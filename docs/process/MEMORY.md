@@ -75,14 +75,15 @@ Decided 2026-10-08, at the repository's creation:
 - **Shaders are compiled at build time with pinned flags and compiled into
   the executable** (`cmake/MetalLibrary.cmake`). Never compiled from source
   at run time, never loaded from a path.
-- **Math shared by the CPU and the GPU gives equal bits, under a stated
-  contract** (`src/core/portable_math.h`): shaders built with `safe` and
-  `precise` math and contraction off, C++ with contraction off, only
-  IEEE-exact operations, no subnormals, which the GPU flushes, and NaN
-  compared as NaN, since the GPU canonicalizes it. Measured
-  in `research/2026-10-08-metal-math-modes.md` and held by
-  `tests/gpu/portable_math_test.cpp`. A kernel that wants Metal's fast math
-  opts out explicitly, as a labelled and measured optimization.
+- **Correctness is shown on the GPU, the way the work will be shown.**
+  ReSTIR against a reference rendered at thousands of samples per pixel: the
+  error falls to zero as samples grow. The reservoir merge against softmax:
+  fed attention scores, it picks each key with probability exp(score) / sum.
+  No CPU copies of kernels, and no limits on shader math for a CPU to check
+  against; shaders compile with Metal's default math. Supersedes, the same
+  day, a contract for bit-equal CPU and GPU math: it served only tests, cost
+  the renderer's math, and showed nothing the goal needs. What it found is
+  kept in `research/2026-10-08-metal-math-modes.md`.
 - **A window and a headless renderer arrive together**, in the first
   rendering change. The headless renderer writes frames at a fixed timestep;
   the window shows the same frames live.

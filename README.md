@@ -7,8 +7,8 @@ DI (Bitterli et al. 2020), denoise the result with a denoiser of its own, and
 compare both against a reference rendered at thousands of samples per pixel.
 
 **Status: skeleton.** Nothing renders yet. The repository has its build, its
-process, a Metal backend that acquires a device and loads compiled shaders,
-and the contract under which the CPU and GPU compute equal bits. The design
+process, and a Metal backend that acquires a device and runs compiled
+shaders. The design
 comes next ([`docs/architecture/`](docs/architecture/README.md)), then the
 first rendering code.
 
@@ -28,7 +28,7 @@ Serenity is R&D under Plainsight Systems LLC.
 ```sh
 git clone --recurse-submodules <this repository>
 cd serenity
-make test     # the core's tests, and the GPU tests on this machine's GPU
+make test     # the tests, the GPU tests on this machine's GPU among them
 make check    # structural rules, and tests proving each check fires
 ```
 
@@ -38,7 +38,7 @@ The first build fetches metal-cpp and doctest, each pinned by commit.
 
 | Path | What it holds |
 |---|---|
-| `src/core/` | platform-neutral C++: no GPU or windowing API. Today, the math the CPU and GPU share (`portable_math.h`) |
+| `src/core/` | platform-neutral C++: no GPU or windowing API. Empty until the first rendering change |
 | `src/metal/` | the Metal backend, the only code that uses Metal's host API |
 | `cmake/` | the toolchain pin, and how shaders are compiled and compiled in |
 | `tests/` | the core's tests; `tests/gpu/` runs on the GPU |

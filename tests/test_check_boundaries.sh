@@ -9,7 +9,15 @@ cd "$(dirname "$0")/.."
 CHECK=./tools/check_boundaries.sh
 CREATED=""
 
-cleanup() { for f in ${CREATED}; do rm -f "$f"; done; rmdir src/metal_extra 2>/dev/null || true; }
+# src/core/ may hold no files yet, and git keeps no empty directory.
+CORE_CREATED=0
+[ -d src/core ] || { mkdir -p src/core; CORE_CREATED=1; }
+
+cleanup() {
+    for f in ${CREATED}; do rm -f "$f"; done
+    rmdir src/metal_extra 2>/dev/null || true
+    if [ "${CORE_CREATED}" = 1 ]; then rmdir src/core 2>/dev/null || true; fi
+}
 trap cleanup EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }

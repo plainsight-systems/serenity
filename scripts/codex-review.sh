@@ -142,8 +142,7 @@ sampled with resampled importance sampling (ReSTIR), then denoised. C++20,
 native, on macOS through Metal (metal-cpp and Metal shaders compiled at build
 time); a Vulkan backend for an AMD machine comes later. src/core/ is
 platform-neutral and uses no GPU API; only src/metal/ uses Metal's host API.
-Math shared between the CPU and the GPU must give equal bits under the
-contract in src/core/portable_math.h. There is one target: an Apple M3 Max,
+There is one target: an Apple M3 Max,
 on the toolchain pinned in cmake/toolchain.json.
 
 Design lives in file headers; each optimization is labelled "Optimization:"
@@ -155,8 +154,7 @@ Bugs, undefined behavior, overflow, lifetimes and dangling spans, off-by-one,
 alignment, unchecked error paths that let a failure pass as success, state
 left inconsistent after a failure, Metal rules the code breaks (object
 ownership and autorelease, resource hazards, synchronization between CPU and
-GPU), CPU-GPU differences the portable-math contract does not allow, and
-claims in comments or the commit message that the code does not honor. Read
+GPU), and claims in comments or the commit message that the code does not honor. Read
 the code the change depends on, not just the diff. A test that cannot fail for
 the bug it names is a finding; a request for more tests in general is not.
 
@@ -261,4 +259,3 @@ echo "codex-review.sh: review written to ${OUTPUT}" >&2
 
 if [ "${POST}" = 1 ]; then
   python3 scripts/post_commit_review.py "${OUTPUT}" "${COMMIT}"
-fi

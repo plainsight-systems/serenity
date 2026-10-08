@@ -6,7 +6,7 @@ This file tracks active and accepted work.
 
 - **Repository skeleton.** Process documents, the build, the toolchain pin
   and its check, the boundary check, the Metal backend's device and library
-  loading, and the portable-math contract with its tests. No rendering code.
+  loading, with its tests. No rendering code.
 
 ## Next, in order
 
@@ -28,8 +28,6 @@ the AMD machine; ReSTIR GI.
 
 ## Parking Lot
 
-- **The cost of `safe` and `precise` math** in the renderer's kernels: not
-  measured (`research/2026-10-08-metal-math-modes.md`).
 - **Whether MoltenVK supports Vulkan ray tracing.** Believed not; verify
   before the Vulkan backend, since it decides whether that backend could also
   run on the Mac.

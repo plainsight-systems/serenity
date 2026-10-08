@@ -10,7 +10,7 @@
 #
 # The Metal shading language's own headers (<metal_stdlib> and the other
 # <metal_*> headers) are not the host API: a core header that a shader also
-# includes may name them, behind __METAL_VERSION__ (core/portable_math.h).
+# includes may name them, behind __METAL_VERSION__.
 set -eu
 
 cd "$(dirname "$0")/.."

@@ -40,10 +40,8 @@ This repo is C++-dominant and performance-sensitive.
   synchronizations, readbacks). A count that scales with pixels or lights
   where it could scale with tiles or passes is designed out before code is
   written. Once the path runs it is measured against that floor.
-- **Math the CPU and GPU share is written to `src/core/portable_math.h`'s
-  contract,** and a GPU test compares the two bit for bit where the contract
-  covers the inputs. Anything outside the contract is compared with a stated
-  tolerance, never with equality that happens to hold.
+- **Correctness is shown on the GPU** (MEMORY.md): rendering against the
+  reference render, sampling against the distribution it should draw from.
 - **Independent review is on request,** not per commit:
   `scripts/codex-review.sh <commit>` checks a commit for correctness and
   speed and writes its findings to `.cache/reviews/`.

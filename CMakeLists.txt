@@ -63,14 +63,9 @@ target_link_libraries(metal_cpp INTERFACE "-framework Metal" "-framework Foundat
 #
 # Invariant: nothing in src/core/ uses a platform GPU or windowing API or
 # includes from a backend. tools/check_boundaries.sh enforces it (make check).
-#
-# Every target that links the core compiles with -ffp-contract=off, the C++
-# half of the CPU-GPU bit-equality contract in core/portable_math.h. Tied to
-# the core rather than set globally, so the contract travels with the code.
 # ---------------------------------------------------------------------------
 add_library(serenity_core INTERFACE)
 target_include_directories(serenity_core INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_compile_options(serenity_core INTERFACE -ffp-contract=off)
 
 # ---------------------------------------------------------------------------
 # Metal backend: the only code that uses Metal's host API.

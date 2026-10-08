@@ -1,5 +1,10 @@
 # Metal math modes and CPU-GPU bit equality
 
+**Status: the project does not rely on this.** It was measured for a
+contract under which CPU tests would check GPU math bit for bit; the contract
+was dropped the same day (`../process/MEMORY.md`), and the files named below
+were removed with it. The facts about Apple's GPU stand.
+
 *2026-10-08. Apple M3 Max (Apple9, `applegpu_g15s`), macOS 26.6.2, Xcode 26.2
 (17C52), Metal compiler 32023.864, Apple clang 17.0.0 (clang-1700.6.3.2).
 Shader language `-std=metal3.2`; the committed test rerun under

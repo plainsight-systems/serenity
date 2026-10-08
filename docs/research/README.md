@@ -7,4 +7,4 @@ Newest first:
 
 | Date | Note | What it found | Status |
 |---|---|---|---|
-| 2026-10-08 | [Metal math modes](2026-10-08-metal-math-modes.md) | CPU and GPU give equal bits only under `safe` and `precise` math with contraction off on both sides, for + - * /, sqrt and fma; not for subnormals, which the GPU flushes, nor for NaN encodings, which it canonicalizes | current |
+| 2026-10-08 | [Metal math modes](2026-10-08-metal-math-modes.md) | CPU and GPU give equal bits only under `safe` and `precise` math with contraction off on both sides, for + - * /, sqrt and fma; not for subnormals, which the GPU flushes, nor for NaN encodings, which it canonicalizes | facts stand; the contract it served was dropped 2026-10-08 |

@@ -1,6 +1,7 @@
-// metal::Library: a compiled-in library loads, its kernel becomes a
-// pipeline, and every failure throws metal::Error naming its cause.
+// metal::Library: a compiled-in library loads, its kernel runs and writes
+// what it should, and every failure throws metal::Error naming its cause.
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -9,23 +10,49 @@
 #include "metal/device.h"
 #include "metal/error.h"
 #include "metal/library.h"
-#include "serenity/metallib/portable_math_probe.h"
+#include "serenity/metallib/smoke.h"
 
 using serenity::metal::Device;
 using serenity::metal::Error;
 using serenity::metal::Library;
 
-TEST_CASE("a compiled-in library loads and builds a pipeline for its kernel") {
+TEST_CASE("a compiled-in kernel runs and writes what it should") {
     Device device;
-    Library library(device, serenity::metallib::portable_math_probe);
-    auto pipeline = library.compute_pipeline("portable_math_probe");
-    CHECK(pipeline);
-    CHECK(pipeline->maxTotalThreadsPerThreadgroup() > 0);
+    Library library(device, serenity::metallib::smoke);
+    auto pipeline = library.compute_pipeline("smoke");
+    REQUIRE(pipeline);
+
+    constexpr std::uint32_t count = 1000;  // not a multiple of the thread width
+    auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+    auto out = NS::TransferPtr(
+        device.handle()->newBuffer(count * sizeof(std::uint32_t), MTL::ResourceStorageModeShared));
+    auto queue = NS::TransferPtr(device.handle()->newCommandQueue());
+    REQUIRE(out);
+    REQUIRE(queue);
+
+    MTL::CommandBuffer* commands = queue->commandBuffer();
+    MTL::ComputeCommandEncoder* encoder = commands->computeCommandEncoder();
+    encoder->setComputePipelineState(pipeline.get());
+    encoder->setBuffer(out.get(), 0, 0);
+    encoder->setBytes(&count, sizeof(count), 1);
+    encoder->dispatchThreads(MTL::Size(count, 1, 1),
+                             MTL::Size(pipeline->threadExecutionWidth(), 1, 1));
+    encoder->endEncoding();
+    commands->commit();
+    commands->waitUntilCompleted();
+    REQUIRE(commands->status() == MTL::CommandBufferStatusCompleted);
+
+    const auto* values = static_cast<const std::uint32_t*>(out->contents());
+    std::uint32_t wrong = 0;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        wrong += values[i] != 3 * i + 1;
+    }
+    CHECK(wrong == 0);
 }
 
 TEST_CASE("a function the library lacks is an error that names it") {
     Device device;
-    Library library(device, serenity::metallib::portable_math_probe);
+    Library library(device, serenity::metallib::smoke);
     try {
         (void)library.compute_pipeline("no_such_kernel");
         FAIL("expected metal::Error");
@@ -36,7 +63,7 @@ TEST_CASE("a function the library lacks is an error that names it") {
 
 TEST_CASE("a null function name is an error") {
     Device device;
-    Library library(device, serenity::metallib::portable_math_probe);
+    Library library(device, serenity::metallib::smoke);
     CHECK_THROWS_AS((void)library.compute_pipeline(nullptr), Error);
 }
 

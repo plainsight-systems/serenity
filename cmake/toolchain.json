@@ -1,5 +1,5 @@
 {
- "$comment": "The toolchain every build and every recorded figure assumes. Metal has no container image to pin, as Charlotte pinned emsdk's, so the versions are pinned here instead and tools/check_toolchain.py compares them with the machine's at configure time; a mismatch stops the build. To move to a new Xcode, change this file in its own commit and rerun the tests: a new Metal compiler can change what the shaders compute (docs/research/2026-10-08-metal-math-modes.md).",
+ "$comment": "The toolchain every build and every recorded figure assumes. Metal has no container image to pin, as Charlotte pinned emsdk's, so the versions are pinned here instead and tools/check_toolchain.py compares them with the machine's at configure time; a mismatch stops the build. To move to a new Xcode, change this file in its own commit and rerun the tests: a new Metal compiler can change what the shaders compute.",
  "xcode": "Xcode 26.2",
  "xcode_build": "Build version 17C52",
  "macos_sdk": "26.2",

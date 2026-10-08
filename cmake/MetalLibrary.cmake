@@ -5,8 +5,7 @@
 #       TARGET       <target that uses the library>
 #       NAME         <C++ identifier for the library's bytes>
 #       SOURCES      <.metal files>...
-#       INCLUDE_DIRS <directories the shaders include from>...
-#       [MATH fast])
+#       INCLUDE_DIRS <directories the shaders include from>...)
 #
 # Each source is compiled to AIR with SERENITY_METAL_FLAGS, the AIR is linked
 # into one .metallib, and its bytes become
@@ -18,47 +17,26 @@
 # Compiled in, not loaded from a path: what a shader computes is fixed by the
 # source revision, and nothing at run time depends on where the build put it.
 #
-# The flags are pinned here and nowhere else (core/portable_math.h says why
-# each is needed):
+# The flags are pinned here and nowhere else:
 #
 #   -std=metal4.0                  the language version, explicit rather than
 #                                  the compiler's default
-#   -fmetal-math-mode=safe         Metal's default is fast, which reassociates
-#   -fmetal-math-fp32-functions=precise
-#                                  and approximates division and sqrt
-#   -ffp-contract=off              a * b + c is not fused; fma() is
 #   -mmacosx-version-min           the deployment target the C++ builds for
 #   -Werror                        a shader warning fails the build
 #
-# MATH fast compiles with Metal's fast math instead. It exists for a kernel
-# that opts out of bit-equality with the CPU as a labelled, measured
-# optimization, and for the test that shows why the default is refused.
-#
-# Dependencies on included headers are tracked through the compiler's depfile,
-# so changing a shared header such as core/portable_math.h rebuilds every
-# library that includes it.
+# Math is Metal's default (fast). Dependencies on included headers are
+# tracked through the compiler's depfile, so changing a header a shader
+# includes rebuilds every library that includes it.
 
 set(SERENITY_METAL_STD "-std=metal4.0")
-set(SERENITY_METAL_MATH_SAFE
-    -fmetal-math-mode=safe -fmetal-math-fp32-functions=precise -ffp-contract=off)
-set(SERENITY_METAL_MATH_FAST
-    -fmetal-math-mode=fast -fmetal-math-fp32-functions=fast -ffp-contract=fast)
 
 function(serenity_add_metallib)
-    cmake_parse_arguments(ARG "" "TARGET;NAME;MATH" "SOURCES;INCLUDE_DIRS" ${ARGN})
+    cmake_parse_arguments(ARG "" "TARGET;NAME" "SOURCES;INCLUDE_DIRS" ${ARGN})
     if(NOT ARG_TARGET OR NOT ARG_NAME OR NOT ARG_SOURCES)
         message(FATAL_ERROR "serenity_add_metallib: TARGET, NAME and SOURCES are required")
     endif()
     if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
         message(FATAL_ERROR "serenity_add_metallib: CMAKE_OSX_DEPLOYMENT_TARGET is not set (CMakePresets.json sets it)")
-    endif()
-
-    if(NOT ARG_MATH)
-        set(math ${SERENITY_METAL_MATH_SAFE})
-    elseif(ARG_MATH STREQUAL "fast")
-        set(math ${SERENITY_METAL_MATH_FAST})
-    else()
-        message(FATAL_ERROR "serenity_add_metallib: MATH is 'fast' or absent, not '${ARG_MATH}'")
     endif()
 
     set(work "${CMAKE_BINARY_DIR}/metallib/${ARG_NAME}")
@@ -76,7 +54,7 @@ function(serenity_add_metallib)
         add_custom_command(
             OUTPUT "${air}"
             COMMAND xcrun -sdk macosx metal
-                    ${SERENITY_METAL_STD} ${math}
+                    ${SERENITY_METAL_STD}
                     -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}
                     -Werror ${includes}
                     -MMD -MF "${dep}"
