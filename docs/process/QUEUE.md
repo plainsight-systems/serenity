@@ -10,8 +10,7 @@ This file tracks active and accepted work.
 
 ## Next, in order
 
-1. `docs/architecture/file-mapping.md`: modules, axes and contracts.
-2. The first frames: a full path tracer over procedural geometry with many
+1. The first frames: a full path tracer over procedural geometry with many
    moving fireflies, sampled naively, shown in a window and written to frames
    by a headless renderer.
 

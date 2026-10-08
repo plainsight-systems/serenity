@@ -1,10 +1,10 @@
-#include "metal/library.h"
+#include "metal/device/library.h"
 
 #include <string>
 
 #include <dispatch/dispatch.h>
 
-#include "metal/error.h"
+#include "metal/device/error.h"
 
 namespace serenity::metal {
 

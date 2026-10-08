@@ -93,13 +93,15 @@ pinned by commit.
 
 | Path | What it holds |
 |---|---|
-| `src/core/` | the platform-neutral core: the scene and its sampling, with no GPU or windowing API. Empty until the first frames |
-| `src/metal/` | the Metal backend, the only code that touches Metal |
+| `src/core/` | the platform-neutral core: what is rendered, how it moves, the frame's schedule, film and output. No GPU or windowing API |
+| `src/metal/` | the Metal backend, the only code that touches Metal: the device, and every shader |
+| `src/app/`, `src/headless/` | the two ways to run a frame: in a window, or to files |
+| `scenes/` | scene descriptions, as data |
 | `cmake/` | the toolchain pin, and how shaders are compiled into the binary |
 | `tests/` | tests; `tests/gpu/` runs on this machine's GPU |
 | `tools/` | the toolchain and boundary checks |
 | `scripts/` | an independent review of a commit, on request |
-| `docs/architecture/` | the design, written before the code it describes |
+| `docs/architecture/` | the design, written before the code it describes: start with the [logical overview](docs/architecture/logical-overview.md) |
 | `docs/research/` | measurements and investigations, each dated, with the machine and toolchain it ran on |
 | `docs/process/` | decisions and the work queue |
 

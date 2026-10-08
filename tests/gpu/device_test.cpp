@@ -10,7 +10,7 @@
 
 #include <doctest/doctest.h>
 
-#include "metal/device.h"
+#include "metal/device/device.h"
 
 TEST_CASE("a Metal device with ray tracing is acquired") {
     serenity::metal::Device device;

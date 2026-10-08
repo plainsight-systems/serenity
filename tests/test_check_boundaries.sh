@@ -47,8 +47,9 @@ probe "Vulkan include in core" src/core/_probe3.h '#pragma once\n#include <vulka
 probe "metal-cpp name in core" src/core/_probe4.h '#pragma once\nvoid f(MTL::Device* d);\n'
 
 # 2. The core including a backend, by quoted and by relative path.
-probe "core includes the Metal backend" src/core/_probe5.h '#pragma once\n#include "metal/device.h"\n'
-probe "core includes a backend by relative path" src/core/_probe6.h '#pragma once\n#include "../metal/device.h"\n'
+probe "core includes the Metal backend" src/core/_probe5.h '#pragma once\n#include "metal/device/device.h"\n'
+probe "core includes a backend by relative path" src/core/_probe6.h '#pragma once\n#include "../metal/device/device.h"\n'
+probe "core includes the headless renderer" src/core/_probe9.h '#pragma once\n#include "headless/render.h"\n'
 
 # 3. The Metal host API outside src/metal/, including a directory whose name
 #    merely starts with it.

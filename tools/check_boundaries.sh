@@ -36,7 +36,7 @@ fi
 
 # 2. The core does not depend outward on a backend or the app. Quoted and
 #    angled forms alike, and any relative path into them.
-hits="$(grep -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal|vulkan|app)/' src/core/ 2>/dev/null || true)"
+hits="$(grep -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal|vulkan|app|headless)/' src/core/ 2>/dev/null || true)"
 if [ -n "${hits}" ]; then
     echo "${hits}" | sed 's/^/  /' >&2
     fail "src/core/ includes from a backend or the app. Dependencies point into the core only."

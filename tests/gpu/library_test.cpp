@@ -7,9 +7,9 @@
 
 #include <doctest/doctest.h>
 
-#include "metal/device.h"
-#include "metal/error.h"
-#include "metal/library.h"
+#include "metal/device/device.h"
+#include "metal/device/error.h"
+#include "metal/device/library.h"
 #include "serenity/metallib/smoke.h"
 
 using serenity::metal::Device;

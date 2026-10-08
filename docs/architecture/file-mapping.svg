@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="710" viewBox="0 0 780 710" role="img">
+<title>Each logical box mapped to the file families that implement it, by layer</title>
+<desc>Twelve boxes of the logical overview, each with the directories that implement it, coloured by layer: the platform-neutral core, the Metal backend, the app and headless renderer, and scene data. Light is the widest: the integrator, light selection, sample reuse, lights, materials, textures and the sampler, all in the Metal backend. Beneath them, the contracts in core/contracts are what the families depend on instead of each other.</desc>
+<style>
+  .bg { fill: #FFFFFF; }
+  .th { font: 500 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: #2C2C2A; }
+  .ts { font: 400 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: #5F5E5A; }
+  rect { stroke-width: 1; }
+  .gray rect   { fill: #F1EFE8; stroke: #888780; } .gray text   { fill: #2C2C2A; }
+  .teal rect   { fill: #E1F5EE; stroke: #0F6E56; } .teal text   { fill: #085041; }
+  .purple rect { fill: #EEEDFE; stroke: #534AB7; } .purple text { fill: #3C3489; }
+  .coral rect  { fill: #FAECE7; stroke: #D85A30; } .coral text  { fill: #712B13; }
+  .arr { stroke: #888780; stroke-width: 1.5; fill: none; }
+</style>
+<defs>
+  <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+    <path d="M 0 1 L 8 5 L 0 9" fill="none" stroke="#888780" stroke-width="1.5"/>
+  </marker>
+</defs>
+<rect class="bg" x="0" y="0" width="780" height="710"/>
+<g class="purple"><rect x="40" y="20" width="14" height="14" rx="3"/></g><text class="ts" x="60" y="31">core: platform-neutral</text>
+<g class="teal"><rect x="210" y="20" width="14" height="14" rx="3"/></g><text class="ts" x="230" y="31">Metal backend</text>
+<g class="coral"><rect x="340" y="20" width="14" height="14" rx="3"/></g><text class="ts" x="360" y="31">app, headless</text>
+<g class="gray"><rect x="466" y="20" width="14" height="14" rx="3"/></g><text class="ts" x="486" y="31">logical box, data</text>
+<text class="th" x="40" y="62">Logical box</text>
+<text class="th" x="250" y="62">File families: src/, and scenes/ at the root</text>
+<g class="gray"><rect x="40" y="74" width="180" height="30" rx="6"/><text class="th" x="130.0" y="94.0" text-anchor="middle">Scene description</text></g>
+<line class="arr" x1="220" y1="89" x2="246" y2="89" marker-end="url(#a)"/>
+<g class="purple"><rect x="250" y="76" width="83" height="26" rx="5"/><text class="ts" x="291.5" y="93" text-anchor="middle">core/scene</text></g>
+<g class="gray"><rect x="341" y="76" width="109" height="26" rx="5"/><text class="ts" x="395.5" y="93" text-anchor="middle">scenes/ (data)</text></g>
+<g class="gray"><rect x="40" y="114" width="180" height="30" rx="6"/><text class="th" x="130.0" y="134.0" text-anchor="middle">Build geometry</text></g>
+<line class="arr" x1="220" y1="129" x2="246" y2="129" marker-end="url(#a)"/>
+<g class="purple"><rect x="250" y="116" width="90" height="26" rx="5"/><text class="ts" x="295.0" y="133" text-anchor="middle">core/shapes</text></g>
+<g class="teal"><rect x="348" y="116" width="135" height="26" rx="5"/><text class="ts" x="415.5" y="133" text-anchor="middle">metal/acceleration</text></g>
+<g class="teal"><rect x="491" y="116" width="96" height="26" rx="5"/><text class="ts" x="539.0" y="133" text-anchor="middle">metal/device</text></g>
+<g class="gray"><rect x="40" y="154" width="180" height="30" rx="6"/><text class="th" x="130.0" y="174.0" text-anchor="middle">Allocate frame state</text></g>
+<line class="arr" x1="220" y1="169" x2="246" y2="169" marker-end="url(#a)"/>
+<g class="purple"><rect x="250" y="156" width="83" height="26" rx="5"/><text class="ts" x="291.5" y="173" text-anchor="middle">core/frame</text></g>
+<g class="teal"><rect x="341" y="156" width="90" height="26" rx="5"/><text class="ts" x="386.0" y="173" text-anchor="middle">metal/frame</text></g>
+<g class="gray"><rect x="40" y="194" width="180" height="30" rx="6"/><text class="th" x="130.0" y="214.0" text-anchor="middle">Frame inputs</text></g>
+<line class="arr" x1="220" y1="209" x2="246" y2="209" marker-end="url(#a)"/>
+<g class="purple"><rect x="250" y="196" width="90" height="26" rx="5"/><text class="ts" x="295.0" y="213" text-anchor="middle">core/camera</text></g>
+<g class="purple"><rect x="348" y="196" width="109" height="26" rx="5"/><text class="ts" x="402.5" y="213" text-anchor="middle">core/animation</text></g>
+<g class="coral"><rect x="465" y="196" width="38" height="26" rx="5"/><text class="ts" x="484.0" y="213" text-anchor="middle">app</text></g>
+<g class="coral"><rect x="511" y="196" width="70" height="26" rx="5"/><text class="ts" x="546.0" y="213" text-anchor="middle">headless</text></g>
+<g class="gray"><rect x="40" y="234" width="180" height="30" rx="6"/><text class="th" x="130.0" y="254.0" text-anchor="middle">Animate</text></g>
+<line class="arr" x1="220" y1="249" x2="246" y2="249" marker-end="url(#a)"/>
+<g class="purple"><rect x="250" y="236" width="109" height="26" rx="5"/><text class="ts" x="304.5" y="253" text-anchor="middle">core/animation</text></g>
+<g class="teal"><rect x="367" y="236" width="135" height="26" rx="5"/><text class="ts" x="434.5" y="253" text-anchor="middle">metal/acceleration</text></g>
+<g class="gray"><rect x="40" y="274" width="180" height="64" rx="6"/><text class="th" x="130.0" y="311.0" text-anchor="middle">Primary visibility</text></g>
+<line class="arr" x1="220" y1="289" x2="246" y2="289" marker-end="url(#a)"/>
+<g class="teal"><rect x="250" y="276" width="96" height="26" rx="5"/><text class="ts" x="298.0" y="293" text-anchor="middle">metal/camera</text></g>
+<g class="teal"><rect x="354" y="276" width="96" height="26" rx="5"/><text class="ts" x="402.0" y="293" text-anchor="middle">metal/shapes</text></g>
+<g class="teal"><rect x="458" y="276" width="116" height="26" rx="5"/><text class="ts" x="516.0" y="293" text-anchor="middle">metal/materials</text></g>
+<g class="teal"><rect x="250" y="310" width="122" height="26" rx="5"/><text class="ts" x="311.0" y="327" text-anchor="middle">metal/integrator</text></g>
+<g class="purple"><rect x="380" y="310" width="76" height="26" rx="5"/><text class="ts" x="418.0" y="327" text-anchor="middle">core/film</text></g>
+<g class="gray"><rect x="40" y="348" width="180" height="64" rx="6"/><text class="th" x="130.0" y="385.0" text-anchor="middle">Light</text></g>
+<line class="arr" x1="220" y1="363" x2="246" y2="363" marker-end="url(#a)"/>
+<g class="teal"><rect x="250" y="350" width="122" height="26" rx="5"/><text class="ts" x="311.0" y="367" text-anchor="middle">metal/integrator</text></g>
+<g class="teal"><rect x="380" y="350" width="154" height="26" rx="5"/><text class="ts" x="457.0" y="367" text-anchor="middle">metal/light_selection</text></g>
+<g class="teal"><rect x="542" y="350" width="90" height="26" rx="5"/><text class="ts" x="587.0" y="367" text-anchor="middle">metal/reuse</text></g>
+<g class="teal"><rect x="640" y="350" width="96" height="26" rx="5"/><text class="ts" x="688.0" y="367" text-anchor="middle">metal/lights</text></g>
+<g class="teal"><rect x="250" y="384" width="116" height="26" rx="5"/><text class="ts" x="308.0" y="401" text-anchor="middle">metal/materials</text></g>
+<g class="teal"><rect x="374" y="384" width="109" height="26" rx="5"/><text class="ts" x="428.5" y="401" text-anchor="middle">metal/textures</text></g>
+<g class="teal"><rect x="491" y="384" width="102" height="26" rx="5"/><text class="ts" x="542.0" y="401" text-anchor="middle">metal/sampler</text></g>
+<g class="gray"><rect x="40" y="422" width="180" height="30" rx="6"/><text class="th" x="130.0" y="442.0" text-anchor="middle">Resolve</text></g>
+<line class="arr" x1="220" y1="437" x2="246" y2="437" marker-end="url(#a)"/>
+<g class="teal"><rect x="250" y="424" width="122" height="26" rx="5"/><text class="ts" x="311.0" y="441" text-anchor="middle">metal/integrator</text></g>
+<g class="purple"><rect x="380" y="424" width="76" height="26" rx="5"/><text class="ts" x="418.0" y="441" text-anchor="middle">core/film</text></g>
+<g class="gray"><rect x="40" y="462" width="180" height="30" rx="6"/><text class="th" x="130.0" y="482.0" text-anchor="middle">Denoise, Upscale, Tone map</text></g>
+<line class="arr" x1="220" y1="477" x2="246" y2="477" marker-end="url(#a)"/>
+<g class="teal"><rect x="250" y="464" width="96" height="26" rx="5"/><text class="ts" x="298.0" y="481" text-anchor="middle">metal/passes</text></g>
+<g class="gray"><rect x="40" y="502" width="180" height="30" rx="6"/><text class="th" x="130.0" y="522.0" text-anchor="middle">Surface records</text></g>
+<line class="arr" x1="220" y1="517" x2="246" y2="517" marker-end="url(#a)"/>
+<g class="purple"><rect x="250" y="504" width="76" height="26" rx="5"/><text class="ts" x="288.0" y="521" text-anchor="middle">core/film</text></g>
+<g class="purple"><rect x="334" y="504" width="83" height="26" rx="5"/><text class="ts" x="375.5" y="521" text-anchor="middle">core/frame</text></g>
+<g class="gray"><rect x="40" y="542" width="180" height="30" rx="6"/><text class="th" x="130.0" y="562.0" text-anchor="middle">Reservoirs</text></g>
+<line class="arr" x1="220" y1="557" x2="246" y2="557" marker-end="url(#a)"/>
+<g class="teal"><rect x="250" y="544" width="90" height="26" rx="5"/><text class="ts" x="295.0" y="561" text-anchor="middle">metal/reuse</text></g>
+<g class="gray"><rect x="40" y="582" width="180" height="30" rx="6"/><text class="th" x="130.0" y="602.0" text-anchor="middle">Present or write</text></g>
+<line class="arr" x1="220" y1="597" x2="246" y2="597" marker-end="url(#a)"/>
+<g class="coral"><rect x="250" y="584" width="38" height="26" rx="5"/><text class="ts" x="269.0" y="601" text-anchor="middle">app</text></g>
+<g class="coral"><rect x="296" y="584" width="70" height="26" rx="5"/><text class="ts" x="331.0" y="601" text-anchor="middle">headless</text></g>
+<g class="purple"><rect x="374" y="584" width="90" height="26" rx="5"/><text class="ts" x="419.0" y="601" text-anchor="middle">core/output</text></g>
+<g class="purple"><rect x="40" y="636" width="700" height="50" rx="6"/>
+  <text class="th" x="390.0" y="657" text-anchor="middle">core/contracts</text>
+  <text class="ts" x="390.0" y="675" text-anchor="middle">surface interaction · BSDF · emitter · light sample · film outputs · frame images: what the families depend on</text></g>
+</svg>

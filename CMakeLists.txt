@@ -71,9 +71,9 @@ target_include_directories(serenity_core INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/
 # Metal backend: the only code that uses Metal's host API.
 # ---------------------------------------------------------------------------
 add_library(serenity_metal STATIC
-    src/metal/metal_cpp.cpp
-    src/metal/device.cpp
-    src/metal/library.cpp
+    src/metal/device/metal_cpp.cpp
+    src/metal/device/device.cpp
+    src/metal/device/library.cpp
 )
 target_link_libraries(serenity_metal PUBLIC serenity_core metal_cpp)
 target_compile_options(serenity_metal PRIVATE ${SERENITY_WARNINGS})

@@ -5,7 +5,7 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
-#include "metal/device.h"
+#include "metal/device/device.h"
 
 namespace serenity::metal {
 

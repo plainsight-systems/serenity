@@ -1,6 +1,6 @@
-#include "metal/device.h"
+#include "metal/device/device.h"
 
-#include "metal/error.h"
+#include "metal/device/error.h"
 
 namespace serenity::metal {
 
