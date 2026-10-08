@@ -1,0 +1,20 @@
+Serenity
+Copyright 2026 Plainsight Systems LLC
+
+Third-party components
+======================
+
+Compiled into the build
+-----------------------
+
+metal-cpp, Apple's C++ interface to Metal, fetched by CMake at the commit
+pinned in CMakeLists.txt (release/metal-cpp_macOS26_iOS26)
+  Copyright 2020-2025 Apple Inc. Apache License 2.0.
+  https://github.com/apple/metal-cpp/blob/main/LICENSE.txt
+
+Used to build or test, not distributed
+--------------------------------------
+
+doctest, fetched by CMake for the tests
+  Copyright (c) 2016-2023 Viktor Kirilov. MIT License.
+  https://github.com/doctest/doctest/blob/master/LICENSE.txt

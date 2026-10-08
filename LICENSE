@@ -1,0 +1,12 @@
+Serenity is distributed under a split license.
+
+Source code and configuration — C++, Metal shaders, build scripts, tools,
+tests and configuration files — are licensed under the Apache License,
+Version 2.0. See LICENSE-CODE.
+
+Documentation, prose, and original visual assets are licensed under the
+Creative Commons Attribution 4.0 International license. See LICENSE-CONTENT.
+
+Each file is governed by the applicable scope above; the two licenses are not
+cumulative requirements on every file. Third-party components keep their own
+licenses, listed in NOTICE.

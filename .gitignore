@@ -1,0 +1,5 @@
+build/
+.cache/
+.DS_Store
+# The project brief is internal planning, not part of the public repository.
+/brief.md
