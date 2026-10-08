@@ -7,7 +7,7 @@ This file is the canonical entry point for durable project context.
 - **Product:** Serenity. Named 2026-09-30.
 - **Operating brand:** None. Internal R&D under the parent entity.
 - **Parent entity:** Plainsight Systems LLC
-- **Repository:** local only; not yet on GitHub.
+- **Repository:** <https://github.com/plainsight-systems/serenity> (public; not yet pushed).
 
 ## Purpose
 
