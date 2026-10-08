@@ -16,6 +16,21 @@ pinned in CMakeLists.txt (release/metal-cpp_macOS26_iOS26)
   Copyright 2020-2025 Apple Inc. Apache License 2.0.
   https://github.com/apple/metal-cpp/blob/main/LICENSE.txt
 
+SDL 3.4.18, the window, fetched by CMake as its release tarball, pinned by
+SHA-256 in CMakeLists.txt
+  Copyright (C) 1997-2026 Sam Lantinga. zlib License.
+  https://github.com/libsdl-org/SDL/blob/main/LICENSE.txt
+
+toml++ 3.4.0, reading scene files, fetched by CMake at the commit pinned in
+CMakeLists.txt
+  Copyright (c) Mark Gillard. MIT License.
+  https://github.com/marzer/tomlplusplus/blob/master/LICENSE
+
+stb_image_write 1.16, writing PNG files, fetched by CMake at the commit
+pinned in CMakeLists.txt
+  Sean Barrett. Public domain (Unlicense), or MIT License, at your choice.
+  https://github.com/nothings/stb/blob/master/LICENSE
+
 Used to build or test, not distributed
 --------------------------------------
 

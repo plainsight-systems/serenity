@@ -14,10 +14,11 @@ It runs natively on Apple silicon through Metal 4, in C++, at the display's
 full resolution and 60 frames a second. A second backend,
 Vulkan on an AMD Strix Halo, comes later.
 
-**Status: early.** Nothing renders yet. What's here is the build, the
-repository's structure, and a Metal backend that acquires a ray-tracing
-device and runs compiled shaders. The design comes next, then the first
-frames.
+**Status: early.** The path a frame takes is built and running end to end:
+a scene file names what the frame computes, the Metal 4 backend renders it,
+and it appears in a window at the display's full resolution or is written
+to PNG files. What it renders so far is a test pattern; the path tracer is
+next. The design is in [`docs/architecture/`](docs/architecture/README.md).
 
 ## Why I built it
 
@@ -80,14 +81,19 @@ git clone --recurse-submodules https://github.com/plainsight-systems/serenity.gi
 cd serenity
 make test     # builds, then runs the tests, the GPU tests among them
 make check    # structural rules, and tests proving each check fires
+make run      # the window, showing scenes/test_pattern.toml
+make headless # the same scene, as 60 PNG frames in frames/
 ```
+
+`make run SCENE=scenes/other.toml` shows another scene. Escape or closing the
+window ends it.
 
 The build is pinned to one toolchain. Metal can't run in a container, so the
 versions of Xcode, the SDK, the Metal compiler and Apple's clang are recorded
 in [`cmake/toolchain.json`](cmake/toolchain.json), and configuring the build
 stops if yours differ. Shaders are compiled when the project builds and
-compiled into the binary. The first build fetches metal-cpp and doctest, each
-pinned by commit.
+compiled into the binary. The first build fetches metal-cpp, SDL3, toml++,
+stb_image_write and doctest, each pinned by commit or by checksum.
 
 ## Find your way around
 

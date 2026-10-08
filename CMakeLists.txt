@@ -55,28 +55,102 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(metal_cpp)
 add_library(metal_cpp INTERFACE)
 target_include_directories(metal_cpp SYSTEM INTERFACE "${metal_cpp_SOURCE_DIR}")
-target_link_libraries(metal_cpp INTERFACE "-framework Metal" "-framework Foundation")
+target_link_libraries(metal_cpp INTERFACE "-framework Metal" "-framework Foundation" "-framework QuartzCore")
+
+# ---------------------------------------------------------------------------
+# SDL3: the window (src/app/ only). Pinned by its release tarball's SHA-256:
+# its git history is far larger than the release. Static, and only the parts
+# the window uses.
+# ---------------------------------------------------------------------------
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
+set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+foreach(subsystem AUDIO CAMERA HAPTIC JOYSTICK SENSOR HIDAPI GPU RENDER POWER DIALOG TRAY)
+    set(SDL_${subsystem} OFF CACHE BOOL "" FORCE)
+endforeach()
+FetchContent_Declare(
+    SDL3
+    URL      https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz
+    URL_HASH SHA256=9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3
+)
+FetchContent_MakeAvailable(SDL3)
+
+# toml++: reading scene files (src/core/scene/scene.cpp only). v3.4.0.
+FetchContent_Declare(
+    tomlplusplus
+    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+    GIT_TAG        30172438cee64926dc41fdd9c11fb3ba5b2ba9de  # v3.4.0
+)
+FetchContent_MakeAvailable(tomlplusplus)
+
+# stb_image_write: PNG output (src/core/output/png.cpp only). v1.16.
+FetchContent_Declare(
+    stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG        2c980bb59875b0d32144a71867fbdebb2f77cd20
+)
+FetchContent_MakeAvailable(stb)
+add_library(stb_image_write INTERFACE)
+target_include_directories(stb_image_write SYSTEM INTERFACE "${stb_SOURCE_DIR}")
 
 # ---------------------------------------------------------------------------
 # Core: platform-neutral C++. Builds with no GPU API at all, so a second
 # backend renders the same scene from the same code.
 #
 # Invariant: nothing in src/core/ uses a platform GPU or windowing API or
-# includes from a backend. tools/check_boundaries.sh enforces it (make check).
+# includes from a backend, the app or the headless renderer.
+# tools/check_boundaries.sh enforces it (make check).
 # ---------------------------------------------------------------------------
-add_library(serenity_core INTERFACE)
-target_include_directories(serenity_core INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+add_library(serenity_core STATIC
+    src/core/frame/schedule.cpp
+    src/core/output/png.cpp
+    src/core/scene/scene.cpp
+)
+target_include_directories(serenity_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_link_libraries(serenity_core PRIVATE tomlplusplus::tomlplusplus stb_image_write)
+target_compile_options(serenity_core PRIVATE ${SERENITY_WARNINGS})
 
 # ---------------------------------------------------------------------------
-# Metal backend: the only code that uses Metal's host API.
+# Metal backend: the only code that uses Metal's host API. Its shaders are
+# compiled into it (cmake/MetalLibrary.cmake), as serenity::metallib::shaders.
 # ---------------------------------------------------------------------------
 add_library(serenity_metal STATIC
     src/metal/device/metal_cpp.cpp
     src/metal/device/device.cpp
     src/metal/device/library.cpp
+    src/metal/device/offscreen.cpp
+    src/metal/device/presenter.cpp
+    src/metal/device/submission.cpp
+    src/metal/frame/renderer.cpp
+    src/metal/passes/test_pattern/test_pattern.cpp
 )
 target_link_libraries(serenity_metal PUBLIC serenity_core metal_cpp)
 target_compile_options(serenity_metal PRIVATE ${SERENITY_WARNINGS})
+serenity_add_metallib(
+    TARGET serenity_metal NAME shaders
+    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/test_pattern/test_pattern.metal"
+    INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+# ---------------------------------------------------------------------------
+# The two ways to run a frame. Each parses its command line in a library of
+# its own, so the tests can reach it without a window or a GPU.
+# ---------------------------------------------------------------------------
+add_library(serenity_app_options STATIC src/app/options.cpp)
+target_include_directories(serenity_app_options PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_options(serenity_app_options PRIVATE ${SERENITY_WARNINGS})
+
+add_executable(serenity src/app/main.cpp src/app/window.cpp src/app/clock.cpp)
+target_link_libraries(serenity PRIVATE serenity_app_options serenity_metal SDL3::SDL3-static)
+target_compile_options(serenity PRIVATE ${SERENITY_WARNINGS})
+
+add_library(serenity_headless_options STATIC src/headless/options.cpp)
+target_link_libraries(serenity_headless_options PUBLIC serenity_core)
+target_compile_options(serenity_headless_options PRIVATE ${SERENITY_WARNINGS})
+
+add_executable(serenity-headless src/headless/main.cpp)
+target_link_libraries(serenity-headless PRIVATE serenity_headless_options serenity_metal)
+target_compile_options(serenity-headless PRIVATE ${SERENITY_WARNINGS})
 
 enable_testing()
 add_subdirectory(tests)

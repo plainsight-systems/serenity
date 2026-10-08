@@ -9,4 +9,17 @@ FetchContent_MakeAvailable(doctest)
 get_target_property(doctest_includes doctest::doctest INTERFACE_INCLUDE_DIRECTORIES)
 set_target_properties(doctest PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${doctest_includes}")
 
-# The core's own tests arrive with the core's first code.
+# The tests that need no GPU: the core, and both command lines.
+add_executable(serenity_tests
+    schedule_test.cpp
+    scene_test.cpp
+    png_test.cpp
+    options_test.cpp
+    main_test.cpp
+)
+target_link_libraries(serenity_tests PRIVATE
+    serenity_app_options serenity_headless_options doctest::doctest)
+target_compile_options(serenity_tests PRIVATE ${SERENITY_WARNINGS})
+target_compile_definitions(serenity_tests PRIVATE
+    SERENITY_SCENES_DIR="${PROJECT_SOURCE_DIR}/scenes")
+add_test(NAME serenity_tests COMMAND serenity_tests)

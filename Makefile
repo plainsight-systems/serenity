@@ -4,7 +4,7 @@
 # (make test-release). Both run the same tests, including the GPU tests on
 # this machine's GPU. There is no CI yet (docs/process/QUEUE.md).
 
-.PHONY: test test-release check toolchain clean
+.PHONY: test test-release run headless check toolchain clean
 
 ## Every test, debug build: the core's tests and the GPU tests.
 test:
@@ -17,6 +17,23 @@ test-release:
 	cmake --preset native-release
 	cmake --build --preset native-release
 	ctest --preset native-release
+
+## The window, release build, showing SCENE (default: the test pattern).
+## Escape or closing the window ends it.
+SCENE ?= scenes/test_pattern.toml
+run:
+	cmake --preset native-release
+	cmake --build --preset native-release --target serenity
+	./build/native-release/serenity --scene $(SCENE)
+
+## Headless frames of SCENE, release build, as PNGs in OUT. FRAMES frames
+## from frame 0, a sixtieth of a second apart.
+OUT ?= frames
+FRAMES ?= 60
+headless:
+	cmake --preset native-release
+	cmake --build --preset native-release --target serenity-headless
+	./build/native-release/serenity-headless --scene $(SCENE) --out $(OUT) --frames $(FRAMES)
 
 ## Whether this machine's toolchain is the pinned one (cmake/toolchain.json).
 ## Configuring runs the same check and stops on a mismatch.

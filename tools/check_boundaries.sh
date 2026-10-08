@@ -50,6 +50,21 @@ if [ -n "${offenders}" ]; then
     fail "only ${METAL_DIR} may use Metal's host API."
 fi
 
+# 4. Each third-party library is reached from one place only, so swapping it
+#    touches one file (change-axes.md): SDL from src/app/, toml++ from the
+#    scene reader, stb from the PNG writer.
+confined() {
+    pattern="$1"; allowed="$2"; what="$3"
+    offenders="$(grep -rlE "${pattern}" src/ 2>/dev/null | grep -v "^${allowed}" || true)"
+    if [ -n "${offenders}" ]; then
+        echo "${offenders}" | sed 's/^/  /' >&2
+        fail "${what} may be included only from ${allowed}."
+    fi
+}
+confined '#[[:space:]]*include[[:space:]]*[<"]SDL3/' 'src/app/' 'SDL'
+confined '#[[:space:]]*include[[:space:]]*[<"]toml\+\+/' 'src/core/scene/scene\.cpp$' 'toml++'
+confined '#[[:space:]]*include[[:space:]]*[<"]stb_' 'src/core/output/png\.cpp$' 'stb'
+
 if [ "${status}" -eq 0 ]; then
     echo "boundaries OK"
 fi

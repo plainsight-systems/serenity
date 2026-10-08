@@ -100,8 +100,10 @@ depend on contracts, not on each other.
 | 4 | **Light sample**: which light and which point on it, in its own coordinates | Light | Sample reuse, Integrator |
 | 5 | **Film outputs**: radiance, normal, depth, motion per pixel | Film | Pass, Sample reuse |
 | 6 | **Frame images**: the images between passes and the history across frames | Frame graph | every Pass |
+| 7 | **Frame constants**: the frame's time and index, and the size of the image written | Frame graph | every Pass |
 
 Each is designed on its own, header first, before the code that uses it.
+Contract 7 is the first written: `src/core/contracts/frame_constants.h`.
 
 **How a layout crosses into a shader.** The data a contract passes to the
 GPU (a material's parameters, a light sample, a surface record) has one

@@ -11,6 +11,8 @@
       "hidden": true,
       "cacheVariables": {
         "CMAKE_CXX_COMPILER": "/usr/bin/clang++",
+        "CMAKE_C_COMPILER": "/usr/bin/clang",
+        "CMAKE_OBJC_COMPILER": "/usr/bin/clang",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "26.0",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }

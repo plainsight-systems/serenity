@@ -14,8 +14,10 @@ namespace serenity::metal {
 // failure from any other (E.14); the message names the cause and, where Metal
 // gave one, Metal's own description.
 //
-// The backend throws only while acquiring and building: a device, a library,
-// a pipeline. Nothing on a frame's path throws.
+// The backend throws while acquiring and building (a device, a library, a
+// pipeline), and on a frame's path only for a failure the frame cannot
+// recover from: the GPU reporting an error, or not finishing a frame in time,
+// or the frame protocol being broken (submission.h).
 class Error : public std::runtime_error {
 public:
     explicit Error(const std::string& what) : std::runtime_error(what) {}

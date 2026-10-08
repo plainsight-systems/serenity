@@ -4,6 +4,8 @@
 add_executable(serenity_gpu_tests
     device_test.cpp
     library_test.cpp
+    frame_test.cpp
+    argument_table_test.cpp
     ../main_test.cpp
 )
 target_link_libraries(serenity_gpu_tests PRIVATE serenity_metal doctest::doctest)
