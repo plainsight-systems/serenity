@@ -72,7 +72,8 @@ Decided 2026-10-08, at the repository's creation:
 - **Math shared by the CPU and the GPU gives equal bits, under a stated
   contract** (`src/core/portable_math.h`): shaders built with `safe` and
   `precise` math and contraction off, C++ with contraction off, only
-  IEEE-exact operations, and no subnormals, which the GPU flushes. Measured
+  IEEE-exact operations, no subnormals, which the GPU flushes, and NaN
+  compared as NaN, since the GPU canonicalizes it. Measured
   in `research/2026-10-08-metal-math-modes.md` and held by
   `tests/gpu/portable_math_test.cpp`. A kernel that wants Metal's fast math
   opts out explicitly, as a labelled and measured optimization.

@@ -28,4 +28,15 @@ PY
     grep -q "^  ${key}:" "${ERR}" || fail "${key}: the failure did not name the tool: $(cat "${ERR}")"
 done
 
+# A compiler other than the pinned one fails, even with every pin intact:
+# the check reads the compiler CMake resolved, not a fixed path.
+FAKE="$(mktemp -t serenity-fake-cxx.XXXXXX)"
+trap 'rm -f "${PINS}" "${ERR}" "${FAKE}"' EXIT
+printf '#!/bin/sh\necho "Apple clang version 99.0.0 (not the pinned one)"\n' > "${FAKE}"
+chmod +x "${FAKE}"
+if "${CHECK}" --cxx "${FAKE}" >/dev/null 2>"${ERR}"; then
+    fail "cxx: an unpinned compiler passed"
+fi
+grep -q "^  cxx:" "${ERR}" || fail "cxx: the failure did not name the compiler: $(cat "${ERR}")"
+
 echo "check_toolchain: OK (a mismatch in any pin fails, by name)"

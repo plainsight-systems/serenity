@@ -34,7 +34,7 @@
 //      arithmetic from the exact operations, or a tolerance stated where it
 //      is tested.
 //
-// The guarantee covers zero, normal, infinite and NaN values, not subnormal
+// The guarantee covers zero, normal and infinite values, not subnormal
 // ones: the GPU flushes a subnormal float to zero, as an input and as a
 // result, under every math mode tried, and -fdenormal-fp-math=ieee did not
 // change it; the CPU keeps them. So equal bits need every input, every
@@ -47,7 +47,12 @@
 // pinned toolchain (cmake/toolchain.json). It says nothing about the order of
 // a reduction: a sum over many elements is equal on both sides only if both
 // add in the same order, and each reduction states its own determinism level
-// (GDSA.2). NaN results are equal as NaN, not by payload.
+// (GDSA.2).
+//
+// A NaN is a NaN on both sides, but not the same bits: the GPU returns every
+// NaN as 0x7fc00000, positive and quiet with no payload, while the CPU keeps
+// the sign and payload of a NaN input. Code that must agree on a NaN's bits,
+// or reads its sign or payload, is outside the contract.
 //
 // The cost is condition 1: precise functions and no reassociation for every
 // shader built with these flags. A kernel that wants Metal's fast math opts

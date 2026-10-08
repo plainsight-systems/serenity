@@ -51,7 +51,12 @@ Two runs.
 
 **Committed test**, with the pinned flags (the last row above): no
 differences in any of the seven operations, among the triples where no input,
-rounded intermediate or result is subnormal. Outside that domain, from 414 of
+rounded intermediate or result is subnormal, except in NaN results. Those are
+NaN on both sides but differ in encoding: the GPU returned every one of
+32,764 NaN results as `0x7fc00000`, one encoding; the CPU's took 6,161, since
+it keeps the sign and payload of a NaN input. (Found by the independent
+review of the commit that added the test, which first compared NaNs by class
+alone.) Outside that domain, from 414 of
 4,203 triples (addition) to 24,483 of 26,397 (division) differ. The first
 mismatch of each operation, the only ones inspected, is a subnormal input the
 GPU treated as zero or a subnormal result it returned as zero; that every
@@ -66,7 +71,7 @@ multiplication, `fma` and `a * b + c` in none. Fast math did not contract
 
 ## What it means
 
-- Equal bits are reachable, and only under all of: `safe`, `precise`,
+- Equal bits are reachable, NaN aside, and only under all of: `safe`, `precise`,
   contraction off on both sides, and IEEE-exact operations (+ - * /, sqrt,
   fma). This is the contract in `src/core/portable_math.h`, and the flags are
   pinned in `cmake/MetalLibrary.cmake`.
@@ -77,6 +82,9 @@ multiplication, `fma` and `a * b + c` in none. Fast math did not contract
   relied on, and `fma()` is called where fusion is wanted.
 - `exp` and `sin` are not bit-portable even as `precise`. Math built on them
   needs its own arithmetic from the exact operations, or a tolerance.
+- The GPU canonicalizes NaN. NaN results are compared by class, and the
+  GPU's are checked to be its one encoding; a NaN's sign and payload are
+  outside the contract.
 - The GPU flushes subnormal floats to zero. The contract is narrowed to
   exclude them rather than making the CPU flush too, which would mean a
   thread-wide floating-point mode.

@@ -1,6 +1,7 @@
 // core/portable_math.h's contract, measured: the same source gives the same
 // bits on this machine's CPU and GPU when the shader is built with the
-// project's pinned flags, and does not when it is built with Metal's fast
+// project's pinned flags (a NaN excepted, which the GPU returns as its one
+// canonical NaN), and does not when it is built with Metal's fast
 // math. The second half is what makes the first mean something: it shows the
 // comparison can see a difference, and that the flags are what remove it.
 //
@@ -128,11 +129,19 @@ std::vector<float> run_on_gpu(const serenity::metal::Device& device,
     return std::vector<float>(out, out + out_size);
 }
 
-bool same(float x, float y) {
-    if (std::isnan(x) && std::isnan(y)) {
-        return true;  // equal as NaN; payloads are not part of the contract
+// The one NaN the GPU returns: positive, quiet, no payload
+// (core/portable_math.h).
+constexpr std::uint32_t gpu_nan = 0x7fc00000u;
+
+// Equal under the contract: the same bits, or, where the CPU's result is a
+// NaN, the GPU's canonical NaN. The CPU keeps the sign and payload of a NaN
+// input and the GPU does not, so a NaN is compared by class and by the GPU's
+// one encoding, never by the CPU's bits.
+bool same(float cpu, float gpu) {
+    if (std::isnan(cpu)) {
+        return std::bit_cast<std::uint32_t>(gpu) == gpu_nan;
     }
-    return std::bit_cast<std::uint32_t>(x) == std::bit_cast<std::uint32_t>(y);
+    return std::bit_cast<std::uint32_t>(cpu) == std::bit_cast<std::uint32_t>(gpu);
 }
 
 // Whether a value is outside the contract: Apple's GPU flushes subnormal
@@ -161,6 +170,7 @@ bool in_contract(int op, float a, float b, float c) {
 struct Mismatches {
     // Inside the contract, and outside it.
     std::uint32_t inside[operation_count] = {};
+    std::uint32_t nan_results[operation_count] = {};  // inside, where the CPU gave a NaN
     std::uint32_t outside[operation_count] = {};
     std::uint32_t outside_total[operation_count] = {};
     std::string first[operation_count];
@@ -179,6 +189,8 @@ Mismatches compare(const std::vector<float>& in, const std::vector<float>& gpu) 
             const bool covered = in_contract(op, a, b, c);
             if (!covered) {
                 ++m.outside_total[op];
+            } else if (std::isnan(cpu)) {
+                ++m.nan_results[op];
             }
             if (same(cpu, g)) {
                 continue;
@@ -200,7 +212,7 @@ Mismatches compare(const std::vector<float>& in, const std::vector<float>& gpu) 
 
 }  // namespace
 
-TEST_CASE("with the pinned flags, every probe operation gives the CPU's bits") {
+TEST_CASE("with the pinned flags, every probe operation gives the CPU's bits, NaN as the GPU's one NaN") {
     serenity::metal::Device device;
     const std::vector<float> in = make_inputs();
     const std::vector<float> gpu = run_on_gpu(device, serenity::metallib::portable_math_probe, in);
@@ -212,6 +224,9 @@ TEST_CASE("with the pinned flags, every probe operation gives the CPU's bits") {
                      << " triples outside the contract differ");
         INFO(name << ": first mismatch " << m.first[op]);
         CHECK(m.inside[op] == 0);
+        // The NaN rule was exercised, not vacuous: the inputs hold NaNs
+        // with signs and payloads, and every operation propagates them.
+        CHECK(m.nan_results[op] > 0);
     }
 
     // The GPU did not fuse a * b + c on its own: the separating triple

@@ -19,6 +19,7 @@ endif()
 # that every way into the build is checked, not only the Makefile's.
 execute_process(
     COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_toolchain.py"
+            --cxx "${CMAKE_CXX_COMPILER}"
     RESULT_VARIABLE toolchain_status)
 if(NOT toolchain_status EQUAL 0)
     message(FATAL_ERROR "serenity: toolchain does not match cmake/toolchain.json (above).")

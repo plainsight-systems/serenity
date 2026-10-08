@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Checks that this machine's toolchain is the one cmake/toolchain.json pins.
 
-    tools/check_toolchain.py [--pins <path>]
+    tools/check_toolchain.py [--pins <path>] [--cxx <compiler>]
 
 Metal cannot run in a container, so the toolchain cannot be pinned by an
 image. It is pinned by version instead, and this check is what makes the pin
@@ -21,9 +21,10 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # What each pin is compared with: the first line of each command's output.
-# The compiler is /usr/bin/clang++, Apple's, by path: the one on PATH may be
-# another clang (Homebrew's, on the development machine), and the presets
-# select this one by the same path.
+# The compiler checked is the one CMake resolved (--cxx), so a build configured
+# with another compiler is caught; run by hand, it is /usr/bin/clang++, the
+# one the presets select. The one on PATH may be another clang entirely
+# (Homebrew's, on the development machine).
 COMMANDS = {
     "xcode": ["xcodebuild", "-version"],
     "xcode_build": ["xcodebuild", "-version"],
@@ -49,11 +50,16 @@ def installed(key):
 
 def main(argv):
     pins_path = ROOT / "cmake" / "toolchain.json"
-    if len(argv) == 3 and argv[1] == "--pins":
-        pins_path = pathlib.Path(argv[2])
-    elif len(argv) != 1:
-        print(__doc__, file=sys.stderr)
-        return 1
+    args = argv[1:]
+    while args:
+        if len(args) >= 2 and args[0] == "--pins":
+            pins_path = pathlib.Path(args[1])
+        elif len(args) >= 2 and args[0] == "--cxx":
+            COMMANDS["cxx"] = [args[1], "--version"]
+        else:
+            print(__doc__, file=sys.stderr)
+            return 1
+        args = args[2:]
 
     pins = json.loads(pins_path.read_text())
     failures = []
