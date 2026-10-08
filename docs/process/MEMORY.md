@@ -58,6 +58,12 @@ Decided 2026-10-08, at the repository's creation:
   here there are two machines and a handful of kernels whose per-vendor
   differences are the subject. Revisit when the Vulkan backend exists and
   the cost of the duplication can be measured.
+- **Metal 4** for the host API and the shading language (`-std=metal4.0`),
+  not Metal 3. Its explicit command allocation, residency and barriers are
+  close to Vulkan's model, which the second backend will need anyway; its
+  machine-learning encoder and in-shader tensors are where the denoiser's
+  inference can run inside the frame; and MetalFX's denoised upscaler is
+  there as a second baseline beside Open Image Denoise.
 - **The core is platform-neutral; only `src/metal/` uses Metal's host API.**
   Enforced by `tools/check_boundaries.sh`, whose rules are proven to fire by
   `tests/test_check_boundaries.sh`.

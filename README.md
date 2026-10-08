@@ -43,7 +43,7 @@ The first build fetches metal-cpp and doctest, each pinned by commit.
 | `cmake/` | the toolchain pin, and how shaders are compiled and compiled in |
 | `tests/` | the core's tests; `tests/gpu/` runs on the GPU |
 | `tools/` | the toolchain and boundary checks |
-| `scripts/` | the per-commit review |
+| `scripts/` | an independent review of a commit, on request |
 | `docs/architecture/` | the design (next) |
 | `docs/research/` | measurements and investigations, each dated, with its machine and toolchain |
 | `docs/process/` | decisions and the work queue |

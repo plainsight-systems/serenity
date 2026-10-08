@@ -21,7 +21,7 @@
 # The flags are pinned here and nowhere else (core/portable_math.h says why
 # each is needed):
 #
-#   -std=metal3.2                  the language version, explicit rather than
+#   -std=metal4.0                  the language version, explicit rather than
 #                                  the compiler's default
 #   -fmetal-math-mode=safe         Metal's default is fast, which reassociates
 #   -fmetal-math-fp32-functions=precise
@@ -38,7 +38,7 @@
 # so changing a shared header such as core/portable_math.h rebuilds every
 # library that includes it.
 
-set(SERENITY_METAL_STD "-std=metal3.2")
+set(SERENITY_METAL_STD "-std=metal4.0")
 set(SERENITY_METAL_MATH_SAFE
     -fmetal-math-mode=safe -fmetal-math-fp32-functions=precise -ffp-contract=off)
 set(SERENITY_METAL_MATH_FAST

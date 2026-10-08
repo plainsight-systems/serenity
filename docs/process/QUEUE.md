@@ -28,18 +28,8 @@ the AMD machine; ReSTIR GI.
 
 ## Parking Lot
 
-- **CI.** Not set up. Unknown whether GitHub's macOS runners, which are
-  virtual machines, expose Metal ray tracing; find out before relying on the
-  GPU tests there. Without it, CI could run only the core's tests and the
-  structural checks.
-- **Metal 3 or Metal 4 for the host API.** The skeleton uses Metal 3 objects
-  and compiles shaders as `-std=metal3.2`. Decide in the first rendering
-  change, with the language version beside it.
 - **The cost of `safe` and `precise` math** in the renderer's kernels: not
   measured (`research/2026-10-08-metal-math-modes.md`).
 - **Whether MoltenVK supports Vulkan ray tracing.** Believed not; verify
   before the Vulkan backend, since it decides whether that backend could also
   run on the Mac.
-- **A sanitizer configuration.** Charlotte found AddressSanitizer's runtime
-  hanging at start-up on macOS and ran it on Linux only; there is no Linux
-  build here yet.

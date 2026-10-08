@@ -2,7 +2,8 @@
 
 *2026-10-08. Apple M3 Max (Apple9, `applegpu_g15s`), macOS 26.6.2, Xcode 26.2
 (17C52), Metal compiler 32023.864, Apple clang 17.0.0 (clang-1700.6.3.2).
-Shader language `-std=metal3.2`.*
+Shader language `-std=metal3.2`; the committed test rerun under
+`-std=metal4.0` gave the same counts.*
 
 ## Question
 

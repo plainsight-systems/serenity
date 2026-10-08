@@ -44,12 +44,9 @@ This repo is C++-dominant and performance-sensitive.
   contract,** and a GPU test compares the two bit for bit where the contract
   covers the inputs. Anything outside the contract is compared with a stated
   tolerance, never with equality that happens to hold.
-- **Review is per commit.** `scripts/codex-review.sh <commit>` has an
-  independent reviewer check the commit for correctness and speed and writes
-  its findings to `.cache/reviews/`; with `--post` it also posts them as
-  comments on the commit, which needs the commit on GitHub. Findings are
-  fixed when they change what the program computes or how fast it runs; a P0
-  or P1 blocks acceptance.
+- **Independent review is on request,** not per commit:
+  `scripts/codex-review.sh <commit>` checks a commit for correctness and
+  speed and writes its findings to `.cache/reviews/`.
 - A frame's path, acceleration-structure builds, memory footprint and GPU
   dispatch are performance-sensitive by default.
 - GPU behavior is environment-sensitive. Verification names the machine it
