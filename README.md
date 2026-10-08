@@ -10,7 +10,8 @@ fireflies that never stop moving. The geometry is deliberately simple and
 there are no art assets. Everything you see comes from the light, and the
 light stays correct as it moves.
 
-It runs natively on Apple silicon through Metal 4, in C++. A second backend,
+It runs natively on Apple silicon through Metal 4, in C++, at the display's
+full resolution and 60 frames a second. A second backend,
 Vulkan on an AMD Strix Halo, comes later.
 
 **Status: early.** Nothing renders yet. What's here is the build, the
@@ -37,14 +38,17 @@ with a picture at the end.
 
 The plan, in order:
 
-1. A path tracer with many moving lights, sampled naively. Noisy, on purpose:
-   it shows the problem.
-2. ReSTIR DI, with spatial and temporal reuse.
-3. Reservoir reuse as kernels: what it costs, and where the bytes go.
-4. A denoiser of my own, inside the frame budget, compared with Intel Open
-   Image Denoise and against a reference rendered at thousands of samples per
-   pixel.
-5. The second machine: the same scene on AMD, through Vulkan, and what
+1. A full path tracer with many moving fireflies, sampled naively. Noisy, on
+   purpose: it shows the problem.
+2. ReSTIR DI, with spatial and temporal reuse, for the direct light.
+3. ReSTIR GI, for the light bouncing between surfaces.
+4. Caustics: firefly light focused through the glass onto the table, by
+   manifold next event estimation.
+5. Reservoir reuse as kernels: what it costs, and where the bytes go.
+6. A denoiser of my own, inside the frame budget, compared with Intel Open
+   Image Denoise and MetalFX, and against a reference rendered at thousands
+   of samples per pixel.
+7. The second machine: the same scene on AMD, through Vulkan, and what
    differed.
 
 None of it is built yet; this list says what I'm aiming at, not what exists.

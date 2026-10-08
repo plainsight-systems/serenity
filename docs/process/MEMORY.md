@@ -84,6 +84,13 @@ Decided 2026-10-08, at the repository's creation:
   day, a contract for bit-equal CPU and GPU math: it served only tests, cost
   the renderer's math, and showed nothing the goal needs. What it found is
   kept in `research/2026-10-08-metal-math-modes.md`.
+- **The target is the look of *Marbles at Night*:** full path tracing of
+  glass and polished metal lit by thousands of moving fireflies, with
+  indirect light and caustics. ReSTIR DI for direct light, ReSTIR GI for
+  indirect, manifold next event estimation for caustics, all unbiased
+  against one reference. The window shows the display's full resolution at
+  60 fps, traced lower and upscaled with MetalFX
+  (`../architecture/logical-overview.md`).
 - **A window and a headless renderer arrive together**, in the first
   rendering change. The headless renderer writes frames at a fixed timestep;
   the window shows the same frames live.

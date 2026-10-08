@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="792" viewBox="0 0 760 792" role="img">
+<title>Serenity's logical flow: startup once, then every frame, with the light at each rough surface expanded</title>
+<desc>At startup the scene description is built into geometry and acceleration structures, and the frame state is allocated. Every frame takes time, frame index and camera as inputs, then runs Animate, Primary visibility, Light, Resolve, Denoise (a later milestone), Upscale, Tone map, and Present or write. Light at each rough surface has three parts: direct light, by naive sampling (also the reference, with time frozen and thousands of samples) or unbiased ReSTIR DI (candidates, temporal merge, spatial merge, shade); indirect light, by path-traced bounces that ReSTIR GI later reuses; and caustics through glass, by manifold next event estimation, a later milestone. The merges read and write the reservoirs and read the surface records, the two kinds of state kept between frames.</desc>
+<style>
+  .bg { fill: #FFFFFF; }
+  .th { font: 500 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: #2C2C2A; }
+  .ts { font: 400 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: #5F5E5A; }
+  rect { stroke-width: 1; }
+  .gray rect   { fill: #F1EFE8; stroke: #888780; } .gray text   { fill: #2C2C2A; } .gray .ts   { fill: #5F5E5A; }
+  .teal rect   { fill: #E1F5EE; stroke: #0F6E56; } .teal text   { fill: #085041; }
+  .purple rect { fill: #EEEDFE; stroke: #534AB7; } .purple text { fill: #3C3489; }
+  .coral rect  { fill: #FAECE7; stroke: #D85A30; } .coral text  { fill: #712B13; }
+  .later rect  { stroke-dasharray: 5 4; }
+  .panel { fill: #F7FBF9; stroke: #0F6E56; stroke-width: 1; }
+  .arr { stroke: #888780; stroke-width: 1.5; fill: none; }
+  .state { stroke: #D85A30; stroke-width: 1.2; stroke-dasharray: 4 3; fill: none; }
+</style>
+<defs>
+  <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+    <path d="M 0 1 L 8 5 L 0 9" fill="none" stroke="#888780" stroke-width="1.5"/>
+  </marker>
+</defs>
+<rect class="bg" x="0" y="0" width="760" height="792"/>
+
+<!-- Legend -->
+<g class="gray"><rect x="40" y="22" width="14" height="14" rx="3"/></g>
+<text class="ts" x="60" y="33">fixed step</text>
+<g class="teal"><rect x="140" y="22" width="14" height="14" rx="3"/></g>
+<text class="ts" x="160" y="33">swappable estimator</text>
+<g class="purple"><rect x="290" y="22" width="14" height="14" rx="3"/></g>
+<text class="ts" x="310" y="33">scene data, inputs</text>
+<g class="coral"><rect x="432" y="22" width="14" height="14" rx="3"/></g>
+<text class="ts" x="452" y="33">kept between frames</text>
+<g class="gray later"><rect x="584" y="22" width="14" height="14" rx="3"/></g>
+<text class="ts" x="604" y="33">later milestone</text>
+
+<!-- Startup -->
+<text class="ts" x="40" y="74">Startup, once</text>
+<g class="purple"><rect x="40" y="84" width="200" height="46" rx="6"/>
+  <text class="th" x="140" y="103" text-anchor="middle">Scene description</text>
+  <text class="ts" x="140" y="120" text-anchor="middle">numbers, no asset files</text></g>
+<line class="arr" x1="240" y1="107" x2="270" y2="107" marker-end="url(#a)"/>
+<g class="gray"><rect x="272" y="84" width="226" height="46" rx="6"/>
+  <text class="th" x="385" y="103" text-anchor="middle">Build geometry</text>
+  <text class="ts" x="385" y="120" text-anchor="middle">and its acceleration structures</text></g>
+<line class="arr" x1="498" y1="107" x2="528" y2="107" marker-end="url(#a)"/>
+<g class="gray"><rect x="530" y="84" width="190" height="46" rx="6"/>
+  <text class="th" x="625" y="103" text-anchor="middle">Allocate frame state</text>
+  <text class="ts" x="625" y="120" text-anchor="middle">reservoirs, surface records</text></g>
+
+<!-- Every frame -->
+<text class="ts" x="40" y="170">Every frame</text>
+
+<g class="purple"><rect x="40" y="178" width="260" height="46" rx="6"/>
+  <text class="th" x="170" y="197" text-anchor="middle">Frame inputs</text>
+  <text class="ts" x="170" y="214" text-anchor="middle">time t · frame index · camera</text></g>
+<line class="arr" x1="170" y1="224" x2="170" y2="244" marker-end="url(#a)"/>
+
+<g class="gray"><rect x="40" y="246" width="260" height="46" rx="6"/>
+  <text class="th" x="170" y="265" text-anchor="middle">Animate</text>
+  <text class="ts" x="170" y="282" text-anchor="middle">fireflies at t, structures updated</text></g>
+<line class="arr" x1="170" y1="292" x2="170" y2="312" marker-end="url(#a)"/>
+
+<g class="gray"><rect x="40" y="314" width="260" height="46" rx="6"/>
+  <text class="th" x="170" y="333" text-anchor="middle">Primary visibility</text>
+  <text class="ts" x="170" y="350" text-anchor="middle">through glass and metal to a rough surface</text></g>
+<line class="arr" x1="170" y1="360" x2="170" y2="380" marker-end="url(#a)"/>
+
+<g class="teal"><rect x="40" y="382" width="260" height="46" rx="6"/>
+  <text class="th" x="170" y="401" text-anchor="middle">Light</text>
+  <text class="ts" x="170" y="418" text-anchor="middle">direct, indirect, caustics</text></g>
+<line class="arr" x1="300" y1="405" x2="322" y2="405" marker-end="url(#a)"/>
+<line class="arr" x1="170" y1="428" x2="170" y2="448" marker-end="url(#a)"/>
+
+<g class="gray"><rect x="40" y="450" width="260" height="46" rx="6"/>
+  <text class="th" x="170" y="469" text-anchor="middle">Resolve</text>
+  <text class="ts" x="170" y="486" text-anchor="middle">plus fireflies seen directly</text></g>
+<line class="arr" x1="170" y1="496" x2="170" y2="516" marker-end="url(#a)"/>
+
+<g class="gray later"><rect x="40" y="518" width="260" height="46" rx="6"/>
+  <text class="th" x="170" y="537" text-anchor="middle">Denoise</text>
+  <text class="ts" x="170" y="554" text-anchor="middle">later: inside the frame budget</text></g>
+<line class="arr" x1="170" y1="564" x2="170" y2="584" marker-end="url(#a)"/>
+
+<g class="gray"><rect x="40" y="586" width="260" height="46" rx="6"/>
+  <text class="th" x="170" y="605" text-anchor="middle">Upscale</text>
+  <text class="ts" x="170" y="622" text-anchor="middle">to the display's resolution</text></g>
+<line class="arr" x1="170" y1="632" x2="170" y2="652" marker-end="url(#a)"/>
+
+<g class="gray"><rect x="40" y="654" width="260" height="46" rx="6"/>
+  <text class="th" x="170" y="673" text-anchor="middle">Tone map</text>
+  <text class="ts" x="170" y="690" text-anchor="middle">linear radiance to display</text></g>
+<line class="arr" x1="170" y1="700" x2="170" y2="720" marker-end="url(#a)"/>
+
+<g class="gray"><rect x="40" y="722" width="260" height="46" rx="6"/>
+  <text class="th" x="170" y="741" text-anchor="middle">Present or write</text>
+  <text class="ts" x="170" y="758" text-anchor="middle">window, or headless frames</text></g>
+
+<!-- Direct light, expanded -->
+<rect class="panel" x="324" y="246" width="400" height="482" rx="8"/>
+<text class="th" x="340" y="270">Direct: one estimator per frame</text>
+
+<g class="teal"><rect x="340" y="282" width="368" height="46" rx="6"/>
+  <text class="th" x="524" y="301" text-anchor="middle">Naive</text>
+  <text class="ts" x="524" y="318" text-anchor="middle">per sample: a light, a point on it, a shadow ray</text></g>
+<text class="ts" x="340" y="346">Also the reference: t frozen, thousands of samples</text>
+
+<text class="th" x="340" y="374">or ReSTIR DI, unbiased</text>
+
+<g class="teal"><rect x="340" y="384" width="200" height="42" rx="6"/>
+  <text class="th" x="440" y="401" text-anchor="middle">Candidates</text>
+  <text class="ts" x="440" y="417" text-anchor="middle">M candidate lights, weighted</text></g>
+<line class="arr" x1="440" y1="426" x2="440" y2="438" marker-end="url(#a)"/>
+<g class="teal"><rect x="340" y="440" width="200" height="42" rx="6"/>
+  <text class="th" x="440" y="457" text-anchor="middle">Temporal merge</text>
+  <text class="ts" x="440" y="473" text-anchor="middle">last frame's, reprojected</text></g>
+<line class="arr" x1="440" y1="482" x2="440" y2="494" marker-end="url(#a)"/>
+<g class="teal"><rect x="340" y="496" width="200" height="42" rx="6"/>
+  <text class="th" x="440" y="513" text-anchor="middle">Spatial merge</text>
+  <text class="ts" x="440" y="529" text-anchor="middle">k neighbors' reservoirs</text></g>
+<line class="arr" x1="440" y1="538" x2="440" y2="550" marker-end="url(#a)"/>
+<g class="teal"><rect x="340" y="552" width="200" height="42" rx="6"/>
+  <text class="th" x="440" y="569" text-anchor="middle">Shade</text>
+  <text class="ts" x="440" y="585" text-anchor="middle">one shadow ray, then shade</text></g>
+
+<g class="teal"><rect x="340" y="610" width="368" height="46" rx="6"/>
+  <text class="th" x="524" y="629" text-anchor="middle">Indirect</text>
+  <text class="ts" x="524" y="646" text-anchor="middle">path-traced bounces; ReSTIR GI reuses them, later</text></g>
+<g class="teal later"><rect x="340" y="666" width="368" height="46" rx="6"/>
+  <text class="th" x="524" y="685" text-anchor="middle">Caustics</text>
+  <text class="ts" x="524" y="702" text-anchor="middle">through glass, by manifold next event estimation</text></g>
+
+<!-- State kept between frames -->
+<line class="state" x1="580" y1="439" x2="540" y2="461"/>
+<line class="state" x1="580" y1="439" x2="540" y2="517"/>
+<line class="state" x1="580" y1="523" x2="540" y2="461"/>
+<line class="state" x1="580" y1="523" x2="540" y2="517"/>
+<line class="state" x1="580" y1="523" x2="540" y2="573"/>
+<g class="coral"><rect x="580" y="416" width="130" height="46" rx="6"/>
+  <text class="th" x="645" y="435" text-anchor="middle">Surface records</text>
+  <text class="ts" x="645" y="452" text-anchor="middle">this frame and last</text></g>
+<g class="coral"><rect x="580" y="500" width="130" height="46" rx="6"/>
+  <text class="th" x="645" y="519" text-anchor="middle">Reservoirs</text>
+  <text class="ts" x="645" y="536" text-anchor="middle">this frame and last</text></g>
+</svg>
