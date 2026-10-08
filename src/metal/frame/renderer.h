@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <memory>
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -10,12 +12,17 @@
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
 #include "core/frame/schedule.h"
+#include "core/scene/scene.h"
+#include "metal/acceleration/primitives.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/device/offscreen.h"
 #include "metal/device/presenter.h"
 #include "metal/device/submission.h"
+#include "metal/frame/frame_resources.h"
+#include "metal/passes/preview/preview.h"
 #include "metal/passes/test_pattern/test_pattern.h"
+#include "metal/scene/scene_buffers.h"
 
 namespace serenity::metal {
 
@@ -32,6 +39,15 @@ namespace serenity::metal {
 // default, so a kind this backend does not implement fails the build, not a
 // frame. The passes are held by value, in schedule order, in a variant over
 // this backend's pass types: no virtual dispatch and no allocation per frame.
+//
+// The scene. A frame graph whose passes read a scene (frame::needs_scene)
+// needs one: the renderer copies it to the GPU (scene_buffers.h) and builds
+// its acceleration structure (primitives.h) at construction, and refuses, by
+// Error, a graph that needs a scene when given none. Each frame then gives
+// every pass the same resources (frame_resources.h), the scene among them,
+// and the camera framed for the target's size in the frame's constants
+// (camera/pinhole.h). A graph that reads no scene runs with or without one;
+// given one, it is not copied.
 //
 // The target is a texture and its size, whatever owns it: the window's
 // drawable (presenter.h) or an offscreen image (offscreen.h). The renderer
@@ -65,10 +81,13 @@ namespace serenity::metal {
 class Renderer {
 public:
     // Builds a pass for each entry of `schedule` from the backend's shader
-    // library, compiled into the program (cmake/MetalLibrary.cmake), and
-    // makes the ring resident through `submission`. Throws Error if the
-    // schedule is empty or a pipeline cannot be built.
-    Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule);
+    // library, compiled into the program (cmake/MetalLibrary.cmake), makes
+    // the ring resident through `submission`, and, if any pass reads the
+    // scene, puts `scene` on the GPU. `scene` may be null when no pass reads
+    // it. Throws Error if the schedule is empty, a pass needs a scene and
+    // there is none, or a pipeline, buffer or structure cannot be built.
+    Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
+             const scene::SceneDescription* scene);
 
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
@@ -82,9 +101,12 @@ public:
                 frame::Extent size);
 
 private:
-    using Pass = std::variant<TestPatternPass>;
+    using Pass = std::variant<TestPatternPass, PreviewPass>;
 
     Library library_;
+    std::optional<camera::Pinhole> camera_;
+    std::unique_ptr<SceneBuffers> scene_;
+    std::unique_ptr<PrimitiveAcceleration> acceleration_;
     NS::SharedPtr<MTL::Buffer> constants_;
     std::array<NS::SharedPtr<MTL4::ArgumentTable>, frames_in_flight> arguments_;
     std::vector<Pass> passes_;  // in schedule order

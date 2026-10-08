@@ -3,7 +3,8 @@
 // Contract 7: frame constants. Owned by the Frame graph; read by every pass.
 //
 // The values every shader in a frame may read: when the frame is, which frame
-// it is, and the size of the image being written. One definition for both
+// it is, the size of the image being written, and the camera it is seen
+// through (a frame input, logical-overview.md, principle 1). One definition for both
 // sides: C++ writes these bytes and the Metal shaders read them, so this
 // header compiles as C++20 and as the Metal shading language
 // (file-mapping.md, "How a layout crosses into a shader"). It shares a layout,
@@ -23,6 +24,8 @@
 #include <stdint.h>
 #endif
 
+#include "core/camera/pinhole.h"
+
 namespace serenity {
 namespace contracts {
 
@@ -35,9 +38,12 @@ struct FrameConstants {
     // The image being written, in pixels.
     uint32_t width;
     uint32_t height;
+    // The camera, framed for this image (camera/pinhole.h). Zero when the
+    // frame has no scene; no pass that reads it runs without one.
+    camera::PinholeData camera;
 };
 
-static_assert(sizeof(FrameConstants) == 16, "FrameConstants must be the same 16 bytes on the host and in shaders");
+static_assert(sizeof(FrameConstants) == 80, "FrameConstants must be the same 80 bytes on the host and in shaders");
 
 }  // namespace contracts
 }  // namespace serenity

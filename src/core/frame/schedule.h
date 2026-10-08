@@ -29,7 +29,12 @@ namespace serenity::frame {
 // another wrote, and with them the barriers between passes.
 enum class PassKind : std::uint8_t {
     test_pattern,  // a diagnostic image, a function of pixel and time
+    preview,       // primary visibility through glass, unlit; needs a scene
 };
+
+// Whether a pass of `kind` reads the scene. A frame graph with such a pass
+// cannot run without one (metal/frame/renderer.h).
+bool needs_scene(PassKind kind);
 
 struct Schedule {
     std::vector<PassKind> passes;  // run in this order; at least one

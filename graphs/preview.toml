@@ -1,0 +1,4 @@
+# Primary visibility, unlit: what the camera's rays reach through glass
+# (src/metal/passes/preview/preview.h). Needs a scene.
+
+passes = ["preview"]

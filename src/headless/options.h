@@ -15,11 +15,12 @@ namespace serenity::headless {
 //
 // What the headless renderer is asked to render, from its command line:
 //
-//   serenity-headless --graph FILE --out DIRECTORY
+//   serenity-headless --graph FILE [--scene FILE] --out DIRECTORY
 //                     [--frames N] [--first I] [--step SECONDS]
 //                     [--size WIDTHxHEIGHT]
 //
-// It renders the frame graph in FILE (core/frame/graph_file.h), frames
+// It renders the frame graph in FILE (core/frame/graph_file.h), over the
+// scene in --scene's FILE if the graph reads one (core/scene/scene.h), frames
 // first .. first + frames - 1, frame i at time i x step,
 // each to DIRECTORY/frame-NNNNNN.png (i, zero-padded to six digits). Time is
 // computed, never measured: the same command writes the same files, on any
@@ -43,6 +44,7 @@ struct Options {
     frame::Seconds step{1.0 / 60.0};
     frame::Extent size{1920, 1080};
     std::filesystem::path graph;
+    std::filesystem::path scene;  // empty when none was given
     std::filesystem::path out;
 };
 

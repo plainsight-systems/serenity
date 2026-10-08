@@ -60,6 +60,9 @@ public:
 
     frame::Extent size_in_pixels() const;
 
+    // Sets the window's title: where the frame time is shown.
+    void set_title(const std::string& title);
+
     // The Metal view's CAMetalLayer, valid for the Window's lifetime.
     void* metal_layer() const;
 

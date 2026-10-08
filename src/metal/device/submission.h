@@ -4,12 +4,14 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 #include <QuartzCore/QuartzCore.hpp>
 
+#include "core/frame/frame_inputs.h"
 #include "metal/device/device.h"
 
 namespace serenity::metal {
@@ -67,6 +69,12 @@ namespace serenity::metal {
 // is shared, and every handler holds its own reference (R.20, CP.3). A late
 // handler writes into state it keeps alive, never into freed memory.
 //
+// Timing. The feedback also carries the GPU's start and end of the
+// submission's work, on the GPU's own clock: their difference is the frame's
+// GPU time (GPU.10), kept per slot and read with gpu_time() once the
+// submission has settled. It is a duration on one clock and is never
+// compared with the CPU's (TLM.11).
+//
 // Residency. Metal 4 runs only on resources a residency set has made
 // resident. make_resident() adds an allocation to the set this queue uses;
 // resources are added once, at start-up, never per frame.
@@ -118,6 +126,11 @@ public:
     // a destructor cannot report.
     void finish();
 
+    // The GPU time of the submission settled most recently: by begin(), which
+    // settles the one whose slot it reuses, by wait_until_complete() or by
+    // finish(). None until one has settled.
+    std::optional<frame::Seconds> gpu_time() const { return last_gpu_time_; }
+
     // Makes `allocation` resident for every frame from now on.
     void make_resident(MTL::Allocation* allocation);
 
@@ -134,6 +147,7 @@ private:
         std::atomic<std::uint64_t> arrived{0};
         std::atomic<bool> failed{false};
         std::string failure;
+        double gpu_seconds = 0.0;  // written before `arrived` is released
     };
 
     struct Slot {
@@ -155,6 +169,7 @@ private:
     std::uint64_t next_ = 0;   // the sequence begin() hands out next
     bool open_ = false;        // a submission is begun and not yet committed
     bool finished_ = false;    // finish() has run; nothing may be begun after
+    std::optional<frame::Seconds> last_gpu_time_;
 };
 
 }  // namespace serenity::metal
