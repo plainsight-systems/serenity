@@ -42,6 +42,7 @@ toolchain:
 
 ## Structural invariants, plus the tests proving each guard actually fires.
 check:
+	for f in scripts/*.sh tools/*.sh tests/*.sh; do bash -n "$$f" || exit 1; done
 	./tools/check_boundaries.sh
 	./tools/check_toolchain.py
 	./tests/test_check_boundaries.sh

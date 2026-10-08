@@ -259,3 +259,4 @@ echo "codex-review.sh: review written to ${OUTPUT}" >&2
 
 if [ "${POST}" = 1 ]; then
   python3 scripts/post_commit_review.py "${OUTPUT}" "${COMMIT}"
+fi
