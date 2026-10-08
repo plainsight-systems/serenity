@@ -18,22 +18,22 @@ test-release:
 	cmake --build --preset native-release
 	ctest --preset native-release
 
-## The window, release build, showing SCENE (default: the test pattern).
-## Escape or closing the window ends it.
-SCENE ?= scenes/test_pattern.toml
+## The window, release build, running the frame graph GRAPH (default: the
+## test pattern). Escape or closing the window ends it.
+GRAPH ?= graphs/test_pattern.toml
 run:
 	cmake --preset native-release
 	cmake --build --preset native-release --target serenity
-	./build/native-release/serenity --scene $(SCENE)
+	./build/native-release/serenity --graph $(GRAPH)
 
-## Headless frames of SCENE, release build, as PNGs in OUT. FRAMES frames
+## Headless frames of GRAPH, release build, as PNGs in OUT. FRAMES frames
 ## from frame 0, a sixtieth of a second apart.
 OUT ?= frames
 FRAMES ?= 60
 headless:
 	cmake --preset native-release
 	cmake --build --preset native-release --target serenity-headless
-	./build/native-release/serenity-headless --scene $(SCENE) --out $(OUT) --frames $(FRAMES)
+	./build/native-release/serenity-headless --graph $(GRAPH) --out $(OUT) --frames $(FRAMES)
 
 ## Whether this machine's toolchain is the pinned one (cmake/toolchain.json).
 ## Configuring runs the same check and stops on a mismatch.

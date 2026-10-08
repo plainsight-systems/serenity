@@ -61,43 +61,40 @@ Submission::Submission(const Device& device) : device_(NS::RetainPtr(device.hand
 
 Submission::~Submission() {
     // Everything this queue's work refers to is owned by objects that outlive
-    // it only if the work has finished, so wait for it. A destructor cannot
-    // report a timeout; the wait is bounded, and whatever it finds is lost.
+    // it only if the work has finished, so wait for it, bounded. A destructor
+    // cannot report what it finds; finish() is how a run reports. Late
+    // feedback is harmless: its handler holds the state it writes.
     const std::uint64_t committed = open_ ? next_ - 1 : next_;
     if (committed > 0) {
         completed_->waitUntilSignaledValue(committed, timeout_ms);
     }
-    // The feedback handlers write into the slots, so none may still be due
-    // when the slots go. Each slot's last submission is the newest one using
-    // it; wait for its feedback, bounded likewise.
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
-    for (std::uint64_t sequence = next_ > frames_in_flight ? next_ - frames_in_flight : 0; sequence < next_;
-         ++sequence) {
-        if (open_ && sequence == next_ - 1) {
-            break;  // begun, never committed: no handler was registered
-        }
-        const Slot& slot = slots_[sequence % frames_in_flight];
-        while (slot.feedback.load(std::memory_order_acquire) < sequence + 1 &&
-               std::chrono::steady_clock::now() < deadline) {
-            std::this_thread::sleep_for(std::chrono::microseconds(50));
-        }
-    }
 }
 
-void Submission::wait_for(std::uint64_t sequence) {
+void Submission::settle(std::uint64_t sequence) {
     if (!completed_->waitUntilSignaledValue(sequence + 1, timeout_ms)) {
         throw Error("submission " + std::to_string(sequence) + " did not complete within " +
                     std::to_string(timeout_ms) + " ms: the GPU has stopped");
     }
-}
-
-void Submission::check(const Slot& slot) const {
-    if (slot.failed.load(std::memory_order_acquire)) {
-        throw Error(slot.failure);
+    // The event says the GPU is done; the feedback, which carries any error,
+    // comes separately and usually just after. Wait for it, bounded.
+    const Feedback& feedback = *slots_[sequence % frames_in_flight].feedback;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    while (feedback.arrived.load(std::memory_order_acquire) < sequence + 1) {
+        if (std::chrono::steady_clock::now() > deadline) {
+            throw Error("no feedback for submission " + std::to_string(sequence) + " within " +
+                        std::to_string(timeout_ms) + " ms");
+        }
+        std::this_thread::sleep_for(std::chrono::microseconds(20));
+    }
+    if (feedback.failed.load(std::memory_order_acquire)) {
+        throw Error(feedback.failure);
     }
 }
 
 FrameSlot Submission::begin() {
+    if (finished_) {
+        throw Error("begin() after finish()");
+    }
     if (open_) {
         throw Error("begin() while submission " + std::to_string(next_ - 1) + " is still open");
     }
@@ -105,12 +102,11 @@ FrameSlot Submission::begin() {
     const std::uint32_t index = static_cast<std::uint32_t>(sequence % frames_in_flight);
     Slot& slot = slots_[index];
 
+    // The slot is free once the submission that last used it has completed
+    // and reported (submission.h).
     if (sequence >= frames_in_flight) {
-        wait_for(sequence - frames_in_flight);
+        settle(sequence - frames_in_flight);
     }
-    // Feedback for the slot's last submission may arrive after its event; a
-    // failure that arrives later is caught the next time the slot comes round.
-    check(slot);
 
     slot.allocator->reset();
     slot.commands->beginCommandBuffer(slot.allocator.get());
@@ -133,16 +129,16 @@ void Submission::end_and_commit(const MTL::Drawable* drawable) {
     }
 
     // Metal 4 reports a submission's GPU error here, on its own queue. The
-    // options object is made per commit: the API's shape (submission.h).
+    // handler holds its own reference to what it writes (submission.h). The
+    // options object is made per commit: the API's shape.
     auto options = NS::TransferPtr(MTL4::CommitOptions::alloc()->init());
-    Slot* target = &slot;
-    options->addFeedbackHandler([target, sequence](MTL4::CommitFeedback* feedback) {
-        if (feedback != nullptr && feedback->error() != nullptr && !target->failed.load(std::memory_order_relaxed)) {
-            target->failure = "submission " + std::to_string(sequence) + " failed on the GPU: " +
-                              describe(feedback->error());
-            target->failed.store(true, std::memory_order_release);
+    options->addFeedbackHandler([state = slot.feedback, sequence](MTL4::CommitFeedback* feedback) {
+        if (feedback != nullptr && feedback->error() != nullptr && !state->failed.load(std::memory_order_relaxed)) {
+            state->failure = "submission " + std::to_string(sequence) + " failed on the GPU: " +
+                             describe(feedback->error());
+            state->failed.store(true, std::memory_order_release);
         }
-        target->feedback.store(sequence + 1, std::memory_order_release);
+        state->arrived.store(sequence + 1, std::memory_order_release);
     });
 
     const MTL4::CommandBuffer* buffers[] = {slot.commands.get()};
@@ -173,21 +169,19 @@ void Submission::wait_until_complete(std::uint64_t sequence) {
     if (sequence + frames_in_flight < next_) {
         throw Error("wait_until_complete(" + std::to_string(sequence) + "): its slot has been reused");
     }
-    wait_for(sequence);
+    settle(sequence);
+}
 
-    // The event says the GPU is done; the feedback, which carries any error,
-    // comes separately. Wait for it too, bounded, so a readback never reads
-    // the image of a submission that failed.
-    const Slot& slot = slots_[sequence % frames_in_flight];
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
-    while (slot.feedback.load(std::memory_order_acquire) < sequence + 1) {
-        if (std::chrono::steady_clock::now() > deadline) {
-            throw Error("no feedback for submission " + std::to_string(sequence) + " within " +
-                        std::to_string(timeout_ms) + " ms");
-        }
-        std::this_thread::sleep_for(std::chrono::microseconds(50));
+void Submission::finish() {
+    if (open_) {
+        throw Error("finish() while submission " + std::to_string(next_ - 1) + " is still open");
     }
-    check(slot);
+    finished_ = true;
+    // Every submission before these was settled when its slot was reused.
+    for (std::uint64_t sequence = next_ > frames_in_flight ? next_ - frames_in_flight : 0; sequence < next_;
+         ++sequence) {
+        settle(sequence);
+    }
 }
 
 void Submission::make_resident(MTL::Allocation* allocation) {

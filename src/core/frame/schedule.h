@@ -10,12 +10,13 @@ namespace serenity::frame {
 
 // Axis: Frame graph.
 //
-// What a frame computes: the passes it runs, in order. Decided by the scene
-// description (core/scene/scene.h), carried in the core, and only carried out
-// by a backend (logical-overview.md, principle 10), so every backend renders
-// the same frame and none can reorder it. The core holds no schedules of its
-// own: which passes a frame runs is data, written in a scene file
-// (change-axes.md: mechanism is code, values are data).
+// What a frame computes: the passes it runs, in order. Written in a frame
+// graph file (core/frame/graph_file.h), carried in the core, and only carried
+// out by a backend (logical-overview.md, principle 10), so every backend
+// renders the same frame and none can reorder it. The core holds no schedules
+// of its own: which passes a frame runs is data (change-axes.md: mechanism is
+// code, values are data), kept apart from the scene, so one scene runs under
+// any graph.
 //
 // A pass is named by its kind. Each backend implements each kind once
 // (change-axes.md: every shader-side axis exists once per backend), mapping
@@ -34,12 +35,12 @@ struct Schedule {
     std::vector<PassKind> passes;  // run in this order; at least one
 };
 
-// The name each kind is written as in a scene file, and back. One table, so
+// The name each kind is written as in a frame graph file, and back. One table, so
 // a kind and its name cannot disagree in two places.
 std::string_view name(PassKind kind);
 std::optional<PassKind> pass_kind(std::string_view name);
 
-// Every kind, in declaration order: for naming the known ones when a scene
+// Every kind, in declaration order: for naming the known ones when a graph
 // file names an unknown one.
 std::span<const PassKind> all_pass_kinds();
 

@@ -1,0 +1,6 @@
+# The diagnostic frame graph: the test pattern, alone
+# (src/metal/passes/test_pattern/test_pattern.h). It needs no scene, and shows
+# that a frame reaches the window or a file with nothing of the renderer in
+# the way.
+
+passes = ["test_pattern"]

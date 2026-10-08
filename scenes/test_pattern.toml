@@ -1,6 +1,0 @@
-# The diagnostic scene: no geometry, only the test pattern
-# (src/metal/passes/test_pattern/test_pattern.h). It shows that a frame
-# reaches the window or a file with nothing of the renderer in the way.
-
-[frame]
-passes = ["test_pattern"]

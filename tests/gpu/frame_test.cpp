@@ -5,12 +5,13 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
 #include <numbers>
 #include <vector>
 
 #include <doctest/doctest.h>
 
-#include "core/scene/scene.h"
+#include "core/frame/graph_file.h"
 #include "metal/device/device.h"
 #include "metal/device/error.h"
 #include "metal/device/offscreen.h"
@@ -24,7 +25,7 @@ namespace {
 constexpr frame::Extent size{64, 32};
 
 frame::Schedule test_pattern_schedule() {
-    return scene::parse("[frame]\npasses = [\"test_pattern\"]\n", "test").schedule;
+    return frame::parse_schedule("passes = [\"test_pattern\"]\n", "test");
 }
 
 struct Rig {
@@ -82,17 +83,41 @@ TEST_CASE("time changes the image, and the same inputs give the same bytes") {
     CHECK(at_one == at_one_again);
 }
 
-TEST_CASE("frames in flight: many committed without waiting, each slot's constants intact") {
-    Rig rig;
-    std::uint64_t last = 0;
-    for (std::uint64_t i = 0; i < 9; ++i) {
-        last = metal::render_to_offscreen(rig.submission, rig.target, rig.renderer,
-                                          frame::FrameInputs{frame::Seconds(double(i) * 0.25), i});
+TEST_CASE("frames in flight: each submission reads its own frame's constants") {
+    // Four frames, each into its own image, at four times, committed without
+    // waiting, so two are in flight at once and the ring's two slots are each
+    // used twice. Had the frames shared one constants slot, an earlier frame
+    // would show a later frame's time.
+    metal::Device device;
+    metal::Submission submission(device);
+    metal::Renderer renderer(device, submission, test_pattern_schedule());
+    std::vector<std::unique_ptr<metal::Offscreen>> targets;
+    for (int i = 0; i < 4; ++i) {
+        targets.push_back(std::make_unique<metal::Offscreen>(device, submission, size));
     }
-    rig.submission.wait_until_complete(last);
+    const double times[] = {1.0, 3.0, 0.5, 2.5};  // blue 1, 0, ~0.85, ~0.15: all distinct
+    std::uint64_t last = 0;
+    for (std::uint64_t i = 0; i < 4; ++i) {
+        last = metal::render_to_offscreen(submission, *targets[i], renderer,
+                                          frame::FrameInputs{frame::Seconds(times[i]), i});
+    }
+    submission.wait_until_complete(last);  // in order, so every earlier one is done too
     std::vector<std::uint8_t> rgba(std::size_t{size.width} * size.height * 4);
-    rig.target.read_rgba(rgba);
-    check_pixel(rgba, 63, 31, 8 * 0.25);  // the last frame's time
+    for (std::size_t i = 0; i < 4; ++i) {
+        targets[i]->read_rgba(rgba);
+        check_pixel(rgba, 63, 31, times[i]);
+        check_pixel(rgba, 21, 13, times[i]);
+    }
+}
+
+TEST_CASE("finish() settles every frame, and nothing begins after it") {
+    Rig rig;
+    for (std::uint64_t i = 0; i < 3; ++i) {
+        (void)metal::render_to_offscreen(rig.submission, rig.target, rig.renderer,
+                                         frame::FrameInputs{frame::Seconds(0.0), i});
+    }
+    rig.submission.finish();
+    CHECK_THROWS_AS((void)rig.submission.begin(), metal::Error);
 }
 
 TEST_CASE("the submission protocol refuses misuse") {

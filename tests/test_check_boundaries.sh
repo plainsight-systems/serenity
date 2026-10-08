@@ -58,8 +58,8 @@ probe "Metal host API outside src/metal/" src/metal_extra/_probe7.cpp '#include 
 
 # 4. Third-party libraries outside their one place.
 probe "SDL outside src/app/" src/core/_probe10.h '#pragma once\n#include <SDL3/SDL.h>\n'
-probe "toml++ outside the scene reader" src/core/frame/_probe11.cpp '#include <toml++/toml.hpp>\n'
-probe "stb outside the PNG writer" src/core/scene/_probe12.cpp '#include <stb_image_write.h>\n'
+probe "toml++ outside the frame graph reader" src/core/frame/_probe11.cpp '#include <toml++/toml.hpp>\n'
+probe "stb outside the PNG writer" src/core/frame/_probe12.cpp '#include <stb_image_write.h>\n'
 
 # The shading language's own headers in the core are allowed.
 F=src/core/_probe8.h; CREATED="${CREATED} ${F}"

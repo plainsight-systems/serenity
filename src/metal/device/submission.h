@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include <Foundation/Foundation.hpp>
@@ -50,12 +51,21 @@ namespace serenity::metal {
 // wait_until_complete(n), for the headless renderer's readback (GPU.1):
 // visible in the call, and never on the window's path.
 //
-// Failure is visible (E.2, E.14). Metal 4 reports a frame's GPU error through
-// commit feedback, on a queue of its own; the handler stores it in the slot,
-// and the next begin() or wait_until_complete() of that slot throws Error
-// naming the frame and Metal's description. A frame that does not complete
-// within the timeout below throws Error as well, rather than blocking the
-// loop forever on a GPU that has stopped.
+// Failure is visible (E.2, E.14). Metal 4 reports a submission's GPU error
+// through commit feedback, on a queue of its own, separately from the event
+// that says the GPU is done. So a slot is reused only once both have arrived:
+// begin() waits for the event and then for the feedback of the submission
+// that last used the slot, and throws Error naming it if it failed;
+// wait_until_complete() does the same for the submission it waits on, and
+// finish() for every submission still unchecked, so a failure in the last
+// frames before shutdown is reported too. A submission whose event or
+// feedback does not arrive within the timeout throws Error as well, rather
+// than blocking forever on a GPU that has stopped.
+//
+// The feedback handlers run on Metal's queue, possibly after this object is
+// gone, so what they write is not in this object: each slot's feedback state
+// is shared, and every handler holds its own reference (R.20, CP.3). A late
+// handler writes into state it keeps alive, never into freed memory.
 //
 // Residency. Metal 4 runs only on resources a residency set has made
 // resident. make_resident() adds an allocation to the set this queue uses;
@@ -102,6 +112,12 @@ public:
     // throws Error if it failed. For readback.
     void wait_until_complete(std::uint64_t sequence);
 
+    // Blocks until every committed submission has completed and reported,
+    // and throws Error if any failed. Called once, at the end of a run, so a
+    // failure in its last frames is not lost. The destructor waits too, but
+    // a destructor cannot report.
+    void finish();
+
     // Makes `allocation` resident for every frame from now on.
     void make_resident(MTL::Allocation* allocation);
 
@@ -109,20 +125,26 @@ public:
     MTL4::CommandQueue* queue() const { return queue_.get(); }
 
 private:
-    struct Slot {
-        NS::SharedPtr<MTL4::CommandAllocator> allocator;
-        NS::SharedPtr<MTL4::CommandBuffer> commands;
-        // Written by the feedback handler, on Metal's feedback queue; read by
-        // begin() and wait_until_complete(). `feedback` is the sequence + 1 of
-        // the last submission whose feedback arrived; `failure` is written
-        // before `failed` is released, and only once.
-        std::atomic<std::uint64_t> feedback{0};
+    // What a slot's feedback handlers write, on Metal's feedback queue, and
+    // this object reads. `arrived` is the sequence + 1 of the last submission
+    // whose feedback has arrived. `failure` is written before `failed` is
+    // released, and only once. One handler runs per slot at a time: a slot is
+    // not reused until its last handler has stored `arrived`.
+    struct Feedback {
+        std::atomic<std::uint64_t> arrived{0};
         std::atomic<bool> failed{false};
         std::string failure;
     };
 
-    void wait_for(std::uint64_t sequence);
-    void check(const Slot& slot) const;
+    struct Slot {
+        NS::SharedPtr<MTL4::CommandAllocator> allocator;
+        NS::SharedPtr<MTL4::CommandBuffer> commands;
+        std::shared_ptr<Feedback> feedback = std::make_shared<Feedback>();
+    };
+
+    // Waits for submission `sequence`'s event, then its feedback, and throws
+    // if either does not come in time or the submission failed.
+    void settle(std::uint64_t sequence);
     void end_and_commit(const MTL::Drawable* drawable);
 
     NS::SharedPtr<MTL::Device> device_;
@@ -132,6 +154,7 @@ private:
     std::array<Slot, frames_in_flight> slots_;
     std::uint64_t next_ = 0;   // the sequence begin() hands out next
     bool open_ = false;        // a submission is begun and not yet committed
+    bool finished_ = false;    // finish() has run; nothing may be begun after
 };
 
 }  // namespace serenity::metal

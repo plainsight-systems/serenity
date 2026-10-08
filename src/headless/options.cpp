@@ -11,7 +11,7 @@ namespace serenity::headless {
 namespace {
 
 constexpr const char* usage =
-    "usage: serenity-headless --scene FILE --out DIRECTORY [--frames N] [--first I] [--step SECONDS] "
+    "usage: serenity-headless --graph FILE --out DIRECTORY [--frames N] [--first I] [--step SECONDS] "
     "[--size WIDTHxHEIGHT]";
 
 std::uint64_t whole_number(std::string_view option, const char* text) {
@@ -50,8 +50,8 @@ Options parse(std::span<const char* const> args) {
             return args[++i];
         };
 
-        if (option == "--scene") {
-            options.scene = value();
+        if (option == "--graph") {
+            options.graph = value();
         } else if (option == "--out") {
             options.out = value();
         } else if (option == "--frames") {
@@ -82,13 +82,15 @@ Options parse(std::span<const char* const> args) {
             throw Error("unknown option '" + std::string(option) + "'; " + usage);
         }
     }
-    if (options.scene.empty()) {
-        throw Error(std::string("missing --scene; ") + usage);
+    if (options.graph.empty()) {
+        throw Error(std::string("missing --graph; ") + usage);
     }
     if (options.out.empty()) {
         throw Error(std::string("missing --out; ") + usage);
     }
-    if (options.first > std::numeric_limits<std::uint64_t>::max() - options.frames) {
+    // The last frame is first + frames - 1, which must exist; first + frames
+    // need not (frames is at least 1 here).
+    if (options.first > std::numeric_limits<std::uint64_t>::max() - (options.frames - 1)) {
         throw Error("--first plus --frames is past the last frame there can be");
     }
     return options;

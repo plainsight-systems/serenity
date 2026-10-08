@@ -21,7 +21,7 @@ SHA-256 in CMakeLists.txt
   Copyright (C) 1997-2026 Sam Lantinga. zlib License.
   https://github.com/libsdl-org/SDL/blob/main/LICENSE.txt
 
-toml++ 3.4.0, reading scene files, fetched by CMake at the commit pinned in
+toml++ 3.4.0, reading frame graph files, fetched by CMake at the commit pinned in
 CMakeLists.txt
   Copyright (c) Mark Gillard. MIT License.
   https://github.com/marzer/tomlplusplus/blob/master/LICENSE

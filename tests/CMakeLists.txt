@@ -12,7 +12,7 @@ set_target_properties(doctest PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "$
 # The tests that need no GPU: the core, and both command lines.
 add_executable(serenity_tests
     schedule_test.cpp
-    scene_test.cpp
+    graph_file_test.cpp
     png_test.cpp
     options_test.cpp
     main_test.cpp
@@ -21,5 +21,5 @@ target_link_libraries(serenity_tests PRIVATE
     serenity_app_options serenity_headless_options doctest::doctest)
 target_compile_options(serenity_tests PRIVATE ${SERENITY_WARNINGS})
 target_compile_definitions(serenity_tests PRIVATE
-    SERENITY_SCENES_DIR="${PROJECT_SOURCE_DIR}/scenes")
+    SERENITY_GRAPHS_DIR="${PROJECT_SOURCE_DIR}/graphs")
 add_test(NAME serenity_tests COMMAND serenity_tests)

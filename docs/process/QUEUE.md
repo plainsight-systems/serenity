@@ -5,7 +5,7 @@ This file tracks active and accepted work.
 ## Active
 
 - **The first frames.** Step (a), done: a frame's whole path, end to end. A
-  scene file names the schedule, the Metal 4 backend records it with two
+  frame graph file names the passes, the Metal 4 backend records it with two
   frames in flight, and the test pattern reaches an SDL3 window at the
   display's resolution, or PNG files from the headless renderer. Step (b),
   next: one sphere ray traced in hardware, and the first frame time at the

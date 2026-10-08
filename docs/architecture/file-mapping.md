@@ -21,7 +21,9 @@ change that first needs it. The directories exist now, empty.
 - **The app, `src/app/`, and the headless renderer, `src/headless/`,** are
   the two ways to run a frame: in a window, with the measured clock, or to
   files, with a fixed step.
-- **Scene descriptions, `scenes/`,** are data, at the repository root.
+- **Scene descriptions, `scenes/`,** and **frame graphs, `graphs/`,** are
+  data, at the repository root, in separate files: what is rendered, and
+  which passes render it, so one scene runs under any graph.
 
 Dependencies point one way: the app and the headless renderer depend on the
 backend and the core, the backend on the core, and the core on nothing
@@ -61,7 +63,7 @@ data or adds a kind; it does not change a family that already exists.
 | `src/core/textures/` | Texture | each texture kind's parameters |
 | `src/core/lights/` | Light | each light kind's parameters |
 | `src/core/film/` | Film | what a pixel accumulates and outputs |
-| `src/core/frame/` | Frame graph | the passes, their order, the images between them, and the history kept across frames |
+| `src/core/frame/` | Frame graph | the passes, their order, the images between them, and the history kept across frames; reading frame graph files |
 | `src/core/output/` | Output | each file format's writer |
 | `src/core/measurement/` | Measurement | error against the reference, and timing reports |
 | `src/metal/device/` | GPU backend | the device, libraries and pipelines, resources, encoding and synchronization |
@@ -80,6 +82,7 @@ data or adds a kind; it does not change a family that already exists.
 | `src/app/` | Presentation | the macOS window, its event loop and the measured clock |
 | `src/headless/` | Presentation | rendering frames to files at a fixed step |
 | `scenes/` | Scene content | scene descriptions, as data |
+| `graphs/` | Frame graph | frame graphs, as data |
 
 A kind lives in two halves with the same axis and the same name: its
 parameters and anything the CPU needs in the core (a sphere's bounds, for

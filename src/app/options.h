@@ -11,20 +11,21 @@ namespace serenity::app {
 //
 // What the window is asked to show, from its command line:
 //
-//   serenity --scene FILE
+//   serenity --graph FILE
 //
-// The scene is required: there is no default scene and no path baked into
+// The frame graph is required: there is no default and no path baked into
 // the program, so what the window shows is always named where it is run.
-// parse() throws Error naming the argument for an unknown option, a missing
-// value, or a missing --scene (E.2, E.14). It does not read the file; the
-// scene is loaded after parsing succeeds (core/scene/scene.h).
+// --scene joins it when scenes have content to read. parse() throws
+// OptionsError naming the argument for an unknown option, a missing value,
+// or a missing --graph (E.2, E.14). It does not read the file; the graph is
+// loaded after parsing succeeds (core/frame/graph_file.h).
 class OptionsError : public std::runtime_error {
 public:
     explicit OptionsError(const std::string& what) : std::runtime_error(what) {}
 };
 
 struct Options {
-    std::filesystem::path scene;
+    std::filesystem::path graph;
 };
 
 // `args` are the arguments after the program's name.

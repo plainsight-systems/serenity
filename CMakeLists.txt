@@ -76,7 +76,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(SDL3)
 
-# toml++: reading scene files (src/core/scene/scene.cpp only). v3.4.0.
+# toml++: reading frame graph files (src/core/frame/graph_file.cpp only). v3.4.0.
 FetchContent_Declare(
     tomlplusplus
     GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
@@ -103,9 +103,9 @@ target_include_directories(stb_image_write SYSTEM INTERFACE "${stb_SOURCE_DIR}")
 # tools/check_boundaries.sh enforces it (make check).
 # ---------------------------------------------------------------------------
 add_library(serenity_core STATIC
+    src/core/frame/graph_file.cpp
     src/core/frame/schedule.cpp
     src/core/output/png.cpp
-    src/core/scene/scene.cpp
 )
 target_include_directories(serenity_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(serenity_core PRIVATE tomlplusplus::tomlplusplus stb_image_write)

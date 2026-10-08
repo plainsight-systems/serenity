@@ -15,7 +15,7 @@ full resolution and 60 frames a second. A second backend,
 Vulkan on an AMD Strix Halo, comes later.
 
 **Status: early.** The path a frame takes is built and running end to end:
-a scene file names what the frame computes, the Metal 4 backend renders it,
+a frame graph file names the passes a frame runs, the Metal 4 backend renders it,
 and it appears in a window at the display's full resolution or is written
 to PNG files. What it renders so far is a test pattern; the path tracer is
 next. The design is in [`docs/architecture/`](docs/architecture/README.md).
@@ -81,11 +81,11 @@ git clone --recurse-submodules https://github.com/plainsight-systems/serenity.gi
 cd serenity
 make test     # builds, then runs the tests, the GPU tests among them
 make check    # structural rules, and tests proving each check fires
-make run      # the window, showing scenes/test_pattern.toml
-make headless # the same scene, as 60 PNG frames in frames/
+make run      # the window, running graphs/test_pattern.toml
+make headless # the same frames, as 60 PNGs in frames/
 ```
 
-`make run SCENE=scenes/other.toml` shows another scene. Escape or closing the
+`make run GRAPH=graphs/other.toml` runs another frame graph. Escape or closing the
 window ends it.
 
 The build is pinned to one toolchain. Metal can't run in a container, so the
@@ -102,7 +102,8 @@ stb_image_write and doctest, each pinned by commit or by checksum.
 | `src/core/` | the platform-neutral core: what is rendered, how it moves, the frame's schedule, film and output. No GPU or windowing API |
 | `src/metal/` | the Metal backend, the only code that touches Metal: the device, and every shader |
 | `src/app/`, `src/headless/` | the two ways to run a frame: in a window, or to files |
-| `scenes/` | scene descriptions, as data |
+| `scenes/` | scene descriptions, as data: what is rendered |
+| `graphs/` | frame graphs, as data: which passes a frame runs |
 | `cmake/` | the toolchain pin, and how shaders are compiled into the binary |
 | `tests/` | tests; `tests/gpu/` runs on this machine's GPU |
 | `tools/` | the toolchain and boundary checks |
