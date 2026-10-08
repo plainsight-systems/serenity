@@ -55,8 +55,11 @@ them, by sampling better and then by denoising. In this scene they're also,
 literally, the lights.
 
 So the project is named for what's left when the fireflies are gone: a calm,
-clean frame. Noise in, serenity out. If the name also brings to mind a small
-ship that kept flying, that's not an accident.
+clean frame. Noise in, serenity out.
+
+If the name also brings to mind a small ship that kept flying, that's not an
+accident, and any Browncoat reading this caught it a paragraph ago. It's why
+the metal spheres are polished: they had to be shiny.
 
 ## Run it locally
 
