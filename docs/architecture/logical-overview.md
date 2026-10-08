@@ -9,8 +9,8 @@ and caustics focused through the glass.
 
 This is the **logical** view: phases, responsibilities and principles. It
 names no files, no types, no interfaces and no GPU API. The rules that turn
-these boxes into files are in `change-axes.md`, and the resulting arrangement
-in `file-mapping.md`, both written next. Every claim here can be checked
+these boxes into files are in [`change-axes.md`](change-axes.md), and the
+resulting arrangement in `file-mapping.md`. Every claim here can be checked
 against a rendered frame or against the reference.
 
 ## The flow
