@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/serenity-readme.png" alt="An original screenprint-style illustration of glass and brass spheres on a table at night, lit by fireflies that look like render noise on the left and settle into a calm, clean scene on the right, where a flock of them forms the outline of a small ship." width="100%" />
+</p>
+
 # Serenity
 
 Serenity is a real-time path tracer I'm writing for one scene: a few glass
