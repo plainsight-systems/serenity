@@ -3,7 +3,7 @@
 FetchContent_Declare(
     doctest
     GIT_REPOSITORY https://github.com/doctest/doctest.git
-    GIT_TAG        1da23a3e8119ec5cce4f9388e91b065e20bf06f5
+    GIT_TAG        2d0a9359a60c51affe2a9bebb1be1dca47868151  # v2.5.3
 )
 FetchContent_MakeAvailable(doctest)
 get_target_property(doctest_includes doctest::doctest INTERFACE_INCLUDE_DIRECTORIES)

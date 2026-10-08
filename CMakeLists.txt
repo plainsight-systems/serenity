@@ -60,13 +60,14 @@ target_link_libraries(metal_cpp INTERFACE "-framework Metal" "-framework Foundat
 # ---------------------------------------------------------------------------
 # SDL3: the window (src/app/ only). Pinned by its release tarball's SHA-256:
 # its git history is far larger than the release. Static, and only the parts
-# the window uses.
+# the window uses: no OpenGL or OpenGL ES, which nothing here draws with.
+# Vulkan stays, for the second backend's window.
 # ---------------------------------------------------------------------------
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
-foreach(subsystem AUDIO CAMERA HAPTIC JOYSTICK SENSOR HIDAPI GPU RENDER POWER DIALOG TRAY)
+foreach(subsystem AUDIO CAMERA HAPTIC JOYSTICK SENSOR HIDAPI GPU RENDER POWER DIALOG TRAY OPENGL OPENGLES)
     set(SDL_${subsystem} OFF CACHE BOOL "" FORCE)
 endforeach()
 FetchContent_Declare(

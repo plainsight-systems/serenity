@@ -6,15 +6,19 @@
 
 .PHONY: test test-release run headless check toolchain clean
 
+# Configure quietly: dependencies' status summaries (SDL prints its whole
+# option list) are hidden; warnings and errors still show. VERBOSE=1 shows all.
+CONFIGURE_QUIET := $(if $(VERBOSE),,--log-level=NOTICE)
+
 ## Every test, debug build: the core's tests and the GPU tests.
 test:
-	cmake --preset native-debug
+	cmake --preset native-debug $(CONFIGURE_QUIET)
 	cmake --build --preset native-debug
 	ctest --preset native-debug
 
 ## The same tests, release build.
 test-release:
-	cmake --preset native-release
+	cmake --preset native-release $(CONFIGURE_QUIET)
 	cmake --build --preset native-release
 	ctest --preset native-release
 
@@ -22,7 +26,7 @@ test-release:
 ## test pattern). Escape or closing the window ends it.
 GRAPH ?= graphs/test_pattern.toml
 run:
-	cmake --preset native-release
+	cmake --preset native-release $(CONFIGURE_QUIET)
 	cmake --build --preset native-release --target serenity
 	./build/native-release/serenity --graph $(GRAPH)
 
@@ -31,7 +35,7 @@ run:
 OUT ?= frames
 FRAMES ?= 60
 headless:
-	cmake --preset native-release
+	cmake --preset native-release $(CONFIGURE_QUIET)
 	cmake --build --preset native-release --target serenity-headless
 	./build/native-release/serenity-headless --graph $(GRAPH) --out $(OUT) --frames $(FRAMES)
 

@@ -34,6 +34,6 @@ pinned in CMakeLists.txt
 Used to build or test, not distributed
 --------------------------------------
 
-doctest, fetched by CMake for the tests
+doctest 2.5.3, fetched by CMake for the tests
   Copyright (c) 2016-2023 Viktor Kirilov. MIT License.
   https://github.com/doctest/doctest/blob/master/LICENSE.txt
