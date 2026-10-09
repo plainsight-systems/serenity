@@ -13,8 +13,10 @@
 // noise(p, seed), for a point p in noise space and a seed, by these steps,
 // which a backend's code carries by number:
 //
-//   Step 1  The lattice cell holding p: i = floor(p), an integer per axis,
-//           and f = p - i, in [0, 1) per axis.
+//   Step 1  The lattice cell holding p: i = floor(p), a 32-bit signed
+//           integer per axis, and f = p - i, in [0, 1) per axis. A caller
+//           keeps every coordinate of p, at every octave, within 2^31, so
+//           the conversion is exact (wood.h shows its bound).
 //   Step 2  Each of the cell's eight corners c = i + (0 or 1 per axis) is
 //           hashed with the seed by pcg3d (Jarzynski and Olano, "Hash
 //           Functions for GPU Rendering", JCGT 2020): h = pcg3d(uint3(c) +

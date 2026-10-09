@@ -154,11 +154,16 @@ namespace serenity::scene {
 //     `clearance` meters from every still surface, on a loop drawn from
 //     `seed`. Its every stretch is checked clear at load.
 //
-// Everything a motion can reach, grown by the sphere's radius, must lie
-// within float's range on every axis, computed in double, so no frame places
-// it where a float cannot hold. Moving shapes are not checked against each
-// other: fireflies may pass through one another, which renders as what it
-// is.
+// The world is the cube within world_extent of the origin on every axis:
+// every shape must lie inside it, a sphere's center grown by its radius and
+// a box's corners, and so must everything a motion can reach, grown by the
+// sphere's radius, computed in double. So no frame places a shape where a
+// float cannot hold it, and every point a ray can hit is bounded, which is
+// what keeps the textures' arithmetic finite: the wood's divisions and its
+// noise's lattice coordinates (core/textures/wood.h), the checker's squares.
+// A thousand kilometers: a scene of a table and its ground is a few hundred
+// meters across. Moving shapes are not checked against each other:
+// fireflies may pass through one another, which renders as what it is.
 //
 // A swarm (swarm.h) is `count` fireflies, each a sphere of `radius` wearing
 // `material`, which must be emissive, with a flight motion of the swarm's
@@ -179,30 +184,33 @@ namespace serenity::scene {
 //     copied into a glow of the schedule kind, core/animation/flashes.h).
 //     The sphere's motion must be a flight; `flash` under a second.
 //
-// Every key is checked, as in graph files: a missing or unknown key, a
-// value of the wrong type or out of range (a radius or size not greater
-// than 0, an ior not greater than 1, an f0 outside [0, 1], a roughness
-// outside (0, 1], a negative radiance, a box whose min is not below its max,
-// a camera that cannot be framed, a reach or speed not greater than 0, a
-// seed below 0, a motion that could carry its shape out of float's range, a
-// flight's box whose min is not below its max, a negative clearance or
-// weight, weights all 0, a circle weight with no targets, a period or flash
-// out of range, a dim outside [0, 1), a wood color outside [0, 1], a ring or
-// board not greater than 0, a wood's seed past 2^32 - 1, a swarm's count
-// outside 1 to 4096), an unknown kind, a name used twice, a name used and
-// never defined, a target that is not a still sphere, an emissive material
-// or a motion on anything but a sphere, a swarm whose material is not
-// emissive, a glow on anything but a light, a flight glow on a light that
-// does not fly, a motion that cannot be made clear of the still shapes, a
-// swarm whose fireflies cannot start clear of them, or no shapes at all is
-// an Error naming the file and the line (E.2, E.14). Nothing has a silent
-// default except `up`.
+// Every key is checked, as in graph files: a missing or unknown key, a value
+// of the wrong type or out of range (a radius or size not greater than 0, an
+// ior not greater than 1, an f0 outside [0, 1], a roughness outside (0, 1], a
+// negative radiance, a box whose min is not below its max, a camera that
+// cannot be framed, a reach or speed not greater than 0, a seed below 0, a
+// shape outside the world or a motion that could carry it out, a flight's box
+// whose min is not below its max, a negative clearance or weight, weights all
+// 0, a circle weight with no targets, a period or flash out of range, a dim
+// outside [0, 1), a wood color outside [0, 1], a ring under wood_least_ring or
+// a board outside wood_least_board to wood_most_board (core/textures/wood.h),
+// a wood's seed past 2^32 - 1, a swarm's count outside 1 to 4096), an unknown
+// kind, a name used twice, a name used and never defined, a target that is not
+// a still sphere, an emissive material or a motion on anything but a sphere, a
+// swarm whose material is not emissive, a glow on anything but a light, a
+// flight glow on a light that does not fly, a motion that cannot be made clear
+// of the still shapes, a swarm whose fireflies cannot start clear of them, or
+// no shapes at all is an Error naming the file and the line (E.2, E.14).
+// Nothing has a silent default except `up`.
 //
 // Read once, at start-up. Every flight in the scene, written or a swarm's,
 // is made once every shape is read, all together, in parallel
 // (core/animation/flight.h, make_flights): for the marbles' 512 fireflies
 // the load's largest cost, under a second on the M3 Max, measured at
 // implementation.
+
+// How far the world reaches from the origin on every axis, in meters (above).
+inline constexpr double world_extent = 1.0e6;
 
 class Error : public std::runtime_error {
 public:

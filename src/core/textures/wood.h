@@ -34,9 +34,10 @@
 //           across from the axis it is. On the face, rings of radius r are
 //           the long arcs, tightest over the axis.
 //   Step 4  The grain's waver: r += wood_waver ring fbm(q, 3, seed) (noise.h),
-//           at q = (p.x / wood_waver_along, p.y / wood_waver_across, p.z /
-//           wood_waver_across): the noise stretched along the board, so the
-//           rings wander slowly along it and quickly across.
+//           at q = (p.x / wood_waver_along, 0, p.z / wood_waver_across): the
+//           noise stretched along the board, so the rings wander slowly
+//           along it and quickly across, and taken at height 0 whatever p's,
+//           as everything here is.
 //   Step 5  The growth ring: t = fract(r / ring), where in its ring the point
 //           is, from the ring's inside (earlywood, grown in spring, light)
 //           to its outside (latewood, grown in summer, dark):
@@ -44,8 +45,8 @@
 //           light (1 - w) + dark w. The next ring starts light again, so
 //           each ring is a gradual darkening and a sharp edge, as wood is.
 //   Step 6  The pores: the color times 1 - wood_pores (0.5 + 0.5 noise(g,
-//           seed + 1)), g = (p.x / wood_pores_along, p.y / wood_pores_across,
-//           p.z / wood_pores_across): fine streaks along the board.
+//           seed + 1)), g = (p.x / wood_pores_along, 0, p.z /
+//           wood_pores_across): fine streaks along the board.
 //   Step 7  The board: the color times s (step 2); and within wood_seam of
 //           the board's edge, min(u, 1 - u) board < wood_seam, times
 //           wood_seam_shade: the gap between boards.
@@ -59,6 +60,15 @@
 // buffer 19 (passes/path/path.metal, passes/preview/preview.metal), the
 // first free in both, and hands to the textures (metal/textures/
 // textures.metal.h).
+//
+// Finite everywhere a ray can hit: the world is within 10^6 m of the origin
+// (core/scene/scene.h, world_extent), and the scene reader holds ring and
+// board within the bounds below. So p.z / board is at most 10^9; r, within
+// about 2 boards of the axis plus the waver's 3 rings, over ring is at most
+// some 2 x 10^5; and the noise's lattice coordinates, the largest p.z /
+// wood_pores_across, about 6.7 x 10^8, fit a 32-bit integer, which noise.h's
+// step 1 takes them as. Far from the origin a float's spacing outgrows the
+// rings, and the wood there is plain; the table is at the origin.
 //
 // No filtering: rings and pores are millimetres wide, and where a pixel
 // covers several, the path tracer's point drawn anew within the pixel each
@@ -94,12 +104,15 @@ SERENITY_CONSTANT float wood_pores_along = 0.08f;         // step 6: meters
 SERENITY_CONSTANT float wood_pores_across = 0.0015f;      // step 6: meters
 SERENITY_CONSTANT float wood_seam = 0.0015f;              // step 7: meters
 SERENITY_CONSTANT float wood_seam_shade = 0.25f;          // step 7
+SERENITY_CONSTANT float wood_least_ring = 1.0e-4f;        // meters: the finest rings read
+SERENITY_CONSTANT float wood_least_board = 1.0e-3f;       // meters
+SERENITY_CONSTANT float wood_most_board = 10.0f;          // meters
 
 struct WoodData {
     contracts::Float3 light;  // earlywood, linear RGB in [0, 1]
-    float ring;               // meters between growth rings; greater than 0
+    float ring;               // meters between growth rings; at least wood_least_ring
     contracts::Float3 dark;   // latewood, linear RGB in [0, 1]
-    float board;              // meters across a board; greater than 0
+    float board;              // meters across a board; wood_least_board to wood_most_board
     uint32_t seed;
     uint32_t padding[3];
 };

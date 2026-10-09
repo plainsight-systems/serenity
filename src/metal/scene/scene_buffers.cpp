@@ -17,26 +17,56 @@ std::span<const std::byte> bytes(const T& one) {
     return std::as_bytes(std::span(&one, 1));
 }
 
-// The scene's arrays, in the order of Addresses' fields.
-std::array<std::span<const std::byte>, 14> arrays_of(const scene::SceneDescription& scene) {
-    return {
-        bytes(scene.environment),    bytes(scene.textures),     bytes(scene.checkers),
-        bytes(scene.materials),      bytes(scene.rough),        bytes(scene.dielectrics),
-        bytes(scene.conductors),     bytes(scene.emissives),    bytes(scene.shapes.records),
-        bytes(scene.shapes.boxes),   bytes(scene.lights),       bytes(scene.shape_lights),
-        bytes(scene.sphere_lights),  bytes(scene.light_counts),
-    };
+// The one list of the scene's arrays: each with the field of Addresses that
+// holds its address, named, so no array can be given another's address.
+// Every field has an entry: the assertion below counts them.
+struct Entry {
+    MTL::GPUAddress SceneBuffers::Addresses::*field;
+    std::span<const std::byte> bytes;
+};
+
+using A = SceneBuffers::Addresses;
+constexpr std::size_t array_count = 15;
+static_assert(sizeof(A) == array_count * sizeof(MTL::GPUAddress),
+              "every field of SceneBuffers::Addresses needs its entry in entries_of()");
+
+std::array<Entry, array_count> entries_of(const scene::SceneDescription& scene) {
+    return {{
+        {&A::environment, bytes(scene.environment)},
+        {&A::textures, bytes(scene.textures)},
+        {&A::checkers, bytes(scene.checkers)},
+        {&A::woods, bytes(scene.woods)},
+        {&A::materials, bytes(scene.materials)},
+        {&A::rough, bytes(scene.rough)},
+        {&A::dielectrics, bytes(scene.dielectrics)},
+        {&A::conductors, bytes(scene.conductors)},
+        {&A::emissives, bytes(scene.emissives)},
+        {&A::shapes, bytes(scene.shapes.records)},
+        {&A::boxes, bytes(scene.shapes.boxes)},
+        {&A::light_records, bytes(scene.lights)},
+        {&A::shape_lights, bytes(scene.shape_lights)},
+        {&A::sphere_lights, bytes(scene.sphere_lights)},
+        {&A::light_counts, bytes(scene.light_counts)},
+    }};
+}
+
+std::array<std::span<const std::byte>, array_count> arrays_of(const scene::SceneDescription& scene) {
+    std::array<std::span<const std::byte>, array_count> arrays;
+    const auto entries = entries_of(scene);
+    for (std::size_t i = 0; i < array_count; ++i) {
+        arrays[i] = entries[i].bytes;
+    }
+    return arrays;
 }
 
 }  // namespace
 
 SceneBuffers::SceneBuffers(const Device& device, Submission& submission, const scene::SceneDescription& scene)
     : arrays_(device, submission, arrays_of(scene)) {
-    addresses_ = Addresses{
-        arrays_.address(0), arrays_.address(1),  arrays_.address(2),  arrays_.address(3),  arrays_.address(4),
-        arrays_.address(5), arrays_.address(6),  arrays_.address(7),  arrays_.address(8),  arrays_.address(9),
-        arrays_.address(10), arrays_.address(11), arrays_.address(12), arrays_.address(13),
-    };
+    const auto entries = entries_of(scene);
+    for (std::size_t i = 0; i < array_count; ++i) {
+        addresses_.*entries[i].field = arrays_.address(i);
+    }
 }
 
 }  // namespace serenity::metal
