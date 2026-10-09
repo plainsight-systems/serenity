@@ -51,18 +51,19 @@ if [ -n "${offenders}" ]; then
 fi
 
 # 4. Each third-party library is reached from one place only, so swapping it
-#    touches one file (change-axes.md): SDL from src/app/, toml++ from the
-#    frame graph reader, stb from the PNG writer.
+#    touches only its readers (change-axes.md): SDL from src/app/, toml++
+#    from the two file readers (frame graphs and scenes), stb from the PNG
+#    writer.
 confined() {
     pattern="$1"; allowed="$2"; what="$3"
-    offenders="$(grep -rlE "${pattern}" src/ 2>/dev/null | grep -v "^${allowed}" || true)"
+    offenders="$(grep -rlE "${pattern}" src/ 2>/dev/null | grep -vE "^${allowed}" || true)"
     if [ -n "${offenders}" ]; then
         echo "${offenders}" | sed 's/^/  /' >&2
         fail "${what} may be included only from ${allowed}."
     fi
 }
 confined '#[[:space:]]*include[[:space:]]*[<"]SDL3/' 'src/app/' 'SDL'
-confined '#[[:space:]]*include[[:space:]]*[<"]toml\+\+/' 'src/core/frame/graph_file\.cpp$' 'toml++'
+confined '#[[:space:]]*include[[:space:]]*[<"]toml\+\+/' 'src/core/(frame/graph_file|scene/scene)\.cpp$' 'toml++'
 confined '#[[:space:]]*include[[:space:]]*[<"]stb_' 'src/core/output/png\.cpp$' 'stb'
 
 if [ "${status}" -eq 0 ]; then

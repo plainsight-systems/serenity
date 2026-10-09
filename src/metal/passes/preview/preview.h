@@ -11,38 +11,66 @@ namespace serenity::metal {
 
 // Axis: Pass (preview).
 //
-// A diagnostic view of primary visibility (logical-overview.md), kept for
-// good, like the test pattern: what the camera's rays reach, through glass,
-// shown unlit. It is not the light transport and makes no claim to it; it
-// shows that the geometry, the materials, the textures and the environment
-// are where the scene says, before any light is computed.
+// Deterministic ray tracing: what the camera sees, lit by the scene's
+// glowing spheres and its sky, with no average across frames. It is not the
+// light transport the renderer is for (logical-overview.md): it counts light
+// that reaches a surface straight from a light or the sky, and the light
+// metal and glass reflect and glass refracts, and leaves out what surfaces
+// reflect onto other rough surfaces and what glass focuses (caustics). Those
+// arrive with the path tracer and its reuse. Kept for good, like the test
+// pattern: a still image that every later estimator's direct light must
+// agree with.
 //
-// Per pixel, one ray from the frame's camera through the pixel's center
-// (contracts/camera.h), deterministic, with no random numbers:
+// Per pixel, four camera rays, at a rotated grid of positions within it
+// (anti-aliasing), each followed until it reaches something that ends it:
 //
-//   - leaving the scene, it shows the environment in its direction;
-//   - at a rough surface, it shows that surface's color, unlit, and stops;
-//   - at glass, the Fresnel term F splits it (dielectric.metal.h): the
-//     reflected part, weighted by F, is traced once more to the first thing
-//     it reaches and shown as that, flat (a rough surface's color, or the
-//     environment, glass there showing the environment); the refracted part,
-//     weighted by 1 - F, continues. Under total internal reflection the
-//     whole ray reflects and continues.
+//   - leaving the scene, the sky in its direction;
+//   - a glowing sphere, its radiance;
+//   - a rough surface: from each light, its irradiance (lights/
+//     sphere_light.h) times the fraction of the light visible, by 4 shadow
+//     rays to points across its disk; and the sky, by 2 cosine-distributed
+//     rays, each that escapes bringing the sky's radiance; times the
+//     surface's color. A shadow is soft where a light is partly hidden.
+//   - metal: each light's highlight, by GGX with its roughness widened by
+//     the light's size and the fraction visible as above; and the rest of
+//     the scene by 4 reflected rays drawn from GGX's visible normals, each
+//     shaded as a reflection (below), lights not counted again;
+//   - glass: the Fresnel term F splits it (dielectric.metal.h); the part
+//     reflected where it enters from outside, weighted by F, is shaded as a
+//     reflection; the refracted part, weighted by 1 - F, continues. Under
+//     total internal reflection the whole ray reflects and continues. At
+//     most 8 surfaces of glass; where a ray leaves glass its reflected part
+//     is dropped.
 //
-// A ray continues for at most 8 surfaces of glass; one that has not reached
-// a rough surface or left the scene by then contributes nothing further.
-// Reflections inside the glass beyond the first are not shown. Both are
-// properties of this preview, not of the renderer.
+// A reflection is shaded more simply: a rough surface by each light whose
+// center it sees, one shadow ray each, and the sky above it unblocked; a
+// glowing sphere by its glow, seen in glass, not in metal, whose highlights
+// already count it; metal and glass by the sky in the ray's direction.
+//
+// Glass is opaque to shadow rays: the light it would focus is a caustic.
+//
+// The numbers each estimate draws are a function of the pixel and the
+// purpose (metal/sampler/sampler.metal.h), not of the frame, so a still
+// scene renders the same image every frame, its error a fine, fixed grain.
+//
+// Colors are linear (core/scene/scene.h). For display, a color brighter than
+// 1 in some channel is scaled by its largest channel, keeping its hue, and
+// encoded with sRGB's transfer function, which an 8-bit target and the
+// display expect. Tone mapping, when it comes, is a pass of its own and the
+// encoding moves to it.
 //
 // The kernel is preview.metal, which uses the shared shader halves of the
-// kinds: pinhole.metal.h, trace.metal.h (the hardware loop over boxes, and
-// each shape kind's exact test: sphere.metal.h, box.metal.h),
-// dielectric.metal.h, checker.metal.h and gradient_sky.metal.h.
+// kinds: pinhole.metal.h, trace.metal.h (the hardware loop over boxes, each
+// shape kind's exact test in shapes.metal.h), rough.metal.h,
+// conductor.metal.h, dielectric.metal.h, textures.metal.h,
+// sphere_light.metal.h, gradient_sky.metal.h and sampler.metal.h.
 //
-// Cost: one thread per pixel, in rows of the execution width (GPU.2). Per
-// pixel, at most 8 + 1 rays for the glass in this scene, typically 1 to 3;
-// each ray's hardware traversal visits a handful of boxes. Memory read is
-// the scene's few hundred bytes, from cache, and 4 bytes written per pixel.
+// Cost: one thread per pixel, in rows of the execution width (GPU.2). On a
+// rough surface, with L lights, 4 x (1 + 4L + 2) rays a pixel: 44 for the
+// first scene's two fireflies; more on metal. Measured on the M3 Max, the
+// first scene takes 78 ms of GPU time at 3456 x 2234 and 20 ms at half that
+// in each direction. The window's frame budget is met by rendering below
+// the display's resolution and upscaling, which comes later.
 class PreviewPass {
 public:
     PreviewPass(const Device& device, const Library& library);

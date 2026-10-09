@@ -1,4 +1,4 @@
-# Primary visibility, unlit: what the camera's rays reach through glass
+# Deterministic ray tracing, lit by the scene's glowing spheres and its sky
 # (src/metal/passes/preview/preview.h). Needs a scene.
 
 passes = ["preview"]

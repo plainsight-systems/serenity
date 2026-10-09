@@ -85,8 +85,15 @@ make run      # the window, running graphs/test_pattern.toml
 make headless # the same frames, as 60 PNGs in frames/
 ```
 
-`make run GRAPH=graphs/other.toml` runs another frame graph. Escape or closing the
-window ends it.
+`make run GRAPH=graphs/other.toml` runs another frame graph, and `SCENE=` gives
+it a scene. The first lit scene, a soft brass sphere on a checkerboard at night
+lit by two fireflies:
+
+```bash
+make run GRAPH=graphs/preview.toml SCENE=scenes/brass_sphere.toml
+```
+
+Escape or closing the window ends it.
 
 The build is pinned to one toolchain. Metal can't run in a container, so the
 versions of Xcode, the SDK, the Metal compiler and Apple's clang are recorded

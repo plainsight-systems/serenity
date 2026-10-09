@@ -68,8 +68,21 @@ TEST_CASE("headless: the last frame there can be is reachable") {
     CHECK(last.frames == 1);
 }
 
-TEST_CASE("window: the scene is required, and nothing else is accepted") {
+TEST_CASE("headless: a scene is optional") {
+    CHECK(headless({"--graph", "g.toml", "--out", "o"}).scene.empty());
+    CHECK(headless({"--graph", "g.toml", "--scene", "s.toml", "--out", "o"}).scene == "s.toml");
+    CHECK(contains(headless_error({"--graph", "g", "--out", "o", "--scene"}), "--scene needs a value"));
+}
+
+TEST_CASE("window: the graph is required, the scene optional, and nothing else is accepted") {
     CHECK(serenity::app::parse(std::vector<const char*>{"--graph", "s.toml"}).graph == "s.toml");
+    CHECK(serenity::app::parse(std::vector<const char*>{"--graph", "g.toml"}).scene.empty());
+    const auto both = serenity::app::parse(std::vector<const char*>{"--graph", "g.toml", "--scene", "s.toml"});
+    CHECK(both.graph == "g.toml");
+    CHECK(both.scene == "s.toml");
+    CHECK_THROWS_AS(serenity::app::parse(std::vector<const char*>{"--scene", "s.toml"}), serenity::app::OptionsError);
+    CHECK_THROWS_AS(serenity::app::parse(std::vector<const char*>{"--graph", "g", "--scene"}),
+                    serenity::app::OptionsError);
     CHECK_THROWS_AS(serenity::app::parse(std::vector<const char*>{}), serenity::app::OptionsError);
     CHECK_THROWS_AS(serenity::app::parse(std::vector<const char*>{"--graph"}), serenity::app::OptionsError);
     CHECK_THROWS_AS(serenity::app::parse(std::vector<const char*>{"--graph", "s", "--size", "1x1"}),

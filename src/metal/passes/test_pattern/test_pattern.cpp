@@ -5,11 +5,11 @@ namespace serenity::metal {
 TestPatternPass::TestPatternPass(const Device&, const Library& library)
     : pipeline_(library.compute_pipeline("test_pattern")) {}
 
-void TestPatternPass::record(MTL4::ComputeCommandEncoder* encoder, MTL4::ArgumentTable* arguments,
-                             MTL::GPUAddress constants, MTL::Texture* target, frame::Extent size) const {
+void TestPatternPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
     // Bindings match test_pattern.metal: buffer 0, texture 0.
-    arguments->setAddress(constants, 0);
-    arguments->setTexture(target->gpuResourceID(), 0);
+    resources.arguments->setAddress(resources.constants, 0);
+    resources.arguments->setTexture(resources.target->gpuResourceID(), 0);
+    const frame::Extent size = resources.size;
     encoder->setComputePipelineState(pipeline_.get());
 
     // Rows of the execution width, as many rows as the threadgroup allows:

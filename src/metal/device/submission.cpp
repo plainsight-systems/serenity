@@ -70,14 +70,18 @@ Submission::~Submission() {
     }
 }
 
-void Submission::settle(std::uint64_t sequence) {
+std::optional<Completed> Submission::settle(std::uint64_t sequence) {
+    Slot& slot = slots_[sequence % frames_in_flight];
+    if (slot.settled >= sequence + 1) {
+        return std::nullopt;
+    }
     if (!completed_->waitUntilSignaledValue(sequence + 1, timeout_ms)) {
         throw Error("submission " + std::to_string(sequence) + " did not complete within " +
                     std::to_string(timeout_ms) + " ms: the GPU has stopped");
     }
     // The event says the GPU is done; the feedback, which carries any error,
     // comes separately and usually just after. Wait for it, bounded.
-    const Feedback& feedback = *slots_[sequence % frames_in_flight].feedback;
+    const Feedback& feedback = *slot.feedback;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     while (feedback.arrived.load(std::memory_order_acquire) < sequence + 1) {
         if (std::chrono::steady_clock::now() > deadline) {
@@ -89,6 +93,8 @@ void Submission::settle(std::uint64_t sequence) {
     if (feedback.failed.load(std::memory_order_acquire)) {
         throw Error(feedback.failure);
     }
+    slot.settled = sequence + 1;
+    return Completed{sequence, frame::Seconds(feedback.gpu_start), frame::Seconds(feedback.gpu_end)};
 }
 
 FrameSlot Submission::begin() {
@@ -104,15 +110,16 @@ FrameSlot Submission::begin() {
 
     // The slot is free once the submission that last used it has completed
     // and reported (submission.h).
+    std::optional<Completed> settled;
     if (sequence >= frames_in_flight) {
-        settle(sequence - frames_in_flight);
+        settled = settle(sequence - frames_in_flight);
     }
 
     slot.allocator->reset();
     slot.commands->beginCommandBuffer(slot.allocator.get());
     open_ = true;
     ++next_;
-    return FrameSlot{slot.commands.get(), index, sequence};
+    return FrameSlot{slot.commands.get(), index, sequence, settled};
 }
 
 void Submission::end_and_commit(const MTL::Drawable* drawable) {
@@ -138,6 +145,10 @@ void Submission::end_and_commit(const MTL::Drawable* drawable) {
                              describe(feedback->error());
             state->failed.store(true, std::memory_order_release);
         }
+        if (feedback != nullptr) {
+            state->gpu_start = feedback->GPUStartTime();
+            state->gpu_end = feedback->GPUEndTime();
+        }
         state->arrived.store(sequence + 1, std::memory_order_release);
     });
 
@@ -162,26 +173,30 @@ void Submission::present(CA::MetalDrawable* drawable) {
     drawable->present();
 }
 
-void Submission::wait_until_complete(std::uint64_t sequence) {
+std::optional<Completed> Submission::wait_until_complete(std::uint64_t sequence) {
     if (sequence >= next_ || (open_ && sequence == next_ - 1)) {
         throw Error("wait_until_complete(" + std::to_string(sequence) + ") for a submission not committed");
     }
     if (sequence + frames_in_flight < next_) {
         throw Error("wait_until_complete(" + std::to_string(sequence) + "): its slot has been reused");
     }
-    settle(sequence);
+    return settle(sequence);
 }
 
-void Submission::finish() {
+std::vector<Completed> Submission::finish() {
     if (open_) {
         throw Error("finish() while submission " + std::to_string(next_ - 1) + " is still open");
     }
     finished_ = true;
     // Every submission before these was settled when its slot was reused.
+    std::vector<Completed> settled;
     for (std::uint64_t sequence = next_ > frames_in_flight ? next_ - frames_in_flight : 0; sequence < next_;
          ++sequence) {
-        settle(sequence);
+        if (std::optional<Completed> completed = settle(sequence)) {
+            settled.push_back(*completed);
+        }
     }
+    return settled;
 }
 
 void Submission::make_resident(MTL::Allocation* allocation) {

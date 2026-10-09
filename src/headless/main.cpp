@@ -1,6 +1,7 @@
-// serenity-headless: renders a scene's frames to PNG files
-// (headless/options.h). Each frame's time is computed from its index, never
-// measured, so the same command writes the same files (principle 1).
+// serenity-headless: renders a frame graph's frames, over a scene if one is
+// given, to PNG files (headless/options.h). Each frame's time is computed
+// from its index, never measured, and its camera is the scene's, so the same
+// command writes the same files (principle 1).
 //
 // Frames are rendered one at a time: each is committed, waited for, read back
 // and written before the next begins. Readback is the point of this program,
@@ -9,11 +10,13 @@
 
 #include <cstdio>
 #include <exception>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "core/output/png.h"
 #include "core/frame/graph_file.h"
+#include "core/scene/scene.h"
 #include "headless/options.h"
 #include "metal/device/device.h"
 #include "metal/device/offscreen.h"
@@ -25,11 +28,15 @@ int main(int argc, char** argv) {
     try {
         const headless::Options options = headless::parse({argv + 1, static_cast<std::size_t>(argc - 1)});
         const frame::Schedule schedule = frame::load_schedule(options.graph);
+        std::optional<scene::SceneDescription> scene;
+        if (!options.scene.empty()) {
+            scene = scene::load(options.scene);
+        }
 
         metal::Device device;
         metal::Submission submission(device);
         metal::Offscreen target(device, submission, options.size);
-        metal::Renderer renderer(device, submission, schedule);
+        metal::Renderer renderer(device, submission, schedule, scene ? &*scene : nullptr);
 
         std::filesystem::create_directories(options.out);
         std::vector<std::uint8_t> rgba(std::size_t{options.size.width} * options.size.height * 4);
@@ -38,9 +45,12 @@ int main(int argc, char** argv) {
         // successor (headless/options.h).
         for (std::uint64_t n = 0; n < options.frames; ++n) {
             const std::uint64_t index = options.first + n;
-            const frame::FrameInputs inputs{options.step * static_cast<double>(index), index};
+            frame::FrameInputs inputs{options.step * static_cast<double>(index), index, std::nullopt};
+            if (scene) {
+                inputs.camera = scene->camera;
+            }
             const std::uint64_t sequence = metal::render_to_offscreen(submission, target, renderer, inputs);
-            submission.wait_until_complete(sequence);
+            (void)submission.wait_until_complete(sequence);
             target.read_rgba(rgba);
 
             char name[32];
@@ -49,7 +59,7 @@ int main(int argc, char** argv) {
             output::write_png(path, options.size, rgba);
             std::printf("%s\n", path.c_str());
         }
-        submission.finish();
+        (void)submission.finish();
         return 0;
     } catch (const std::exception& error) {
         std::fprintf(stderr, "serenity-headless: %s\n", error.what());

@@ -84,6 +84,12 @@ frame::Extent Window::size_in_pixels() const {
     return frame::Extent{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)};
 }
 
+void Window::set_title(const std::string& title) {
+    if (!SDL_SetWindowTitle(window_.get(), title.c_str())) {
+        fail("SDL_SetWindowTitle");
+    }
+}
+
 void* Window::metal_layer() const {
     return SDL_Metal_GetLayer(view_->view);
 }

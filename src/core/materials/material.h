@@ -17,8 +17,10 @@ namespace serenity {
 namespace materials {
 
 enum class MaterialKind : uint32_t {
-    rough = 0,       // takes light: lit, once there is light
+    rough = 0,       // takes light, and scatters it every way
     dielectric = 1,  // glass: passed through, reflecting and refracting
+    conductor = 2,   // metal: reflects, sharply or softly by its roughness
+    emissive = 3,    // gives light: a sphere that wears it is a light
 };
 
 struct MaterialRecord {

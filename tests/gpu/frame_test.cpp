@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <memory>
 #include <numbers>
+#include <optional>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -32,11 +33,11 @@ struct Rig {
     metal::Device device;
     metal::Submission submission{device};
     metal::Offscreen target{device, submission, size};
-    metal::Renderer renderer{device, submission, test_pattern_schedule()};
+    metal::Renderer renderer{device, submission, test_pattern_schedule(), nullptr};
 
     std::vector<std::uint8_t> render(double seconds, std::uint64_t index) {
         const auto sequence =
-            metal::render_to_offscreen(submission, target, renderer, frame::FrameInputs{frame::Seconds(seconds), index});
+            metal::render_to_offscreen(submission, target, renderer, frame::FrameInputs{frame::Seconds(seconds), index, std::nullopt});
         submission.wait_until_complete(sequence);
         std::vector<std::uint8_t> rgba(std::size_t{size.width} * size.height * 4);
         target.read_rgba(rgba);
@@ -90,7 +91,7 @@ TEST_CASE("frames in flight: each submission reads its own frame's constants") {
     // would show a later frame's time.
     metal::Device device;
     metal::Submission submission(device);
-    metal::Renderer renderer(device, submission, test_pattern_schedule());
+    metal::Renderer renderer(device, submission, test_pattern_schedule(), nullptr);
     std::vector<std::unique_ptr<metal::Offscreen>> targets;
     for (int i = 0; i < 4; ++i) {
         targets.push_back(std::make_unique<metal::Offscreen>(device, submission, size));
@@ -99,7 +100,7 @@ TEST_CASE("frames in flight: each submission reads its own frame's constants") {
     std::uint64_t last = 0;
     for (std::uint64_t i = 0; i < 4; ++i) {
         last = metal::render_to_offscreen(submission, *targets[i], renderer,
-                                          frame::FrameInputs{frame::Seconds(times[i]), i});
+                                          frame::FrameInputs{frame::Seconds(times[i]), i, std::nullopt});
     }
     submission.wait_until_complete(last);  // in order, so every earlier one is done too
     std::vector<std::uint8_t> rgba(std::size_t{size.width} * size.height * 4);
@@ -114,7 +115,7 @@ TEST_CASE("finish() settles every frame, and nothing begins after it") {
     Rig rig;
     for (std::uint64_t i = 0; i < 3; ++i) {
         (void)metal::render_to_offscreen(rig.submission, rig.target, rig.renderer,
-                                         frame::FrameInputs{frame::Seconds(0.0), i});
+                                         frame::FrameInputs{frame::Seconds(0.0), i, std::nullopt});
     }
     rig.submission.finish();
     CHECK_THROWS_AS((void)rig.submission.begin(), metal::Error);
@@ -135,5 +136,32 @@ TEST_CASE("the submission protocol refuses misuse") {
 TEST_CASE("an empty schedule is refused") {
     metal::Device device;
     metal::Submission submission(device);
-    CHECK_THROWS_AS(metal::Renderer(device, submission, frame::Schedule{}), metal::Error);
+    CHECK_THROWS_AS(metal::Renderer(device, submission, frame::Schedule{}, nullptr), metal::Error);
+}
+
+TEST_CASE("each submission is settled once, by whichever call comes first") {
+    metal::Device device;
+    metal::Submission submission(device);
+    std::optional<metal::Completed> settled_by_begin;
+    for (int i = 0; i < 3; ++i) {
+        const metal::FrameSlot frame = submission.begin();
+        if (i < 2) {
+            CHECK_FALSE(frame.settled.has_value());  // its slot had not been used
+        } else {
+            settled_by_begin = frame.settled;  // submission 0 had used it
+        }
+        submission.commit();
+    }
+    REQUIRE(settled_by_begin.has_value());
+    CHECK(settled_by_begin->sequence == 0);
+
+    const auto waited = submission.wait_until_complete(2);
+    REQUIRE(waited.has_value());
+    CHECK(waited->sequence == 2);
+    CHECK(waited->gpu_end >= waited->gpu_start);
+    CHECK_FALSE(submission.wait_until_complete(2).has_value());  // already settled
+
+    const std::vector<metal::Completed> rest = submission.finish();
+    REQUIRE(rest.size() == 1);
+    CHECK(rest[0].sequence == 1);
 }

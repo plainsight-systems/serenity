@@ -6,7 +6,7 @@ namespace serenity::frame {
 
 namespace {
 
-constexpr std::array<PassKind, 1> kinds = {PassKind::test_pattern};
+constexpr std::array<PassKind, 2> kinds = {PassKind::test_pattern, PassKind::preview};
 
 }  // namespace
 
@@ -15,8 +15,21 @@ std::string_view name(PassKind kind) {
     switch (kind) {
     case PassKind::test_pattern:
         return "test_pattern";
+    case PassKind::preview:
+        return "preview";
     }
     return {};  // unreachable for a valid PassKind
+}
+
+bool needs_scene(PassKind kind) {
+    // No default, as for name().
+    switch (kind) {
+    case PassKind::test_pattern:
+        return false;
+    case PassKind::preview:
+        return true;
+    }
+    return true;  // unreachable for a valid PassKind
 }
 
 std::optional<PassKind> pass_kind(std::string_view text) {

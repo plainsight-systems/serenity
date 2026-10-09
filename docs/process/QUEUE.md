@@ -8,8 +8,13 @@ This file tracks active and accepted work.
   frame graph file names the passes, the Metal 4 backend records it with two
   frames in flight, and the test pattern reaches an SDL3 window at the
   display's resolution, or PNG files from the headless renderer. Step (b),
-  next: one sphere ray traced in hardware, and the first frame time at the
-  display's resolution.
+  done: the first scene, read from a file, ray traced in hardware: a soft
+  brass sphere on a checkerboard at night, lit by two fireflies, through the
+  preview pass (direct light with soft shadows, sky light, GGX metal, glass
+  without caustics, 4x anti-aliasing), with each frame's GPU time in the
+  window's title. 78 ms at the display's 3456 x 2234 on the M3 Max, 20 ms at
+  half that each way: rendering below the display and upscaling with MetalFX
+  is what brings it to 60 frames a second.
 
 ## Accepted
 

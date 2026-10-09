@@ -77,7 +77,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(SDL3)
 
-# toml++: reading frame graph files (src/core/frame/graph_file.cpp only). v3.4.0.
+# toml++: reading frame graph and scene files (src/core/frame/graph_file.cpp and
+# src/core/scene/scene.cpp only). v3.4.0.
 FetchContent_Declare(
     tomlplusplus
     GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
@@ -104,9 +105,13 @@ target_include_directories(stb_image_write SYSTEM INTERFACE "${stb_SOURCE_DIR}")
 # tools/check_boundaries.sh enforces it (make check).
 # ---------------------------------------------------------------------------
 add_library(serenity_core STATIC
+    src/core/camera/pinhole.cpp
     src/core/frame/graph_file.cpp
     src/core/frame/schedule.cpp
+    src/core/measurement/frame_times.cpp
     src/core/output/png.cpp
+    src/core/scene/scene.cpp
+    src/core/shapes/shapes.cpp
 )
 target_include_directories(serenity_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(serenity_core PRIVATE tomlplusplus::tomlplusplus stb_image_write)
@@ -122,8 +127,12 @@ add_library(serenity_metal STATIC
     src/metal/device/library.cpp
     src/metal/device/offscreen.cpp
     src/metal/device/presenter.cpp
+    src/metal/device/static_arrays.cpp
     src/metal/device/submission.cpp
+    src/metal/acceleration/primitives.cpp
+    src/metal/scene/scene_buffers.cpp
     src/metal/frame/renderer.cpp
+    src/metal/passes/preview/preview.cpp
     src/metal/passes/test_pattern/test_pattern.cpp
 )
 target_link_libraries(serenity_metal PUBLIC serenity_core metal_cpp)
@@ -131,6 +140,7 @@ target_compile_options(serenity_metal PRIVATE ${SERENITY_WARNINGS})
 serenity_add_metallib(
     TARGET serenity_metal NAME shaders
     SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/test_pattern/test_pattern.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/preview/preview.metal"
     INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 # ---------------------------------------------------------------------------

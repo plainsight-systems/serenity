@@ -11,8 +11,8 @@ namespace serenity::headless {
 namespace {
 
 constexpr const char* usage =
-    "usage: serenity-headless --graph FILE --out DIRECTORY [--frames N] [--first I] [--step SECONDS] "
-    "[--size WIDTHxHEIGHT]";
+    "usage: serenity-headless --graph FILE [--scene FILE] --out DIRECTORY [--frames N] [--first I] "
+    "[--step SECONDS] [--size WIDTHxHEIGHT]";
 
 std::uint64_t whole_number(std::string_view option, const char* text) {
     // strtoull accepts a sign and leading space; neither is a frame count.
@@ -52,6 +52,8 @@ Options parse(std::span<const char* const> args) {
 
         if (option == "--graph") {
             options.graph = value();
+        } else if (option == "--scene") {
+            options.scene = value();
         } else if (option == "--out") {
             options.out = value();
         } else if (option == "--frames") {

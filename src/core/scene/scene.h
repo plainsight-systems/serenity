@@ -8,7 +8,10 @@
 
 #include "core/contracts/camera.h"
 #include "core/lights/gradient_sky.h"
+#include "core/lights/sphere_light.h"
+#include "core/materials/conductor.h"
 #include "core/materials/dielectric.h"
+#include "core/materials/emissive.h"
 #include "core/materials/material.h"
 #include "core/materials/rough.h"
 #include "core/shapes/shapes.h"
@@ -20,7 +23,8 @@ namespace serenity::scene {
 // Axis: Scene content (reading it).
 //
 // What is rendered, as data: the camera, the environment, the textures,
-// the materials, and the shapes that wear them. Read from a scene file in
+// the materials, the shapes that wear them, and the lights, which are the
+// spheres that wear an emissive material. Read from a scene file in
 // scenes/, kept apart from frame graph files (core/frame/graph_file.h), so
 // one scene runs under any graph.
 //
@@ -57,6 +61,15 @@ namespace serenity::scene {
 //   kind = "rough"
 //   texture = "floor_checks"        # or: color = [r, g, b]
 //
+//   [materials.brass]
+//   kind = "conductor"
+//   f0 = [0.91, 0.78, 0.42]         # reflectance at normal incidence
+//   roughness = 0.35                # in (0, 1]
+//
+//   [materials.glow]
+//   kind = "emissive"
+//   radiance = [40, 36, 12]         # linear RGB, may exceed 1
+//
 //   [[shapes]]
 //   kind = "sphere"
 //   center = [0, 0.8, 0]
@@ -71,10 +84,12 @@ namespace serenity::scene {
 //
 // Every key is checked, as in graph files: a missing or unknown key, a
 // value of the wrong type or out of range (a radius or size not greater
-// than 0, an ior not greater than 1, a box whose min is not below its max, a
-// camera that cannot be framed), an unknown kind, a name used and never
-// defined, or no shapes at all is an Error naming the file and the line
-// (E.2, E.14). Nothing has a silent default except `up`.
+// than 0, an ior not greater than 1, an f0 outside [0, 1], a roughness
+// outside (0, 1], a negative radiance, a box whose min is not below its max,
+// a camera that cannot be framed), an unknown kind, a name used and never
+// defined, an emissive material on anything but a sphere, or no shapes at
+// all is an Error naming the file and the line (E.2, E.14). Nothing has a
+// silent default except `up`.
 //
 // Not performance-sensitive: read once, at start-up.
 
@@ -96,10 +111,16 @@ struct SceneDescription {
     std::vector<materials::MaterialRecord> materials;
     std::vector<materials::RoughData> rough;
     std::vector<materials::DielectricData> dielectrics;
+    std::vector<materials::ConductorData> conductors;
+    std::vector<materials::EmissiveData> emissives;
 
     // In file order: the acceleration structure's primitive i is
     // shapes.records[i].
     shapes::Shapes shapes;
+
+    // One per sphere that wears an emissive material, in shape order.
+    std::vector<lights::SphereLightData> sphere_lights;
+    lights::LightCounts light_counts{};
 };
 
 // Reads the scene file at `path`.

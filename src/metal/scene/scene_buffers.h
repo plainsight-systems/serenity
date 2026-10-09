@@ -21,9 +21,9 @@ namespace serenity::metal {
 //
 // The layouts are the core's shared ones, so the bytes are copied as they
 // are: nothing is converted, and the shaders read exactly what the scene
-// reader wrote. An array with no elements has address 0: a shader indexes
-// it only through a record that names its kind, and no record names a kind
-// the scene has none of.
+// reader wrote. An array with no elements has the address of a zeroed
+// block (static_arrays.h): a shader indexes it only through a record that
+// names its kind, and no record names a kind the scene has none of.
 //
 // Static: written once, at construction. Moving fireflies, later, rewrite
 // their own ring of data each frame (logical-overview.md, Animate); that is
@@ -48,9 +48,13 @@ public:
         MTL::GPUAddress materials = 0;
         MTL::GPUAddress rough = 0;
         MTL::GPUAddress dielectrics = 0;
+        MTL::GPUAddress conductors = 0;
+        MTL::GPUAddress emissives = 0;
         MTL::GPUAddress shapes = 0;
         MTL::GPUAddress spheres = 0;
         MTL::GPUAddress boxes = 0;
+        MTL::GPUAddress sphere_lights = 0;
+        MTL::GPUAddress light_counts = 0;
     };
     const Addresses& addresses() const { return addresses_; }
 
