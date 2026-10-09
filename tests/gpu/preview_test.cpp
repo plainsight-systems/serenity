@@ -107,16 +107,20 @@ void check_near(std::array<int, 3> actual, std::array<int, 3> expected, int tole
 
 // What a pixel that sees the floor's top (y = 0) shows, lit by `light`
 // alone, unhidden, under a black sky: the mean over the pixel's positions of
-// albedo L sin^2 cos (lights/sphere_light.h).
+// albedo L sin^2 cos (lights/sphere_light.h). The light is where its shape's
+// transform places the unit sphere: center its translation, radius its
+// scale.
 Vec lit_floor(const contracts::CameraData& framed, frame::Extent size, std::uint32_t x, std::uint32_t y,
-              const lights::SphereLightData& light, Vec albedo) {
+              const lights::SphereLightData& light, const contracts::Transform& placed, Vec albedo) {
+    const Vec center = vec(contracts::translation(placed));
+    const double radius = placed.m[0][0];
     Vec sum{0, 0, 0};
     for (const auto& p : positions) {
         const Vec d = ray_direction(framed, x + p[0], y + p[1], size);
         const Vec hit = vec(framed.origin) + (-framed.origin.y / d.y) * d;
-        const Vec to_light = vec(light.center) - hit;
+        const Vec to_light = center - hit;
         const double distance2 = dot(to_light, to_light);
-        const double sin2 = light.radius * light.radius / distance2;
+        const double sin2 = radius * radius / distance2;
         const double cos_t = to_light.y / std::sqrt(distance2);
         const double e = light.radiance.x * sin2 * cos_t;
         sum = sum + Vec{albedo.x * e, albedo.y * e, albedo.z * e};
@@ -186,10 +190,11 @@ TEST_CASE("a rough surface under an unhidden light: albedo times L sin^2 cos") {
     const scene::SceneDescription scene = scene::parse(text, "test scene");
     const contracts::CameraData framed = camera::shader_form(scene.camera, size);
     const lights::SphereLightData light = scene.sphere_lights.at(0);
+    const contracts::Transform& placed = scene.shapes.transforms.at(light.shape);
 
     for (auto [x, y] : {std::pair{32u, 30u}, {10u, 40u}, {50u, 26u}}) {
         INFO("pixel " << x << ", " << y);
-        check_near(image.at(x, y), displayed(lit_floor(framed, size, x, y, light, {0.8, 0.6, 0.4})), 1);
+        check_near(image.at(x, y), displayed(lit_floor(framed, size, x, y, light, placed, {0.8, 0.6, 0.4})), 1);
     }
 }
 
@@ -226,7 +231,10 @@ TEST_CASE("a point that a sphere hides wholly from the light is in shadow") {
     const auto [sx, sy] = pixel_of({0.0, 0.0, 0.25});
     check_near(image.at(sx, sy), {0, 0, 0}, 0);
     const auto [lx, ly] = pixel_of({1.5, 0.0, 0.0});
-    check_near(image.at(lx, ly), displayed(lit_floor(framed, size, lx, ly, scene.sphere_lights.at(0), {0.8, 0.8, 0.8})),
+    const lights::SphereLightData& light = scene.sphere_lights.at(0);
+    check_near(image.at(lx, ly),
+               displayed(lit_floor(framed, size, lx, ly, light, scene.shapes.transforms.at(light.shape),
+                                   {0.8, 0.8, 0.8})),
                1);
 }
 

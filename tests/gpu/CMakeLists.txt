@@ -11,6 +11,7 @@ add_executable(serenity_gpu_tests
     bsdf_test.cpp
     path_test.cpp
     film_test.cpp
+    motion_test.cpp
     ../main_test.cpp
 )
 target_link_libraries(serenity_gpu_tests PRIVATE serenity_metal doctest::doctest)
@@ -23,6 +24,7 @@ serenity_add_metallib(
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/light_cone.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/bsdf_probe.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/film_probe.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/kernels/trace_probe.metal"
     INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/src")
 
 add_test(NAME serenity_gpu_tests COMMAND serenity_gpu_tests)

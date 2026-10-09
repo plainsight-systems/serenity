@@ -26,9 +26,9 @@ static_assert(constants_offset + sizeof(contracts::FrameConstants) <= camera_off
 static_assert(camera_offset + sizeof(contracts::CameraData) <= slot_stride);
 
 // Every pass binds at most this many buffers and textures through the table:
-// the preview binds the constants, the camera, the structure and the scene's
-// fourteen arrays (preview.metal), seventeen in all; the path pass a few
-// more for its image's counter.
+// the preview binds the constants, the camera, the structure, the scene's
+// thirteen still arrays and the frame's transforms (preview.metal), seventeen
+// in all; the path pass a few more for its image's counter.
 constexpr NS::UInteger max_buffers = 24;
 constexpr NS::UInteger max_textures = 4;
 
@@ -107,10 +107,21 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         non_finite_ = std::make_unique<NonFinite>(device, submission);
     }
 
-    // Only a graph that reads the scene has it put on the GPU.
+    // Only a graph that reads the scene has it put on the GPU, and only its
+    // frames place what moves.
     if (needs_scene_) {
         scene_ = std::make_unique<SceneBuffers>(device, submission, *scene);
-        acceleration_ = std::make_unique<PrimitiveAcceleration>(device, submission, shapes::bounds(scene->shapes));
+        animation_ = scene->animation;
+        const bool moves = animation::moves(animation_);
+        transforms_ = std::make_unique<ShapeTransforms>(device, submission, scene->shapes.transforms, moves);
+        // Where the families meet: the acceleration structure learns which
+        // shapes move, by the movers' targets, and nothing else of them.
+        std::vector<std::uint32_t> moving;
+        moving.reserve(animation_.movers.size());
+        for (const animation::Mover& mover : animation_.movers) {
+            moving.push_back(mover.target);
+        }
+        acceleration_ = std::make_unique<SceneAcceleration>(device, submission, scene->shapes, moving);
     }
 }
 
@@ -120,7 +131,7 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
         return;
     }
     prepared_.reset();
-    const std::uint32_t held = accumulation_->prepare(inputs, size);
+    const std::uint32_t held = accumulation_->prepare(inputs, size, animation::moves(animation_));
     prepared_ = Prepared{inputs.index, size, held};
 }
 
@@ -172,7 +183,8 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
     }
     if (scene_) {
         resources.scene = &scene_->addresses();
-        resources.acceleration = acceleration_.get();
+        resources.transforms = transforms_->address(frame.slot);
+        resources.acceleration = acceleration_->resource(frame.slot);
     }
     if (accumulation_) {
         resources.accumulation = accumulation_->texture();
@@ -182,6 +194,14 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
     }
 
     MTL4::ComputeCommandEncoder* encoder = frame.commands->computeCommandEncoder();
+    // Animate: every moving shape placed at the frame's time, by the core,
+    // in the slot's transforms, and the slot's structure rebuilt over them, before
+    // any pass traces it.
+    if (scene_ && animation::moves(animation_)) {
+        const std::span<contracts::Transform> placed = transforms_->transforms(frame.slot);
+        animation::animate(animation_, inputs.time, placed);
+        acceleration_->update(encoder, frame.slot, placed);
+    }
     encoder->setArgumentTable(resources.arguments);
     for (const Pass& pass : passes_) {
         std::visit([&](const auto& p) { p.record(encoder, resources); }, pass);

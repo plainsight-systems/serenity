@@ -18,7 +18,8 @@
 // finish() come after the last title and are not shown.
 //
 // A graph that converges accumulates from the first frame and starts over
-// whenever the window's size changes, or when the image would hold more
+// whenever the window's size changes; every frame, while the scene's shapes
+// move, since its time always advances; or when the image would hold more
 // frames than it can (frame::max_accumulated_frames). Samples the pass left
 // out for not being finite, a bug, are shown in the title.
 //
@@ -34,6 +35,7 @@
 #include "app/clock.h"
 #include "app/options.h"
 #include "app/window.h"
+#include "core/animation/animate.h"
 #include "core/frame/graph_file.h"
 #include "core/measurement/frame_times.h"
 #include "core/scene/scene.h"
@@ -81,6 +83,9 @@ int main(int argc, char** argv) {
         measurement::FrameTimes frame_times(frame::Seconds(1.0));
         std::uint64_t index = 0;
         std::uint64_t accumulated_since = 0;
+        // Its time always advances, so while shapes move each frame starts
+        // the image over (core/frame/frame_inputs.h).
+        const bool moves = scene && animation::moves(scene->animation);
         for (;;) {
             const app::Window::Events events = window.poll();
             if (events.quit) {
@@ -89,6 +94,9 @@ int main(int argc, char** argv) {
             if (events.resized) {
                 presenter.resize(app::render_size(window.size_in_pixels(), options.scale));
                 accumulated_since = index;  // what the window shows changed
+            }
+            if (moves) {
+                accumulated_since = index;  // the scene at this frame's time is not the last frame's
             }
             if (index - accumulated_since > frame::max_accumulated_frames) {
                 accumulated_since = index;  // the image holds no more

@@ -46,13 +46,15 @@ headless:
 	./build/native-release/serenity-headless --graph $(GRAPH) $(SCENE_ARG) --out $(OUT) --frames $(FRAMES)
 
 ## A movie of GRAPH over SCENE, for sharing: SECONDS seconds at FPS frames a
-## second, SIZE pixels, rendered headless as PNGs (the lossless frames, which
+## second, SIZE pixels, each frame SAMPLES renders of its instant
+## (headless/options.h), rendered headless as PNGs (the lossless frames, which
 ## are what is measured) and encoded with ffmpeg as H.264 into media/, named
 ## by date, scene and graph. ffmpeg is a tool for sharing, outside the build
 ## and not pinned: brew install ffmpeg.
 SECONDS ?= 10
 FPS ?= 60
 SIZE ?= 1920x1080
+SAMPLES ?= 64
 MOVIE_FRAMES := build/movie-frames
 MOVIE ?= media/$(shell date +%Y-%m-%d)-$(basename $(notdir $(or $(SCENE),none)))-$(basename $(notdir $(GRAPH))).mp4
 movie:
@@ -61,7 +63,8 @@ movie:
 	cmake --build --preset native-release --target serenity-headless
 	rm -rf $(MOVIE_FRAMES) && mkdir -p media
 	./build/native-release/serenity-headless --graph $(GRAPH) $(SCENE_ARG) --out $(MOVIE_FRAMES) \
-		--frames $$(( $(SECONDS) * $(FPS) )) --step $$(awk 'BEGIN { print 1 / $(FPS) }') --size $(SIZE) >/dev/null
+		--frames $$(( $(SECONDS) * $(FPS) )) --step $$(awk 'BEGIN { print 1 / $(FPS) }') --size $(SIZE) \
+		--samples $(SAMPLES) >/dev/null
 	ffmpeg -hide_banner -loglevel error -y -framerate $(FPS) -i $(MOVIE_FRAMES)/frame-%06d.png \
 		-vf "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p" \
 		-colorspace bt709 -color_primaries bt709 -color_trc bt709 \

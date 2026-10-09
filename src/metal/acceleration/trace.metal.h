@@ -3,20 +3,18 @@
 // Axis: Acceleration (shader half of acceleration/scene_acceleration.h).
 //
 // The nearest shape a ray reaches, and whether any shape blocks a shadow
-// ray. Metal's hardware walks the two-level structure of bounding boxes and
+// ray. Metal's hardware walks the structure of bounding boxes and
 // hands back each box the ray enters as a candidate; the shape's own exact
 // test (shapes/shapes.metal.h) decides whether, and where, the ray hits
 // what is inside, and a hit nearer than the nearest so far is committed.
 // Kind-blind: it names no shape kind.
 //
-// The structure is two levels (scene_acceleration.h): a candidate is a box
-// of some geometry, reached through an instance, whose user ID is its shape
-// (shapes/primitive.h). The exact test takes the ray the query hands over
-// for that candidate, in the instance's object space
-// (get_candidate_ray_origin and _direction), and the t it finds is the
-// world's (contracts/transform.h), so it is committed and compared as it is.
-// What a hit reports is the shape and t; where on it, in the world, is
-// surface_interaction()'s (shapes/shapes.metal.h).
+// One level (scene_acceleration.h): a candidate is shape i's box, its
+// primitive index i. The exact test carries the world's ray into the
+// shape's object space itself (shapes/shapes.metal.h), and the t it finds is
+// the world's (contracts/transform.h), so it is committed and compared as it
+// is. What a hit reports is the shape and t; where on it, in the world, is
+// surface_interaction()'s.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -28,8 +26,8 @@ namespace shaders {
 
 struct Hit {
     bool found;
-    float t;         // distance along the ray
-    uint primitive;  // the shape, as primitive i is shape i
+    float t;         // the ray's parameter: its distance, the direction being unit
+    uint primitive;  // the shape, as primitive i is shape i (shapes/primitive.h)
 };
 
 // `direction` is unit length; hits are in (t_min, t_max).
@@ -47,9 +45,9 @@ inline Hit trace(metal::raytracing::primitive_acceleration_structure structure, 
         if (query.get_candidate_intersection_type() != intersection_type::bounding_box) {
             continue;
         }
-        const uint primitive = query.get_candidate_primitive_id();
+        const uint shape = query.get_candidate_primitive_id();
         float t = 0.0f;
-        if (intersect_shape(shapes, primitive, origin, direction, t_min, nearest, t)) {
+        if (intersect_shape(shapes, shape, origin, direction, t_min, nearest, t)) {
             query.commit_bounding_box_intersection(t);
             nearest = t;
         }
@@ -62,9 +60,9 @@ inline Hit trace(metal::raytracing::primitive_acceleration_structure structure, 
     return hit;
 }
 
-// Whether anything but primitive `ignore` lies along the ray within
-// (t_min, t_max): a shadow ray's question. It stops at the first such shape,
-// whichever it is, rather than searching for the nearest.
+// Whether any shape but `ignore` lies along the ray within (t_min, t_max): a
+// shadow ray's question. It stops at the first such shape, whichever it is,
+// rather than searching for the nearest.
 inline bool occluded(metal::raytracing::primitive_acceleration_structure structure, Shapes shapes, float3 origin,
                      float3 direction, float t_min, float t_max, uint ignore) {
     using namespace metal::raytracing;
@@ -78,9 +76,9 @@ inline bool occluded(metal::raytracing::primitive_acceleration_structure structu
         if (query.get_candidate_intersection_type() != intersection_type::bounding_box) {
             continue;
         }
-        const uint primitive = query.get_candidate_primitive_id();
+        const uint shape = query.get_candidate_primitive_id();
         float t = 0.0f;
-        if (primitive != ignore && intersect_shape(shapes, primitive, origin, direction, t_min, t_max, t)) {
+        if (shape != ignore && intersect_shape(shapes, shape, origin, direction, t_min, t_max, t)) {
             query.abort();
             return true;
         }

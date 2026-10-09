@@ -99,9 +99,26 @@ TEST_CASE("the example reads into one array per kind, names resolved to indices"
     REQUIRE(s.shapes.records.size() == 2);
     CHECK(s.shapes.records[0].kind == shapes::ShapeKind::sphere);
     CHECK(s.shapes.records[1].kind == shapes::ShapeKind::box);
-    CHECK(s.shapes.spheres[0].material == 1);
-    CHECK(s.shapes.boxes[0].material == 0);
-    CHECK(s.shapes.boxes[0].min.x == -6.0f);
+    CHECK(s.shapes.records[0].material == 1);
+    CHECK(s.shapes.records[1].material == 0);
+
+    // Each an instance of a geometry, placed by its transform: the sphere
+    // the unit sphere, scaled by its radius and moved to its center; the
+    // box a box about its origin, its half extent, moved to its middle.
+    REQUIRE(s.shapes.transforms.size() == 2);
+    CHECK(s.shapes.transforms[0].m[0][0] == doctest::Approx(0.8f));
+    CHECK(s.shapes.transforms[0].m[2][2] == doctest::Approx(0.8f));
+    CHECK(s.shapes.transforms[0].m[1][3] == doctest::Approx(0.8f));
+    CHECK(s.shapes.records[1].geometry == 0);
+    REQUIRE(s.shapes.boxes.size() == 1);
+    CHECK(s.shapes.boxes[0].half_extent.x == 6.0f);
+    CHECK(s.shapes.boxes[0].half_extent.y == doctest::Approx(0.05f));
+    CHECK(s.shapes.transforms[1].m[0][0] == 1.0f);
+    CHECK(s.shapes.transforms[1].m[0][3] == 0.0f);
+    CHECK(s.shapes.transforms[1].m[1][3] == doctest::Approx(-0.05f));
+
+    // Nothing moves.
+    CHECK_FALSE(animation::moves(s.animation));
 }
 
 TEST_CASE("up defaults to +y, and a rough material may have a color instead of a texture") {
@@ -172,9 +189,10 @@ material = "brass"
     for (std::size_t i = 1; i < s.shape_lights.size(); ++i) {
         CHECK(s.shape_lights[i] == lights::no_light);
     }
-    CHECK(s.sphere_lights[0].primitive == 0);
-    CHECK(s.sphere_lights[0].center.z == 3.0f);
-    CHECK(s.sphere_lights[0].radius == doctest::Approx(0.05f));
+    // The light is its shape: where it is and how big are the shape's.
+    CHECK(s.sphere_lights[0].shape == 0);
+    CHECK(s.shapes.transforms[0].m[2][3] == 3.0f);
+    CHECK(s.shapes.transforms[0].m[0][0] == doctest::Approx(0.05f));
     CHECK(s.sphere_lights[0].radiance.y == 36.0f);
 }
 
@@ -222,6 +240,80 @@ TEST_CASE("every mistake is refused, naming the file and the line") {
     const std::size_t floor = glowing_box.rfind("material = \"floor\"");
     glowing_box.replace(floor, std::string("material = \"floor\"").size(), "material = \"glow\"");
     CHECK(contains(error_of(glowing_box), "only a sphere may be emissive"));
+}
+
+namespace {
+
+// The example with a third sphere, which wanders, clear of the others.
+std::string moving(const std::string& center = "[3, 1.5, 0]", const std::string& motion =
+                       "{ kind = \"wander\", reach = 0.25, speed = 0.3, seed = 7 }",
+                   const std::string& radius = "0.05") {
+    return std::string(example) + "\n[[shapes]]\nkind = \"sphere\"\ncenter = " + center + "\nradius = " + radius +
+           "\nmaterial = \"glass\"\nmotion = " + motion + "\n";
+}
+
+}  // namespace
+
+TEST_CASE("a sphere's motion: a mover for its shape, its wander about its center") {
+    const scene::SceneDescription s = scene::parse(moving(), "s");
+    REQUIRE(s.shapes.records.size() == 3);
+    CHECK(animation::moves(s.animation));
+    REQUIRE(s.animation.movers.size() == 1);
+    CHECK(s.animation.movers[0].target == 2);
+    CHECK(s.animation.movers[0].motion.kind == animation::MotionKind::wander);
+    REQUIRE(s.animation.motions.wanders.size() == 1);
+    const animation::Wander& w = s.animation.motions.wanders[0];
+    CHECK(w.anchor.x == 3.0f);
+    CHECK(w.anchor.y == 1.5f);
+    CHECK(w.reach == 0.25f);
+    // The shape at rest is at the anchor.
+    CHECK(s.shapes.transforms[2].m[0][3] == 3.0f);
+}
+
+TEST_CASE("the wandering brass sphere scene reads, both fireflies moving") {
+    const scene::SceneDescription s = scene::load(SERENITY_SCENES_DIR "/brass_sphere_wander.toml");
+    REQUIRE(s.animation.movers.size() == 2);
+    CHECK(s.animation.movers[0].target == 2);
+    CHECK(s.animation.movers[1].target == 3);
+    CHECK(s.sphere_lights.size() == 2);
+}
+
+TEST_CASE("every mistake in a motion is refused, naming the file and the line") {
+    const auto motion = [](const std::string& m) { return error_of(moving("[3, 1.5, 0]", m)); };
+    CHECK(contains(motion("{ kind = \"orbit\", reach = 0.25, speed = 0.3, seed = 7 }"), "unknown motion kind 'orbit'"));
+    CHECK(contains(motion("{ kind = \"wander\", reach = 0, speed = 0.3, seed = 7 }"), "reach must be greater than 0"));
+    CHECK(contains(motion("{ kind = \"wander\", reach = 0.25, speed = -1, seed = 7 }"), "speed must be greater than 0"));
+    CHECK(contains(motion("{ kind = \"wander\", reach = 0.25, speed = 0.3, seed = -1 }"), "seed must be an integer, 0 or more"));
+    CHECK(contains(motion("{ kind = \"wander\", reach = 0.25, speed = 0.3, seed = 1.5 }"), "seed must be an integer, 0 or more"));
+    CHECK(contains(motion("{ kind = \"wander\", reach = 0.25, speed = 0.3 }"), "has no 'seed'"));
+    CHECK(contains(motion("{ kind = \"wander\", reach = 0.25, speed = 0.3, seed = 7, size = 1 }"),
+                   "unknown key 'size' in shape 3's motion"));
+    CHECK(contains(motion("\"wander\""), "shape 3's motion must be a table"));
+    // Only a sphere moves.
+    CHECK(contains(error_of(with("material = \"floor\"", "material = \"floor\"\nmotion = { kind = \"wander\" }")),
+                   "unknown key 'motion' in shape 2"));
+    // Wherever it wanders, grown by its radius, it may touch no still shape:
+    // the glass sphere (0.6 from its center, radius 0.8), or the floor.
+    const std::string near_glass = error_of(moving("[0.9, 0.8, 0]"));
+    CHECK(contains(near_glass, "s.toml:"));
+    CHECK(contains(near_glass, "shape 3's motion could carry it into shape 1, which does not move"));
+    CHECK(contains(error_of(moving("[3, 0.2, 0]")), "could carry it into shape 2, which does not move"));
+    // Just clear of the floor: 0.25 + 0.05 above its top, at 0.
+    CHECK_NOTHROW((void)scene::parse(moving("[3, 0.3001, 0]"), "s"));
+    // Out of float's range: the anchor and reach, and then with the radius.
+    CHECK(contains(error_of(moving("[3e38, 1.5, 0]", "{ kind = \"wander\", reach = 1e38, speed = 0.3, seed = 7 }")),
+                   "out of float's range"));
+    CHECK(contains(error_of(moving("[3e38, 1.5, 0]", "{ kind = \"wander\", reach = 0.4e38, speed = 0.3, seed = 7 }",
+                                   "1e36")),
+                   "could carry shape 3 out of float's range"));
+}
+
+TEST_CASE("moving shapes are not checked against each other") {
+    const std::string both = moving() + "\n[[shapes]]\nkind = \"sphere\"\ncenter = [3.1, 1.5, 0]\nradius = 0.05\n"
+                                        "material = \"glass\"\nmotion = { kind = \"wander\", reach = 0.25, speed = 0.3, "
+                                        "seed = 8 }\n";
+    const scene::SceneDescription s = scene::parse(both, "s");
+    CHECK(s.animation.movers.size() == 2);
 }
 
 TEST_CASE("a missing file is refused by name") {

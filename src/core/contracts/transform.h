@@ -7,11 +7,12 @@
 // coordinates (object space), in the world (shapes/primitive.h). Animation
 // writes it for a shape that moves (animation/animate.h), a sphere light
 // reads where it is and how big from it (lights/sphere_light.h), and the
-// acceleration structure places its instances by it, so the families meet
+// acceleration structure places each shape's box by it, so the families meet
 // here and depend on nothing of each other's. Shared with shaders, and the
 // same 3 x 4 row-major affine matrix Vulkan's instance descriptors take
 // (VkTransformMatrixKHR) and Metal's take when built with
-// MTLMatrixLayoutRowMajor, so the bytes are given to either as they are.
+// MTLMatrixLayoutRowMajor, so the bytes could be given to either as they are
+// when a shape is a mesh under an instance.
 // Row r is (m[r][0], m[r][1], m[r][2], m[r][3]): the linear part in the
 // first three columns, the translation in the fourth.
 //

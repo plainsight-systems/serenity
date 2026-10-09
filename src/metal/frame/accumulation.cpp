@@ -9,7 +9,7 @@ namespace serenity::metal {
 Accumulation::Accumulation(const Device& device, Submission& submission)
     : device_(NS::RetainPtr(device.handle())), submission_(submission) {}
 
-std::uint32_t Accumulation::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
+std::uint32_t Accumulation::prepare(const frame::FrameInputs& inputs, frame::Extent size, bool scene_moves) {
     if (inputs.accumulated_since > inputs.index) {
         throw Error("frame " + std::to_string(inputs.index) + " accumulates since frame " +
                     std::to_string(inputs.accumulated_since) + ", after itself");
@@ -50,6 +50,7 @@ std::uint32_t Accumulation::prepare(const frame::FrameInputs& inputs, frame::Ext
         }
         since_ = inputs.accumulated_since;
         next_ = inputs.index + 1;
+        time_ = inputs.time;
         return 0;
     }
 
@@ -61,6 +62,13 @@ std::uint32_t Accumulation::prepare(const frame::FrameInputs& inputs, frame::Ext
                                     " at " + std::to_string(size_.width) + " x " + std::to_string(size_.height) + ")"
                               : " (nothing yet)") +
                     "; a frame skipped, or a change without starting over");
+    }
+    // Samples of one instant: a moving scene's frames join only frames of
+    // their own time, exactly.
+    if (scene_moves && inputs.time != time_) {
+        throw Error("frame " + std::to_string(inputs.index) + ", at " + std::to_string(inputs.time.count()) +
+                    " s, would join frames at " + std::to_string(time_.count()) +
+                    " s; the scene moves, so an image holds one instant (start over at each new time)");
     }
     next_ = inputs.index + 1;
     return static_cast<std::uint32_t>(held);

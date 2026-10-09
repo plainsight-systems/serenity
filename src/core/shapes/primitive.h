@@ -12,13 +12,12 @@
 // (contract 10, contracts/transform.h). Every sphere in a scene, every marble
 // and every firefly, is the one unit sphere (sphere.h), placed at its center
 // and scaled by its radius; each box is its own geometry, a box about its
-// origin (box.h). So the acceleration structures hold each geometry once,
-// built once, and the shapes as instances of them
-// (metal/acceleration/scene_acceleration.h): a shape that moves changes its
-// transform and nothing else.
+// origin (box.h). A shape that moves changes its transform and nothing
+// else. The acceleration structure holds each shape as its geometry's
+// bounds placed by its transform (metal/acceleration/scene_acceleration.h).
 //
-// Shape i of the scene is ShapeRecord i and Transform i, and instance i of
-// the acceleration structure, whose user ID is i. Its kind says which
+// Shape i of the scene is ShapeRecord i and Transform i, and primitive i of
+// the acceleration structure. Its kind says which
 // kind's geometry `geometry` indexes; a kind and an index rather than a union
 // (Enum.2, C.181). A new kind adds a value here, its geometry's data and
 // object-space bounds, and its object-space test; it changes no other kind,

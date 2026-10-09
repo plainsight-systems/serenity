@@ -39,8 +39,8 @@ kernel void preview(constant serenity::contracts::FrameConstants& frame [[buffer
                     device const serenity::materials::RoughData* rough [[buffer(7)]],
                     device const serenity::materials::DielectricData* dielectrics [[buffer(8)]],
                     device const serenity::materials::ConductorData* conductors [[buffer(9)]],
-                    device const serenity::shapes::PrimitiveRecord* shape_records [[buffer(11)]],
-                    device const serenity::shapes::SphereData* spheres [[buffer(12)]],
+                    device const serenity::shapes::ShapeRecord* shape_records [[buffer(11)]],
+                    device const serenity::contracts::Transform* transforms [[buffer(12)]],
                     device const serenity::shapes::BoxData* boxes [[buffer(13)]],
                     device const serenity::lights::LightRecord* light_records [[buffer(14)]],
                     device const uint* shape_lights [[buffer(15)]],
@@ -53,11 +53,11 @@ kernel void preview(constant serenity::contracts::FrameConstants& frame [[buffer
     }
     direct::Scene scene;
     scene.structure = structure;
-    scene.shapes = Shapes{shape_records, spheres, boxes};
+    scene.shapes = Shapes{shape_records, transforms, boxes};
     scene.textures = Textures{texture_records, checkers};
     scene.materials = Materials{materials, rough, dielectrics, conductors};
     scene.selection = EveryLight{light_records, light_counts.lights};
-    scene.lights = Lights{light_records, shape_lights, sphere_lights};
+    scene.lights = Lights{light_records, shape_lights, sphere_lights, transforms};
     scene.sky = sky;
 
     float3 color = float3(0.0f);

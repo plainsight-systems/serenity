@@ -9,20 +9,21 @@
 // (acceleration/trace.metal.h) names none. The switches have no default, so
 // a kind added to ShapeKind and not here fails to compile (-Werror).
 //
-// The exact hit is in the shape's object space: intersect_shape() takes the
-// ray as the acceleration structure hands it over for a candidate, carried
-// into the instance's space with its direction not renormalized, so its t
-// is the world's (contracts/transform.h), and tests it against the kind's
-// geometry about the origin. surface_interaction() takes the world's hit
-// point, carries it into object space by the inverse of the shape's
-// transform (a similarity: the transposed rotation, 1 / scale, minus the
-// translation), asks the kind for its object-space normal there, and turns
-// that normal by the transform's rotation into the world's.
+// The exact hit is in the shape's object space: intersect_shape() carries
+// the world's ray there by the inverse of the shape's transform, its
+// direction not renormalized, so its t is the world's
+// (contracts/transform.h), and tests it against the kind's geometry about
+// the origin. surface_interaction() takes the world's hit point, carries it
+// into object space the same way, asks the kind for its object-space normal
+// there, and turns that normal by the transform's rotation into the world's.
 
 #include <metal_stdlib>
 
 #include "core/contracts/surface_interaction.h"
+#include "core/contracts/transform.h"
 #include "core/shapes/primitive.h"
+#include "metal/device/layout.metal.h"
+#include "metal/math/transform.metal.h"
 #include "metal/shapes/box.metal.h"
 #include "metal/shapes/sphere.metal.h"
 
@@ -35,51 +36,52 @@ struct Shapes {
     device const serenity::shapes::BoxData* boxes;
 };
 
-inline bool intersect_shape(Shapes shapes, uint primitive, float3 origin, float3 direction, float t_min, float t_max,
+// The exact hit of a world ray on shape `shape`'s geometry, tested in its
+// object space; `t` is the world's.
+inline bool intersect_shape(Shapes shapes, uint shape, float3 origin, float3 direction, float t_min, float t_max,
                             thread float& t) {
-    const serenity::shapes::PrimitiveRecord record = shapes.records[primitive];
+    const serenity::shapes::ShapeRecord record = shapes.records[shape];
+    float3 o;
+    float3 d;
+    transform_ray_to_object(shapes.transforms[shape], origin, direction, o, d);
     switch (record.kind) {
     case serenity::shapes::ShapeKind::sphere:
-        return intersect_sphere(shapes.spheres[record.index], origin, direction, t_min, t_max, t);
+        return intersect_sphere(o, d, t_min, t_max, t);
     case serenity::shapes::ShapeKind::box:
-        return intersect_box(shapes.boxes[record.index], origin, direction, t_min, t_max, t);
+        return intersect_box(shapes.boxes[record.geometry], o, d, t_min, t_max, t);
     }
     return false;
 }
 
-inline float3 shape_normal(Shapes shapes, uint primitive, float3 point) {
-    const serenity::shapes::PrimitiveRecord record = shapes.records[primitive];
+// The outward normal of shape `shape` at world `point`, in the world: found
+// in object space, turned by the transform's rotation.
+inline float3 shape_normal(Shapes shapes, uint shape, float3 point) {
+    const serenity::shapes::ShapeRecord record = shapes.records[shape];
+    const serenity::contracts::Transform placed = shapes.transforms[shape];
+    const float3 at = transform_to_object(placed, point);
+    float3 normal = float3(0.0f, 1.0f, 0.0f);
     switch (record.kind) {
     case serenity::shapes::ShapeKind::sphere:
-        return sphere_normal(shapes.spheres[record.index], point);
+        normal = sphere_normal(at);
+        break;
     case serenity::shapes::ShapeKind::box:
-        return box_normal(shapes.boxes[record.index], point);
+        normal = box_normal(shapes.boxes[record.geometry], at);
+        break;
     }
-    return float3(0.0f, 1.0f, 0.0f);
+    return metal::normalize(transform_direction(placed, normal));
 }
 
-inline uint shape_material(Shapes shapes, uint primitive) {
-    const serenity::shapes::PrimitiveRecord record = shapes.records[primitive];
-    switch (record.kind) {
-    case serenity::shapes::ShapeKind::sphere:
-        return shapes.spheres[record.index].material;
-    case serenity::shapes::ShapeKind::box:
-        return shapes.boxes[record.index].material;
-    }
-    return 0;
-}
-
-// Contract 1: where a ray along `direction` met primitive `primitive` at
+// Contract 1: where a ray along `direction` met shape `shape` at world
 // `point`, filled by the shape (contracts/surface_interaction.h). The
 // shading normal is the geometric one for every kind so far.
-inline serenity::contracts::SurfaceInteraction surface_interaction(Shapes shapes, uint primitive, float3 point,
+inline serenity::contracts::SurfaceInteraction surface_interaction(Shapes shapes, uint shape, float3 point,
                                                                     float3 direction) {
-    const float3 normal = shape_normal(shapes, primitive, point);
+    const float3 normal = shape_normal(shapes, shape, point);
     serenity::contracts::SurfaceInteraction s;
     s.position = to_packed(point);
-    s.material = shape_material(shapes, primitive);
+    s.material = shapes.records[shape].material;
     s.geometric_normal = to_packed(normal);
-    s.primitive = primitive;
+    s.primitive = shape;
     s.shading_normal = to_packed(normal);
     s.flags = metal::dot(direction, normal) < 0.0f ? serenity::contracts::arrived_from_outside : 0u;
     return s;

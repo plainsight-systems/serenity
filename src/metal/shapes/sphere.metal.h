@@ -4,33 +4,46 @@
 //
 // The exact hit of a ray on the unit sphere, in object space, and its
 // outward normal there, the point itself. The ray's direction is not unit
-// length (contracts/transform.h: it is the world's carried into object space,
-// scaled by 1 / radius), so the roots of |o + t d|^2 = 1 are found with
-// a = d.d kept: t = (-b +/- sqrt(b^2 - a c)) / a, b = o.d, c = o.o - 1. The
-// nearer of the two that lies in (t_min, t_max), so a ray that starts inside
-// the sphere hits it on the way out.
+// length (contracts/transform.h: it is the world's carried into object
+// space, scaled by 1 / radius), so the roots of |o + t d|^2 = 1 are found
+// with a = d.d kept, b = o.d, c = o.o - 1.
+//
+// In the stable form of Haines et al. (Ray Tracing Gems, ch. 7), since a
+// small sphere seen from afar is the scene's whole point: the discriminant
+// b^2 - a c, two numbers near (|o| |d|)^2 subtracted, loses nearly every
+// digit for a firefly 3 cm wide 5 m off (a hit 2e-5 short, in float); it is
+// a (1 - |l|^2) instead, l = o - (b / a) d the vector from the center to the
+// ray's nearest point. And the roots are c / q and q / a, q = -(b + sign(b)
+// sqrt(disc)), which adds numbers of one sign where -b + sqrt(disc) would
+// cancel. The nearer of the two that lies in (t_min, t_max), so a ray that
+// starts inside the sphere hits it on the way out.
 
 #include <metal_stdlib>
 
 #include "core/shapes/sphere.h"
-#include "metal/device/layout.metal.h"
 
 namespace serenity {
 namespace shaders {
 
-// `direction` is unit length. On a hit, `t` is its distance.
-inline bool intersect_sphere(serenity::shapes::SphereData sphere, float3 origin, float3 direction, float t_min,
-                             float t_max, thread float& t) {
-    const float3 to_origin = origin - to_float3(sphere.center);
-    const float b = metal::dot(to_origin, direction);
-    const float c = metal::dot(to_origin, to_origin) - sphere.radius * sphere.radius;
-    const float discriminant = b * b - c;
+// `origin` and `direction` in object space, `direction` of any length. On a
+// hit, `t` is its parameter, the world's too (contracts/transform.h).
+inline bool intersect_sphere(float3 origin, float3 direction, float t_min, float t_max, thread float& t) {
+    const float a = metal::dot(direction, direction);
+    const float b = metal::dot(origin, direction);
+    const float3 nearest = origin - (b / a) * direction;
+    const float discriminant = a * (1.0f - metal::dot(nearest, nearest));
     if (discriminant < 0.0f) {
         return false;
     }
-    const float root = metal::sqrt(discriminant);
-    const float near = -b - root;
-    const float far = -b + root;
+    const float q = -(b + metal::copysign(metal::sqrt(discriminant), b));
+    if (q == 0.0f) {
+        return false;  // a ray from the sphere's surface, along it: both roots 0
+    }
+    const float c = metal::dot(origin, origin) - 1.0f;
+    const float one = c / q;
+    const float other = q / a;
+    const float near = metal::min(one, other);
+    const float far = metal::max(one, other);
     if (near > t_min && near < t_max) {
         t = near;
         return true;
@@ -42,8 +55,10 @@ inline bool intersect_sphere(serenity::shapes::SphereData sphere, float3 origin,
     return false;
 }
 
-inline float3 sphere_normal(serenity::shapes::SphereData sphere, float3 point) {
-    return metal::normalize(point - to_float3(sphere.center));
+// The outward normal at `point`, in object space: the point itself, on the
+// unit sphere.
+inline float3 sphere_normal(float3 point) {
+    return metal::normalize(point);
 }
 
 }  // namespace shaders

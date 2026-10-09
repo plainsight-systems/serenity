@@ -12,6 +12,7 @@
 
 #include <doctest/doctest.h>
 
+#include "core/contracts/transform.h"
 #include "core/lights/sphere_light.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
@@ -27,31 +28,36 @@ TEST_CASE("shadow rays toward a near sphere light span its whole cone, and end o
     auto pipeline = library.compute_pipeline("light_cone");
 
     constexpr std::uint32_t n = 64;
-    const lights::SphereLightData light{{0.0f, 2.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 1.0f}, 0};
+    const lights::SphereLightData light{{1.0f, 1.0f, 1.0f}, 0};
+    const contracts::Transform placed = contracts::placed({0.0f, 2.0f, 0.0f}, 1.0f);
     const float point_and_n[4] = {0.0f, 0.0f, 0.0f, static_cast<float>(n)};  // d = 2r
 
     auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
     MTL::Device* mtl = device.handle();
     auto out = NS::TransferPtr(mtl->newBuffer(n * n * 16, MTL::ResourceStorageModeShared));
     auto light_buffer = NS::TransferPtr(mtl->newBuffer(sizeof(light), MTL::ResourceStorageModeShared));
+    auto placed_buffer = NS::TransferPtr(mtl->newBuffer(sizeof(placed), MTL::ResourceStorageModeShared));
+    REQUIRE(placed_buffer);
+    std::memcpy(placed_buffer->contents(), &placed, sizeof(placed));
     auto point_buffer = NS::TransferPtr(mtl->newBuffer(sizeof(point_and_n), MTL::ResourceStorageModeShared));
     REQUIRE(out);
     REQUIRE(light_buffer);
     REQUIRE(point_buffer);
     std::memcpy(light_buffer->contents(), &light, sizeof(light));
     std::memcpy(point_buffer->contents(), point_and_n, sizeof(point_and_n));
-    for (MTL::Buffer* buffer : {out.get(), light_buffer.get(), point_buffer.get()}) {
+    for (MTL::Buffer* buffer : {out.get(), light_buffer.get(), point_buffer.get(), placed_buffer.get()}) {
         submission.make_resident(buffer);
     }
 
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-    descriptor->setMaxBufferBindCount(3);
+    descriptor->setMaxBufferBindCount(4);
     NS::Error* error = nullptr;
     auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
     REQUIRE(table);
     table->setAddress(out->gpuAddress(), 0);
     table->setAddress(light_buffer->gpuAddress(), 1);
     table->setAddress(point_buffer->gpuAddress(), 2);
+    table->setAddress(placed_buffer->gpuAddress(), 3);
 
     const auto frame = submission.begin();
     MTL4::ComputeCommandEncoder* encoder = frame.commands->computeCommandEncoder();
@@ -90,27 +96,32 @@ TEST_CASE("a small light far off keeps its solid angle: no cancellation to zero"
     metal::Submission submission(device);
     metal::Library library(device, metallib::smoke);
     auto pipeline = library.compute_pipeline("light_far");
-    const lights::SphereLightData light{{0.0f, 1000.0f, 0.0f}, 0.1f, {1.0f, 1.0f, 1.0f}, 0};
+    const lights::SphereLightData light{{1.0f, 1.0f, 1.0f}, 0};
+    const contracts::Transform placed = contracts::placed({0.0f, 1000.0f, 0.0f}, 0.1f);
     const float point[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
     auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
     MTL::Device* mtl = device.handle();
     auto out = NS::TransferPtr(mtl->newBuffer(16, MTL::ResourceStorageModeShared));
     auto light_buffer = NS::TransferPtr(mtl->newBuffer(sizeof(light), MTL::ResourceStorageModeShared));
+    auto placed_buffer = NS::TransferPtr(mtl->newBuffer(sizeof(placed), MTL::ResourceStorageModeShared));
+    REQUIRE(placed_buffer);
+    std::memcpy(placed_buffer->contents(), &placed, sizeof(placed));
     auto point_buffer = NS::TransferPtr(mtl->newBuffer(sizeof(point), MTL::ResourceStorageModeShared));
     std::memcpy(light_buffer->contents(), &light, sizeof(light));
     std::memcpy(point_buffer->contents(), point, sizeof(point));
-    for (MTL::Buffer* buffer : {out.get(), light_buffer.get(), point_buffer.get()}) {
+    for (MTL::Buffer* buffer : {out.get(), light_buffer.get(), point_buffer.get(), placed_buffer.get()}) {
         submission.make_resident(buffer);
     }
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-    descriptor->setMaxBufferBindCount(3);
+    descriptor->setMaxBufferBindCount(4);
     NS::Error* error = nullptr;
     auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
     REQUIRE(table);
     table->setAddress(out->gpuAddress(), 0);
     table->setAddress(light_buffer->gpuAddress(), 1);
     table->setAddress(point_buffer->gpuAddress(), 2);
+    table->setAddress(placed_buffer->gpuAddress(), 3);
     const auto frame = submission.begin();
     MTL4::ComputeCommandEncoder* encoder = frame.commands->computeCommandEncoder();
     encoder->setArgumentTable(table.get());

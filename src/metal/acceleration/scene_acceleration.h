@@ -1,12 +1,13 @@
 #pragma once
 
 #include <array>
-#include <memory>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <vector>
 
 #include <Foundation/Foundation.hpp>
+#include <Metal/MTL4AccelerationStructure.hpp>  // not in Metal.hpp's umbrella
 #include <Metal/Metal.hpp>
 
 #include "core/shapes/shapes.h"
@@ -18,88 +19,84 @@ namespace serenity::metal {
 
 // Axis: Acceleration.
 //
-// The structure rays are traced against, kept as Unreal keeps its ray
-// tracing scene: each geometry once, in its own coordinates, built once; and
-// every shape an instance of one, placed by its transform, in a top-level
-// structure rebuilt each frame from the instances. A shape that moves
-// changes its transform and nothing else: no geometry is ever rebuilt for
-// it (Epic, "Ray Tracing Performance Guide": static meshes' bottom-level
-// structures are built once, at load; the top level is rebuilt every
-// frame, at a cost that grows with the instance count; only geometry that
-// deforms rebuilds its own, and nothing here deforms).
+// The structure rays are traced against: one primitive acceleration
+// structure of axis-aligned bounding boxes, one per shape, in the scene's
+// order, so primitive i is shape i (shapes/primitive.h). Each box is the
+// shape's geometry's object-space bounds (shapes::object_bounds) placed in
+// the world by its transform (contract 10, shapes::world_bounds), so the
+// structure names no shape kind. Metal traces the boxes in hardware; the
+// exact hit inside one is the shape kind's own test, in its object space,
+// which the tracing loop calls for each candidate (trace.metal.h). Boxes,
+// not triangles: a sphere's silhouette and normal are then exact, which
+// glass magnifies, and the reference must be exact. Metal has no sphere
+// primitive.
 //
-// The geometries (shapes/primitive.h): the unit sphere, shared by every
-// sphere of the scene, and each box. Each is a primitive structure of one
-// axis-aligned bounding box, its object-space bounds (shapes::
-// object_bounds), built at construction, in a submission of its own that is
-// waited for, and never touched again (CDSA.29). Metal traces the boxes in
-// hardware; the exact hit inside one is the shape kind's own object-space
-// test, which the tracing loop calls for each candidate (trace.metal.h).
-// Boxes, not triangles: a sphere's silhouette and normal are then exact,
-// which glass magnifies. Metal has no sphere primitive.
+// How it compares with Unreal's ray tracing scene, which builds each mesh's
+// bottom-level structure once and rebuilds a top level of instances every
+// frame (Epic, "Ray Tracing Performance Guide"). A mesh is thousands of
+// triangles, worth building once and placing by a transform; a shape here is
+// one box, so its bottom level would hold nothing worth keeping. This one
+// level is Unreal's top level with each instance's transform folded into its
+// box: rebuilt each frame when shapes move, as Unreal rebuilds its top, at a
+// cost that grows with the shape count as Unreal's grows with the instances.
+// What it leaves out is the instance level each ray would otherwise cross,
+// which on this hardware, for boxes whose hits the shader decides, costs more
+// than everything it saves. Measured on the M3 Max, the path tracer on the
+// still brass scene at 3456 x 2234 (docs/research/
+// 2026-10-09-acceleration-structure.md):
 //
-// The top: an instance structure with one instance per shape, in the
-// scene's order: instance i is shape i, its user ID i (shapes/primitive.h),
-// its transform shape i's (contracts/transform.h, given row-major, as the core
-// lays it out), its structure its geometry's. So a hit names its shape
-// directly, with no table between.
+//   one level, exact spheres, world-space tests (main before)  7.8 ms
+//   this: one level, exact spheres, transforms, object space    8.2 ms
+//   instances of triangle spheres, 5,120 to 81,920 each    11.5 - 12.5 ms
+//   instances of exact spheres, one per shape                  18.1 ms
 //
-// A still scene, where no shape moves, has one top, built at
-// construction with the geometries, and every frame traces it. A scene
-// where shapes move has a top per frame in flight, each with its own
-// instance descriptors and scratch; the descriptors are a FrameArray
+// When a shape arrives that is a mesh (a table of triangles), it is a
+// structure of its own, built once, under an instance: a second level for
+// that, measured again then.
+//
+// A still scene (no shape moves) has one structure, built at construction,
+// in a submission of its own that is waited for, so it is complete before
+// any frame traces it (CDSA.29). A scene where shapes move has one per frame
+// in flight, each with its own boxes and scratch; the boxes are a FrameArray
 // (metal/device/frame_array.h), whose rule says when the CPU may write a
 // slot's. Which shapes move it is told as their indices, nothing more of the
 // scene's animation (core/animation/animate.h). A frame:
 //
-//   1. update() copies each moving shape's transform, which the core placed
-//      for the frame's time in the frame's transforms (metal/scene/
-//      shape_transforms.h), into the slot's instance descriptor. Only the
-//      moving shapes' descriptors are written; the still ones were written
-//      at construction and never change.
-//   2. It records the build of the slot's top over all the instances, at the
+//   1. update() writes each moving shape's box, its object-space bounds
+//      placed by the transform the core placed for the frame's time
+//      (metal/scene/shape_transforms.h), into the slot's boxes. Only the
+//      moving shapes' boxes are written; the still ones were written at
+//      construction and never change.
+//   2. It records the build of the slot's structure over every box, at the
 //      start of the frame's encoder,
 //   3. and a barrier from the acceleration-structure stage to the dispatch
 //      stage, so every pass traces the finished structure (GPU.7).
 //
-// Rebuilt, not refit: refitting keeps the tree's shape, whose quality decays
-// as instances move away from where it was built, without bound for free
-// flight; Epic rebuilds the top every frame; and logical-overview.md's
-// principle 9 says nothing built over the lights outlives the frame. The
-// slot's descriptors, top and scratch were last used by the frame two
-// submissions back, which Submission::begin() waited for: nothing in flight
-// reads what the frame writes, and frames still overlap.
+// Rebuilt, not refit: a refit keeps the tree's shape, whose quality decays
+// as shapes move away from where it was built, without bound for free
+// flight (CDSA.30); and logical-overview.md's principle 9 says nothing built
+// over the lights outlives the frame. The slot's boxes, structure and
+// scratch were last used by the frame two submissions back, which
+// Submission::begin() waited for: nothing in flight reads what the frame
+// writes, and frames still overlap.
 //
-// Two things this relies on of Metal, which tests/gpu show on this machine:
-// that an intersection query hands each candidate the ray in its instance's
-// object space, its direction transformed but not renormalized, so the
-// object-space t is the world's (contracts/transform.h); and that the instance
-// transforms are applied in the traversal hardware.
-//
-// Not taken from Unreal, and why: its instance culling drops instances far
-// from or behind the camera, which changes the image, and a path tracer's
-// reference must see what the camera cannot (principle 3); its residency
-// and per-frame budgets for deforming geometry have nothing here to act on.
-//
-// Optimization: every per-frame descriptor buffer, top and scratch is made
-// at construction, so a frame allocates nothing (MEM.9); per frame, 48 bytes
-// copied per moving shape on the CPU, and one top build and one barrier on
-// the GPU, whose cost grows with the shape count and is the whole of what
-// a moving shape costs the structure. No geometry is compacted: there are
-// a handful, of one box each. Measured on the M3 Max: (the implementation
-// fills in the top's build time for the first moving scene's 4 shapes and
-// for 4096.)
+// Optimization: every per-frame buffer, structure and build descriptor is
+// made at construction, so a frame allocates nothing (MEM.9); per frame, one
+// 24-byte box per moving shape on the CPU, and one build and one barrier on
+// the GPU, whose cost grows with the shape count. Measured on the M3 Max: the
+// wandering brass scene's frame takes 8.28 ms against the still scene's
+// 8.17, the placing and the build together 0.11 ms; a build alone, in a
+// command buffer of its own, 68 us over 4 shapes and 340 us over 4096.
 //
 // Throws Error if there are no shapes, if the device cannot make a
 // structure, its scratch memory or a buffer, or if the start-up build fails
 // on the GPU (submission.h).
 class SceneAcceleration {
 public:
-    // Builds a structure for each geometry of `shapes`, and the top over its
-    // shapes at rest. `moving` are the indices of the shapes that move, in
-    // increasing order: none, and the one top is built here; some, and each
-    // slot's top is built by its frame's update(). Throws Error if an index
-    // is not a shape's.
+    // Builds the structure over `shapes` at rest. `moving` are the indices
+    // of the shapes that move, in increasing order: none, and the one
+    // structure is built here; some, and each slot's is built by its frame's
+    // update(). Throws Error if an index is not a shape's.
     SceneAcceleration(const Device& device, Submission& submission, const shapes::Shapes& shapes,
                       std::span<const std::uint32_t> moving);
 
@@ -117,23 +114,22 @@ public:
     void update(MTL4::ComputeCommandEncoder* encoder, std::uint32_t slot,
                 std::span<const contracts::Transform> transforms) const;
 
-    // The top frame slot `slot` traces, as a shader binds it.
+    // The structure frame slot `slot` traces, as a shader binds it.
     MTL::ResourceID resource(std::uint32_t slot) const;
 
 private:
-    struct Top {
+    struct Built {
         NS::SharedPtr<MTL::Buffer> scratch;
-        NS::SharedPtr<MTL4::InstanceAccelerationStructureDescriptor> descriptor;
+        NS::SharedPtr<MTL4::PrimitiveAccelerationStructureDescriptor> descriptor;  // over the slot's boxes
         NS::SharedPtr<MTL::AccelerationStructure> structure;
     };
 
-    // Each geometry's structure, built once: the unit sphere's, then each box's.
-    std::vector<NS::SharedPtr<MTL::AccelerationStructure>> geometries_;
-    std::vector<std::uint32_t> moving_;  // the shapes that move, whose descriptors update() writes
-    std::unique_ptr<FrameArray> instances_;  // one descriptor per shape, per top
-    // One top for a still scene, in slot 0, which every frame traces; one per
-    // slot when shapes move.
-    std::array<Top, frames_in_flight> tops_;
+    std::vector<std::uint32_t> moving_;          // the shapes that move, whose boxes update() writes
+    std::vector<shapes::Bounds> moving_bounds_;  // each one's object-space bounds, in moving_'s order
+    std::unique_ptr<FrameArray> boxes_;          // one box per shape, per structure
+    // One structure for a still scene, in slot 0, which every frame traces;
+    // one per slot when shapes move.
+    std::array<Built, frames_in_flight> structures_;
 };
 
 }  // namespace serenity::metal

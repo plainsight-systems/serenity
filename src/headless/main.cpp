@@ -1,11 +1,14 @@
 // serenity-headless: renders a frame graph's frames, over a scene if one is
 // given, to PNG files (headless/options.h). Each frame's time is computed
 // from its index, or frozen by --time, never measured; its camera is the
-// scene's; and a graph that converges accumulates from the first frame. So
-// the same command writes the same files (principle 1).
+// scene's; each frame is --samples renders of its instant; and a graph that
+// converges accumulates from the first frame while the scene looks the same
+// at every frame's time, and from each frame's first sample when it moves.
+// So the same command writes the same files (principle 1).
 //
-// Frames are rendered one at a time: each is committed and waited for, and
-// those --write selects are read back and written, before the next begins.
+// Frames are rendered one at a time: each frame's samples are committed, the
+// last waited for, and those --write selects are read back and written,
+// before the next frame begins.
 // Readback is the point of this program, and it is not held to the frame
 // budget (GPU.1). A frame that left out samples for not being finite
 // (metal/film/non_finite.h) fails the run once it has completed, naming the
@@ -18,8 +21,9 @@
 #include <string>
 #include <vector>
 
-#include "core/output/png.h"
+#include "core/animation/animate.h"
 #include "core/frame/graph_file.h"
+#include "core/output/png.h"
 #include "core/scene/scene.h"
 #include "headless/options.h"
 #include "metal/device/device.h"
@@ -45,17 +49,27 @@ int main(int argc, char** argv) {
         std::filesystem::create_directories(options.out);
         std::vector<std::uint8_t> rgba(std::size_t{options.size.width} * options.size.height * 4);
 
+        // A moving scene's frames are each their own instant; a still
+        // scene, or frozen time, looks the same at every frame, so the run
+        // converges as a whole (headless/options.h).
+        const bool instants = scene && animation::moves(scene->animation) && !options.time;
+        const std::uint64_t samples = options.samples;
+
         // Counted, so the last frame there can be is reachable without its
         // successor (headless/options.h).
         for (std::uint64_t n = 0; n < options.frames; ++n) {
             const std::uint64_t index = options.first + n;
-            const frame::FrameInputs inputs{
-                .time = options.time ? *options.time : options.step * static_cast<double>(index),
-                .index = index,
-                .accumulated_since = options.first,
-                .camera = scene ? std::optional(scene->camera) : std::nullopt,
-            };
-            const std::uint64_t sequence = metal::render_to_offscreen(submission, target, renderer, inputs);
+            const frame::Seconds time = options.time ? *options.time : options.step * static_cast<double>(index);
+            std::uint64_t sequence = 0;
+            for (std::uint64_t s = 0; s < samples; ++s) {
+                const frame::FrameInputs inputs{
+                    .time = time,
+                    .index = index * samples + s,
+                    .accumulated_since = (instants ? index : options.first) * samples,
+                    .camera = scene ? std::optional(scene->camera) : std::nullopt,
+                };
+                sequence = metal::render_to_offscreen(submission, target, renderer, inputs);
+            }
             (void)submission.wait_until_complete(sequence);
             if (const std::uint64_t failed = renderer.non_finite_samples(); failed != 0) {
                 throw std::runtime_error("frame " + std::to_string(index) + ": " + std::to_string(failed) +

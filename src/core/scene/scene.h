@@ -139,7 +139,7 @@ struct SceneDescription {
     std::vector<materials::EmissiveData> emissives;
 
     // In file order: shape i is shapes.records[i] and shapes.transforms[i],
-    // each at rest, and instance i of the acceleration structure
+    // each at rest, and primitive i of the acceleration structure
     // (shapes/primitive.h). A sphere is the unit sphere placed at its center,
     // scaled by its radius; a box, a box about its origin, its half extent
     // the file's max - min halved, placed at its middle.

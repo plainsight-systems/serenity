@@ -16,6 +16,7 @@ add_executable(serenity_tests
     scene_test.cpp
     pinhole_test.cpp
     shapes_test.cpp
+    animation_test.cpp
     frame_times_test.cpp
     png_test.cpp
     options_test.cpp

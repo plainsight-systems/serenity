@@ -180,9 +180,14 @@ double expected_floor(const scene::SceneDescription& scene, frame::Extent size, 
     const std::array<double, 3> p = {c.origin.x + t * d[0], 0.0, c.origin.z + t * d[2]};
     double sum = 0.0;
     for (const lights::SphereLightData& light : scene.sphere_lights) {
-        const std::array<double, 3> to = {light.center.x - p[0], light.center.y - p[1], light.center.z - p[2]};
+        // Where its shape is, and how big: the transform's translation and
+        // scale (contracts/transform.h).
+        const contracts::Transform& placed = scene.shapes.transforms.at(light.shape);
+        const contracts::Float3 center = contracts::translation(placed);
+        const double radius = placed.m[0][0];
+        const std::array<double, 3> to = {center.x - p[0], center.y - p[1], center.z - p[2]};
         const double d2 = to[0] * to[0] + to[1] * to[1] + to[2] * to[2];
-        sum += 0.8 * light.radiance.x * (light.radius * light.radius / d2) * (to[1] / std::sqrt(d2));
+        sum += 0.8 * light.radiance.x * (radius * radius / d2) * (to[1] / std::sqrt(d2));
     }
     return sum;
 }

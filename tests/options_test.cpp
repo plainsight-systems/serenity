@@ -68,6 +68,20 @@ TEST_CASE("headless: the last frame there can be is reachable") {
     CHECK(last.frames == 1);
 }
 
+TEST_CASE("headless: samples per frame, from 1 to what an image holds, and the last sample reachable") {
+    CHECK(headless({"--graph", "s", "--out", "o"}).samples == 1);
+    CHECK(headless({"--graph", "s", "--out", "o", "--samples", "64"}).samples == 64);
+    CHECK(headless({"--graph", "s", "--out", "o", "--samples", "16777215"}).samples == 16777215);
+    CHECK(contains(headless_error({"--graph", "s", "--out", "o", "--samples", "0"}), "--samples must be from 1"));
+    CHECK(contains(headless_error({"--graph", "s", "--out", "o", "--samples", "16777216"}), "the most an image holds"));
+    // The last frame's last sample, (first + frames) x N - 1, must exist: with
+    // N = 2, the last frame can be at most (2^64 - 2) / 2.
+    CHECK(headless({"--graph", "s", "--out", "o", "--first", "9223372036854775807", "--samples", "2"}).first ==
+          9223372036854775807ull);
+    CHECK(contains(headless_error({"--graph", "s", "--out", "o", "--first", "9223372036854775808", "--samples", "2"}),
+                   "past the last sample"));
+}
+
 TEST_CASE("headless: a scene is optional") {
     CHECK(headless({"--graph", "g.toml", "--out", "o"}).scene.empty());
     CHECK(headless({"--graph", "g.toml", "--scene", "s.toml", "--out", "o"}).scene == "s.toml");

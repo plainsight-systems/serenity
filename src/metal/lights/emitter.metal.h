@@ -30,6 +30,12 @@ struct Lights {
     device const serenity::contracts::Transform* transforms;
 };
 
+// Sphere light `index`, where its shape is this frame.
+inline SphereLight sphere_light_at(Lights lights, uint index) {
+    const serenity::lights::SphereLightData light = lights.spheres[index];
+    return sphere_light(light, lights.transforms[light.shape]);
+}
+
 // Whether shape `primitive` is a light, and if so which, in `light`.
 inline bool light_at(Lights lights, uint primitive, thread serenity::lights::LightRecord& light) {
     const uint index = lights.shape_lights[primitive];
@@ -44,7 +50,7 @@ inline serenity::contracts::LightSample sample_light(Lights lights, serenity::li
                                                      float2 u) {
     switch (light.kind) {
     case serenity::lights::LightKind::sphere:
-        return sphere_sample_light(lights.spheres[light.index], point, u);
+        return sphere_sample_light(sphere_light_at(lights, light.index), point, u);
     }
     return serenity::contracts::LightSample{};
 }
@@ -54,7 +60,7 @@ inline serenity::contracts::LightSample sample_light(Lights lights, serenity::li
 inline float3 light_emitted(Lights lights, serenity::lights::LightRecord light, float3, float3) {
     switch (light.kind) {
     case serenity::lights::LightKind::sphere:
-        return sphere_emitted(lights.spheres[light.index]);
+        return sphere_emitted(sphere_light_at(lights, light.index));
     }
     return float3(0.0f);
 }
@@ -62,7 +68,7 @@ inline float3 light_emitted(Lights lights, serenity::lights::LightRecord light, 
 inline float light_pdf(Lights lights, serenity::lights::LightRecord light, float3 point, float3 direction) {
     switch (light.kind) {
     case serenity::lights::LightKind::sphere:
-        return sphere_light_pdf(lights.spheres[light.index], point, direction);
+        return sphere_light_pdf(sphere_light_at(lights, light.index), point, direction);
     }
     return 0.0f;
 }

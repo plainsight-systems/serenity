@@ -37,6 +37,21 @@ struct Shapes {
 // default, so a kind without bounds fails the build.
 Bounds object_bounds(const Shapes& shapes, const ShapeRecord& record);
 
+// The world box that holds a geometry whose object-space bounds are
+// `object`, placed by `transform`: the box about the transformed center
+// whose half extent on each axis is the absolute linear part times the
+// object's half extent, the tight box of a transformed box, rotation
+// included (Arvo, "Transforming Axis-Aligned Bounding Boxes", Graphics Gems
+// 1990). In double, rounded outward, so the float box never cuts into what
+// it holds: a ray that grazes a sphere's silhouette still enters its box.
+// What the acceleration structure holds for each shape
+// (metal/acceleration/scene_acceleration.h), once for a still shape, each
+// frame for a moving one.
+//
+// Performance-sensitive: once per moving shape per frame. Some 30 flops,
+// nothing allocated.
+Bounds world_bounds(const Bounds& object, const contracts::Transform& transform);
+
 // Whether shape `shape`, where its transform places it, meets or touches the
 // world box `box`, by its kind's exact test (sphere.h, box.h): what the scene
 // reader asks of every still shape before it lets a moving one sweep `box`

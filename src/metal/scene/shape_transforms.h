@@ -25,10 +25,10 @@ namespace serenity::metal {
 // Shaders read a shape's transform after a hit, to carry its object-space
 // normal into the world, and a sphere light reads its shape's, which is
 // where it is and how big (core/lights/sphere_light.h); the acceleration
-// structure copies the moving shapes' transforms from here into its
-// instance descriptors (metal/acceleration/scene_acceleration.h). So the
-// shape a ray hits, the light lit from it and the instance traced are
-// placed by the one value, which the core computed once.
+// structure places the moving shapes' boxes by their transforms from here
+// (metal/acceleration/scene_acceleration.h). So the shape a ray hits, the
+// light lit from it and the box traced are placed by the one value, which
+// the core computed once.
 //
 // A still scene keeps one copy; a scene where shapes move, one per frame in
 // flight, every one starting as the shapes at rest, the core then rewriting

@@ -12,7 +12,7 @@ namespace {
 
 constexpr const char* usage =
     "usage: serenity-headless --graph FILE [--scene FILE] --out DIRECTORY [--frames N] [--first I] "
-    "[--step SECONDS | --time SECONDS] [--size WIDTHxHEIGHT] [--write all|last|doubling]";
+    "[--step SECONDS | --time SECONDS] [--size WIDTHxHEIGHT] [--write all|last|doubling] [--samples N]";
 
 // A number of seconds from `text`, finite, and at least `least` (exclusive
 // when `positive`).
@@ -77,6 +77,12 @@ Options parse(std::span<const char* const> args) {
             if (options.frames == 0) {
                 throw Error("--frames must be at least 1");
             }
+        } else if (option == "--samples") {
+            options.samples = whole_number(option, value());
+            if (options.samples == 0 || options.samples > frame::max_accumulated_frames) {
+                throw Error("--samples must be from 1 to " + std::to_string(frame::max_accumulated_frames) +
+                            ", the most an image holds");
+            }
         } else if (option == "--first") {
             options.first = whole_number(option, value());
         } else if (option == "--step") {
@@ -120,6 +126,12 @@ Options parse(std::span<const char* const> args) {
     // need not (frames is at least 1 here).
     if (options.first > std::numeric_limits<std::uint64_t>::max() - (options.frames - 1)) {
         throw Error("--first plus --frames is past the last frame there can be");
+    }
+    // Its last sample, last x N + N - 1, must exist too.
+    const std::uint64_t last = options.first + (options.frames - 1);
+    const std::uint64_t n = options.samples;
+    if (last > (std::numeric_limits<std::uint64_t>::max() - (n - 1)) / n) {
+        throw Error("--first plus --frames, at --samples per frame, is past the last sample there can be");
     }
     return options;
 }

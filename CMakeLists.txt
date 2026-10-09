@@ -105,6 +105,9 @@ target_include_directories(stb_image_write SYSTEM INTERFACE "${stb_SOURCE_DIR}")
 # tools/check_boundaries.sh enforces it (make check).
 # ---------------------------------------------------------------------------
 add_library(serenity_core STATIC
+    src/core/animation/animate.cpp
+    src/core/animation/motion.cpp
+    src/core/animation/wander.cpp
     src/core/camera/pinhole.cpp
     src/core/frame/graph_file.cpp
     src/core/frame/schedule.cpp
@@ -127,10 +130,12 @@ add_library(serenity_metal STATIC
     src/metal/device/library.cpp
     src/metal/device/offscreen.cpp
     src/metal/device/presenter.cpp
+    src/metal/device/frame_array.cpp
     src/metal/device/static_arrays.cpp
     src/metal/device/submission.cpp
     src/metal/acceleration/scene_acceleration.cpp
     src/metal/scene/scene_buffers.cpp
+    src/metal/scene/shape_transforms.cpp
     src/metal/film/non_finite.cpp
     src/metal/frame/accumulation.cpp
     src/metal/frame/renderer.cpp
