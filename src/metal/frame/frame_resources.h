@@ -7,6 +7,7 @@
 #include <Metal/Metal.hpp>
 
 #include "core/frame/extent.h"
+#include "core/frame/tone_map.h"
 #include "metal/scene/scene_buffers.h"
 
 namespace serenity::metal {
@@ -33,7 +34,7 @@ struct FrameResources {
     // image and the bloom pyramid's levels; null when the schedule uses
     // none.
     MTL::Texture* radiance = nullptr;
-    std::array<MTL::Texture*, 6> bloom{};
+    std::array<MTL::Texture*, frame::bloom_levels> bloom{};
 
     // The accumulated image (accumulation.h), the frames it holds, which
     // this one joins, and its counter of samples left out for not being

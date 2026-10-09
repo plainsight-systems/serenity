@@ -40,7 +40,7 @@ using namespace serenity;
 namespace {
 
 frame::Schedule path_graph() {
-    return frame::parse_schedule("passes = [\"path\"]\n", "test");
+    return frame::parse_schedule("passes = [\"path\", \"display\"]\n", "test");
 }
 
 // A renderer of the path graph over `text`, at `size`, rendering frames that
@@ -269,9 +269,8 @@ TEST_CASE("a frame recorded without being prepared is refused, and so is a graph
                     metal::Error);
 
     metal::Submission other(device);
-    CHECK_THROWS_AS(
-        metal::Renderer(device, other, frame::Schedule{{frame::PassKind::path, frame::PassKind::path}}, &scene),
-        metal::Error);
+    const frame::Schedule twice{{frame::PassKind::path, frame::PassKind::path, frame::PassKind::display}, std::nullopt};
+    CHECK_THROWS_AS(metal::Renderer(device, other, twice, &scene), metal::Error);
 }
 
 TEST_CASE("the camera sees a light's glow, through the emitter") {

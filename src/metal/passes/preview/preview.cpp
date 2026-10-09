@@ -7,8 +7,9 @@ namespace serenity::metal {
 PreviewPass::PreviewPass(const Device&, const Library& library) : pipeline_(library.compute_pipeline("preview")) {}
 
 void PreviewPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
-    if (resources.scene == nullptr || resources.transforms == 0 || resources.glows == 0 || resources.camera == 0) {
-        throw Error("PreviewPass: the frame has no scene or no camera");
+    if (resources.scene == nullptr || resources.transforms == 0 || resources.glows == 0 || resources.camera == 0 ||
+        resources.radiance == nullptr) {
+        throw Error("PreviewPass: the frame has no scene, no camera or no radiance image");
     }
     const SceneBuffers::Addresses& scene = *resources.scene;
 
@@ -32,7 +33,7 @@ void PreviewPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
     arguments->setAddress(scene.shape_lights, 15);
     arguments->setAddress(scene.sphere_lights, 16);
     arguments->setAddress(scene.light_counts, 17);
-    arguments->setTexture(resources.target->gpuResourceID(), 0);
+    arguments->setTexture(resources.radiance->gpuResourceID(), 0);
     encoder->setComputePipelineState(pipeline_.get());
 
     // As the test pattern: rows of the execution width (GPU.2).

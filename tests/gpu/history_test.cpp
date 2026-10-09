@@ -58,7 +58,7 @@ frame::FrameInputs at(const scene::SceneDescription& s, std::uint64_t index, std
 }  // namespace
 
 TEST_CASE("a moving scene's image holds one instant; a still scene's, any") {
-    const frame::Schedule path = frame::parse_schedule("passes = [\"path\"]\n", "test");
+    const frame::Schedule path = frame::parse_schedule("passes = [\"path\", \"display\"]\n", "test");
     const frame::Extent size{32, 24};
     {
         const scene::SceneDescription moving = scene::parse(scene_text(true), "moving");

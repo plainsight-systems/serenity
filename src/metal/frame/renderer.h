@@ -211,7 +211,8 @@ private:
     std::optional<Prepared> prepared_;  // the frame prepare() readied, until recorded
     NS::SharedPtr<MTL::Buffer> constants_;
     std::array<NS::SharedPtr<MTL4::ArgumentTable>, frames_in_flight> arguments_;
-    std::vector<Pass> passes_;  // in schedule order
+    std::vector<frame::PassKind> kinds_;  // the schedule's
+    std::vector<Pass> passes_;            // in schedule order, one per kind
 };
 
 // One frame, start to finish, for each kind of target. The window and the

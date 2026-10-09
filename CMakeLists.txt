@@ -142,10 +142,13 @@ add_library(serenity_metal STATIC
     src/metal/scene/shape_transforms.cpp
     src/metal/film/non_finite.cpp
     src/metal/frame/accumulation.cpp
+    src/metal/frame/frame_images.cpp
     src/metal/frame/renderer.cpp
+    src/metal/passes/display/display.cpp
     src/metal/passes/path/path.cpp
     src/metal/passes/preview/preview.cpp
     src/metal/passes/test_pattern/test_pattern.cpp
+    src/metal/passes/tone_map/tone_map.cpp
 )
 target_link_libraries(serenity_metal PUBLIC serenity_core metal_cpp)
 target_compile_options(serenity_metal PRIVATE ${SERENITY_WARNINGS})
@@ -154,6 +157,8 @@ serenity_add_metallib(
     SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/test_pattern/test_pattern.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/preview/preview.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/path/path.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/display/display.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/tone_map/tone_map.metal"
     INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 # ---------------------------------------------------------------------------

@@ -88,7 +88,8 @@ Image render(const std::string& scene_text, frame::Extent size) {
     metal::Device device;
     metal::Submission submission(device);
     metal::Offscreen target(device, submission, size);
-    metal::Renderer renderer(device, submission, frame::parse_schedule("passes = [\"preview\"]\n", "test"), &scene);
+    metal::Renderer renderer(device, submission,
+                             frame::parse_schedule("passes = [\"preview\", \"display\"]\n", "test"), &scene);
     const frame::FrameInputs inputs{.time = frame::Seconds(0.0), .index = 0, .camera = scene.camera};
     const auto sequence = metal::render_to_offscreen(submission, target, renderer, inputs);
     (void)submission.wait_until_complete(sequence);
@@ -270,7 +271,7 @@ TEST_CASE("metal: a near-mirror of f0 = 1 reflects a uniform sky as it is") {
 TEST_CASE("a graph that reads a scene refuses to run without one, and a frame without a camera") {
     metal::Device device;
     metal::Submission submission(device);
-    const frame::Schedule preview = frame::parse_schedule("passes = [\"preview\"]\n", "test");
+    const frame::Schedule preview = frame::parse_schedule("passes = [\"preview\", \"display\"]\n", "test");
     CHECK_THROWS_AS(metal::Renderer(device, submission, preview, nullptr), metal::Error);
 
     const scene::SceneDescription scene = scene::parse(
@@ -290,21 +291,21 @@ TEST_CASE("start-up work is settled before the first frame, so it is never measu
     metal::Device device;
     metal::Submission submission(device);
     metal::Offscreen target(device, submission, {16, 16});
-    metal::Renderer renderer(device, submission, frame::parse_schedule("passes = [\"preview\"]\n", "test"), &scene);
+    metal::Renderer renderer(device, submission,
+                             frame::parse_schedule("passes = [\"preview\", \"display\"]\n", "test"), &scene);
     const std::uint64_t first_frame = submission.next_sequence();
     CHECK(first_frame > 0);  // the acceleration structure's build came first
 
     std::vector<std::uint64_t> settled;
     for (std::uint64_t i = 0; i < 5; ++i) {
+        const frame::FrameInputs inputs{.time = frame::Seconds(0.0), .index = i, .camera = scene.camera};
+        renderer.prepare(inputs, target.size());
         const metal::FrameSlot frame = submission.begin();
         if (frame.settled) {
             settled.push_back(frame.settled->sequence);
             CHECK(frame.settled->gpu_end >= frame.settled->gpu_start);
         }
-        renderer.record(frame,
-                        frame::FrameInputs{.time = frame::Seconds(0.0), .index = i, .camera = scene.camera},
-                        target.texture(),
-                        target.size());
+        renderer.record(frame, inputs, target.texture(), target.size());
         submission.commit();
     }
     for (const metal::Completed& done : submission.finish()) {

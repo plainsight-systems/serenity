@@ -34,15 +34,15 @@ This file tracks active and accepted work.
 
 ## Next, in order
 
-1. Milestone 1, the rest: tone mapping with bloom (in design: a radiance
-   image between passes, display and tone_map as the presenting passes,
-   Jimenez's bloom pyramid, Khronos PBR Neutral), so a firefly's flash shows
-   on the firefly; procedural geometry toward marbles on a table with many
-   fireflies; the reference render and its error measure. Done: moving
-   fireflies (the wander; shapes as a geometry and a transform; one level of
-   placed boxes rebuilt each frame, docs/research/2026-10-09-acceleration-
-   structure.md); fireflies in flight and blinking (episodes checked clear
-   at load, glows on the GPU).
+1. Milestone 1, the rest: procedural geometry toward marbles on a table
+   with many fireflies; the reference render and its error measure. Done:
+   moving fireflies (the wander; shapes as a geometry and a transform; one
+   level of placed boxes rebuilt each frame, docs/research/2026-10-09-
+   acceleration-structure.md); fireflies in flight and blinking (episodes
+   checked clear at load, glows on the GPU); tone mapping with bloom (a
+   radiance image between passes, display and tone_map as the presenting
+   passes, Jimenez's bloom pyramid, Khronos PBR Neutral), so a firefly's
+   flash shows on the firefly.
 
 Then, each in its turn: ReSTIR DI; ReSTIR GI; caustics by manifold next
 event estimation; reservoir reuse as kernels; a denoiser of its own against

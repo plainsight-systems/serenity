@@ -1,6 +1,6 @@
 // The preview (preview.h): the pass that launches the direct-light
 // integrator (integrator/direct.metal.h) for each pixel, at four positions
-// within it, and writes the mean for display.
+// within it, and writes the mean to the radiance image.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -12,7 +12,6 @@
 #include "core/lights/sphere_light.h"
 #include "metal/camera/pinhole.metal.h"
 #include "metal/integrator/direct.metal.h"
-#include "metal/passes/display.metal.h"
 
 using namespace metal;
 using namespace metal::raytracing;
@@ -47,7 +46,7 @@ kernel void preview(constant serenity::contracts::FrameConstants& frame [[buffer
                     device const uint* shape_lights [[buffer(15)]],
                     device const serenity::lights::SphereLightData* sphere_lights [[buffer(16)]],
                     constant serenity::lights::LightCounts& light_counts [[buffer(17)]],
-                    texture2d<float, access::write> target [[texture(0)]],
+                    texture2d<float, access::write> radiance [[texture(0)]],
                     uint2 pixel [[thread_position_in_grid]]) {
     if (pixel.x >= frame.width || pixel.y >= frame.height) {
         return;
@@ -66,5 +65,5 @@ kernel void preview(constant serenity::contracts::FrameConstants& frame [[buffer
         const float3 direction = pinhole_direction(camera, float2(pixel) + positions[i], frame.width, frame.height);
         color += direct::radiance(scene, to_float3(camera.origin), direction, direct::Pixel{pixel, i});
     }
-    target.write(float4(encode_srgb(color / float(pixel_samples)), 1.0f), pixel);
+    radiance.write(float4(color / float(pixel_samples), 1.0f), pixel);
 }

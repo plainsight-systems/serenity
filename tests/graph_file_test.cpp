@@ -31,10 +31,11 @@ bool contains(const std::string& text, const char* part) {
 }  // namespace
 
 TEST_CASE("the passes are read in order") {
-    const auto schedule = parse_schedule("passes = [\"test_pattern\", \"test_pattern\"]\n", "graph.toml");
+    const auto schedule = parse_schedule("passes = [\"preview\", \"display\"]\n", "graph.toml");
     REQUIRE(schedule.passes.size() == 2);
-    CHECK(schedule.passes[0] == PassKind::test_pattern);
-    CHECK(schedule.passes[1] == PassKind::test_pattern);
+    CHECK(schedule.passes[0] == PassKind::preview);
+    CHECK(schedule.passes[1] == PassKind::display);
+    CHECK_FALSE(schedule.tone_map.has_value());
 }
 
 TEST_CASE("comments are allowed") {
@@ -81,14 +82,55 @@ TEST_CASE("a missing file is an error that names it") {
 }
 
 TEST_CASE("a graph with two passes that accumulate is refused, at the core, naming them") {
-    const std::string error = error_for("passes = [\"path\", \"path\"]\n");
+    const std::string error = error_for("passes = [\"path\", \"path\", \"display\"]\n");
     CHECK(contains(error, "graph.toml:1:"));
     CHECK(contains(error, "2 passes that accumulate (path, path)"));
-    CHECK(error_for("passes = [\"path\", \"test_pattern\"]\n").empty());
+    CHECK(error_for("passes = [\"path\", \"display\"]\n").empty());
+}
+
+TEST_CASE("a graph that computes light and does not show it is refused, at the core") {
+    CHECK(contains(error_for("passes = [\"path\", \"test_pattern\"]\n"),
+                   "graph.toml:1: path computes light and no pass after it shows it"));
+}
+
+TEST_CASE("the tone map's settings are read with its pass") {
+    const auto schedule = parse_schedule(
+        "passes = [\"path\", \"tone_map\"]\n[tone_map]\nexposure = -1.5\nbloom = 0.25\n", "graph.toml");
+    REQUIRE(schedule.tone_map.has_value());
+    CHECK(schedule.tone_map->exposure == -1.5f);
+    CHECK(schedule.tone_map->bloom == 0.25f);
+    // A whole number is a number.
+    CHECK(parse_schedule("passes = [\"path\", \"tone_map\"]\n[tone_map]\nexposure = 1\nbloom = 0\n", "g")
+              .tone_map->exposure == 1.0f);
+}
+
+TEST_CASE("every mistake in the tone map's settings is an error at its line") {
+    const char* passes = "passes = [\"path\", \"tone_map\"]\n";
+    const auto with = [&](const char* rest) { return error_for((std::string(passes) + rest).c_str()); };
+    CHECK(contains(with(""), "graph.toml:1: the frame graph has a tone_map pass and no tone-map settings"));
+    CHECK(contains(with("[tone_map]\nexposure = 0.0\n"), "graph.toml:2: [tone_map] has no 'bloom'"));
+    CHECK(contains(with("[tone_map]\nexposure = \"0\"\nbloom = 0.0\n"), "graph.toml:3: 'exposure' must be a number"));
+    CHECK(contains(with("[tone_map]\nexposure = 0.0\nbloom = 0.0\nglare = 1\n"),
+                   "graph.toml:5: unknown key 'glare' in [tone_map]"));
+    CHECK(contains(with("[tone_map]\nexposure = 11.0\nbloom = 0.0\n"), "graph.toml:2: the tone map's exposure"));
+    CHECK(contains(with("[tone_map]\nexposure = 0.0\nbloom = 1.0\n"), "graph.toml:2: the tone map's bloom"));
+    CHECK(contains(with("tone_map = 1\n"), "'tone_map' must be a table"));
+    CHECK(contains(error_for("passes = [\"path\", \"display\"]\n[tone_map]\nexposure = 0.0\nbloom = 0.0\n"),
+                   "tone-map settings and no tone_map pass"));
 }
 
 TEST_CASE("the path tracer's graph in graphs/ reads") {
     const auto schedule = serenity::frame::load_schedule(SERENITY_GRAPHS_DIR "/path.toml");
-    REQUIRE(schedule.passes.size() == 1);
+    REQUIRE(schedule.passes.size() == 2);
     CHECK(schedule.passes[0] == serenity::frame::PassKind::path);
+    CHECK(schedule.passes[1] == serenity::frame::PassKind::tone_map);
+    REQUIRE(schedule.tone_map.has_value());
+    CHECK(schedule.tone_map->exposure == 0.0f);
+    CHECK(schedule.tone_map->bloom == 0.04f);
+}
+
+TEST_CASE("the preview's graph in graphs/ reads") {
+    const auto schedule = serenity::frame::load_schedule(SERENITY_GRAPHS_DIR "/preview.toml");
+    REQUIRE(schedule.passes.size() == 2);
+    CHECK(schedule.passes[1] == serenity::frame::PassKind::display);
 }

@@ -14,11 +14,14 @@ add_executable(serenity_gpu_tests
     acceleration_test.cpp
     motion_test.cpp
     history_test.cpp
+    tone_map_test.cpp
     ../main_test.cpp
 )
 target_link_libraries(serenity_gpu_tests PRIVATE serenity_metal doctest::doctest)
 target_compile_options(serenity_gpu_tests PRIVATE ${SERENITY_WARNINGS})
-target_compile_definitions(serenity_gpu_tests PRIVATE SERENITY_SCENES_DIR="${PROJECT_SOURCE_DIR}/scenes")
+target_compile_definitions(serenity_gpu_tests PRIVATE
+    SERENITY_SCENES_DIR="${PROJECT_SOURCE_DIR}/scenes"
+    SERENITY_GRAPHS_DIR="${PROJECT_SOURCE_DIR}/graphs")
 
 serenity_add_metallib(
     TARGET serenity_gpu_tests NAME smoke

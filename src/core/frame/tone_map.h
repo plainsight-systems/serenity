@@ -31,11 +31,16 @@
 // over the radiance image L, at the frame's size W x H, and a bloom pyramid
 // B_0 .. B_5 of bloom_levels levels:
 //
-//   Step 1  Exposure: E = min(2^exposure L, bloom_ceiling) per channel,
-//           wherever L is read below. The ceiling, 65504, the largest half
-//           float, is where the pyramid's storage ends: light brighter than
-//           it after exposure glares as if it were that bright, and its core
-//           is white either way (step 5).
+//   Step 1  Exposure: E = 2^exposure L, and each read of E below clamped
+//           to bloom_ceiling per channel: each of step 2's bilinear reads,
+//           after it averages its texels, and each of step 4's texels. The
+//           ceiling, 65504, the largest half float, is where the pyramid's
+//           storage ends: light brighter than it after exposure glares as
+//           if it were that bright, and its core is white either way (step
+//           5). Clamped after the average rather than texel by texel, so a
+//           backend reads E through its hardware's filter, 13 reads a texel
+//           of B_0 rather than 52; the two differ only for light past the
+//           ceiling.
 //   Step 2  Down: level k's size is max(1, ceil(previous / 2)) on each axis,
 //           from W x H, so a frame of any size, 1 x 1 included, has every
 //           level. B_0 is E filtered to its size, B_k is B_(k-1) filtered to

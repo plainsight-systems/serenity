@@ -47,8 +47,29 @@ void only(std::string_view source, const toml::table& table, std::initializer_li
     }
 }
 
+// A number in `table` at `key`, which must be there.
+float number(std::string_view source, const toml::table& table, std::string_view key, std::string_view where) {
+    const toml::node* node = table.get(key);
+    if (node == nullptr) {
+        throw GraphFileError(at(source, table, std::string(where) + " has no '" + std::string(key) + "'"));
+    }
+    const std::optional<double> value = node->value<double>();
+    if (!value) {
+        throw GraphFileError(at(source, *node, "'" + std::string(key) + "' must be a number"));
+    }
+    return static_cast<float>(*value);
+}
+
+ToneMap read_tone_map(std::string_view source, const toml::table& table) {
+    only(source, table, {"exposure", "bloom"}, "[tone_map]");
+    ToneMap settings{};
+    settings.exposure = number(source, table, "exposure", "[tone_map]");
+    settings.bloom = number(source, table, "bloom", "[tone_map]");
+    return settings;
+}
+
 Schedule read_schedule(std::string_view source, const toml::table& root) {
-    only(source, root, {"passes"}, "the frame graph");
+    only(source, root, {"passes", "tone_map"}, "the frame graph");
 
     const toml::node* passes_node = root.get("passes");
     if (passes_node == nullptr) {
@@ -72,6 +93,20 @@ Schedule read_schedule(std::string_view source, const toml::table& root) {
                                     "unknown pass '" + std::string(*text) + "'; known passes: " + known_pass_names()));
         }
         schedule.passes.push_back(*kind);
+    }
+
+    // The tone map's settings: checked by the core's rule with the rest
+    // (schedule.h), each mistake reported at the line it is about.
+    const toml::node* tone_map_node = root.get("tone_map");
+    if (tone_map_node != nullptr) {
+        const toml::table* table = tone_map_node->as_table();
+        if (table == nullptr) {
+            throw GraphFileError(at(source, *tone_map_node, "'tone_map' must be a table, [tone_map]"));
+        }
+        schedule.tone_map = read_tone_map(source, *table);
+        if (const std::optional<std::string> reason = invalid(*schedule.tone_map)) {
+            throw GraphFileError(at(source, *table, *reason));
+        }
     }
     if (const std::optional<std::string> reason = invalid(schedule)) {
         throw GraphFileError(at(source, *passes_node, *reason));

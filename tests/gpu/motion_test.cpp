@@ -98,7 +98,7 @@ TEST_CASE("a moving scene at time t renders exactly as the scene still, placed w
     {
         metal::Device device;
         metal::Submission submission(device);
-        metal::Renderer renderer(device, submission, graph("\"preview\""), &moving);
+        metal::Renderer renderer(device, submission, graph("\"preview\", \"display\""), &moving);
         std::vector<std::unique_ptr<metal::Offscreen>> targets;
         std::uint64_t sequence = 0;
         for (std::size_t i = 0; i < times.size(); ++i) {
@@ -120,7 +120,7 @@ TEST_CASE("a moving scene at time t renders exactly as the scene still, placed w
         REQUIRE_FALSE(animation::moves(still.animation));
         metal::Device device;
         metal::Submission submission(device);
-        metal::Renderer renderer(device, submission, graph("\"preview\""), &still);
+        metal::Renderer renderer(device, submission, graph("\"preview\", \"display\""), &still);
         metal::Offscreen target(device, submission, size);
         const std::uint64_t sequence = metal::render_to_offscreen(
             submission, target, renderer,
@@ -147,7 +147,7 @@ TEST_CASE("a flying, blinking scene at time t renders exactly as the scene still
     {
         metal::Device device;
         metal::Submission submission(device);
-        metal::Renderer renderer(device, submission, graph("\"preview\""), &flying);
+        metal::Renderer renderer(device, submission, graph("\"preview\", \"display\""), &flying);
         std::vector<std::unique_ptr<metal::Offscreen>> targets;
         std::uint64_t sequence = 0;
         for (std::size_t i = 0; i < times.size(); ++i) {
@@ -183,7 +183,7 @@ TEST_CASE("a flying, blinking scene at time t renders exactly as the scene still
         }
         metal::Device device;
         metal::Submission submission(device);
-        metal::Renderer renderer(device, submission, graph("\"preview\""), &still);
+        metal::Renderer renderer(device, submission, graph("\"preview\", \"display\""), &still);
         metal::Offscreen target(device, submission, size);
         const std::uint64_t sequence = metal::render_to_offscreen(
             submission, target, renderer,

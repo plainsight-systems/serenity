@@ -8,8 +8,8 @@ PathPass::PathPass(const Device&, const Library& library) : pipeline_(library.co
 
 void PathPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
     if (resources.scene == nullptr || resources.transforms == 0 || resources.glows == 0 || resources.camera == 0 ||
-        resources.accumulation == nullptr || resources.non_finite_counter == 0) {
-        throw Error("PathPass: the frame has no scene, no camera or no accumulated image");
+        resources.accumulation == nullptr || resources.non_finite_counter == 0 || resources.radiance == nullptr) {
+        throw Error("PathPass: the frame has no scene, no camera, no accumulated image or no radiance image");
     }
     const SceneBuffers::Addresses& scene = *resources.scene;
 
@@ -35,7 +35,7 @@ void PathPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources
     arguments->setAddress(scene.light_counts, 17);
     arguments->setAddress(resources.non_finite_counter, 18);
     arguments->setTexture(resources.accumulation->gpuResourceID(), 0);
-    arguments->setTexture(resources.target->gpuResourceID(), 1);
+    arguments->setTexture(resources.radiance->gpuResourceID(), 1);
     encoder->setComputePipelineState(pipeline_.get());
 
     // The previous frame's dispatch wrote the accumulated image this one

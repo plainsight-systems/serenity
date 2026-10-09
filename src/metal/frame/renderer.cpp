@@ -59,9 +59,11 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         throw Error("Renderer: " + *reason);
     }
     bool accumulates = false;
+    bool radiance = false;
     for (frame::PassKind kind : schedule.passes) {
         needs_scene_ = needs_scene_ || frame::needs_scene(kind);
         accumulates = accumulates || frame::accumulates(kind);
+        radiance = radiance || frame::writes_radiance(kind);
     }
     if (needs_scene_ && scene == nullptr) {
         throw Error("Renderer: the frame graph's passes read a scene, and none was given (--scene)");
@@ -86,6 +88,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         }
     }
 
+    kinds_ = schedule.passes;
     passes_.reserve(schedule.passes.size());
     for (frame::PassKind kind : schedule.passes) {
         // No default: a kind this backend does not implement fails the build
@@ -100,7 +103,17 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         case frame::PassKind::path:
             passes_.emplace_back(std::in_place_type<PathPass>, device, library_);
             break;
+        case frame::PassKind::display:
+            passes_.emplace_back(std::in_place_type<DisplayPass>, device, library_);
+            break;
+        case frame::PassKind::tone_map:
+            // The schedule has its settings with its pass (frame::invalid).
+            passes_.emplace_back(std::in_place_type<ToneMapPass>, device, library_, submission, *schedule.tone_map);
+            break;
         }
+    }
+    if (radiance) {
+        images_ = std::make_unique<FrameImages>(device, submission, true, schedule.tone_map.has_value());
     }
     if (accumulates) {
         accumulation_ = std::make_unique<Accumulation>(device, submission);
@@ -129,11 +142,17 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
 
 void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
     check_time(inputs);
-    if (!accumulation_) {
+    if (!accumulation_ && !images_) {
         return;
     }
     prepared_.reset();
-    const std::uint32_t held = accumulation_->prepare(inputs, size, animation::changes(animation_));
+    if (images_) {
+        images_->prepare(size);
+    }
+    std::uint32_t held = 0;
+    if (accumulation_) {
+        held = accumulation_->prepare(inputs, size, animation::changes(animation_));
+    }
     prepared_ = Prepared{inputs.index, size, held};
 }
 
@@ -148,7 +167,7 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
     }
     check_time(inputs);
     std::uint32_t accumulated_frames = 0;
-    if (accumulation_) {
+    if (accumulation_ || images_) {
         if (!prepared_ || prepared_->index != inputs.index || !(prepared_->size == size)) {
             throw Error("Renderer::record: frame " + std::to_string(inputs.index) +
                         " was not prepared at this size (Renderer::prepare)");
@@ -189,6 +208,12 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
         resources.glows = glows_->address(frame.slot);
         resources.acceleration = acceleration_->resource(frame.slot);
     }
+    if (images_) {
+        resources.radiance = images_->radiance();
+        for (std::uint32_t level = 0; level < frame::bloom_levels; ++level) {
+            resources.bloom[level] = images_->bloom(level);
+        }
+    }
     if (accumulation_) {
         resources.accumulation = accumulation_->texture();
         resources.accumulated_frames = accumulated_frames;
@@ -209,8 +234,19 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
         }
     }
     encoder->setArgumentTable(resources.arguments);
-    for (const Pass& pass : passes_) {
-        std::visit([&](const auto& p) { p.record(encoder, resources); }, pass);
+    for (std::size_t i = 0; i < passes_.size(); ++i) {
+        const frame::PassKind kind = kinds_[i];
+        if (frame::writes_radiance(kind)) {
+            // The frames in flight share the images between passes: none
+            // writes them while the frame before still reads them.
+            encoder->barrierAfterQueueStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+        }
+        if (frame::reads_radiance(kind)) {
+            // The radiance image an earlier pass of this frame wrote.
+            encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch,
+                                               MTL4::VisibilityOptionDevice);
+        }
+        std::visit([&](const auto& p) { p.record(encoder, resources); }, passes_[i]);
     }
     encoder->endEncoding();
 }

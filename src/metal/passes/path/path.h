@@ -44,8 +44,8 @@ class PathPass {
 public:
     PathPass(const Device& device, const Library& library);
 
-    // Records the pass. Throws Error if `resources` has no scene, no camera
-    // or no accumulated image.
+    // Records the pass. Throws Error if `resources` has no scene, no camera,
+    // no accumulated image or no radiance image.
     void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
 
 private:

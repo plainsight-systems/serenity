@@ -99,6 +99,11 @@ bool accumulates(const Schedule& schedule);
 // rule (metal/frame/renderer.h).
 std::optional<std::string> invalid(const Schedule& schedule);
 
+// The last of those rules alone: whether tone-map `settings` are in range.
+// For the graph reader, to name the line of the settings rather than of the
+// passes.
+std::optional<std::string> invalid(const ToneMap& settings);
+
 // The name each kind is written as in a frame graph file, and back. One table, so
 // a kind and its name cannot disagree in two places.
 std::string_view name(PassKind kind);
