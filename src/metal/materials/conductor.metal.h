@@ -18,7 +18,7 @@
 #include "core/contracts/bsdf.h"
 #include "core/materials/conductor.h"
 #include "metal/device/layout.metal.h"
-#include "metal/sampler/sampler.metal.h"
+#include "metal/math/warp.metal.h"
 
 namespace serenity {
 namespace shaders {

@@ -27,6 +27,7 @@
 #include "metal/materials/conductor.metal.h"
 #include "metal/materials/dielectric.metal.h"
 #include "metal/materials/rough.metal.h"
+#include "metal/math/warp.metal.h"
 #include "metal/sampler/sampler.metal.h"
 #include "metal/shapes/shapes.metal.h"
 #include "metal/textures/textures.metal.h"

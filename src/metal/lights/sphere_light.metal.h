@@ -17,7 +17,7 @@
 
 #include "core/lights/sphere_light.h"
 #include "metal/device/layout.metal.h"
-#include "metal/sampler/sampler.metal.h"
+#include "metal/math/warp.metal.h"
 
 namespace serenity {
 namespace shaders {

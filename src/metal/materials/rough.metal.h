@@ -12,7 +12,7 @@
 #include "core/contracts/bsdf.h"
 #include "core/materials/rough.h"
 #include "metal/device/layout.metal.h"
-#include "metal/sampler/sampler.metal.h"
+#include "metal/math/warp.metal.h"
 #include "metal/textures/textures.metal.h"
 
 namespace serenity {

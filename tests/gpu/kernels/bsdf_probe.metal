@@ -8,15 +8,12 @@
 #include "metal/materials/bsdf.metal.h"
 #include "metal/materials/resolve.metal.h"
 #include "metal/sampler/sampler.metal.h"
+#include "bsdf_probe.h"
 
 using namespace serenity::shaders;
 using serenity::contracts::Bsdf;
 
-struct Probe {
-    float4 direction_pdf;   // the sample's wi and pdf
-    float4 value_lobe;      // its value, and its lobe bits as a float
-    float4 evaluated;       // evaluate(wo, wi) and pdf(wo, wi), asked afterwards
-};
+using serenity::tests::Probe;
 
 // Sample i of `count`, from numbers hashed from i.
 kernel void bsdf_samples(device Probe* out [[buffer(0)]],
@@ -31,9 +28,14 @@ kernel void bsdf_samples(device Probe* out [[buffer(0)]],
     const float3 u = float3(unit_float(h), unit_float(pcg_hash(h)), unit_float(pcg_hash(h ^ 0x9e3779b9u)));
     const serenity::contracts::BsdfSample s = bsdf_sample(bsdf, wo, u);
     const float3 wi = to_float3(s.direction);
-    out[i].direction_pdf = float4(wi, s.pdf);
-    out[i].value_lobe = float4(to_float3(s.value), float(s.lobe));
-    out[i].evaluated = s.pdf > 0.0f ? float4(bsdf_evaluate(bsdf, wo, wi), bsdf_pdf(bsdf, wo, wi)) : float4(0.0f);
+    Probe p;
+    p.direction = s.direction;
+    p.pdf = s.pdf;
+    p.value = s.value;
+    p.lobe = s.lobe;
+    p.evaluated = to_packed(s.pdf > 0.0f ? bsdf_evaluate(bsdf, wo, wi) : float3(0.0f));
+    p.evaluated_pdf = s.pdf > 0.0f ? bsdf_pdf(bsdf, wo, wi) : 0.0f;
+    out[i] = p;
 }
 
 // evaluate and pdf over the sphere, in res x res cells of equal solid angle:
@@ -69,4 +71,14 @@ kernel void bsdf_resolve(device Bsdf* out [[buffer(0)]],
     }
     out[i] = resolve_bsdf(Materials{records, rough, dielectrics, conductors}, Textures{texture_records, checkers},
                           surfaces[i]);
+}
+
+// lobes() of each of `count` Bsdfs.
+kernel void bsdf_lobe_bits(device uint* out [[buffer(0)]],
+                           device const Bsdf* bsdfs [[buffer(1)]],
+                           constant uint& count [[buffer(2)]],
+                           uint i [[thread_position_in_grid]]) {
+    if (i < count) {
+        out[i] = bsdf_lobes(bsdfs[i]);
+    }
 }

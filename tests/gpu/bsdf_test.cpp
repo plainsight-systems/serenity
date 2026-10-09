@@ -33,6 +33,7 @@
 #include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/device/submission.h"
+#include "kernels/bsdf_probe.h"
 #include "serenity/metallib/smoke.h"
 
 using namespace serenity;
@@ -108,15 +109,7 @@ V3 unit(double x, double y, double z) {
     return {x / l, y / l, z / l};
 }
 
-struct Probe {
-    float direction[3];
-    float pdf;
-    float value[3];
-    float lobe;
-    float evaluated[3];
-    float evaluated_pdf;
-};
-static_assert(sizeof(Probe) == 48);
+using tests::Probe;
 
 Bsdf make(BsdfKind kind, V3 normal, std::array<float, 3> color, float alpha, float ior) {
     Bsdf b{};
@@ -143,9 +136,9 @@ std::vector<std::array<float, 4>> density(Gpu& gpu, const Bsdf& bsdf, V3 wo) {
 
 // The cell of bsdf_density's grid a direction falls in, coarsened by
 // `coarse` in each direction.
-std::size_t coarse_cell(const float d[3], std::uint32_t coarse) {
-    const double z = std::clamp<double>(d[2], -1.0, 1.0);
-    const double phi = std::atan2(d[1], d[0]);
+std::size_t coarse_cell(contracts::Float3 d, std::uint32_t coarse) {
+    const double z = std::clamp<double>(d.z, -1.0, 1.0);
+    const double phi = std::atan2(d.y, d.x);
     const auto row = std::min<std::uint32_t>(grid - 1, std::uint32_t((1.0 - z) * 0.5 * grid));
     const auto column =
         std::min<std::uint32_t>(grid - 1, std::uint32_t((phi < 0 ? phi + 2 * std::numbers::pi : phi) /
@@ -169,10 +162,9 @@ void check_sampling_follows_pdf(Gpu& gpu, const Bsdf& bsdf, V3 wo, std::uint32_t
         ++valid;
         CHECK(std::uint32_t(p.lobe) == lobe);
         const bool same_pdf = std::abs(p.evaluated_pdf - p.pdf) <= 1e-3f * p.pdf;
-        bool same_value = true;
-        for (int c = 0; c < 3; ++c) {
-            same_value = same_value && std::abs(p.evaluated[c] - p.value[c]) <= 1e-3f * std::max(p.value[c], 1e-6f);
-        }
+        const auto close = [](float a, float b) { return std::abs(a - b) <= 1e-3f * std::max(b, 1e-6f); };
+        const bool same_value =
+            close(p.evaluated.x, p.value.x) && close(p.evaluated.y, p.value.y) && close(p.evaluated.z, p.value.z);
         inconsistent += (same_pdf && same_value) ? 0u : 1u;
     }
     CHECK(inconsistent == 0);
@@ -230,8 +222,8 @@ TEST_CASE("Lambert: sampling follows the pdf, and every sample's weight is the a
 
     std::uint32_t wrong_weight = 0;
     for (const Probe& p : samples(gpu, bsdf, wo)) {
-        const double cos = std::abs(dot({p.direction[0], p.direction[1], p.direction[2]}, n));
-        const double weight = p.value[0] * cos / p.pdf;
+        const double cos = std::abs(dot({p.direction.x, p.direction.y, p.direction.z}, n));
+        const double weight = p.value.x * cos / p.pdf;
         wrong_weight += std::abs(weight - 0.5) < 1e-3 ? 0u : 1u;
     }
     CHECK(wrong_weight == 0);
@@ -248,9 +240,20 @@ TEST_CASE("Lambert: sampling follows the pdf, and every sample's weight is the a
     }
     CHECK(albedo == doctest::Approx(0.5).epsilon(0.005));
 
-    // wo on the far side of the normal: it reflects there instead.
-    check_sampling_follows_pdf(gpu, bsdf, V3{-wo.x, -wo.y, -wo.z},
-                               contracts::lobe_reflection | contracts::lobe_diffuse);
+    // wo on the far side of the normal: it reflects there instead. Checked
+    // against the normal directly, not only against evaluate() and pdf(),
+    // which would agree with sample() on the wrong side too.
+    const V3 behind{-wo.x, -wo.y, -wo.z};
+    check_sampling_follows_pdf(gpu, bsdf, behind, contracts::lobe_reflection | contracts::lobe_diffuse);
+    std::uint32_t wrong_side = 0;
+    std::uint32_t wrong_back_weight = 0;
+    for (const Probe& p : samples(gpu, bsdf, behind)) {
+        const double cos = dot({p.direction.x, p.direction.y, p.direction.z}, n);
+        wrong_side += (p.pdf > 0.0f && cos < 0.0) ? 0u : 1u;
+        wrong_back_weight += std::abs(p.value.x * -cos / p.pdf - 0.5) < 1e-3 ? 0u : 1u;
+    }
+    CHECK(wrong_side == 0);
+    CHECK(wrong_back_weight == 0);
 }
 
 TEST_CASE("conductor: sampling follows the pdf, and a metal of f0 = 1 returns no more than it receives") {
@@ -268,7 +271,7 @@ TEST_CASE("conductor: sampling follows the pdf, and a metal of f0 = 1 returns no
             double largest = 0.0;
             for (const Probe& p : samples(gpu, bsdf, wo)) {
                 if (p.pdf > 0.0f) {
-                    const double weight = p.value[0] * std::abs(p.direction[0]) / p.pdf;
+                    const double weight = p.value.x * std::abs(p.direction.x) / p.pdf;
                     total += weight;
                     largest = std::max(largest, weight);
                 }
@@ -298,16 +301,16 @@ TEST_CASE("dielectric: Fresnel chooses reflection, the weights are 1 and 1 / eta
     std::uint32_t reflected = 0;
     for (const Probe& p : samples(gpu, bsdf, n)) {
         REQUIRE(p.pdf > 0.0f);
-        CHECK(p.evaluated[0] == 0.0f);
+        CHECK(p.evaluated.x == 0.0f);
         CHECK(p.evaluated_pdf == 0.0f);
-        const double weight = p.value[0] * std::abs(p.direction[2]) / p.pdf;
+        const double weight = p.value.x * std::abs(p.direction.z) / p.pdf;
         if (std::uint32_t(p.lobe) == (contracts::lobe_reflection | contracts::lobe_delta)) {
             ++reflected;
-            CHECK(p.direction[2] == doctest::Approx(1.0f));
+            CHECK(p.direction.z == doctest::Approx(1.0f));
             CHECK(weight == doctest::Approx(1.0));
         } else {
             CHECK(std::uint32_t(p.lobe) == (contracts::lobe_transmission | contracts::lobe_delta));
-            CHECK(p.direction[2] == doctest::Approx(-1.0f));  // straight through, into the glass
+            CHECK(p.direction.z == doctest::Approx(-1.0f));  // straight through, into the glass
             CHECK(weight == doctest::Approx(1.0 / 2.25));
         }
     }
@@ -318,18 +321,33 @@ TEST_CASE("dielectric: Fresnel chooses reflection, the weights are 1 and 1 / eta
     const V3 inside = unit(std::sin(std::numbers::pi / 3), 0.0, -std::cos(std::numbers::pi / 3));
     for (const Probe& p : samples(gpu, bsdf, inside)) {
         CHECK(std::uint32_t(p.lobe) == (contracts::lobe_reflection | contracts::lobe_delta));
-        CHECK(p.value[0] * std::abs(p.direction[2]) / p.pdf == doctest::Approx(1.0));
-        CHECK(p.direction[2] < 0.0f);  // stays inside
+        CHECK(p.value.x * std::abs(p.direction.z) / p.pdf == doctest::Approx(1.0));
+        CHECK(p.direction.z < 0.0f);  // stays inside
     }
 }
 
-TEST_CASE("lobes: an estimator aims at lights only where a lobe is not delta") {
+TEST_CASE("lobes: each kind's, from the shader, and an estimator aims at lights only where one is not delta") {
     using namespace contracts;
-    CHECK(aims_at_lights(lobe_reflection | lobe_diffuse));
-    CHECK(aims_at_lights(lobe_reflection | lobe_glossy));
-    CHECK_FALSE(aims_at_lights(lobe_reflection | lobe_transmission | lobe_delta));
+    const V3 n = unit(0.0, 0.0, 1.0);
+    const std::vector<Bsdf> bsdfs = {
+        make(BsdfKind::none, n, {1, 1, 1}, 0.0f, 0.0f),
+        make(BsdfKind::lambert, n, {0.5f, 0.5f, 0.5f}, 0.0f, 0.0f),
+        make(BsdfKind::conductor, n, {1, 1, 1}, 0.25f, 0.0f),
+        make(BsdfKind::dielectric, n, {1, 1, 1}, 0.0f, 1.5f),
+    };
+    const std::uint32_t count = std::uint32_t(bsdfs.size());
+    Gpu gpu;
+    const auto lobes = gpu.run<std::uint32_t>("bsdf_lobe_bits", count, {bytes(bsdfs), bytes(count)});
+    CHECK(lobes[0] == 0u);
+    CHECK(lobes[1] == (lobe_reflection | lobe_diffuse));
+    CHECK(lobes[2] == (lobe_reflection | lobe_glossy));
+    CHECK(lobes[3] == (lobe_reflection | lobe_transmission | lobe_delta));
+
+    CHECK_FALSE(aims_at_lights(lobes[0]));
+    CHECK(aims_at_lights(lobes[1]));
+    CHECK(aims_at_lights(lobes[2]));
+    CHECK_FALSE(aims_at_lights(lobes[3]));
     CHECK(aims_at_lights(lobe_reflection | lobe_delta | lobe_glossy));  // a mirror over a glossy coat
-    CHECK_FALSE(aims_at_lights(0u));
 }
 
 TEST_CASE("resolve: each material kind to its Bsdf, a texture read at the point") {

@@ -74,6 +74,7 @@ data or adds a kind; it does not change a family that already exists.
 | `src/metal/textures/` | Texture | each texture kind's evaluation |
 | `src/metal/lights/` | Light | each light kind's emission and sampling |
 | `src/metal/camera/` | Camera | each camera kind's ray generation |
+| `src/metal/math/` | shared shader math | orthonormal frames, and warps from the unit square to the disk and the hemisphere: mappings every family uses, owned by none |
 | `src/metal/sampler/` | Sampler | deriving random numbers from pixel, frame and purpose |
 | `src/metal/light_selection/` | Light selection | each strategy for choosing a light |
 | `src/metal/integrator/` | Integrator | the path loop, its strategies, and the target function |

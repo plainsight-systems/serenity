@@ -75,7 +75,7 @@ namespace serenity::metal {
 // kinds: trace.metal.h (the hardware loop over boxes, each shape kind's
 // exact test in shapes.metal.h), rough.metal.h, conductor.metal.h,
 // dielectric.metal.h, textures.metal.h, sphere_light.metal.h,
-// gradient_sky.metal.h and sampler.metal.h.
+// gradient_sky.metal.h, sampler.metal.h and warp.metal.h.
 //
 // Cost: one thread per pixel, in rows of the execution width (GPU.2). On a
 // rough surface, with L lights, 4 x (1 + 4L + 2) rays a pixel, growing by
