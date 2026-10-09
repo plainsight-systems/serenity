@@ -119,10 +119,15 @@ namespace serenity::metal {
 // them, so the dependencies are explicit and in one place (GPU.7): before a
 // pass that reads the radiance image, a barrier from dispatch to dispatch
 // after the pass that wrote it. Within a pass of several dispatches, the
-// pass records its own (passes/tone_map/tone_map.h). Between frames, a pass
-// that reads its own history waits for the previous frame's dispatches
-// itself (passes/path/path.h). The queue's wait for the drawable orders the
-// frame against the display (submission.h).
+// pass records its own (passes/tone_map/tone_map.h). Between frames, the
+// images between passes are one set the frames in flight share
+// (frame_images.h), so before the first pass of a frame that writes them the
+// renderer records a barrier waiting for the queue's earlier dispatches
+// (barrierAfterQueueStages, dispatch before dispatch): a frame never writes
+// them while the frame before still reads them. A pass that reads its own
+// history waits the same way itself (passes/path/path.h). The queue's wait
+// for the drawable orders the frame against the display
+// (submission.h).
 //
 // Frame constants (contracts/frame_constants.h) and the framed camera
 // (contracts/camera.h) reach the shaders through a buffer, because Metal 4's

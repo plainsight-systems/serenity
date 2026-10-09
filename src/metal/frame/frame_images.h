@@ -7,6 +7,7 @@
 #include <Metal/Metal.hpp>
 
 #include "core/frame/extent.h"
+#include "core/frame/tone_map.h"
 #include "metal/device/device.h"
 #include "metal/device/submission.h"
 
@@ -23,10 +24,12 @@ namespace serenity::metal {
 //     32-bit, not 16: the display pass must show exactly what the light
 //     pass computed, as the passes did when they encoded the target
 //     themselves, and a firefly's radiance of hundreds keeps its digits;
-//   - the bloom pyramid, for the tone-map pass alone: six levels, each half
-//     the one before in each direction (1/2 to 1/64 of the frame),
+//   - the bloom pyramid, for the tone-map pass alone: frame::bloom_levels
+//     levels (core/frame/tone_map.h), each max(1, ceil(previous / 2)) on
+//     each axis from the frame's size, so any frame has every level;
 //     RGBA16Float, which a blur of light needs no more than (half's 11 bits
-//     are 3 decimal digits, and its range reaches 65504).
+//     are 3 decimal digits), the light clamped to its range before it
+//     enters (tone_map.h, step 1).
 //
 // Made when the frame's size is first known and remade when it changes,
 // before the frame's submission begins (Renderer::prepare), draining the
@@ -36,10 +39,16 @@ namespace serenity::metal {
 // made: a schedule with no light pass makes none; one without tone_map, no
 // pyramid.
 //
-// Not per frame in flight: a frame writes its images before it reads them
-// and reads nothing of the last frame's, and the queue's frames run their
-// dispatches in order (the path pass's barrier, path.h), so one set serves
-// every frame.
+// One set, not one per frame in flight: the frames in flight share it, and
+// what keeps one frame's passes from writing it while the frame before still
+// reads it is a barrier the renderer records before the first pass of a
+// frame that writes it, waiting for the queue's earlier dispatches
+// (metal/frame/renderer.h). So the CPU still records a frame while the GPU
+// runs the one before; what the barrier gives up is only the GPU starting a
+// frame's first dispatch before the last frame's final one ends. A copy per
+// frame in flight would keep that sliver of overlap at twice the memory,
+// 290 MB at the display's size; the barrier's cost is measured at
+// implementation.
 //
 // Cost: at 3456 x 2234, the radiance image is 123 MB and the pyramid 21 MB.
 // Per frame: the radiance image written once and read once, 247 MB of
@@ -48,8 +57,6 @@ namespace serenity::metal {
 // Throws Error if the device cannot make an image.
 class FrameImages {
 public:
-    static constexpr std::uint32_t bloom_levels = 6;
-
     // `radiance` and `pyramid`: which the schedule uses.
     FrameImages(const Device& device, Submission& submission, bool radiance, bool pyramid);
 
@@ -73,7 +80,7 @@ private:
     bool wants_pyramid_;
     frame::Extent size_;
     NS::SharedPtr<MTL::Texture> radiance_;
-    std::array<NS::SharedPtr<MTL::Texture>, bloom_levels> pyramid_;
+    std::array<NS::SharedPtr<MTL::Texture>, frame::bloom_levels> pyramid_;
 };
 
 }  // namespace serenity::metal

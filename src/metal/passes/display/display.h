@@ -14,7 +14,7 @@ namespace serenity::metal {
 // The frame's radiance as it is, for the display: per pixel, the radiance
 // image's color (metal/frame/frame_images.h), a color brighter than the
 // display shows scaled down by its largest channel, keeping its hue, then
-// sRGB's transfer function (passes/display.metal.h), into the target. What
+// sRGB's transfer function (display.metal.h), into the target. What
 // the preview and path passes did to their own output before the radiance
 // image came between them and the target, moved here unchanged, so a frame
 // graph of a light pass and this one shows, byte for byte, what that light

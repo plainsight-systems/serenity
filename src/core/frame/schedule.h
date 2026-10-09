@@ -69,7 +69,7 @@ bool writes_target(PassKind kind);
 struct Schedule {
     std::vector<PassKind> passes;  // run in this order; at least one
     // The tone-map pass's settings: present exactly when the schedule has
-    // that pass (graph_file.h).
+    // that pass (graph_file.h, tone_map.h).
     std::optional<ToneMap> tone_map;
 };
 
@@ -90,7 +90,8 @@ bool accumulates(const Schedule& schedule);
 //     it, and a pass that writes it is followed by one that reads it: light
 //     computed and never shown is a mistake, not a frame;
 //   - tone-map settings exactly when there is a tone_map pass, with an
-//     exposure finite within [-20, 20] stops and a bloom in [0, 1).
+//     exposure finite within [-10, 10] stops and a bloom in [0, 1)
+//     (tone_map.h).
 //
 // None if `schedule` is valid; otherwise why not, in words a reader of the
 // frame graph file can act on. The graph reader refuses an invalid schedule

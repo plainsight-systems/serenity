@@ -13,68 +13,33 @@ namespace serenity::metal {
 
 // Axis: Pass (tone map).
 //
-// The frame's radiance as the look wants it shown: exposed, its brightest
-// light spread into glare, rolled off toward white instead of clipped, and
-// encoded for the display. The pass the window and movies end in
-// (graphs/path.toml); its numbers are the graph's (core/frame/tone_map.h).
+// The frame's radiance as the look wants it shown: what is computed is the
+// core's (core/frame/tone_map.h, steps 1 to 6), with its constants, which
+// the shaders take from that header; this pass is how Metal computes it. The
+// pass the window and movies end in (graphs/path.toml).
 //
-// Why it is needed: a firefly bright enough to light the scene is far
-// brighter than the display shows, at its base glow and at its flash alike,
-// so its body clips to one brightness either way (scenes/
-// brass_sphere_flight.toml). An eye or a camera shows such a light as glare,
-// a halo whose size and strength grow with its brightness; bloom is that
-// glare, and with it a flash shows on the firefly itself.
+// How: four pipelines over the radiance image and the bloom pyramid
+// (metal/frame/frame_images.h), in 12 dispatches:
 //
-// The algorithm, whose steps the code carries by number, over the radiance
-// image L (metal/frame/frame_images.h) and the bloom pyramid B_0 .. B_5,
-// each level half the one before (1/2 to 1/64 of the frame):
+//   - steps 1 and 2 for B_0: the first down pipeline, reading the radiance
+//     image, exposing and clamping it (step 1) at each of its 13 reads,
+//     writing B_0 as half floats;
+//   - step 2 for B_1 .. B_5: the down pipeline, each reading the level
+//     before;
+//   - step 3 for B_4 .. B_0: the up pipeline, each reading the level below
+//     and adding to its own, in place;
+//   - steps 1 and 4 to 6: the finish pipeline at the frame's size, reading
+//     the radiance image and B_0, writing the target.
 //
-//   Step 1  Exposure: E = 2^exposure L, wherever L is read below.
-//   Step 2  Down: B_0 is E filtered to half size, B_k is B_(k-1) filtered to
-//           half size again, k = 1 .. 5, each by Jimenez's 13-tap filter
-//           (SIGGRAPH 2014, "Next Generation Post Processing in Call of
-//           Duty: Advanced Warfare"): five overlapping 2 x 2 box averages,
-//           the middle one weighted 1/2 and the four corner ones 1/8 each,
-//           taken with 13 bilinear reads. Edges clamp, so a uniform image
-//           stays uniform at every level. Not the Karis average Jimenez
-//           applies to the first level: it weights a pixel by 1 / (1 + its
-//           luminance) to keep isolated over-bright pixels from blooming,
-//           and the isolated over-bright pixels here are the fireflies,
-//           whose glare is the point. The path tracer's own bright noise
-//           blooms with them, until a denoiser takes the noise out first.
-//   Step 3  Up: for k = 4 down to 0, B_k += tent(B_(k+1)), the 3 x 3 tent
-//           filter (weights 1, 2, 1 by 1, 2, 1, over 16) of the level below,
-//           read bilinearly at B_k's size. B_0 is then the sum of six blurs
-//           of E, from narrow to wide: glare that is bright near the light
-//           and wide around it, as a lens's is.
-//   Step 4  Composite: C = (1 - bloom) E + bloom tent(B_0) / 6, at the
-//           frame's size. Each blur keeps E's mean, so their sum's sixth
-//           does, and C is a mean of E and it: bloom moves light and makes
-//           none.
-//   Step 5  Roll-off: Khronos' PBR Neutral tone mapper (KhronosGroup/
-//           ToneMapping, PBR_Neutral, 2024), from its published equations,
-//           with F90 = 0.04: K_s = 0.8 - F90, K_d = 0.15; x the smallest
-//           channel of C, C -= (x < 0.08 ? x - 6.25 x^2 : 0.04); p its
-//           largest; if p >= K_s, with d = 1 - K_s, p_n = 1 - d^2 / (p + d -
-//           K_s), C *= p_n / p, and C mixed toward (p_n, p_n, p_n) by
-//           1 - 1 / (K_d (p - p_n) + 1). Below K_s colors pass as they are;
-//           above, they roll off toward 1 and toward white, so a firefly's
-//           core goes white-hot while its glare keeps its yellow. Chosen over
-//           ACES and AgX because it keeps hues where they are: AgX moves
-//           brass's hue (a Blender user measured 52 degrees to 46), and the
-//           brass and the fireflies are the scene's colors.
-//   Step 6  Encode: sRGB's transfer function (passes/display.metal.h), into
-//           the target.
+// Bilinear reads through one sampler, clamp to edge, normalized coordinates
+// at texel centers, as step 2 says. Each dispatch reads what the one before
+// wrote, so a barrier from dispatch to dispatch sits between each two
+// (GPU.7). The radiance image was written by an earlier pass in the frame;
+// the renderer records that barrier (metal/frame/renderer.h).
 //
-// Steps 2 and 3 are 11 dispatches, one per level, and steps 4 to 6 one at
-// the frame's size; each reads what the one before wrote, so a barrier from
-// dispatch to dispatch sits between each two (GPU.7). The radiance image
-// was written by an earlier pass; the renderer records that barrier
-// (metal/frame/renderer.h).
-//
-// The settings reach the shader in a 16-byte buffer of the pass's own, made
-// at construction and never written again: the graph's, the same every
-// frame.
+// The settings reach the shader in a 16-byte buffer of the pass's own
+// (frame::ToneMap's shared layout), made at construction and never written
+// again: the graph's, the same every frame.
 //
 // Cost, per frame, for P pixels: step 2 reads 13 texels per output pixel
 // over P/4 + P/16 + ... (about P/3 pixels), 4.3 P reads; step 3, 9 per

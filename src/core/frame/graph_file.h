@@ -23,7 +23,7 @@ namespace serenity::frame {
 //   passes = ["path", "tone_map"] # pass names, in order; at least one
 //
 //   [tone_map]                    # exactly when a pass is tone_map
-//   exposure = 0.0                # stops (core/frame/tone_map.h)
+//   exposure = 0.0                # stops, within [-10, 10] (core/frame/tone_map.h)
 //   bloom = 0.04                  # the fraction of light spread into glare
 //
 // Every key is checked. A missing passes, a passes that is not a non-empty
