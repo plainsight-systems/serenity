@@ -1,6 +1,8 @@
 #include "core/frame/graph_file.h"
 
+#include <cmath>
 #include <fstream>
+#include <limits>
 #include <sstream>
 
 #include <toml++/toml.hpp>
@@ -47,24 +49,46 @@ void only(std::string_view source, const toml::table& table, std::initializer_li
     }
 }
 
-// A number in `table` at `key`, which must be there.
-float number(std::string_view source, const toml::table& table, std::string_view key, std::string_view where) {
+// The node in `table` at `key`, which must be there.
+const toml::node& required(std::string_view source, const toml::table& table, std::string_view key,
+                           std::string_view where) {
     const toml::node* node = table.get(key);
     if (node == nullptr) {
         throw GraphFileError(at(source, table, std::string(where) + " has no '" + std::string(key) + "'"));
     }
-    const std::optional<double> value = node->value<double>();
+    return *node;
+}
+
+// `node` as a float: a number, finite and within float's range, checked
+// while it is still a double, since narrowing one past that range is
+// undefined.
+float finite_float(std::string_view source, const toml::node& node, std::string_view key) {
+    const std::optional<double> value = node.value<double>();
     if (!value) {
-        throw GraphFileError(at(source, *node, "'" + std::string(key) + "' must be a number"));
+        throw GraphFileError(at(source, node, "'" + std::string(key) + "' must be a number"));
+    }
+    if (!std::isfinite(*value) || std::abs(*value) > std::numeric_limits<float>::max()) {
+        throw GraphFileError(at(source, node, "'" + std::string(key) + "' must be a finite number"));
     }
     return static_cast<float>(*value);
 }
 
-ToneMap read_tone_map(std::string_view source, const toml::table& table) {
+// The tone map's settings, each checked by the core's rule (schedule.h)
+// and refused at its own line.
+passes::ToneMap read_tone_map(std::string_view source, const toml::table& table) {
     only(source, table, {"exposure", "bloom"}, "[tone_map]");
-    ToneMap settings{};
-    settings.exposure = number(source, table, "exposure", "[tone_map]");
-    settings.bloom = number(source, table, "bloom", "[tone_map]");
+    const toml::node& exposure = required(source, table, "exposure", "[tone_map]");
+    const toml::node& bloom = required(source, table, "bloom", "[tone_map]");
+    passes::ToneMap settings{};
+    settings.exposure = finite_float(source, exposure, "exposure");
+    settings.bloom = finite_float(source, bloom, "bloom");
+    // Each alone, beside a value of the other the rule accepts.
+    if (const std::optional<std::string> reason = invalid(passes::ToneMap{settings.exposure, 0.0f, {}})) {
+        throw GraphFileError(at(source, exposure, *reason));
+    }
+    if (const std::optional<std::string> reason = invalid(passes::ToneMap{0.0f, settings.bloom, {}})) {
+        throw GraphFileError(at(source, bloom, *reason));
+    }
     return settings;
 }
 
@@ -95,8 +119,8 @@ Schedule read_schedule(std::string_view source, const toml::table& root) {
         schedule.passes.push_back(*kind);
     }
 
-    // The tone map's settings: checked by the core's rule with the rest
-    // (schedule.h), each mistake reported at the line it is about.
+    // The tone map's settings, each mistake reported at the line it is
+    // about; whether they come with their pass, by the rule for the whole.
     const toml::node* tone_map_node = root.get("tone_map");
     if (tone_map_node != nullptr) {
         const toml::table* table = tone_map_node->as_table();
@@ -104,9 +128,6 @@ Schedule read_schedule(std::string_view source, const toml::table& root) {
             throw GraphFileError(at(source, *tone_map_node, "'tone_map' must be a table, [tone_map]"));
         }
         schedule.tone_map = read_tone_map(source, *table);
-        if (const std::optional<std::string> reason = invalid(*schedule.tone_map)) {
-            throw GraphFileError(at(source, *table, *reason));
-        }
     }
     if (const std::optional<std::string> reason = invalid(schedule)) {
         throw GraphFileError(at(source, *passes_node, *reason));

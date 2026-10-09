@@ -1,5 +1,5 @@
 // The tone-map pass (tone_map.h): the core's steps 1 to 6
-// (core/frame/tone_map.h), with its constants, in four kernels.
+// (core/passes/tone_map.h), with its constants, in four kernels.
 //
 // Every image is sampled at its levels' texel centers, (i + 0.5) / size,
 // through one sampler: bilinear, clamped to the edge, normalized
@@ -8,16 +8,16 @@
 
 #include <metal_stdlib>
 
-#include "core/frame/tone_map.h"
+#include "core/passes/tone_map.h"
 #include "metal/math/srgb.metal.h"
 
 using namespace metal;
 using namespace serenity::shaders;
-using serenity::frame::ToneMap;
+using serenity::passes::ToneMap;
 
 namespace {
 
-namespace tm = serenity::frame;
+namespace tm = serenity::passes;
 
 constexpr sampler bilinear(coord::normalized, address::clamp_to_edge, filter::linear);
 
@@ -70,7 +70,8 @@ float2 center(uint2 pixel, uint2 size) {
 
 }  // namespace
 
-// Steps 1 and 2 for B_0: the exposed radiance, filtered to B_0's size.
+// Steps 1 and 2 for B_0: the exposed radiance, filtered to B_0's size and
+// divided by the level count.
 kernel void tone_map_down_first(constant ToneMap& settings [[buffer(0)]],
                                 texture2d<float, access::sample> radiance [[texture(0)]],
                                 texture2d<float, access::write> level [[texture(1)]],
@@ -82,7 +83,8 @@ kernel void tone_map_down_first(constant ToneMap& settings [[buffer(0)]],
     const float scale = exp2(settings.exposure);
     const float2 texel = 1.0f / float2(radiance.get_width(), radiance.get_height());
     const auto read = [&](float2 uv) { return expose(radiance.sample(bilinear, uv).rgb, scale); };
-    level.write(float4(down13(read, center(pixel, size), texel), 1.0f), pixel);
+    const float3 filtered = down13(read, center(pixel, size), texel);
+    level.write(float4(filtered / float(tm::bloom_levels), 1.0f), pixel);
 }
 
 // Step 2 for B_1 .. B_5: the level before, filtered to this one's size.
@@ -123,7 +125,7 @@ kernel void tone_map_finish(constant ToneMap& settings [[buffer(0)]],
     // Step 1.
     const float3 exposed = expose(radiance.read(pixel).rgb, exp2(settings.exposure));
     // Step 4.
-    const float3 glare = tent(bloom, center(pixel, size)) / float(tm::bloom_levels);
+    const float3 glare = tent(bloom, center(pixel, size));
     const float3 composite = (1.0f - settings.bloom) * exposed + settings.bloom * glare;
     // Steps 5 and 6.
     target.write(float4(transfer_srgb(saturate(neutral(composite))), 1.0f), pixel);

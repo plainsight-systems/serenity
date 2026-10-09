@@ -190,9 +190,9 @@ std::optional<std::string> invalid(const Schedule& schedule) {
     return std::nullopt;
 }
 
-std::optional<std::string> invalid(const ToneMap& settings) {
-    if (!std::isfinite(settings.exposure) || std::abs(settings.exposure) > max_exposure) {
-        const std::string limit = std::to_string(static_cast<int>(max_exposure));
+std::optional<std::string> invalid(const passes::ToneMap& settings) {
+    if (!std::isfinite(settings.exposure) || std::abs(settings.exposure) > passes::max_exposure) {
+        const std::string limit = std::to_string(static_cast<int>(passes::max_exposure));
         return "the tone map's exposure, " + std::to_string(settings.exposure) + " stops, must be finite, within [-" +
                limit + ", " + limit + "]";
     }

@@ -1,6 +1,6 @@
 #pragma once
 
-// Axis: Frame graph (what the tone-map pass computes).
+// Axis: Pass (tone map: what the pass computes, for every backend).
 //
 // How a frame's linear radiance becomes what the display shows when the look
 // wants it shown: the tone-map pass's computation, decided here, in the core,
@@ -12,7 +12,8 @@
 // (contracts/frame_constants.h gives the rules): one definition of every
 // constant, none to drift.
 //
-// Its settings are the graph's (graph_file.h), the same every frame:
+// Its settings are the graph's (core/frame/graph_file.h), the same every
+// frame; the graph's rules check them (core/frame/schedule.h):
 //
 //   exposure  in stops, within [-10, 10]: the radiance is scaled by
 //             2^exposure before anything else. 0 shows it as it is.
@@ -34,17 +35,18 @@
 //   Step 1  Exposure: E = 2^exposure L, and each read of E below clamped
 //           to bloom_ceiling per channel: each of step 2's bilinear reads,
 //           after it averages its texels, and each of step 4's texels. The
-//           ceiling, 65504, the largest half float, is where the pyramid's
-//           storage ends: light brighter than it after exposure glares as
-//           if it were that bright, and its core is white either way (step
-//           5). Clamped after the average rather than texel by texel, so a
+//           ceiling, 65504, the largest half float, bounds what the
+//           pyramid stores (steps 2 and 3): light brighter than it after
+//           exposure glares as if it were that bright, and its core is
+//           white either way (step 5). Clamped after the average rather than texel by texel, so a
 //           backend reads E through its hardware's filter, 13 reads a texel
 //           of B_0 rather than 52; the two differ only for light past the
 //           ceiling.
 //   Step 2  Down: level k's size is max(1, ceil(previous / 2)) on each axis,
 //           from W x H, so a frame of any size, 1 x 1 included, has every
-//           level. B_0 is E filtered to its size, B_k is B_(k-1) filtered to
-//           its size, k = 1 .. 5, by Jimenez's 13-tap filter (SIGGRAPH 2014,
+//           level. B_0 is E filtered to its size and divided by
+//           bloom_levels, B_k is B_(k-1) filtered to its size, k = 1 .. 5,
+//           by Jimenez's 13-tap filter (SIGGRAPH 2014,
 //           "Next Generation Post Processing in Call of Duty: Advanced
 //           Warfare"): five overlapping 2 x 2 box averages about the output
 //           texel's center in the source, the middle one weighted
@@ -62,13 +64,23 @@
 //   Step 3  Up: for k = 4 down to 0, B_k += tent(B_(k+1)), the 3 x 3 tent
 //           (weights 1, 2, 1 by 1, 2, 1, over 16) of the level below, at a
 //           radius of one of its texels, read bilinearly at B_k's texel
-//           centers, edges clamped. B_0 is then the sum of six blurs of E,
-//           from narrow to wide.
-//   Step 4  Composite: C = (1 - bloom) E + bloom tent(B_0) / bloom_levels,
-//           at the frame's size. Each blur keeps E's mean (each filter's
-//           weights sum to 1, and edges clamp), so their sum over the level
-//           count does, and C is a mean of E and it: bloom moves light and
-//           makes none.
+//           centers, edges clamped. B_0 is then the mean of six blurs of E,
+//           from narrow to wide. Divided first rather than summed and
+//           divided last because the pyramid is half floats: six levels at
+//           the ceiling would sum past it, to infinity, which step 5 turns
+//           to NaN. Divided, each level holds at most bloom_ceiling /
+//           bloom_levels, 10917.3 (step 1, and each filter's weights sum to
+//           1, so no filter exceeds its largest input). Stored rounded to
+//           the nearest half float, that is 10920, and the sums at most
+//           21840, 32768, 43680, 54592 and 65504, the ceiling exactly;
+//           rounded toward zero, as the M3 Max's texture writes round (it
+//           stores 10912), at most their exact values, within it. Rounding
+//           is monotone, so a field at the ceiling everywhere is the most
+//           any level holds.
+//   Step 4  Composite: C = (1 - bloom) E + bloom tent(B_0), at the frame's
+//           size. Each blur keeps E's mean (each filter's weights sum to 1,
+//           and edges clamp), so their mean does, and C is a mean of E and
+//           it: bloom moves light and makes none.
 //   Step 5  Roll-off: Khronos' PBR Neutral tone mapper (KhronosGroup/
 //           ToneMapping, PBR_Neutral, 2024), from its published equations:
 //           x the smallest channel of C, C -= (x < 0.08 ? x - 6.25 x^2 :
@@ -93,7 +105,7 @@
 #endif
 
 namespace serenity {
-namespace frame {
+namespace passes {
 
 SERENITY_CONSTANT unsigned int bloom_levels = 6;
 SERENITY_CONSTANT float bloom_ceiling = 65504.0f;  // the largest half float (step 1)
@@ -112,7 +124,7 @@ struct ToneMap {
 
 static_assert(sizeof(ToneMap) == 16, "ToneMap must be the same 16 bytes on the host and in shaders");
 
-}  // namespace frame
+}  // namespace passes
 }  // namespace serenity
 
 #undef SERENITY_CONSTANT

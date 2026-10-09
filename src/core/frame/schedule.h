@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-#include "core/frame/tone_map.h"
+#include "core/passes/tone_map.h"
 
 namespace serenity::frame {
 
@@ -41,7 +41,7 @@ namespace serenity::frame {
 // So a frame graph that computes light ends in a presenting pass, which
 // decides how its light looks: display shows it as it is, as tests and
 // diagnostics want; tone_map gives it exposure, glare and a film-like
-// roll-off, as the window and movies want (tone_map.h). The backend records
+// roll-off, as the window and movies want (core/passes/tone_map.h). The backend records
 // the barrier between a pass that writes an image and a later one that reads
 // it (metal/frame/renderer.h).
 enum class PassKind : std::uint8_t {
@@ -49,7 +49,7 @@ enum class PassKind : std::uint8_t {
     preview,       // deterministic ray tracing, direct light only; needs a scene; writes radiance
     path,          // path tracing, naive, accumulating while the image holds still; needs a scene; writes radiance
     display,       // radiance as it is: the largest channel above 1 scaled to 1, then sRGB; writes the target
-    tone_map,      // radiance exposed, bloomed and rolled off (tone_map.h), then sRGB; writes the target
+    tone_map,      // radiance exposed, bloomed and rolled off (core/passes/tone_map.h), then sRGB; writes the target
 };
 
 // Whether a pass of `kind` reads the scene. A frame graph with such a pass
@@ -69,8 +69,8 @@ bool writes_target(PassKind kind);
 struct Schedule {
     std::vector<PassKind> passes;  // run in this order; at least one
     // The tone-map pass's settings: present exactly when the schedule has
-    // that pass (graph_file.h, tone_map.h).
-    std::optional<ToneMap> tone_map;
+    // that pass (graph_file.h, core/passes/tone_map.h).
+    std::optional<passes::ToneMap> tone_map;
 };
 
 // Whether any pass of `schedule` accumulates: whether its frames build on
@@ -91,7 +91,7 @@ bool accumulates(const Schedule& schedule);
 //     computed and never shown is a mistake, not a frame;
 //   - tone-map settings exactly when there is a tone_map pass, with an
 //     exposure finite within [-10, 10] stops and a bloom in [0, 1)
-//     (tone_map.h).
+//     (core/passes/tone_map.h).
 //
 // None if `schedule` is valid; otherwise why not, in words a reader of the
 // frame graph file can act on. The graph reader refuses an invalid schedule
@@ -102,7 +102,7 @@ std::optional<std::string> invalid(const Schedule& schedule);
 // The last of those rules alone: whether tone-map `settings` are in range.
 // For the graph reader, to name the line of the settings rather than of the
 // passes.
-std::optional<std::string> invalid(const ToneMap& settings);
+std::optional<std::string> invalid(const passes::ToneMap& settings);
 
 // The name each kind is written as in a frame graph file, and back. One table, so
 // a kind and its name cannot disagree in two places.

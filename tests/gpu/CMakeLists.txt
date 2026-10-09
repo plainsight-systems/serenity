@@ -15,6 +15,7 @@ add_executable(serenity_gpu_tests
     motion_test.cpp
     history_test.cpp
     tone_map_test.cpp
+    frame_images_test.cpp
     ../main_test.cpp
 )
 target_link_libraries(serenity_gpu_tests PRIVATE serenity_metal doctest::doctest)

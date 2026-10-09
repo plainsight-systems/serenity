@@ -1,31 +1,29 @@
 // The tone-map pass (metal/passes/tone_map/tone_map.h), on the GPU, against
-// the core's steps 1 to 6 (core/frame/tone_map.h), worked out here on the
+// the core's steps 1 to 6 (core/passes/tone_map.h), worked out here on the
 // CPU in doubles from the header's words: exposure and its ceiling, the
 // pyramid's sizes and its 13-tap filter, the tent up, the composite, PBR
 // Neutral and sRGB. The pass is given radiance written here, so every image
-// is one chosen to show a property: a uniform field, a lone light, a light
-// past the half-float range, frames as small as a pixel. And the pass in a
-// renderer: the path tracer's graph, frames in flight, a resize.
+// is one chosen to show a property: a uniform field, a lone light, light
+// past the half-float range, alone and over a broad field, frames as small
+// as a pixel. The pass among others, in a renderer, is the frame graph's
+// (frame_images_test.cpp).
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <vector>
 
 #include <doctest/doctest.h>
 
-#include "core/frame/graph_file.h"
-#include "core/frame/tone_map.h"
-#include "core/scene/scene.h"
+#include "core/passes/tone_map.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/device/offscreen.h"
 #include "metal/device/submission.h"
 #include "metal/frame/frame_images.h"
-#include "metal/frame/renderer.h"
+#include "metal/frame/frame_resources.h"
 #include "metal/passes/tone_map/tone_map.h"
 #include "serenity/metallib/shaders.h"
 
@@ -49,6 +47,13 @@ Field field(std::uint32_t width, std::uint32_t height, Color fill) {
 }
 
 // ---- The core's steps, on the CPU ---------------------------------------
+
+// `v` stored as a half float, as the pyramid stores it: rounded to nearest,
+// where the M3 Max rounds toward zero (core/passes/tone_map.h, step 3), a
+// part in two thousand at most, within the comparisons' tolerance.
+double half(double v) {
+    return double(static_cast<_Float16>(v));
+}
 
 // Bilinear at normalized (u, v), edges clamped.
 Color bilinear(const Field& f, double u, double v) {
@@ -82,7 +87,7 @@ Color down13(Read read, double u, double v, const Field& source) {
         const double middle = 0.25 * (j[n] + k[n] + l[n] + m[n]);
         const double corners = 0.25 * ((a[n] + b[n] + d[n] + e[n]) + (b[n] + c[n] + e[n] + f[n]) +
                                        (d[n] + e[n] + g[n] + h[n]) + (e[n] + f[n] + h[n] + i[n]));
-        out[n] = frame::down_middle * middle + frame::down_corner * corners;
+        out[n] = passes::down_middle * middle + passes::down_corner * corners;
     }
     return out;
 }
@@ -111,13 +116,13 @@ Color neutral(Color c) {
         v -= offset;
     }
     const double peak = std::max({c[0], c[1], c[2]});
-    const double start = frame::neutral_start;
+    const double start = passes::neutral_start;
     if (peak < start) {
         return c;
     }
     const double d = 1.0 - start;
     const double rolled = 1.0 - d * d / (peak + d - start);
-    const double g = 1.0 - 1.0 / (double(frame::neutral_desaturation) * (peak - rolled) + 1.0);
+    const double g = 1.0 - 1.0 / (double(passes::neutral_desaturation) * (peak - rolled) + 1.0);
     for (double& v : c) {
         v = (v * rolled / peak) * (1.0 - g) + rolled * g;
     }
@@ -133,11 +138,11 @@ int srgb8(double v) {
 using Bytes = std::vector<std::array<int, 3>>;
 
 // Steps 1 to 6 over `radiance`.
-Bytes reference(const Field& radiance, frame::ToneMap settings) {
+Bytes reference(const Field& radiance, passes::ToneMap settings, Field* base = nullptr) {
     // Step 1: E, and each read of it clamped.
     const auto clamped = [](Color c) {
         for (double& v : c) {
-            v = std::min(v, double(frame::bloom_ceiling));
+            v = std::min(v, double(passes::bloom_ceiling));
         }
         return c;
     };
@@ -150,32 +155,38 @@ Bytes reference(const Field& radiance, frame::ToneMap settings) {
     // Step 2.
     std::vector<Field> pyramid;
     const Field* source = &exposed;
-    for (unsigned k = 0; k < frame::bloom_levels; ++k) {
+    for (unsigned k = 0; k < passes::bloom_levels; ++k) {
         Field level = field(std::max(1u, (source->width + 1) / 2), std::max(1u, (source->height + 1) / 2), {});
         const auto read = [&](double u, double v) {
             const Color c = bilinear(*source, u, v);
             return k == 0 ? clamped(c) : c;
         };
+        // B_0 divided by the level count.
+        const double scale = k == 0 ? 1.0 / passes::bloom_levels : 1.0;
         for (std::uint32_t y = 0; y < level.height; ++y) {
             for (std::uint32_t x = 0; x < level.width; ++x) {
-                level.at(x, y) = down13(read, (x + 0.5) / level.width, (y + 0.5) / level.height, *source);
+                const Color c = down13(read, (x + 0.5) / level.width, (y + 0.5) / level.height, *source);
+                level.at(x, y) = {half(scale * c[0]), half(scale * c[1]), half(scale * c[2])};
             }
         }
         pyramid.push_back(std::move(level));
         source = &pyramid.back();
     }
     // Step 3.
-    for (int k = int(frame::bloom_levels) - 2; k >= 0; --k) {
+    for (int k = int(passes::bloom_levels) - 2; k >= 0; --k) {
         Field& level = pyramid[std::size_t(k)];
         const Field& below = pyramid[std::size_t(k) + 1];
         for (std::uint32_t y = 0; y < level.height; ++y) {
             for (std::uint32_t x = 0; x < level.width; ++x) {
                 const Color t = tent(below, (x + 0.5) / level.width, (y + 0.5) / level.height);
                 for (int c = 0; c < 3; ++c) {
-                    level.at(x, y)[c] += t[c];
+                    level.at(x, y)[c] = half(level.at(x, y)[c] + t[c]);
                 }
             }
         }
+    }
+    if (base != nullptr) {
+        *base = pyramid[0];
     }
     // Steps 4 to 6.
     Bytes out;
@@ -185,7 +196,7 @@ Bytes reference(const Field& radiance, frame::ToneMap settings) {
             Color c{};
             for (int n = 0; n < 3; ++n) {
                 c[n] = (1.0 - settings.bloom) * clamped(exposed.at(x, y))[n] +
-                       settings.bloom * glare[n] / frame::bloom_levels;
+                       settings.bloom * glare[n];
             }
             const Color shown = neutral(c);
             out.push_back({srgb8(shown[0]), srgb8(shown[1]), srgb8(shown[2])});
@@ -197,8 +208,10 @@ Bytes reference(const Field& radiance, frame::ToneMap settings) {
 // ---- The pass, on the GPU -----------------------------------------------
 
 // The tone-map pass alone over `radiance`, through the renderer's own pass
-// type, into an 8-bit target.
-Bytes tone_map(const Field& radiance, frame::ToneMap settings) {
+// type, into an 8-bit target. The pyramid is the renderer's own
+// (frame_images.h), or, with `base`, levels made here that the CPU can read,
+// and B_0 after step 3 is read back into it.
+Bytes tone_map(const Field& radiance, passes::ToneMap settings, Field* base = nullptr) {
     metal::Device device;
     metal::Submission submission(device);
     metal::Library library(device, metallib::shaders);
@@ -223,6 +236,20 @@ Bytes tone_map(const Field& radiance, frame::ToneMap settings) {
 
     metal::FrameImages pyramid(device, submission, false, true);
     pyramid.prepare(size);
+    std::array<NS::SharedPtr<MTL::Texture>, passes::bloom_levels> readable;
+    if (base != nullptr) {
+        frame::Extent level = size;
+        for (auto& texture : readable) {
+            level = {std::max(1u, (level.width + 1) / 2), std::max(1u, (level.height + 1) / 2)};
+            descriptor->setPixelFormat(MTL::PixelFormatRGBA16Float);
+            descriptor->setWidth(level.width);
+            descriptor->setHeight(level.height);
+            descriptor->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
+            texture = NS::TransferPtr(mtl->newTexture(descriptor.get()));
+            REQUIRE(texture);
+            submission.make_resident(texture.get());
+        }
+    }
     metal::Offscreen target(device, submission, size);
     metal::ToneMapPass pass(device, library, submission, settings);
 
@@ -238,8 +265,8 @@ Bytes tone_map(const Field& radiance, frame::ToneMap settings) {
     resources.target = target.texture();
     resources.size = size;
     resources.radiance = image.get();
-    for (std::uint32_t k = 0; k < frame::bloom_levels; ++k) {
-        resources.bloom[k] = pyramid.bloom(k);
+    for (std::uint32_t k = 0; k < passes::bloom_levels; ++k) {
+        resources.bloom[k] = base != nullptr ? readable[k].get() : pyramid.bloom(k);
     }
     const metal::FrameSlot frame = submission.begin();
     MTL4::ComputeCommandEncoder* encoder = frame.commands->computeCommandEncoder();
@@ -249,6 +276,15 @@ Bytes tone_map(const Field& radiance, frame::ToneMap settings) {
     submission.commit();
     (void)submission.wait_until_complete(frame.sequence);
 
+    if (base != nullptr) {
+        MTL::Texture* b0 = readable[0].get();
+        std::vector<_Float16> halves(std::size_t{b0->width()} * b0->height() * 4);
+        b0->getBytes(halves.data(), b0->width() * 8, MTL::Region(0, 0, b0->width(), b0->height()), 0);
+        *base = field(std::uint32_t(b0->width()), std::uint32_t(b0->height()), {});
+        for (std::size_t i = 0; i < base->texels.size(); ++i) {
+            base->texels[i] = {double(halves[4 * i]), double(halves[4 * i + 1]), double(halves[4 * i + 2])};
+        }
+    }
     std::vector<std::uint8_t> rgba(std::size_t{size.width} * size.height * 4);
     target.read_rgba(rgba);
     Bytes out;
@@ -291,8 +327,8 @@ Field scene_like(std::uint32_t width, std::uint32_t height) {
     return f;
 }
 
-constexpr frame::ToneMap settings(float exposure, float bloom) {
-    return frame::ToneMap{exposure, bloom, {0.0f, 0.0f}};
+constexpr passes::ToneMap settings(float exposure, float bloom) {
+    return passes::ToneMap{exposure, bloom, {0.0f, 0.0f}};
 }
 
 }  // namespace
@@ -303,7 +339,7 @@ TEST_CASE("the tone map computes the core's steps, at even and odd sizes") {
     // doubles.
     for (const auto [width, height] : {std::array<std::uint32_t, 2>{64, 32}, {61, 37}, {200, 113}}) {
         const Field radiance = scene_like(width, height);
-        for (const frame::ToneMap s : {settings(0.0f, 0.04f), settings(1.5f, 0.3f), settings(-2.0f, 0.0f)}) {
+        for (const passes::ToneMap s : {settings(0.0f, 0.04f), settings(1.5f, 0.3f), settings(-2.0f, 0.0f)}) {
             INFO(width << " x " << height << ", exposure " << s.exposure << ", bloom " << s.bloom);
             CHECK(farthest(tone_map(radiance, s), reference(radiance, s)) <= 2);
         }
@@ -339,11 +375,59 @@ TEST_CASE("light past the half-float range glares as if at the ceiling, and noth
     Field radiance = field(48, 48, {0.01, 0.01, 0.01});
     radiance.at(24, 24) = {1e30, 1e30, 1e30};
     radiance.at(10, 30) = {3e38, 0.0, 0.0};
-    for (const frame::ToneMap s : {settings(10.0f, 0.04f), settings(0.0f, 0.5f)}) {
+    for (const passes::ToneMap s : {settings(10.0f, 0.04f), settings(0.0f, 0.5f)}) {
         const Bytes out = tone_map(radiance, s);
         INFO("exposure " << s.exposure << ", bloom " << s.bloom);
         CHECK(farthest(out, reference(radiance, s)) <= 2);
         CHECK(out[24 * 48 + 24] == std::array<int, 3>{255, 255, 255});
+    }
+}
+
+TEST_CASE("broad light past the half-float range: six levels at the ceiling sum within it") {
+    // Every level of the pyramid at the ceiling over most of the image: a
+    // sum of six of them, undivided, is past what a half float holds.
+    Field radiance = field(96, 64, {1e6, 1e6, 1e6});
+    for (std::uint32_t y = 40; y < 64; ++y) {
+        for (std::uint32_t x = 0; x < 96; ++x) {
+            radiance.at(x, y) = {0.05, 0.04, 0.03};
+        }
+    }
+    for (const passes::ToneMap s : {settings(0.0f, 0.5f), settings(-10.0f, 0.04f), settings(10.0f, 0.999f)}) {
+        INFO("exposure " << s.exposure << ", bloom " << s.bloom);
+        Field base, expected;
+        const Bytes out = tone_map(radiance, s, &base);
+        CHECK(farthest(out, reference(radiance, s, &expected)) <= 2);
+        // B_0 itself, which the image, white wherever it is near the
+        // ceiling, cannot show: finite, within the ceiling, and the mean of
+        // the blurs, within half floats' and the filter's rounding.
+        double worst = 0.0;
+        for (std::size_t i = 0; i < base.texels.size(); ++i) {
+            for (int c = 0; c < 3; ++c) {
+                const double got = base.texels[i][c], want = expected.texels[i][c];
+                REQUIRE(std::isfinite(got));
+                CHECK(got <= double(passes::bloom_ceiling));
+                worst = std::max(worst, std::abs(got - want) / std::max(want, 1e-3));
+            }
+        }
+        CHECK(worst < 0.01);
+        if (s.exposure >= 0.0f) {
+            CHECK(out[10 * 96 + 50] == std::array<int, 3>{255, 255, 255});
+        }
+    }
+    // A field past the ceiling everywhere, the most any level holds: B_0
+    // finite, within the ceiling and within a part in a thousand of it
+    // (the header works out both roundings), and the image white
+    // everywhere, none of it NaN.
+    Field base;
+    const Bytes white = tone_map(field(40, 24, {1e6, 1e6, 1e6}), settings(0.0f, 0.5f), &base);
+    CHECK(farthest(white, Bytes(white.size(), {255, 255, 255})) == 0);
+    for (const Color& t : base.texels) {
+        for (double v : t) {
+            INFO("B_0 holds " << v);
+            REQUIRE(std::isfinite(v));
+            CHECK(v <= double(passes::bloom_ceiling));
+            CHECK(v >= 0.999 * double(passes::bloom_ceiling));
+        }
     }
 }
 
@@ -380,68 +464,4 @@ TEST_CASE("a lone firefly glares: a halo falling off with distance, its color ke
     // Round: the same at the same distance in each direction.
     CHECK(at(64 + 6, 64) == at(64, 64 + 6));
     CHECK(at(64 - 6, 64) == at(64, 64 - 6));
-}
-
-TEST_CASE("the path tracer's graph runs through the tone map, frames in flight, across a resize") {
-    // Each frame, rendered back to back with the frame before still in
-    // flight, is the frame rendered alone: the radiance image they share is
-    // never written while the frame before still reads it.
-    const scene::SceneDescription scene = scene::load(SERENITY_SCENES_DIR "/brass_sphere_flight.toml");
-    const frame::Schedule graph =
-        frame::parse_schedule("passes = [\"preview\", \"tone_map\"]\n[tone_map]\nexposure = 0.5\nbloom = 0.1\n", "t");
-    const frame::Extent size{480, 270};
-    const auto inputs = [&](std::uint64_t i) {
-        // One instant per image: the scene moves (core/frame/history.h).
-        return frame::FrameInputs{
-            .time = frame::Seconds(0.1 * i), .index = i, .accumulated_since = i, .camera = scene.camera};
-    };
-    const auto read = [&](metal::Offscreen& target) {
-        std::vector<std::uint8_t> rgba(std::size_t{size.width} * size.height * 4);
-        target.read_rgba(rgba);
-        return rgba;
-    };
-
-    std::vector<std::vector<std::uint8_t>> alone;
-    for (std::uint64_t i = 0; i < 4; ++i) {
-        metal::Device device;
-        metal::Submission submission(device);
-        metal::Offscreen target(device, submission, size);
-        metal::Renderer renderer(device, submission, graph, &scene);
-        (void)submission.wait_until_complete(metal::render_to_offscreen(submission, target, renderer, inputs(i)));
-        alone.push_back(read(target));
-    }
-
-    metal::Device device;
-    metal::Submission submission(device);
-    metal::Renderer renderer(device, submission, graph, &scene);
-    std::vector<std::unique_ptr<metal::Offscreen>> targets;
-    std::vector<std::uint64_t> sequences;
-    for (std::uint64_t i = 0; i < 4; ++i) {
-        targets.push_back(std::make_unique<metal::Offscreen>(device, submission, size));
-        sequences.push_back(metal::render_to_offscreen(submission, *targets.back(), renderer, inputs(i)));
-    }
-    (void)submission.wait_until_complete(sequences.back());
-    for (std::uint64_t i = 0; i < 4; ++i) {
-        INFO("frame " << i);
-        CHECK(read(*targets[i]) == alone[i]);
-    }
-
-    // A resize remakes the images, and the next frame is whole.
-    metal::Offscreen small(device, submission, {97, 61});
-    (void)submission.wait_until_complete(metal::render_to_offscreen(submission, small, renderer, inputs(0)));
-    std::vector<std::uint8_t> rgba(97 * 61 * 4);
-    small.read_rgba(rgba);
-    CHECK(std::any_of(rgba.begin(), rgba.end(), [](std::uint8_t b) { return b > 0; }));
-
-    // And the path tracer's own graph, in graphs/, runs.
-    const frame::Schedule path = frame::load_schedule(SERENITY_GRAPHS_DIR "/path.toml");
-    metal::Renderer tracer(device, submission, path, &scene);
-    metal::Offscreen shown(device, submission, size);
-    std::uint64_t last = 0;
-    for (std::uint64_t i = 0; i < 3; ++i) {
-        last = metal::render_to_offscreen(submission, shown, tracer, inputs(i));
-    }
-    (void)submission.wait_until_complete(last);
-    CHECK(renderer.non_finite_samples() == 0);
-    CHECK(tracer.non_finite_samples() == 0);
 }

@@ -27,7 +27,7 @@ NS::SharedPtr<MTL::Texture> make_image(MTL::Device* device, Submission& submissi
     return texture;
 }
 
-// Half of `size` on each axis, rounded up, at least 1 (core/frame/tone_map.h,
+// Half of `size` on each axis, rounded up, at least 1 (core/passes/tone_map.h,
 // step 2).
 frame::Extent half(frame::Extent size) {
     return {std::max(1u, (size.width + 1) / 2), std::max(1u, (size.height + 1) / 2)};

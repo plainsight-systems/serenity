@@ -112,8 +112,12 @@ TEST_CASE("every mistake in the tone map's settings is an error at its line") {
     CHECK(contains(with("[tone_map]\nexposure = \"0\"\nbloom = 0.0\n"), "graph.toml:3: 'exposure' must be a number"));
     CHECK(contains(with("[tone_map]\nexposure = 0.0\nbloom = 0.0\nglare = 1\n"),
                    "graph.toml:5: unknown key 'glare' in [tone_map]"));
-    CHECK(contains(with("[tone_map]\nexposure = 11.0\nbloom = 0.0\n"), "graph.toml:2: the tone map's exposure"));
-    CHECK(contains(with("[tone_map]\nexposure = 0.0\nbloom = 1.0\n"), "graph.toml:2: the tone map's bloom"));
+    CHECK(contains(with("[tone_map]\nexposure = 11.0\nbloom = 0.0\n"), "graph.toml:3: the tone map's exposure"));
+    CHECK(contains(with("[tone_map]\nexposure = 0.0\nbloom = 1.0\n"), "graph.toml:4: the tone map's bloom"));
+    // Past float's range, or not finite, refused before it is narrowed.
+    CHECK(contains(with("[tone_map]\nexposure = 1e300\nbloom = 0.0\n"), "graph.toml:3: 'exposure' must be a finite"));
+    CHECK(contains(with("[tone_map]\nexposure = 0.0\nbloom = nan\n"), "graph.toml:4: 'bloom' must be a finite"));
+    CHECK(contains(with("[tone_map]\nexposure = -inf\nbloom = 0.0\n"), "graph.toml:3: 'exposure' must be a finite"));
     CHECK(contains(with("tone_map = 1\n"), "'tone_map' must be a table"));
     CHECK(contains(error_for("passes = [\"path\", \"display\"]\n[tone_map]\nexposure = 0.0\nbloom = 0.0\n"),
                    "tone-map settings and no tone_map pass"));

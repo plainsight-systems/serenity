@@ -7,7 +7,7 @@
 #include <Metal/Metal.hpp>
 
 #include "core/frame/extent.h"
-#include "core/frame/tone_map.h"
+#include "core/passes/tone_map.h"
 #include "metal/device/device.h"
 #include "metal/device/submission.h"
 
@@ -24,12 +24,12 @@ namespace serenity::metal {
 //     32-bit, not 16: the display pass must show exactly what the light
 //     pass computed, as the passes did when they encoded the target
 //     themselves, and a firefly's radiance of hundreds keeps its digits;
-//   - the bloom pyramid, for the tone-map pass alone: frame::bloom_levels
-//     levels (core/frame/tone_map.h), each max(1, ceil(previous / 2)) on
+//   - the bloom pyramid, for the tone-map pass alone: passes::bloom_levels
+//     levels (core/passes/tone_map.h), each max(1, ceil(previous / 2)) on
 //     each axis from the frame's size, so any frame has every level;
 //     RGBA16Float, which a blur of light needs no more than (half's 11 bits
-//     are 3 decimal digits), the light clamped to its range before it
-//     enters (tone_map.h, step 1).
+//     are 3 decimal digits), the light kept within its range
+//     (core/passes/tone_map.h, steps 1 to 3).
 //
 // Made when the frame's size is first known and remade when it changes,
 // before the frame's submission begins (Renderer::prepare), draining the
@@ -50,9 +50,14 @@ namespace serenity::metal {
 // 290 MB at the display's size; the barrier's cost is measured at
 // implementation.
 //
-// Cost: at 3456 x 2234, the radiance image is 123 MB and the pyramid 21 MB.
-// Per frame: the radiance image written once and read once, 247 MB of
-// traffic, some 0.6 ms of the M3 Max's 400 GB/s.
+// Cost: at 3456 x 2234 (P = 7.7 M pixels), the radiance image is 123 MB
+// and the pyramid 21 MB. Per frame, the light pass writes the radiance
+// image once, P texels; the display pass reads it once, P texels, 247 MB of
+// traffic in all, some 0.6 ms of the M3 Max's 400 GB/s. The tone-map pass
+// reads it twice, in two dispatches ten apart, too far for one read to
+// leave it cached for the other: 13 filtered samples for each of B_0's P / 4
+// texels, then P exact reads (passes/tone_map/tone_map.h); what that costs
+// in memory traffic is the pass's measured time, not a count here.
 //
 // Throws Error if the device cannot make an image.
 class FrameImages {
@@ -80,7 +85,7 @@ private:
     bool wants_pyramid_;
     frame::Extent size_;
     NS::SharedPtr<MTL::Texture> radiance_;
-    std::array<NS::SharedPtr<MTL::Texture>, frame::bloom_levels> pyramid_;
+    std::array<NS::SharedPtr<MTL::Texture>, passes::bloom_levels> pyramid_;
 };
 
 }  // namespace serenity::metal

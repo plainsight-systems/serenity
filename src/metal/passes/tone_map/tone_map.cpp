@@ -27,7 +27,7 @@ void barrier(MTL4::ComputeCommandEncoder* encoder) {
 }  // namespace
 
 ToneMapPass::ToneMapPass(const Device& device, const Library& library, Submission& submission,
-                         const frame::ToneMap& settings)
+                         const passes::ToneMap& settings)
     : down_first_(library.compute_pipeline("tone_map_down_first")),
       down_(library.compute_pipeline("tone_map_down")),
       up_(library.compute_pipeline("tone_map_up")),
@@ -38,7 +38,7 @@ ToneMapPass::ToneMapPass(const Device& device, const Library& library, Submissio
     if (!device.handle()->supports32BitFloatFiltering()) {
         throw Error("ToneMapPass: the device cannot filter the 32-bit radiance image (supports32BitFloatFiltering)");
     }
-    settings_ = NS::TransferPtr(device.handle()->newBuffer(sizeof(frame::ToneMap), MTL::ResourceStorageModeShared));
+    settings_ = NS::TransferPtr(device.handle()->newBuffer(sizeof(passes::ToneMap), MTL::ResourceStorageModeShared));
     if (!settings_) {
         throw Error("ToneMapPass: the device made no buffer for the settings");
     }

@@ -3,7 +3,7 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
-#include "core/frame/tone_map.h"
+#include "core/passes/tone_map.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/device/submission.h"
@@ -14,7 +14,7 @@ namespace serenity::metal {
 // Axis: Pass (tone map).
 //
 // The frame's radiance as the look wants it shown: what is computed is the
-// core's (core/frame/tone_map.h, steps 1 to 6), with its constants, which
+// core's (core/passes/tone_map.h, steps 1 to 6), with its constants, which
 // the shaders take from that header; this pass is how Metal computes it. The
 // pass the window and movies end in (graphs/path.toml).
 //
@@ -40,7 +40,7 @@ namespace serenity::metal {
 // the renderer records that barrier (metal/frame/renderer.h).
 //
 // The settings reach the shader in a 16-byte buffer of the pass's own
-// (frame::ToneMap's shared layout), made at construction and never written
+// (passes::ToneMap's shared layout), made at construction and never written
 // again: the graph's, the same every frame.
 //
 // Cost, per frame, for P pixels: step 2 reads 13 texels per output pixel
@@ -55,11 +55,11 @@ namespace serenity::metal {
 // reads to each bilinear one, cost 1.6 ms more (step 1).
 class ToneMapPass {
 public:
-    // Throws Error if `settings` are out of range (core/frame/tone_map.h),
+    // Throws Error if `settings` are out of range (core/passes/tone_map.h),
     // the device cannot filter 32-bit floats, or it cannot make the
     // pipelines or the settings' buffer.
     ToneMapPass(const Device& device, const Library& library, Submission& submission,
-                const frame::ToneMap& settings);
+                const passes::ToneMap& settings);
 
     // Records the pass. Throws Error if `resources` has no radiance image or
     // no bloom pyramid.

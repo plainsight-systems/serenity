@@ -46,7 +46,7 @@ namespace {
 
 using namespace serenity::frame;
 
-constexpr ToneMap look{0.0f, 0.04f, {0.0f, 0.0f}};
+constexpr serenity::passes::ToneMap look{0.0f, 0.04f, {0.0f, 0.0f}};
 
 std::string why(const Schedule& schedule) {
     return invalid(schedule).value_or("");
@@ -103,7 +103,7 @@ TEST_CASE("tone-map settings come exactly with the pass, in range") {
     CHECK(says(Schedule{{PassKind::path, PassKind::tone_map}, std::nullopt}, "no tone-map settings"));
     CHECK(says(Schedule{{PassKind::path, PassKind::display}, look}, "no tone_map pass"));
     const auto with = [](float exposure, float bloom) {
-        return Schedule{{PassKind::path, PassKind::tone_map}, ToneMap{exposure, bloom, {0.0f, 0.0f}}};
+        return Schedule{{PassKind::path, PassKind::tone_map}, serenity::passes::ToneMap{exposure, bloom, {0.0f, 0.0f}}};
     };
     CHECK(why(with(-10.0f, 0.0f)).empty());
     CHECK(why(with(10.0f, 0.999f)).empty());

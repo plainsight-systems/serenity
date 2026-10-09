@@ -210,7 +210,7 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
     }
     if (images_) {
         resources.radiance = images_->radiance();
-        for (std::uint32_t level = 0; level < frame::bloom_levels; ++level) {
+        for (std::uint32_t level = 0; level < passes::bloom_levels; ++level) {
             resources.bloom[level] = images_->bloom(level);
         }
     }
