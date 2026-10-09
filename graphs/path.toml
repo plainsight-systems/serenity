@@ -1,0 +1,4 @@
+# The naive path tracer: full light transport, converging over frames while
+# the image holds still (src/metal/passes/path/path.h). Needs a scene.
+
+passes = ["path"]

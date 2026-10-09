@@ -101,11 +101,11 @@ depend on contracts, not on each other.
 |---|---|---|---|
 | 1 | **Surface interaction**: position, normals, the side arrived from, material; surface coordinates with the first texture that needs them | Shape | Material, Texture, Integrator, Sample reuse |
 | 2 | **BSDF**: a material resolved at a surface, and evaluate, sample, pdf and lobes on it | Material | Integrator, Sample reuse |
-| 3 | **Emitter**: emission, sample a point, pdf | Light | Light selection, Integrator, Sample reuse |
+| 3 | **Emitter**: a direction toward the light drawn from numbers, the radiance along it, the distance to it, and the pdf | Light | Light selection, Integrator, Sample reuse |
 | 4 | **Light sample**: which light and which point on it, in its own coordinates | Light | Sample reuse, Integrator |
 | 5 | **Film outputs**: radiance, normal, depth, motion per pixel | Film | Pass, Sample reuse |
-| 6 | **Frame images**: the images between passes and the history across frames | Frame graph | every Pass |
-| 7 | **Frame constants**: the frame's time and index, and the size of the image written | Frame graph | every Pass |
+| 6 | **Frame images**: the images between passes and the history across frames; first, the accumulated image | Frame graph | every Pass |
+| 7 | **Frame constants**: the frame's time and index, the size of the image written, and the frames the accumulated image holds | Frame graph | every Pass |
 | 8 | **Camera**: where the frame is seen from, and that view framed for an image | Camera | Scene content, Frame graph, every Pass that generates rays |
 | 9 | **Texture reference**: which texture a parameter takes its value from, or none | Texture | Material |
 
@@ -114,7 +114,10 @@ Contract 7 was the first written: `src/core/contracts/frame_constants.h`.
 Contracts 8 and 9 came with the first scene: `camera.h` and
 `texture_reference.h` beside it. Contracts 1 and 2 came with the path
 tracer: `surface_interaction.h` and `bsdf.h`, the shared layouts, with the
-functions' semantics stated there and written by each backend. The camera is one contract for every
+functions' semantics stated there and written by each backend; contract 3,
+`emitter.h`, with them. Contract 6 starts as one image, the accumulated
+mean a converging pass folds its frames into (`metal/frame/accumulation.h`),
+and grows into the images between passes when a pass first reads another's. The camera is one contract for every
 camera, as Falcor's `CameraData` is, since a frame has one camera and
 cameras differ by parameters, not code.
 

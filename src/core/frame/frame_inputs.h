@@ -33,8 +33,17 @@ struct FrameInputs {
     Seconds time{0.0};
 
     // The frame's position in the run, from 0. Seeds per-frame randomness
-    // once there is randomness.
+    // (metal/sampler/sampler.metal.h).
     std::uint64_t index = 0;
+
+    // The frame from which the image accumulates: a pass that converges over
+    // frames shows the mean of frames accumulated_since .. index, so the
+    // frame's image is a function of this as well (principle 1). Equal to
+    // index to start over. The window starts over whenever what it shows
+    // would otherwise change: its size, and later the camera and anything
+    // that moves. The headless renderer accumulates from its first frame, so
+    // its frame first + k is the mean of k + 1 frames. Never after index.
+    std::uint64_t accumulated_since = 0;
 
     // The camera the frame is seen through, at the frame's time
     // (contracts/camera.h). None when the frame has no scene; a frame graph

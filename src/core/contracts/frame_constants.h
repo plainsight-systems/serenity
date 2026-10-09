@@ -3,7 +3,8 @@
 // Contract 7: frame constants. Owned by the Frame graph; read by every pass.
 //
 // The values every shader in a frame may read: when the frame is, which frame
-// it is, and the size of the image being written. The camera is a contract of
+// it is, the size of the image being written, and how many frames the
+// accumulated image already holds. The camera is a contract of
 // its own (contracts/camera.h), owned by Camera, so a change to the camera
 // changes nothing here. One definition for both
 // sides: C++ writes these bytes and the Metal shaders read them, so this
@@ -37,9 +38,13 @@ struct FrameConstants {
     // The image being written, in pixels.
     uint32_t width;
     uint32_t height;
+    // frame::FrameInputs::index - accumulated_since: the frames already in
+    // the accumulated image, which this one joins; 0 starts it over.
+    uint32_t accumulated_frames;
+    uint32_t padding[3];
 };
 
-static_assert(sizeof(FrameConstants) == 16, "FrameConstants must be the same 16 bytes on the host and in shaders");
+static_assert(sizeof(FrameConstants) == 32, "FrameConstants must be the same 32 bytes on the host and in shaders");
 
 }  // namespace contracts
 }  // namespace serenity

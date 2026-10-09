@@ -146,12 +146,23 @@ public:
     // cannot report.
     std::vector<Completed> finish();
 
+    // As finish(), but submissions may begin again after it: for replacing a
+    // resource that frames in flight may still read (an accumulated image
+    // remade at a new size, metal/frame/accumulation.h). A full wait,
+    // visible in the call; never per frame.
+    std::vector<Completed> drain();
+
     // The sequence the next begin() hands out: every submission from here on
     // has this sequence or a later one.
     std::uint64_t next_sequence() const { return next_; }
 
     // Makes `allocation` resident for every frame from now on.
     void make_resident(MTL::Allocation* allocation);
+
+    // Takes `allocation` out of the residency set, so it can be released.
+    // No committed submission may still use it: drain() first. Throws Error
+    // while a submission is open.
+    void release_resident(MTL::Allocation* allocation);
 
     // The queue, for adding a residency set another object owns (a layer's).
     MTL4::CommandQueue* queue() const { return queue_.get(); }

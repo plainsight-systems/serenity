@@ -20,6 +20,8 @@
 #include "metal/device/presenter.h"
 #include "metal/device/submission.h"
 #include "metal/frame/frame_resources.h"
+#include "metal/frame/accumulation.h"
+#include "metal/passes/path/path.h"
 #include "metal/passes/preview/preview.h"
 #include "metal/passes/test_pattern/test_pattern.h"
 #include "metal/scene/scene_buffers.h"
@@ -55,34 +57,41 @@ namespace serenity::metal {
 // (camera/pinhole.h) and binds it; a frame of a graph that reads a scene and
 // has no camera is refused, by Error.
 //
+// The accumulated image. A frame graph with a pass that averages its frames
+// (frame::accumulates) has one (accumulation.h), which the renderer prepares
+// each frame from the frame's inputs before recording it: the count of
+// frames it holds goes to the frame constants, and a frame whose inputs
+// claim an image the history does not hold is refused, by Error.
+//
 // The target is a texture and its size, whatever owns it: the window's
 // drawable (presenter.h) or an offscreen image (offscreen.h). The renderer
 // cannot tell which, so a frame is the same function of its inputs in the
 // window and headless (principle 1).
 //
 // Metal 4 does not track hazards between passes. When a pass reads what an
-// earlier pass wrote, the renderer records the barrier between them, so the
-// dependencies are explicit and in one place (GPU.7). Today every pass writes
-// only the target and none reads another's output, so there is none; the
-// queue's wait for the drawable orders the frame against the display
-// (submission.h).
+// earlier pass in the frame wrote, the renderer records the barrier between
+// them, so the dependencies are explicit and in one place (GPU.7). Today no
+// pass reads another's output in the frame, so there is none. Between
+// frames, a pass that reads its own history waits for the previous frame's
+// dispatches itself (passes/path/path.h). The queue's wait for the drawable
+// orders the frame against the display (submission.h).
 //
 // Frame constants (contracts/frame_constants.h) and the framed camera
 // (contracts/camera.h) reach the shaders through a buffer, because Metal 4's
 // compute encoder has no inline constants. The buffer is a ring, one slot per
-// frame in flight, indexed by the submission's slot (submission.h), so the
-// CPU writes the next frame's values while the GPU may still read the last
-// one's (GPU.7). Slots are 256 bytes apart; in each, the frame constants are
-// at 0 and the camera at 128, so each contract is bound at its own address
-// and either can grow without moving the other. The argument tables the passes bind through are ringed
-// the same way, one per slot: Apple's documentation does not say whether an
-// encoder copies a table's bindings at each dispatch, so no frame in flight
-// shares a table with the next. Within a frame, passes rebind the slot's
-// table between dispatches, which tests/gpu/argument_table_test.cpp shows
-// Metal 4 honours on this machine. The ring and the tables are made once, at
-// construction (MEM.9).
+// frame in flight, indexed by the submission's slot (submission.h), so the CPU
+// writes the next frame's values while the GPU may still read the last one's
+// (GPU.7). Slots are 256 bytes apart; in each, the frame constants are at 0
+// and the camera at 128, so each contract is bound at its own address and
+// either can grow without moving the other. The argument tables the passes
+// bind through are ringed the same way, one per slot: Apple's documentation
+// does not say whether an encoder copies a table's bindings at each dispatch,
+// so no frame in flight shares a table with the next. Within a frame, passes
+// rebind the slot's table between dispatches, which
+// tests/gpu/argument_table_test.cpp shows Metal 4 honours on this machine. The
+// ring and the tables are made once, at construction (MEM.9).
 //
-// Cost of recording a frame, on the CPU: 80 bytes written to the ring (16 of
+// Cost of recording a frame, on the CPU: 96 bytes written to the ring (32 of
 // frame constants and, with a camera, 64 of camera), one framing of the camera
 // (a few dozen flops), one compute encoder, and per pass one pipeline bind,
 // its argument-table entries and one dispatch, all in one command buffer
@@ -111,12 +120,13 @@ public:
                 frame::Extent size);
 
 private:
-    using Pass = std::variant<TestPatternPass, PreviewPass>;
+    using Pass = std::variant<TestPatternPass, PreviewPass, PathPass>;
 
     Library library_;
     bool needs_scene_ = false;  // some pass in the schedule reads the scene
     std::unique_ptr<SceneBuffers> scene_;
     std::unique_ptr<PrimitiveAcceleration> acceleration_;
+    std::unique_ptr<Accumulation> accumulation_;  // when a pass accumulates
     NS::SharedPtr<MTL::Buffer> constants_;
     std::array<NS::SharedPtr<MTL4::ArgumentTable>, frames_in_flight> arguments_;
     std::vector<Pass> passes_;  // in schedule order

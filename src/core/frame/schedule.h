@@ -30,11 +30,17 @@ namespace serenity::frame {
 enum class PassKind : std::uint8_t {
     test_pattern,  // a diagnostic image, a function of pixel and time
     preview,       // deterministic ray tracing, direct light only; needs a scene
+    path,          // path tracing, naive, accumulating while the image holds still; needs a scene
 };
 
 // Whether a pass of `kind` reads the scene. A frame graph with such a pass
 // cannot run without one (metal/frame/renderer.h).
 bool needs_scene(PassKind kind);
+
+// Whether a pass of `kind` averages its frames into an accumulated image
+// (frame/frame_inputs.h, accumulated_since), so that its frames are a
+// function of the frames before them since the image started over.
+bool accumulates(PassKind kind);
 
 struct Schedule {
     std::vector<PassKind> passes;  // run in this order; at least one

@@ -21,7 +21,9 @@ namespace serenity::headless {
 //
 // It renders the frame graph in FILE (core/frame/graph_file.h), over the
 // scene in --scene's FILE if the graph reads one (core/scene/scene.h), frames
-// first .. first + frames - 1, frame i at time i x step,
+// first .. first + frames - 1, frame i at time i x step, accumulating from
+// frame first (core/frame/frame_inputs.h): a graph that converges over
+// frames writes its frame first + k as the mean of k + 1 frames,
 // each to DIRECTORY/frame-NNNNNN.png (i, zero-padded to six digits). Time is
 // computed, never measured: the same command writes the same files, on any
 // run (principle 1). Defaults: one frame, from frame 0, a step of 1/60 s,

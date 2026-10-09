@@ -13,8 +13,8 @@ class PrimitiveAcceleration;
 // Axis: Frame graph.
 //
 // What a pass is given to record itself: the frame's constants, the image it
-// writes, the argument table it binds through, and the scene and the framed
-// camera, if the frame has them. One struct for every pass, so the renderer records any pass the
+// writes, the argument table it binds through, and the scene, the framed
+// camera and the accumulated image, if the frame has them. One struct for every pass, so the renderer records any pass the
 // same way (renderer.h); each pass takes what it needs and refuses, by Error,
 // to run without what it needs.
 struct FrameResources {
@@ -26,6 +26,11 @@ struct FrameResources {
     // The frame's contracts::CameraData, framed for `size`; 0 when the frame
     // has no camera.
     MTL::GPUAddress camera = 0;
+
+    // The accumulated image (accumulation.h), and the frames it holds,
+    // which this one joins; null and 0 when no pass in the graph accumulates.
+    MTL::Texture* accumulation = nullptr;
+    std::uint32_t accumulated_frames = 0;
 
     // Null when the frame has no scene.
     const SceneBuffers::Addresses* scene = nullptr;
