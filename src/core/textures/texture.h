@@ -18,6 +18,7 @@ namespace textures {
 
 enum class TextureKind : uint32_t {
     checker = 0,
+    wood = 1,  // a plank tabletop (wood.h)
 };
 
 struct TextureRecord {

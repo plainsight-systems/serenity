@@ -13,6 +13,7 @@
 #include "core/contracts/texture_reference.h"
 #include "core/textures/texture.h"
 #include "metal/textures/checker.metal.h"
+#include "metal/textures/wood.metal.h"
 
 namespace serenity {
 namespace shaders {
@@ -20,6 +21,7 @@ namespace shaders {
 struct Textures {
     device const serenity::textures::TextureRecord* records;
     device const serenity::textures::CheckerData* checkers;
+    device const serenity::textures::WoodData* woods;
 };
 
 // `reference` names a texture: its index is not no_texture.
@@ -28,6 +30,8 @@ inline float3 evaluate_texture(Textures textures, serenity::contracts::TextureRe
     switch (record.kind) {
     case serenity::textures::TextureKind::checker:
         return checker(textures.checkers[record.index], point);
+    case serenity::textures::TextureKind::wood:
+        return wood(textures.woods[record.index], point);
     }
     return float3(0.0f);
 }

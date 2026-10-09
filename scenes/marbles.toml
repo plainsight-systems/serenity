@@ -1,0 +1,154 @@
+# The marbles at night: the scene the renderer is for (docs/process/
+# MEMORY.md, brief: the look of NVIDIA's Marbles at Night). Seen low across
+# a dark plank table: three glass spheres and two polished brass ones, under
+# an open night sky with a low horizon, lit by 512 fireflies, the scene's
+# only lights but a faint sky. Each glass sphere shows tiny refracted
+# fireflies and focuses their light on the table, a caustic; the brass shows
+# them as sharp points. The fireflies circle the spheres, swoop and drift,
+# and flash on their climbs (core/animation/flight.h, glow.h), one swarm
+# (core/scene/swarm.h).
+#
+# Through graphs/path.toml, the naive path tracer: one light of 512 chosen
+# uniformly at each bounce, so each frame is noisy, and the caustics are
+# reached only by paths that happen to hit a firefly through the glass.
+# That noise is the baseline the estimators that follow are measured
+# against. The preview counts every light at every pixel, 512 of them, and
+# is not for this scene.
+#
+# Scale: meters. The table top is at 0.75 m, a table's height; the ground
+# below it, at 0, is dark grass the fireflies light where they fly past the
+# table's edges. The firefly radiance is a first guess, set against a
+# converged still when the scene first renders.
+
+[camera]
+position = [0.0, 0.98, 1.45]
+look_at = [0.0, 0.86, 0.0]
+vertical_fov_degrees = 34
+
+[environment]
+kind = "gradient"
+# Moonless: a faint sky, so the table's far edge and the horizon read; the
+# fireflies are the light.
+zenith = [0.004, 0.006, 0.02]
+horizon = [0.02, 0.028, 0.06]
+
+[textures.walnut]
+kind = "wood"
+light = [0.13, 0.065, 0.03]
+dark = [0.045, 0.02, 0.008]
+ring = 0.004
+board = 0.16
+seed = 3
+
+[materials.table]
+kind = "rough"
+texture = "walnut"
+
+[materials.grass]
+kind = "rough"
+color = [0.015, 0.02, 0.012]
+
+[materials.glass]
+kind = "dielectric"
+ior = 1.5
+
+[materials.brass]
+kind = "conductor"
+f0 = [0.91, 0.78, 0.42]
+roughness = 0.05
+
+[materials.firefly]
+kind = "emissive"
+radiance = [240.0, 320.0, 50.0]   # yellow-green
+
+# The table: a top 2.4 m by 1.2 m, 3 cm thick, on four legs.
+[[shapes]]
+kind = "box"
+min = [-1.2, 0.72, -0.6]
+max = [1.2, 0.75, 0.6]
+material = "table"
+
+[[shapes]]
+kind = "box"
+min = [-1.14, 0.0, -0.54]
+max = [-1.08, 0.72, -0.48]
+material = "table"
+
+[[shapes]]
+kind = "box"
+min = [1.08, 0.0, -0.54]
+max = [1.14, 0.72, -0.48]
+material = "table"
+
+[[shapes]]
+kind = "box"
+min = [-1.14, 0.0, 0.48]
+max = [-1.08, 0.72, 0.54]
+material = "table"
+
+[[shapes]]
+kind = "box"
+min = [1.08, 0.0, 0.48]
+max = [1.14, 0.72, 0.54]
+material = "table"
+
+# The ground, to the horizon.
+[[shapes]]
+kind = "box"
+min = [-200.0, -0.1, -200.0]
+max = [200.0, 0.0, 200.0]
+material = "grass"
+
+# On the table, each resting on its top: its center its radius above 0.75.
+[[shapes]]
+kind = "sphere"
+name = "glass_left"
+center = [-0.55, 0.89, 0.05]
+radius = 0.14
+material = "glass"
+
+[[shapes]]
+kind = "sphere"
+name = "glass_middle"
+center = [0.05, 0.86, -0.18]
+radius = 0.11
+material = "glass"
+
+[[shapes]]
+kind = "sphere"
+name = "glass_right"
+center = [0.6, 0.91, 0.12]
+radius = 0.16
+material = "glass"
+
+[[shapes]]
+kind = "sphere"
+name = "brass_back"
+center = [-0.15, 0.88, -0.35]
+radius = 0.13
+material = "brass"
+
+[[shapes]]
+kind = "sphere"
+name = "brass_front"
+center = [0.3, 0.84, 0.32]
+radius = 0.09
+material = "brass"
+
+# The fireflies: over the table and past its edges, from just above its top
+# to a meter over it.
+[[swarms]]
+count = 512
+radius = 0.008
+material = "firefly"
+min = [-1.6, 0.78, -1.2]
+max = [1.6, 1.75, 0.9]
+targets = ["glass_left", "glass_middle", "glass_right", "brass_back", "brass_front"]
+speed = 0.35
+clearance = 0.03
+circle = 2
+swoop = 1
+drift = 2
+flash = 0.35
+dim = 0.25
+seed = 1

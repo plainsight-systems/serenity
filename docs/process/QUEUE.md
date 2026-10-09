@@ -34,8 +34,10 @@ This file tracks active and accepted work.
 
 ## Next, in order
 
-1. Milestone 1, the rest: procedural geometry toward marbles on a table
-   with many fireflies; the reference render and its error measure. Done:
+1. Milestone 1, the rest: the marbles' scene (in design: a plank table of
+   procedural wood, three glass and two brass spheres, 512 fireflies from
+   one swarm, their flights made in parallel; scenes/marbles.toml); the
+   reference render and its error measure. Done:
    moving fireflies (the wander; shapes as a geometry and a transform; one
    level of placed boxes rebuilt each frame, docs/research/2026-10-09-
    acceleration-structure.md); fireflies in flight and blinking (episodes

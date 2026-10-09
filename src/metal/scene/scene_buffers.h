@@ -45,6 +45,7 @@ public:
         MTL::GPUAddress environment = 0;
         MTL::GPUAddress textures = 0;
         MTL::GPUAddress checkers = 0;
+        MTL::GPUAddress woods = 0;
         MTL::GPUAddress materials = 0;
         MTL::GPUAddress rough = 0;
         MTL::GPUAddress dielectrics = 0;

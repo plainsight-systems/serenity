@@ -108,9 +108,12 @@ namespace serenity::animation {
 // still shape: some 10^4 to 10^5 distance tests per firefly per still
 // shape. Measured on the M3 Max, release: scenes/brass_sphere_flight.toml,
 // six fireflies among two still shapes, loads in 12.4 ms, 2 ms a firefly
-// (837 segments in all). A thousand fireflies among fifty marbles would be
-// some 50 s; a spatial index behind the obstacles is the change, made when
-// that scene is.
+// (837 segments in all). The marbles' scene (scenes/marbles.toml), 512
+// fireflies among eleven still shapes, would be some 512 x 2 ms x 11 / 2,
+// about 6 s, one flight after another; made in parallel (make_flights), on
+// the M3 Max's 16 cores, under a second, measured at implementation. A
+// thousand fireflies among fifty marbles would want a spatial index behind
+// the obstacles as well, made when such a scene is.
 // Memory: some 140 segments of 22 doubles, some 25 KB per firefly. Per frame:
 // one binary search over 128 starts and one closed form of a few sines or a
 // cubic, nothing allocated (MEM.9).
@@ -160,6 +163,21 @@ struct Flight {
 // or an episode that cannot be drawn clear.
 Flight make_flight(const FlightParams& params, contracts::Float3 start, float body,
                    const contracts::Obstacles& obstacles);
+
+// Many flights, each as make_flight() makes it, made in parallel: flight k
+// of the result is make_flight(jobs[k]...), whatever the number of threads,
+// since each is a function of its own numbers alone and `obstacles` answers
+// the same from any thread (contract 11). As many threads as the machine
+// has cores (std::thread::hardware_concurrency, at least one), each taking
+// the next unmade flight. If any cannot be made, throws, once every thread
+// has finished, the std::invalid_argument of the lowest k that failed,
+// prefixed "flight k: ", so the error does not depend on the threads either.
+struct FlightJob {
+    FlightParams params;
+    contracts::Float3 start;
+    float body = 0.0f;
+};
+std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles);
 
 // Where it is at `t`, by steps E1 to E3.
 contracts::Float3 position(const Flight& flight, frame::Seconds t);

@@ -15,6 +15,12 @@
 // exact for the kinds there are, a sphere and a box. Asked only at load:
 // not performance-sensitive per call, though a flight asks some thousands of
 // times (core/animation/flight.h gives the count). CPU only.
+//
+// Asked from several threads at once: flights are made in parallel
+// (flight.h, make_flights), so an answer must be safe to ask concurrently
+// and the same from any thread. An implementation keeps no state that a
+// question changes: both are const, and read only what was fixed before the
+// first was asked.
 
 #include "core/contracts/float3.h"
 

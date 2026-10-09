@@ -19,6 +19,7 @@
 #include "core/shapes/shapes.h"
 #include "core/textures/checker.h"
 #include "core/textures/texture.h"
+#include "core/textures/wood.h"
 
 namespace serenity::scene {
 
@@ -27,7 +28,7 @@ namespace serenity::scene {
 // What is rendered, as data: the camera, the environment, the textures,
 // the materials, the shapes that wear them, the lights, which are the
 // spheres that wear an emissive material, and how the shapes that move
-// move. Read from a scene file in
+// move; and swarms, many fireflies from one entry (swarm.h). Read from a scene file in
 // scenes/, kept apart from frame graph files (core/frame/graph_file.h), so
 // one scene runs under any graph.
 //
@@ -55,6 +56,14 @@ namespace serenity::scene {
 //   size = 0.5
 //   a = [0.9, 0.9, 0.9]
 //   b = [0.1, 0.1, 0.1]
+//
+//   [textures.walnut]
+//   kind = "wood"                   # a plank tabletop (core/textures/wood.h)
+//   light = [0.13, 0.065, 0.03]     # earlywood, linear RGB in [0, 1]
+//   dark = [0.045, 0.02, 0.008]     # latewood
+//   ring = 0.004                    # meters between growth rings
+//   board = 0.16                    # meters across a board; boards run along x
+//   seed = 3
 //
 //   [materials.glass]               # a name, used by shapes
 //   kind = "dielectric"
@@ -110,6 +119,22 @@ namespace serenity::scene {
 //              circle = 3, swoop = 1, drift = 1, seed = 11 }
 //   glow = { kind = "flight", flash = 0.35, dim = 0.05 }
 //
+//   [[swarms]]                      # many fireflies (swarm.h)
+//   count = 512                     # 1 to 4096
+//   radius = 0.008                  # each firefly's
+//   material = "glow"               # emissive
+//   min = [-1.6, 0.8, -1.2]         # its flights' volume, where they start
+//   max = [1.6, 1.7, 0.9]
+//   targets = ["marble"]
+//   speed = 0.35
+//   clearance = 0.03
+//   circle = 2
+//   swoop = 1
+//   drift = 2
+//   flash = 0.35                    # its flight glows'
+//   dim = 0.25
+//   seed = 1
+//
 // A name is optional and unique among the shapes: it is how a flight names
 // what it circles.
 //
@@ -135,6 +160,13 @@ namespace serenity::scene {
 // other: fireflies may pass through one another, which renders as what it
 // is.
 //
+// A swarm (swarm.h) is `count` fireflies, each a sphere of `radius` wearing
+// `material`, which must be emissive, with a flight motion of the swarm's
+// numbers and a flight glow of its `flash` and `dim`, each with its own seed
+// and start, drawn from the swarm's seed: what a firefly written as a
+// [[shapes]] entry with a flight and a flight glow is, checked by the same
+// rules. Its shapes follow the file's [[shapes]], swarm by swarm.
+//
 // A glow (core/animation/glow.h) is optional, and only a sphere that is a
 // light has one; without it, the light shines at its radiance always. Its
 // brightness is a factor on the radiance, from `dim` between flashes (in
@@ -155,15 +187,22 @@ namespace serenity::scene {
 // seed below 0, a motion that could carry its shape out of float's range, a
 // flight's box whose min is not below its max, a negative clearance or
 // weight, weights all 0, a circle weight with no targets, a period or flash
-// out of range, a dim outside [0, 1)), an unknown kind, a name used twice, a
-// name used and never defined, a target that is not a still sphere, an
-// emissive material or a motion on anything but a sphere, a glow on
-// anything but a light, a flight glow on a light that does not fly, a motion
-// that cannot be made clear of the still shapes, or no shapes at all is an
-// Error naming the file and the line (E.2, E.14). Nothing has a silent
+// out of range, a dim outside [0, 1), a wood color outside [0, 1], a ring or
+// board not greater than 0, a wood's seed past 2^32 - 1, a swarm's count
+// outside 1 to 4096), an unknown kind, a name used twice, a name used and
+// never defined, a target that is not a still sphere, an emissive material
+// or a motion on anything but a sphere, a swarm whose material is not
+// emissive, a glow on anything but a light, a flight glow on a light that
+// does not fly, a motion that cannot be made clear of the still shapes, a
+// swarm whose fireflies cannot start clear of them, or no shapes at all is
+// an Error naming the file and the line (E.2, E.14). Nothing has a silent
 // default except `up`.
 //
-// Not performance-sensitive: read once, at start-up.
+// Read once, at start-up. Every flight in the scene, written or a swarm's,
+// is made once every shape is read, all together, in parallel
+// (core/animation/flight.h, make_flights): for the marbles' 512 fireflies
+// the load's largest cost, under a second on the M3 Max, measured at
+// implementation.
 
 class Error : public std::runtime_error {
 public:
@@ -179,6 +218,7 @@ struct SceneDescription {
 
     std::vector<textures::TextureRecord> textures;
     std::vector<textures::CheckerData> checkers;
+    std::vector<textures::WoodData> woods;
 
     std::vector<materials::MaterialRecord> materials;
     std::vector<materials::RoughData> rough;
@@ -186,7 +226,8 @@ struct SceneDescription {
     std::vector<materials::ConductorData> conductors;
     std::vector<materials::EmissiveData> emissives;
 
-    // In file order: shape i is shapes.records[i] and shapes.transforms[i],
+    // In file order, the [[shapes]] and then each swarm's fireflies
+    // (swarm.h): shape i is shapes.records[i] and shapes.transforms[i],
     // each at rest, and primitive i of the acceleration structure
     // (shapes/primitive.h). A sphere is the unit sphere placed at its center,
     // scaled by its radius; a box, its corners as the file gives them,
