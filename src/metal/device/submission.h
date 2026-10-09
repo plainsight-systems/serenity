@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
@@ -69,11 +70,17 @@ namespace serenity::metal {
 // is shared, and every handler holds its own reference (R.20, CP.3). A late
 // handler writes into state it keeps alive, never into freed memory.
 //
-// Timing. The feedback also carries the GPU's start and end of the
-// submission's work, on the GPU's own clock: their difference is the frame's
-// GPU time (GPU.10), kept per slot and read with gpu_time() once the
-// submission has settled. It is a duration on one clock and is never
-// compared with the CPU's (TLM.11).
+// Settling. A submission is settled once its event and its feedback have
+// both arrived and it did not fail: by begin(), for the submission whose slot
+// it reuses; by wait_until_complete(), for the one it waits on; or by
+// finish(), for every one left. Each submission is settled exactly once, by
+// whichever comes first, and that call hands back its Completed record: the
+// sequence, and the instants the feedback reports for when the GPU began and
+// finished the work, in host time (MTL4CommitFeedback.h: GPUStartTime and
+// GPUEndTime, seconds on the CPU's time base). This object records them and
+// interprets nothing; what they mean as a frame time is Measurement's
+// (core/measurement/frame_times.h). Which submissions are frames is the
+// caller's to know, by their sequences.
 //
 // Residency. Metal 4 runs only on resources a residency set has made
 // resident. make_resident() adds an allocation to the set this queue uses;
@@ -87,12 +94,22 @@ namespace serenity::metal {
 // the API's shape, not ours, and is kept.
 inline constexpr std::uint32_t frames_in_flight = 2;
 
+// A submission settled (see Settling, above).
+struct Completed {
+    std::uint64_t sequence = 0;
+    frame::Seconds gpu_start{0.0};  // host time
+    frame::Seconds gpu_end{0.0};    // host time
+};
+
 // A submission begun: the command buffer to record into, its slot, and its
-// sequence number, for wait_until_complete().
+// sequence number, for wait_until_complete(). `settled` is the earlier
+// submission that begin() settled to free the slot, if it was not settled
+// already.
 struct FrameSlot {
     MTL4::CommandBuffer* commands = nullptr;
     std::uint32_t slot = 0;
     std::uint64_t sequence = 0;
+    std::optional<Completed> settled;
 };
 
 class Submission {
@@ -117,19 +134,21 @@ public:
     void present(CA::MetalDrawable* drawable);
 
     // Blocks until submission `sequence` has completed on the GPU, and
-    // throws Error if it failed. For readback.
-    void wait_until_complete(std::uint64_t sequence);
+    // throws Error if it failed. For readback, and for start-up work that
+    // must finish before frames begin. Returns its record if this call
+    // settled it, none if an earlier call had.
+    std::optional<Completed> wait_until_complete(std::uint64_t sequence);
 
     // Blocks until every committed submission has completed and reported,
     // and throws Error if any failed. Called once, at the end of a run, so a
-    // failure in its last frames is not lost. The destructor waits too, but
-    // a destructor cannot report.
-    void finish();
+    // failure in its last frames is not lost. Returns the records of those it
+    // settled, in sequence order. The destructor waits too, but a destructor
+    // cannot report.
+    std::vector<Completed> finish();
 
-    // The GPU time of the submission settled most recently: by begin(), which
-    // settles the one whose slot it reuses, by wait_until_complete() or by
-    // finish(). None until one has settled.
-    std::optional<frame::Seconds> gpu_time() const { return last_gpu_time_; }
+    // The sequence the next begin() hands out: every submission from here on
+    // has this sequence or a later one.
+    std::uint64_t next_sequence() const { return next_; }
 
     // Makes `allocation` resident for every frame from now on.
     void make_resident(MTL::Allocation* allocation);
@@ -147,18 +166,23 @@ private:
         std::atomic<std::uint64_t> arrived{0};
         std::atomic<bool> failed{false};
         std::string failure;
-        double gpu_seconds = 0.0;  // written before `arrived` is released
+        double gpu_start = 0.0;  // host seconds; written before `arrived` is released
+        double gpu_end = 0.0;
     };
 
     struct Slot {
         NS::SharedPtr<MTL4::CommandAllocator> allocator;
         NS::SharedPtr<MTL4::CommandBuffer> commands;
         std::shared_ptr<Feedback> feedback = std::make_shared<Feedback>();
+        // The sequence + 1 of the last submission in this slot settled; read
+        // and written only on the caller's thread.
+        std::uint64_t settled = 0;
     };
 
     // Waits for submission `sequence`'s event, then its feedback, and throws
-    // if either does not come in time or the submission failed.
-    void settle(std::uint64_t sequence);
+    // if either does not come in time or the submission failed. Returns its
+    // record if this call settled it, none if it was settled already.
+    std::optional<Completed> settle(std::uint64_t sequence);
     void end_and_commit(const MTL::Drawable* drawable);
 
     NS::SharedPtr<MTL::Device> device_;
@@ -169,7 +193,6 @@ private:
     std::uint64_t next_ = 0;   // the sequence begin() hands out next
     bool open_ = false;        // a submission is begun and not yet committed
     bool finished_ = false;    // finish() has run; nothing may be begun after
-    std::optional<frame::Seconds> last_gpu_time_;
 };
 
 }  // namespace serenity::metal

@@ -67,6 +67,7 @@ data or adds a kind; it does not change a family that already exists.
 | `src/core/output/` | Output | each file format's writer |
 | `src/core/measurement/` | Measurement | error against the reference, and timing reports |
 | `src/metal/device/` | GPU backend | the device, libraries and pipelines, resources, encoding and synchronization |
+| `src/metal/scene/` | Scene content | which of the scene's arrays the GPU holds, and their addresses |
 | `src/metal/acceleration/` | Acceleration | building and updating the acceleration structures |
 | `src/metal/shapes/` | Shape | each shape kind's intersection and point sampling |
 | `src/metal/materials/` | Material | each material kind's BSDF |
@@ -104,9 +105,15 @@ depend on contracts, not on each other.
 | 5 | **Film outputs**: radiance, normal, depth, motion per pixel | Film | Pass, Sample reuse |
 | 6 | **Frame images**: the images between passes and the history across frames | Frame graph | every Pass |
 | 7 | **Frame constants**: the frame's time and index, and the size of the image written | Frame graph | every Pass |
+| 8 | **Camera**: where the frame is seen from, and that view framed for an image | Camera | Scene content, Frame graph, every Pass that generates rays |
+| 9 | **Texture reference**: which texture a parameter takes its value from, or none | Texture | Material |
 
 Each is designed on its own, header first, before the code that uses it.
-Contract 7 is the first written: `src/core/contracts/frame_constants.h`.
+Contract 7 was the first written: `src/core/contracts/frame_constants.h`.
+Contracts 8 and 9 came with the first scene: `camera.h` and
+`texture_reference.h` beside it. The camera is one contract for every
+camera, as Falcor's `CameraData` is, since a frame has one camera and
+cameras differ by parameters, not code.
 
 **How a layout crosses into a shader.** The data a contract passes to the
 GPU (a material's parameters, a light sample, a surface record) has one

@@ -4,7 +4,8 @@
 //
 // The texture kinds, and the record that says which a texture is, as for
 // shapes and materials. Shared with shaders. A texture is evaluated at a
-// surface interaction and gives a color.
+// surface interaction and gives a color. Materials name a texture through
+// contracts/texture_reference.h, an index into these records.
 
 #if defined(__METAL_VERSION__)
 #include <metal_stdlib>
@@ -25,14 +26,6 @@ struct TextureRecord {
 };
 
 static_assert(sizeof(TextureRecord) == 8, "TextureRecord must be the same 8 bytes on the host and in shaders");
-
-// A material's texture index when it has none. A constant at namespace
-// scope must be in the shading language's constant address space.
-#if defined(__METAL_VERSION__)
-constant constexpr uint32_t no_texture = 0xffffffffu;
-#else
-constexpr uint32_t no_texture = 0xffffffffu;
-#endif
 
 }  // namespace textures
 }  // namespace serenity

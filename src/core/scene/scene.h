@@ -6,14 +6,12 @@
 #include <string_view>
 #include <vector>
 
-#include "core/camera/pinhole.h"
+#include "core/contracts/camera.h"
 #include "core/lights/gradient_sky.h"
 #include "core/materials/dielectric.h"
 #include "core/materials/material.h"
 #include "core/materials/rough.h"
-#include "core/shapes/box.h"
-#include "core/shapes/primitive.h"
-#include "core/shapes/sphere.h"
+#include "core/shapes/shapes.h"
 #include "core/textures/checker.h"
 #include "core/textures/texture.h"
 
@@ -86,7 +84,10 @@ public:
 };
 
 struct SceneDescription {
-    camera::Pinhole camera;
+    // The camera as the file places it (contracts/camera.h); valid
+    // (camera/pinhole.h). Each frame is seen through it until the camera
+    // moves.
+    contracts::Camera camera;
     lights::GradientSkyData environment;
 
     std::vector<textures::TextureRecord> textures;
@@ -96,11 +97,9 @@ struct SceneDescription {
     std::vector<materials::RoughData> rough;
     std::vector<materials::DielectricData> dielectrics;
 
-    // One record per shape, in file order: the acceleration structure's
-    // primitive i is shapes[i].
-    std::vector<shapes::PrimitiveRecord> shapes;
-    std::vector<shapes::SphereData> spheres;
-    std::vector<shapes::BoxData> boxes;
+    // In file order: the acceleration structure's primitive i is
+    // shapes.records[i].
+    shapes::Shapes shapes;
 };
 
 // Reads the scene file at `path`.

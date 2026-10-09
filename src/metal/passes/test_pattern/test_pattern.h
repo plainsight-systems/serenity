@@ -32,7 +32,7 @@ namespace serenity::metal {
 // Cost: one thread per pixel, each writing 4 bytes, in threadgroups of the
 // pipeline's execution width by as many rows as the threadgroup limit allows.
 // Adjacent threads write adjacent pixels of a row (GPU.2). At 3456 x 2234 it
-// writes 30.9 MB a frame and reads nothing but the frame's 80 bytes of
+// writes 30.9 MB a frame and reads nothing but the frame's 16 bytes of
 // constants.
 class TestPatternPass {
 public:

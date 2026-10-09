@@ -1,37 +1,37 @@
 #pragma once
 
-#include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
 #include "core/scene/scene.h"
 #include "metal/device/device.h"
+#include "metal/device/static_arrays.h"
 #include "metal/device/submission.h"
 
 namespace serenity::metal {
 
 // Axis: Scene content (on the GPU).
 //
-// The scene description's arrays (core/scene/scene.h), copied once into GPU
-// memory and made resident, and their addresses, which the passes bind. The
-// layouts are the core's shared ones, so the bytes are copied as they are:
-// nothing is converted, and the shaders read exactly what the scene reader
-// wrote.
+// Which of the scene description's arrays (core/scene/scene.h) the GPU
+// holds, and the address of each, which the passes bind. This file is the
+// list of them and nothing more: how they are allocated, aligned and made
+// resident is the GPU backend's (metal/device/static_arrays.h). A new kind's
+// array is added here, as it is to the description; a change to how arrays
+// reach the GPU is made there. Falcor's Scene keeps the same list, in its
+// scene's parameter block.
 //
-// One buffer holds every array, each at an offset aligned to 256 bytes, so
-// the scene is one allocation and one residency entry, not one per kind
-// (GPU.9). An array with no elements has no bytes and its address is 0,
-// with a count of 0: a shader indexes it only through a record that names
-// its kind, and no record names a kind the scene has none of.
+// The layouts are the core's shared ones, so the bytes are copied as they
+// are: nothing is converted, and the shaders read exactly what the scene
+// reader wrote. An array with no elements has address 0: a shader indexes
+// it only through a record that names its kind, and no record names a kind
+// the scene has none of.
 //
 // Static: written once, at construction. Moving fireflies, later, rewrite
 // their own ring of data each frame (logical-overview.md, Animate); that is
-// not this buffer.
+// not this.
 //
-// Not performance-sensitive: one copy, at start-up.
+// Throws Error if the arrays cannot be put on the GPU (static_arrays.h).
 class SceneBuffers {
 public:
-    // Copies `scene` into a buffer on `device`, made resident through
-    // `submission`. Throws Error if the device cannot make the buffer.
     SceneBuffers(const Device& device, Submission& submission, const scene::SceneDescription& scene);
 
     SceneBuffers(const SceneBuffers&) = delete;
@@ -55,7 +55,7 @@ public:
     const Addresses& addresses() const { return addresses_; }
 
 private:
-    NS::SharedPtr<MTL::Buffer> buffer_;
+    StaticArrays arrays_;
     Addresses addresses_;
 };
 

@@ -17,8 +17,8 @@ namespace serenity::metal {
 // shows that the geometry, the materials, the textures and the environment
 // are where the scene says, before any light is computed.
 //
-// Per pixel, one ray from the camera through the pixel's center
-// (camera/pinhole.h), deterministic, with no random numbers:
+// Per pixel, one ray from the frame's camera through the pixel's center
+// (contracts/camera.h), deterministic, with no random numbers:
 //
 //   - leaving the scene, it shows the environment in its direction;
 //   - at a rough surface, it shows that surface's color, unlit, and stops;
@@ -47,7 +47,8 @@ class PreviewPass {
 public:
     PreviewPass(const Device& device, const Library& library);
 
-    // Records the pass. Throws Error if `resources` has no scene.
+    // Records the pass. Throws Error if `resources` has no scene or no
+    // camera.
     void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
 
 private:

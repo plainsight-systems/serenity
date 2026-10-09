@@ -28,6 +28,7 @@
 <line class="arr" x1="220" y1="89" x2="246" y2="89" marker-end="url(#a)"/>
 <g class="purple"><rect x="250" y="76" width="83" height="26" rx="5"/><text class="ts" x="291.5" y="93" text-anchor="middle">core/scene</text></g>
 <g class="gray"><rect x="341" y="76" width="109" height="26" rx="5"/><text class="ts" x="395.5" y="93" text-anchor="middle">scenes/ (data)</text></g>
+<g class="teal"><rect x="458" y="76" width="90" height="26" rx="5"/><text class="ts" x="503.0" y="93" text-anchor="middle">metal/scene</text></g>
 <g class="gray"><rect x="40" y="114" width="180" height="30" rx="6"/><text class="th" x="130.0" y="134.0" text-anchor="middle">Build geometry</text></g>
 <line class="arr" x1="220" y1="129" x2="246" y2="129" marker-end="url(#a)"/>
 <g class="purple"><rect x="250" y="116" width="90" height="26" rx="5"/><text class="ts" x="295.0" y="133" text-anchor="middle">core/shapes</text></g>
@@ -82,7 +83,8 @@
 <g class="coral"><rect x="250" y="584" width="38" height="26" rx="5"/><text class="ts" x="269.0" y="601" text-anchor="middle">app</text></g>
 <g class="coral"><rect x="296" y="584" width="70" height="26" rx="5"/><text class="ts" x="331.0" y="601" text-anchor="middle">headless</text></g>
 <g class="purple"><rect x="374" y="584" width="90" height="26" rx="5"/><text class="ts" x="419.0" y="601" text-anchor="middle">core/output</text></g>
-<g class="purple"><rect x="40" y="636" width="700" height="50" rx="6"/>
-  <text class="th" x="390.0" y="657" text-anchor="middle">core/contracts</text>
-  <text class="ts" x="390.0" y="675" text-anchor="middle">surface interaction · BSDF · emitter · light sample · film outputs · frame images: what the families depend on</text></g>
+<g class="purple"><rect x="40" y="632" width="700" height="66" rx="6"/>
+  <text class="th" x="390.0" y="653" text-anchor="middle">core/contracts</text>
+  <text class="ts" x="390.0" y="671" text-anchor="middle">surface interaction · BSDF · emitter · light sample · film outputs · frame images</text>
+  <text class="ts" x="390.0" y="688" text-anchor="middle">frame constants · camera · texture reference: what the families depend on</text></g>
 </svg>
