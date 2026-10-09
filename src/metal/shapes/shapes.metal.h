@@ -11,6 +11,7 @@
 
 #include <metal_stdlib>
 
+#include "core/contracts/surface_interaction.h"
 #include "core/shapes/primitive.h"
 #include "metal/shapes/box.metal.h"
 #include "metal/shapes/sphere.metal.h"
@@ -56,6 +57,22 @@ inline uint shape_material(Shapes shapes, uint primitive) {
         return shapes.boxes[record.index].material;
     }
     return 0;
+}
+
+// Contract 1: where a ray along `direction` met primitive `primitive` at
+// `point`, filled by the shape (contracts/surface_interaction.h). The
+// shading normal is the geometric one for every kind so far.
+inline serenity::contracts::SurfaceInteraction surface_interaction(Shapes shapes, uint primitive, float3 point,
+                                                                    float3 direction) {
+    const float3 normal = shape_normal(shapes, primitive, point);
+    serenity::contracts::SurfaceInteraction s;
+    s.position = to_packed(point);
+    s.material = shape_material(shapes, primitive);
+    s.geometric_normal = to_packed(normal);
+    s.primitive = primitive;
+    s.shading_normal = to_packed(normal);
+    s.flags = metal::dot(direction, normal) < 0.0f ? serenity::contracts::arrived_from_outside : 0u;
+    return s;
 }
 
 }  // namespace shaders
