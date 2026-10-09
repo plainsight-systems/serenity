@@ -122,11 +122,11 @@ public:
     Renderer& operator=(Renderer&&) = delete;
     ~Renderer() = default;
 
-    // Readies what frame `inputs` at `size` needs from before it: the
-    // accumulated image, if the graph has one (accumulation.h). Called
-    // before the frame's submission begins; throws Error if the image cannot
-    // hold what the inputs claim. Nothing to do for a graph that accumulates
-    // nothing.
+    // Checks frame `inputs` and readies what it needs from before it: its
+    // time must be finite within float's range, which the shaders read; and
+    // the accumulated image, if the graph has one (accumulation.h), must
+    // hold what the inputs claim. Called before the frame's submission
+    // begins, for every graph; throws Error if either fails.
     void prepare(const frame::FrameInputs& inputs, frame::Extent size);
 
     // Records frame `inputs` into `frame`, writing `target`, of `size`.
@@ -137,8 +137,9 @@ public:
                 frame::Extent size);
 
     // Samples left out for not being finite (metal/film/non_finite.h), over
-    // every completed frame; 0 for a graph that accumulates nothing.
-    std::uint32_t non_finite_samples() const;
+    // every completed frame; 0 for a graph that accumulates nothing. Reads
+    // no counter a frame in flight may be writing.
+    std::uint64_t non_finite_samples() const;
 
 private:
     using Pass = std::variant<TestPatternPass, PreviewPass, PathPass>;

@@ -1,6 +1,8 @@
 #include "metal/frame/renderer.h"
 
+#include <cmath>
 #include <cstring>
+#include <limits>
 #include <optional>
 #include <string>
 
@@ -29,6 +31,16 @@ static_assert(camera_offset + sizeof(contracts::CameraData) <= slot_stride);
 // more for its image's counter.
 constexpr NS::UInteger max_buffers = 24;
 constexpr NS::UInteger max_textures = 4;
+
+// Shaders read the time as a float (contracts/frame_constants.h): a double
+// past float's range would reach them as infinity.
+void check_time(const frame::FrameInputs& inputs) {
+    const double seconds = inputs.time.count();
+    if (!std::isfinite(seconds) || std::abs(seconds) > std::numeric_limits<float>::max()) {
+        throw Error("frame " + std::to_string(inputs.index) + ": its time, " + std::to_string(seconds) +
+                    " s, is past what the shaders' float holds");
+    }
+}
 
 std::string describe(const NS::Error* error) {
     if (error == nullptr || error->localizedDescription() == nullptr) {
@@ -103,6 +115,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
 }
 
 void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
+    check_time(inputs);
     if (!accumulation_) {
         return;
     }
@@ -111,7 +124,7 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
     prepared_ = Prepared{inputs.index, size, held};
 }
 
-std::uint32_t Renderer::non_finite_samples() const {
+std::uint64_t Renderer::non_finite_samples() const {
     return non_finite_ ? non_finite_->count() : 0u;
 }
 
@@ -120,6 +133,7 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
     if (frame.commands == nullptr || target == nullptr || size.width == 0 || size.height == 0) {
         throw Error("Renderer::record: no command buffer, no target, or an empty image");
     }
+    check_time(inputs);
     std::uint32_t accumulated_frames = 0;
     if (accumulation_) {
         if (!prepared_ || prepared_->index != inputs.index || !(prepared_->size == size)) {
@@ -163,7 +177,8 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
     if (accumulation_) {
         resources.accumulation = accumulation_->texture();
         resources.accumulated_frames = accumulated_frames;
-        resources.non_finite_counter = non_finite_->address();
+        non_finite_->begin_frame(frame.slot, frame.sequence);
+        resources.non_finite_counter = non_finite_->address(frame.slot);
     }
 
     MTL4::ComputeCommandEncoder* encoder = frame.commands->computeCommandEncoder();

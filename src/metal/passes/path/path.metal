@@ -28,14 +28,14 @@ kernel void path_trace(constant serenity::contracts::FrameConstants& frame [[buf
                        device const serenity::materials::RoughData* rough [[buffer(7)]],
                        device const serenity::materials::DielectricData* dielectrics [[buffer(8)]],
                        device const serenity::materials::ConductorData* conductors [[buffer(9)]],
-                       device const serenity::materials::EmissiveData* emissives [[buffer(10)]],
                        device const serenity::shapes::PrimitiveRecord* shape_records [[buffer(11)]],
                        device const serenity::shapes::SphereData* spheres [[buffer(12)]],
                        device const serenity::shapes::BoxData* boxes [[buffer(13)]],
                        device const serenity::lights::LightRecord* light_records [[buffer(14)]],
-                       device const serenity::lights::SphereLightData* sphere_lights [[buffer(15)]],
-                       constant serenity::lights::LightCounts& light_counts [[buffer(16)]],
-                       device atomic_uint* non_finite [[buffer(17)]],
+                       device const uint* shape_lights [[buffer(15)]],
+                       device const serenity::lights::SphereLightData* sphere_lights [[buffer(16)]],
+                       constant serenity::lights::LightCounts& light_counts [[buffer(17)]],
+                       device atomic_uint* non_finite [[buffer(18)]],
                        texture2d<float, access::read_write> accumulated [[texture(0)]],
                        texture2d<float, access::write> target [[texture(1)]],
                        uint2 pixel [[thread_position_in_grid]]) {
@@ -48,10 +48,9 @@ kernel void path_trace(constant serenity::contracts::FrameConstants& frame [[buf
         scene.structure = structure;
         scene.shapes = Shapes{shape_records, spheres, boxes};
         scene.materials = Materials{materials, rough, dielectrics, conductors};
-        scene.emissives = emissives;
         scene.textures = Textures{texture_records, checkers};
         scene.selection = UniformLight{light_records, light_counts.lights};
-        scene.lights = Lights{sphere_lights};
+        scene.lights = Lights{light_records, shape_lights, sphere_lights};
         scene.sky = sky;
 
         PathNumbers numbers = path_numbers(pixel, frame.frame_index);

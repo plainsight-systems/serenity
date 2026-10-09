@@ -20,11 +20,13 @@
 //   Step 1  Trace: the nearest surface along the ray.
 //   Step 2  Escape: if there is none, L += beta x sky(direction), and stop.
 //           The sky is not aimed at, so this is the one way it is counted.
-//   Step 3  Emission: if the surface glows, then if the path counts emission,
-//           L += beta x L_e; stop either way, a light scatters nothing. The
-//           path counts emission on the camera's own ray and after a delta
-//           lobe, which no shadow ray could have reached the light through
-//           (glass blocks shadow rays). After any other bounce the light was
+//   Step 3  Emission: if the surface is a light (contract 3, light_at) and
+//           the path counts emission, L += beta x L_e, L_e the emitter's. A
+//           light's surface scatters what its BSDF scatters: a glowing
+//           sphere's nothing, so its path ends at step 6. The path counts
+//           emission on the camera's own ray and after a delta lobe, which
+//           no shadow ray could have reached the light through (glass
+//           blocks shadow rays). After any other bounce the light was
 //           counted at the surface before, by step 5, so it adds nothing
 //           here (principle 7). Light that glass focuses onto a rough surface
 //           is therefore counted here, the one way it can be, until manifold
@@ -80,7 +82,6 @@
 #include "core/contracts/emitter.h"
 #include "core/contracts/surface_interaction.h"
 #include "core/lights/gradient_sky.h"
-#include "core/materials/emissive.h"
 #include "core/materials/material.h"
 #include "metal/acceleration/trace.metal.h"
 #include "metal/device/layout.metal.h"
@@ -109,7 +110,6 @@ struct Scene {
     metal::raytracing::primitive_acceleration_structure structure;
     Shapes shapes;
     Materials materials;
-    device const serenity::materials::EmissiveData* emissives;
     Textures textures;
     UniformLight selection;
     Lights lights;
@@ -141,16 +141,15 @@ inline float3 radiance(Scene scene, float3 origin, float3 direction, thread Path
         const float3 point = origin + hit.t * direction;
         const serenity::contracts::SurfaceInteraction surface_at =
             surface_interaction(scene.shapes, hit.primitive, point, direction);
-        const serenity::materials::MaterialRecord material = scene.materials.records[surface_at.material];
 
-        // Step 3: Emission: counted on the camera's ray and after a delta
-        // lobe; after any other bounce, step 5 at the surface before counted
-        // it. A light scatters nothing, so the path ends here either way.
-        if (material.kind == serenity::materials::MaterialKind::emissive) {
-            if (counts_emission) {
-                L += beta * to_float3(scene.emissives[material.index].radiance);
-            }
-            break;
+        // Step 3: Emission, through the emitter (contract 3): counted on the
+        // camera's ray and after a delta lobe; after any other bounce, step 5
+        // at the surface before counted it. What the light's surface
+        // scatters is its BSDF's: a glowing sphere's scatters nothing, so its
+        // path ends at step 6.
+        serenity::lights::LightRecord glowing;
+        if (counts_emission && light_at(scene.lights, hit.primitive, glowing)) {
+            L += beta * light_emitted(scene.lights, glowing, point, -direction);
         }
 
         // Step 4: Resolve the surface's BSDF (contract 2).

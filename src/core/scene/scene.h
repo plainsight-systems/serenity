@@ -123,6 +123,9 @@ struct SceneDescription {
     // for each sphere that wears an emissive material, in shape order.
     std::vector<lights::LightRecord> lights;
     std::vector<lights::SphereLightData> sphere_lights;
+    // One per shape, in primitive order: its light record's index, or
+    // lights::no_light (core/lights/light.h).
+    std::vector<std::uint32_t> shape_lights;
     lights::LightCounts light_counts{};
 };
 

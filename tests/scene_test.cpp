@@ -165,6 +165,13 @@ material = "brass"
     CHECK(s.light_counts.lights == 1);
     REQUIRE(s.sphere_lights.size() == 1);
     CHECK(s.light_counts.spheres == 1);
+    // Which light each shape is: the glow is, the brass and the example's
+    // own shapes are not.
+    REQUIRE(s.shape_lights.size() == s.shapes.records.size());
+    CHECK(s.shape_lights[0] == 0);
+    for (std::size_t i = 1; i < s.shape_lights.size(); ++i) {
+        CHECK(s.shape_lights[i] == lights::no_light);
+    }
     CHECK(s.sphere_lights[0].primitive == 0);
     CHECK(s.sphere_lights[0].center.z == 3.0f);
     CHECK(s.sphere_lights[0].radius == doctest::Approx(0.05f));

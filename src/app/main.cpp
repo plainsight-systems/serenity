@@ -45,7 +45,7 @@
 namespace {
 
 std::string title(serenity::frame::Extent size, const serenity::measurement::Summary& summary,
-                  std::uint32_t non_finite) {
+                  std::uint64_t non_finite) {
     char text[200];
     std::snprintf(text, sizeof(text), "Serenity  |  %u x %u  |  GPU %.2f ms mean, %.2f to %.2f, over %llu frames",
                   size.width, size.height, summary.mean.count() * 1e3, summary.shortest.count() * 1e3,

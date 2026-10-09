@@ -275,6 +275,9 @@ void read_shapes(const Reader& r, const toml::array& all,
             }
             sphere.material = material();
             const materials::MaterialRecord worn = scene.materials[sphere.material];
+            scene.shape_lights.push_back(worn.kind == materials::MaterialKind::emissive
+                                             ? static_cast<std::uint32_t>(scene.lights.size())
+                                             : lights::no_light);
             if (worn.kind == materials::MaterialKind::emissive) {
                 scene.lights.push_back(
                     {lights::LightKind::sphere, static_cast<std::uint32_t>(scene.sphere_lights.size())});
@@ -295,6 +298,7 @@ void read_shapes(const Reader& r, const toml::array& all,
             if (scene.materials[box.material].kind == materials::MaterialKind::emissive) {
                 r.fail(r.required(t, "material", what), what + " is a box; only a sphere may be emissive");
             }
+            scene.shape_lights.push_back(lights::no_light);
             shapes.records.push_back({shapes::ShapeKind::box, static_cast<std::uint32_t>(shapes.boxes.size())});
             shapes.boxes.push_back(box);
         } else {

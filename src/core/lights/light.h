@@ -30,6 +30,16 @@ struct LightRecord {
 
 static_assert(sizeof(LightRecord) == 8, "LightRecord must be the same 8 bytes on the host and in shaders");
 
+// Which light, if any, each shape is: one entry per primitive (shapes/
+// primitive.h), the index of its light record, or no_light. A path that
+// reaches a shape asks this, through the emitter (contract 3, light_at), and
+// so learns it reached a light without naming a material.
+#if defined(__METAL_VERSION__)
+constant constexpr uint32_t no_light = 0xffffffffu;
+#else
+constexpr uint32_t no_light = 0xffffffffu;
+#endif
+
 // How many lights a scene has, for a shader to choose among: a count is not
 // in an array's address.
 struct LightCounts {

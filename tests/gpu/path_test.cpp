@@ -19,6 +19,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -266,4 +267,34 @@ TEST_CASE("a frame recorded without being prepared is refused, and so is a graph
     CHECK_THROWS_AS(
         metal::Renderer(device, other, frame::Schedule{{frame::PassKind::path, frame::PassKind::path}}, &scene),
         metal::Error);
+}
+
+TEST_CASE("the camera sees a light's glow, through the emitter") {
+    // A camera ray that meets a light counts its emission (step 3): the
+    // emitter's radiance, (0.6, 0.3, 0.1), every frame alike.
+    const std::string text = camera_text("[0, 0, 3]", "[0, 0, 0]", 30) + sky("[0, 0, 0]", "[0, 0, 0]") +
+                             "[materials.glow]\nkind = \"emissive\"\nradiance = [0.6, 0.3, 0.1]\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.5\nmaterial = \"glow\"\n";
+    Rig rig(text, {33, 33});
+    const auto image = rig.render(4);
+    CHECK(mean_over(image, rig.size, 16, 16, 2) == doctest::Approx(0.6).epsilon(0.01));
+}
+
+TEST_CASE("a frame time past what the shaders' float holds is refused before it is recorded") {
+    const scene::SceneDescription scene = scene::parse(lit_floor(firefly("[0.3, 2.5, -0.5]")), "test scene");
+    metal::Device device;
+    metal::Submission submission(device);
+    metal::Offscreen target(device, submission, {16, 16});
+    metal::Renderer renderer(device, submission, path_graph(), &scene);
+    for (double seconds : {1e100, -1e39, std::numeric_limits<double>::infinity()}) {
+        INFO("time " << seconds);
+        CHECK_THROWS_AS(metal::render_to_offscreen(submission, target, renderer,
+                                                   frame::FrameInputs{.time = frame::Seconds(seconds), .index = 0,
+                                                                      .camera = scene.camera}),
+                        metal::Error);
+    }
+    const auto fine = metal::render_to_offscreen(
+        submission, target, renderer,
+        frame::FrameInputs{.time = frame::Seconds(3.0e38), .index = 0, .camera = scene.camera});
+    (void)submission.wait_until_complete(fine);
 }

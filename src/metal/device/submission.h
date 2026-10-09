@@ -152,6 +152,11 @@ public:
     // visible in the call; never per frame.
     std::vector<Completed> drain();
 
+    // Whether submission `sequence` has completed on the GPU, without
+    // waiting: its event has been signalled, so what it wrote to shared
+    // memory may be read. Says nothing of failure, which settling reports.
+    bool has_completed(std::uint64_t sequence) const;
+
     // The sequence the next begin() hands out: every submission from here on
     // has this sequence or a later one.
     std::uint64_t next_sequence() const { return next_; }

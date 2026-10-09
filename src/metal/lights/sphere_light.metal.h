@@ -14,12 +14,8 @@
 // light, as seen from the point, that is not hidden, out to its rim.
 //
 // Its answers to the emitter contract (contracts/emitter.h), at the end:
-// sample_light draws over the cone, pdf 1 / (its solid angle); its radiance
-// is the same everywhere and every way; its irradiance is pi L sin^2 a
-// cos t, exact while the sphere is wholly above the surface's horizon. A
-// sphere partly below the horizon is given the same formula, with cos t at
-// least 0: an overestimate in that band, which only the preview's direct
-// estimate reads (the path tracer aims rays instead).
+// sample_light draws over the cone, pdf 1 / (its solid angle), and its
+// radiance is the same everywhere on it and every way.
 
 #include <metal_stdlib>
 
@@ -32,11 +28,12 @@ namespace serenity {
 namespace shaders {
 
 struct LightView {
-    float3 direction;   // unit, from the point to the center
-    float distance;     // to the center
-    float sin2;         // sin^2 of the cone's half-angle: (r / d)^2, at most 1
-    float cos_max;      // cos of the cone's half-angle
-    float solid_angle;  // of the cone: 2 pi (1 - cos_max)
+    float3 direction;      // unit, from the point to the center
+    float distance;        // to the center
+    float sin2;            // sin^2 of the cone's half-angle: (r / d)^2, at most 1
+    float cos_max;         // cos of the cone's half-angle
+    float one_minus_cos;   // 1 - cos_max, computed without cancelling
+    float solid_angle;     // of the cone: 2 pi (1 - cos_max)
 };
 
 inline LightView view_light(serenity::lights::SphereLightData light, float3 point) {
@@ -46,14 +43,18 @@ inline LightView view_light(serenity::lights::SphereLightData light, float3 poin
     v.direction = to_center / v.distance;
     v.sin2 = metal::min(1.0f, (light.radius * light.radius) / (v.distance * v.distance));
     v.cos_max = metal::sqrt(1.0f - v.sin2);
-    v.solid_angle = 2.0f * M_PI_F * (1.0f - v.cos_max);
+    // 1 - cos a = sin^2 a / (1 + cos a): the direct difference cancels to 0
+    // for a small, distant light (r / d = 1e-4 makes 1 - sin^2 round to 1),
+    // and the light would vanish; this form keeps its precision.
+    v.one_minus_cos = v.sin2 / (1.0f + v.cos_max);
+    v.solid_angle = 2.0f * M_PI_F * v.one_minus_cos;
     return v;
 }
 
 // A direction within the light's cone, uniform in solid angle, from a point
 // `u` in the unit square: cos t uniform on [cos_max, 1], the azimuth uniform.
 inline float3 direction_to_light(LightView v, float2 u) {
-    const float cos_t = 1.0f - u.x * (1.0f - v.cos_max);
+    const float cos_t = 1.0f - u.x * v.one_minus_cos;
     const float sin_t = metal::sqrt(metal::max(0.0f, 1.0f - cos_t * cos_t));
     const float phi = 2.0f * M_PI_F * u.y;
     float3 t;
@@ -67,7 +68,11 @@ inline float3 direction_to_light(LightView v, float2 u) {
 // sphere. At the cone's rim the root is double, d cos a.
 inline float distance_to_light(serenity::lights::SphereLightData light, LightView v, float3 direction) {
     const float along = v.distance * metal::dot(direction, v.direction);
-    const float off2 = v.distance * v.distance - along * along;
+    // The ray's distance from the center, squared: d^2 sin^2 of the angle
+    // between them, from the cross product. Not d^2 - along^2, which for a
+    // light far off subtracts two numbers near d^2 and loses the difference.
+    const float3 across = metal::cross(direction, v.direction);
+    const float off2 = v.distance * v.distance * metal::dot(across, across);
     return along - metal::sqrt(metal::max(0.0f, light.radius * light.radius - off2));
 }
 
@@ -103,29 +108,15 @@ inline float3 sphere_emitted(serenity::lights::SphereLightData light) {
 
 inline float sphere_light_pdf(serenity::lights::SphereLightData light, float3 point, float3 direction) {
     const LightView v = view_light(light, point);
-    if (v.distance <= light.radius || metal::dot(direction, v.direction) < v.cos_max) {
+    // Inside the cone: on the light's side, and sin^2 of the angle to its
+    // middle, the cross product's length squared, at most sin^2 a; this
+    // holds its precision where cos against cos_max would cancel.
+    const float3 across = metal::cross(direction, v.direction);
+    if (v.distance <= light.radius || metal::dot(direction, v.direction) <= 0.0f ||
+        metal::dot(across, across) > v.sin2) {
         return 0.0f;
     }
     return 1.0f / v.solid_angle;
-}
-
-inline serenity::contracts::LightExtent sphere_extent(serenity::lights::SphereLightData light, float3 point) {
-    const LightView v = view_light(light, point);
-    serenity::contracts::LightExtent e;
-    e.direction = to_packed(v.direction);
-    e.distance = v.distance;
-    e.radiance = light.radiance;
-    e.solid_angle = v.solid_angle;
-    e.sin_radius = metal::sqrt(v.sin2);
-    e.primitive = light.primitive;
-    e.padding[0] = e.padding[1] = 0u;
-    return e;
-}
-
-inline float3 sphere_irradiance(serenity::lights::SphereLightData light, float3 point, float3 normal) {
-    const LightView v = view_light(light, point);
-    const float cos_t = metal::max(0.0f, metal::dot(normal, v.direction));
-    return M_PI_F * to_float3(light.radiance) * v.sin2 * cos_t;
 }
 
 }  // namespace shaders

@@ -102,7 +102,7 @@ depend on contracts, not on each other.
 |---|---|---|---|
 | 1 | **Surface interaction**: position, normals, the side arrived from, material; surface coordinates with the first texture that needs them | Shape | Material, Texture, Integrator, Sample reuse |
 | 2 | **BSDF**: a material resolved at a surface, and evaluate, sample, pdf and lobes on it | Material | Integrator, Sample reuse |
-| 3 | **Emitter**: a direction toward the light drawn from numbers, the radiance along it, the distance to it, and the pdf; the light's extent and unhindered irradiance from a point | Light | Light selection, Integrator, Sample reuse |
+| 3 | **Emitter**: a direction toward the light drawn from numbers, the radiance along it, the distance to it, the pdf; the radiance it emits; which light, if any, a shape is | Light | Light selection, Integrator, Sample reuse |
 | 4 | **Light sample**: which light and which point on it, in its own coordinates | Light | Sample reuse, Integrator |
 | 5 | **Film outputs**: radiance, normal, depth, motion per pixel | Film | Pass, Sample reuse |
 | 6 | **Frame images**: the images between passes and the history across frames; first, the accumulated image | Frame graph | every Pass |

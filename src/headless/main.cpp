@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
             };
             const std::uint64_t sequence = metal::render_to_offscreen(submission, target, renderer, inputs);
             (void)submission.wait_until_complete(sequence);
-            if (const std::uint32_t failed = renderer.non_finite_samples(); failed != 0) {
+            if (const std::uint64_t failed = renderer.non_finite_samples(); failed != 0) {
                 throw std::runtime_error("frame " + std::to_string(index) + ": " + std::to_string(failed) +
                                          " samples were not finite, and were left out (a bug)");
             }

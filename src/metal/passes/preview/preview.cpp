@@ -25,13 +25,14 @@ void PreviewPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
     arguments->setAddress(scene.rough, 7);
     arguments->setAddress(scene.dielectrics, 8);
     arguments->setAddress(scene.conductors, 9);
-    arguments->setAddress(scene.emissives, 10);
+    // 10: unbound; a light's glow is read through the emitter (contract 3).
     arguments->setAddress(scene.shapes, 11);
     arguments->setAddress(scene.spheres, 12);
     arguments->setAddress(scene.boxes, 13);
     arguments->setAddress(scene.light_records, 14);
-    arguments->setAddress(scene.sphere_lights, 15);
-    arguments->setAddress(scene.light_counts, 16);
+    arguments->setAddress(scene.shape_lights, 15);
+    arguments->setAddress(scene.sphere_lights, 16);
+    arguments->setAddress(scene.light_counts, 17);
     arguments->setTexture(resources.target->gpuResourceID(), 0);
     encoder->setComputePipelineState(pipeline_.get());
 

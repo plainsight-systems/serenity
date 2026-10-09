@@ -22,33 +22,31 @@ namespace serenity::metal {
 // agree with.
 //
 // Per pixel, four camera rays, at a rotated grid of positions within it
-// (anti-aliasing), each followed until it reaches something that ends it:
+// (anti-aliasing), each followed until it reaches something that ends it.
+// What it does at a surface it decides by the surface's BSDF and its lobes
+// (contract 2), and every light it reads through the emitter (contract 3),
+// naming no material and no light kind (metal/integrator/direct.metal.h):
 //
 //   - leaving the scene, the sky in its direction;
-//   - a glowing sphere, its radiance;
-//   - a rough surface: from each light, its irradiance (lights/
-//     sphere_light.h) times the fraction of the light visible, by 4 shadow
-//     rays drawn uniformly over the cone the light fills, out to its rim
-//     (metal/lights/sphere_light.metal.h); and the sky, by 2
-//     cosine-distributed rays, each that escapes bringing the sky's
-//     radiance; times the surface's color. A shadow is soft where a light is
-//     partly hidden.
-//   - metal: each light's highlight, by GGX with its roughness widened by
-//     the light's size, over the light's exact solid angle, by the fraction
-//     visible as above; and the rest of
-//     the scene by 4 reflected rays drawn from GGX's visible normals, each
-//     shaded as a reflection (below), lights not counted again;
-//   - glass: the Fresnel term F splits it (dielectric.metal.h); the part
-//     reflected where it enters from outside, weighted by F, is shaded as a
-//     reflection; the refracted part, weighted by 1 - F, continues. Under
-//     total internal reflection the whole ray reflects and continues. At
-//     most 8 surfaces of glass; where a ray leaves glass its reflected part
-//     is dropped.
+//   - a light, its glow (emitted); a glowing sphere scatters nothing more;
+//   - a surface with a lobe that is not delta (rough, metal): from each
+//     light, 4 directions the emitter draws over it (for a sphere,
+//     uniformly over the cone it fills), each f |cos| L / pdf where no
+//     shape but the light lies before it, so shadows are soft where a light
+//     is partly hidden and a metal's highlight is the light's own shape seen
+//     through its lobe; and rays its BSDF samples, each weighted value |cos|
+//     / pdf: a diffuse lobe's 2 bring the sky where they escape, a glossy
+//     lobe's 4 bring what they reach, shaded as a reflection (below),
+//     lights not counted again;
+//   - a surface whose lobes are all delta (glass): every lobe taken, each
+//     with its probability, by sampling the BSDF at both ends of u.x; the
+//     reflection, where the ray arrives from outside, shaded as a
+//     reflection; the transmitted part continuing. At most 8 such surfaces.
 //
-// A reflection is shaded more simply: a rough surface by each light whose
-// center it sees, one shadow ray each, and the sky above it unblocked; a
-// glowing sphere by its glow, seen in glass, not in metal, whose highlights
-// already count it; metal and glass by the sky in the ray's direction.
+// A reflection is shaded more simply: a light by its glow, in glass but not
+// in metal, whose highlights already count it; a surface with a diffuse
+// lobe by each light toward its middle, one shadow ray each, and the sky
+// above it unblocked; any other surface by the sky along the ray.
 //
 // Glass is opaque to shadow rays: the light it would focus is a caustic.
 //
@@ -71,14 +69,7 @@ namespace serenity::metal {
 //
 // The kernel is preview.metal: it places the four camera rays, launches the
 // integrator (metal/integrator/direct.metal.h) for each, and encodes the
-// mean for display. The integrator uses the shared shader halves of the
-// kinds: trace.metal.h (the hardware loop over boxes, each shape kind's
-// exact test in shapes.metal.h), rough.metal.h, conductor.metal.h,
-// dielectric.metal.h, textures.metal.h, gradient_sky.metal.h,
-// sampler.metal.h and warp.metal.h, and reads every light through the
-// emitter contract (lights/emitter.metal.h: each light's extent, its
-// irradiance, and directions toward it for shadow rays), naming no light
-// kind.
+// mean for display (passes/display.metal.h).
 //
 // Cost: one thread per pixel, in rows of the execution width (GPU.2). On a
 // rough surface, with L lights, 4 x (1 + 4L + 2) rays a pixel, growing by

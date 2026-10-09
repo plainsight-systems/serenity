@@ -204,6 +204,10 @@ std::vector<Completed> Submission::drain() {
     return settled;
 }
 
+bool Submission::has_completed(std::uint64_t sequence) const {
+    return completed_->signaledValue() >= sequence + 1;
+}
+
 void Submission::release_resident(MTL::Allocation* allocation) {
     if (allocation == nullptr) {
         throw Error("release_resident() with no allocation");

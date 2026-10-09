@@ -17,11 +17,23 @@
 namespace serenity {
 namespace shaders {
 
-// Every light, as a shader reads it: one array per light kind, which a
-// record indexes.
+// Every light, as a shader reads it: the records, which light each shape
+// is, and one array per light kind, which a record indexes.
 struct Lights {
+    device const serenity::lights::LightRecord* records;
+    device const uint* shape_lights;
     device const serenity::lights::SphereLightData* spheres;
 };
+
+// Whether shape `primitive` is a light, and if so which, in `light`.
+inline bool light_at(Lights lights, uint primitive, thread serenity::lights::LightRecord& light) {
+    const uint index = lights.shape_lights[primitive];
+    if (index == serenity::lights::no_light) {
+        return false;
+    }
+    light = lights.records[index];
+    return true;
+}
 
 inline serenity::contracts::LightSample sample_light(Lights lights, serenity::lights::LightRecord light, float3 point,
                                                      float2 u) {
@@ -48,23 +60,6 @@ inline float light_pdf(Lights lights, serenity::lights::LightRecord light, float
         return sphere_light_pdf(lights.spheres[light.index], point, direction);
     }
     return 0.0f;
-}
-
-inline serenity::contracts::LightExtent light_extent(Lights lights, serenity::lights::LightRecord light,
-                                                     float3 point) {
-    switch (light.kind) {
-    case serenity::lights::LightKind::sphere:
-        return sphere_extent(lights.spheres[light.index], point);
-    }
-    return serenity::contracts::LightExtent{};
-}
-
-inline float3 light_irradiance(Lights lights, serenity::lights::LightRecord light, float3 point, float3 normal) {
-    switch (light.kind) {
-    case serenity::lights::LightKind::sphere:
-        return sphere_irradiance(lights.spheres[light.index], point, normal);
-    }
-    return float3(0.0f);
 }
 
 }  // namespace shaders

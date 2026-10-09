@@ -82,3 +82,51 @@ TEST_CASE("shadow rays toward a near sphere light span its whole cone, and end o
     CHECK(widest >= cone - 1.0 * std::numbers::pi / 180.0);
     CHECK(worst_surface_error < 1e-3);
 }
+
+TEST_CASE("a small light far off keeps its solid angle: no cancellation to zero") {
+    // r / d = 1e-4: 1 - sqrt(1 - 1e-8) is 0 in float, which would make the
+    // pdf infinite and the light vanish; sin^2 / (1 + cos) keeps it.
+    metal::Device device;
+    metal::Submission submission(device);
+    metal::Library library(device, metallib::smoke);
+    auto pipeline = library.compute_pipeline("light_far");
+    const lights::SphereLightData light{{0.0f, 1000.0f, 0.0f}, 0.1f, {1.0f, 1.0f, 1.0f}, 0};
+    const float point[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+    MTL::Device* mtl = device.handle();
+    auto out = NS::TransferPtr(mtl->newBuffer(16, MTL::ResourceStorageModeShared));
+    auto light_buffer = NS::TransferPtr(mtl->newBuffer(sizeof(light), MTL::ResourceStorageModeShared));
+    auto point_buffer = NS::TransferPtr(mtl->newBuffer(sizeof(point), MTL::ResourceStorageModeShared));
+    std::memcpy(light_buffer->contents(), &light, sizeof(light));
+    std::memcpy(point_buffer->contents(), point, sizeof(point));
+    for (MTL::Buffer* buffer : {out.get(), light_buffer.get(), point_buffer.get()}) {
+        submission.make_resident(buffer);
+    }
+    auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
+    descriptor->setMaxBufferBindCount(3);
+    NS::Error* error = nullptr;
+    auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
+    REQUIRE(table);
+    table->setAddress(out->gpuAddress(), 0);
+    table->setAddress(light_buffer->gpuAddress(), 1);
+    table->setAddress(point_buffer->gpuAddress(), 2);
+    const auto frame = submission.begin();
+    MTL4::ComputeCommandEncoder* encoder = frame.commands->computeCommandEncoder();
+    encoder->setArgumentTable(table.get());
+    encoder->setComputePipelineState(pipeline.get());
+    encoder->dispatchThreads(MTL::Size(1, 1, 1), MTL::Size(1, 1, 1));
+    encoder->endEncoding();
+    submission.commit();
+    (void)submission.wait_until_complete(frame.sequence);
+
+    const auto* result = static_cast<const float*>(out->contents());
+    const double sin2 = 1e-8;
+    const double solid_angle = 2.0 * std::numbers::pi * sin2 / (1.0 + std::sqrt(1.0 - sin2));
+    INFO("pdf " << result[0] << ", expected " << 1.0 / solid_angle);
+    CHECK(std::isfinite(result[0]));
+    CHECK(result[0] == doctest::Approx(1.0 / solid_angle).epsilon(1e-4));
+    CHECK(result[1] == doctest::Approx(1.0 / solid_angle).epsilon(1e-4));  // its middle, inside
+    CHECK(result[2] == 0.0f);                                              // well aside, outside
+    CHECK(result[3] == doctest::Approx(999.9).epsilon(1e-5));              // to its surface
+}
