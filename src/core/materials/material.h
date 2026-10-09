@@ -6,6 +6,10 @@
 // and an index into that kind's array (Enum.2, C.181), as shapes are
 // (shapes/primitive.h). Shared with shaders. Each kind's data and its BSDF
 // are its own files; a new kind changes no other.
+//
+// Each kind resolves at a surface to a BSDF (contracts/bsdf.h): rough to
+// lambert, conductor to conductor, dielectric to dielectric, and emissive
+// to none, its light being the emitter's.
 
 #if defined(__METAL_VERSION__)
 #include <metal_stdlib>
