@@ -20,36 +20,57 @@ namespace serenity::metal {
 // is unbiased: its mean over frames is the image the reference converges
 // to (logical-overview.md, principle 3).
 //
-// Per pixel, per frame, the path (metal/integrator/path.metal.h):
+// The algorithm is the textbook path tracer with next event estimation and
+// multiple importance sampling: Veach's (Robust Monte Carlo Methods for
+// Light Transport Simulation, 1997, ch. 9) as pbrt-v4 writes it
+// (PathIntegrator::Li, section 13.4). Per pixel, per frame, in
+// metal/integrator/path.metal.h, whose sections carry these step numbers:
 //
-//   - starts at a position within the pixel drawn anew each frame, so
-//     anti-aliasing comes from the average, not from extra rays;
-//   - at each surface, resolves its BSDF (contract 2) and, where it has a
-//     lobe that is not delta, aims at one light: chosen uniformly among the
-//     lights (metal/light_selection/uniform_light.metal.h), a direction
-//     toward it drawn by the emitter (contract 3), and one shadow ray. Cost
-//     per vertex is constant in the number of lights (principle 9);
-//   - then samples the BSDF for the next direction and continues;
-//   - weighs the two ways of reaching a light against each other by the
-//     power heuristic (Veach, multiple importance sampling): aiming at the
-//     light, and a BSDF-sampled ray that happens to reach it. Both count,
-//     neither twice. Light reached only through delta lobes (seen in glass
-//     or a mirror) has no aimed counterpart and counts whole;
-//   - counts the sky where a ray leaves the scene, by BSDF sampling alone:
-//     the sky is not aimed at;
-//   - stops after 8 surfaces, or earlier by Russian roulette from the 4th,
-//     with a survival probability of the path's throughput, at most 0.95,
-//     dividing by it so the mean is unchanged.
+//   L = 0, the radiance found; beta = 1, the path's throughput; the ray
+//   from the camera through a point in the pixel drawn anew each frame,
+//   so anti-aliasing comes from the average, not from extra rays.
+//   For each surface, up to 8:
+//
+//   Step 1  Trace: the nearest surface along the ray.
+//   Step 2  Escape: if there is none, L += beta x sky(direction), and stop.
+//           The sky is reached by BSDF sampling alone; it is not aimed at.
+//   Step 3  Emission: if the surface glows, L += beta x w x L_e, and stop
+//           (a light scatters nothing). w = 1 for the camera's own ray and
+//           after a delta lobe, which aiming could not have found; otherwise
+//           the power heuristic against aiming,
+//             w = p_bsdf^2 / (p_bsdf^2 + p_aim^2),
+//           p_bsdf the pdf of the bounce that found the light, p_aim =
+//           P(light) x pdf_light(the previous surface -> this direction).
+//   Step 4  Resolve the surface's BSDF (contract 2).
+//   Step 5  Next event estimation, where the BSDF has a lobe that is not
+//           delta (aims_at_lights): choose one light uniformly, P = 1 / N
+//           (light_selection/uniform_light.metal.h); draw a direction toward
+//           it, pdf p_light (contract 3); trace one shadow ray; if nothing
+//           blocks it,
+//             L += beta x f(wo, wi) |cos| x L_e x w / (P x p_light),
+//             w = (P p_light)^2 / ((P p_light)^2 + p_bsdf(wi)^2).
+//           Cost per surface is the same for any number of lights
+//           (principle 9).
+//   Step 6  Sample the BSDF: wi, f and pdf (contract 2). If pdf is 0, stop.
+//           beta *= f |cos| / pdf; keep pdf and whether the lobe was delta
+//           for step 3 at the next surface.
+//   Step 7  Russian roulette, from the 4th surface: survive with
+//           q = min(the largest channel of beta, 0.95), else stop;
+//           beta /= q, so the mean is unchanged.
+//   Step 8  Continue from the surface along wi.
+//
+//   Step 9  Accumulate: the image's new mean is (old x n + L) / (n + 1), n
+//           the frames it held (contracts/frame_constants.h,
+//           accumulated_frames); write it back, and write it for display to
+//           the frame's target.
 //
 // The numbers a path draws are a function of the pixel, the frame's index
 // and the dimension, the count of numbers drawn before it on the path
 // (metal/sampler/sampler.metal.h): independent between frames, so their mean
 // converges, and any frame can be rendered again exactly, alone (principle 2).
 //
-// The new mean is (old x n + this frame) / (n + 1), n the frames the image
-// held (contracts/frame_constants.h, accumulated_frames), written back to the
-// accumulated image, and also, for display, to the frame's target, encoded
-// as the preview encodes it (passes/display.metal.h).
+// For display the mean is encoded as the preview encodes it
+// (passes/display.metal.h).
 //
 // Ordering: the pass reads the image the previous frame wrote. Metal 4 does
 // not track hazards, so before its dispatch the pass records a barrier that
