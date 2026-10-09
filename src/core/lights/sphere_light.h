@@ -2,9 +2,10 @@
 
 // Axis: Light (sphere).
 //
-// A glowing sphere: the fireflies. A sphere shape that wears an emissive
-// material is one (materials/emissive.h); the scene reader lists each, so a
-// shader finds every light without searching the shapes. It is also a shape,
+// A glowing sphere: the fireflies, light kind sphere (light.h). A sphere
+// shape that wears an emissive material is one (materials/emissive.h); the
+// scene reader lists each, with a light record for it, so a shader finds
+// every light without searching the shapes. It is also a shape,
 // so rays that reach it see its glow, and it casts shadows like any other.
 //
 // The light at a point p with normal n, from a sphere of radius r and
@@ -37,15 +38,6 @@ struct SphereLightData {
 };
 
 static_assert(sizeof(SphereLightData) == 32, "SphereLightData must be the same 32 bytes on the host and in shaders");
-
-// How many lights a scene has, for a shader to loop over: a light count is
-// not in the array's address.
-struct LightCounts {
-    uint32_t spheres;
-    uint32_t padding[3];
-};
-
-static_assert(sizeof(LightCounts) == 16, "LightCounts must be the same 16 bytes on the host and in shaders");
 
 }  // namespace lights
 }  // namespace serenity

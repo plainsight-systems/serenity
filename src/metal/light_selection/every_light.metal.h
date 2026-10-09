@@ -7,6 +7,12 @@
 // Its cost grows with the number of lights, which is why it is the
 // preview's and no estimator's (logical-overview.md, principle 9): the
 // estimators choose a fixed number of candidates, and ReSTIR reuses them.
+//
+// It walks the sphere lights' array itself, where uniform selection chooses
+// among light records (uniform_light.metal.h): the preview's direct
+// integrator uses the sphere light's exact irradiance, not the emitter
+// contract. Both move onto the contracts together, with the preview's
+// material switch (docs/process/QUEUE.md).
 
 #include <metal_stdlib>
 

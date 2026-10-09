@@ -276,6 +276,8 @@ void read_shapes(const Reader& r, const toml::array& all,
             sphere.material = material();
             const materials::MaterialRecord worn = scene.materials[sphere.material];
             if (worn.kind == materials::MaterialKind::emissive) {
+                scene.lights.push_back(
+                    {lights::LightKind::sphere, static_cast<std::uint32_t>(scene.sphere_lights.size())});
                 scene.sphere_lights.push_back({sphere.center, sphere.radius, scene.emissives[worn.index].radiance,
                                                static_cast<std::uint32_t>(shapes.records.size())});
             }
@@ -324,6 +326,7 @@ SceneDescription read_scene(const Reader& r, const toml::table& root) {
         r.fail(shapes, "'shapes' must be an array of tables, written [[shapes]]");
     }
     read_shapes(r, *list, material_index, scene);
+    scene.light_counts.lights = static_cast<std::uint32_t>(scene.lights.size());
     scene.light_counts.spheres = static_cast<std::uint32_t>(scene.sphere_lights.size());
     return scene;
 }

@@ -8,6 +8,7 @@
 
 #include "core/contracts/camera.h"
 #include "core/lights/gradient_sky.h"
+#include "core/lights/light.h"
 #include "core/lights/sphere_light.h"
 #include "core/materials/conductor.h"
 #include "core/materials/dielectric.h"
@@ -118,7 +119,9 @@ struct SceneDescription {
     // shapes.records[i].
     shapes::Shapes shapes;
 
-    // One per sphere that wears an emissive material, in shape order.
+    // One record per light, and one array per light kind: a sphere light
+    // for each sphere that wears an emissive material, in shape order.
+    std::vector<lights::LightRecord> lights;
     std::vector<lights::SphereLightData> sphere_lights;
     lights::LightCounts light_counts{};
 };

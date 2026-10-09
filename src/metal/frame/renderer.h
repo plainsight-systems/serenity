@@ -58,10 +58,15 @@ namespace serenity::metal {
 // has no camera is refused, by Error.
 //
 // The accumulated image. A frame graph with a pass that averages its frames
-// (frame::accumulates) has one (accumulation.h), which the renderer prepares
-// each frame from the frame's inputs before recording it: the count of
-// frames it holds goes to the frame constants, and a frame whose inputs
-// claim an image the history does not hold is refused, by Error.
+// (frame::accumulates) has one (accumulation.h), and at most one such pass:
+// one image holds one pass's history, so a graph with two, a kind repeated
+// included, is refused at construction, by Error. Each frame, prepare()
+// readies it from the frame's inputs before the frame's submission begins,
+// since remaking it for a new size waits for the frames in flight; record()
+// then gives the pass the image and the count of frames it holds, through
+// the frame constants. A frame whose inputs claim an image the history does
+// not hold is refused, by Error, and so is a frame recorded without being
+// prepared.
 //
 // The target is a texture and its size, whatever owns it: the window's
 // drawable (presenter.h) or an offscreen image (offscreen.h). The renderer
@@ -113,11 +118,23 @@ public:
     Renderer& operator=(Renderer&&) = delete;
     ~Renderer() = default;
 
+    // Readies what frame `inputs` at `size` needs from before it: the
+    // accumulated image, if the graph has one (accumulation.h). Called
+    // before the frame's submission begins; throws Error if the image cannot
+    // hold what the inputs claim. Nothing to do for a graph that accumulates
+    // nothing.
+    void prepare(const frame::FrameInputs& inputs, frame::Extent size);
+
     // Records frame `inputs` into `frame`, writing `target`, of `size`.
     // `frame` is what Submission::begin() returned. Throws Error if the
-    // schedule reads a scene and `inputs` has no camera.
+    // schedule reads a scene and `inputs` has no camera, or accumulates and
+    // the frame was not prepared at this size.
     void record(const FrameSlot& frame, const frame::FrameInputs& inputs, MTL::Texture* target,
                 frame::Extent size);
+
+    // Samples left out for not being finite (accumulation.h), over every
+    // completed frame; 0 for a graph that accumulates nothing.
+    std::uint32_t non_finite_samples() const;
 
 private:
     using Pass = std::variant<TestPatternPass, PreviewPass, PathPass>;
@@ -127,6 +144,12 @@ private:
     std::unique_ptr<SceneBuffers> scene_;
     std::unique_ptr<PrimitiveAcceleration> acceleration_;
     std::unique_ptr<Accumulation> accumulation_;  // when a pass accumulates
+    struct Prepared {
+        std::uint64_t index = 0;
+        frame::Extent size;
+        std::uint32_t accumulated_frames = 0;
+    };
+    std::optional<Prepared> prepared_;  // the frame prepare() readied, until recorded
     NS::SharedPtr<MTL::Buffer> constants_;
     std::array<NS::SharedPtr<MTL4::ArgumentTable>, frames_in_flight> arguments_;
     std::vector<Pass> passes_;  // in schedule order
@@ -135,6 +158,8 @@ private:
 // One frame, start to finish, for each kind of target. The window and the
 // headless renderer call these and nothing below them, so neither names a
 // Metal type (file-mapping.md).
+//
+// Both prepare the frame (Renderer::prepare) before its submission begins.
 //
 // render_to_window() acquires a drawable, records the frame into it and
 // presents it, inside an autorelease pool of its own (the drawable is an

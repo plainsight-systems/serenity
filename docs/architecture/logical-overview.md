@@ -118,7 +118,12 @@ pixels or across frames.
    estimation. A bounced ray that strikes a firefly adds nothing, because
    sampling has already counted that light. A firefly struck by the camera's
    path before any rough surface is counted as emission. No path is found two
-   ways, so no two strategies need weighting against each other.
+   ways, so no two strategies need weighting against each other. Until
+   manifold next event estimation arrives, the naive path tracer counts the
+   light glass and metal focus onto a rough surface the one way it can: a
+   bounced ray that reaches a firefly through a delta lobe, which a shadow
+   ray, blocked by the glass, cannot. Manifold next event estimation then
+   takes those paths over, and the bounced ray stops counting them.
 
 8. **The scene is data.** Positions, materials, firefly count, color,
    intensity and motion are numbers in the description. Changing the scene

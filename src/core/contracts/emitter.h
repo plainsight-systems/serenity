@@ -10,7 +10,10 @@
 // its kind (pbrt-v4's Light: SampleLi, PDF_Li, L).
 //
 // The data here is shared; the functions are each backend's, written to the
-// semantics below, one file per kind in metal/lights/.
+// semantics below, one file per kind in metal/lights/ and a dispatch on the
+// light's kind (metal/lights/emitter.metal.h). Each takes a light record
+// (core/lights/light.h), which Light selection chose without knowing its
+// kind, and the scene's light arrays.
 //
 //   LightSample sample_light(light, point, u)
 //       a direction from `point` toward the light, drawn from u, two numbers
@@ -19,11 +22,16 @@
 //       means no sample (the point is inside the light).
 //   float light_pdf(light, point, direction)
 //       the density with which sample_light() draws `direction` from
-//       `point`: what a path that reached the light by sampling a BSDF needs
-//       to weigh itself against aiming (multiple importance sampling). 0 for
-//       a direction that misses the light.
+//       `point`: what ReSTIR's resampling weights need of a candidate, and
+//       what any estimator that weighs two strategies against each other
+//       would. The naive path tracer weighs none (logical-overview.md,
+//       principle 7). 0 for a direction that misses the light.
 //   float3 emitted(light, point on it, direction)
 //       the radiance the light sends from that point along that direction.
+//
+// A shadow ray toward a sample stops short of `distance`: anything nearer
+// than the light's surface along the direction blocks it, and the light's
+// own surface does not.
 //
 // The sphere light (lights/sphere_light.h) draws uniformly over the cone it
 // fills from the point, pdf = 1 / (2 pi (1 - cos a)), sin a = r / d, and its
