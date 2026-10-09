@@ -187,6 +187,10 @@ TEST_CASE("every mistake is refused, naming the file and the line") {
     CHECK(contains(error_of(with("[camera]", "[camera]\nzoom = 2")), "unknown key 'zoom' in [camera]"));
     CHECK(contains(error_of(with("[environment]", "[lights]\n[environment]")), "unknown key 'lights' in the scene"));
     CHECK(contains(error_of(with("radius = 0.8", "radius = \"big\"")), "must be a number"));
+    // Finite as a double, beyond float's range: refused, not narrowed to infinity.
+    CHECK(contains(error_of(with("radius = 0.8", "radius = 1e300")), "within float's range"));
+    CHECK(contains(error_of(with("ior = 1.5", "ior = 1e39")), "within float's range"));
+    CHECK(contains(error_of(with("center = [0, 0.8, 0]", "center = [0, -1e300, 0]")), "within float's range"));
     CHECK(contains(error_of(with("center = [0, 0.8, 0]", "center = [0, 0.8]")), "array of three numbers"));
     CHECK(contains(error_of(with("radius = 0.8\n", "")), "shape 1 has no 'radius'"));
     CHECK(contains(error_of("[camera]\nposition = [0, 0, 1]\nlook_at = [0, 0, 0]\nvertical_fov_degrees = 40\n"

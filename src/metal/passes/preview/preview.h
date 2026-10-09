@@ -28,11 +28,14 @@ namespace serenity::metal {
 //   - a glowing sphere, its radiance;
 //   - a rough surface: from each light, its irradiance (lights/
 //     sphere_light.h) times the fraction of the light visible, by 4 shadow
-//     rays to points across its disk; and the sky, by 2 cosine-distributed
-//     rays, each that escapes bringing the sky's radiance; times the
-//     surface's color. A shadow is soft where a light is partly hidden.
+//     rays drawn uniformly over the cone the light fills, out to its rim
+//     (metal/lights/sphere_light.metal.h); and the sky, by 2
+//     cosine-distributed rays, each that escapes bringing the sky's
+//     radiance; times the surface's color. A shadow is soft where a light is
+//     partly hidden.
 //   - metal: each light's highlight, by GGX with its roughness widened by
-//     the light's size and the fraction visible as above; and the rest of
+//     the light's size, over the light's exact solid angle, by the fraction
+//     visible as above; and the rest of
 //     the scene by 4 reflected rays drawn from GGX's visible normals, each
 //     shaded as a reflection (below), lights not counted again;
 //   - glass: the Fresnel term F splits it (dielectric.metal.h); the part
@@ -59,15 +62,25 @@ namespace serenity::metal {
 // display expect. Tone mapping, when it comes, is a pass of its own and the
 // encoding moves to it.
 //
-// The kernel is preview.metal, which uses the shared shader halves of the
-// kinds: pinhole.metal.h, trace.metal.h (the hardware loop over boxes, each
-// shape kind's exact test in shapes.metal.h), rough.metal.h,
-// conductor.metal.h, dielectric.metal.h, textures.metal.h,
-// sphere_light.metal.h, gradient_sky.metal.h and sampler.metal.h.
+// Every light is counted at every pixel: the every-light selection
+// (light_selection/every_light.metal.h), so the image has no selection
+// noise. Its cost therefore grows with the number of lights, the one place
+// that principle 9 of logical-overview.md does not hold, and why the preview
+// is for scenes of a few lights. A scene of thousands of fireflies is the
+// estimators' to render.
+//
+// The kernel is preview.metal: it places the four camera rays, launches the
+// integrator (metal/integrator/direct.metal.h) for each, and encodes the
+// mean for display. The integrator uses the shared shader halves of the
+// kinds: trace.metal.h (the hardware loop over boxes, each shape kind's
+// exact test in shapes.metal.h), rough.metal.h, conductor.metal.h,
+// dielectric.metal.h, textures.metal.h, sphere_light.metal.h,
+// gradient_sky.metal.h and sampler.metal.h.
 //
 // Cost: one thread per pixel, in rows of the execution width (GPU.2). On a
-// rough surface, with L lights, 4 x (1 + 4L + 2) rays a pixel: 44 for the
-// first scene's two fireflies; more on metal. Measured on the M3 Max, the
+// rough surface, with L lights, 4 x (1 + 4L + 2) rays a pixel, growing by
+// 16 with each light: 44 for the first scene's two fireflies; more on
+// metal. Measured on the M3 Max, the
 // first scene takes 78 ms of GPU time at 3456 x 2234 and 20 ms at half that
 // in each direction. The window's frame budget is met by rendering below
 // the display's resolution and upscaling, which comes later.

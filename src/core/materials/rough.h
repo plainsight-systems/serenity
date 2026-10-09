@@ -5,8 +5,9 @@
 // A rough surface: one that light arriving from anywhere scatters, and that
 // a path takes light at rather than passes through (logical-overview.md). Its
 // color is a constant, or a texture's, named through a texture reference
-// (contracts/texture_reference.h). Its BSDF arrives with light; until
-// then a preview shows its color, unlit (metal/passes/preview/preview.h).
+// (contracts/texture_reference.h). It scatters light by Lambert's law,
+// albedo / pi, which the preview evaluates for the light reaching it
+// straight from the lights and the sky (metal/passes/preview/preview.h).
 
 #include "core/contracts/float3.h"
 #include "core/contracts/texture_reference.h"

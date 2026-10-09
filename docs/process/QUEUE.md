@@ -25,7 +25,10 @@ This file tracks active and accepted work.
 ## Next, in order
 
 1. A full path tracer over procedural geometry with many moving fireflies,
-   sampled naively, in the window and headless.
+   sampled naively, in the window and headless. It brings the BSDF contract
+   (contract 2), through which each material kind is evaluated and sampled,
+   and with it the material switch leaves the preview's direct integrator
+   (metal/integrator/direct.metal.h).
 
 Then, each in its turn: ReSTIR DI; ReSTIR GI; caustics by manifold next
 event estimation; reservoir reuse as kernels; a denoiser of its own against

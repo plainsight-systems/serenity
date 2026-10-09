@@ -68,8 +68,10 @@ public:
             fail(node, std::string(what) + " must be a number");
         }
         const std::optional<double> value = node.value<double>();
-        if (!value || !std::isfinite(*value)) {
-            fail(node, std::string(what) + " must be a finite number");
+        // Checked as a double, before narrowing: converting a double outside
+        // float's range to float is undefined behavior.
+        if (!value || !std::isfinite(*value) || std::abs(*value) > std::numeric_limits<float>::max()) {
+            fail(node, std::string(what) + " must be a finite number within float's range");
         }
         return static_cast<float>(*value);
     }

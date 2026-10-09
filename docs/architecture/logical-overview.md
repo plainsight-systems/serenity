@@ -128,7 +128,9 @@ pixels or across frames.
    a fixed number of candidates per pixel whether there are a hundred
    fireflies or ten thousand. What grows with the count is Animate and
    whatever is built over the lights each frame, and nothing built over them
-   outlives the frame, because they move.
+   outlives the frame, because they move. This binds the estimators. The
+   deterministic preview, a diagnostic for scenes of a few lights, sums over
+   every light so that it has no selection noise, and says so.
 
 10. **The core decides what is computed; a backend decides how.** Both
     backends render the same scene from the same description, and each is

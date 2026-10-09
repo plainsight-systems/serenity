@@ -7,6 +7,7 @@ add_executable(serenity_gpu_tests
     frame_test.cpp
     argument_table_test.cpp
     preview_test.cpp
+    light_test.cpp
     ../main_test.cpp
 )
 target_link_libraries(serenity_gpu_tests PRIVATE serenity_metal doctest::doctest)
@@ -15,6 +16,8 @@ target_compile_definitions(serenity_gpu_tests PRIVATE SERENITY_SCENES_DIR="${PRO
 
 serenity_add_metallib(
     TARGET serenity_gpu_tests NAME smoke
-    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/kernels/smoke.metal")
+    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/kernels/smoke.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/kernels/light_cone.metal"
+    INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/src")
 
 add_test(NAME serenity_gpu_tests COMMAND serenity_gpu_tests)
