@@ -16,14 +16,17 @@
 # is not for this scene.
 #
 # Scale: meters. The table top is at 0.75 m, a table's height; the ground
-# below it, at 0, is dark grass the fireflies light where they fly past the
-# table's edges. The firefly radiance is a first guess, set against a
-# converged still when the scene first renders.
+# below it, at 0, is dark grass, seen past the table's far end. The firefly
+# radiance is set against a converged still at exposure 0 (graphs/path.toml):
+# night, the table lit in pools.
+#
+# Loads in 104 ms (its flights made in parallel); a path-traced frame at
+# 3456 x 2234 is 13.6 ms of the M3 Max's GPU.
 
 [camera]
-position = [0.0, 0.98, 1.45]
-look_at = [0.0, 0.86, 0.0]
-vertical_fov_degrees = 34
+position = [0.0, 0.93, 1.45]
+look_at = [0.0, 0.87, 0.0]
+vertical_fov_degrees = 38
 
 [environment]
 kind = "gradient"
@@ -59,37 +62,38 @@ roughness = 0.05
 
 [materials.firefly]
 kind = "emissive"
-radiance = [240.0, 320.0, 50.0]   # yellow-green
+radiance = [55.0, 80.0, 12.0]   # yellow-green
 
-# The table: a top 2.4 m by 1.2 m, 3 cm thick, on four legs.
+# The table: a top 2.8 m by 2.6 m, 3 cm thick, on four legs. The camera is
+# over its near end, so all it sees below the horizon is the top.
 [[shapes]]
 kind = "box"
-min = [-1.2, 0.72, -0.6]
-max = [1.2, 0.75, 0.6]
+min = [-1.4, 0.72, -0.9]
+max = [1.4, 0.75, 1.7]
 material = "table"
 
 [[shapes]]
 kind = "box"
-min = [-1.14, 0.0, -0.54]
-max = [-1.08, 0.72, -0.48]
+min = [-1.34, 0.0, -0.84]
+max = [-1.28, 0.72, -0.78]
 material = "table"
 
 [[shapes]]
 kind = "box"
-min = [1.08, 0.0, -0.54]
-max = [1.14, 0.72, -0.48]
+min = [1.28, 0.0, -0.84]
+max = [1.34, 0.72, -0.78]
 material = "table"
 
 [[shapes]]
 kind = "box"
-min = [-1.14, 0.0, 0.48]
-max = [-1.08, 0.72, 0.54]
+min = [-1.34, 0.0, 1.58]
+max = [-1.28, 0.72, 1.64]
 material = "table"
 
 [[shapes]]
 kind = "box"
-min = [1.08, 0.0, 0.48]
-max = [1.14, 0.72, 0.54]
+min = [1.28, 0.0, 1.58]
+max = [1.34, 0.72, 1.64]
 material = "table"
 
 # The ground, to the horizon.
@@ -103,46 +107,48 @@ material = "grass"
 [[shapes]]
 kind = "sphere"
 name = "glass_left"
-center = [-0.55, 0.89, 0.05]
+center = [-0.65, 0.89, 0.1]
 radius = 0.14
 material = "glass"
 
 [[shapes]]
 kind = "sphere"
 name = "glass_middle"
-center = [0.05, 0.86, -0.18]
+center = [0.2, 0.86, 0.2]
 radius = 0.11
 material = "glass"
 
 [[shapes]]
 kind = "sphere"
 name = "glass_right"
-center = [0.6, 0.91, 0.12]
+center = [0.68, 0.91, -0.2]
 radius = 0.16
 material = "glass"
 
 [[shapes]]
 kind = "sphere"
 name = "brass_back"
-center = [-0.15, 0.88, -0.35]
+center = [-0.25, 0.88, -0.3]
 radius = 0.13
 material = "brass"
 
 [[shapes]]
 kind = "sphere"
 name = "brass_front"
-center = [0.3, 0.84, 0.32]
+center = [-0.3, 0.84, 0.4]
 radius = 0.09
 material = "brass"
 
-# The fireflies: over the table and past its edges, from just above its top
-# to a meter over it.
+# The fireflies: over the table, past its sides and far beyond its far end,
+# so they are seen at every depth, from just above its top
+# to a meter and a half over it: room for a swoop, whose dip, climb and
+# headroom take up to 1.2 m.
 [[swarms]]
 count = 512
 radius = 0.008
 material = "firefly"
-min = [-1.6, 0.78, -1.2]
-max = [1.6, 1.75, 0.9]
+min = [-2.6, 0.78, -3.0]
+max = [2.6, 2.2, 1.0]
 targets = ["glass_left", "glass_middle", "glass_right", "brass_back", "brass_front"]
 speed = 0.35
 clearance = 0.03

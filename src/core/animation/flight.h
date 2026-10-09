@@ -1,7 +1,10 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "core/animation/extent.h"
@@ -36,8 +39,10 @@ namespace serenity::animation {
 // duration, every number drawn from the seed:
 //
 //   circle   loops about a target, a still sphere the scene names: an orbit
-//            of radius r0 in a plane tilted up to 25 degrees from level,
-//            raised up to the target's radius above its center, either way
+//            of radius r0 in a plane tilted up to 25 degrees from level, or
+//            less where the volume's floor leaves no room for that tilt (a
+//            marble on a table, its orbit skimming the top), raised up to
+//            the target's radius above its center, either way
 //            round, at the cruising speed; its radius breathes by up to 10%
 //            and it bobs by up to 5 cm, each at a frequency of its own. Four
 //            to nine seconds: part of a loop about a wide orbit, more than
@@ -74,7 +79,13 @@ namespace serenity::animation {
 //           times.
 //   Step 4  The transit into it from episode k - 1's end: the direct curve,
 //           checked as in step 3; failing that, over the waypoint; failing
-//           both, draw episode k again (step 2).
+//           both, draw episode k again (step 2). An episode's 16 draws are a
+//           round. If episode k fails a whole round, where episode k - 1
+//           ended may leave no way on (beside a marble, flying at it): draw
+//           episode k - 1 again from its next round, then k afresh. At most
+//           4 rounds an episode and 64 such redraws a flight; past them the
+//           flight is refused. On open ground no episode needs a second
+//           round, and the draws are those of the first.
 //   Step 5  Close the loop: the transit from episode 63's end to episode 0's
 //           start, checked as in step 4; failing it, draw episode 63 again.
 //   Step 6  Lay the segments out in time, transit 0, episode 0, transit 1,
@@ -88,7 +99,7 @@ namespace serenity::animation {
 //           are closer than a second, the loop's last and first included. In
 //           time order.
 //
-// If an episode cannot be drawn clear in 16 tries, make_flight throws
+// If an episode cannot be drawn clear within those redraws, make_flight throws
 // std::invalid_argument naming it: a target with no room to circle it, a
 // volume too tight for the clearance. The scene reader reports it against
 // the motion's line (core/scene/scene.h).
@@ -109,14 +120,22 @@ namespace serenity::animation {
 // shape. Measured on the M3 Max, release: scenes/brass_sphere_flight.toml,
 // six fireflies among two still shapes, loads in 12.4 ms, 2 ms a firefly
 // (837 segments in all). The marbles' scene (scenes/marbles.toml), 512
-// fireflies among eleven still shapes, would be some 512 x 2 ms x 11 / 2,
-// about 6 s, one flight after another; made in parallel (make_flights), on
-// the M3 Max's 16 cores, under a second, measured at implementation. A
-// thousand fireflies among fifty marbles would want a spatial index behind
-// the obstacles as well, made when such a scene is.
+// fireflies among eleven still shapes: 1.3 s one flight after another, and
+// loaded whole in 104 ms with its flights made in parallel (make_flights) on
+// the M3 Max's 16 cores. A thousand fireflies among fifty marbles would want
+// a spatial index behind the obstacles as well, made when such a scene is.
 // Memory: some 140 segments of 22 doubles, some 25 KB per firefly. Per frame:
 // one binary search over 128 starts and one closed form of a few sines or a
 // cubic, nothing allocated (MEM.9).
+
+// Step 3's sampling bound, delta, in meters.
+inline constexpr double flight_delta = 0.01;
+
+// How far episode 0, the drift about the start, may carry the firefly from
+// its start on each axis, in meters (step 2): its reach. A start clear by
+// this much more than step 3 asks keeps the whole first drift clear
+// (core/scene/swarm.h draws its starts so).
+inline constexpr double first_drift_reach = 0.1;
 
 // A still sphere a flight circles: where it is and how big.
 struct Target {
@@ -171,7 +190,13 @@ Flight make_flight(const FlightParams& params, contracts::Float3 start, float bo
 // has cores (std::thread::hardware_concurrency, at least one), each taking
 // the next unmade flight. If any cannot be made, throws, once every thread
 // has finished, the std::invalid_argument of the lowest k that failed,
-// prefixed "flight k: ", so the error does not depend on the threads either.
+// prefixed "flight k: ", as a FlightsError that also carries k, so the
+// error does not depend on the threads either.
+struct FlightsError : std::invalid_argument {
+    FlightsError(std::size_t job, const std::string& what) : std::invalid_argument(what), job(job) {}
+    std::size_t job;
+};
+
 struct FlightJob {
     FlightParams params;
     contracts::Float3 start;

@@ -44,8 +44,8 @@
 //           w = smoothstep(wood_latewood, 1, t), and the color
 //           light (1 - w) + dark w. The next ring starts light again, so
 //           each ring is a gradual darkening and a sharp edge, as wood is.
-//   Step 6  The pores: the color times 1 - wood_pores (0.5 + 0.5 noise(g,
-//           seed + 1)), g = (p.x / wood_pores_along, 0, p.z /
+//   Step 6  The pores: the color times 1 - wood_pores saturate(0.5 + 0.5
+//           noise(g, seed + 1)), the noise's bound being past 1, g = (p.x / wood_pores_along, 0, p.z /
 //           wood_pores_across): fine streaks along the board.
 //   Step 7  The board: the color times s (step 2); and within wood_seam of
 //           the board's edge, min(u, 1 - u) board < wood_seam, times

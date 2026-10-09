@@ -1,11 +1,15 @@
 #include "core/animation/flight.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <system_error>
+#include <thread>
 
 #include "core/animation/draw.h"
 
@@ -14,8 +18,10 @@ namespace serenity::animation {
 namespace {
 
 constexpr int episodes = 64;
-constexpr int attempts = 16;
-constexpr double delta = 0.01;  // the sampling bound, meters (step 3)
+constexpr int attempts = 16;         // draws of an episode in a round (step 3)
+constexpr int rounds = 4;            // rounds of draws an episode may have (step 4)
+constexpr int most_backtracks = 64;  // redraws of earlier episodes, in all (step 4)
+constexpr double delta = flight_delta;  // the sampling bound, meters (step 3)
 constexpr double pi = std::numbers::pi;
 
 struct V {
@@ -217,8 +223,9 @@ Segment drift_about(const FlightParams& params, const Draws& d, V center) {
     put3(s, 0, center);
     // A reach of 10 cm on each axis, at a third of the cruising speed: each
     // axis's frequency from its amplitude, f = (speed / 3) / (2 pi a sqrt 3).
-    const double a[3] = {d.between(amplitude_x, 0.04, 0.1), d.between(amplitude_y, 0.04, 0.1),
-                         d.between(amplitude_z, 0.04, 0.1)};
+    const double a[3] = {d.between(amplitude_x, 0.04, first_drift_reach),
+                         d.between(amplitude_y, 0.04, first_drift_reach),
+                         d.between(amplitude_z, 0.04, first_drift_reach)};
     const Purpose phases[3] = {phase_x, phase_y, phase_z};
     const double v = static_cast<double>(params.speed) / 3.0;
     for (int i = 0; i < 3; ++i) {
@@ -229,13 +236,21 @@ Segment drift_about(const FlightParams& params, const Draws& d, V center) {
     return s;
 }
 
-Segment circle_about(const FlightParams& params, const Draws& d, double body) {
+Segment circle_about(const Context& c, const Draws& d) {
+    const FlightParams& params = c.params;
     const auto pick = static_cast<std::size_t>(d(target) * static_cast<double>(params.targets.size()));
     const Target& t = params.targets[std::min(pick, params.targets.size() - 1)];
-    const double inner = t.radius + static_cast<double>(params.clearance) + body + delta + 0.04;
+    const double inner = t.radius + static_cast<double>(params.clearance) + c.body + delta + 0.04;
     const double r0 = d.between(radius, inner, inner + 0.6);
-    // The orbit's plane: level tilted by up to 25 degrees about a level axis.
-    const double alpha = d.between(tilt, 0.0, 25.0 * pi / 180.0);
+    const double raised = d.between(lift, 0.0, static_cast<double>(t.radius));
+    // The orbit's plane: level tilted by up to 25 degrees about a level
+    // axis, or less where the volume's floor is near: as far as keeps the
+    // orbit's lowest point, its radius breathed out by 10% and bobbed down
+    // 5 cm, above the floor by the body and delta.
+    const double room = static_cast<double>(t.center.y) + raised - 0.05 -
+                        (static_cast<double>(params.volume.min.y) + c.body + delta);
+    const double steepest = std::min(25.0 * pi / 180.0, std::asin(std::clamp(room / (1.1 * r0), 0.0, 1.0)));
+    const double alpha = d.between(tilt, 0.0, steepest);
     const double beta = d.between(azimuth, 0.0, 2.0 * pi);
     const V axis{std::cos(beta), 0.0, std::sin(beta)};
     const V w = normalized(std::cos(alpha) * up + std::sin(alpha) * cross(axis, up));
@@ -243,7 +258,7 @@ Segment circle_about(const FlightParams& params, const Draws& d, double body) {
     const V v = cross(w, u);
     Segment s;
     s.behaviour = Behaviour::circle;
-    put3(s, 0, of(t.center) + (d.between(lift, 0.0, static_cast<double>(t.radius))) * up);
+    put3(s, 0, of(t.center) + raised * up);
     put3(s, 3, u);
     put3(s, 6, v);
     s.numbers[9] = r0;
@@ -294,7 +309,7 @@ Segment behaviour_for(const Context& c, const Draws& d, V from) {
     const double total = static_cast<double>(w[0]) + w[1] + w[2];
     const double pick = d(choose) * total;
     if (pick < w[0]) {
-        return circle_about(c.params, d, c.body);
+        return circle_about(c, d);
     }
     if (pick < static_cast<double>(w[0]) + w[1]) {
         return swoop_from(c, d, from);
@@ -377,8 +392,8 @@ Flight make_flight(const FlightParams& params, contracts::Float3 start, float bo
         }
         behaviours.push_back(first);
     }
-    const auto build = [&](int k) {
-        for (int attempt = 0; attempt < attempts; ++attempt) {
+    const auto build = [&](int k, int round) {
+        for (int attempt = round * attempts; attempt < (round + 1) * attempts; ++attempt) {
             const Draws d{params.seed, static_cast<std::uint64_t>(k), static_cast<std::uint64_t>(attempt)};
             const Segment& last = behaviours[static_cast<std::size_t>(k - 1)];
             const Segment next = behaviour_for(c, d, evaluate(last, last.duration));
@@ -399,12 +414,27 @@ Flight make_flight(const FlightParams& params, contracts::Float3 start, float bo
         }
         return false;
     };
-    for (int k = 1; k < episodes; ++k) {
-        if (!build(k)) {
-            throw std::invalid_argument("flight episode " + std::to_string(k) + " could not be drawn clear of the "
-                                        "still shapes in " + std::to_string(attempts) +
-                                        " tries: a target with no room to circle it, or a volume too tight");
+    // An episode that cannot be drawn may be boxed in by where the one before
+    // ended: back up and draw that one again, from its next round of draws
+    // (step 4).
+    std::array<int, episodes> round{};
+    int backtracks = 0;
+    for (int k = 1; k < episodes;) {
+        if (build(k, round[static_cast<std::size_t>(k)])) {
+            if (++k < episodes) {
+                round[static_cast<std::size_t>(k)] = 0;
+            }
+            continue;
         }
+        if (k == 1 || round[static_cast<std::size_t>(k - 1)] + 1 >= rounds || backtracks == most_backtracks) {
+            throw std::invalid_argument("flight episode " + std::to_string(k) + " could not be drawn clear of the "
+                                        "still shapes, after " + std::to_string(backtracks) +
+                                        " redraws of the episodes before it: a target with no room to circle it, "
+                                        "or a volume too tight");
+        }
+        ++round[static_cast<std::size_t>(k - 1)];
+        ++backtracks;
+        --k;
     }
     // Step 5: close the loop, drawing the last episode again until it can.
     std::vector<Segment> closing = transit(c, behaviours.back(), behaviours.front());
@@ -496,6 +526,44 @@ contracts::Float3 position(const Flight& flight, frame::Seconds t) {
     // Step E3: its closed form.
     const V p = evaluate(s, tau - s.start);
     return {static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z)};
+}
+
+std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles) {
+    std::vector<Flight> flights(jobs.size());
+    std::vector<std::optional<std::string>> failures(jobs.size());
+    // Each thread takes the next unmade flight; each flight is written to
+    // its own slot, so the result is in job order whatever the threads.
+    std::atomic<std::size_t> next{0};
+    const auto work = [&]() {
+        for (std::size_t k = next++; k < jobs.size(); k = next++) {
+            try {
+                flights[k] = make_flight(jobs[k].params, jobs[k].start, jobs[k].body, obstacles);
+            } catch (const std::invalid_argument& refused) {
+                failures[k] = refused.what();
+            }
+        }
+    };
+    const std::size_t threads =
+        std::min<std::size_t>(std::max(1u, std::thread::hardware_concurrency()), std::max<std::size_t>(jobs.size(), 1));
+    std::vector<std::thread> workers;
+    workers.reserve(threads - 1);
+    for (std::size_t t = 1; t < threads; ++t) {
+        try {
+            workers.emplace_back(work);
+        } catch (const std::system_error&) {
+            break;  // fewer threads: the same flights, made more slowly
+        }
+    }
+    work();
+    for (std::thread& worker : workers) {
+        worker.join();
+    }
+    for (std::size_t k = 0; k < jobs.size(); ++k) {
+        if (failures[k]) {
+            throw FlightsError(k, "flight " + std::to_string(k) + ": " + *failures[k]);
+        }
+    }
+    return flights;
 }
 
 Extent extent(const Flight& flight) {

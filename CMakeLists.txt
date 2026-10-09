@@ -117,6 +117,7 @@ add_library(serenity_core STATIC
     src/core/measurement/frame_times.cpp
     src/core/output/png.cpp
     src/core/scene/scene.cpp
+    src/core/scene/swarm.cpp
     src/core/shapes/shapes.cpp
 )
 target_include_directories(serenity_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")

@@ -21,6 +21,7 @@ void PathPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources
     arguments->setAddress(scene.environment, 3);
     arguments->setAddress(scene.textures, 4);
     arguments->setAddress(scene.checkers, 5);
+    arguments->setAddress(scene.woods, 19);
     arguments->setAddress(scene.materials, 6);
     arguments->setAddress(scene.rough, 7);
     arguments->setAddress(scene.dielectrics, 8);

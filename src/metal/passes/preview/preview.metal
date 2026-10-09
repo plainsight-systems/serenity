@@ -34,6 +34,7 @@ kernel void preview(constant serenity::contracts::FrameConstants& frame [[buffer
                     constant serenity::lights::GradientSkyData& sky [[buffer(3)]],
                     device const serenity::textures::TextureRecord* texture_records [[buffer(4)]],
                     device const serenity::textures::CheckerData* checkers [[buffer(5)]],
+                    device const serenity::textures::WoodData* woods [[buffer(19)]],
                     device const serenity::materials::MaterialRecord* materials [[buffer(6)]],
                     device const serenity::materials::RoughData* rough [[buffer(7)]],
                     device const serenity::materials::DielectricData* dielectrics [[buffer(8)]],
@@ -54,7 +55,7 @@ kernel void preview(constant serenity::contracts::FrameConstants& frame [[buffer
     direct::Scene scene;
     scene.structure = structure;
     scene.shapes = Shapes{shape_records, transforms, boxes};
-    scene.textures = Textures{texture_records, checkers};
+    scene.textures = Textures{texture_records, checkers, woods};
     scene.materials = Materials{materials, rough, dielectrics, conductors};
     scene.selection = EveryLight{light_records, light_counts.lights};
     scene.lights = Lights{light_records, shape_lights, sphere_lights, transforms, sphere_glows};

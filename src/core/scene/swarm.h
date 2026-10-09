@@ -32,13 +32,17 @@ namespace serenity::scene {
 //           swarm's seed and i alone, so adding a swarm, or fireflies at the
 //           end of one, moves no other firefly.
 //   Step 2  Its start, where its flight's first drift hovers (flight.h,
-//           step 2): a point drawn uniformly within the swarm's volume
-//           shrunk by radius + clearance + delta on every side (delta, the
-//           flight's 1 cm, flight.h step 3), from draw(seed_i, attempt,
-//           axis); drawn again while it is nearer than clearance + radius +
-//           delta to a still surface (contract 11), up to start_attempts
-//           times. Failing all, the swarm is refused, naming the firefly: a
-//           volume the still shapes fill.
+//           step 2), which may carry it first_drift_reach from the start on
+//           each axis: a point drawn uniformly within the swarm's volume
+//           shrunk by radius + delta + first_drift_reach on every side
+//           (delta, the flight's sampling bound, flight.h step 3), from
+//           draw(seed_i, attempt, axis) (core/animation/draw.h); drawn again
+//           while it is nearer than clearance + radius + delta +
+//           first_drift_reach sqrt 3 to a still surface (contract 11), up to
+//           start_attempts times. So the whole first drift keeps the
+//           flight's clearance and stays in its volume, as the flight
+//           requires of its start. Failing all, the swarm is refused, naming
+//           the firefly: a volume the still shapes fill.
 //   Step 3  It becomes a sphere at its start, of the swarm's radius, wearing
 //           the swarm's material; a sphere light; a flight with the swarm's
 //           volume, targets, speed, clearance and weights and its own seed;

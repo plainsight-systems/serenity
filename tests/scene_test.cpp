@@ -206,7 +206,8 @@ TEST_CASE("every mistake is refused, naming the file and the line") {
     CHECK(contains(error_of(with("vertical_fov_degrees = 40", "vertical_fov_degrees = 180")), "cannot be framed"));
     CHECK(contains(error_of(with("kind = \"sphere\"", "kind = \"cone\"")), "unknown shape kind 'cone'"));
     CHECK(contains(error_of(with("kind = \"dielectric\"", "kind = \"metal\"")), "unknown material kind 'metal'"));
-    CHECK(contains(error_of(with("kind = \"checker\"", "kind = \"wood\"")), "unknown texture kind 'wood'"));
+    CHECK(contains(error_of(with("kind = \"checker\"", "kind = \"marble\"")),
+                   "unknown texture kind 'marble'; known kinds: checker, wood"));
     CHECK(contains(error_of(with("kind = \"gradient\"", "kind = \"stars\"")), "unknown environment kind 'stars'"));
     CHECK(contains(error_of(with("material = \"glass\"", "material = \"crystal\"")),
                    "uses material 'crystal', which is not defined"));
@@ -256,15 +257,16 @@ std::string moving(const std::string& center = "[3, 1.5, 0]", const std::string&
 }  // namespace
 
 TEST_CASE("a box keeps the file's corners exactly, where a center and a half extent would not") {
-    // 100000000 to 100000008: both floats; their middle, 100000004, is not,
-    // and a center and half extent would give back 99999996 to 100000004.
+    // 999999.9375 to 1000000, adjacent floats at the world's edge: their
+    // middle, 999999.96875, is not a float, and a center and half extent
+    // would round it and give back other corners.
     const std::string text = with("min = [-6, -0.1, -6]\nmax = [6, 0, 6]",
-                                  "min = [100000000, -0.1, -6]\nmax = [100000008, 0, 6]");
+                                  "min = [999999.9375, -0.1, -6]\nmax = [1000000, 0, 6]");
     const scene::SceneDescription far = scene::parse(text, "s");
     const shapes::Bounds placed = shapes::world_bounds(shapes::object_bounds(far.shapes, far.shapes.records[1]),
                                                        far.shapes.transforms[1]);
-    CHECK(placed.min.x == 100000000.0f);
-    CHECK(placed.max.x == 100000008.0f);
+    CHECK(placed.min.x == 999999.9375f);
+    CHECK(placed.max.x == 1000000.0f);
 }
 
 TEST_CASE("a sphere's motion: a mover for its shape, its wander about its center") {
@@ -313,12 +315,12 @@ TEST_CASE("every mistake in a motion is refused, naming the file and the line") 
     CHECK(contains(error_of(moving("[3, 0.2, 0]")), "its wander could carry it into a still shape"));
     // Just clear of the floor: 0.25 + 0.05 above its top, at 0.
     CHECK_NOTHROW((void)scene::parse(moving("[3, 0.3001, 0]"), "s"));
-    // Out of float's range: the anchor and reach, and then with the radius.
-    CHECK(contains(error_of(moving("[3e38, 1.5, 0]", "{ kind = \"wander\", reach = 1e38, speed = 0.3, seed = 7 }")),
-                   "within float's range"));
-    CHECK(contains(error_of(moving("[3e38, 1.5, 0]", "{ kind = \"wander\", reach = 0.4e38, speed = 0.3, seed = 7 }",
-                                   "1e36")),
-                   "shape 3's motion: make_wander: anchor +/- (reach + body) must lie within float's range"));
+    // Out of the world: the shape itself, and then where its wander could
+    // carry it, grown by its radius.
+    CHECK(contains(error_of(moving("[3e38, 1.5, 0]")), "shape 3 must lie within 1000 km of the origin"));
+    CHECK(contains(error_of(moving("[999999.8, 1.5, 0]")),
+                   "shape 3's motion could carry shape 3 out of the world: it must stay within 1000 km"));
+    CHECK_NOTHROW((void)scene::parse(moving("[999999.5, 1.5, 0]"), "s"));
 }
 
 TEST_CASE("moving shapes are not checked against each other") {
@@ -374,4 +376,60 @@ TEST_CASE("names, and glows: what they read into, and every mistake refused") {
 
 TEST_CASE("a missing file is refused by name") {
     CHECK_THROWS_WITH_AS(scene::load("no/such/scene.toml"), doctest::Contains("no/such/scene.toml"), scene::Error);
+}
+
+TEST_CASE("a wood texture reads as the table's planks, every value checked") {
+    const std::string wood = "[textures.walnut]\nkind = \"wood\"\nlight = [0.13, 0.065, 0.03]\n"
+                             "dark = [0.045, 0.02, 0.008]\nring = 0.004\nboard = 0.16\nseed = 3\n";
+    const auto with_wood = [&](const std::string& from, const std::string& to) {
+        std::string text = wood;
+        if (!from.empty()) {
+            text.replace(text.find(from), from.size(), to);
+        }
+        std::string scene = with("[materials.glass]", text + "[materials.glass]");
+        scene.replace(scene.find("texture = \"floor_checks\""), 24, "texture = \"walnut\"");
+        return scene;
+    };
+    const scene::SceneDescription s = scene::parse(with_wood("", ""), "s");
+    REQUIRE(s.woods.size() == 1);
+    REQUIRE(s.textures.size() == 2);  // floor_checks, walnut: name order
+    CHECK(s.textures[1].kind == textures::TextureKind::wood);
+    CHECK(s.textures[1].index == 0);
+    CHECK(s.rough[0].texture.index == 1);
+    CHECK(s.woods[0].light.y == doctest::Approx(0.065f));
+    CHECK(s.woods[0].dark.z == doctest::Approx(0.008f));
+    CHECK(s.woods[0].ring == 0.004f);
+    CHECK(s.woods[0].board == 0.16f);
+    CHECK(s.woods[0].seed == 3u);
+
+    const auto error = [&](const std::string& from, const std::string& to) { return error_of(with_wood(from, to)); };
+    CHECK(contains(error("light = [0.13, 0.065, 0.03]", "light = [1.2, 0.065, 0.03]"),
+                   "texture 'walnut''s light must be within [0, 1]"));
+    CHECK(contains(error("dark = [0.045, 0.02, 0.008]", "dark = [0.045, -0.1, 0.008]"), "dark must be within [0, 1]"));
+    CHECK(contains(error("ring = 0.004", "ring = 0.00005"), "ring must be at least 0.0001 m"));
+    CHECK(contains(error("ring = 0.004", "ring = 1e-45"), "ring must be at least 0.0001 m"));
+    CHECK(contains(error("board = 0.16", "board = 0.0005"), "board must be from 0.001 to 10 m"));
+    CHECK(contains(error("board = 0.16", "board = 11"), "board must be from 0.001 to 10 m"));
+    CHECK(contains(error("seed = 3", "seed = 4294967296"), "seed must be at most 4294967295"));
+    CHECK(contains(error("seed = 3", "seed = -1"), "seed must be an integer, 0 or more"));
+    CHECK(contains(error("seed = 3", "seed = 3\ngrain = 1"), "unknown key 'grain' in texture 'walnut'"));
+    CHECK(contains(error("ring = 0.004\n", ""), "texture 'walnut' has no 'ring'"));
+}
+
+TEST_CASE("every shape lies within the world") {
+    CHECK(contains(error_of(with("center = [0, 0.8, 0]", "center = [999999.5, 0.8, 0]")),
+                   "shape 1 must lie within 1000 km of the origin on every axis"));
+    CHECK(contains(error_of(with("max = [6, 0, 6]", "max = [6, 0, 1000001]")),
+                   "shape 2 must lie within 1000 km of the origin on every axis"));
+    CHECK_NOTHROW((void)scene::parse(with("max = [6, 0, 6]", "max = [6, 0, 1000000]"), "s"));
+}
+
+TEST_CASE("the marbles' scene reads: a walnut table, five spheres, 512 fireflies") {
+    const scene::SceneDescription s = scene::load(SERENITY_SCENES_DIR "/marbles.toml");
+    CHECK(s.woods.size() == 1);
+    CHECK(s.shapes.records.size() == 11 + 512);
+    CHECK(s.sphere_lights.size() == 512);
+    CHECK(s.animation.movers.size() == 512);
+    CHECK(s.animation.glowers.size() == 512);
+    CHECK(s.animation.motions.flights.size() == 512);
 }

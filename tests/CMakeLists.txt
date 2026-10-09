@@ -19,6 +19,7 @@ add_executable(serenity_tests
     animation_test.cpp
     history_test.cpp
     flight_test.cpp
+    swarm_test.cpp
     frame_times_test.cpp
     png_test.cpp
     options_test.cpp
