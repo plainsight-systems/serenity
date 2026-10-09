@@ -104,18 +104,19 @@ TEST_CASE("the example reads into one array per kind, names resolved to indices"
 
     // Each an instance of a geometry, placed by its transform: the sphere
     // the unit sphere, scaled by its radius and moved to its center; the
-    // box a box about its origin, its half extent, moved to its middle.
+    // box its corners as the file gives them, placed by the identity.
     REQUIRE(s.shapes.transforms.size() == 2);
     CHECK(s.shapes.transforms[0].m[0][0] == doctest::Approx(0.8f));
     CHECK(s.shapes.transforms[0].m[2][2] == doctest::Approx(0.8f));
     CHECK(s.shapes.transforms[0].m[1][3] == doctest::Approx(0.8f));
     CHECK(s.shapes.records[1].geometry == 0);
     REQUIRE(s.shapes.boxes.size() == 1);
-    CHECK(s.shapes.boxes[0].half_extent.x == 6.0f);
-    CHECK(s.shapes.boxes[0].half_extent.y == doctest::Approx(0.05f));
+    CHECK(s.shapes.boxes[0].min.x == -6.0f);
+    CHECK(s.shapes.boxes[0].min.y == -0.1f);
+    CHECK(s.shapes.boxes[0].max.z == 6.0f);
     CHECK(s.shapes.transforms[1].m[0][0] == 1.0f);
     CHECK(s.shapes.transforms[1].m[0][3] == 0.0f);
-    CHECK(s.shapes.transforms[1].m[1][3] == doctest::Approx(-0.05f));
+    CHECK(s.shapes.transforms[1].m[1][3] == 0.0f);
 
     // Nothing moves.
     CHECK_FALSE(animation::moves(s.animation));
@@ -253,6 +254,18 @@ std::string moving(const std::string& center = "[3, 1.5, 0]", const std::string&
 }
 
 }  // namespace
+
+TEST_CASE("a box keeps the file's corners exactly, where a center and a half extent would not") {
+    // 100000000 to 100000008: both floats; their middle, 100000004, is not,
+    // and a center and half extent would give back 99999996 to 100000004.
+    const std::string text = with("min = [-6, -0.1, -6]\nmax = [6, 0, 6]",
+                                  "min = [100000000, -0.1, -6]\nmax = [100000008, 0, 6]");
+    const scene::SceneDescription far = scene::parse(text, "s");
+    const shapes::Bounds placed = shapes::world_bounds(shapes::object_bounds(far.shapes, far.shapes.records[1]),
+                                                       far.shapes.transforms[1]);
+    CHECK(placed.min.x == 100000000.0f);
+    CHECK(placed.max.x == 100000008.0f);
+}
 
 TEST_CASE("a sphere's motion: a mover for its shape, its wander about its center") {
     const scene::SceneDescription s = scene::parse(moving(), "s");

@@ -78,4 +78,13 @@ std::span<const PassKind> all_pass_kinds() {
     return kinds;
 }
 
+bool accumulates(const Schedule& schedule) {
+    for (PassKind kind : schedule.passes) {
+        if (accumulates(kind)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace serenity::frame

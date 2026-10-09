@@ -1,10 +1,9 @@
 // serenity-headless: renders a frame graph's frames, over a scene if one is
 // given, to PNG files (headless/options.h). Each frame's time is computed
 // from its index, or frozen by --time, never measured; its camera is the
-// scene's; each frame is --samples renders of its instant; and a graph that
-// converges accumulates from the first frame while the scene looks the same
-// at every frame's time, and from each frame's first sample when it moves.
-// So the same command writes the same files (principle 1).
+// scene's; and which samples each frame is, and what a converging graph's
+// image holds, is the core's plan (core/frame/history.h, plan_headless). So
+// the same command writes the same files (principle 1).
 //
 // Frames are rendered one at a time: each frame's samples are committed, the
 // last waited for, and those --write selects are read back and written,
@@ -21,8 +20,8 @@
 #include <string>
 #include <vector>
 
-#include "core/animation/animate.h"
 #include "core/frame/graph_file.h"
+#include "core/frame/history.h"
 #include "core/output/png.h"
 #include "core/scene/scene.h"
 #include "headless/options.h"
@@ -49,11 +48,11 @@ int main(int argc, char** argv) {
         std::filesystem::create_directories(options.out);
         std::vector<std::uint8_t> rgba(std::size_t{options.size.width} * options.size.height * 4);
 
-        // A moving scene's frames are each their own instant; a still
-        // scene, or frozen time, looks the same at every frame, so the run
-        // converges as a whole (headless/options.h).
-        const bool instants = scene && animation::moves(scene->animation) && !options.time;
-        const std::uint64_t samples = options.samples;
+        // Which samples each frame is, and what its image holds, is the
+        // core's plan (core/frame/history.h).
+        const frame::HeadlessPlan plan =
+            frame::plan_headless(options.first, options.samples, frame::accumulates(schedule),
+                                 scene && scene::moves(*scene), options.time.has_value());
 
         // Counted, so the last frame there can be is reachable without its
         // successor (headless/options.h).
@@ -61,11 +60,12 @@ int main(int argc, char** argv) {
             const std::uint64_t index = options.first + n;
             const frame::Seconds time = options.time ? *options.time : options.step * static_cast<double>(index);
             std::uint64_t sequence = 0;
-            for (std::uint64_t s = 0; s < samples; ++s) {
+            for (std::uint64_t s = 0; s < plan.samples; ++s) {
+                const frame::Sample sample = plan.sample(index, s);
                 const frame::FrameInputs inputs{
                     .time = time,
-                    .index = index * samples + s,
-                    .accumulated_since = (instants ? index : options.first) * samples,
+                    .index = sample.index,
+                    .accumulated_since = sample.accumulated_since,
                     .camera = scene ? std::optional(scene->camera) : std::nullopt,
                 };
                 sequence = metal::render_to_offscreen(submission, target, renderer, inputs);

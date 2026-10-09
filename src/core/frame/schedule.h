@@ -47,6 +47,10 @@ struct Schedule {
     std::vector<PassKind> passes;  // run in this order; at least one
 };
 
+// Whether any pass of `schedule` accumulates: whether its frames build on
+// the frames before them (frame/history.h).
+bool accumulates(const Schedule& schedule);
+
 // What makes a schedule one a backend can carry out, decided here, in the
 // core, so that every backend refuses the same schedules (principle 10):
 //

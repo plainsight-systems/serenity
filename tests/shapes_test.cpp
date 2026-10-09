@@ -14,7 +14,7 @@ namespace {
 
 Shapes two_spheres_and_a_box() {
     Shapes shapes;
-    shapes.boxes.push_back(BoxData{{1.0f, 2.0f, 3.0f}, 0});
+    shapes.boxes.push_back(BoxData{{-1.0f, -2.0f, -3.0f}, 0, {1.0f, 2.0f, 3.0f}, 0});
     shapes.records = {{ShapeKind::sphere, 0, 0, 0}, {ShapeKind::box, 0, 0, 0}, {ShapeKind::sphere, 0, 0, 0}};
     shapes.transforms = {contracts::placed({1.0f, 2.0f, 3.0f}, 0.5f), contracts::placed({10.0f, 0.0f, 0.0f}, 1.0f),
                          contracts::placed({-4.0f, 0.0f, 0.0f}, 2.0f)};
@@ -23,7 +23,7 @@ Shapes two_spheres_and_a_box() {
 
 }  // namespace
 
-TEST_CASE("a geometry's bounds are in its own space: the unit sphere's, the box's about its origin") {
+TEST_CASE("a geometry's bounds are in its own space: the unit sphere's, the box's corners") {
     const Shapes shapes = two_spheres_and_a_box();
     const Bounds sphere = object_bounds(shapes, shapes.records[0]);
     CHECK(sphere.min.x == -1.0f);
@@ -50,7 +50,7 @@ TEST_CASE("a sphere touches a box exactly when the nearest point of the box is w
 
 TEST_CASE("a box touches a box when they overlap or meet on every axis") {
     const Shapes shapes = two_spheres_and_a_box();
-    // Shape 1: the box of half extent (1, 2, 3) placed at (10, 0, 0):
+    // Shape 1: the box from (-1, -2, -3) to (1, 2, 3) placed at (10, 0, 0):
     // x in [9, 11].
     CHECK(touches(shapes, 1, Bounds{{11.0f, 0.0f, 0.0f}, {12.0f, 1.0f, 1.0f}}));
     CHECK_FALSE(touches(shapes, 1, Bounds{{11.001f, 0.0f, 0.0f}, {12.0f, 1.0f, 1.0f}}));

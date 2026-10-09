@@ -344,21 +344,13 @@ void read_shapes(const Reader& r, const toml::array& all,
             if (scene.materials[worn].kind == materials::MaterialKind::emissive) {
                 r.fail(r.required(t, "material", what), what + " is a box; only a sphere may be emissive");
             }
-            // The middle and the half extent, in double: a box about its
-            // origin, placed at its middle (core/shapes/box.h).
-            const auto middle = [](float a, float b) {
-                return static_cast<float>(0.5 * (static_cast<double>(a) + static_cast<double>(b)));
-            };
-            const auto half = [](float a, float b) {
-                return static_cast<float>(0.5 * (static_cast<double>(b) - static_cast<double>(a)));
-            };
-            shapes::BoxData box{};
-            box.half_extent = {half(min.x, max.x), half(min.y, max.y), half(min.z, max.z)};
+            // Its corners as the file gives them, placed by the identity
+            // transform (core/shapes/box.h).
+            const shapes::BoxData box{min, 0u, max, 0u};
             scene.shape_lights.push_back(lights::no_light);
             shapes.records.push_back(
                 {shapes::ShapeKind::box, static_cast<std::uint32_t>(shapes.boxes.size()), worn, 0u});
-            shapes.transforms.push_back(
-                contracts::placed({middle(min.x, max.x), middle(min.y, max.y), middle(min.z, max.z)}, 1.0f));
+            shapes.transforms.push_back(contracts::placed({0.0f, 0.0f, 0.0f}, 1.0f));
             shapes.boxes.push_back(box);
         } else {
             r.fail(r.required(t, "kind", what), "unknown shape kind '" + std::string(kind) + "'; known kinds: sphere, box");

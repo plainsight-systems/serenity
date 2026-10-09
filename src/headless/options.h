@@ -45,8 +45,8 @@ namespace serenity::headless {
 //     (metal/frame/accumulation.h). This is how a movie of moving fireflies
 //     is made clean: N samples of each instant.
 //
-// A graph that converges over nothing renders each of a frame's samples
-// alike, and writes the last.
+// A graph that converges over nothing renders each frame once, whatever N:
+// its samples would be the same image again (core/frame/history.h).
 //
 // --time freezes it: every frame is at time SECONDS, while the frame index,
 // and with it every random number, still advances. That is how a reference

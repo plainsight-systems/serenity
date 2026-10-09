@@ -110,6 +110,7 @@ add_library(serenity_core STATIC
     src/core/animation/wander.cpp
     src/core/camera/pinhole.cpp
     src/core/frame/graph_file.cpp
+    src/core/frame/history.cpp
     src/core/frame/schedule.cpp
     src/core/measurement/frame_times.cpp
     src/core/output/png.cpp

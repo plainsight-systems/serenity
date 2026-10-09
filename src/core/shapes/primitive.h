@@ -11,8 +11,8 @@
 // shape that is one of it places it in the world with its own transform
 // (contract 10, contracts/transform.h). Every sphere in a scene, every marble
 // and every firefly, is the one unit sphere (sphere.h), placed at its center
-// and scaled by its radius; each box is its own geometry, a box about its
-// origin (box.h). A shape that moves changes its transform and nothing
+// and scaled by its radius; each box is its own geometry, its corners as the
+// file gives them (box.h). A shape that moves changes its transform and nothing
 // else. The acceleration structure holds each shape as its geometry's
 // bounds placed by its transform (metal/acceleration/scene_acceleration.h).
 //
@@ -36,7 +36,7 @@ namespace shapes {
 
 enum class ShapeKind : uint32_t {
     sphere = 0,  // the unit sphere (sphere.h): no data of its own; `geometry` is 0
-    box = 1,     // a box about its origin (box.h): `geometry` indexes the boxes
+    box = 1,     // an axis-aligned box, min to max (box.h): `geometry` indexes the boxes
 };
 
 struct ShapeRecord {

@@ -141,8 +141,8 @@ struct SceneDescription {
     // In file order: shape i is shapes.records[i] and shapes.transforms[i],
     // each at rest, and primitive i of the acceleration structure
     // (shapes/primitive.h). A sphere is the unit sphere placed at its center,
-    // scaled by its radius; a box, a box about its origin, its half extent
-    // the file's max - min halved, placed at its middle.
+    // scaled by its radius; a box, its corners as the file gives them,
+    // placed by the identity transform.
     shapes::Shapes shapes;
 
     // One record per light, and one array per light kind: a sphere light
@@ -160,6 +160,12 @@ struct SceneDescription {
     // where nothing renders it: a frame places it at its time first.
     animation::Animation animation;
 };
+
+// Whether anything in `scene` moves: what the history plans ask
+// (core/frame/history.h).
+inline bool moves(const SceneDescription& scene) {
+    return animation::moves(scene.animation);
+}
 
 // Reads the scene file at `path`.
 SceneDescription load(const std::filesystem::path& path);

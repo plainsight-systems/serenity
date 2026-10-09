@@ -47,15 +47,13 @@ struct FrameInputs {
     // The frame from which the image accumulates: a pass that converges over
     // frames shows the mean of frames accumulated_since .. index, so the
     // frame's image is a function of this as well (principle 1). Equal to
-    // index to start over. The window starts over whenever what it shows would
-    // otherwise change: its size; every frame while the scene's shapes move
-    // (core/animation/animate.h), since its time always advances; later the
-    // camera; and when the image would hold 2^24 frames, the most it holds
-    // (metal/frame/accumulation.h). The headless renderer renders each of its
-    // frames as samples of one instant, and accumulates across its frames only
-    // while the scene looks the same at each (headless/options.h). When the
-    // scene moves, the frames an image holds must share one time
-    // (metal/frame/accumulation.h). Never after index.
+    // index to start over. Which frames may share an image, and the window's
+    // and the headless renderer's plans for when to start over, are the core's
+    // (frame/history.h): the window starts over when its size changes, every
+    // frame while the scene's shapes move, and when the image is full; the
+    // headless renderer renders each frame as samples of one instant,
+    // accumulating across frames only while the scene looks the same at each.
+    // Never after index.
     std::uint64_t accumulated_since = 0;
 
     // The camera the frame is seen through, at the frame's time

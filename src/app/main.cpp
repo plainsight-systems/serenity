@@ -18,9 +18,10 @@
 // finish() come after the last title and are not shown.
 //
 // A graph that converges accumulates from the first frame and starts over
-// whenever the window's size changes; every frame, while the scene's shapes
-// move, since its time always advances; or when the image would hold more
-// frames than it can (frame::max_accumulated_frames). Samples the pass left
+// as the core's plan says (core/frame/history.h, LiveHistory): whenever the
+// window's size changes; every frame, while the scene's shapes move, since
+// its time always advances; and when the image would hold more frames than
+// it can. Samples the pass left
 // out for not being finite, a bug, are shown in the title.
 //
 // At the end the submission is finished, so a GPU failure in the last frames
@@ -35,8 +36,8 @@
 #include "app/clock.h"
 #include "app/options.h"
 #include "app/window.h"
-#include "core/animation/animate.h"
 #include "core/frame/graph_file.h"
+#include "core/frame/history.h"
 #include "core/measurement/frame_times.h"
 #include "core/scene/scene.h"
 #include "metal/device/device.h"
@@ -82,10 +83,8 @@ int main(int argc, char** argv) {
         const app::Clock clock;
         measurement::FrameTimes frame_times(frame::Seconds(1.0));
         std::uint64_t index = 0;
-        std::uint64_t accumulated_since = 0;
-        // Its time always advances, so while shapes move each frame starts
-        // the image over (core/frame/frame_inputs.h).
-        const bool moves = scene && animation::moves(scene->animation);
+        // When the image starts over is the core's plan (core/frame/history.h).
+        frame::LiveHistory history(scene && scene::moves(*scene));
         for (;;) {
             const app::Window::Events events = window.poll();
             if (events.quit) {
@@ -93,14 +92,8 @@ int main(int argc, char** argv) {
             }
             if (events.resized) {
                 presenter.resize(app::render_size(window.size_in_pixels(), options.scale));
-                accumulated_since = index;  // what the window shows changed
             }
-            if (moves) {
-                accumulated_since = index;  // the scene at this frame's time is not the last frame's
-            }
-            if (index - accumulated_since > frame::max_accumulated_frames) {
-                accumulated_since = index;  // the image holds no more
-            }
+            const std::uint64_t accumulated_since = history.since(index, events.resized);
             const frame::FrameInputs inputs{
                 .time = clock.elapsed(),
                 .index = index,

@@ -34,8 +34,12 @@ double hi(const Bounds& b, int axis) {
     return axis == 0 ? b.max.x : (axis == 1 ? b.max.y : b.max.z);
 }
 
-double half(const BoxData& box, int axis) {
-    return axis == 0 ? box.half_extent.x : (axis == 1 ? box.half_extent.y : box.half_extent.z);
+double low(const BoxData& box, int axis) {
+    return axis == 0 ? box.min.x : (axis == 1 ? box.min.y : box.min.z);
+}
+
+double high(const BoxData& box, int axis) {
+    return axis == 0 ? box.max.x : (axis == 1 ? box.max.y : box.max.z);
 }
 
 }  // namespace
@@ -54,8 +58,9 @@ bool sphere_touches(const contracts::Transform& transform, const Bounds& box) {
 bool box_touches(const BoxData& box, const contracts::Transform& transform, const Bounds& other) {
     const Placement p = placement(transform);
     for (int axis = 0; axis < 3; ++axis) {
-        const double extent = p.scale * half(box, axis);
-        if (p.t[axis] + extent < lo(other, axis) || p.t[axis] - extent > hi(other, axis)) {
+        const double placed_low = p.t[axis] + p.scale * low(box, axis);
+        const double placed_high = p.t[axis] + p.scale * high(box, axis);
+        if (placed_high < lo(other, axis) || placed_low > hi(other, axis)) {
             return false;
         }
     }

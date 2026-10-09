@@ -11,7 +11,9 @@ add_executable(serenity_gpu_tests
     bsdf_test.cpp
     path_test.cpp
     film_test.cpp
+    acceleration_test.cpp
     motion_test.cpp
+    history_test.cpp
     ../main_test.cpp
 )
 target_link_libraries(serenity_gpu_tests PRIVATE serenity_metal doctest::doctest)

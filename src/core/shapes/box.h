@@ -2,14 +2,15 @@
 
 // Axis: Shape (box).
 //
-// A box about its origin, in object space: its geometry is its half
-// extent on each axis, and its shape's transform (contracts/transform.h) places its
-// center in the world. Each box is a geometry of its own, with its own
-// acceleration structure of one box, built once (metal/acceleration/
-// scene_acceleration.h): boxes differ in shape, and a scene has few. The
-// table, and the floor of the first scene, are boxes. The shader half
-// (metal/shapes/box.metal.h) computes the exact entry point and the face's
-// normal.
+// An axis-aligned box in object space, its geometry its min and max corners,
+// as the scene file gives them: a scene's boxes are placed by the identity
+// transform, so the file's numbers are the box's, exactly. (A box held as a
+// center and a half extent cannot keep them: the two, each rounded to a
+// float, need not give back the corners; 100000000 to 100000008 would come
+// back as 99999996 to 100000004.) Each box is a geometry of its own, boxes
+// differing in shape and a scene having few. The table, and the floor of the
+// first scene, are boxes. The shader half (metal/shapes/box.metal.h)
+// computes the exact entry point and the face's normal.
 
 #include "core/contracts/float3.h"
 #include "core/contracts/transform.h"
@@ -19,17 +20,18 @@ namespace serenity {
 namespace shapes {
 
 struct BoxData {
-    contracts::Float3 half_extent;  // greater than 0 on every axis
-    uint32_t padding;
+    contracts::Float3 min;  // min < max on every axis
+    uint32_t padding0;
+    contracts::Float3 max;
+    uint32_t padding1;
 };
 
-static_assert(sizeof(BoxData) == 16, "BoxData must be the same 16 bytes on the host and in shaders");
+static_assert(sizeof(BoxData) == 32, "BoxData must be the same 32 bytes on the host and in shaders");
 
 #if !defined(__METAL_VERSION__)
-// Its extent in object space: -half_extent to half_extent.
+// Its extent in object space: itself.
 inline Bounds bounds(const BoxData& box) {
-    const contracts::Float3& h = box.half_extent;
-    return Bounds{{-h.x, -h.y, -h.z}, {h.x, h.y, h.z}};
+    return Bounds{box.min, box.max};
 }
 
 // Whether the box `transform` places meets or touches the world box
