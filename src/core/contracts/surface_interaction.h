@@ -18,9 +18,12 @@
 //
 //   geometric_normal  the true surface's, for offsetting rays that leave it
 //                     and for which side a direction is on;
-//   shading_normal    the one materials shade with. Equal to the geometric
-//                     normal for every shape kind so far; it differs once a
-//                     kind interpolates normals or a material perturbs them.
+//   shading_normal    the shape's own shading normal: equal to the
+//                     geometric normal for every shape kind so far, and
+//                     different once a kind interpolates normals. Only the
+//                     shape writes it. A material that perturbs the normal
+//                     (a normal map) does so when it resolves its BSDF, into
+//                     Bsdf::normal (contracts/bsdf.h), which it owns.
 //
 // Surface coordinates (u, v) join this contract with the first texture that
 // needs them; every texture so far is a function of position.

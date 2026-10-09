@@ -42,11 +42,14 @@
 //                                   caller ends the path.
 //   float pdf(Bsdf, wo, wi)         the density with which sample() draws wi,
 //                                   per unit solid angle. 0 for a delta lobe.
-//   uint lobes(Bsdf)                which lobes the kind has (BsdfLobe). A
-//                                   surface whose lobes are all delta cannot
-//                                   be lit by aiming at a light: the
-//                                   estimator skips that, and ReSTIR does
-//                                   not reuse there.
+//   uint lobes(Bsdf)                every lobe the surface has, as the union
+//                                   of their bits (below). A surface with no
+//                                   diffuse or glossy lobe, all of whose
+//                                   lobes are delta, cannot be lit by aiming
+//                                   at a light: the estimator skips that,
+//                                   and ReSTIR does not reuse there. The test
+//                                   is on the bits, never on the kind, so it
+//                                   holds for any kind, mixed ones included.
 //
 // For every sample, value x |cos(wi, shading normal)| / pdf is the sample's
 // weight, its contribution per unit of the radiance arriving along wi. For a
@@ -80,20 +83,38 @@ enum class BsdfKind : uint32_t {
     dielectric = 3,  // smooth glass: mirror reflection and refraction, by Fresnel
 };
 
-// Bits of lobes() and BsdfSample::lobe.
+// Bits of lobes() and BsdfSample::lobe, as pbrt-v4's BxDFFlags: each lobe
+// is one of reflection or transmission, which side wi is on, and one of
+// diffuse, glossy or delta, how it spreads. lobes() is the union over a
+// surface's lobes; a sample's lobe has one bit of each pair.
+//
+//   diffuse  spreads over the hemisphere (Lambert);
+//   glossy   spreads about a direction (rough metal);
+//   delta    one direction only: evaluate() and pdf() are 0 for it.
 #if defined(__METAL_VERSION__)
 constant constexpr uint32_t lobe_reflection = 1u;    // wi on wo's side
 constant constexpr uint32_t lobe_transmission = 2u;  // wi on the other side
-constant constexpr uint32_t lobe_delta = 4u;         // one direction only: evaluate() and pdf() are 0
+constant constexpr uint32_t lobe_diffuse = 4u;
+constant constexpr uint32_t lobe_glossy = 8u;
+constant constexpr uint32_t lobe_delta = 16u;
 #else
 constexpr uint32_t lobe_reflection = 1u;
 constexpr uint32_t lobe_transmission = 2u;
-constexpr uint32_t lobe_delta = 4u;
+constexpr uint32_t lobe_diffuse = 4u;
+constexpr uint32_t lobe_glossy = 8u;
+constexpr uint32_t lobe_delta = 16u;
 #endif
+
+// Whether a surface with `lobes` can be lit by aiming at a light: it has a
+// lobe that is not delta.
+inline bool aims_at_lights(uint32_t lobes) {
+    return (lobes & (lobe_diffuse | lobe_glossy)) != 0u;
+}
 
 // A material resolved at one surface.
 struct Bsdf {
-    Float3 normal;   // the shading normal, unit, outward (contracts/surface_interaction.h)
+    Float3 normal;   // the normal to shade with, unit, outward: the surface's shading normal
+                     // (contracts/surface_interaction.h), as the material perturbs it, if it does
     BsdfKind kind;
     Float3 color;    // lambert: albedo; conductor: f0; dielectric: unused, 1
     float alpha;     // conductor: GGX alpha = roughness^2; otherwise 0
@@ -108,7 +129,7 @@ struct BsdfSample {
     Float3 direction;  // wi, unit
     float pdf;         // per unit solid angle, or a delta lobe's probability; 0 for no sample
     Float3 value;      // f(wo, wi), or for a delta lobe as described above
-    uint32_t lobe;     // the lobe chosen: reflection or transmission, and delta if it is one
+    uint32_t lobe;     // the lobe chosen: reflection or transmission, and diffuse, glossy or delta
 };
 
 static_assert(sizeof(BsdfSample) == 32, "BsdfSample must be the same 32 bytes on the host and in shaders");
