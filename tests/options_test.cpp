@@ -107,3 +107,32 @@ TEST_CASE("window: a render scale in (0, 1], and the size it gives") {
     CHECK(render_size(Extent{2560, 1600}, 0.33) == Extent{845, 528});
     CHECK(render_size(Extent{3, 1}, 0.01) == Extent{1, 1});  // never empty
 }
+
+TEST_CASE("headless: which frames are written, and frozen time") {
+    using serenity::headless::Write;
+    using serenity::headless::written;
+    CHECK(headless({"--graph", "g", "--out", "o"}).write == Write::all);
+    CHECK(headless({"--graph", "g", "--out", "o", "--write", "last"}).write == Write::last);
+    CHECK(headless({"--graph", "g", "--out", "o", "--write", "doubling"}).write == Write::doubling);
+    CHECK(contains(headless_error({"--graph", "g", "--out", "o", "--write", "some"}), "all, last or doubling"));
+
+    // Of 10 frames: all; the last; the 1st, 2nd, 4th, 8th and the last.
+    std::vector<std::uint64_t> all, last, doubling;
+    for (std::uint64_t n = 0; n < 10; ++n) {
+        if (written(Write::all, n, 10)) all.push_back(n);
+        if (written(Write::last, n, 10)) last.push_back(n);
+        if (written(Write::doubling, n, 10)) doubling.push_back(n);
+    }
+    CHECK(all.size() == 10);
+    CHECK(last == std::vector<std::uint64_t>{9});
+    CHECK(doubling == std::vector<std::uint64_t>{0, 1, 3, 7, 9});
+
+    CHECK_FALSE(headless({"--graph", "g", "--out", "o"}).time.has_value());
+    const auto frozen = headless({"--graph", "g", "--out", "o", "--time", "2.5"});
+    REQUIRE(frozen.time.has_value());
+    CHECK(frozen.time->count() == 2.5);
+    CHECK(headless({"--graph", "g", "--out", "o", "--time", "0"}).time->count() == 0.0);
+    CHECK(contains(headless_error({"--graph", "g", "--out", "o", "--time", "-1"}), "0 or more"));
+    CHECK(contains(headless_error({"--graph", "g", "--out", "o", "--time", "nan"}), "0 or more"));
+    CHECK(contains(headless_error({"--graph", "g", "--out", "o", "--time", "1", "--step", "0.5"}), "exclusive"));
+}

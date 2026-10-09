@@ -8,9 +8,11 @@
 #include "core/contracts/camera.h"
 #include "core/contracts/frame_constants.h"
 #include "core/lights/gradient_sky.h"
+#include "core/lights/light.h"
 #include "core/lights/sphere_light.h"
 #include "metal/camera/pinhole.metal.h"
 #include "metal/integrator/direct.metal.h"
+#include "metal/passes/display.metal.h"
 
 using namespace metal;
 using namespace metal::raytracing;
@@ -24,15 +26,6 @@ constant constexpr uint pixel_samples = 4;
 constant constexpr float2 positions[pixel_samples] = {
     float2(0.375f, 0.125f), float2(0.875f, 0.375f), float2(0.625f, 0.875f), float2(0.125f, 0.625f)};
 
-// For display: a color brighter than the display shows is scaled down by
-// its largest channel, so it keeps its hue (a firefly stays yellow rather
-// than clipping to white); then linear to sRGB's transfer function, for an
-// 8-bit target the display reads as sRGB.
-float3 encode_srgb(float3 linear) {
-    const float largest = max(max(linear.r, linear.g), linear.b);
-    const float3 c = saturate(largest > 1.0f ? linear / largest : linear);
-    return select(1.055f * pow(c, 1.0f / 2.4f) - 0.055f, 12.92f * c, c <= 0.0031308f);
-}
 
 }  // namespace
 
@@ -50,8 +43,9 @@ kernel void preview(constant serenity::contracts::FrameConstants& frame [[buffer
                     device const serenity::shapes::PrimitiveRecord* shape_records [[buffer(11)]],
                     device const serenity::shapes::SphereData* spheres [[buffer(12)]],
                     device const serenity::shapes::BoxData* boxes [[buffer(13)]],
-                    device const serenity::lights::SphereLightData* lights [[buffer(14)]],
-                    constant serenity::lights::LightCounts& light_counts [[buffer(15)]],
+                    device const serenity::lights::LightRecord* light_records [[buffer(14)]],
+                    device const serenity::lights::SphereLightData* sphere_lights [[buffer(15)]],
+                    constant serenity::lights::LightCounts& light_counts [[buffer(16)]],
                     texture2d<float, access::write> target [[texture(0)]],
                     uint2 pixel [[thread_position_in_grid]]) {
     if (pixel.x >= frame.width || pixel.y >= frame.height) {
@@ -66,7 +60,8 @@ kernel void preview(constant serenity::contracts::FrameConstants& frame [[buffer
     scene.dielectrics = dielectrics;
     scene.conductors = conductors;
     scene.emissives = emissives;
-    scene.lights = EveryLight{lights, light_counts.spheres};
+    scene.selection = EveryLight{light_records, light_counts.lights};
+    scene.lights = Lights{sphere_lights};
     scene.sky = sky;
 
     float3 color = float3(0.0f);

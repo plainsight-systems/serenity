@@ -46,9 +46,13 @@
 // direction toward one. With them it reads every light through this
 // contract and names no light kind.
 //
-// A shadow ray toward a sample stops short of `distance`: anything nearer
-// than the light's surface along the direction blocks it, and the light's
-// own surface does not.
+// A shadow ray toward a sample is blocked by anything nearer than the
+// light's surface along its direction, and not by the light itself: a light
+// that is also a shape (a glowing sphere) names that shape, `primitive`,
+// which the ray ignores, and the ray stops at `distance`. Ignoring it, not
+// stopping short of it, is what makes this exact: near a sphere's rim a
+// ray grazes it, and where it meets it is computed with too little
+// precision for any fixed margin to fall reliably short.
 //
 // The sphere light (lights/sphere_light.h) draws uniformly over the cone it
 // fills from the point, pdf = 1 / (2 pi (1 - cos a)), sin a = r / d, and its
@@ -70,14 +74,23 @@
 namespace serenity {
 namespace contracts {
 
+// The shape a light is not, for primitive below.
+#if defined(__METAL_VERSION__)
+constant constexpr uint32_t no_primitive = 0xffffffffu;
+#else
+constexpr uint32_t no_primitive = 0xffffffffu;
+#endif
+
 struct LightSample {
-    Float3 direction;  // unit, from the point toward the light
-    float distance;    // along it, to the light's surface
-    Float3 radiance;   // arriving along it, if nothing is in the way
-    float pdf;         // per unit solid angle, given the light; 0 for no sample
+    Float3 direction;    // unit, from the point toward the light
+    float distance;      // along it, to the light's surface
+    Float3 radiance;     // arriving along it, if nothing is in the way
+    float pdf;           // per unit solid angle, given the light; 0 for no sample
+    uint32_t primitive;  // the light's own shape, which a shadow ray ignores; or no_primitive
+    uint32_t padding[3];
 };
 
-static_assert(sizeof(LightSample) == 32, "LightSample must be the same 32 bytes on the host and in shaders");
+static_assert(sizeof(LightSample) == 48, "LightSample must be the same 48 bytes on the host and in shaders");
 
 struct LightExtent {
     Float3 direction;     // unit, from the point toward the light's middle
@@ -85,7 +98,8 @@ struct LightExtent {
     Float3 radiance;      // the mean over the solid angle it fills
     float solid_angle;    // the solid angle it fills from the point
     float sin_radius;     // the sine of its angular radius
-    uint32_t padding[3];
+    uint32_t primitive;   // its own shape, which a shadow ray ignores; or no_primitive
+    uint32_t padding[2];
 };
 
 static_assert(sizeof(LightExtent) == 48, "LightExtent must be the same 48 bytes on the host and in shaders");

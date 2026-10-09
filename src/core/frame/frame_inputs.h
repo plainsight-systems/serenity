@@ -24,6 +24,12 @@ namespace serenity::frame {
 // passed where seconds are meant (I.4).
 using Seconds = std::chrono::duration<double>;
 
+// The most frames an accumulated image holds before a frame joins it: a
+// pixel's count is a float, exact to 2^24 (metal/film/accumulate.metal.h).
+// A caller starts over (accumulated_since = index) before index -
+// accumulated_since would pass it.
+inline constexpr std::uint64_t max_accumulated_frames = (std::uint64_t{1} << 24) - 1;
+
 struct FrameInputs {
     // Since the run began. The window measures it from a monotonic clock, the
     // headless renderer computes it as index times a fixed step. Double here;

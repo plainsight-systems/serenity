@@ -93,6 +93,12 @@ lit by two fireflies:
 make run GRAPH=graphs/preview.toml SCENE=scenes/brass_sphere.toml
 ```
 
+The naive path tracer, milestone 1, converges while the image holds still:
+
+```bash
+make run GRAPH=graphs/path.toml SCENE=scenes/brass_sphere.toml
+```
+
 `SCALE=0.5` renders at half the window's resolution each way, for speed.
 Escape or closing the window ends it. `make movie` with the same `GRAPH` and
 `SCENE` renders ten seconds headless and encodes them with ffmpeg into

@@ -89,8 +89,8 @@ Image render(const std::string& scene_text, frame::Extent size) {
     metal::Submission submission(device);
     metal::Offscreen target(device, submission, size);
     metal::Renderer renderer(device, submission, frame::parse_schedule("passes = [\"preview\"]\n", "test"), &scene);
-    const auto sequence = metal::render_to_offscreen(submission, target, renderer,
-                                                     frame::FrameInputs{frame::Seconds(0.0), 0, scene.camera});
+    const frame::FrameInputs inputs{.time = frame::Seconds(0.0), .index = 0, .camera = scene.camera};
+    const auto sequence = metal::render_to_offscreen(submission, target, renderer, inputs);
     (void)submission.wait_until_complete(sequence);
     Image image{size, std::vector<std::uint8_t>(std::size_t{size.width} * size.height * 4)};
     target.read_rgba(image.rgba);
@@ -273,7 +273,7 @@ TEST_CASE("a graph that reads a scene refuses to run without one, and a frame wi
     metal::Offscreen target(device, submission, {8, 8});
     metal::Renderer renderer(device, submission, preview, &scene);
     CHECK_THROWS_AS(metal::render_to_offscreen(submission, target, renderer,
-                                               frame::FrameInputs{frame::Seconds(0.0), 0, std::nullopt}),
+                                               frame::FrameInputs{.time = frame::Seconds(0.0), .index = 0}),
                     metal::Error);
 }
 
@@ -293,7 +293,9 @@ TEST_CASE("start-up work is settled before the first frame, so it is never measu
             settled.push_back(frame.settled->sequence);
             CHECK(frame.settled->gpu_end >= frame.settled->gpu_start);
         }
-        renderer.record(frame, frame::FrameInputs{frame::Seconds(0.0), i, scene.camera}, target.texture(),
+        renderer.record(frame,
+                        frame::FrameInputs{.time = frame::Seconds(0.0), .index = i, .camera = scene.camera},
+                        target.texture(),
                         target.size());
         submission.commit();
     }

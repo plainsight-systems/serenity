@@ -79,3 +79,16 @@ TEST_CASE("a missing file is an error that names it") {
         CHECK(contains(error.what(), "no/such/graph.toml"));
     }
 }
+
+TEST_CASE("a graph with two passes that accumulate is refused, at the core, naming them") {
+    const std::string error = error_for("passes = [\"path\", \"path\"]\n");
+    CHECK(contains(error, "graph.toml:1:"));
+    CHECK(contains(error, "2 passes that accumulate (path, path)"));
+    CHECK(error_for("passes = [\"path\", \"test_pattern\"]\n").empty());
+}
+
+TEST_CASE("the path tracer's graph in graphs/ reads") {
+    const auto schedule = serenity::frame::load_schedule(SERENITY_GRAPHS_DIR "/path.toml");
+    REQUIRE(schedule.passes.size() == 1);
+    CHECK(schedule.passes[0] == serenity::frame::PassKind::path);
+}

@@ -53,6 +53,7 @@ public:
         MTL::GPUAddress shapes = 0;
         MTL::GPUAddress spheres = 0;
         MTL::GPUAddress boxes = 0;
+        MTL::GPUAddress light_records = 0;
         MTL::GPUAddress sphere_lights = 0;
         MTL::GPUAddress light_counts = 0;
     };

@@ -31,3 +31,22 @@ TEST_CASE("which pass kinds read the scene") {
     CHECK(serenity::frame::needs_scene(serenity::frame::PassKind::preview));
     CHECK(pass_kind("preview") == serenity::frame::PassKind::preview);
 }
+
+TEST_CASE("the path pass reads the scene and accumulates; the others do not accumulate") {
+    using namespace serenity::frame;
+    CHECK(needs_scene(PassKind::path));
+    CHECK(accumulates(PassKind::path));
+    CHECK_FALSE(accumulates(PassKind::preview));
+    CHECK_FALSE(accumulates(PassKind::test_pattern));
+    CHECK(pass_kind("path") == PassKind::path);
+}
+
+TEST_CASE("which schedules are valid is the core's") {
+    using namespace serenity::frame;
+    CHECK_FALSE(invalid(Schedule{{PassKind::path}}).has_value());
+    CHECK_FALSE(invalid(Schedule{{PassKind::test_pattern, PassKind::path}}).has_value());
+    REQUIRE(invalid(Schedule{}).has_value());
+    CHECK(invalid(Schedule{})->find("no passes") != std::string::npos);
+    REQUIRE(invalid(Schedule{{PassKind::path, PassKind::path}}).has_value());
+    CHECK(invalid(Schedule{{PassKind::path, PassKind::path}})->find("at most one") != std::string::npos);
+}

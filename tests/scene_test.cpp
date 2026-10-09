@@ -157,7 +157,12 @@ material = "brass"
     REQUIRE(s.emissives.size() == 1);
     CHECK(s.emissives[0].radiance.x == 40.0f);
 
-    // The glowing sphere is the first shape, and the one light.
+    // The glowing sphere is the first shape, and the one light: a record of
+    // kind sphere into the sphere lights.
+    REQUIRE(s.lights.size() == 1);
+    CHECK(s.lights[0].kind == lights::LightKind::sphere);
+    CHECK(s.lights[0].index == 0);
+    CHECK(s.light_counts.lights == 1);
     REQUIRE(s.sphere_lights.size() == 1);
     CHECK(s.light_counts.spheres == 1);
     CHECK(s.sphere_lights[0].primitive == 0);

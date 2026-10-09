@@ -1,16 +1,20 @@
 // serenity-headless: renders a frame graph's frames, over a scene if one is
 // given, to PNG files (headless/options.h). Each frame's time is computed
-// from its index, never measured, and its camera is the scene's, so the same
-// command writes the same files (principle 1).
+// from its index, or frozen by --time, never measured; its camera is the
+// scene's; and a graph that converges accumulates from the first frame. So
+// the same command writes the same files (principle 1).
 //
-// Frames are rendered one at a time: each is committed, waited for, read back
-// and written before the next begins. Readback is the point of this program,
-// and it is not held to the frame budget (GPU.1). Any failure ends the run
-// with its message and a non-zero status.
+// Frames are rendered one at a time: each is committed and waited for, and
+// those --write selects are read back and written, before the next begins.
+// Readback is the point of this program, and it is not held to the frame
+// budget (GPU.1). A frame that left out samples for not being finite
+// (metal/film/non_finite.h) fails the run once it has completed, naming the
+// count. Any failure ends the run with its message and a non-zero status.
 
 #include <cstdio>
 #include <exception>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -45,12 +49,21 @@ int main(int argc, char** argv) {
         // successor (headless/options.h).
         for (std::uint64_t n = 0; n < options.frames; ++n) {
             const std::uint64_t index = options.first + n;
-            frame::FrameInputs inputs{options.step * static_cast<double>(index), index, std::nullopt};
-            if (scene) {
-                inputs.camera = scene->camera;
-            }
+            const frame::FrameInputs inputs{
+                .time = options.time ? *options.time : options.step * static_cast<double>(index),
+                .index = index,
+                .accumulated_since = options.first,
+                .camera = scene ? std::optional(scene->camera) : std::nullopt,
+            };
             const std::uint64_t sequence = metal::render_to_offscreen(submission, target, renderer, inputs);
             (void)submission.wait_until_complete(sequence);
+            if (const std::uint32_t failed = renderer.non_finite_samples(); failed != 0) {
+                throw std::runtime_error("frame " + std::to_string(index) + ": " + std::to_string(failed) +
+                                         " samples were not finite, and were left out (a bug)");
+            }
+            if (!headless::written(options.write, n, options.frames)) {
+                continue;
+            }
             target.read_rgba(rgba);
 
             char name[32];

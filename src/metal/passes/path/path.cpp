@@ -1,19 +1,20 @@
-#include "metal/passes/preview/preview.h"
+#include "metal/passes/path/path.h"
 
 #include "metal/acceleration/primitives.h"
 #include "metal/device/error.h"
 
 namespace serenity::metal {
 
-PreviewPass::PreviewPass(const Device&, const Library& library) : pipeline_(library.compute_pipeline("preview")) {}
+PathPass::PathPass(const Device&, const Library& library) : pipeline_(library.compute_pipeline("path_trace")) {}
 
-void PreviewPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
-    if (resources.scene == nullptr || resources.acceleration == nullptr || resources.camera == 0) {
-        throw Error("PreviewPass: the frame has no scene or no camera");
+void PathPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
+    if (resources.scene == nullptr || resources.acceleration == nullptr || resources.camera == 0 ||
+        resources.accumulation == nullptr || resources.non_finite_counter == 0) {
+        throw Error("PathPass: the frame has no scene, no camera or no accumulated image");
     }
     const SceneBuffers::Addresses& scene = *resources.scene;
 
-    // Bindings match preview.metal.
+    // Bindings match path.metal.
     MTL4::ArgumentTable* arguments = resources.arguments;
     arguments->setAddress(resources.constants, 0);
     arguments->setAddress(resources.camera, 1);
@@ -32,10 +33,16 @@ void PreviewPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
     arguments->setAddress(scene.light_records, 14);
     arguments->setAddress(scene.sphere_lights, 15);
     arguments->setAddress(scene.light_counts, 16);
-    arguments->setTexture(resources.target->gpuResourceID(), 0);
+    arguments->setAddress(resources.non_finite_counter, 17);
+    arguments->setTexture(resources.accumulation->gpuResourceID(), 0);
+    arguments->setTexture(resources.target->gpuResourceID(), 1);
     encoder->setComputePipelineState(pipeline_.get());
 
-    // As the test pattern: rows of the execution width (GPU.2).
+    // The previous frame's dispatch wrote the accumulated image this one
+    // reads; Metal 4 does not order them unless asked (path.h).
+    encoder->barrierAfterQueueStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+
+    // Rows of the execution width (GPU.2).
     const NS::UInteger width = pipeline_->threadExecutionWidth();
     const NS::UInteger rows = pipeline_->maxTotalThreadsPerThreadgroup() / width;
     encoder->dispatchThreads(MTL::Size(resources.size.width, resources.size.height, 1), MTL::Size(width, rows, 1));

@@ -184,10 +184,15 @@ std::optional<Completed> Submission::wait_until_complete(std::uint64_t sequence)
 }
 
 std::vector<Completed> Submission::finish() {
-    if (open_) {
-        throw Error("finish() while submission " + std::to_string(next_ - 1) + " is still open");
-    }
+    std::vector<Completed> settled = drain();
     finished_ = true;
+    return settled;
+}
+
+std::vector<Completed> Submission::drain() {
+    if (open_) {
+        throw Error("drain() or finish() while submission " + std::to_string(next_ - 1) + " is still open");
+    }
     // Every submission before these was settled when its slot was reused.
     std::vector<Completed> settled;
     for (std::uint64_t sequence = next_ > frames_in_flight ? next_ - frames_in_flight : 0; sequence < next_;
@@ -197,6 +202,17 @@ std::vector<Completed> Submission::finish() {
         }
     }
     return settled;
+}
+
+void Submission::release_resident(MTL::Allocation* allocation) {
+    if (allocation == nullptr) {
+        throw Error("release_resident() with no allocation");
+    }
+    if (open_) {
+        throw Error("release_resident() while submission " + std::to_string(next_ - 1) + " is still open");
+    }
+    residency_->removeAllocation(allocation);
+    residency_->commit();
 }
 
 void Submission::make_resident(MTL::Allocation* allocation) {

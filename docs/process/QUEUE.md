@@ -22,14 +22,23 @@ This file tracks active and accepted work.
   toolchain pin and its check, the boundary check, the Metal backend's
   device and library loading.
 
+- **Milestone 1, the naive path tracer.** First slice, done: a still
+  scene converging over frames. The textbook path tracer with next event
+  estimation (pbrt-v4's SimplePathIntegrator, principle 7: each light path
+  counted one way), uniform light selection, Russian roulette, on contracts
+  1 to 3 (surface interaction, BSDF, emitter), into an accumulated image
+  whose pixels keep their own sample counts; headless --write and --time
+  for references. Checked against closed forms: furnaces, an integrating
+  sphere, lit floors. The preview reads its lights through the emitter
+  contract too.
+
 ## Next, in order
 
-1. A full path tracer over procedural geometry with many moving fireflies,
-   sampled naively, in the window and headless. It brings the BSDF contract
-   (contract 2), through which each material kind is evaluated and sampled,
-   and with it the material switch leaves the preview's direct integrator
-   (metal/integrator/direct.metal.h), whose light loop moves onto light
-   records and the emitter (contract 3).
+1. Milestone 1, the rest: fireflies that move (animation, the structure
+   refit each frame, accumulation starting over as they do); procedural
+   geometry toward marbles on a table with many fireflies; the reference
+   render and its error measure. The preview's direct integrator moves its
+   material switch onto the BSDF contract.
 
 Then, each in its turn: ReSTIR DI; ReSTIR GI; caustics by manifold next
 event estimation; reservoir reuse as kernels; a denoiser of its own against

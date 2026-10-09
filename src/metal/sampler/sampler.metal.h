@@ -13,7 +13,15 @@
 // the pixel's set, and uncorrelated between neighbouring pixels, so what
 // error is left is fine grain rather than bands. The frame is not an input
 // yet: the preview takes no average across frames, and a still scene stays
-// still. When frames are averaged, the frame index joins the hash.
+// still.
+//
+// A path's numbers (the path tracer's, which averages frames) are drawn
+// another way: independent, from a hash of the pixel, the frame's index and
+// the dimension, the count of numbers the path drew before. Each frame's are
+// independent of every other's, so their mean converges, and each is a
+// function of where and when it is used, so any frame can be drawn again,
+// alone (principle 2). The counter is the path's own, in a register, not
+// state any other thread or frame shares.
 //
 // The hash is PCG's output permutation (Jarzynski and Olano, "Hash Functions
 // for GPU Rendering", 2020).
@@ -43,6 +51,32 @@ inline float2 sample_offset(uint2 pixel, uint purpose) {
 inline float2 sample_2d(float2 offset, uint index) {
     const float2 step = float2(0.7548776662466927f, 0.5698402909980532f);  // 1/p, 1/p^2
     return metal::fract(offset + float(index) * step);
+}
+
+// A path's numbers: `key` from the pixel and the frame, `dimension` counting.
+struct PathNumbers {
+    uint key;
+    uint dimension;
+};
+
+inline PathNumbers path_numbers(uint2 pixel, uint frame) {
+    return PathNumbers{pcg_hash(pixel.x ^ pcg_hash(pixel.y ^ pcg_hash(frame))), 0u};
+}
+
+// The path's next number, in [0, 1).
+inline float next_number(thread PathNumbers& numbers) {
+    return unit_float(pcg_hash(numbers.key ^ pcg_hash(numbers.dimension++)));
+}
+
+inline float2 next_numbers2(thread PathNumbers& numbers) {
+    const float a = next_number(numbers);
+    return float2(a, next_number(numbers));
+}
+
+inline float3 next_numbers3(thread PathNumbers& numbers) {
+    const float a = next_number(numbers);
+    const float b = next_number(numbers);
+    return float3(a, b, next_number(numbers));
 }
 
 }  // namespace shaders

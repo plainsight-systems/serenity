@@ -131,7 +131,10 @@ add_library(serenity_metal STATIC
     src/metal/device/submission.cpp
     src/metal/acceleration/primitives.cpp
     src/metal/scene/scene_buffers.cpp
+    src/metal/film/non_finite.cpp
+    src/metal/frame/accumulation.cpp
     src/metal/frame/renderer.cpp
+    src/metal/passes/path/path.cpp
     src/metal/passes/preview/preview.cpp
     src/metal/passes/test_pattern/test_pattern.cpp
 )
@@ -141,6 +144,7 @@ serenity_add_metallib(
     TARGET serenity_metal NAME shaders
     SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/test_pattern/test_pattern.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/preview/preview.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/path/path.metal"
     INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 # ---------------------------------------------------------------------------

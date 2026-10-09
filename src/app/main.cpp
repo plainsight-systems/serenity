@@ -17,6 +17,11 @@
 // submitted, and settled, before it. The frames settled at the end by
 // finish() come after the last title and are not shown.
 //
+// A graph that converges accumulates from the first frame and starts over
+// whenever the window's size changes, or when the image would hold more
+// frames than it can (frame::max_accumulated_frames). Samples the pass left
+// out for not being finite, a bug, are shown in the title.
+//
 // At the end the submission is finished, so a GPU failure in the last frames
 // is reported too. Any failure ends the run with its message and a non-zero
 // status.
@@ -39,12 +44,17 @@
 
 namespace {
 
-std::string title(serenity::frame::Extent size, const serenity::measurement::Summary& summary) {
-    char text[160];
+std::string title(serenity::frame::Extent size, const serenity::measurement::Summary& summary,
+                  std::uint32_t non_finite) {
+    char text[200];
     std::snprintf(text, sizeof(text), "Serenity  |  %u x %u  |  GPU %.2f ms mean, %.2f to %.2f, over %llu frames",
                   size.width, size.height, summary.mean.count() * 1e3, summary.shortest.count() * 1e3,
                   summary.longest.count() * 1e3, static_cast<unsigned long long>(summary.frames));
-    return text;
+    std::string result = text;
+    if (non_finite != 0) {
+        result += "  |  " + std::to_string(non_finite) + " SAMPLES NOT FINITE (a bug)";
+    }
+    return result;
 }
 
 }  // namespace
@@ -70,6 +80,7 @@ int main(int argc, char** argv) {
         const app::Clock clock;
         measurement::FrameTimes frame_times(frame::Seconds(1.0));
         std::uint64_t index = 0;
+        std::uint64_t accumulated_since = 0;
         for (;;) {
             const app::Window::Events events = window.poll();
             if (events.quit) {
@@ -77,11 +88,17 @@ int main(int argc, char** argv) {
             }
             if (events.resized) {
                 presenter.resize(app::render_size(window.size_in_pixels(), options.scale));
+                accumulated_since = index;  // what the window shows changed
             }
-            frame::FrameInputs inputs{clock.elapsed(), index, std::nullopt};
-            if (scene) {
-                inputs.camera = scene->camera;
+            if (index - accumulated_since > frame::max_accumulated_frames) {
+                accumulated_since = index;  // the image holds no more
             }
+            const frame::FrameInputs inputs{
+                .time = clock.elapsed(),
+                .index = index,
+                .accumulated_since = accumulated_since,
+                .camera = scene ? std::optional(scene->camera) : std::nullopt,
+            };
             if (const auto rendered = metal::render_to_window(submission, presenter, renderer, inputs)) {
                 ++index;
                 if (rendered->settled && rendered->settled->sequence >= first_frame) {
@@ -89,7 +106,7 @@ int main(int argc, char** argv) {
                 }
             }
             if (const auto summary = frame_times.take(clock.elapsed())) {
-                window.set_title(title(presenter.size(), *summary));
+                window.set_title(title(presenter.size(), *summary, renderer.non_finite_samples()));
             }
         }
         (void)submission.finish();

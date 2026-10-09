@@ -1,6 +1,8 @@
 #include "metal/frame/renderer.h"
 
 #include <cstring>
+#include <optional>
+#include <string>
 
 #include "core/camera/pinhole.h"
 #include "core/contracts/camera.h"
@@ -23,8 +25,9 @@ static_assert(camera_offset + sizeof(contracts::CameraData) <= slot_stride);
 
 // Every pass binds at most this many buffers and textures through the table:
 // the preview binds the constants, the camera, the structure and the scene's
-// thirteen arrays (preview.metal).
-constexpr NS::UInteger max_buffers = 16;
+// fourteen arrays (preview.metal), seventeen in all; the path pass a few
+// more for its image's counter.
+constexpr NS::UInteger max_buffers = 24;
 constexpr NS::UInteger max_textures = 4;
 
 std::string describe(const NS::Error* error) {
@@ -39,11 +42,14 @@ std::string describe(const NS::Error* error) {
 Renderer::Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
                    const scene::SceneDescription* scene)
     : library_(device, serenity::metallib::shaders) {
-    if (schedule.passes.empty()) {
-        throw Error("Renderer: the schedule has no passes");
+    // The core decides which schedules can be carried out (principle 10).
+    if (const std::optional<std::string> reason = frame::invalid(schedule)) {
+        throw Error("Renderer: " + *reason);
     }
+    bool accumulates = false;
     for (frame::PassKind kind : schedule.passes) {
         needs_scene_ = needs_scene_ || frame::needs_scene(kind);
+        accumulates = accumulates || frame::accumulates(kind);
     }
     if (needs_scene_ && scene == nullptr) {
         throw Error("Renderer: the frame graph's passes read a scene, and none was given (--scene)");
@@ -79,7 +85,14 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         case frame::PassKind::preview:
             passes_.emplace_back(std::in_place_type<PreviewPass>, device, library_);
             break;
+        case frame::PassKind::path:
+            passes_.emplace_back(std::in_place_type<PathPass>, device, library_);
+            break;
         }
+    }
+    if (accumulates) {
+        accumulation_ = std::make_unique<Accumulation>(device, submission);
+        non_finite_ = std::make_unique<NonFinite>(device, submission);
     }
 
     // Only a graph that reads the scene has it put on the GPU.
@@ -89,10 +102,32 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     }
 }
 
+void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
+    if (!accumulation_) {
+        return;
+    }
+    prepared_.reset();
+    const std::uint32_t held = accumulation_->prepare(inputs, size);
+    prepared_ = Prepared{inputs.index, size, held};
+}
+
+std::uint32_t Renderer::non_finite_samples() const {
+    return non_finite_ ? non_finite_->count() : 0u;
+}
+
 void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, MTL::Texture* target,
                       frame::Extent size) {
     if (frame.commands == nullptr || target == nullptr || size.width == 0 || size.height == 0) {
         throw Error("Renderer::record: no command buffer, no target, or an empty image");
+    }
+    std::uint32_t accumulated_frames = 0;
+    if (accumulation_) {
+        if (!prepared_ || prepared_->index != inputs.index || !(prepared_->size == size)) {
+            throw Error("Renderer::record: frame " + std::to_string(inputs.index) +
+                        " was not prepared at this size (Renderer::prepare)");
+        }
+        accumulated_frames = prepared_->accumulated_frames;
+        prepared_.reset();
     }
 
     if (needs_scene_ && !inputs.camera) {
@@ -104,6 +139,8 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
         static_cast<std::uint32_t>(inputs.index),
         size.width,
         size.height,
+        accumulated_frames,
+        {0u, 0u, 0u},
     };
     const std::size_t slot = std::size_t{frame.slot} * slot_stride;
     auto* ring = static_cast<std::byte*>(constants_->contents());
@@ -123,6 +160,11 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
         resources.scene = &scene_->addresses();
         resources.acceleration = acceleration_.get();
     }
+    if (accumulation_) {
+        resources.accumulation = accumulation_->texture();
+        resources.accumulated_frames = accumulated_frames;
+        resources.non_finite_counter = non_finite_->address();
+    }
 
     MTL4::ComputeCommandEncoder* encoder = frame.commands->computeCommandEncoder();
     encoder->setArgumentTable(resources.arguments);
@@ -139,6 +181,7 @@ std::optional<WindowFrame> render_to_window(Submission& submission, Presenter& p
     if (drawable == nullptr) {
         return std::nullopt;
     }
+    renderer.prepare(inputs, presenter.size());
     const FrameSlot frame = submission.begin();
     renderer.record(frame, inputs, drawable->texture(), presenter.size());
     submission.present(drawable);
@@ -147,6 +190,7 @@ std::optional<WindowFrame> render_to_window(Submission& submission, Presenter& p
 
 std::uint64_t render_to_offscreen(Submission& submission, Offscreen& target, Renderer& renderer,
                                   const frame::FrameInputs& inputs) {
+    renderer.prepare(inputs, target.size());
     const FrameSlot frame = submission.begin();
     renderer.record(frame, inputs, target.texture(), target.size());
     submission.commit();

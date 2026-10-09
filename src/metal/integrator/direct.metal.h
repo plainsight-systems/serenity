@@ -16,14 +16,15 @@
 #include <metal_raytracing>
 #include <metal_stdlib>
 
+#include "core/contracts/emitter.h"
 #include "core/lights/gradient_sky.h"
-#include "core/lights/sphere_light.h"
+#include "core/lights/light.h"
 #include "core/materials/emissive.h"
 #include "core/materials/material.h"
 #include "metal/acceleration/trace.metal.h"
 #include "metal/light_selection/every_light.metal.h"
+#include "metal/lights/emitter.metal.h"
 #include "metal/lights/gradient_sky.metal.h"
-#include "metal/lights/sphere_light.metal.h"
 #include "metal/materials/conductor.metal.h"
 #include "metal/materials/dielectric.metal.h"
 #include "metal/materials/rough.metal.h"
@@ -63,7 +64,8 @@ struct Scene {
     device const serenity::materials::DielectricData* dielectrics;
     device const serenity::materials::ConductorData* conductors;
     device const serenity::materials::EmissiveData* emissives;
-    EveryLight lights;
+    EveryLight selection;
+    Lights lights;
     serenity::lights::GradientSkyData sky;
 };
 
@@ -97,19 +99,26 @@ inline Surface reach(Scene scene, float3 origin, float3 direction) {
     return s;
 }
 
-// The fraction of `light` visible from `from`, by `count` shadow rays drawn
-// uniformly over the light's cone (sphere_light.metal.h), each reaching the
-// light unless a shape other than the light lies before its surface. Glass
-// is opaque to them: the light glass would focus is a caustic, which this
-// estimator leaves out.
-inline float visible_fraction(Scene scene, float3 from, serenity::lights::SphereLightData light, LightView view,
-                              Pixel px, uint light_index, uint count) {
+// The fraction of `light` visible from `from`, by `count` shadow rays toward
+// directions the emitter draws over it (contract 3; for a sphere, uniformly
+// over its cone), each reaching the light unless a shape lies before the
+// light's surface. Glass is opaque to them: the light glass would focus is
+// a caustic, which this estimator leaves out.
+inline float visible_fraction(Scene scene, float3 point, float3 from, serenity::lights::LightRecord light, Pixel px,
+                              uint light_index, uint count) {
     const float2 offset_2d = sample_offset(px.pixel, purpose_light + light_index);
     uint seen = 0;
     for (uint i = 0; i < count; ++i) {
-        const float3 d = direction_to_light(view, sample_2d(offset_2d, px.position * count + i));
-        const float reach_light = distance_to_light(light, view, d);
-        seen += occluded(scene.structure, scene.shapes, from, d, 0.0f, reach_light, light.primitive) ? 0u : 1u;
+        const serenity::contracts::LightSample sample =
+            sample_light(scene.lights, light, point, sample_2d(offset_2d, px.position * count + i));
+        if (sample.pdf <= 0.0f) {
+            continue;
+        }
+        // Blocked by anything before the light, not by the light itself.
+        seen += occluded(scene.structure, scene.shapes, from, to_float3(sample.direction), 0.0f, sample.distance,
+                         sample.primitive)
+                    ? 0u
+                    : 1u;
     }
     return float(seen) / float(count);
 }
@@ -125,16 +134,15 @@ inline float3 surface_color(Scene scene, Surface s) {
 inline float3 shade_rough(Scene scene, Surface s, float3 albedo, Pixel px) {
     const float3 from = s.point + offset * s.normal;
     float3 light_in = float3(0.0f);
-    for (uint j = 0; j < selected_count(scene.lights); ++j) {
-        const serenity::lights::SphereLightData light = selected(scene.lights, j);
-        const LightView view = view_light(light, s.point);
-        const float cos_t = metal::dot(s.normal, view.direction);
-        if (cos_t <= 0.0f) {
+    for (uint j = 0; j < selected_count(scene.selection); ++j) {
+        const serenity::lights::LightRecord light = selected(scene.selection, j);
+        const float3 irradiance = light_irradiance(scene.lights, light, s.point, s.normal);
+        if (metal::all(irradiance == 0.0f)) {
             continue;
         }
-        const float seen = visible_fraction(scene, from, light, view, px, j, light_samples);
-        // E / pi = L sin^2 cos (lights/sphere_light.h); times albedo below.
-        light_in += to_float3(light.radiance) * view.sin2 * cos_t * seen / selection_probability(scene.lights, j);
+        const float seen = visible_fraction(scene, s.point, from, light, px, j, light_samples);
+        // Albedo / pi times the irradiance; the albedo is applied below.
+        light_in += irradiance * M_1_PI_F * seen / selection_probability(scene.selection, j);
     }
     // Each cosine-distributed ray that leaves the scene brings the sky's
     // radiance; their mean times the albedo is the sky's contribution.
@@ -165,13 +173,15 @@ inline float3 shade_reflected(Scene scene, float3 origin, float3 direction, bool
         const float3 normal = metal::dot(s.normal, direction) > 0.0f ? -s.normal : s.normal;
         const float3 from = s.point + offset * normal;
         float3 light_in = gradient_sky(scene.sky, normal);
-        for (uint j = 0; j < selected_count(scene.lights); ++j) {
-            const serenity::lights::SphereLightData light = selected(scene.lights, j);
-            const LightView view = view_light(light, s.point);
-            const float cos_t = metal::dot(normal, view.direction);
-            if (cos_t > 0.0f && !occluded(scene.structure, scene.shapes, from, view.direction, 0.0f,
-                                          view.distance - light.radius, light.primitive)) {
-                light_in += to_float3(light.radiance) * view.sin2 * cos_t / selection_probability(scene.lights, j);
+        for (uint j = 0; j < selected_count(scene.selection); ++j) {
+            const serenity::lights::LightRecord light = selected(scene.selection, j);
+            const float3 irradiance = light_irradiance(scene.lights, light, s.point, normal);
+            const serenity::contracts::LightExtent extent = light_extent(scene.lights, light, s.point);
+            // One shadow ray, toward the light's middle, ignoring the light.
+            if (!metal::all(irradiance == 0.0f) &&
+                !occluded(scene.structure, scene.shapes, from, to_float3(extent.direction), 0.0f, extent.distance,
+                          extent.primitive)) {
+                light_in += irradiance * M_1_PI_F / selection_probability(scene.selection, j);
             }
         }
         return surface_color(scene, s) * light_in;
@@ -184,9 +194,10 @@ inline float3 shade_reflected(Scene scene, float3 origin, float3 direction, bool
 }
 
 // A metal's light: each selected light's highlight, through GGX widened by
-// the light's size (alpha' = alpha + r / 2d, so a near light's highlight is
-// no smaller than the light) over the light's solid angle, by the fraction
-// of it visible; and the rest of the scene, by rays the metal's microfacets
+// the light's size (alpha' = alpha + sin(its angular radius) / 2, r / 2d
+// for a sphere, so a near light's highlight is no smaller than the light)
+// over the light's solid angle (contract 3, extent), by the fraction of it
+// visible; and the rest of the scene, by rays the metal's microfacets
 // reflect.
 inline float3 shade_conductor(Scene scene, Surface s, float3 toward_eye, Pixel px) {
     const serenity::materials::ConductorData conductor = scene.conductors[s.material.index];
@@ -194,17 +205,18 @@ inline float3 shade_conductor(Scene scene, Surface s, float3 toward_eye, Pixel p
     const float3 from = s.point + offset * s.normal;
 
     float3 color = float3(0.0f);
-    for (uint j = 0; j < selected_count(scene.lights); ++j) {
-        const serenity::lights::SphereLightData light = selected(scene.lights, j);
-        const LightView view = view_light(light, s.point);
-        const float widened = metal::min(1.0f, alpha + light.radius / (2.0f * view.distance));
-        const float3 reflectance = conductor_reflectance(conductor, widened, s.normal, toward_eye, view.direction);
+    for (uint j = 0; j < selected_count(scene.selection); ++j) {
+        const serenity::lights::LightRecord light = selected(scene.selection, j);
+        const serenity::contracts::LightExtent extent = light_extent(scene.lights, light, s.point);
+        const float widened = metal::min(1.0f, alpha + extent.sin_radius / 2.0f);
+        const float3 reflectance =
+            conductor_reflectance(conductor, widened, s.normal, toward_eye, to_float3(extent.direction));
         if (metal::all(reflectance == 0.0f)) {
             continue;
         }
-        const float seen = visible_fraction(scene, from, light, view, px, j, light_samples);
-        color += reflectance * to_float3(light.radiance) * view.solid_angle * seen /
-                 selection_probability(scene.lights, j);
+        const float seen = visible_fraction(scene, s.point, from, light, px, j, light_samples);
+        color += reflectance * to_float3(extent.radiance) * extent.solid_angle * seen /
+                 selection_probability(scene.selection, j);
     }
 
     // The glow is not counted again here: the highlights above are it.

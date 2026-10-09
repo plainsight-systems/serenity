@@ -73,6 +73,9 @@ Schedule read_schedule(std::string_view source, const toml::table& root) {
         }
         schedule.passes.push_back(*kind);
     }
+    if (const std::optional<std::string> reason = invalid(schedule)) {
+        throw GraphFileError(at(source, *passes_node, *reason));
+    }
     return schedule;
 }
 

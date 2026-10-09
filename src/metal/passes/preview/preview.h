@@ -74,8 +74,11 @@ namespace serenity::metal {
 // mean for display. The integrator uses the shared shader halves of the
 // kinds: trace.metal.h (the hardware loop over boxes, each shape kind's
 // exact test in shapes.metal.h), rough.metal.h, conductor.metal.h,
-// dielectric.metal.h, textures.metal.h, sphere_light.metal.h,
-// gradient_sky.metal.h, sampler.metal.h and warp.metal.h.
+// dielectric.metal.h, textures.metal.h, gradient_sky.metal.h,
+// sampler.metal.h and warp.metal.h, and reads every light through the
+// emitter contract (lights/emitter.metal.h: each light's extent, its
+// irradiance, and directions toward it for shadow rays), naming no light
+// kind.
 //
 // Cost: one thread per pixel, in rows of the execution width (GPU.2). On a
 // rough surface, with L lights, 4 x (1 + 4L + 2) rays a pixel, growing by

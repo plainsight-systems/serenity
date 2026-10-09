@@ -37,7 +37,8 @@ struct Rig {
 
     std::vector<std::uint8_t> render(double seconds, std::uint64_t index) {
         const auto sequence =
-            metal::render_to_offscreen(submission, target, renderer, frame::FrameInputs{frame::Seconds(seconds), index, std::nullopt});
+            metal::render_to_offscreen(submission, target, renderer,
+                                       frame::FrameInputs{.time = frame::Seconds(seconds), .index = index});
         submission.wait_until_complete(sequence);
         std::vector<std::uint8_t> rgba(std::size_t{size.width} * size.height * 4);
         target.read_rgba(rgba);
@@ -100,7 +101,7 @@ TEST_CASE("frames in flight: each submission reads its own frame's constants") {
     std::uint64_t last = 0;
     for (std::uint64_t i = 0; i < 4; ++i) {
         last = metal::render_to_offscreen(submission, *targets[i], renderer,
-                                          frame::FrameInputs{frame::Seconds(times[i]), i, std::nullopt});
+                                          frame::FrameInputs{.time = frame::Seconds(times[i]), .index = i});
     }
     submission.wait_until_complete(last);  // in order, so every earlier one is done too
     std::vector<std::uint8_t> rgba(std::size_t{size.width} * size.height * 4);
@@ -115,7 +116,7 @@ TEST_CASE("finish() settles every frame, and nothing begins after it") {
     Rig rig;
     for (std::uint64_t i = 0; i < 3; ++i) {
         (void)metal::render_to_offscreen(rig.submission, rig.target, rig.renderer,
-                                         frame::FrameInputs{frame::Seconds(0.0), i, std::nullopt});
+                                         frame::FrameInputs{.time = frame::Seconds(0.0), .index = i});
     }
     rig.submission.finish();
     CHECK_THROWS_AS((void)rig.submission.begin(), metal::Error);
