@@ -93,7 +93,10 @@ lit by two fireflies:
 make run GRAPH=graphs/preview.toml SCENE=scenes/brass_sphere.toml
 ```
 
-Escape or closing the window ends it.
+`SCALE=0.5` renders at half the window's resolution each way, for speed.
+Escape or closing the window ends it. `make movie` with the same `GRAPH` and
+`SCENE` renders ten seconds headless and encodes them with ffmpeg into
+`media/`, which git ignores.
 
 The build is pinned to one toolchain. Metal can't run in a container, so the
 versions of Xcode, the SDK, the Metal compiler and Apple's clang are recorded
