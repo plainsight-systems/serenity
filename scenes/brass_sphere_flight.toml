@@ -14,8 +14,11 @@ vertical_fov_degrees = 38
 
 [environment]
 kind = "gradient"
-zenith = [0.002, 0.003, 0.012]
-horizon = [0.012, 0.016, 0.035]
+# Moonlit: five times brass_sphere.toml's sky, so the scene reads between
+# flashes. The sky is reached by bounces, not chosen among the lights, so it
+# leaves the fireflies' sampling as it was.
+zenith = [0.01, 0.015, 0.06]
+horizon = [0.06, 0.08, 0.175]
 
 [textures.floor_checks]
 kind = "checker"
