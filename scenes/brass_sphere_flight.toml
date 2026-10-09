@@ -1,6 +1,9 @@
 # The brass sphere with six fireflies in flight: each circles the sphere,
 # swoops in J-strokes, drifts and travels between, flashing on each climb
-# and dim between (core/animation/flight.h, glow.h). Seen through
+# and nearly dark between, as Photinus is (core/animation/flight.h, glow.h).
+# The dim is low because the display shows radiance above 1 at full
+# brightness: at 0.0005 of 320 a firefly between flashes is a faint ember,
+# where 0.08 (25.6) would look as bright as its flash. Seen through
 # graphs/path.toml, the window starts over every frame; a clean movie takes
 # samples per frame (make movie SAMPLES=...).
 
@@ -52,7 +55,7 @@ center = [-1.05, 0.55, 0.85]
 radius = 0.03
 material = "firefly"
 motion = { kind = "flight", min = [-2.2, 0.12, -2.2], max = [2.2, 2.2, 2.2], targets = ["brass"], speed = 0.45, clearance = 0.06, circle = 3, swoop = 1, drift = 1, seed = 1 }
-glow = { kind = "flight", flash = 0.35, dim = 0.08 }
+glow = { kind = "flight", flash = 0.35, dim = 0.0005 }
 
 [[shapes]]
 kind = "sphere"
@@ -60,7 +63,7 @@ center = [0.95, 1.45, -0.55]
 radius = 0.03
 material = "firefly"
 motion = { kind = "flight", min = [-2.2, 0.12, -2.2], max = [2.2, 2.2, 2.2], targets = ["brass"], speed = 0.45, clearance = 0.06, circle = 3, swoop = 1, drift = 1, seed = 2 }
-glow = { kind = "flight", flash = 0.35, dim = 0.08 }
+glow = { kind = "flight", flash = 0.35, dim = 0.0005 }
 
 [[shapes]]
 kind = "sphere"
@@ -68,7 +71,7 @@ center = [-1.6, 1.2, -1.2]
 radius = 0.03
 material = "firefly"
 motion = { kind = "flight", min = [-2.2, 0.12, -2.2], max = [2.2, 2.2, 2.2], targets = ["brass"], speed = 0.45, clearance = 0.06, circle = 1, swoop = 2, drift = 1, seed = 3 }
-glow = { kind = "flight", flash = 0.35, dim = 0.08 }
+glow = { kind = "flight", flash = 0.35, dim = 0.0005 }
 
 [[shapes]]
 kind = "sphere"
@@ -76,7 +79,7 @@ center = [1.5, 0.6, 1.1]
 radius = 0.03
 material = "firefly"
 motion = { kind = "flight", min = [-2.2, 0.12, -2.2], max = [2.2, 2.2, 2.2], targets = ["brass"], speed = 0.45, clearance = 0.06, circle = 2, swoop = 1, drift = 2, seed = 4 }
-glow = { kind = "flight", flash = 0.35, dim = 0.08 }
+glow = { kind = "flight", flash = 0.35, dim = 0.0005 }
 
 [[shapes]]
 kind = "sphere"
@@ -84,7 +87,7 @@ center = [0.2, 1.9, 1.3]
 radius = 0.03
 material = "firefly"
 motion = { kind = "flight", min = [-2.2, 0.12, -2.2], max = [2.2, 2.2, 2.2], targets = ["brass"], speed = 0.45, clearance = 0.06, circle = 3, swoop = 1, drift = 1, seed = 5 }
-glow = { kind = "flight", flash = 0.35, dim = 0.08 }
+glow = { kind = "flight", flash = 0.35, dim = 0.0005 }
 
 [[shapes]]
 kind = "sphere"
@@ -92,4 +95,4 @@ center = [-0.4, 0.35, -1.6]
 radius = 0.03
 material = "firefly"
 motion = { kind = "flight", min = [-2.2, 0.12, -2.2], max = [2.2, 2.2, 2.2], targets = ["brass"], speed = 0.45, clearance = 0.06, circle = 1, swoop = 1, drift = 2, seed = 6 }
-glow = { kind = "flight", flash = 0.35, dim = 0.08 }
+glow = { kind = "flight", flash = 0.35, dim = 0.0005 }
