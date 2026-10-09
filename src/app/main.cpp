@@ -2,6 +2,9 @@
 // opens a window, and renders frames into it until the window is closed or
 // Escape is pressed.
 //
+// Frames are rendered at --scale of the window's pixels, and the window's
+// layer stretches them to fill it (app/options.h).
+//
 // Each frame's inputs are the measured clock (app/clock.h), the count of
 // frames rendered, and the scene's camera, still until the camera moves; all
 // three are handed to the renderer (principle 1). The loop is paced by the
@@ -60,7 +63,7 @@ int main(int argc, char** argv) {
         metal::Device device;
         metal::Submission submission(device);
         metal::Presenter presenter(device, submission, metal::LayerHandle{window.metal_layer()},
-                                   window.size_in_pixels());
+                                   app::render_size(window.size_in_pixels(), options.scale));
         metal::Renderer renderer(device, submission, schedule, scene ? &*scene : nullptr);
         const std::uint64_t first_frame = submission.next_sequence();
 
@@ -73,7 +76,7 @@ int main(int argc, char** argv) {
                 break;
             }
             if (events.resized) {
-                presenter.resize(window.size_in_pixels());
+                presenter.resize(app::render_size(window.size_in_pixels(), options.scale));
             }
             frame::FrameInputs inputs{clock.elapsed(), index, std::nullopt};
             if (scene) {

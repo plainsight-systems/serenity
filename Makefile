@@ -24,14 +24,17 @@ test-release:
 
 ## The window, release build, running the frame graph GRAPH (default: the
 ## test pattern) over the scene SCENE, if given (a graph that reads a scene
-## needs one). Escape or closing the window ends it.
+## needs one), rendered at SCALE of the window's pixels if given (0.5 is a
+## quarter of the pixels). Escape or closing the window ends it.
 GRAPH ?= graphs/test_pattern.toml
 SCENE ?=
 SCENE_ARG := $(if $(SCENE),--scene $(SCENE),)
+SCALE ?=
+SCALE_ARG := $(if $(SCALE),--scale $(SCALE),)
 run:
 	cmake --preset native-release $(CONFIGURE_QUIET)
 	cmake --build --preset native-release --target serenity
-	./build/native-release/serenity --graph $(GRAPH) $(SCENE_ARG)
+	./build/native-release/serenity --graph $(GRAPH) $(SCENE_ARG) $(SCALE_ARG)
 
 ## Headless frames of GRAPH, over SCENE if given, release build, as PNGs in
 ## OUT. FRAMES frames from frame 0, a sixtieth of a second apart.

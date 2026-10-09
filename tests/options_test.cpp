@@ -88,3 +88,22 @@ TEST_CASE("window: the graph is required, the scene optional, and nothing else i
     CHECK_THROWS_AS(serenity::app::parse(std::vector<const char*>{"--graph", "s", "--size", "1x1"}),
                     serenity::app::OptionsError);
 }
+
+TEST_CASE("window: a render scale in (0, 1], and the size it gives") {
+    using serenity::app::parse;
+    using serenity::app::render_size;
+    using serenity::frame::Extent;
+    CHECK(parse(std::vector<const char*>{"--graph", "g"}).scale == 1.0);
+    CHECK(parse(std::vector<const char*>{"--graph", "g", "--scale", "0.5"}).scale == 0.5);
+    for (const char* wrong : {"0", "-0.5", "1.5", "nan", "inf", "half", "0.5x"}) {
+        INFO("--scale " << wrong);
+        CHECK_THROWS_AS(parse(std::vector<const char*>{"--graph", "g", "--scale", wrong}),
+                        serenity::app::OptionsError);
+    }
+    CHECK_THROWS_AS(parse(std::vector<const char*>{"--graph", "g", "--scale"}), serenity::app::OptionsError);
+
+    CHECK(render_size(Extent{3456, 2234}, 1.0) == Extent{3456, 2234});
+    CHECK(render_size(Extent{3456, 2234}, 0.5) == Extent{1728, 1117});
+    CHECK(render_size(Extent{2560, 1600}, 0.33) == Extent{845, 528});
+    CHECK(render_size(Extent{3, 1}, 0.01) == Extent{1, 1});  // never empty
+}
