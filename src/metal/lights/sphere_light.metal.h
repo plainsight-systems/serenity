@@ -20,8 +20,8 @@
 // Each takes the light and its shape's transform, which the emitter reads
 // from the frame's transforms by the light's `shape` (emitter.metal.h): the
 // center is the transform's translation and the radius its scale
-// (core/shapes/transform.h), wherever this frame placed it
-// (core/scene/animate.h).
+// (core/contracts/transform.h), wherever this frame placed it
+// (core/animation/animate.h).
 
 #include <metal_stdlib>
 

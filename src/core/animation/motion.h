@@ -15,8 +15,8 @@ namespace serenity::animation {
 // The motion kinds, and the record that says which motion a moving thing
 // follows: a kind and an index into that kind's array (Enum.2, C.181), as
 // for shapes, materials, textures and lights. The family's one view of all
-// its kinds, so what places things at a time, the scene's Animate step
-// (core/scene/animate.h), names no kind.
+// its kinds, so what places things at a time, the Animate step
+// (animate.h), names no kind.
 //
 // A motion places one point, the center of what it moves, at a time t: a
 // closed form, evaluated directly, never stepped from the frame before
@@ -31,7 +31,7 @@ namespace serenity::animation {
 //
 // CPU only: motions are evaluated once a frame, on the CPU, and only the
 // positions they give reach the GPU, as the translations of the moving
-// shapes' transforms (core/scene/animate.h).
+// shapes' transforms (core/animation/animate.h).
 
 enum class MotionKind : std::uint32_t {
     wander = 0,  // a drift about a fixed point (wander.h)

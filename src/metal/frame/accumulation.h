@@ -37,7 +37,7 @@ namespace serenity::metal {
 //     count past 2^24 - 1, beyond which a pixel's count, a float, is no
 //     longer exact (77 hours of frames at 60 a second): the caller starts
 //     over before it (frame/frame_inputs.h). And so, when the scene moves
-//     (core/scene/animate.h), is a frame at another time than the frames
+//     (core/animation/animate.h), is a frame at another time than the frames
 //     the image holds: they are samples of one instant, and a frame of
 //     another would average two scenes into a blur no camera sees. The
 //     times must be equal exactly, as a frozen --time gives them

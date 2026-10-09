@@ -69,7 +69,11 @@ struct Wander {
 };
 
 // The path for these numbers, by steps 1 to 3. `reach` and `speed` must be
-// finite and greater than 0; the scene reader makes them so.
+// finite and greater than 0, and every point of the extent a float:
+// |anchor| + reach no greater than FLT_MAX on each axis, in double, so no
+// position the path reaches rounds to an infinity. The scene reader makes
+// them so, with the moving shape's size added (core/scene/scene.h); this
+// throws std::invalid_argument for numbers that are not (I.6).
 Wander make_wander(contracts::Float3 anchor, float reach, float speed, std::uint64_t seed);
 
 // Where it is at `t`.

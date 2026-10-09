@@ -12,7 +12,7 @@
 #include "core/contracts/emitter.h"
 #include "core/lights/light.h"
 #include "core/lights/sphere_light.h"
-#include "core/shapes/transform.h"
+#include "core/contracts/transform.h"
 #include "metal/lights/sphere_light.metal.h"
 
 namespace serenity {
@@ -27,7 +27,7 @@ struct Lights {
     device const serenity::lights::LightRecord* records;
     device const uint* shape_lights;
     device const serenity::lights::SphereLightData* spheres;
-    device const serenity::shapes::Transform* transforms;
+    device const serenity::contracts::Transform* transforms;
 };
 
 // Whether shape `primitive` is a light, and if so which, in `light`.

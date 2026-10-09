@@ -1,9 +1,14 @@
 #pragma once
 
-// Axis: Shape (where an instance of a geometry is).
+// Contract 10: a transform. Owned by Shape; read by Animation, Light and
+// Acceleration.
 //
 // The transform that places a shape's geometry, defined in its own
-// coordinates (object space), in the world: shared with shaders, and the
+// coordinates (object space), in the world (shapes/primitive.h). Animation
+// writes it for a shape that moves (animation/animate.h), a sphere light
+// reads where it is and how big from it (lights/sphere_light.h), and the
+// acceleration structure places its instances by it, so the families meet
+// here and depend on nothing of each other's. Shared with shaders, and the
 // same 3 x 4 row-major affine matrix Vulkan's instance descriptors take
 // (VkTransformMatrixKHR) and Metal's take when built with
 // MTLMatrixLayoutRowMajor, so the bytes are given to either as they are.
@@ -23,7 +28,7 @@
 //
 // The scene format has no rotation yet: every transform the scene reader
 // makes is a translation and a scale (core/scene/scene.h), and the Shape
-// family's world-space helpers say where they rely on it.
+// family's world-space tests say where they rely on it.
 
 #if defined(__METAL_VERSION__)
 #include <metal_stdlib>
@@ -32,7 +37,7 @@
 #include "core/contracts/float3.h"
 
 namespace serenity {
-namespace shapes {
+namespace contracts {
 
 struct Transform {
     float m[3][4];
@@ -42,7 +47,7 @@ static_assert(sizeof(Transform) == 48, "Transform must be the same 48 bytes on t
 
 #if !defined(__METAL_VERSION__)
 // The transform that scales by `scale` (> 0) and then moves by `translation`.
-inline Transform placed(contracts::Float3 translation, float scale) {
+inline Transform placed(Float3 translation, float scale) {
     return Transform{{
         {scale, 0.0f, 0.0f, translation.x},
         {0.0f, scale, 0.0f, translation.y},
@@ -50,12 +55,13 @@ inline Transform placed(contracts::Float3 translation, float scale) {
     }};
 }
 
-inline contracts::Float3 translation(const Transform& t) {
+inline Float3 translation(const Transform& t) {
     return {t.m[0][3], t.m[1][3], t.m[2][3]};
 }
 
-// `t` with its translation replaced: what a motion changes (core/scene/animate.h).
-inline Transform moved_to(Transform t, contracts::Float3 translation) {
+// `t` with its translation replaced: what a motion changes
+// (animation/animate.h).
+inline Transform moved_to(Transform t, Float3 translation) {
     t.m[0][3] = translation.x;
     t.m[1][3] = translation.y;
     t.m[2][3] = translation.z;
@@ -63,5 +69,5 @@ inline Transform moved_to(Transform t, contracts::Float3 translation) {
 }
 #endif
 
-}  // namespace shapes
+}  // namespace contracts
 }  // namespace serenity

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <memory>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -8,9 +9,9 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
-#include "core/scene/animate.h"
 #include "core/shapes/shapes.h"
 #include "metal/device/device.h"
+#include "metal/device/frame_array.h"
 #include "metal/device/submission.h"
 
 namespace serenity::metal {
@@ -39,14 +40,17 @@ namespace serenity::metal {
 //
 // The top: an instance structure with one instance per shape, in the
 // scene's order: instance i is shape i, its user ID i (shapes/primitive.h),
-// its transform shape i's (shapes/transform.h, given row-major, as the core
+// its transform shape i's (contracts/transform.h, given row-major, as the core
 // lays it out), its structure its geometry's. So a hit names its shape
 // directly, with no table between.
 //
-// A still scene (core/scene/animate.h, moves()) has one top, built at
+// A still scene, where no shape moves, has one top, built at
 // construction with the geometries, and every frame traces it. A scene
 // where shapes move has a top per frame in flight, each with its own
-// instance descriptors and scratch. A frame:
+// instance descriptors and scratch; the descriptors are a FrameArray
+// (metal/device/frame_array.h), whose rule says when the CPU may write a
+// slot's. Which shapes move it is told as their indices, nothing more of the
+// scene's animation (core/animation/animate.h). A frame:
 //
 //   1. update() copies each moving shape's transform, which the core placed
 //      for the frame's time in the frame's transforms (metal/scene/
@@ -69,7 +73,7 @@ namespace serenity::metal {
 // Two things this relies on of Metal, which tests/gpu show on this machine:
 // that an intersection query hands each candidate the ray in its instance's
 // object space, its direction transformed but not renormalized, so the
-// object-space t is the world's (shapes/transform.h); and that the instance
+// object-space t is the world's (contracts/transform.h); and that the instance
 // transforms are applied in the traversal hardware.
 //
 // Not taken from Unreal, and why: its instance culling drops instances far
@@ -92,11 +96,12 @@ namespace serenity::metal {
 class SceneAcceleration {
 public:
     // Builds a structure for each geometry of `shapes`, and the top over its
-    // shapes at rest. `animation` says which shapes move: none, and the one
-    // top is built here; some, and each slot's top is built by its frame's
-    // update().
+    // shapes at rest. `moving` are the indices of the shapes that move, in
+    // increasing order: none, and the one top is built here; some, and each
+    // slot's top is built by its frame's update(). Throws Error if an index
+    // is not a shape's.
     SceneAcceleration(const Device& device, Submission& submission, const shapes::Shapes& shapes,
-                      const scene::SceneAnimation& animation);
+                      std::span<const std::uint32_t> moving);
 
     SceneAcceleration(const SceneAcceleration&) = delete;
     SceneAcceleration& operator=(const SceneAcceleration&) = delete;
@@ -110,14 +115,13 @@ public:
     // Submission::begin() returning the slot and the frame's commit; throws
     // Error when nothing moves, or if `transforms` is not the shape count.
     void update(MTL4::ComputeCommandEncoder* encoder, std::uint32_t slot,
-                std::span<const shapes::Transform> transforms) const;
+                std::span<const contracts::Transform> transforms) const;
 
     // The top frame slot `slot` traces, as a shader binds it.
     MTL::ResourceID resource(std::uint32_t slot) const;
 
 private:
     struct Top {
-        NS::SharedPtr<MTL::Buffer> instances;  // one descriptor per shape
         NS::SharedPtr<MTL::Buffer> scratch;
         NS::SharedPtr<MTL4::InstanceAccelerationStructureDescriptor> descriptor;
         NS::SharedPtr<MTL::AccelerationStructure> structure;
@@ -126,6 +130,7 @@ private:
     // Each geometry's structure, built once: the unit sphere's, then each box's.
     std::vector<NS::SharedPtr<MTL::AccelerationStructure>> geometries_;
     std::vector<std::uint32_t> moving_;  // the shapes that move, whose descriptors update() writes
+    std::unique_ptr<FrameArray> instances_;  // one descriptor per shape, per top
     // One top for a still scene, in slot 0, which every frame traces; one per
     // slot when shapes move.
     std::array<Top, frames_in_flight> tops_;

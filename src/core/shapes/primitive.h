@@ -9,12 +9,13 @@
 // A shape is an instance of a geometry, as a mesh instance is in Unreal: the
 // geometry is defined once, in its own coordinates (object space), and each
 // shape that is one of it places it in the world with its own transform
-// (transform.h). Every sphere in a scene, every marble and every firefly, is
-// the one unit sphere (sphere.h), placed at its center and scaled by its
-// radius; each box is its own geometry, a box about its origin (box.h). So
-// the acceleration structures hold each geometry once, built once, and the
-// shapes as instances of them (metal/acceleration/scene_acceleration.h): a
-// shape that moves changes its transform and nothing else.
+// (contract 10, contracts/transform.h). Every sphere in a scene, every marble
+// and every firefly, is the one unit sphere (sphere.h), placed at its center
+// and scaled by its radius; each box is its own geometry, a box about its
+// origin (box.h). So the acceleration structures hold each geometry once,
+// built once, and the shapes as instances of them
+// (metal/acceleration/scene_acceleration.h): a shape that moves changes its
+// transform and nothing else.
 //
 // Shape i of the scene is ShapeRecord i and Transform i, and instance i of
 // the acceleration structure, whose user ID is i. Its kind says which

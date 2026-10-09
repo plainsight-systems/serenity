@@ -3,10 +3,10 @@
 #include <cstdint>
 #include <vector>
 
+#include "core/contracts/transform.h"
 #include "core/shapes/box.h"
 #include "core/shapes/primitive.h"
 #include "core/shapes/sphere.h"
-#include "core/shapes/transform.h"
 
 namespace serenity::shapes {
 
@@ -20,14 +20,14 @@ namespace serenity::shapes {
 //
 // The transforms are each shape at rest, as the scene file places it. A
 // shape that moves is placed anew each frame, in a copy of them the GPU
-// backend keeps per frame (core/scene/animate.h); the records and the
+// backend keeps per frame (core/animation/animate.h); the records and the
 // geometry never change.
 //
 // CPU only: shaders read the records, the transforms and the arrays, each in
 // its shared layout, from the GPU (metal/scene/scene_buffers.h).
 struct Shapes {
     std::vector<ShapeRecord> records;    // shape i is records[i]
-    std::vector<Transform> transforms;   // and transforms[i]
+    std::vector<contracts::Transform> transforms;  // and transforms[i]
     std::vector<BoxData> boxes;          // the box geometries
 };
 

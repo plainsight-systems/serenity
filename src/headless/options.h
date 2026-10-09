@@ -39,11 +39,11 @@ namespace serenity::headless {
 //   - a still scene, or time frozen by --time: the mean of every sample from
 //     frame first's first on, so frame first + k is the mean of (k + 1) x N.
 //     It looks the same at every instant, so the whole run converges;
-//   - a scene whose shapes move (core/scene/animate.h), time advancing: the
-//     mean of frame i's own N samples, started over at each frame, since
-//     frames at two instants are two scenes (metal/frame/accumulation.h).
-//     This is how a movie of moving fireflies is made clean: N samples of
-//     each instant.
+//   - a scene whose shapes move (core/animation/animate.h), time
+//     advancing: the mean of frame i's own N samples, started over at each
+//     frame, since frames at two instants are two scenes
+//     (metal/frame/accumulation.h). This is how a movie of moving fireflies
+//     is made clean: N samples of each instant.
 //
 // A graph that converges over nothing renders each of a frame's samples
 // alike, and writes the last.

@@ -5,7 +5,7 @@
 // The exact hit of a ray on a box about the origin, in object space, by
 // slabs, and the outward normal of the face a point lies on there. The
 // slabs need no unit direction: t is where the ray crosses each plane,
-// whatever the direction's length (shapes/transform.h). A ray that starts
+// whatever the direction's length (contracts/transform.h). A ray that starts
 // inside the box hits it on the way out.
 
 #include <metal_stdlib>

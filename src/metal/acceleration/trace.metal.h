@@ -14,7 +14,7 @@
 // (shapes/primitive.h). The exact test takes the ray the query hands over
 // for that candidate, in the instance's object space
 // (get_candidate_ray_origin and _direction), and the t it finds is the
-// world's (shapes/transform.h), so it is committed and compared as it is.
+// world's (contracts/transform.h), so it is committed and compared as it is.
 // What a hit reports is the shape and t; where on it, in the world, is
 // surface_interaction()'s (shapes/shapes.metal.h).
 

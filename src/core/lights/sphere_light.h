@@ -20,10 +20,10 @@
 // (metal/lights/sphere_light.metal.h).
 //
 // Where it is and how big are its shape's: the translation and the scale of
-// the transform that places the unit sphere (shapes/transform.h,
+// the transform that places the unit sphere (contracts/transform.h,
 // shapes/sphere.h), read from the shapes' transforms, not copied here. A
 // light samples its shape (change-axes.md), and a firefly that moves is
-// moved once, as a shape (core/scene/animate.h), with its light following,
+// moved once, as a shape (core/animation/animate.h), with its light following,
 // and no second copy of its center to fall out of step. It is also the
 // firefly's own coordinates, in which a reservoir keeps a sample on it
 // (logical-overview.md, principle 6). What the light adds is its radiance.

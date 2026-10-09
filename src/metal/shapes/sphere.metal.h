@@ -4,7 +4,7 @@
 //
 // The exact hit of a ray on the unit sphere, in object space, and its
 // outward normal there, the point itself. The ray's direction is not unit
-// length (shapes/transform.h: it is the world's carried into object space,
+// length (contracts/transform.h: it is the world's carried into object space,
 // scaled by 1 / radius), so the roots of |o + t d|^2 = 1 are found with
 // a = d.d kept: t = (-b +/- sqrt(b^2 - a c)) / a, b = o.d, c = o.o - 1. The
 // nearer of the two that lies in (t_min, t_max), so a ray that starts inside

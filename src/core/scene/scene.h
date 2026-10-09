@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 
+#include "core/animation/animate.h"
 #include "core/contracts/camera.h"
 #include "core/lights/gradient_sky.h"
 #include "core/lights/light.h"
@@ -15,7 +16,6 @@
 #include "core/materials/emissive.h"
 #include "core/materials/material.h"
 #include "core/materials/rough.h"
-#include "core/scene/animate.h"
 #include "core/shapes/shapes.h"
 #include "core/textures/checker.h"
 #include "core/textures/texture.h"
@@ -98,7 +98,9 @@ namespace serenity::scene {
 // a second, on a path drawn from `seed`, an integer from 0. The shape must
 // touch no shape that does not move, wherever its motion takes it: its
 // motion's extent, grown by its radius on every side, may not meet any
-// still shape, by that shape kind's exact test (shapes/shapes.h).
+// still shape, by that shape kind's exact test (shapes/shapes.h); and that
+// grown extent must lie within float's range on every axis, computed in
+// double, so no frame places it where a float cannot hold.
 // Moving shapes are not checked against each other: fireflies may pass
 // through one another, which renders as what it is.
 //
@@ -107,7 +109,8 @@ namespace serenity::scene {
 // than 0, an ior not greater than 1, an f0 outside [0, 1], a roughness
 // outside (0, 1], a negative radiance, a box whose min is not below its max,
 // a camera that cannot be framed, a reach or speed not greater than 0, a
-// seed below 0), an unknown kind, a name used and never defined, an
+// seed below 0, a motion that could carry its shape out of float's range),
+// an unknown kind, a name used and never defined, an
 // emissive material or a motion on anything but a sphere, a moving shape
 // that could touch a still one, or no shapes at all is an Error naming the
 // file and the line (E.2, E.14). Nothing has a silent default except `up`.
@@ -151,10 +154,11 @@ struct SceneDescription {
     std::vector<std::uint32_t> shape_lights;
     lights::LightCounts light_counts{};
 
-    // The shapes that move, and their motions (animate.h). Empty for a
-    // still scene. The transforms above place each moving shape at its
-    // anchor, where nothing renders it: a frame places it at its time first.
-    SceneAnimation animation;
+    // Which shapes move, and their motions: a mover per moving shape, its
+    // target the shape's index (core/animation/animate.h). Empty for a still
+    // scene. The transforms above place each moving shape at its anchor,
+    // where nothing renders it: a frame places it at its time first.
+    animation::Animation animation;
 };
 
 // Reads the scene file at `path`.

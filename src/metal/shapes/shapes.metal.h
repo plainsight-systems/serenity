@@ -12,7 +12,7 @@
 // The exact hit is in the shape's object space: intersect_shape() takes the
 // ray as the acceleration structure hands it over for a candidate, carried
 // into the instance's space with its direction not renormalized, so its t
-// is the world's (shapes/transform.h), and tests it against the kind's
+// is the world's (contracts/transform.h), and tests it against the kind's
 // geometry about the origin. surface_interaction() takes the world's hit
 // point, carries it into object space by the inverse of the shape's
 // transform (a similarity: the transposed rotation, 1 / scale, minus the
@@ -31,7 +31,7 @@ namespace shaders {
 
 struct Shapes {
     device const serenity::shapes::ShapeRecord* records;
-    device const serenity::shapes::Transform* transforms;  // as this frame places them
+    device const serenity::contracts::Transform* transforms;  // as this frame places them
     device const serenity::shapes::BoxData* boxes;
 };
 

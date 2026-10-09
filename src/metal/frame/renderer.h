@@ -57,16 +57,19 @@ namespace serenity::metal {
 // the scene's still arrays (metal/scene/shape_transforms.h), and the
 // acceleration structure holds each geometry once and the shapes as
 // instances of them (scene_acceleration.h). When shapes move
-// (core/scene/animate.h), recording a frame begins, before any pass, by
+// (core/animation/animate.h), recording a frame begins, before any pass, by
 // placing every moving shape at the frame's time, by the core
-// (scene::animate), into the frame slot's transforms, and recording the
+// (animation::animate), into the frame slot's transforms, and recording the
 // slot's top-level build and its barrier into the frame's encoder
 // (SceneAcceleration::update). Every pass of the frame then sees the scene
 // at that time: the slot's transforms and the slot's structure. The work is
 // the moving shapes' transforms and one top-level build; no geometry is
 // rebuilt and the still shapes are not rewritten. The scene's motions are
 // the core's to evaluate; the renderer only gives them the memory to write
-// into and the time (principle 10). A still scene does none of this.
+// into and the time (principle 10). It is also where the families meet: it
+// tells the acceleration structure which shapes move, by the movers'
+// targets, and nothing else of the scene's animation. A still scene does
+// none of this.
 //
 // The camera. It is the frame's, an input like its time (frame_inputs.h):
 // the caller chooses it, and the renderer holds none. Each frame the
@@ -120,10 +123,9 @@ namespace serenity::metal {
 // frame constants and, with a camera, 64 of camera), one framing of the camera
 // (a few dozen flops), one compute encoder, and per pass one pipeline bind,
 // its argument-table entries and one dispatch, all in one command buffer
-// (GPU.6). When shapes move, also: each moving shape's motion, its
-// transform's write and its copy into the instance descriptors
-// (core/scene/animate.h, scene_acceleration.h), and one top-level build and
-// one barrier.
+// (GPU.6). When shapes move, also: each moving shape's motion, its transform's
+// write and its copy into the instance descriptors (core/animation/animate.h,
+// scene_acceleration.h), and one top-level build and one barrier.
 // Nothing is allocated.
 class Renderer {
 public:
@@ -170,7 +172,7 @@ private:
     std::unique_ptr<SceneBuffers> scene_;
     std::unique_ptr<SceneAcceleration> acceleration_;
     std::unique_ptr<ShapeTransforms> transforms_;
-    scene::SceneAnimation animation_;  // empty unless the scene moves
+    animation::Animation animation_;  // empty unless the scene moves
     std::unique_ptr<Accumulation> accumulation_;  // when a pass accumulates
     std::unique_ptr<NonFinite> non_finite_;       // with it
     struct Prepared {
