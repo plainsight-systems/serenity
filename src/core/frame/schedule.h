@@ -7,6 +7,8 @@
 #include <string_view>
 #include <vector>
 
+#include "core/frame/tone_map.h"
+
 namespace serenity::frame {
 
 // Axis: Frame graph.
@@ -25,13 +27,29 @@ namespace serenity::frame {
 // every backend's build until that backend implements it or refuses it by
 // name. A backend never silently skips a pass.
 //
-// Today every pass writes the frame's target. The images passed between
-// passes (contract 6) join the schedule with the first pass that reads what
-// another wrote, and with them the barriers between passes.
+// What each pass reads and writes, of the frame's images (contract 6):
+//
+//   - the target, what the window shows or the headless renderer writes,
+//     in display values: written by the pass that finishes the frame (a
+//     presenting pass), and by no other;
+//   - the radiance image, the frame's linear radiance at the frame's size,
+//     between a pass that computes light and the pass that presents it.
+//
+// A pass that computes light (preview, path) writes radiance; a presenting
+// pass (display, tone_map) reads it and writes the target; the test
+// pattern, a diagnostic in display values already, writes the target alone.
+// So a frame graph that computes light ends in a presenting pass, which
+// decides how its light looks: display shows it as it is, as tests and
+// diagnostics want; tone_map gives it exposure, glare and a film-like
+// roll-off, as the window and movies want (tone_map.h). The backend records
+// the barrier between a pass that writes an image and a later one that reads
+// it (metal/frame/renderer.h).
 enum class PassKind : std::uint8_t {
-    test_pattern,  // a diagnostic image, a function of pixel and time
-    preview,       // deterministic ray tracing, direct light only; needs a scene
-    path,          // path tracing, naive, accumulating while the image holds still; needs a scene
+    test_pattern,  // a diagnostic image, a function of pixel and time; writes the target
+    preview,       // deterministic ray tracing, direct light only; needs a scene; writes radiance
+    path,          // path tracing, naive, accumulating while the image holds still; needs a scene; writes radiance
+    display,       // radiance as it is: the largest channel above 1 scaled to 1, then sRGB; writes the target
+    tone_map,      // radiance exposed, bloomed and rolled off (tone_map.h), then sRGB; writes the target
 };
 
 // Whether a pass of `kind` reads the scene. A frame graph with such a pass
@@ -43,8 +61,16 @@ bool needs_scene(PassKind kind);
 // function of the frames before them since the image started over.
 bool accumulates(PassKind kind);
 
+// Which of the frame's images a pass of `kind` writes and reads; see above.
+bool writes_radiance(PassKind kind);
+bool reads_radiance(PassKind kind);
+bool writes_target(PassKind kind);
+
 struct Schedule {
     std::vector<PassKind> passes;  // run in this order; at least one
+    // The tone-map pass's settings: present exactly when the schedule has
+    // that pass (graph_file.h).
+    std::optional<ToneMap> tone_map;
 };
 
 // Whether any pass of `schedule` accumulates: whether its frames build on
@@ -57,7 +83,14 @@ bool accumulates(const Schedule& schedule);
 //   - at least one pass;
 //   - at most one pass that accumulates (accumulates()): one accumulated
 //     image holds one pass's history, so two such passes, the same kind
-//     twice included, would each fold a frame into the other's mean.
+//     twice included, would each fold a frame into the other's mean;
+//   - one pass writes the target, and it is the last: a frame shows one
+//     image, finished by one pass;
+//   - at most one pass writes radiance, every pass that reads it comes after
+//     it, and a pass that writes it is followed by one that reads it: light
+//     computed and never shown is a mistake, not a frame;
+//   - tone-map settings exactly when there is a tone_map pass, with an
+//     exposure finite within [-20, 20] stops and a bloom in [0, 1).
 //
 // None if `schedule` is valid; otherwise why not, in words a reader of the
 // frame graph file can act on. The graph reader refuses an invalid schedule

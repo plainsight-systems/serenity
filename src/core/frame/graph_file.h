@@ -18,13 +18,19 @@ namespace serenity::frame {
 // or the test pattern on none. Graph files live in graphs/, written by hand,
 // in TOML. Reading them is toml++'s, pinned by commit (NOTICE).
 //
-// The format, today:
+// The format:
 //
-//   passes = ["test_pattern"]     # pass names, in order; at least one
+//   passes = ["path", "tone_map"] # pass names, in order; at least one
+//
+//   [tone_map]                    # exactly when a pass is tone_map
+//   exposure = 0.0                # stops (core/frame/tone_map.h)
+//   bloom = 0.04                  # the fraction of light spread into glare
 //
 // Every key is checked. A missing passes, a passes that is not a non-empty
-// array of strings, an unknown pass name, a schedule the core does not
-// accept (schedule.h, invalid()), or a key nobody reads is an Error,
+// array of strings, an unknown pass name, a [tone_map] table without a
+// tone_map pass or the pass without the table, a setting missing or out of
+// range, a schedule the core does not accept (schedule.h, invalid()), or a
+// key nobody reads is an Error,
 // never a default or an ignored line: a typo must fail the run that reads
 // it, not render something else (E.2, E.14). Each Error names the file and
 // the line, and an unknown pass name lists the known ones.

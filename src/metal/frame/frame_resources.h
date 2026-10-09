@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 #include <Foundation/Foundation.hpp>
@@ -27,6 +28,12 @@ struct FrameResources {
     // The frame's contracts::CameraData, framed for `size`; 0 when the frame
     // has no camera.
     MTL::GPUAddress camera = 0;
+
+    // The images between the frame's passes (frame_images.h): the radiance
+    // image and the bloom pyramid's levels; null when the schedule uses
+    // none.
+    MTL::Texture* radiance = nullptr;
+    std::array<MTL::Texture*, 6> bloom{};
 
     // The accumulated image (accumulation.h), the frames it holds, which
     // this one joins, and its counter of samples left out for not being

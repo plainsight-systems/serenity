@@ -22,9 +22,12 @@
 #include "metal/frame/frame_resources.h"
 #include "metal/film/non_finite.h"
 #include "metal/frame/accumulation.h"
+#include "metal/frame/frame_images.h"
+#include "metal/passes/display/display.h"
 #include "metal/passes/path/path.h"
 #include "metal/passes/preview/preview.h"
 #include "metal/passes/test_pattern/test_pattern.h"
+#include "metal/passes/tone_map/tone_map.h"
 #include "metal/scene/shape_transforms.h"
 #include "metal/scene/light_glows.h"
 #include "metal/scene/scene_buffers.h"
@@ -106,13 +109,20 @@ namespace serenity::metal {
 // cannot tell which, so a frame is the same function of its inputs in the
 // window and headless (principle 1).
 //
+// The images between passes (frame_images.h): the radiance image, which a
+// light pass writes and a presenting pass reads, and the tone-map pass's
+// bloom pyramid, made by prepare() at the frame's size when the schedule
+// uses them (core/frame/schedule.h: writes_radiance, tone_map).
+//
 // Metal 4 does not track hazards between passes. When a pass reads what an
 // earlier pass in the frame wrote, the renderer records the barrier between
-// them, so the dependencies are explicit and in one place (GPU.7). Today no
-// pass reads another's output in the frame, so there is none. Between
-// frames, a pass that reads its own history waits for the previous frame's
-// dispatches itself (passes/path/path.h). The queue's wait for the drawable
-// orders the frame against the display (submission.h).
+// them, so the dependencies are explicit and in one place (GPU.7): before a
+// pass that reads the radiance image, a barrier from dispatch to dispatch
+// after the pass that wrote it. Within a pass of several dispatches, the
+// pass records its own (passes/tone_map/tone_map.h). Between frames, a pass
+// that reads its own history waits for the previous frame's dispatches
+// itself (passes/path/path.h). The queue's wait for the drawable orders the
+// frame against the display (submission.h).
 //
 // Frame constants (contracts/frame_constants.h) and the framed camera
 // (contracts/camera.h) reach the shaders through a buffer, because Metal 4's
@@ -156,16 +166,17 @@ public:
     ~Renderer() = default;
 
     // Checks frame `inputs` and readies what it needs from before it: its
-    // time must be finite within float's range, which the shaders read; and
-    // the accumulated image, if the graph has one (accumulation.h), must
-    // hold what the inputs claim. Called before the frame's submission
-    // begins, for every graph; throws Error if either fails.
+    // time must be finite within float's range, which the shaders read; the
+    // accumulated image, if the graph has one (accumulation.h), must hold
+    // what the inputs claim; and the images between passes, if the graph
+    // has any (frame_images.h), are made at `size`. Called before the
+    // frame's submission begins, for every graph; throws Error if any fails.
     void prepare(const frame::FrameInputs& inputs, frame::Extent size);
 
     // Records frame `inputs` into `frame`, writing `target`, of `size`.
     // `frame` is what Submission::begin() returned. Throws Error if the
-    // schedule reads a scene and `inputs` has no camera, or accumulates and
-    // the frame was not prepared at this size.
+    // schedule reads a scene and `inputs` has no camera, or uses images or
+    // accumulates and the frame was not prepared at this size.
     void record(const FrameSlot& frame, const frame::FrameInputs& inputs, MTL::Texture* target,
                 frame::Extent size);
 
@@ -175,7 +186,7 @@ public:
     std::uint64_t non_finite_samples() const;
 
 private:
-    using Pass = std::variant<TestPatternPass, PreviewPass, PathPass>;
+    using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass>;
 
     Library library_;
     bool needs_scene_ = false;  // some pass in the schedule reads the scene
@@ -184,6 +195,7 @@ private:
     std::unique_ptr<ShapeTransforms> transforms_;
     std::unique_ptr<LightGlows> glows_;
     animation::Animation animation_;  // empty unless the scene changes
+    std::unique_ptr<FrameImages> images_;         // when a pass writes radiance
     std::unique_ptr<Accumulation> accumulation_;  // when a pass accumulates
     std::unique_ptr<NonFinite> non_finite_;       // with it
     struct Prepared {

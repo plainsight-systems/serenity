@@ -25,8 +25,9 @@ namespace serenity::metal {
 //   - the accumulated image's mean for the pixel takes it in, n being the
 //     frames the image held (contracts/frame_constants.h,
 //     accumulated_frames), and is written back;
-//   - the mean, encoded for display as the preview encodes it
-//     (passes/display.metal.h), is written to the frame's target.
+//   - the mean, linear, is written to the frame's radiance image
+//     (metal/frame/frame_images.h), for the presenting pass that follows
+//     (core/frame/schedule.h) to show.
 //
 // Ordering: the pass reads the image the previous frame wrote. Metal 4 does
 // not track hazards, so before its dispatch the pass records a barrier that
@@ -37,8 +38,8 @@ namespace serenity::metal {
 // Cost: one thread per pixel, in rows of the execution width (GPU.2); per
 // pixel, the integrator's path (about twice its length in rays, a handful
 // of surfaces in practice; integrator/path.metal.h), and 36 bytes of
-// images: the accumulated pixel's 16 read and 16 written, and the target's
-// 4.
+// images: the accumulated pixel's 16 read and 16 written, and the radiance
+// image's 16 written.
 class PathPass {
 public:
     PathPass(const Device& device, const Library& library);

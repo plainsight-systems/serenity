@@ -1,4 +1,10 @@
-# The naive path tracer: full light transport, converging over frames while
-# the image holds still (src/metal/passes/path/path.h). Needs a scene.
+# The naive path tracer, as the look shows it: full light transport,
+# converging over frames while the image holds still
+# (src/metal/passes/path/path.h), then exposed, bloomed and rolled off for
+# the display (src/metal/passes/tone_map/tone_map.h). Needs a scene.
 
-passes = ["path"]
+passes = ["path", "tone_map"]
+
+[tone_map]
+exposure = 0.0  # stops
+bloom = 0.04    # the fraction of light spread into glare

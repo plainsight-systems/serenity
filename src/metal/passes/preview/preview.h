@@ -54,11 +54,10 @@ namespace serenity::metal {
 // purpose (metal/sampler/sampler.metal.h), not of the frame, so a still
 // scene renders the same image every frame, its error a fine, fixed grain.
 //
-// Colors are linear (core/scene/scene.h). For display, a color brighter than
-// 1 in some channel is scaled by its largest channel, keeping its hue, and
-// encoded with sRGB's transfer function, which an 8-bit target and the
-// display expect. Tone mapping, when it comes, is a pass of its own and the
-// encoding moves to it.
+// Colors are linear (core/scene/scene.h), and the pass writes them so, into
+// the frame's radiance image (metal/frame/frame_images.h): how they are shown
+// is the presenting pass's that follows it (core/frame/schedule.h), display
+// for the numbers as they are, tone_map for the look.
 //
 // Every light is counted at every pixel: the every-light selection
 // (light_selection/every_light.metal.h), so the image has no selection
@@ -68,8 +67,8 @@ namespace serenity::metal {
 // estimators' to render.
 //
 // The kernel is preview.metal: it places the four camera rays, launches the
-// integrator (metal/integrator/direct.metal.h) for each, and encodes the
-// mean for display (passes/display.metal.h).
+// integrator (metal/integrator/direct.metal.h) for each, and writes their
+// mean to the radiance image.
 //
 // Cost: one thread per pixel, in rows of the execution width (GPU.2). On a
 // rough surface, with L lights, 4 x (1 + 4L + 2) rays a pixel, growing by

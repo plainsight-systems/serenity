@@ -1,4 +1,5 @@
 # Deterministic ray tracing, lit by the scene's glowing spheres and its sky
-# (src/metal/passes/preview/preview.h). Needs a scene.
+# (src/metal/passes/preview/preview.h), shown as it is
+# (src/metal/passes/display/display.h). Needs a scene.
 
-passes = ["preview"]
+passes = ["preview", "display"]

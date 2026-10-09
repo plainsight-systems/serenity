@@ -3,12 +3,13 @@
 // Axis: Pass (display encoding, shared by the passes that write a frame's
 // target).
 //
-// A linear color, for display: a color brighter than the display shows is
-// scaled down by its largest channel, so it keeps its hue (a firefly stays
-// yellow rather than clipping to white); then linear to sRGB's transfer
-// function, for an 8-bit target the display reads as sRGB. Not tone
-// mapping: when that arrives it is a pass of its own, and this encoding
-// moves to it.
+// encode_srgb(): a linear color, for display as it is: a color brighter
+// than the display shows is scaled down by its largest channel, so it keeps
+// its hue (a firefly stays yellow rather than clipping to white); then
+// linear to sRGB's transfer function, for an 8-bit target the display reads
+// as sRGB. The display pass's (passes/display/display.h). transfer_srgb():
+// the transfer function alone, for a color already in [0, 1], as the
+// tone-map pass's roll-off leaves it (passes/tone_map/tone_map.h).
 
 #include <metal_stdlib>
 
