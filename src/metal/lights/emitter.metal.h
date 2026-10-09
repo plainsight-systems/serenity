@@ -38,7 +38,7 @@ struct Lights {
 // Sphere light `index`, where its shape is this frame, as bright as its glow.
 inline SphereLight sphere_light_at(Lights lights, uint index) {
     const serenity::lights::SphereLightData light = lights.spheres[index];
-    return sphere_light(light, lights.transforms[light.shape]);
+    return sphere_light(light, lights.transforms[light.shape], lights.sphere_glows[index]);
 }
 
 // Whether shape `primitive` is a light, and if so which, in `light`.

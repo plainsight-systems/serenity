@@ -31,9 +31,10 @@ writes is allocated.
 **Every frame** is a function of its inputs: the time *t*, the frame's index
 and the camera.
 
-- **Animate** places every firefly where it is at *t*, and updates the
-  acceleration structures to match. The fireflies are small glowing spheres:
-  geometry that rays can hit, and lights that the estimators sample.
+- **Animate** places every firefly where it is at *t*, sets how brightly
+  each glows at *t*, and updates the acceleration structures to match. The
+  fireflies are small glowing spheres: geometry that rays can hit, and
+  lights that the estimators sample.
 - **Primary visibility** traces a ray from the camera through each pixel. At
   glass it reflects or refracts, chosen by the Fresnel term; at polished metal
   it reflects; it stops at the first rough surface, or when it leaves the

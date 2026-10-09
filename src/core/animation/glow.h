@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "core/animation/motion.h"
+#include "core/animation/flashes.h"
 #include "core/frame/frame_inputs.h"
 
 namespace serenity::animation {
@@ -32,10 +32,11 @@ namespace serenity::animation {
 //           should not follow its flight. Found for any t from k =
 //           floor(t / period) and its neighbors: no state. `flash` at most
 //           half the period, so neighbors cannot overlap.
-//   flight  flashes when its flight says (flight.h, step 7): on each swoop's
-//           climb, and now and then while it circles or drifts. Its light's
-//           shape must fly. Found by binary search on the flight's flashes,
-//           in its loop.
+//   schedule  flashes at the starts a schedule gives (flashes.h), in its
+//           loop. A flying firefly's schedule is its flight's (flight.h,
+//           step 7): on each swoop's climb, and now and then while it circles
+//           or drifts; the scene reader copies it in, so this kind names no
+//           motion. Found by binary search on the starts.
 //
 // The factor reaches the GPU per light per frame (metal/scene/
 // light_glows.h); the radiance in the scene is the peak.
@@ -45,7 +46,7 @@ namespace serenity::animation {
 
 enum class GlowKind : std::uint32_t {
     rhythm = 0,
-    flight = 1,
+    schedule = 1,
 };
 
 struct GlowRecord {
@@ -60,20 +61,20 @@ struct Rhythm {
     std::uint64_t seed = 0;
 };
 
-struct FlightGlow {
-    std::uint32_t flight = 0;  // the flight it follows, an index into Motions::flights
-    double flash = 0.0;        // a flash's length; in (0, 1): a flight's flashes are at least a second apart
-    float dim = 0.0f;          // brightness between flashes; in [0, 1)
+struct ScheduleGlow {
+    FlashSchedule schedule;
+    double flash = 0.0;  // a flash's length; in (0, 1): a schedule's flashes are at least a second apart
+    float dim = 0.0f;    // brightness between flashes; in [0, 1)
 };
 
 struct Glows {
     std::vector<Rhythm> rhythms;
-    std::vector<FlightGlow> flights;
+    std::vector<ScheduleGlow> schedules;
 };
 
 // The factor on its radiance the glow `record` gives at `t`, in [dim, 1].
-// The record must index its kind's array, and a flight glow a flight; the
-// scene reader makes them so. A switch with no default.
-float glow(const Glows& glows, const Motions& motions, GlowRecord record, frame::Seconds t);
+// The record must index its kind's array; the scene reader makes it so. A
+// switch with no default.
+float glow(const Glows& glows, GlowRecord record, frame::Seconds t);
 
 }  // namespace serenity::animation

@@ -45,11 +45,12 @@ struct SphereLight {
     uint primitive;  // its shape, which a shadow ray toward it ignores
 };
 
-inline SphereLight sphere_light(serenity::lights::SphereLightData light, serenity::contracts::Transform placed) {
+inline SphereLight sphere_light(serenity::lights::SphereLightData light, serenity::contracts::Transform placed,
+                                float glow) {
     SphereLight s;
     s.center = transform_translation(placed);
     s.radius = transform_scale(placed);
-    s.radiance = to_float3(light.radiance);
+    s.radiance = to_float3(light.radiance) * glow;
     s.primitive = light.shape;
     return s;
 }

@@ -4,8 +4,8 @@
 #include <cstdint>
 
 #include "core/animation/extent.h"
-#include "core/animation/obstacles.h"
 #include "core/contracts/float3.h"
+#include "core/contracts/obstacles.h"
 #include "core/frame/frame_inputs.h"
 
 namespace serenity::animation {
@@ -55,7 +55,7 @@ namespace serenity::animation {
 // The extent is the box the center never leaves: anchor +/- reach on each
 // axis. make_wander() checks that the body, wherever in it (the extent grown
 // by the body's radius, rounded outward), touches no still shape
-// (Obstacles::touches, obstacles.h), and refuses otherwise.
+// (contracts::Obstacles::touches, contract 11), and refuses otherwise.
 //
 // Not performance-sensitive per wander: make_wander() runs once, at load;
 // position() is 9 sines in double, once per moving shape per frame.
@@ -77,7 +77,7 @@ struct Wander {
 // to an infinity. Throws std::invalid_argument for numbers that are not, or
 // a reach whose body could touch a still shape (I.6).
 Wander make_wander(contracts::Float3 anchor, float reach, float speed, std::uint64_t seed, float body,
-                   const Obstacles& obstacles);
+                   const contracts::Obstacles& obstacles);
 
 // Where it is at `t`.
 contracts::Float3 position(const Wander& wander, frame::Seconds t);

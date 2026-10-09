@@ -25,11 +25,12 @@ namespace serenity::animation {
 // follows which motion, and its numbers, are the scene's (change-axes.md:
 // mechanism is code, values are data).
 //
-// Every kind is made clear of the scene's still shapes (obstacles.h): when
-// it is made, at load, it checks that what it moves can touch none of them,
-// for all time, and refuses to be made otherwise. So the guarantee is each
-// kind's own, in the terms its path allows: the wander's whole reach clear
-// (wander.h), a flight's every stretch (flight.h).
+// Every kind is made clear of the scene's still shapes (contract 11,
+// contracts/obstacles.h): when it is made, at load, it checks that what it
+// moves can touch none of them, for all time, and refuses to be made
+// otherwise. So the guarantee is each kind's own, in the terms its path
+// allows: the wander's whole reach clear (wander.h), a flight's every stretch
+// (flight.h).
 //
 // A new kind adds a value here, an array of its parameters, its make
 // function, and its position() and extent(); it changes no other kind and

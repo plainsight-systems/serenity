@@ -26,7 +26,7 @@ combination of axes, and none is an axis of its own.
 | **Light** | a new kind of emitter | that kind's emission, sampling, and pdf |
 | **Medium** | a new participating medium | that medium's density, scattering and sampling |
 | **Camera** | a new projection or lens | ray generation for that model |
-| **Animation** | a new kind of motion over time | how that kind places an object or light at time *t* |
+| **Animation** | a new kind of change over time: a motion, or a glow | how that kind places an object or light, or sets a light's brightness, at time *t* |
 | **Scene content** | the scene is art-directed | values only: what is where, made of what, moving how |
 
 **How light is computed**
@@ -147,7 +147,7 @@ The boxes that are compound:
 |---|---|---|
 | **Build geometry** | Shape, Acceleration, GPU backend | each shape kind's geometry · the acceleration structures · the API calls that build them |
 | **Frame inputs** | Camera, Animation, Presentation | the camera at *t* · the time step: measured by the window, fixed when headless |
-| **Animate** | Animation, Acceleration | placing each object and light at *t* · updating the structures to match |
+| **Animate** | Animation, Acceleration | placing each object and light, and setting each light's brightness, at *t* · updating the structures to match |
 | **Primary visibility** | Camera, Shape, Material, Integrator, Film | generating the ray · intersecting it · passing through glass and metal · writing the surface record |
 | **Light** | Integrator, Light selection, Sample reuse, Light, Material | the path loop and its strategies · choosing lights · reusing samples · each emitter · each BSDF |
 | **Resolve** | Integrator, Film | adding light seen directly · accumulating the pixel |

@@ -143,8 +143,9 @@ namespace serenity::scene {
 //   - rhythm flashes every `period` seconds, each moved by up to a fifth of
 //     it, drawn from `seed`; `flash` at most half the period;
 //   - flight flashes when the light's flight says: on each swoop's climb,
-//     now and then while circling or drifting. The sphere's motion must be a
-//     flight; `flash` under a second.
+//     now and then while circling or drifting (its flight's flash schedule,
+//     copied into a glow of the schedule kind, core/animation/flashes.h).
+//     The sphere's motion must be a flight; `flash` under a second.
 //
 // Every key is checked, as in graph files: a missing or unknown key, a
 // value of the wrong type or out of range (a radius or size not greater

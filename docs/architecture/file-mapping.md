@@ -56,7 +56,7 @@ data or adds a kind; it does not change a family that already exists.
 |---|---|---|
 | `src/core/contracts/` | contract | the interfaces between axes (below) |
 | `src/core/scene/` | Scene content | reading a scene description into its kinds |
-| `src/core/animation/` | Animation | each motion kind: placing an object or light at *t* |
+| `src/core/animation/` | Animation | each motion kind, placing an object or light at *t*, and each glow kind, setting a light's brightness at *t* |
 | `src/core/camera/` | Camera | each camera kind's parameters, and its pose at *t* |
 | `src/core/shapes/` | Shape | each shape kind's parameters, bounds and geometry for the acceleration build |
 | `src/core/materials/` | Material | each material kind's parameters |
@@ -110,6 +110,7 @@ depend on contracts, not on each other.
 | 8 | **Camera**: where the frame is seen from, and that view framed for an image | Camera | Scene content, Frame graph, every Pass that generates rays |
 | 9 | **Texture reference**: which texture a parameter takes its value from, or none | Texture | Material |
 | 10 | **Transform**: where an instance of a geometry is, from its own coordinates to the world's | Shape | Animation, Light, Acceleration |
+| 11 | **Obstacles**: what a motion must keep clear of, as distances and touches against the still shapes | Animation | Scene content (answers) |
 
 Each is designed on its own, header first, before the code that uses it.
 Contract 7 was the first written: `src/core/contracts/frame_constants.h`.

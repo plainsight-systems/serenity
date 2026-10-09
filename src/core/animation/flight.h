@@ -5,8 +5,9 @@
 #include <vector>
 
 #include "core/animation/extent.h"
-#include "core/animation/obstacles.h"
+#include "core/animation/flashes.h"
 #include "core/contracts/float3.h"
+#include "core/contracts/obstacles.h"
 #include "core/frame/frame_inputs.h"
 
 namespace serenity::animation {
@@ -61,9 +62,12 @@ namespace serenity::animation {
 //   Step 3  Check it: samples along its path, close enough that the path
 //           between two lies within delta = 1 cm of them, must each be at
 //           least clearance + body radius + delta from every still surface
-//           (Obstacles::distance) and within the volume shrunk by the body
-//           radius. So the whole path keeps the clearance, not only the
-//           samples. If any is not, draw again (step 2), up to 16 times.
+//           (contracts::Obstacles::distance, contract 11) and within the
+//           volume shrunk by body radius + delta on every side. Every point
+//           of the path is within delta of a sample, so the whole path, not
+//           only the samples, keeps the clearance and keeps its body inside
+//           the volume. If any sample is not, draw again (step 2), up to 16
+//           times.
 //   Step 4  The transit into it from episode k - 1's end: the direct curve,
 //           checked as in step 3; failing that, over the waypoint; failing
 //           both, draw episode k again (step 2).
@@ -72,12 +76,13 @@ namespace serenity::animation {
 //   Step 6  Lay the segments out in time, transit 0, episode 0, transit 1,
 //           ..., each starting where the one before ends; the loop's length
 //           is their sum.
-//   Step 7  The flashes, the starts of the firefly's own blinks
-//           (glow.h): one at each swoop's climb, and, at a rate drawn per
-//           firefly, a few while circling and fewer while drifting; a
-//           flash that would start within a second of the one before is
-//           left out, so no two are closer than a second, the loop's last
-//           and first included. In time order.
+//   Step 7  The flashes, the starts of the firefly's own blinks, as a
+//           schedule over the loop (flashes.h, read by a glow, glow.h): one
+//           at each swoop's climb, and, at a rate drawn per firefly, a few
+//           while circling and fewer while drifting; a flash that would
+//           start within a second of the one before is left out, so no two
+//           are closer than a second, the loop's last and first included. In
+//           time order.
 //
 // If an episode cannot be drawn clear in 16 tries, make_flight throws
 // std::invalid_argument naming it: a target with no room to circle it, a
@@ -95,10 +100,11 @@ namespace serenity::animation {
 // any standard library. Evaluated in double, rounded to float once.
 //
 // Cost. At load, per firefly: 64 episodes and 64 transits, each some tens to
-// a few hundred samples, each sample one Obstacles::distance over every
-// still shape: some 10^4 to 10^5 distance tests per firefly per still shape.
-// A thousand fireflies among fifty marbles is about 10^9, seconds; a
-// spatial index behind Obstacles is the change if it is measured to matter.
+// a few hundred samples, each sample one distance (contract 11) over every
+// still shape: some 10^4 to 10^5 distance tests per firefly per still
+// shape. A thousand fireflies among fifty marbles is about 10^9, seconds; a
+// spatial index behind the obstacles is the change if it is measured to
+// matter.
 // Memory: 128 segments of 22 doubles, some 23 KB per firefly. Per frame:
 // one binary search over 128 starts and one closed form of a few sines or a
 // cubic, nothing allocated (MEM.9).
@@ -139,14 +145,15 @@ struct Flight {
     Extent volume;
     std::vector<Segment> segments;  // in time order, covering [0, loop)
     double loop = 0.0;              // the loop's length, in seconds
-    std::vector<double> flashes;    // the starts of its flashes within the loop, in order
+    FlashSchedule flashes;          // its flashes, over the same loop (step 7)
 };
 
 // The flight for these numbers, starting at `start`, of a body of radius
 // `body`, kept clear of `obstacles`, by steps 1 to 7. Throws
 // std::invalid_argument for numbers out of range (above), a start not clear,
 // or an episode that cannot be drawn clear.
-Flight make_flight(const FlightParams& params, contracts::Float3 start, float body, const Obstacles& obstacles);
+Flight make_flight(const FlightParams& params, contracts::Float3 start, float body,
+                   const contracts::Obstacles& obstacles);
 
 // Where it is at `t`, by steps E1 to E3.
 contracts::Float3 position(const Flight& flight, frame::Seconds t);

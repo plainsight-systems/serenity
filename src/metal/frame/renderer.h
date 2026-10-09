@@ -67,7 +67,14 @@ namespace serenity::metal {
 // the frame's encoder (SceneAcceleration::update). Every pass of the frame
 // then sees the scene at that time: the slot's transforms, glows and
 // structure. The CPU's work is the moving shapes' and the glowing lights'
-// alone; the rest is not rewritten. The scene's motions are
+// alone; the rest is not rewritten. Animate runs whenever the scene changes
+// (animation::changes), so a firefly that blinks in place blinks, and the
+// history rule is asked whether the scene changes (core/frame/history.h);
+// the structure is rebuilt only when shapes move (animation::moves). Every
+// pass that reads the scene binds the frame's transforms at buffer 12 and
+// its glows at buffer 10 (passes/path/path.metal, passes/preview/
+// preview.metal), where the emitter reads them (metal/lights/
+// emitter.metal.h). The scene's motions are
 // the core's to evaluate; the renderer only gives them the memory to write
 // into and the time (principle 10). It is also where the families meet: it
 // tells the acceleration structure which shapes move, by the movers'

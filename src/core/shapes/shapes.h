@@ -55,7 +55,7 @@ Bounds world_bounds(const Bounds& object, const contracts::Transform& transform)
 // The distance from world `point` to shape `shape`'s surface, where its
 // transform places it, by its kind's exact test (sphere.h, box.h): 0 on it,
 // negative inside. In double. What the scene answers a flight with, as it
-// keeps clear of the still shapes (core/animation/obstacles.h). A switch with
+// keeps clear of the still shapes (contracts/obstacles.h). A switch with
 // no default, as below.
 //
 // Not performance-sensitive per call, but called often at load: once per
