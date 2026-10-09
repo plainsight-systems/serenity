@@ -36,7 +36,14 @@ namespace serenity::metal {
 //     that lies about its image is refused, not shown (principle 1). So is a
 //     count past 2^24 - 1, beyond which a pixel's count, a float, is no
 //     longer exact (77 hours of frames at 60 a second): the caller starts
-//     over before it (frame/frame_inputs.h).
+//     over before it (frame/frame_inputs.h). And so, when the scene moves
+//     (core/scene/animate.h), is a frame at another time than the frames
+//     the image holds: they are samples of one instant, and a frame of
+//     another would average two scenes into a blur no camera sees. The
+//     times must be equal exactly, as a frozen --time gives them
+//     (headless/options.h); the window, whose time always advances, starts
+//     over every frame while anything moves. A still scene looks the same at
+//     every t, so its frames join whatever their times.
 //
 // The image is the GPU's alone, in private storage, made resident through
 // the submission. Remaking it for a new size first drains the submission,
@@ -59,10 +66,10 @@ public:
     Accumulation& operator=(Accumulation&&) = delete;
     ~Accumulation() = default;
 
-    // The count of frames the image holds before frame `inputs`, at `size`;
-    // see above. Throws Error if the image cannot hold what the inputs claim,
-    // or cannot be made.
-    std::uint32_t prepare(const frame::FrameInputs& inputs, frame::Extent size);
+    // The count of frames the image holds before frame `inputs`, at `size`,
+    // of a scene that moves or not; see above. Throws Error if the image
+    // cannot hold what the inputs claim, or cannot be made.
+    std::uint32_t prepare(const frame::FrameInputs& inputs, frame::Extent size, bool scene_moves);
 
     // The image, valid until the next prepare(); null before the first.
     MTL::Texture* texture() const { return texture_.get(); }
@@ -75,6 +82,7 @@ private:
     frame::Extent size_;
     std::uint64_t since_ = 0;  // accumulated_since of the frames it holds
     std::uint64_t next_ = 0;   // the index of the frame it expects next
+    frame::Seconds time_{0.0}; // the time of the frames it holds, when the scene moves
 };
 
 }  // namespace serenity::metal

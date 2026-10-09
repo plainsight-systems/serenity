@@ -10,8 +10,6 @@
 
 namespace serenity::metal {
 
-class PrimitiveAcceleration;
-
 // Axis: Frame graph.
 //
 // What a pass is given to record itself: the frame's constants, the image it
@@ -37,9 +35,13 @@ struct FrameResources {
     std::uint32_t accumulated_frames = 0;
     MTL::GPUAddress non_finite_counter = 0;
 
-    // Null when the frame has no scene.
+    // The scene's still arrays; the shapes' transforms as this frame places
+    // them (metal/scene/shape_transforms.h); and the structure this frame
+    // traces (metal/acceleration/scene_acceleration.h). Null, 0 and no
+    // structure when the frame has no scene.
     const SceneBuffers::Addresses* scene = nullptr;
-    const PrimitiveAcceleration* acceleration = nullptr;
+    MTL::GPUAddress transforms = 0;
+    MTL::ResourceID acceleration{};
 };
 
 }  // namespace serenity::metal

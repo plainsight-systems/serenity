@@ -1,13 +1,22 @@
 #pragma once
 
-// Axis: Acceleration (shader half of acceleration/primitives.h).
+// Axis: Acceleration (shader half of acceleration/scene_acceleration.h).
 //
 // The nearest shape a ray reaches, and whether any shape blocks a shadow
-// ray. Metal's hardware walks the structure of
-// bounding boxes and hands back each box the ray enters as a candidate; the
-// shape's own exact test (shapes/shapes.metal.h) decides whether, and
-// where, the ray hits what is inside, and a hit nearer than the nearest so
-// far is committed. Kind-blind: it names no shape kind.
+// ray. Metal's hardware walks the two-level structure of bounding boxes and
+// hands back each box the ray enters as a candidate; the shape's own exact
+// test (shapes/shapes.metal.h) decides whether, and where, the ray hits
+// what is inside, and a hit nearer than the nearest so far is committed.
+// Kind-blind: it names no shape kind.
+//
+// The structure is two levels (scene_acceleration.h): a candidate is a box
+// of some geometry, reached through an instance, whose user ID is its shape
+// (shapes/primitive.h). The exact test takes the ray the query hands over
+// for that candidate, in the instance's object space
+// (get_candidate_ray_origin and _direction), and the t it finds is the
+// world's (shapes/transform.h), so it is committed and compared as it is.
+// What a hit reports is the shape and t; where on it, in the world, is
+// surface_interaction()'s (shapes/shapes.metal.h).
 
 #include <metal_raytracing>
 #include <metal_stdlib>

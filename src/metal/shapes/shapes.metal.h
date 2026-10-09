@@ -2,12 +2,22 @@
 
 // Axis: Shape (shader half of shapes/shapes.h).
 //
-// Every shape, as a shader reads it: the records and one array per kind
-// (shapes/primitive.h). Given a primitive, its exact hit, its normal and its
-// material, by its kind: the one place a shader dispatches on shape kind, so
-// the tracing loop (acceleration/trace.metal.h) names none. The switches
-// have no default, so a kind added to ShapeKind and not here fails to
-// compile (-Werror).
+// Every shape, as a shader reads it: the records, the frame's transforms,
+// and one geometry array per kind that has data (shapes/primitive.h). Given
+// a shape, its exact hit, its normal and its material, by its kind: the one
+// place a shader dispatches on shape kind, so the tracing loop
+// (acceleration/trace.metal.h) names none. The switches have no default, so
+// a kind added to ShapeKind and not here fails to compile (-Werror).
+//
+// The exact hit is in the shape's object space: intersect_shape() takes the
+// ray as the acceleration structure hands it over for a candidate, carried
+// into the instance's space with its direction not renormalized, so its t
+// is the world's (shapes/transform.h), and tests it against the kind's
+// geometry about the origin. surface_interaction() takes the world's hit
+// point, carries it into object space by the inverse of the shape's
+// transform (a similarity: the transposed rotation, 1 / scale, minus the
+// translation), asks the kind for its object-space normal there, and turns
+// that normal by the transform's rotation into the world's.
 
 #include <metal_stdlib>
 
@@ -20,8 +30,8 @@ namespace serenity {
 namespace shaders {
 
 struct Shapes {
-    device const serenity::shapes::PrimitiveRecord* records;
-    device const serenity::shapes::SphereData* spheres;
+    device const serenity::shapes::ShapeRecord* records;
+    device const serenity::shapes::Transform* transforms;  // as this frame places them
     device const serenity::shapes::BoxData* boxes;
 };
 

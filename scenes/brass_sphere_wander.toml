@@ -1,0 +1,60 @@
+# The brass sphere of brass_sphere.toml with its two fireflies awake: each
+# drifts about where it hung, never twice the same way (core/animation/
+# wander.h). The first scene that moves. Seen through graphs/path.toml, the
+# window starts over every frame; a clean movie takes samples per frame
+# (make movie SAMPLES=...).
+
+[camera]
+position = [0.0, 1.1, 4.2]
+look_at = [0.0, 0.75, 0.0]
+vertical_fov_degrees = 38
+
+[environment]
+kind = "gradient"
+zenith = [0.002, 0.003, 0.012]
+horizon = [0.012, 0.016, 0.035]
+
+[textures.floor_checks]
+kind = "checker"
+size = 0.4
+a = [0.75, 0.72, 0.65]
+b = [0.05, 0.05, 0.06]
+
+[materials.brass]
+kind = "conductor"
+f0 = [0.91, 0.78, 0.42]
+roughness = 0.35
+
+[materials.floor]
+kind = "rough"
+texture = "floor_checks"
+
+[materials.firefly]
+kind = "emissive"
+radiance = [320.0, 280.0, 70.0]
+
+[[shapes]]
+kind = "sphere"
+center = [0.0, 0.75, 0.0]
+radius = 0.75
+material = "brass"
+
+[[shapes]]
+kind = "box"
+min = [-200.0, -0.1, -200.0]
+max = [200.0, 0.0, 200.0]
+material = "floor"
+
+[[shapes]]
+kind = "sphere"
+center = [-1.05, 0.55, 0.85]
+radius = 0.035
+material = "firefly"
+motion = { kind = "wander", reach = 0.25, speed = 0.25, seed = 1 }
+
+[[shapes]]
+kind = "sphere"
+center = [0.95, 1.45, -0.55]
+radius = 0.03
+material = "firefly"
+motion = { kind = "wander", reach = 0.25, speed = 0.3, seed = 2 }

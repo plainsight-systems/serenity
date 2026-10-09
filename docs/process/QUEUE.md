@@ -34,11 +34,12 @@ This file tracks active and accepted work.
 
 ## Next, in order
 
-1. Milestone 1, the rest: fireflies that move (animation, the structure
-   refit each frame, accumulation starting over as they do); procedural
-   geometry toward marbles on a table with many fireflies; the reference
-   render and its error measure. The preview's direct integrator moves its
-   material switch onto the BSDF contract.
+1. Milestone 1, the rest: fireflies that move (in progress: a wander about
+   an anchor, closed in time; the structure rebuilt each frame; a sphere
+   light read from its sphere; accumulation of one instant at a time;
+   headless --samples for clean movies); fireflies that blink; procedural
+   geometry toward marbles on a table with many fireflies, flying free; the
+   reference render and its error measure.
 
 Then, each in its turn: ReSTIR DI; ReSTIR GI; caustics by manifold next
 event estimation; reservoir reuse as kernels; a denoiser of its own against

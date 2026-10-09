@@ -2,17 +2,26 @@
 
 // Axis: Shape.
 //
-// The shape kinds, and the record that says which shape a primitive in the
-// acceleration structure is. Shared with shaders (contracts/frame_constants.h
-// gives the layout rules).
+// The shape kinds, and the record of each shape in a scene: which geometry
+// it is an instance of, and what it is made of. Shared with shaders
+// (contracts/frame_constants.h gives the layout rules).
 //
-// Every shape is one bounding box in the acceleration structure, and the
-// exact hit is the shape kind's own test (metal/acceleration/primitives.h):
-// primitive i is the shape PrimitiveRecord i names, a kind and an index into
-// that kind's array (Enum.2; a kind and an index rather than a union, C.181).
-// A new kind adds a value here, an array of its data (shapes/shapes.h), its
-// bounds, and its test; it changes no other kind, and nothing outside the
-// Shape family.
+// A shape is an instance of a geometry, as a mesh instance is in Unreal: the
+// geometry is defined once, in its own coordinates (object space), and each
+// shape that is one of it places it in the world with its own transform
+// (transform.h). Every sphere in a scene, every marble and every firefly, is
+// the one unit sphere (sphere.h), placed at its center and scaled by its
+// radius; each box is its own geometry, a box about its origin (box.h). So
+// the acceleration structures hold each geometry once, built once, and the
+// shapes as instances of them (metal/acceleration/scene_acceleration.h): a
+// shape that moves changes its transform and nothing else.
+//
+// Shape i of the scene is ShapeRecord i and Transform i, and instance i of
+// the acceleration structure, whose user ID is i. Its kind says which
+// kind's geometry `geometry` indexes; a kind and an index rather than a union
+// (Enum.2, C.181). A new kind adds a value here, its geometry's data and
+// object-space bounds, and its object-space test; it changes no other kind,
+// and nothing outside the Shape family.
 
 #if defined(__METAL_VERSION__)
 #include <metal_stdlib>
@@ -26,22 +35,24 @@ namespace serenity {
 namespace shapes {
 
 enum class ShapeKind : uint32_t {
-    sphere = 0,
-    box = 1,
+    sphere = 0,  // the unit sphere (sphere.h): no data of its own; `geometry` is 0
+    box = 1,     // a box about its origin (box.h): `geometry` indexes the boxes
 };
 
-struct PrimitiveRecord {
+struct ShapeRecord {
     ShapeKind kind;
-    uint32_t index;  // into that kind's array
+    uint32_t geometry;  // into that kind's geometry array
+    uint32_t material;  // index into the material records
+    uint32_t padding;
 };
 
-static_assert(sizeof(PrimitiveRecord) == 8, "PrimitiveRecord must be the same 8 bytes on the host and in shaders");
+static_assert(sizeof(ShapeRecord) == 16, "ShapeRecord must be the same 16 bytes on the host and in shaders");
 
 #if !defined(__METAL_VERSION__)
-// The axis-aligned box a shape occupies: what the acceleration structure
-// holds for it. Each kind's header says how its bounds are computed, and
-// shapes/shapes.h gives them for every shape, in primitive order. Two packed
-// triples, the layout of Metal's and Vulkan's bounding boxes alike.
+// An axis-aligned box: a geometry's extent in object space, what its
+// acceleration structure holds; or a shape's extent in the world (shapes.h).
+// Two packed triples, the layout of Metal's and Vulkan's bounding boxes
+// alike.
 struct Bounds {
     contracts::Float3 min;
     contracts::Float3 max;

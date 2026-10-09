@@ -12,17 +12,22 @@
 #include "core/contracts/emitter.h"
 #include "core/lights/light.h"
 #include "core/lights/sphere_light.h"
+#include "core/shapes/transform.h"
 #include "metal/lights/sphere_light.metal.h"
 
 namespace serenity {
 namespace shaders {
 
 // Every light, as a shader reads it: the records, which light each shape
-// is, and one array per light kind, which a record indexes.
+// is, and one array per light kind, which a record indexes; and the frame's
+// shape transforms, where a sphere light finds where it is and how big
+// (core/lights/sphere_light.h): the same array, at the same address, that
+// hits are placed by, so a light is always where its shape is.
 struct Lights {
     device const serenity::lights::LightRecord* records;
     device const uint* shape_lights;
     device const serenity::lights::SphereLightData* spheres;
+    device const serenity::shapes::Transform* transforms;
 };
 
 // Whether shape `primitive` is a light, and if so which, in `light`.

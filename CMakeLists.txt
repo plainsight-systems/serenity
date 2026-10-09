@@ -129,7 +129,7 @@ add_library(serenity_metal STATIC
     src/metal/device/presenter.cpp
     src/metal/device/static_arrays.cpp
     src/metal/device/submission.cpp
-    src/metal/acceleration/primitives.cpp
+    src/metal/acceleration/scene_acceleration.cpp
     src/metal/scene/scene_buffers.cpp
     src/metal/film/non_finite.cpp
     src/metal/frame/accumulation.cpp

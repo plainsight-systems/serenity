@@ -25,9 +25,9 @@ namespace serenity::metal {
 // block (static_arrays.h): a shader indexes it only through a record that
 // names its kind, and no record names a kind the scene has none of.
 //
-// Static: written once, at construction. Moving fireflies, later, rewrite
-// their own ring of data each frame (logical-overview.md, Animate); that is
-// not this.
+// Static: written once, at construction. The shapes' transforms, which
+// change when shapes move, are not here: ShapeTransforms keeps them, a copy
+// per frame in flight when they move (shape_transforms.h).
 //
 // Throws Error if the arrays cannot be put on the GPU (static_arrays.h).
 class SceneBuffers {
@@ -50,9 +50,8 @@ public:
         MTL::GPUAddress dielectrics = 0;
         MTL::GPUAddress conductors = 0;
         MTL::GPUAddress emissives = 0;
-        MTL::GPUAddress shapes = 0;
-        MTL::GPUAddress spheres = 0;
-        MTL::GPUAddress boxes = 0;
+        MTL::GPUAddress shapes = 0;  // the shape records
+        MTL::GPUAddress boxes = 0;   // the box geometries
         MTL::GPUAddress light_records = 0;
         MTL::GPUAddress shape_lights = 0;
         MTL::GPUAddress sphere_lights = 0;

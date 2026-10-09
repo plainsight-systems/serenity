@@ -13,7 +13,7 @@
 #include "core/frame/frame_inputs.h"
 #include "core/frame/schedule.h"
 #include "core/scene/scene.h"
-#include "metal/acceleration/primitives.h"
+#include "metal/acceleration/scene_acceleration.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/device/offscreen.h"
@@ -25,6 +25,7 @@
 #include "metal/passes/path/path.h"
 #include "metal/passes/preview/preview.h"
 #include "metal/passes/test_pattern/test_pattern.h"
+#include "metal/scene/shape_transforms.h"
 #include "metal/scene/scene_buffers.h"
 
 namespace serenity::metal {
@@ -45,12 +46,27 @@ namespace serenity::metal {
 //
 // The scene. A frame graph whose passes read a scene (frame::needs_scene)
 // needs one: the renderer copies it to the GPU (scene_buffers.h) and builds
-// its acceleration structure (primitives.h) at construction, and refuses, by
+// its acceleration structures (scene_acceleration.h) at construction, and refuses, by
 // Error, a graph that needs a scene when given none. Each frame then gives
 // every pass the same resources (frame_resources.h), the scene among them.
 // A graph that reads no scene runs with or without one; given one, it is not
 // copied, and the structure is built over the scene's shapes as the Shape
 // family bounds them (shapes/shapes.h).
+//
+// Animate (logical-overview.md). The shapes' transforms are kept apart from
+// the scene's still arrays (metal/scene/shape_transforms.h), and the
+// acceleration structure holds each geometry once and the shapes as
+// instances of them (scene_acceleration.h). When shapes move
+// (core/scene/animate.h), recording a frame begins, before any pass, by
+// placing every moving shape at the frame's time, by the core
+// (scene::animate), into the frame slot's transforms, and recording the
+// slot's top-level build and its barrier into the frame's encoder
+// (SceneAcceleration::update). Every pass of the frame then sees the scene
+// at that time: the slot's transforms and the slot's structure. The work is
+// the moving shapes' transforms and one top-level build; no geometry is
+// rebuilt and the still shapes are not rewritten. The scene's motions are
+// the core's to evaluate; the renderer only gives them the memory to write
+// into and the time (principle 10). A still scene does none of this.
 //
 // The camera. It is the frame's, an input like its time (frame_inputs.h):
 // the caller chooses it, and the renderer holds none. Each frame the
@@ -69,7 +85,8 @@ namespace serenity::metal {
 // frame constants, and Film's counter of samples left out for not being finite
 // (metal/film/non_finite.h), which non_finite_samples() reads. A frame whose
 // inputs claim an image the history does not hold is refused, by Error, and so
-// is a frame recorded without being prepared.
+// is a frame recorded without being prepared, and, when the scene moves, a
+// frame at another time than the frames the image holds (accumulation.h).
 //
 // The target is a texture and its size, whatever owns it: the window's
 // drawable (presenter.h) or an offscreen image (offscreen.h). The renderer
@@ -103,7 +120,11 @@ namespace serenity::metal {
 // frame constants and, with a camera, 64 of camera), one framing of the camera
 // (a few dozen flops), one compute encoder, and per pass one pipeline bind,
 // its argument-table entries and one dispatch, all in one command buffer
-// (GPU.6). Nothing is allocated.
+// (GPU.6). When shapes move, also: each moving shape's motion, its
+// transform's write and its copy into the instance descriptors
+// (core/scene/animate.h, scene_acceleration.h), and one top-level build and
+// one barrier.
+// Nothing is allocated.
 class Renderer {
 public:
     // Builds a pass for each entry of `schedule` from the backend's shader
@@ -147,7 +168,9 @@ private:
     Library library_;
     bool needs_scene_ = false;  // some pass in the schedule reads the scene
     std::unique_ptr<SceneBuffers> scene_;
-    std::unique_ptr<PrimitiveAcceleration> acceleration_;
+    std::unique_ptr<SceneAcceleration> acceleration_;
+    std::unique_ptr<ShapeTransforms> transforms_;
+    scene::SceneAnimation animation_;  // empty unless the scene moves
     std::unique_ptr<Accumulation> accumulation_;  // when a pass accumulates
     std::unique_ptr<NonFinite> non_finite_;       // with it
     struct Prepared {

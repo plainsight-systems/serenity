@@ -34,8 +34,10 @@ struct FrameInputs {
     // Since the run began. The window measures it from a monotonic clock, the
     // headless renderer computes it as index times a fixed step. Double here;
     // shaders receive it as float (contracts/frame_constants.h), whose spacing
-    // is 0.24 ms after an hour and 7.8 ms after a day: animation steps
-    // visibly after about a day of running.
+    // is 0.24 ms after an hour and 7.8 ms after a day: what a shader
+    // animates by it steps visibly after about a day of running. The scene's
+    // motions are evaluated from it on the CPU, in double
+    // (core/animation/motion.h), and do not step.
     Seconds time{0.0};
 
     // The frame's position in the run, from 0. Seeds per-frame randomness
@@ -46,11 +48,14 @@ struct FrameInputs {
     // frames shows the mean of frames accumulated_since .. index, so the
     // frame's image is a function of this as well (principle 1). Equal to
     // index to start over. The window starts over whenever what it shows
-    // would otherwise change: its size, and later the camera and anything
-    // that moves; and when the image would hold 2^24 frames, the most it
-    // holds (metal/frame/accumulation.h). The headless renderer accumulates
-    // from its first frame, so its frame first + k is the mean of k + 1
-    // frames, and refuses more than 2^24 of them. Never after index.
+    // would otherwise change: its size; every frame while the scene's shapes
+    // move (core/scene/animate.h), since its time always advances; later the
+    // camera; and when the image would hold 2^24 frames, the most it holds
+    // (metal/frame/accumulation.h). The headless renderer renders each of its
+    // frames as samples of one instant, and accumulates across its frames
+    // only while the scene looks the same at each (headless/options.h). When
+    // the scene moves, the frames an image holds must share one time
+    // (metal/frame/accumulation.h). Never after index.
     std::uint64_t accumulated_since = 0;
 
     // The camera the frame is seen through, at the frame's time
