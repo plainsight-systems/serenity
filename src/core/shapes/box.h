@@ -39,6 +39,10 @@ inline Bounds bounds(const BoxData& box) {
 // translation and a uniform scale (contracts/transform.h), so the placed box is still
 // axis-aligned.
 bool box_touches(const BoxData& box, const contracts::Transform& transform, const Bounds& other);
+
+// The distance from `point` to the box's surface, in double: outside, to its
+// nearest point; inside, minus the distance to its nearest face.
+double box_distance(const BoxData& box, const contracts::Transform& transform, contracts::Float3 point);
 #endif
 
 }  // namespace shapes

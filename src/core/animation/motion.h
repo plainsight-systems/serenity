@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "core/animation/extent.h"
+#include "core/animation/flight.h"
 #include "core/animation/wander.h"
 #include "core/contracts/float3.h"
 #include "core/frame/frame_inputs.h"
@@ -24,10 +25,15 @@ namespace serenity::animation {
 // follows which motion, and its numbers, are the scene's (change-axes.md:
 // mechanism is code, values are data).
 //
-// A new kind adds a value here, an array of its parameters, and its
-// position() and extent(); it changes no other kind and nothing outside the
-// family. Free flight through a volume, a curve through waypoints drawn
-// from a seed, is the next: still a closed form in t.
+// Every kind is made clear of the scene's still shapes (obstacles.h): when
+// it is made, at load, it checks that what it moves can touch none of them,
+// for all time, and refuses to be made otherwise. So the guarantee is each
+// kind's own, in the terms its path allows: the wander's whole reach clear
+// (wander.h), a flight's every stretch (flight.h).
+//
+// A new kind adds a value here, an array of its parameters, its make
+// function, and its position() and extent(); it changes no other kind and
+// nothing outside the family.
 //
 // CPU only: motions are evaluated once a frame, on the CPU, and only the
 // positions they give reach the GPU, as the translations of the moving
@@ -35,6 +41,7 @@ namespace serenity::animation {
 
 enum class MotionKind : std::uint32_t {
     wander = 0,  // a drift about a fixed point (wander.h)
+    flight = 1,  // flying free among the still shapes (flight.h)
 };
 
 struct MotionRecord {
@@ -44,6 +51,7 @@ struct MotionRecord {
 
 struct Motions {
     std::vector<Wander> wanders;
+    std::vector<Flight> flights;
 };
 
 // Where the motion `record` names places its point at `t`. The record must

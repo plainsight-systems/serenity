@@ -4,6 +4,7 @@
 #include <span>
 #include <vector>
 
+#include "core/animation/glow.h"
 #include "core/animation/motion.h"
 #include "core/contracts/transform.h"
 #include "core/frame/frame_inputs.h"
@@ -12,54 +13,71 @@ namespace serenity::animation {
 
 // Axis: Animation, and logical-overview.md's Animate step.
 //
-// Placing what moves at a frame's time: each mover, a target that follows a
-// motion, has its transform (contract 10, contracts/transform.h) set to
-// where the motion puts it at t. This is how a motion's result changes a
-// transform, the Animation family's to decide; which targets move, and by
-// which motion, is the scene's, which fills in the movers from its file
-// (core/scene/scene.h). A target is an index into the transforms: for a
-// scene, its shape (core/shapes/primitive.h). The family names no shape kind
-// and no scene type.
+// Placing what moves and lighting what glows at a frame's time:
 //
-// A motion places a point (motion.h), and the point is the transform's
-// translation: animate() replaces the translation and keeps the rest, the
-// scale and the rotation. A motion that also turns what it moves (a marble
-// that rolls) will give the whole placement, and the change is here and in
-// its kind, nowhere else.
+//   - each mover, a target that follows a motion (motion.h), has its
+//     transform (contract 10, contracts/transform.h) set to where the motion
+//     puts it at t. A motion places a point, the transform's translation;
+//     animate() replaces the translation and keeps the scale and rotation. A
+//     motion that also turns what it moves (a marble that rolls) will give
+//     the whole placement, and the change is here and in its kind;
+//   - each glower, a target that follows a glow (glow.h), has its factor set
+//     to the glow's at t: the factor on its light's radiance.
 //
-// animate() writes into a span the caller owns, the frame's copy of the
-// transforms, which the GPU backend keeps in memory the GPU reads
-// (metal/scene/shape_transforms.h): the placements are computed once, in one
-// place. It writes only the movers' transforms; the rest the caller filled
-// at start-up and nothing changes them. Throws std::invalid_argument, before
-// writing anything, if a mover's target is not an index into `transforms`
-// (I.6).
+// How a motion or a glow changes its target is this family's to decide;
+// which targets move or glow, and by which kind, is the scene's, which fills
+// in the movers and glowers from its file (core/scene/scene.h). A mover's
+// target is an index into the transforms: for a scene, its shape. A
+// glower's is an index into the glows: for a scene, its sphere light
+// (core/lights/sphere_light.h). The family names no shape kind, no light
+// kind and no scene type.
 //
-// moves() says whether anything moves at all: what does not move looks the
-// same at every t, so a converging pass may average frames of any time
-// (metal/frame/accumulation.h), and the GPU backend builds its structures
-// once (metal/acceleration/scene_acceleration.h).
+// animate() writes into spans the caller owns, the frame's copies of the
+// transforms and the glows, which the GPU backend keeps in memory the GPU
+// reads (metal/scene/shape_transforms.h, metal/scene/light_glows.h): each is
+// computed once, in one place. It writes only the movers' transforms and the
+// glowers' factors; the rest the caller filled at start-up (every glow
+// starts at 1, its light's full radiance) and nothing changes them. Throws
+// std::invalid_argument, before writing anything, if a target is not an
+// index into its span (I.6).
 //
-// Cost, per frame: one motion and one 48-byte write per mover, O(movers),
-// nothing allocated (MEM.9). The thousands of fireflies of the goal are some
-// hundred microseconds of sines on one core, before anything is spread
-// across threads.
+// moves() says whether anything moves, which is what the acceleration
+// structure is rebuilt for (metal/acceleration/scene_acceleration.h);
+// changes() whether anything moves or glows, which is what makes frames at
+// two times two different scenes, so a converging pass may average frames
+// of any time only when nothing changes (core/frame/history.h).
+//
+// Cost, per frame: one motion and one 48-byte write per mover, one glow and
+// one 4-byte write per glower, O(movers + glowers), nothing allocated
+// (MEM.9).
 
 struct Mover {
     std::uint32_t target;  // the index of its transform
     MotionRecord motion;
 };
 
+struct Glower {
+    std::uint32_t target;  // the index of its glow factor
+    GlowRecord glow;
+};
+
 struct Animation {
     Motions motions;
-    std::vector<Mover> movers;  // in target order
+    Glows glows;
+    std::vector<Mover> movers;    // in target order
+    std::vector<Glower> glowers;  // in target order
 };
 
 inline bool moves(const Animation& animation) {
     return !animation.movers.empty();
 }
 
-// Places every mover at `t`; see above.
-void animate(const Animation& animation, frame::Seconds t, std::span<contracts::Transform> transforms);
+inline bool changes(const Animation& animation) {
+    return !animation.movers.empty() || !animation.glowers.empty();
+}
+
+// Places every mover and lights every glower at `t`; see above.
+void animate(const Animation& animation, frame::Seconds t, std::span<contracts::Transform> transforms,
+             std::span<float> glows);
 
 }  // namespace serenity::animation

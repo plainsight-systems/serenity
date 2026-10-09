@@ -26,6 +26,7 @@
 #include "metal/passes/preview/preview.h"
 #include "metal/passes/test_pattern/test_pattern.h"
 #include "metal/scene/shape_transforms.h"
+#include "metal/scene/light_glows.h"
 #include "metal/scene/scene_buffers.h"
 
 namespace serenity::metal {
@@ -53,18 +54,20 @@ namespace serenity::metal {
 // copied, and the structure is built over the scene's shapes as the Shape
 // family bounds them (shapes/shapes.h).
 //
-// Animate (logical-overview.md). The shapes' transforms are kept apart from
-// the scene's still arrays (metal/scene/shape_transforms.h), and the
+// Animate (logical-overview.md). The shapes' transforms and the lights'
+// glows are kept apart from the scene's still arrays
+// (metal/scene/shape_transforms.h, metal/scene/light_glows.h), and the
 // acceleration structure holds each shape as its geometry's bounds placed
-// by its transform (scene_acceleration.h). When shapes move
+// by its transform (scene_acceleration.h). When the scene changes
 // (core/animation/animate.h), recording a frame begins, before any pass, by
-// placing every moving shape at the frame's time, by the core
-// (animation::animate), into the frame slot's transforms, and recording the
-// slot's structure's build, from the moving shapes' new boxes, and its
-// barrier into the frame's encoder (SceneAcceleration::update). Every pass
-// of the frame then sees the scene at that time: the slot's transforms and
-// the slot's structure. The CPU's work is the moving shapes' alone; the
-// still shapes are not rewritten. The scene's motions are
+// placing every moving shape and lighting every glowing light at the
+// frame's time, by the core (animation::animate), into the frame slot's
+// transforms and glows; and, when shapes move, by recording the slot's
+// structure's build, from the moving shapes' new boxes, and its barrier into
+// the frame's encoder (SceneAcceleration::update). Every pass of the frame
+// then sees the scene at that time: the slot's transforms, glows and
+// structure. The CPU's work is the moving shapes' and the glowing lights'
+// alone; the rest is not rewritten. The scene's motions are
 // the core's to evaluate; the renderer only gives them the memory to write
 // into and the time (principle 10). It is also where the families meet: it
 // tells the acceleration structure which shapes move, by the movers'
@@ -88,7 +91,7 @@ namespace serenity::metal {
 // frame constants, and Film's counter of samples left out for not being finite
 // (metal/film/non_finite.h), which non_finite_samples() reads. A frame whose
 // inputs claim an image the history does not hold is refused, by Error, and so
-// is a frame recorded without being prepared, and, when the scene moves, a
+// is a frame recorded without being prepared, and, when the scene changes, a
 // frame at another time than the frames the image holds (accumulation.h).
 //
 // The target is a texture and its size, whatever owns it: the window's
@@ -172,7 +175,8 @@ private:
     std::unique_ptr<SceneBuffers> scene_;
     std::unique_ptr<SceneAcceleration> acceleration_;
     std::unique_ptr<ShapeTransforms> transforms_;
-    animation::Animation animation_;  // empty unless the scene moves
+    std::unique_ptr<LightGlows> glows_;
+    animation::Animation animation_;  // empty unless the scene changes
     std::unique_ptr<Accumulation> accumulation_;  // when a pass accumulates
     std::unique_ptr<NonFinite> non_finite_;       // with it
     struct Prepared {

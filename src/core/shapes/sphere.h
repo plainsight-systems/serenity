@@ -29,6 +29,10 @@ inline Bounds sphere_bounds() {
 // numbers, all floats, give an exact answer at a distance of 0. The
 // transform is a translation and a uniform scale (contracts/transform.h).
 bool sphere_touches(const contracts::Transform& transform, const Bounds& box);
+
+// The distance from `point` to the sphere's surface: |point - center| -
+// radius, in double.
+double sphere_distance(const contracts::Transform& transform, contracts::Float3 point);
 #endif
 
 }  // namespace shapes

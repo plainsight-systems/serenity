@@ -19,18 +19,23 @@ namespace serenity {
 namespace shaders {
 
 // Every light, as a shader reads it: the records, which light each shape
-// is, and one array per light kind, which a record indexes; and the frame's
+// is, and one array per light kind, which a record indexes; the frame's
 // shape transforms, where a sphere light finds where it is and how big
 // (core/lights/sphere_light.h): the same array, at the same address, that
-// hits are placed by, so a light is always where its shape is.
+// hits are placed by, so a light is always where its shape is; and the
+// frame's glows, one factor per sphere light on its radiance
+// (metal/scene/light_glows.h). Every answer below reads a sphere light
+// through sphere_light_at(), so none can see it brighter or elsewhere than
+// another.
 struct Lights {
     device const serenity::lights::LightRecord* records;
     device const uint* shape_lights;
     device const serenity::lights::SphereLightData* spheres;
     device const serenity::contracts::Transform* transforms;
+    device const float* sphere_glows;
 };
 
-// Sphere light `index`, where its shape is this frame.
+// Sphere light `index`, where its shape is this frame, as bright as its glow.
 inline SphereLight sphere_light_at(Lights lights, uint index) {
     const serenity::lights::SphereLightData light = lights.spheres[index];
     return sphere_light(light, lights.transforms[light.shape]);

@@ -25,24 +25,25 @@ namespace serenity::frame {
 //     image is made anew if it has no size yet or another one;
 //   - or it is the next frame (index is the one after the last held), of
 //     the same accumulated_since and the same size, and, when the scene
-//     moves (core/animation/animate.h), at the same time exactly: frames at
-//     two instants are two scenes, and their mean a blur no camera sees. A
-//     still scene looks the same at every t, so its frames join whatever
-//     their times;
+//     changes (core/animation/animate.h: anything moves or glows), at the
+//     same time exactly: frames at two instants are two scenes, and their
+//     mean a blur no camera sees. A still scene looks the same at every t,
+//     so its frames join whatever their times;
 //   - and the image would hold at most 2^24 - 1 frames
 //     (max_accumulated_frames), past which a pixel's count, a float, is no
 //     longer exact.
 //
 // Anything else is refused by HistoryError: a frame skipped, a size changed
 // or an accumulated_since moved without starting over, an accumulated_since
-// after the frame, another instant of a moving scene, or one frame too many.
+// after the frame, another instant of a changing scene, or one frame too
+// many.
 // The image would then hold something other than what the frame claims to
 // show, and a frame that lies about its image is refused, not shown
 // (principle 1).
 //
 // The window's plan (LiveHistory): its time always advances, so it starts
 // over whenever what it shows would otherwise change: its size or what it
-// views (the caller says), every frame while the scene moves, and when the
+// views (the caller says), every frame while the scene changes, and when the
 // image is full.
 //
 // The headless renderer's plan (headless_sample): each of its frames is N
@@ -53,8 +54,8 @@ namespace serenity::frame {
 //   - a still scene's, or frozen time's, every sample from its first
 //     frame's first on: it looks the same at every frame's time, so the
 //     whole run converges;
-//   - a moving scene's, time advancing, frame i's own N samples, started over
-//     at each frame.
+//   - a changing scene's, time advancing, frame i's own N samples, started
+//     over at each frame.
 //
 // A graph that accumulates nothing (frame::accumulates) has one sample a
 // frame, whatever N: its frames are the same function of the same inputs, so
@@ -75,9 +76,9 @@ struct Joined {
 
 class History {
 public:
-    // Frame `inputs`, at `size`, of a scene that moves or not, joins the
+    // Frame `inputs`, at `size`, of a scene that changes or not, joins the
     // image; see above. Throws HistoryError, changing nothing, if it may not.
-    Joined join(const FrameInputs& inputs, Extent size, bool scene_moves);
+    Joined join(const FrameInputs& inputs, Extent size, bool scene_changes);
 
 private:
     bool made_ = false;  // whether the image has a size yet
@@ -90,7 +91,7 @@ private:
 // A running window's accumulated_since, frame by frame.
 class LiveHistory {
 public:
-    explicit LiveHistory(bool scene_moves) : moves_(scene_moves) {}
+    explicit LiveHistory(bool scene_changes) : changes_(scene_changes) {}
 
     // accumulated_since for frame `index`, the frames asked for in order;
     // `view_changed` when what the window shows changed since the last
@@ -98,7 +99,7 @@ public:
     std::uint64_t since(std::uint64_t index, bool view_changed);
 
 private:
-    bool moves_;
+    bool changes_;
     std::uint64_t since_ = 0;
 };
 
@@ -109,18 +110,18 @@ struct Sample {
 };
 
 // How the headless renderer renders: `samples` asked for per frame, from
-// frame `first`, for a graph that accumulates or not, a scene that moves or
+// frame `first`, for a graph that accumulates or not, a scene that changes or
 // not, time frozen or not.
 struct HeadlessPlan {
     std::uint64_t first = 0;
     std::uint64_t samples = 1;  // rendered per frame: 1 for a graph that accumulates nothing
-    bool instants = false;      // each frame's image its own: the scene moves and time advances
+    bool instants = false;      // each frame's image its own: the scene changes and time advances
 
     // Sample `s` (< samples) of frame `frame`.
     Sample sample(std::uint64_t frame, std::uint64_t s) const;
 };
 
-HeadlessPlan plan_headless(std::uint64_t first, std::uint64_t samples, bool accumulates, bool scene_moves,
+HeadlessPlan plan_headless(std::uint64_t first, std::uint64_t samples, bool accumulates, bool scene_changes,
                            bool time_frozen);
 
 }  // namespace serenity::frame

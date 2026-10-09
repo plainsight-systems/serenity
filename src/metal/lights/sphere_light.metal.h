@@ -17,10 +17,11 @@
 // sample_light draws over the cone, pdf 1 / (its solid angle), and its
 // radiance is the same everywhere on it and every way.
 //
-// Each takes the light and its shape's transform, which the emitter reads
-// from the frame's transforms by the light's `shape` (emitter.metal.h): the
-// center is the transform's translation and the radius its scale
-// (core/contracts/transform.h), wherever this frame placed it
+// Each takes the light as sphere_light() makes it from its data, its
+// shape's transform and its glow, which the emitter reads from the frame's
+// arrays (emitter.metal.h): the center is the transform's translation and
+// the radius its scale (core/contracts/transform.h), wherever this frame
+// placed it, and the radiance the light's peak times its glow this frame
 // (core/animation/animate.h).
 
 #include <metal_stdlib>

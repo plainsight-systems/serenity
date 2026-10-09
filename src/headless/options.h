@@ -42,7 +42,7 @@ namespace serenity::headless {
 //   - a scene whose shapes move (core/animation/animate.h), time
 //     advancing: the mean of frame i's own N samples, started over at each
 //     frame, since frames at two instants are two scenes
-//     (metal/frame/accumulation.h). This is how a movie of moving fireflies
+//     (metal/frame/accumulation.h). This is how a movie of moving, blinking fireflies
 //     is made clean: N samples of each instant.
 //
 // A graph that converges over nothing renders each frame once, whatever N:

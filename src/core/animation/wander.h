@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "core/animation/extent.h"
+#include "core/animation/obstacles.h"
 #include "core/contracts/float3.h"
 #include "core/frame/frame_inputs.h"
 
@@ -52,8 +53,9 @@ namespace serenity::animation {
 // result is rounded to float once, at the end.
 //
 // The extent is the box the center never leaves: anchor +/- reach on each
-// axis. The scene reader checks that the shape, wherever in it, touches
-// nothing that does not also move (core/scene/scene.h).
+// axis. make_wander() checks that the body, wherever in it (the extent grown
+// by the body's radius, rounded outward), touches no still shape
+// (Obstacles::touches, obstacles.h), and refuses otherwise.
 //
 // Not performance-sensitive per wander: make_wander() runs once, at load;
 // position() is 9 sines in double, once per moving shape per frame.
@@ -68,13 +70,14 @@ struct Wander {
     std::array<std::array<double, 3>, 3> phase{};
 };
 
-// The path for these numbers, by steps 1 to 3. `reach` and `speed` must be
-// finite and greater than 0, and every point of the extent a float:
-// |anchor| + reach no greater than FLT_MAX on each axis, in double, so no
-// position the path reaches rounds to an infinity. The scene reader makes
-// them so, with the moving shape's size added (core/scene/scene.h); this
-// throws std::invalid_argument for numbers that are not (I.6).
-Wander make_wander(contracts::Float3 anchor, float reach, float speed, std::uint64_t seed);
+// The path for these numbers, by steps 1 to 3, of a body of radius `body`
+// kept clear of `obstacles`. `reach` and `speed` must be finite and greater
+// than 0, and every point the body can reach a float: |anchor| + reach +
+// body no greater than FLT_MAX on each axis, in double, so no position rounds
+// to an infinity. Throws std::invalid_argument for numbers that are not, or
+// a reach whose body could touch a still shape (I.6).
+Wander make_wander(contracts::Float3 anchor, float reach, float speed, std::uint64_t seed, float body,
+                   const Obstacles& obstacles);
 
 // Where it is at `t`.
 contracts::Float3 position(const Wander& wander, frame::Seconds t);

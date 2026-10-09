@@ -41,6 +41,7 @@ struct FrameResources {
     // structure when the frame has no scene.
     const SceneBuffers::Addresses* scene = nullptr;
     MTL::GPUAddress transforms = 0;
+    MTL::GPUAddress glows = 0;  // the sphere lights' glows this frame (metal/scene/light_glows.h)
     MTL::ResourceID acceleration{};
 };
 

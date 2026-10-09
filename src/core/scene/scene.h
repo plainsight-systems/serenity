@@ -87,33 +87,80 @@ namespace serenity::scene {
 //
 //   [[shapes]]
 //   kind = "sphere"
-//   center = [1, 1.4, -0.5]         # a moving shape's anchor
+//   name = "marble"                 # optional: what a flight may circle
+//   center = [2, 0.4, 0]
+//   radius = 0.4
+//   material = "glass"
+//
+//   [[shapes]]
+//   kind = "sphere"
+//   center = [1, 1.4, -0.5]         # a moving shape's anchor, or start
 //   radius = 0.03
 //   material = "glow"
 //   motion = { kind = "wander", reach = 0.25, speed = 0.3, seed = 7 }
+//   glow = { kind = "rhythm", period = 5.5, flash = 0.35, dim = 0.05, seed = 3 }
+//
+//   [[shapes]]
+//   kind = "sphere"
+//   center = [-1, 1.2, 1]
+//   radius = 0.03
+//   material = "glow"
+//   motion = { kind = "flight", min = [-3, 0.1, -3], max = [3, 2.5, 3],
+//              targets = ["marble"], speed = 0.5, clearance = 0.08,
+//              circle = 3, swoop = 1, drift = 1, seed = 11 }
+//   glow = { kind = "flight", flash = 0.35, dim = 0.05 }
+//
+// A name is optional and unique among the shapes: it is how a flight names
+// what it circles.
 //
 // A motion (core/animation/motion.h) is optional, and only a sphere has
-// one. A wander (core/animation/wander.h) drifts about the sphere's center:
-// at most `reach` along each axis, at a root-mean-square `speed` in meters
-// a second, on a path drawn from `seed`, an integer from 0. The shape must
-// touch no shape that does not move, wherever its motion takes it: its
-// motion's extent, grown by its radius on every side, may not meet any
-// still shape, by that shape kind's exact test (shapes/shapes.h); and that
-// grown extent must lie within float's range on every axis, computed in
-// double, so no frame places it where a float cannot hold.
-// Moving shapes are not checked against each other: fireflies may pass
-// through one another, which renders as what it is.
+// one. Each kind is made clear of the still shapes, by that shape kind's
+// exact tests (shapes/shapes.h), and refused otherwise (motion.h):
+//
+//   - wander (core/animation/wander.h) drifts about the sphere's center: at
+//     most `reach` along each axis, at a root-mean-square `speed` in meters
+//     a second, on a path drawn from `seed`, an integer from 0. Its reach,
+//     grown by the sphere's radius, may meet no still shape;
+//   - flight (core/animation/flight.h) flies free within the box `min` to
+//     `max`, starting at the sphere's center: circling the `targets`, still
+//     spheres named in this file (none, and `circle` must be 0), swooping
+//     and drifting, in the proportions `circle`, `swoop` and `drift` (each 0
+//     or more, not all 0), at a cruising `speed`, its surface at least
+//     `clearance` meters from every still surface, on a loop drawn from
+//     `seed`. Its every stretch is checked clear at load.
+//
+// Everything a motion can reach, grown by the sphere's radius, must lie
+// within float's range on every axis, computed in double, so no frame places
+// it where a float cannot hold. Moving shapes are not checked against each
+// other: fireflies may pass through one another, which renders as what it
+// is.
+//
+// A glow (core/animation/glow.h) is optional, and only a sphere that is a
+// light has one; without it, the light shines at its radiance always. Its
+// brightness is a factor on the radiance, from `dim` between flashes (in
+// [0, 1)) up to 1 at a flash's peak, a flash lasting `flash` seconds:
+//
+//   - rhythm flashes every `period` seconds, each moved by up to a fifth of
+//     it, drawn from `seed`; `flash` at most half the period;
+//   - flight flashes when the light's flight says: on each swoop's climb,
+//     now and then while circling or drifting. The sphere's motion must be a
+//     flight; `flash` under a second.
 //
 // Every key is checked, as in graph files: a missing or unknown key, a
 // value of the wrong type or out of range (a radius or size not greater
 // than 0, an ior not greater than 1, an f0 outside [0, 1], a roughness
 // outside (0, 1], a negative radiance, a box whose min is not below its max,
 // a camera that cannot be framed, a reach or speed not greater than 0, a
-// seed below 0, a motion that could carry its shape out of float's range),
-// an unknown kind, a name used and never defined, an
-// emissive material or a motion on anything but a sphere, a moving shape
-// that could touch a still one, or no shapes at all is an Error naming the
-// file and the line (E.2, E.14). Nothing has a silent default except `up`.
+// seed below 0, a motion that could carry its shape out of float's range, a
+// flight's box whose min is not below its max, a negative clearance or
+// weight, weights all 0, a circle weight with no targets, a period or flash
+// out of range, a dim outside [0, 1)), an unknown kind, a name used twice, a
+// name used and never defined, a target that is not a still sphere, an
+// emissive material or a motion on anything but a sphere, a glow on
+// anything but a light, a flight glow on a light that does not fly, a motion
+// that cannot be made clear of the still shapes, or no shapes at all is an
+// Error naming the file and the line (E.2, E.14). Nothing has a silent
+// default except `up`.
 //
 // Not performance-sensitive: read once, at start-up.
 
@@ -154,17 +201,19 @@ struct SceneDescription {
     std::vector<std::uint32_t> shape_lights;
     lights::LightCounts light_counts{};
 
-    // Which shapes move, and their motions: a mover per moving shape, its
-    // target the shape's index (core/animation/animate.h). Empty for a still
-    // scene. The transforms above place each moving shape at its anchor,
-    // where nothing renders it: a frame places it at its time first.
+    // Which shapes move and which lights glow, and how: a mover per moving
+    // shape, its target the shape's index, and a glower per glowing light,
+    // its target the light's index among the sphere lights
+    // (core/animation/animate.h). Empty for a still scene. The transforms
+    // above place each moving shape at its anchor or start, where nothing
+    // renders it: a frame places it at its time first.
     animation::Animation animation;
 };
 
-// Whether anything in `scene` moves: what the history plans ask
-// (core/frame/history.h).
-inline bool moves(const SceneDescription& scene) {
-    return animation::moves(scene.animation);
+// Whether anything in `scene` changes with time, moving or glowing: what
+// the history plans ask (core/frame/history.h).
+inline bool changes(const SceneDescription& scene) {
+    return animation::changes(scene.animation);
 }
 
 // Reads the scene file at `path`.

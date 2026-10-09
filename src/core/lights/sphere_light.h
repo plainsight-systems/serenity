@@ -26,7 +26,9 @@
 // moved once, as a shape (core/animation/animate.h), with its light following,
 // and no second copy of its center to fall out of step. It is also the
 // firefly's own coordinates, in which a reservoir keeps a sample on it
-// (logical-overview.md, principle 6). What the light adds is its radiance.
+// (logical-overview.md, principle 6). What the light adds is its radiance:
+// its peak, which its glow this frame scales (core/animation/glow.h,
+// metal/scene/light_glows.h), 1 for a light that does not blink.
 
 #if defined(__METAL_VERSION__)
 #include <metal_stdlib>

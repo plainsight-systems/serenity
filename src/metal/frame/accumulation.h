@@ -57,9 +57,9 @@ public:
     ~Accumulation() = default;
 
     // The count of frames the image holds before frame `inputs`, at `size`,
-    // of a scene that moves or not; see above. Throws Error if the core's
+    // of a scene that changes or not; see above. Throws Error if the core's
     // rule refuses the frame, or the image cannot be made.
-    std::uint32_t prepare(const frame::FrameInputs& inputs, frame::Extent size, bool scene_moves);
+    std::uint32_t prepare(const frame::FrameInputs& inputs, frame::Extent size, bool scene_changes);
 
     // The image, valid until the next prepare(); null before the first.
     MTL::Texture* texture() const { return texture_.get(); }
