@@ -17,7 +17,7 @@ kernel void light_cone(device float4* out [[buffer(0)]],
                        constant float4& point_and_n [[buffer(2)]],
                        constant serenity::contracts::Transform& placed [[buffer(3)]],
                        uint i [[thread_position_in_grid]]) {
-    const SphereLight light = sphere_light(data, placed);
+    const SphereLight light = sphere_light(data, placed, 1.0f);
     const uint n = uint(point_and_n.w);
     if (i >= n * n) {
         return;
@@ -36,7 +36,7 @@ kernel void light_far(device float4* out [[buffer(0)]],
                       constant float4& point [[buffer(2)]],
                       constant serenity::contracts::Transform& placed [[buffer(3)]],
                       uint i [[thread_position_in_grid]]) {
-    const SphereLight light = sphere_light(data, placed);
+    const SphereLight light = sphere_light(data, placed, 1.0f);
     if (i != 0) {
         return;
     }

@@ -62,7 +62,7 @@ TEST_CASE("a moving scene's image holds one instant; a still scene's, any") {
     const frame::Extent size{32, 24};
     {
         const scene::SceneDescription moving = scene::parse(scene_text(true), "moving");
-        REQUIRE(scene::moves(moving));
+        REQUIRE(scene::changes(moving));
         metal::Device device;
         metal::Submission submission(device);
         metal::Renderer renderer(device, submission, path, &moving);
@@ -80,7 +80,7 @@ TEST_CASE("a moving scene's image holds one instant; a still scene's, any") {
     }
     {
         const scene::SceneDescription still = scene::parse(scene_text(false), "still");
-        REQUIRE_FALSE(scene::moves(still));
+        REQUIRE_FALSE(scene::changes(still));
         metal::Device device;
         metal::Submission submission(device);
         metal::Renderer renderer(device, submission, path, &still);

@@ -106,6 +106,8 @@ target_include_directories(stb_image_write SYSTEM INTERFACE "${stb_SOURCE_DIR}")
 # ---------------------------------------------------------------------------
 add_library(serenity_core STATIC
     src/core/animation/animate.cpp
+    src/core/animation/flight.cpp
+    src/core/animation/glow.cpp
     src/core/animation/motion.cpp
     src/core/animation/wander.cpp
     src/core/camera/pinhole.cpp
@@ -135,6 +137,7 @@ add_library(serenity_metal STATIC
     src/metal/device/static_arrays.cpp
     src/metal/device/submission.cpp
     src/metal/acceleration/scene_acceleration.cpp
+    src/metal/scene/light_glows.cpp
     src/metal/scene/scene_buffers.cpp
     src/metal/scene/shape_transforms.cpp
     src/metal/film/non_finite.cpp

@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
         measurement::FrameTimes frame_times(frame::Seconds(1.0));
         std::uint64_t index = 0;
         // When the image starts over is the core's plan (core/frame/history.h).
-        frame::LiveHistory history(scene && scene::moves(*scene));
+        frame::LiveHistory history(scene && scene::changes(*scene));
         for (;;) {
             const app::Window::Events events = window.poll();
             if (events.quit) {

@@ -10,6 +10,8 @@ contracts::Float3 position(const Motions& motions, MotionRecord record, frame::S
     switch (record.kind) {
     case MotionKind::wander:
         return position(motions.wanders.at(record.index), t);
+    case MotionKind::flight:
+        return position(motions.flights.at(record.index), t);
     }
     return {};
 }
@@ -18,6 +20,8 @@ Extent extent(const Motions& motions, MotionRecord record) {
     switch (record.kind) {
     case MotionKind::wander:
         return extent(motions.wanders.at(record.index));
+    case MotionKind::flight:
+        return extent(motions.flights.at(record.index));
     }
     return {};
 }

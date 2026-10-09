@@ -114,6 +114,8 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         animation_ = scene->animation;
         const bool moves = animation::moves(animation_);
         transforms_ = std::make_unique<ShapeTransforms>(device, submission, scene->shapes.transforms, moves);
+        glows_ = std::make_unique<LightGlows>(device, submission, scene->light_counts.spheres,
+                                              !animation_.glowers.empty());
         // Where the families meet: the acceleration structure learns which
         // shapes move, by the movers' targets, and nothing else of them.
         std::vector<std::uint32_t> moving;
@@ -131,7 +133,7 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
         return;
     }
     prepared_.reset();
-    const std::uint32_t held = accumulation_->prepare(inputs, size, animation::moves(animation_));
+    const std::uint32_t held = accumulation_->prepare(inputs, size, animation::changes(animation_));
     prepared_ = Prepared{inputs.index, size, held};
 }
 
@@ -184,6 +186,7 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
     if (scene_) {
         resources.scene = &scene_->addresses();
         resources.transforms = transforms_->address(frame.slot);
+        resources.glows = glows_->address(frame.slot);
         resources.acceleration = acceleration_->resource(frame.slot);
     }
     if (accumulation_) {
@@ -194,13 +197,16 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
     }
 
     MTL4::ComputeCommandEncoder* encoder = frame.commands->computeCommandEncoder();
-    // Animate: every moving shape placed at the frame's time, by the core,
-    // in the slot's transforms, and the slot's structure rebuilt over them, before
-    // any pass traces it.
-    if (scene_ && animation::moves(animation_)) {
+    // Animate: every moving shape placed and every glowing light lit at the
+    // frame's time, by the core, in the slot's transforms and glows; and,
+    // when shapes move, the slot's structure rebuilt over them, before any
+    // pass traces it.
+    if (scene_ && animation::changes(animation_)) {
         const std::span<contracts::Transform> placed = transforms_->transforms(frame.slot);
-        animation::animate(animation_, inputs.time, placed);
-        acceleration_->update(encoder, frame.slot, placed);
+        animation::animate(animation_, inputs.time, placed, glows_->glows(frame.slot));
+        if (animation::moves(animation_)) {
+            acceleration_->update(encoder, frame.slot, placed);
+        }
     }
     encoder->setArgumentTable(resources.arguments);
     for (const Pass& pass : passes_) {

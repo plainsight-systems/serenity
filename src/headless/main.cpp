@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
         // core's plan (core/frame/history.h).
         const frame::HeadlessPlan plan =
             frame::plan_headless(options.first, options.samples, frame::accumulates(schedule),
-                                 scene && scene::moves(*scene), options.time.has_value());
+                                 scene && scene::changes(*scene), options.time.has_value());
 
         // Counted, so the last frame there can be is reachable without its
         // successor (headless/options.h).

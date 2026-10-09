@@ -20,6 +20,16 @@ namespace {
 
 constexpr contracts::Float3 anchor{1.0f, 2.0f, -3.0f};
 
+// A scene with no still shapes, as contract 11 asks of one: nothing to keep
+// clear of. A stand-in for the scene's own answer (core/scene/scene.cpp),
+// which the scene tests exercise.
+class Nothing final : public contracts::Obstacles {
+public:
+    double distance(contracts::Float3) const override { return std::numeric_limits<double>::infinity(); }
+    bool touches(const contracts::Box&) const override { return false; }
+};
+const Nothing nothing;
+
 double axis(contracts::Float3 v, int a) {
     return a == 0 ? v.x : (a == 1 ? v.y : v.z);
 }
@@ -27,7 +37,7 @@ double axis(contracts::Float3 v, int a) {
 }  // namespace
 
 TEST_CASE("step 2: each axis's amplitudes sum to the reach") {
-    const Wander w = animation::make_wander(anchor, 0.25f, 0.3f, 7);
+    const Wander w = animation::make_wander(anchor, 0.25f, 0.3f, 7, 0.0f, nothing);
     for (int a = 0; a < 3; ++a) {
         double sum = 0.0;
         for (int k = 0; k < 3; ++k) {
@@ -39,7 +49,7 @@ TEST_CASE("step 2: each axis's amplitudes sum to the reach") {
 }
 
 TEST_CASE("the path never leaves its extent, anchor +/- reach") {
-    const Wander w = animation::make_wander(anchor, 0.25f, 0.3f, 7);
+    const Wander w = animation::make_wander(anchor, 0.25f, 0.3f, 7, 0.0f, nothing);
     const animation::Extent e = animation::extent(w);
     CHECK(e.min.x <= 0.75f);
     CHECK(e.max.y >= 2.25f);
@@ -59,7 +69,7 @@ TEST_CASE("the path never leaves its extent, anchor +/- reach") {
 
 TEST_CASE("step 3: its root-mean-square speed is the speed") {
     const float speed = 0.3f;
-    const Wander w = animation::make_wander(anchor, 0.25f, speed, 7);
+    const Wander w = animation::make_wander(anchor, 0.25f, speed, 7, 0.0f, nothing);
     // The mean of |velocity|^2 over a long time, the velocity by central
     // differences of the exact path.
     const double h = 1e-3;
@@ -83,9 +93,9 @@ TEST_CASE("step 3: its root-mean-square speed is the speed") {
 }
 
 TEST_CASE("a function of the seed alone: the same seed the same path, another seed another") {
-    const Wander a = animation::make_wander(anchor, 0.25f, 0.3f, 7);
-    const Wander b = animation::make_wander(anchor, 0.25f, 0.3f, 7);
-    const Wander c = animation::make_wander(anchor, 0.25f, 0.3f, 8);
+    const Wander a = animation::make_wander(anchor, 0.25f, 0.3f, 7, 0.0f, nothing);
+    const Wander b = animation::make_wander(anchor, 0.25f, 0.3f, 7, 0.0f, nothing);
+    const Wander c = animation::make_wander(anchor, 0.25f, 0.3f, 8, 0.0f, nothing);
     for (double t : {0.0, 1.5, 3600.0}) {
         const contracts::Float3 pa = animation::position(a, Seconds(t));
         const contracts::Float3 pb = animation::position(b, Seconds(t));
@@ -103,14 +113,14 @@ TEST_CASE("a function of the seed alone: the same seed the same path, another se
 }
 
 TEST_CASE("numbers it cannot make a path of are refused") {
-    CHECK_THROWS_AS(animation::make_wander(anchor, 0.0f, 0.3f, 7), std::invalid_argument);
-    CHECK_THROWS_AS(animation::make_wander(anchor, 0.25f, std::numeric_limits<float>::infinity(), 7),
+    CHECK_THROWS_AS(animation::make_wander(anchor, 0.0f, 0.3f, 7, 0.0f, nothing), std::invalid_argument);
+    CHECK_THROWS_AS(animation::make_wander(anchor, 0.25f, std::numeric_limits<float>::infinity(), 7, 0.0f, nothing),
                     std::invalid_argument);
-    CHECK_THROWS_AS(animation::make_wander({3e38f, 0.0f, 0.0f}, 1e38f, 0.3f, 7), std::invalid_argument);
+    CHECK_THROWS_AS(animation::make_wander({3e38f, 0.0f, 0.0f}, 1e38f, 0.3f, 7, 0.0f, nothing), std::invalid_argument);
 }
 
 TEST_CASE("the extent is rounded outward, so it holds every point the path reaches") {
-    const Wander w = animation::make_wander({0.1f, 0.1f, 0.1f}, 0.2f, 0.3f, 7);
+    const Wander w = animation::make_wander({0.1f, 0.1f, 0.1f}, 0.2f, 0.3f, 7, 0.0f, nothing);
     const animation::Extent e = animation::extent(w);
     CHECK(static_cast<double>(e.max.x) >= static_cast<double>(0.1f) + static_cast<double>(0.2f));
     CHECK(static_cast<double>(e.min.x) <= static_cast<double>(0.1f) - static_cast<double>(0.2f));
@@ -118,13 +128,13 @@ TEST_CASE("the extent is rounded outward, so it holds every point the path reach
 
 TEST_CASE("Animate places only the movers: the translation replaced, the scale kept") {
     animation::Animation anim;
-    anim.motions.wanders.push_back(animation::make_wander(anchor, 0.25f, 0.3f, 7));
+    anim.motions.wanders.push_back(animation::make_wander(anchor, 0.25f, 0.3f, 7, 0.0f, nothing));
     anim.movers.push_back({1, {animation::MotionKind::wander, 0}});
     CHECK(animation::moves(anim));
 
     std::vector<contracts::Transform> transforms = {contracts::placed({9.0f, 9.0f, 9.0f}, 2.0f),
                                                     contracts::placed(anchor, 0.05f)};
-    animation::animate(anim, Seconds(1.0), transforms);
+    animation::animate(anim, Seconds(1.0), transforms, {});
     const contracts::Float3 p = animation::position(anim.motions.wanders[0], Seconds(1.0));
     CHECK(transforms[1].m[0][3] == p.x);
     CHECK(transforms[1].m[1][3] == p.y);
@@ -138,7 +148,7 @@ TEST_CASE("Animate places only the movers: the translation replaced, the scale k
     // A target past the transforms is refused before anything is written.
     anim.movers.insert(anim.movers.begin(), animation::Mover{0, {animation::MotionKind::wander, 0}});
     anim.movers.push_back({5, {animation::MotionKind::wander, 0}});
-    CHECK_THROWS_AS(animation::animate(anim, Seconds(2.0), transforms), std::invalid_argument);
+    CHECK_THROWS_AS(animation::animate(anim, Seconds(2.0), transforms, {}), std::invalid_argument);
     CHECK(transforms[0].m[0][3] == 9.0f);
 }
 

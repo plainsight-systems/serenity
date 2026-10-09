@@ -12,7 +12,7 @@ std::string at(Extent size) {
 
 }  // namespace
 
-Joined History::join(const FrameInputs& inputs, Extent size, bool scene_moves) {
+Joined History::join(const FrameInputs& inputs, Extent size, bool scene_changes) {
     if (inputs.accumulated_since > inputs.index) {
         throw HistoryError("frame " + std::to_string(inputs.index) + " accumulates since frame " +
                            std::to_string(inputs.accumulated_since) + ", after itself");
@@ -43,17 +43,17 @@ Joined History::join(const FrameInputs& inputs, Extent size, bool scene_moves) {
                                   : " (nothing yet)") +
                            "; a frame skipped, or a change without starting over");
     }
-    if (scene_moves && inputs.time != time_) {
+    if (scene_changes && inputs.time != time_) {
         throw HistoryError("frame " + std::to_string(inputs.index) + ", at " + std::to_string(inputs.time.count()) +
                            " s, would join frames at " + std::to_string(time_.count()) +
-                           " s; the scene moves, so an image holds one instant (start over at each new time)");
+                           " s; the scene changes, so an image holds one instant (start over at each new time)");
     }
     next_ = inputs.index + 1;
     return Joined{static_cast<std::uint32_t>(held), false};
 }
 
 std::uint64_t LiveHistory::since(std::uint64_t index, bool view_changed) {
-    if (view_changed || moves_ || index - since_ > max_accumulated_frames) {
+    if (view_changed || changes_ || index - since_ > max_accumulated_frames) {
         since_ = index;
     }
     return since_;
@@ -63,9 +63,9 @@ Sample HeadlessPlan::sample(std::uint64_t frame, std::uint64_t s) const {
     return Sample{frame * samples + s, (instants ? frame : first) * samples};
 }
 
-HeadlessPlan plan_headless(std::uint64_t first, std::uint64_t samples, bool accumulates, bool scene_moves,
+HeadlessPlan plan_headless(std::uint64_t first, std::uint64_t samples, bool accumulates, bool scene_changes,
                            bool time_frozen) {
-    return HeadlessPlan{first, accumulates ? samples : 1u, scene_moves && !time_frozen};
+    return HeadlessPlan{first, accumulates ? samples : 1u, scene_changes && !time_frozen};
 }
 
 }  // namespace serenity::frame

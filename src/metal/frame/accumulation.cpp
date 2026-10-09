@@ -9,10 +9,10 @@ namespace serenity::metal {
 Accumulation::Accumulation(const Device& device, Submission& submission)
     : device_(NS::RetainPtr(device.handle())), submission_(submission) {}
 
-std::uint32_t Accumulation::prepare(const frame::FrameInputs& inputs, frame::Extent size, bool scene_moves) {
+std::uint32_t Accumulation::prepare(const frame::FrameInputs& inputs, frame::Extent size, bool scene_changes) {
     frame::Joined joined;
     try {
-        joined = history_.join(inputs, size, scene_moves);
+        joined = history_.join(inputs, size, scene_changes);
     } catch (const frame::HistoryError& refused) {
         throw Error(refused.what());
     }

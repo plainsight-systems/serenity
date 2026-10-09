@@ -12,6 +12,7 @@
 #include <doctest/doctest.h>
 
 #include "core/animation/animate.h"
+#include "core/contracts/transform.h"
 #include "core/frame/graph_file.h"
 #include "core/scene/scene.h"
 #include "metal/device/device.h"
@@ -133,4 +134,66 @@ TEST_CASE("a moving scene at time t renders exactly as the scene still, placed w
     }
     // And the fireflies did move: the first and last frames differ.
     CHECK(animated.front() != animated.back());
+}
+
+TEST_CASE("a flying, blinking scene at time t renders exactly as the scene still, placed and lit as at t") {
+    const scene::SceneDescription flying = scene::load(SERENITY_SCENES_DIR "/brass_sphere_flight.toml");
+    REQUIRE(animation::moves(flying.animation));
+    REQUIRE(flying.animation.glowers.size() == 6);
+    const frame::Extent size{96, 64};
+    const std::vector<double> times = {0.0, 2.6, 13.1, 77.7};
+
+    std::vector<std::vector<std::uint8_t>> animated;
+    {
+        metal::Device device;
+        metal::Submission submission(device);
+        metal::Renderer renderer(device, submission, graph("\"preview\""), &flying);
+        std::vector<std::unique_ptr<metal::Offscreen>> targets;
+        std::uint64_t sequence = 0;
+        for (std::size_t i = 0; i < times.size(); ++i) {
+            targets.push_back(std::make_unique<metal::Offscreen>(device, submission, size));
+            sequence = metal::render_to_offscreen(
+                submission, *targets.back(), renderer,
+                frame::FrameInputs{.time = frame::Seconds(times[i]), .index = i, .accumulated_since = i,
+                                   .camera = flying.camera});
+        }
+        (void)submission.wait_until_complete(sequence);
+        for (const auto& target : targets) {
+            animated.emplace_back(std::size_t{size.width} * size.height * 4);
+            target->read_rgba(animated.back());
+        }
+    }
+
+    bool some_dim = false;
+    for (std::size_t i = 0; i < times.size(); ++i) {
+        // The same scene, nothing moving or glowing: each firefly placed
+        // where its flight is at t, its radiance scaled by its glow at t.
+        scene::SceneDescription still = flying;
+        still.animation = {};
+        const frame::Seconds t(times[i]);
+        for (const animation::Mover& m : flying.animation.movers) {
+            still.shapes.transforms[m.target] = contracts::moved_to(
+                still.shapes.transforms[m.target], animation::position(flying.animation.motions, m.motion, t));
+        }
+        for (const animation::Glower& g : flying.animation.glowers) {
+            const float factor = animation::glow(flying.animation.glows, g.glow, t);
+            some_dim = some_dim || factor < 0.5f;
+            contracts::Float3& radiance = still.sphere_lights[g.target].radiance;
+            radiance = {radiance.x * factor, radiance.y * factor, radiance.z * factor};
+        }
+        metal::Device device;
+        metal::Submission submission(device);
+        metal::Renderer renderer(device, submission, graph("\"preview\""), &still);
+        metal::Offscreen target(device, submission, size);
+        const std::uint64_t sequence = metal::render_to_offscreen(
+            submission, target, renderer,
+            frame::FrameInputs{.time = frame::Seconds(0.0), .index = 0, .accumulated_since = 0, .camera = still.camera});
+        (void)submission.wait_until_complete(sequence);
+        std::vector<std::uint8_t> expected(std::size_t{size.width} * size.height * 4);
+        target.read_rgba(expected);
+        INFO("time " << times[i]);
+        CHECK(animated[i] == expected);
+    }
+    // The glows were in play: some firefly was dim at some time.
+    CHECK(some_dim);
 }

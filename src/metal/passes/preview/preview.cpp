@@ -7,7 +7,7 @@ namespace serenity::metal {
 PreviewPass::PreviewPass(const Device&, const Library& library) : pipeline_(library.compute_pipeline("preview")) {}
 
 void PreviewPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
-    if (resources.scene == nullptr || resources.transforms == 0 || resources.camera == 0) {
+    if (resources.scene == nullptr || resources.transforms == 0 || resources.glows == 0 || resources.camera == 0) {
         throw Error("PreviewPass: the frame has no scene or no camera");
     }
     const SceneBuffers::Addresses& scene = *resources.scene;
@@ -24,7 +24,7 @@ void PreviewPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
     arguments->setAddress(scene.rough, 7);
     arguments->setAddress(scene.dielectrics, 8);
     arguments->setAddress(scene.conductors, 9);
-    // 10: unbound; a light's glow is read through the emitter (contract 3).
+    arguments->setAddress(resources.glows, 10);  // the sphere lights' glows this frame
     arguments->setAddress(scene.shapes, 11);
     arguments->setAddress(resources.transforms, 12);  // as this frame places the shapes
     arguments->setAddress(scene.boxes, 13);

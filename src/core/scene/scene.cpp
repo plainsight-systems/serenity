@@ -10,7 +10,10 @@
 
 #include <toml++/toml.hpp>
 
+#include "core/animation/flight.h"
+#include "core/animation/glow.h"
 #include "core/animation/wander.h"
+#include "core/contracts/obstacles.h"
 #include "core/camera/pinhole.h"
 
 namespace serenity::scene {
@@ -247,49 +250,215 @@ std::map<std::string, std::uint32_t, std::less<>> read_materials(
     return index;
 }
 
-// A shape's motion, as read, for the checks once every shape is known.
-struct ReadMotion {
-    const toml::node* node;  // the motion's table, for errors
+// A shape's motion and glow, as read: made once every shape is read, when
+// the still shapes it must keep clear of and the names it circles are known.
+struct Pending {
     std::uint32_t shape;
+    std::string what;                    // "shape N", for errors
+    const toml::node* motion = nullptr;  // its motion's table, if any
+    const toml::node* glow = nullptr;    // its glow's table, if any
 };
 
-animation::MotionRecord read_motion(const Reader& r, const toml::node& node, contracts::Float3 anchor,
-                                    std::string_view shape, animation::Motions& motions) {
-    const std::string what = std::string(shape) + "'s motion";
-    const toml::table& t = r.table(node, what);
-    const std::string_view kind = r.text(t, "kind", what);
-    if (kind != "wander") {
-        r.fail(r.required(t, "kind", what), "unknown motion kind '" + std::string(kind) + "'; known kinds: wander");
-    }
-    r.only(t, {"kind", "reach", "speed", "seed"}, what);
-    const float reach = r.number(t, "reach", what);
-    if (!(reach > 0.0f)) {
-        r.fail(r.required(t, "reach", what), what + "'s reach must be greater than 0");
-    }
-    const float speed = r.number(t, "speed", what);
-    if (!(speed > 0.0f)) {
-        r.fail(r.required(t, "speed", what), what + "'s speed must be greater than 0");
-    }
-    const toml::node& seed_node = r.required(t, "seed", what);
-    const std::optional<std::int64_t> seed = seed_node.is_integer() ? seed_node.value<std::int64_t>() : std::nullopt;
+std::uint64_t read_seed(const Reader& r, const toml::table& t, const std::string& what) {
+    const toml::node& node = r.required(t, "seed", what);
+    const std::optional<std::int64_t> seed = node.is_integer() ? node.value<std::int64_t>() : std::nullopt;
     if (!seed || *seed < 0) {
-        r.fail(seed_node, what + "'s seed must be an integer, 0 or more");
+        r.fail(node, what + "'s seed must be an integer, 0 or more");
     }
-    // The float-range rule is checked with the shape's size, after every
-    // shape is read (check_motions); make_wander's own check is then met.
-    for (int axis = 0; axis < 3; ++axis) {
-        const double a = axis == 0 ? anchor.x : (axis == 1 ? anchor.y : anchor.z);
-        if (std::abs(a) + static_cast<double>(reach) > std::numeric_limits<float>::max()) {
-            r.fail(node, what + " could carry " + std::string(shape) + " out of float's range");
+    return static_cast<std::uint64_t>(*seed);
+}
+
+float read_positive(const Reader& r, const toml::table& t, std::string_view key, const std::string& what) {
+    const float v = r.number(t, key, what);
+    if (!(v > 0.0f)) {
+        r.fail(r.required(t, key, what), what + "'s " + std::string(key) + " must be greater than 0");
+    }
+    return v;
+}
+
+float read_at_least_zero(const Reader& r, const toml::table& t, std::string_view key, const std::string& what) {
+    const float v = r.number(t, key, what);
+    if (!(v >= 0.0f)) {
+        r.fail(r.required(t, key, what), what + "'s " + std::string(key) + " must be 0 or more");
+    }
+    return v;
+}
+
+// The still shapes, as contract 11 asks of them: each shape kind's exact
+// distance and touch tests (core/shapes/shapes.h) over every shape that
+// does not move.
+class StillShapes final : public contracts::Obstacles {
+public:
+    StillShapes(const shapes::Shapes& shapes, const std::vector<bool>& moving) : shapes_(shapes) {
+        for (std::uint32_t i = 0; i < shapes.records.size(); ++i) {
+            if (!moving[i]) {
+                still_.push_back(i);
+            }
         }
     }
-    motions.wanders.push_back(animation::make_wander(anchor, reach, speed, static_cast<std::uint64_t>(*seed)));
-    return {animation::MotionKind::wander, static_cast<std::uint32_t>(motions.wanders.size() - 1)};
+
+    double distance(contracts::Float3 point) const override {
+        double nearest = std::numeric_limits<double>::infinity();
+        for (std::uint32_t i : still_) {
+            nearest = std::min(nearest, shapes::distance(shapes_, i, point));
+        }
+        return nearest;
+    }
+
+    bool touches(const contracts::Box& box) const override {
+        const shapes::Bounds bounds{box.min, box.max};
+        for (std::uint32_t i : still_) {
+            if (shapes::touches(shapes_, i, bounds)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+private:
+    const shapes::Shapes& shapes_;
+    std::vector<std::uint32_t> still_;
+};
+
+animation::MotionRecord make_motion(const Reader& r, const Pending& p,
+                                    const std::map<std::string, std::uint32_t, std::less<>>& names,
+                                    const std::vector<bool>& moving, const contracts::Obstacles& obstacles,
+                                    SceneDescription& scene) {
+    const std::string what = p.what + "'s motion";
+    const toml::table& t = r.table(*p.motion, what);
+    const std::string_view kind = r.text(t, "kind", what);
+    const contracts::Transform& placed = scene.shapes.transforms[p.shape];
+    const contracts::Float3 center = contracts::translation(placed);
+    const float body = placed.m[0][0];  // a sphere's radius (core/shapes/sphere.h)
+    animation::Motions& motions = scene.animation.motions;
+    try {
+        if (kind == "wander") {
+            r.only(t, {"kind", "reach", "speed", "seed"}, what);
+            const float reach = read_positive(r, t, "reach", what);
+            const float speed = read_positive(r, t, "speed", what);
+            const std::uint64_t seed = read_seed(r, t, what);
+            motions.wanders.push_back(animation::make_wander(center, reach, speed, seed, body, obstacles));
+            return {animation::MotionKind::wander, static_cast<std::uint32_t>(motions.wanders.size() - 1)};
+        }
+        if (kind == "flight") {
+            r.only(t, {"kind", "min", "max", "targets", "speed", "clearance", "circle", "swoop", "drift", "seed"},
+                   what);
+            animation::FlightParams params;
+            params.volume = {r.triple(t, "min", what), r.triple(t, "max", what)};
+            if (!below(params.volume.min, params.volume.max)) {
+                r.fail(t, what + "'s min must be below its max on every axis");
+            }
+            const toml::node& list_node = r.required(t, "targets", what);
+            const toml::array* list = list_node.as_array();
+            if (list == nullptr) {
+                r.fail(list_node, what + "'s targets must be an array of shape names");
+            }
+            for (const toml::node& name_node : *list) {
+                const std::string_view name = r.text(name_node, what + "'s target");
+                const auto found = names.find(name);
+                if (found == names.end()) {
+                    r.fail(name_node, what + " circles '" + std::string(name) + "', which is not defined");
+                }
+                const std::uint32_t target = found->second;
+                if (scene.shapes.records[target].kind != shapes::ShapeKind::sphere || moving[target]) {
+                    r.fail(name_node, what + " circles '" + std::string(name) + "', which is not a still sphere");
+                }
+                const contracts::Transform& at = scene.shapes.transforms[target];
+                params.targets.push_back({contracts::translation(at), at.m[0][0]});
+            }
+            params.speed = read_positive(r, t, "speed", what);
+            params.clearance = read_at_least_zero(r, t, "clearance", what);
+            params.weights = {read_at_least_zero(r, t, "circle", what), read_at_least_zero(r, t, "swoop", what),
+                              read_at_least_zero(r, t, "drift", what)};
+            if (params.weights[0] + params.weights[1] + params.weights[2] <= 0.0f) {
+                r.fail(t, what + "'s circle, swoop and drift are all 0");
+            }
+            if (params.weights[0] > 0.0f && params.targets.empty()) {
+                r.fail(r.required(t, "circle", what), what + " circles, and names no targets");
+            }
+            params.seed = read_seed(r, t, what);
+            motions.flights.push_back(animation::make_flight(params, center, body, obstacles));
+            return {animation::MotionKind::flight, static_cast<std::uint32_t>(motions.flights.size() - 1)};
+        }
+    } catch (const std::invalid_argument& refused) {
+        r.fail(*p.motion, what + ": " + refused.what());
+    }
+    r.fail(r.required(t, "kind", what), "unknown motion kind '" + std::string(kind) + "'; known kinds: wander, flight");
+}
+
+animation::GlowRecord make_glow(const Reader& r, const Pending& p, const animation::MotionRecord* motion,
+                                SceneDescription& scene) {
+    const std::string what = p.what + "'s glow";
+    const toml::table& t = r.table(*p.glow, what);
+    const std::string_view kind = r.text(t, "kind", what);
+    const auto dim_of = [&]() {
+        const float dim = r.number(t, "dim", what);
+        if (!(dim >= 0.0f && dim < 1.0f)) {
+            r.fail(r.required(t, "dim", what), what + "'s dim must be in [0, 1)");
+        }
+        return dim;
+    };
+    animation::Glows& glows = scene.animation.glows;
+    if (kind == "rhythm") {
+        r.only(t, {"kind", "period", "flash", "dim", "seed"}, what);
+        animation::Rhythm rhythm;
+        rhythm.period = read_positive(r, t, "period", what);
+        rhythm.flash = read_positive(r, t, "flash", what);
+        if (rhythm.flash > rhythm.period / 2.0) {
+            r.fail(r.required(t, "flash", what), what + "'s flash must be at most half its period");
+        }
+        rhythm.dim = dim_of();
+        rhythm.seed = read_seed(r, t, what);
+        glows.rhythms.push_back(rhythm);
+        return {animation::GlowKind::rhythm, static_cast<std::uint32_t>(glows.rhythms.size() - 1)};
+    }
+    if (kind == "flight") {
+        r.only(t, {"kind", "flash", "dim"}, what);
+        if (motion == nullptr || motion->kind != animation::MotionKind::flight) {
+            r.fail(*p.glow, what + " follows its flight, and " + p.what + " does not fly");
+        }
+        animation::ScheduleGlow glow;
+        glow.schedule = scene.animation.motions.flights[motion->index].flashes;
+        glow.flash = read_positive(r, t, "flash", what);
+        if (!(glow.flash < 1.0)) {
+            r.fail(r.required(t, "flash", what), what + "'s flash must be under a second");
+        }
+        glow.dim = dim_of();
+        glows.schedules.push_back(glow);
+        return {animation::GlowKind::schedule, static_cast<std::uint32_t>(glows.schedules.size() - 1)};
+    }
+    r.fail(r.required(t, "kind", what), "unknown glow kind '" + std::string(kind) + "'; known kinds: rhythm, flight");
+}
+
+// Every motion and glow, made now that every shape is read: motions against
+// the still shapes, glows from their motions.
+void make_animation(const Reader& r, const std::vector<Pending>& pending,
+                    const std::map<std::string, std::uint32_t, std::less<>>& names, SceneDescription& scene) {
+    std::vector<bool> moving(scene.shapes.records.size(), false);
+    for (const Pending& p : pending) {
+        moving[p.shape] = moving[p.shape] || p.motion != nullptr;
+    }
+    const StillShapes obstacles(scene.shapes, moving);
+    for (const Pending& p : pending) {
+        std::optional<animation::MotionRecord> motion;
+        if (p.motion != nullptr) {
+            motion = make_motion(r, p, names, moving, obstacles, scene);
+            scene.animation.movers.push_back({p.shape, *motion});
+        }
+        if (p.glow != nullptr) {
+            const std::uint32_t light = scene.shape_lights[p.shape];
+            if (light == lights::no_light) {
+                r.fail(*p.glow, p.what + " has a glow, and is not a light");
+            }
+            const animation::GlowRecord glow = make_glow(r, p, motion ? &*motion : nullptr, scene);
+            scene.animation.glowers.push_back({scene.lights[light].index, glow});
+        }
+    }
 }
 
 void read_shapes(const Reader& r, const toml::array& all,
                  const std::map<std::string, std::uint32_t, std::less<>>& material_index, SceneDescription& scene,
-                 std::vector<ReadMotion>& read_motions) {
+                 std::vector<Pending>& pending, std::map<std::string, std::uint32_t, std::less<>>& names) {
     shapes::Shapes& shapes = scene.shapes;
     std::size_t number = 0;
     for (const toml::node& node : all) {
@@ -297,6 +466,12 @@ void read_shapes(const Reader& r, const toml::array& all,
         const toml::table& t = r.table(node, what);
         const std::string_view kind = r.text(t, "kind", what);
         const auto index = static_cast<std::uint32_t>(shapes.records.size());
+        if (const toml::node* name_node = t.get("name")) {
+            const std::string_view name = r.text(*name_node, what + "'s name");
+            if (!names.emplace(std::string(name), index).second) {
+                r.fail(*name_node, "the name '" + std::string(name) + "' is used twice");
+            }
+        }
 
         const auto material = [&]() {
             const std::string_view name = r.text(t, "material", what);
@@ -309,7 +484,7 @@ void read_shapes(const Reader& r, const toml::array& all,
         };
 
         if (kind == "sphere") {
-            r.only(t, {"kind", "center", "radius", "material", "motion"}, what);
+            r.only(t, {"kind", "name", "center", "radius", "material", "motion", "glow"}, what);
             const contracts::Float3 center = r.triple(t, "center", what);
             const float radius = r.number(t, "radius", what);
             if (!(radius > 0.0f)) {
@@ -327,14 +502,11 @@ void read_shapes(const Reader& r, const toml::array& all,
             }
             shapes.records.push_back({shapes::ShapeKind::sphere, 0u, worn_index, 0u});
             shapes.transforms.push_back(contracts::placed(center, radius));
-            if (const toml::node* motion = t.get("motion")) {
-                const animation::MotionRecord record =
-                    read_motion(r, *motion, center, what, scene.animation.motions);
-                scene.animation.movers.push_back({index, record});
-                read_motions.push_back({motion, index});
+            if (t.contains("motion") || t.contains("glow")) {
+                pending.push_back({index, what, t.get("motion"), t.get("glow")});
             }
         } else if (kind == "box") {
-            r.only(t, {"kind", "min", "max", "material"}, what);
+            r.only(t, {"kind", "name", "min", "max", "material"}, what);
             const contracts::Float3 min = r.triple(t, "min", what);
             const contracts::Float3 max = r.triple(t, "max", what);
             if (!below(min, max)) {
@@ -361,49 +533,6 @@ void read_shapes(const Reader& r, const toml::array& all,
     }
 }
 
-// Every moving shape, wherever its motion takes it, must stay within float's
-// range and touch no still shape (scene.h).
-void check_motions(const Reader& r, const std::vector<ReadMotion>& read_motions, const SceneDescription& scene) {
-    const shapes::Shapes& shapes = scene.shapes;
-    std::vector<bool> moving(shapes.records.size(), false);
-    for (const ReadMotion& m : read_motions) {
-        moving[m.shape] = true;
-    }
-    for (std::size_t i = 0; i < read_motions.size(); ++i) {
-        const ReadMotion& m = read_motions[i];
-        const animation::Extent extent = animation::extent(scene.animation.motions, scene.animation.movers[i].motion);
-        // Only spheres move, and a sphere's size is its scale
-        // (core/shapes/sphere.h): the extent grows by it on every side.
-        const double radius = shapes.transforms[m.shape].m[0][0];
-        const double float_max = std::numeric_limits<float>::max();
-        const double lows[3] = {extent.min.x - radius, extent.min.y - radius, extent.min.z - radius};
-        const double highs[3] = {extent.max.x + radius, extent.max.y + radius, extent.max.z + radius};
-        for (int axis = 0; axis < 3; ++axis) {
-            if (lows[axis] < -float_max || highs[axis] > float_max) {
-                r.fail(*m.node, "this motion could carry shape " + std::to_string(m.shape + 1) +
-                                    " out of float's range");
-            }
-        }
-        // Rounded outward, so the swept box is never smaller than the sweep.
-        const auto down = [](double x) {
-            const float f = static_cast<float>(x);
-            return static_cast<double>(f) > x ? std::nextafter(f, -std::numeric_limits<float>::infinity()) : f;
-        };
-        const auto up = [](double x) {
-            const float f = static_cast<float>(x);
-            return static_cast<double>(f) < x ? std::nextafter(f, std::numeric_limits<float>::infinity()) : f;
-        };
-        const shapes::Bounds swept{{down(lows[0]), down(lows[1]), down(lows[2])},
-                                   {up(highs[0]), up(highs[1]), up(highs[2])}};
-        for (std::uint32_t other = 0; other < shapes.records.size(); ++other) {
-            if (!moving[other] && shapes::touches(shapes, other, swept)) {
-                r.fail(*m.node, "shape " + std::to_string(m.shape + 1) + "'s motion could carry it into shape " +
-                                    std::to_string(other + 1) + ", which does not move");
-            }
-        }
-    }
-}
-
 SceneDescription read_scene(const Reader& r, const toml::table& root) {
     r.only(root, {"camera", "environment", "textures", "materials", "shapes"}, "the scene");
     SceneDescription scene{};
@@ -423,9 +552,10 @@ SceneDescription read_scene(const Reader& r, const toml::table& root) {
     if (list == nullptr) {
         r.fail(shapes, "'shapes' must be an array of tables, written [[shapes]]");
     }
-    std::vector<ReadMotion> read_motions;
-    read_shapes(r, *list, material_index, scene, read_motions);
-    check_motions(r, read_motions, scene);
+    std::vector<Pending> pending;
+    std::map<std::string, std::uint32_t, std::less<>> names;
+    read_shapes(r, *list, material_index, scene, pending, names);
+    make_animation(r, pending, names, scene);
     scene.light_counts.lights = static_cast<std::uint32_t>(scene.lights.size());
     scene.light_counts.spheres = static_cast<std::uint32_t>(scene.sphere_lights.size());
     return scene;

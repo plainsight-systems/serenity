@@ -39,16 +39,34 @@ double component(contracts::Float3 v, int axis) {
 
 }  // namespace
 
-Wander make_wander(contracts::Float3 anchor, float reach, float speed, std::uint64_t seed) {
+Wander make_wander(contracts::Float3 anchor, float reach, float speed, std::uint64_t seed, float body,
+                   const contracts::Obstacles& obstacles) {
     constexpr double float_max = std::numeric_limits<float>::max();
-    if (!(std::isfinite(reach) && reach > 0.0f) || !(std::isfinite(speed) && speed > 0.0f)) {
+    if (!(std::isfinite(reach) && reach > 0.0f) || !(std::isfinite(speed) && speed > 0.0f) ||
+        !(std::isfinite(body) && body >= 0.0f)) {
         throw std::invalid_argument("make_wander: reach and speed must be finite and greater than 0");
     }
     for (int axis = 0; axis < 3; ++axis) {
         const double a = component(anchor, axis);
-        if (!std::isfinite(a) || std::abs(a) + static_cast<double>(reach) > float_max) {
-            throw std::invalid_argument("make_wander: anchor +/- reach must lie within float's range");
+        if (!std::isfinite(a) || std::abs(a) + static_cast<double>(reach) + static_cast<double>(body) > float_max) {
+            throw std::invalid_argument("make_wander: anchor +/- (reach + body) must lie within float's range");
         }
+    }
+    // Wherever it wanders, its body touches no still shape: the reach grown
+    // by the body, rounded outward, against every still shape.
+    const auto down = [](double x) {
+        const float f = static_cast<float>(x);
+        return static_cast<double>(f) > x ? std::nextafter(f, -std::numeric_limits<float>::infinity()) : f;
+    };
+    const auto up = [](double x) {
+        const float f = static_cast<float>(x);
+        return static_cast<double>(f) < x ? std::nextafter(f, std::numeric_limits<float>::infinity()) : f;
+    };
+    const double grown = static_cast<double>(reach) + static_cast<double>(body);
+    const contracts::Box swept{{down(anchor.x - grown), down(anchor.y - grown), down(anchor.z - grown)},
+                               {up(anchor.x + grown), up(anchor.y + grown), up(anchor.z + grown)}};
+    if (obstacles.touches(swept)) {
+        throw std::invalid_argument("its wander could carry it into a still shape");
     }
     constexpr double two_pi = 2.0 * std::numbers::pi;
 

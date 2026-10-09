@@ -28,8 +28,9 @@ namespace serenity::animation {
 // any t could promise neither without walking every episode before it. Made
 // at load, the whole loop is built in order and checked once, and the
 // guarantee holds for all time; the loop then repeats. At 64 episodes of a
-// few seconds each it lasts some four minutes, and among many fireflies, each
-// with its own loop, a repeat is not seen.
+// few seconds each, with the transits between, it lasts some ten minutes
+// (598 s for the first of scenes/brass_sphere_flight.toml), and among many
+// fireflies, each with its own loop, a repeat is not seen.
 //
 // The behaviours, each a closed form over its own time tau from 0 to its
 // duration, every number drawn from the seed:
@@ -38,11 +39,14 @@ namespace serenity::animation {
 //            of radius r0 in a plane tilted up to 25 degrees from level,
 //            raised up to the target's radius above its center, either way
 //            round, at the cruising speed; its radius breathes by up to 10%
-//            and it bobs by up to 5 cm, each at a frequency of its own. One
-//            to two and a half loops.
+//            and it bobs by up to 5 cm, each at a frequency of its own. Four
+//            to nine seconds: part of a loop about a wide orbit, more than
+//            one about a tight one.
 //   swoop    a J-stroke, the flight of Photinus pyralis: from a point in the
 //            air, a dip of 10 to 25 cm along a level heading, then a climb of
 //            30 to 60 cm, as one cubic Bezier curve. It flashes on the climb.
+//            It starts low enough to leave 35 cm above its climb: it ends
+//            climbing, and the transit out rises on before it turns.
 //   drift    hovering about a point, as the wander does (wander.h), with a
 //            reach of 10 cm at a third of the cruising speed. Two to four
 //            seconds.
@@ -102,10 +106,12 @@ namespace serenity::animation {
 // Cost. At load, per firefly: 64 episodes and 64 transits, each some tens to
 // a few hundred samples, each sample one distance (contract 11) over every
 // still shape: some 10^4 to 10^5 distance tests per firefly per still
-// shape. A thousand fireflies among fifty marbles is about 10^9, seconds; a
-// spatial index behind the obstacles is the change if it is measured to
-// matter.
-// Memory: 128 segments of 22 doubles, some 23 KB per firefly. Per frame:
+// shape. Measured on the M3 Max, release: scenes/brass_sphere_flight.toml,
+// six fireflies among two still shapes, loads in 12.4 ms, 2 ms a firefly
+// (837 segments in all). A thousand fireflies among fifty marbles would be
+// some 50 s; a spatial index behind the obstacles is the change, made when
+// that scene is.
+// Memory: some 140 segments of 22 doubles, some 25 KB per firefly. Per frame:
 // one binary search over 128 starts and one closed form of a few sines or a
 // cubic, nothing allocated (MEM.9).
 

@@ -309,16 +309,16 @@ TEST_CASE("every mistake in a motion is refused, naming the file and the line") 
     // the glass sphere (0.6 from its center, radius 0.8), or the floor.
     const std::string near_glass = error_of(moving("[0.9, 0.8, 0]"));
     CHECK(contains(near_glass, "s.toml:"));
-    CHECK(contains(near_glass, "shape 3's motion could carry it into shape 1, which does not move"));
-    CHECK(contains(error_of(moving("[3, 0.2, 0]")), "could carry it into shape 2, which does not move"));
+    CHECK(contains(near_glass, "shape 3's motion: its wander could carry it into a still shape"));
+    CHECK(contains(error_of(moving("[3, 0.2, 0]")), "its wander could carry it into a still shape"));
     // Just clear of the floor: 0.25 + 0.05 above its top, at 0.
     CHECK_NOTHROW((void)scene::parse(moving("[3, 0.3001, 0]"), "s"));
     // Out of float's range: the anchor and reach, and then with the radius.
     CHECK(contains(error_of(moving("[3e38, 1.5, 0]", "{ kind = \"wander\", reach = 1e38, speed = 0.3, seed = 7 }")),
-                   "out of float's range"));
+                   "within float's range"));
     CHECK(contains(error_of(moving("[3e38, 1.5, 0]", "{ kind = \"wander\", reach = 0.4e38, speed = 0.3, seed = 7 }",
                                    "1e36")),
-                   "could carry shape 3 out of float's range"));
+                   "shape 3's motion: make_wander: anchor +/- (reach + body) must lie within float's range"));
 }
 
 TEST_CASE("moving shapes are not checked against each other") {
@@ -327,6 +327,49 @@ TEST_CASE("moving shapes are not checked against each other") {
                                         "seed = 8 }\n";
     const scene::SceneDescription s = scene::parse(both, "s");
     CHECK(s.animation.movers.size() == 2);
+}
+
+TEST_CASE("the flying brass sphere scene reads: six flights, each with its flight's flashes") {
+    const scene::SceneDescription s = scene::load(SERENITY_SCENES_DIR "/brass_sphere_flight.toml");
+    CHECK(s.animation.motions.flights.size() == 6);
+    REQUIRE(s.animation.glowers.size() == 6);
+    for (std::size_t i = 0; i < 6; ++i) {
+        CHECK(s.animation.glowers[i].target == i);  // sphere light i
+        CHECK(s.animation.glowers[i].glow.kind == animation::GlowKind::schedule);
+        CHECK(s.animation.glows.schedules[i].schedule.starts ==
+              s.animation.motions.flights[i].flashes.starts);
+    }
+    CHECK(scene::changes(s));
+}
+
+TEST_CASE("names, and glows: what they read into, and every mistake refused") {
+    const std::string glow = "[materials.light]\nkind = \"emissive\"\nradiance = [5, 5, 5]\n";
+    const auto lamp = [&](const std::string& extra) {
+        return with("[[shapes]]", glow + "[[shapes]]\nkind = \"sphere\"\ncenter = [3, 1, 0]\nradius = 0.05\n"
+                                         "material = \"light\"\n" + extra + "\n[[shapes]]");
+    };
+    // A still light that blinks in a rhythm: a glower for sphere light 0.
+    const scene::SceneDescription s =
+        scene::parse(lamp("glow = { kind = \"rhythm\", period = 5, flash = 0.4, dim = 0.1, seed = 2 }"), "s");
+    REQUIRE(s.animation.glowers.size() == 1);
+    CHECK(s.animation.glowers[0].target == 0);
+    CHECK(s.animation.glows.rhythms[0].period == 5.0);
+    CHECK(scene::changes(s));
+    CHECK_FALSE(animation::moves(s.animation));
+
+    CHECK(contains(error_of(lamp("glow = { kind = \"rhythm\", period = 5, flash = 3, dim = 0.1, seed = 2 }")),
+                   "at most half its period"));
+    CHECK(contains(error_of(lamp("glow = { kind = \"rhythm\", period = 5, flash = 0.4, dim = 1, seed = 2 }")),
+                   "dim must be in [0, 1)"));
+    CHECK(contains(error_of(lamp("glow = { kind = \"flight\", flash = 0.4, dim = 0.1 }")), "does not fly"));
+    CHECK(contains(error_of(lamp("glow = { kind = \"candle\" }")), "unknown glow kind 'candle'"));
+    CHECK(contains(error_of(with("radius = 0.8", "radius = 0.8\nglow = { kind = \"rhythm\", period = 5, "
+                                                 "flash = 0.4, dim = 0.1, seed = 2 }")),
+                   "has a glow, and is not a light"));
+    // Names: unique, and only on shapes.
+    std::string twice = with("radius = 0.8", "radius = 0.8\nname = \"a\"");
+    twice.replace(twice.find("material = \"floor\""), 0, "name = \"a\"\n");
+    CHECK(contains(error_of(twice), "the name 'a' is used twice"));
 }
 
 TEST_CASE("a missing file is refused by name") {
