@@ -28,6 +28,23 @@
 //       principle 7). 0 for a direction that misses the light.
 //   float3 emitted(light, point on it, direction)
 //       the radiance the light sends from that point along that direction.
+//   LightExtent extent(light, point)
+//       the light as seen from `point`, whole: the direction to its middle,
+//       the distance to it, the solid angle it fills, the sine of its
+//       angular radius, and its mean radiance over that solid angle. What a
+//       glossy surface's highlight needs: a lobe widened by the light's
+//       size, over its solid angle.
+//   float3 irradiance(light, point, normal)
+//       the irradiance the light gives a surface at `point` with `normal`,
+//       nothing in the way: the integral of radiance times the cosine over
+//       the light. Exact for the sphere light, pi L sin^2 a cos t while it is
+//       wholly above the surface's horizon (lights/sphere_light.h).
+//
+// The last two are what an estimator that is not Monte Carlo over the light
+// needs: the deterministic preview (metal/passes/preview/preview.h), which
+// visits every light and computes each one's light, rather than drawing a
+// direction toward one. With them it reads every light through this
+// contract and names no light kind.
 //
 // A shadow ray toward a sample stops short of `distance`: anything nearer
 // than the light's surface along the direction blocks it, and the light's
@@ -61,6 +78,17 @@ struct LightSample {
 };
 
 static_assert(sizeof(LightSample) == 32, "LightSample must be the same 32 bytes on the host and in shaders");
+
+struct LightExtent {
+    Float3 direction;     // unit, from the point toward the light's middle
+    float distance;       // to its middle
+    Float3 radiance;      // the mean over the solid angle it fills
+    float solid_angle;    // the solid angle it fills from the point
+    float sin_radius;     // the sine of its angular radius
+    uint32_t padding[3];
+};
+
+static_assert(sizeof(LightExtent) == 48, "LightExtent must be the same 48 bytes on the host and in shaders");
 
 }  // namespace contracts
 }  // namespace serenity

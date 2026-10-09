@@ -28,7 +28,7 @@ This file tracks active and accepted work.
    sampled naively, in the window and headless. It brings the BSDF contract
    (contract 2), through which each material kind is evaluated and sampled,
    and with it the material switch leaves the preview's direct integrator
-   (metal/integrator/direct.metal.h), and its light loop moves onto light
+   (metal/integrator/direct.metal.h), whose light loop moves onto light
    records and the emitter (contract 3).
 
 Then, each in its turn: ReSTIR DI; ReSTIR GI; caustics by manifold next

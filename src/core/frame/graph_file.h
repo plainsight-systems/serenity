@@ -23,7 +23,8 @@ namespace serenity::frame {
 //   passes = ["test_pattern"]     # pass names, in order; at least one
 //
 // Every key is checked. A missing passes, a passes that is not a non-empty
-// array of strings, an unknown pass name, or a key nobody reads is an Error,
+// array of strings, an unknown pass name, a schedule the core does not
+// accept (schedule.h, invalid()), or a key nobody reads is an Error,
 // never a default or an ignored line: a typo must fail the run that reads
 // it, not render something else (E.2, E.14). Each Error names the file and
 // the line, and an unknown pass name lists the known ones.

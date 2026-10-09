@@ -20,6 +20,7 @@
 #include "metal/device/presenter.h"
 #include "metal/device/submission.h"
 #include "metal/frame/frame_resources.h"
+#include "metal/film/non_finite.h"
 #include "metal/frame/accumulation.h"
 #include "metal/passes/path/path.h"
 #include "metal/passes/preview/preview.h"
@@ -58,15 +59,17 @@ namespace serenity::metal {
 // has no camera is refused, by Error.
 //
 // The accumulated image. A frame graph with a pass that averages its frames
-// (frame::accumulates) has one (accumulation.h), and at most one such pass:
-// one image holds one pass's history, so a graph with two, a kind repeated
-// included, is refused at construction, by Error. Each frame, prepare()
+// (frame::accumulates) has one (accumulation.h), and at most one such pass,
+// a rule of the core's (frame::invalid, core/frame/schedule.h) that the
+// renderer applies at construction, refusing by Error any schedule the core
+// would not accept. Each frame, prepare()
 // readies it from the frame's inputs before the frame's submission begins,
 // since remaking it for a new size waits for the frames in flight; record()
-// then gives the pass the image and the count of frames it holds, through
-// the frame constants. A frame whose inputs claim an image the history does
-// not hold is refused, by Error, and so is a frame recorded without being
-// prepared.
+// then gives the pass the image and the count of frames it holds, through the
+// frame constants, and Film's counter of samples left out for not being finite
+// (metal/film/non_finite.h), which non_finite_samples() reads. A frame whose
+// inputs claim an image the history does not hold is refused, by Error, and so
+// is a frame recorded without being prepared.
 //
 // The target is a texture and its size, whatever owns it: the window's
 // drawable (presenter.h) or an offscreen image (offscreen.h). The renderer
@@ -104,11 +107,12 @@ namespace serenity::metal {
 class Renderer {
 public:
     // Builds a pass for each entry of `schedule` from the backend's shader
-    // library, compiled into the program (cmake/MetalLibrary.cmake), makes
-    // the ring resident through `submission`, and, if any pass reads the
-    // scene, puts `scene` on the GPU. `scene` may be null when no pass reads
-    // it. Throws Error if the schedule is empty, a pass needs a scene and
-    // there is none, or a pipeline, buffer or structure cannot be built.
+    // library, compiled into the program (cmake/MetalLibrary.cmake), makes the
+    // ring resident through `submission`, and, if any pass reads the scene,
+    // puts `scene` on the GPU. `scene` may be null when no pass reads it.
+    // Throws Error if the schedule is invalid (frame::invalid), a pass needs a
+    // scene and there is none, or a pipeline, buffer or structure cannot be
+    // built.
     Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
              const scene::SceneDescription* scene);
 
@@ -132,8 +136,8 @@ public:
     void record(const FrameSlot& frame, const frame::FrameInputs& inputs, MTL::Texture* target,
                 frame::Extent size);
 
-    // Samples left out for not being finite (accumulation.h), over every
-    // completed frame; 0 for a graph that accumulates nothing.
+    // Samples left out for not being finite (metal/film/non_finite.h), over
+    // every completed frame; 0 for a graph that accumulates nothing.
     std::uint32_t non_finite_samples() const;
 
 private:
@@ -144,6 +148,7 @@ private:
     std::unique_ptr<SceneBuffers> scene_;
     std::unique_ptr<PrimitiveAcceleration> acceleration_;
     std::unique_ptr<Accumulation> accumulation_;  // when a pass accumulates
+    std::unique_ptr<NonFinite> non_finite_;       // with it
     struct Prepared {
         std::uint64_t index = 0;
         frame::Extent size;

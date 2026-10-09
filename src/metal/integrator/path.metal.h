@@ -15,7 +15,7 @@
 //
 //   L = 0, the radiance found; beta = 1, the path's throughput; the ray from
 //   the camera; and "counts emission", true for the camera's own ray.
-//   For each surface, up to 8:
+//   For each surface, until Russian roulette ends the path (step 7):
 //
 //   Step 1  Trace: the nearest surface along the ray.
 //   Step 2  Escape: if there is none, L += beta x sky(direction), and stop.
@@ -43,7 +43,9 @@
 //           surface only if this lobe was delta.
 //   Step 7  Russian roulette, from the 4th surface: survive with
 //           q = min(the largest channel of beta, 0.95), else stop;
-//           beta /= q, so the mean is unchanged.
+//           beta /= q, so the mean is unchanged. This, not a depth limit,
+//           ends paths: every path length keeps a chance, so the mean
+//           converges to the full light transport (Veach 1997, 2.4).
 //   Step 8  Continue: the ray leaves the surface along wi.
 //
 // What the camera ray starts from, and what is done with L, are the pass's:
@@ -55,6 +57,18 @@
 // (metal/sampler/sampler.metal.h): independent between frames, so their mean
 // converges, and any frame can be rendered again exactly, alone (principle 2).
 //
-// Cost per path: at most 8 surfaces, each one ray to the next surface and at
-// most one shadow ray, so 16 rays at most; about twice the mean path length
-// in practice.
+// A safety stop at 256 surfaces bounds one thread's work, against a path
+// that roulette keeps alive for long (each survival is at most 0.95 likely,
+// and a survivor's throughput is divided by it, so roulette leaves every
+// path's expected contribution unchanged). The stop is the one place the
+// estimator drops light: the light that reaches the camera only after more
+// than 256 surfaces. Every surface that absorbs some of what it scatters
+// shrinks that light by its albedo, so it falls off at least as fast as the
+// largest albedo to the 256th power: below 1e-18 of the light for albedos of
+// 0.85 and under, as the floor's and the brass's are. Only lossless surfaces
+// (smooth glass) do not shrink it, and a ray through a glass sphere leaves
+// it within a few surfaces. Stated, not hidden; not zero.
+//
+// Cost per path: one ray to the next surface and at most one shadow ray per
+// surface, so about twice the mean path length, a handful of surfaces in
+// practice; 512 rays at the safety stop.

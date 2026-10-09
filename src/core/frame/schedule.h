@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -45,6 +46,20 @@ bool accumulates(PassKind kind);
 struct Schedule {
     std::vector<PassKind> passes;  // run in this order; at least one
 };
+
+// What makes a schedule one a backend can carry out, decided here, in the
+// core, so that every backend refuses the same schedules (principle 10):
+//
+//   - at least one pass;
+//   - at most one pass that accumulates (accumulates()): one accumulated
+//     image holds one pass's history, so two such passes, the same kind
+//     twice included, would each fold a frame into the other's mean.
+//
+// None if `schedule` is valid; otherwise why not, in words a reader of the
+// frame graph file can act on. The graph reader refuses an invalid schedule
+// (graph_file.h), and a backend refuses one built otherwise, by this same
+// rule (metal/frame/renderer.h).
+std::optional<std::string> invalid(const Schedule& schedule);
 
 // The name each kind is written as in a frame graph file, and back. One table, so
 // a kind and its name cannot disagree in two places.

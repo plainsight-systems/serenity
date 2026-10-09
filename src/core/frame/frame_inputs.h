@@ -41,8 +41,10 @@ struct FrameInputs {
     // frame's image is a function of this as well (principle 1). Equal to
     // index to start over. The window starts over whenever what it shows
     // would otherwise change: its size, and later the camera and anything
-    // that moves. The headless renderer accumulates from its first frame, so
-    // its frame first + k is the mean of k + 1 frames. Never after index.
+    // that moves; and when the image would hold 2^24 frames, the most it
+    // holds (metal/frame/accumulation.h). The headless renderer accumulates
+    // from its first frame, so its frame first + k is the mean of k + 1
+    // frames, and refuses more than 2^24 of them. Never after index.
     std::uint64_t accumulated_since = 0;
 
     // The camera the frame is seen through, at the frame's time
