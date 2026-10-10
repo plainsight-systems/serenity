@@ -153,7 +153,7 @@ inline float3 radiance(Scene scene, float3 origin, float3 direction, thread Path
     for (uint surface = 0; surface < safety_stop; ++surface) {
         // Step 1: Trace: the nearest surface along the ray, and what the
         // medium the ray crossed kept of it (contract 12).
-        const Hit hit = trace(scene.structure, scene.shapes(), origin, direction, 0.0f, INFINITY);
+        const Hit hit = trace(scene.structure, scene.shapes(), origin, direction, 0.0f, unbounded);
 
         // Step 2: Escape: the sky, the one way it is counted.
         if (!hit.found) {

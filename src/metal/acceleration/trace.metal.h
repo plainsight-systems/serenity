@@ -24,6 +24,13 @@
 namespace serenity {
 namespace shaders {
 
+// The far end of a ray that runs until it meets something: the largest
+// finite float. Not INFINITY: every shader compiles with Metal's default
+// fast math, under which an infinite operand makes a comparison's result
+// undefined (no-infs-fp-math), and the shapes' exact tests compare their t
+// against this bound.
+constant constexpr float unbounded = metal::numeric_limits<float>::max();
+
 struct Hit {
     bool found;
     float t;         // the ray's parameter: its distance, the direction being unit

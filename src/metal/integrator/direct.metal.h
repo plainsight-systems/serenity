@@ -26,8 +26,9 @@
 // Every stretch the camera ray crosses is dimmed by the medium it is in
 // (contract 12), entered through a transmission into a shape and left
 // through one out of it, as the path tracer's is (path.metal.h, steps 1 and
-// 6). Shadow rays never cross glass (it blocks them), so they cross air
-// alone.
+// 6). Shadow rays never cross glass (it blocks them), so they cross only
+// the medium the surface they leave is in: air, or the medium of a shape
+// the light is inside too, dimmed over the shadow ray's length.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -95,8 +96,8 @@ struct Reached {
 };
 
 inline Reached reach(Scene scene, float3 origin, float3 direction) {
-    const Hit hit = trace(scene.structure, scene.shapes(), origin, direction, 0.0f, INFINITY);
-    Reached r;
+    const Hit hit = trace(scene.structure, scene.shapes(), origin, direction, 0.0f, unbounded);
+    Reached r{};  // point and surface stay zero where nothing was reached (ES.20)
     r.found = hit.found;
     if (hit.found) {
         r.point = origin + hit.t * direction;
@@ -224,7 +225,7 @@ inline float3 shade_scattering(Scene scene, Reached at, serenity::contracts::Bsd
         const float3 weight = to_float3(sample.value) * metal::abs(metal::dot(wi, shading)) / sample.pdf;
         const float3 from = leave(at.point, n, wi);
         if ((sample.lobe & serenity::contracts::lobe_diffuse) != 0u) {
-            if (!occluded(scene.structure, scene.shapes(), from, wi, 0.0f, INFINITY, ~0u)) {
+            if (!occluded(scene.structure, scene.shapes(), from, wi, 0.0f, unbounded, ~0u)) {
                 bounced += weight * gradient_sky(scene.sky(), wi);
             }
         } else {

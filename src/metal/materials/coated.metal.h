@@ -49,9 +49,14 @@ inline float coated_pdf(serenity::contracts::Bsdf bsdf, float3 n, float3 wo, flo
 
 // Step 2: the coat with probability F(cos theta_o), u.x below it: the
 // first of its two lobes over u.x (contract 2). Else the base,
-// cosine-weighted from u.yz.
+// cosine-weighted from u.yz. wo in the surface's plane has no sample (I.5):
+// the coat's value F / cos would divide by its cosine of 0, and anything
+// arriving there is weighed by that 0.
 inline serenity::contracts::BsdfSample coated_sample(serenity::contracts::Bsdf bsdf, float3 n, float3 wo, float3 u) {
     const float cos_o = metal::dot(wo, n);
+    if (cos_o <= 0.0f) {
+        return serenity::contracts::BsdfSample{};
+    }
     const float f_o = coat_reflectance(bsdf, cos_o);
     serenity::contracts::BsdfSample s;
     if (u.x < f_o) {

@@ -47,13 +47,12 @@ struct Materials {
 inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures textures,
                                               serenity::contracts::SurfaceInteraction surface) {
     const serenity::materials::MaterialRecord record = materials.records[surface.material];
-    serenity::contracts::Bsdf bsdf;
+    // Every field set before the switch (ES.20): a record whose kind is no
+    // enumerator resolves to none, which scatters nothing.
+    serenity::contracts::Bsdf bsdf{};
     bsdf.normal = surface.shading_normal;
+    bsdf.kind = serenity::contracts::BsdfKind::none;
     bsdf.color = to_packed(float3(1.0f));
-    bsdf.alpha = 0.0f;
-    bsdf.ior = 0.0f;
-    bsdf.escape = 0.0f;
-    bsdf.padding[0] = bsdf.padding[1] = 0u;
     const float3 world = to_float3(surface.position);
     const float3 object = to_float3(surface.object_position);
     switch (record.kind) {

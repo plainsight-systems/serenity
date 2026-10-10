@@ -337,6 +337,36 @@ TEST_CASE("dielectric: Fresnel chooses reflection, the weights are 1 and 1 / eta
     }
 }
 
+TEST_CASE("a wo in the surface's plane: glass and a coat have no sample there, and no kind's is ever infinite") {
+    // |cos wo| = 0 exactly: the delta lobes' value F / |cos| would divide by
+    // 0. The sample is refused instead (pdf 0); whatever arrived along it is
+    // weighed by that 0 cosine anyway.
+    Gpu gpu;
+    const V3 n = unit(0.0, 0.0, 1.0);
+    const V3 in_plane = unit(1.0, 0.0, 0.0);
+    for (const BsdfKind kind : {BsdfKind::lambert, BsdfKind::conductor, BsdfKind::dielectric, BsdfKind::coated}) {
+        Bsdf bsdf = make(kind, n, {0.5f, 0.5f, 0.5f}, kind == BsdfKind::conductor ? 0.3f : 0.0f,
+                         kind == BsdfKind::lambert || kind == BsdfKind::conductor ? 0.0f : 1.5f);
+        if (kind == BsdfKind::coated) {
+            bsdf.escape = float(materials::internal_escape(1.5));
+        }
+        std::uint32_t not_finite = 0;
+        std::uint32_t refused = 0;
+        for (const Probe& p : samples(gpu, bsdf, in_plane)) {
+            not_finite += std::isfinite(p.pdf) && std::isfinite(p.value.x) && std::isfinite(p.value.y) &&
+                                  std::isfinite(p.value.z)
+                              ? 0u
+                              : 1u;
+            refused += p.pdf == 0.0f ? 1u : 0u;
+        }
+        INFO("kind " << int(kind));
+        CHECK(not_finite == 0);
+        if (kind == BsdfKind::dielectric || kind == BsdfKind::coated) {
+            CHECK(refused == sample_count);
+        }
+    }
+}
+
 namespace {
 
 // The unpolarized Fresnel reflectance from air into `ior`, in double: the

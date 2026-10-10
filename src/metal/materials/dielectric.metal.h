@@ -26,7 +26,9 @@
 // index wi's side to wo's. The 1 / eta_t^2 is radiance's: it is n^2-scaled
 // across a boundary (pbrt-v4, DielectricBxDF, TransportMode::Radiance), and
 // for a path through a whole sphere it cancels. A sample's weight is 1 when
-// it reflects and 1 / eta_t^2 when it refracts.
+// it reflects and 1 / eta_t^2 when it refracts. A wo in the surface's plane,
+// |cos| 0, has no sample (pdf 0): its value would divide by 0, and whatever
+// arrives along it is weighed by that 0.
 
 #include <metal_stdlib>
 
@@ -74,6 +76,10 @@ inline serenity::contracts::BsdfSample dielectric_sample(serenity::contracts::Bs
     // Traced backwards: the camera's ray arrives along -wo.
     const Boundary b = dielectric_boundary(glass, -wo, n);
     const float cos_o = metal::abs(metal::dot(wo, n));
+    if (cos_o <= 0.0f) {
+        // wo in the surface's plane: no sample (I.5), not a value of F / 0.
+        return serenity::contracts::BsdfSample{};
+    }
     serenity::contracts::BsdfSample s;
     if (b.total_internal || choose < b.reflectance) {
         s.direction = to_packed(b.reflected);
