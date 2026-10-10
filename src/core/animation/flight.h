@@ -45,10 +45,11 @@ namespace serenity::animation {
 //            raised a drawn lift of 0 to the target's radius above the
 //            target's, and higher where that leaves its bob no room above
 //            the volume's floor: at height max(center.y + lift, min.y + body
-//            + delta + 0.05), the bob's 5 cm, so a level orbit about a
-//            marble a centimeter across, on the table, keeps its body inside
-//            the volume at the bob's lowest; the tilt's room is then
-//            measured from that height. It flies either way round, at the
+//            + delta + 0.05), the bob's 5 cm, a named constant beside the
+//            orbit's other numbers in flight.cpp (ES.45), so a level orbit
+//            about a marble a centimeter across, on the table, keeps its
+//            body inside the volume at the bob's lowest; the tilt's room is
+//            then measured from that height. It flies either way round, at the
 //            cruising speed; its radius breathes by up to 10%
 //            and it bobs by up to 5 cm, each at a frequency of its own. Four
 //            to nine seconds: part of a loop about a wide orbit, more than

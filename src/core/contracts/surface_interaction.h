@@ -39,6 +39,14 @@
 // (shapes/primitive.h), or contracts::no_medium: what a path that passes
 // through this surface into the shape enters.
 //
+// Layout: four groups of a packed triple and a word, 16 bytes each, so no
+// field pads another (CACHE.5); 64 bytes, from 48 before object_position
+// and interior. In the path kernel each surface's interaction is live in
+// registers through its shading, so the 16 bytes are register pressure;
+// whether they cost the frame is measured against the frame's time (13.6
+// ms at 3456 x 2234 on the marbles before them), not judged by occupancy
+// (GPU.3, GPU.10).
+//
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
 #if defined(__METAL_VERSION__)

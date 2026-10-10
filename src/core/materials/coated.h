@@ -63,7 +63,9 @@
 // the coat of F_inside(cos theta) 2 cos theta sin theta d theta, F_inside
 // the Fresnel reflectance from the coat's side, 1 past the critical angle.
 // By Simpson's rule over 4096 intervals of theta, in double: some 0.596 for
-// ior 1.5. CPU only, at load; the shaders read the result.
+// ior 1.5. A pure function of the ior (F.8), computed once a material, at
+// load, rather than at every hit that resolves it; the shaders read the
+// result. CPU only.
 
 #if defined(__METAL_VERSION__)
 #include <metal_stdlib>

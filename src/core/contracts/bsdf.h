@@ -51,7 +51,10 @@
 //                                   estimator that takes every lobe of such
 //                                   a surface (the preview) samples both
 //                                   ends and tells the two apart by their
-//                                   lobe bits, never by the kind.
+//                                   lobe bits, never by the kind. Stated
+//                                   here so no estimator relies on a
+//                                   kind's sampling order that its
+//                                   interface does not promise (I.1).
 //   float pdf(Bsdf, wo, wi)         the density with which sample() draws wi,
 //                                   per unit solid angle. 0 for a delta lobe.
 //   uint lobes(Bsdf)                every lobe the surface has, as the union

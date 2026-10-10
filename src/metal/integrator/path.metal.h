@@ -52,7 +52,9 @@
 //           leaves into air. One medium at a time (contract 12): an opaque
 //           core inside a tinted marble reflects without leaving the
 //           marble's medium, so the stretches between glass and core are
-//           dimmed as the glass's.
+//           dimmed as the glass's. A path in air asks no medium anything;
+//           lanes diverge only where a SIMD group straddles glass and air,
+//           a marble's few pixels (GPU.4).
 //   Step 7  Russian roulette, from the 4th surface: survive with
 //           q = min(the largest channel of beta, 0.95), else stop;
 //           beta /= q, so the mean is unchanged. This, not a depth limit,

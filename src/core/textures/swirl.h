@@ -39,7 +39,9 @@
 // every pass that reads the scene (passes/path/path.metal,
 // passes/preview/preview.metal).
 //
-// Cost, per evaluation: an atan2, two noises and a few dozen flops.
+// Cost, per evaluation: an atan2, two noises and a few dozen flops, with no
+// branch. Every tuning number is a named constant below (ES.45); its noise
+// is keyed by (seed, lattice point), as noise.h's always is (GDSA.3).
 
 #if defined(__METAL_VERSION__)
 #include <metal_stdlib>

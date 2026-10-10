@@ -3,7 +3,9 @@
 // Axis: Medium.
 //
 // The medium kinds, and the record that says which a medium is: a kind and
-// an index into that kind's array, as materials are (materials/material.h).
+// an index into that kind's array, as materials are (materials/material.h):
+// a named set of kinds (Enum.2) and an index beside it, never a union whose
+// member a reader must guess (C.181).
 // Shared with shaders. A shape names a medium by the index of its record
 // (shapes/primitive.h, ShapeRecord::interior), or contracts::no_medium.
 // Each kind answers contract 12 (contracts/medium.h); the one place a shader

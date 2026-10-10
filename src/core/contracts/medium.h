@@ -43,7 +43,8 @@
 namespace serenity {
 namespace contracts {
 
-// A shape's interior, or a path's medium, when it is air: no medium.
+// A shape's interior, or a path's medium, when it is air: no medium. A
+// named value, not a bare all-ones (ES.45), as no_texture is.
 #if defined(__METAL_VERSION__)
 constant constexpr uint32_t no_medium = 0xffffffffu;
 #else
