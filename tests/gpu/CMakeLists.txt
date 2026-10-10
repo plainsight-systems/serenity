@@ -24,9 +24,13 @@ add_executable(serenity_gpu_tests
     allocation_test.cpp
     lifetime_test.cpp
     frame_errors_test.cpp
+    headless_pfm_test.cpp
     ../main_test.cpp
 )
 target_link_libraries(serenity_gpu_tests PRIVATE serenity_metal serenity_test_support)
+# headless_pfm_test runs serenity-headless as its user does
+# (tests/support/programs.h.in).
+add_dependencies(serenity_gpu_tests serenity-headless)
 
 # The probe kernels, each running a shader half on its own for its test
 # (kernels/probes.h), and the smallest kernel, smoke, that the library and

@@ -56,6 +56,16 @@ probe "Objective-C module import in core" src/core/_probe18.mm '@import Metal;\n
 probe "core includes the Metal backend" src/core/_probe5.h '#pragma once\n#include "metal/device/device.h"\n'
 probe "core includes a backend by relative path" src/core/_probe6.h '#pragma once\n#include "../metal/device/device.h"\n'
 probe "core includes the headless renderer" src/core/_probe9.h '#pragma once\n#include "headless/render.h"\n'
+probe "core includes the measuring program" src/core/_probe20.h '#pragma once\n#include "measure/options.h"\n'
+
+# 2b. The measuring program including a backend or another program, by
+#     quoted, angled and relative path.
+probe "measure includes the Metal backend" src/measure/_probe21.h '#pragma once\n#include "metal/frame/renderer.h"\n'
+probe "measure includes the app by angle" src/measure/_probe22.h '#pragma once\n#include <app/window.h>\n'
+probe "measure includes the headless renderer by relative path" src/measure/_probe23.h \
+    '#pragma once\n#include "../headless/options.h"\n'
+# And rule 3 covers it: Metal's host API in src/measure/.
+probe "Metal host API in src/measure/" src/measure/_probe24.cpp 'void f(MTL::Device* d);\n'
 
 # 3. The Metal host API outside src/metal/, including a directory whose name
 #    merely starts with it.

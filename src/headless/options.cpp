@@ -3,8 +3,11 @@
 #include <charconv>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <optional>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <system_error>
 
@@ -14,7 +17,8 @@ namespace {
 
 constexpr std::string_view usage =
     "usage: serenity-headless --graph FILE [--scene FILE] --out DIRECTORY [--frames N] [--first I] "
-    "[--step SECONDS | --time SECONDS] [--size WIDTHxHEIGHT] [--write all|last|doubling] [--samples N]; "
+    "[--step SECONDS | --time SECONDS] [--size WIDTHxHEIGHT] [--write all|last|doubling] [--samples N] "
+    "[--format png|pfm]; "
     "DIRECTORY must be new or empty";
 
 // The whole of `text` as a T, or none: std::from_chars reads no locale and
@@ -128,6 +132,14 @@ Options parse(std::span<const char* const> args) {
             } else {
                 throw OptionsError("--write needs all, last or doubling, not '" + std::string{which} + "'");
             }
+        } else if (option == "--format") {
+            // Output's list of kinds, not one of this program's (image_format.h).
+            const std::string_view which = value();
+            const std::optional<output::ImageFormat> format = output::image_format_named(which);
+            if (!format) {
+                throw OptionsError("--format needs png or pfm, not '" + std::string{which} + "'");
+            }
+            options.format = *format;
         } else if (option == "--size") {
             const std::string_view text = value();
             const std::size_t x = text.find('x');
@@ -153,16 +165,18 @@ Options parse(std::span<const char* const> args) {
     if (stepped && options.time) {
         throw OptionsError("--time and --step are exclusive: --time freezes every frame at one time");
     }
-    // The last frame is first + frames - 1, which must exist; first + frames
-    // need not (frames is at least 1 here).
-    if (options.first > std::numeric_limits<std::uint64_t>::max() - (options.frames - 1)) {
-        throw OptionsError("--first plus --frames is past the last frame there can be");
-    }
-    // Its last sample, last x N + N - 1, must exist too.
-    const std::uint64_t last = options.first + (options.frames - 1);
+    // The run's last sample, (first + frames) x N - 1, at most 2^32 - 1: the
+    // shaders tell indices apart by their low 32 bits alone
+    // (headless/options.h). Each step is bounded before the next is
+    // computed, so nothing here wraps (ES.103): first + frames at most 2^32,
+    // then times N, at most 2^24 - 1, under 2^56.
+    constexpr std::uint64_t sample_indices = std::uint64_t{1} << 32;  // 0 .. 2^32 - 1
     const std::uint64_t n = options.samples;
-    if (last > (std::numeric_limits<std::uint64_t>::max() - (n - 1)) / n) {
-        throw OptionsError("--first plus --frames, at --samples per frame, is past the last sample there can be");
+    if (options.first > sample_indices || options.frames > sample_indices - options.first ||
+        (options.first + options.frames) * n > sample_indices) {
+        throw OptionsError("--first " + std::to_string(options.first) + " plus --frames " +
+                           std::to_string(options.frames) + ", at --samples " + std::to_string(n) +
+                           " per frame, is past sample index 2^32 - 1, the last whose random numbers are its own");
     }
     return options;
 }

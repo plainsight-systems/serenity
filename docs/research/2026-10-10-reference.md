@@ -125,6 +125,34 @@ confirmed by timing a batch when the first reference is rendered:
   after the path pass would change the rule that a graph computing light
   ends in a presenting pass (core/frame/schedule.h), for every graph.
 
+## Implementation
+
+Built on the design above; the guideline pass over it is
+[2026-10-10-reference/guidelines-pass.md](2026-10-10-reference/guidelines-pass.md).
+The headers changed in the implementation, each for its reason:
+
+- core/contracts/linear_image.h gains `checked_values()`, the invariant's
+  check every reader makes, and `value_position()`, "pixel (x, y) channel
+  c": four readers had each written the check, and two the naming (ES.3).
+- core/measurement/error.h: `error_against()` takes a `Judged {image,
+  reference}`, the two images by name; side by side, swapped arguments
+  gave other numbers silently, the measure being asymmetric (I.24).
+- core/output/pfm.h's cost note: a file is read whole with one stream
+  operation, its rows then turned in place, and written a row at a time,
+  bottom first, through the stream's buffer; "written whole with one
+  stream operation" would have needed a turned copy of the image.
+- headless/options.h: its first paragraph named the files .png only; it
+  now says .pfm with --format pfm, and that PNG is the default.
+- measure/options.h: the error's CSV quotes a path holding a comma, a
+  double quote or a line break as RFC 4180 has it, so no path splits its
+  row.
+
+The Makefile's targets write `.cache/references/<scene>-t<TIME>-<SIZE>-<B>x<N>.pfm`,
+its floors beside it as `.txt`, and the convergence's CSV beside it as
+`<same>-convergence-<frames>x<samples>.csv` (columns samples, image, mse,
+relative_mse). A reference is never replaced: `make reference` stops
+before rendering if its file is there.
+
 ## Results
 
 To come: the references at t = 120 and t = 8, their floors, the two-

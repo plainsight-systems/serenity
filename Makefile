@@ -8,7 +8,7 @@
 # (docs/research/2026-10-10-sanitizers.md). There is no CI yet
 # (docs/process/QUEUE.md).
 
-.PHONY: test test-release test-sanitize run headless movie check toolchain clean
+.PHONY: test test-release test-sanitize run headless movie reference convergence check toolchain clean
 
 # Configure quietly: dependencies' status summaries (SDL prints its whole
 # option list) are hidden; warnings and errors still show. VERBOSE=1 shows all.
@@ -88,6 +88,79 @@ movie:
 		-colorspace bt709 -color_primaries bt709 -color_trc bt709 \
 		-c:v libx264 -preset slow -crf 16 -movflags +faststart $(MOVIE)
 	@echo $(MOVIE)
+
+## A reference image of SCENE, time frozen at TIME, SIZE pixels, release
+## build (docs/research/2026-10-10-reference.md, "How it is run"): BATCHES
+## batches of BATCH_SAMPLES samples of graphs/path.toml, batch k its own
+## headless run, --first k --frames 1, so its samples are frame indices
+## k x N .. k x N + N - 1 and no two batches share one. Each is written as a
+## PFM into a scratch directory beside the reference, folded in double by
+## serenity-measure into REFERENCE, and the scratch directory removed; the
+## reference's own error, its floors (serenity-measure's stdout), goes beside
+## it as .txt. A reference is never replaced: remove it to make it again.
+## The defaults, 64 x 1024 samples at 1920 x 1080, take most of an hour of
+## GPU. For example: make reference SCENE=scenes/marbles.toml TIME=120
+TIME ?=
+BATCHES ?= 64
+BATCH_SAMPLES ?= 1024
+REFERENCES := .cache/references
+REFERENCE_NAME = $(basename $(notdir $(SCENE)))-t$(TIME)-$(SIZE)-$(BATCHES)x$(BATCH_SAMPLES)
+REFERENCE = $(REFERENCES)/$(REFERENCE_NAME).pfm
+REFERENCE_FLOORS = $(REFERENCES)/$(REFERENCE_NAME).txt
+REFERENCE_BATCHES = $(REFERENCES)/$(REFERENCE_NAME).batches
+reference:
+	@[ -n "$(SCENE)" ] && [ -n "$(TIME)" ] || { echo "make reference needs SCENE and TIME" >&2; exit 1; }
+	@[ ! -e $(REFERENCE) ] || { echo "$(REFERENCE) exists, and a reference is never replaced: remove it to make it again" >&2; exit 1; }
+	cmake --preset native-release $(CONFIGURE_QUIET)
+	cmake --build --preset native-release --target serenity-headless serenity-measure
+	rm -rf $(REFERENCE_BATCHES) $(REFERENCE_FLOORS)
+	k=0; while [ $$k -lt $(BATCHES) ]; do \
+		./build/native-release/serenity-headless --graph graphs/path.toml --scene $(SCENE) \
+			--out $(REFERENCE_BATCHES)/$$k --size $(SIZE) --first $$k --frames 1 --samples $(BATCH_SAMPLES) \
+			--time $(TIME) --format pfm || exit 1; \
+		k=$$((k + 1)); \
+	done
+	./build/native-release/serenity-measure reference --out $(REFERENCE) \
+		$$(k=0; while [ $$k -lt $(BATCHES) ]; do \
+			printf '%s/%d/frame-%06d.pfm\n' $(REFERENCE_BATCHES) $$k $$k; k=$$((k + 1)); done) \
+		>$(REFERENCE_FLOORS) || { rm -f $(REFERENCE_FLOORS); exit 1; }
+	rm -rf $(REFERENCE_BATCHES)
+	@cat $(REFERENCE_FLOORS)
+	@echo $(REFERENCE)
+
+## The naive path tracer's convergence against the reference above (made
+## first, by make reference with the same SCENE, TIME, SIZE, BATCHES and
+## BATCH_SAMPLES): CONVERGENCE_FRAMES frames of CONVERGENCE_SAMPLES samples
+## of graphs/path.toml at TIME, from the first frame index whose samples
+## follow every one of the reference's, so none is any of them and their
+## noise is independent (core/measurement/error.h). Written at doubling
+## frames as PFMs (--write doubling), each measured against the reference by
+## serenity-measure, into a CSV beside it: samples, image, MSE and relative
+## MSE, a row a written frame. The frames are removed once measured.
+CONVERGENCE_FRAMES ?= 16384
+CONVERGENCE_SAMPLES ?= 1
+CONVERGENCE_NAME = $(REFERENCE_NAME)-convergence-$(CONVERGENCE_FRAMES)x$(CONVERGENCE_SAMPLES)
+CONVERGENCE_FRAMES_DIR = $(REFERENCES)/$(CONVERGENCE_NAME).frames
+CONVERGENCE = $(REFERENCES)/$(CONVERGENCE_NAME).csv
+convergence:
+	@[ -n "$(SCENE)" ] && [ -n "$(TIME)" ] || { echo "make convergence needs SCENE and TIME" >&2; exit 1; }
+	@[ -f $(REFERENCE) ] || { echo "$(REFERENCE) is not there: make reference first, with the same SCENE, TIME, SIZE, BATCHES and BATCH_SAMPLES" >&2; exit 1; }
+	cmake --preset native-release $(CONFIGURE_QUIET)
+	cmake --build --preset native-release --target serenity-headless serenity-measure
+	rm -rf $(CONVERGENCE_FRAMES_DIR) $(CONVERGENCE)
+	first=$$(( ($(BATCHES) * $(BATCH_SAMPLES) + $(CONVERGENCE_SAMPLES) - 1) / $(CONVERGENCE_SAMPLES) )) && \
+	frames=$$(./build/native-release/serenity-headless --graph graphs/path.toml --scene $(SCENE) \
+		--out $(CONVERGENCE_FRAMES_DIR) --size $(SIZE) --first $$first --frames $(CONVERGENCE_FRAMES) \
+		--samples $(CONVERGENCE_SAMPLES) --time $(TIME) --write doubling --format pfm) && \
+	errors=$$(./build/native-release/serenity-measure error --reference $(REFERENCE) $$frames) && \
+	printf '%s\n' "$$errors" | awk -F, -v first=$$first -v m=$(CONVERGENCE_SAMPLES) \
+		'NR == 1 { print "samples," $$0; next } \
+		 match($$0, /frame-[0-9]+\.pfm/) { frame = substr($$0, RSTART + 6, RLENGTH - 10) + 0; \
+			printf "%d,%s\n", (frame - first + 1) * m, $$0; next } \
+		 { print "unmatched row: " $$0 > "/dev/stderr"; exit 1 }' >$(CONVERGENCE) || { rm -f $(CONVERGENCE); exit 1; }
+	rm -rf $(CONVERGENCE_FRAMES_DIR)
+	@cat $(CONVERGENCE)
+	@echo $(CONVERGENCE)
 
 ## Whether this machine's toolchain is the pinned one (cmake/toolchain.json).
 ## Configuring runs the same check and stops on a mismatch.

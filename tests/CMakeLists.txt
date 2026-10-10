@@ -16,6 +16,9 @@ set_target_properties(doctest PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "$
 # value or its sign, names that hide others, and C-style casts fail their
 # build (P.12, ES.46, ES.49, ES.12).
 configure_file(support/test_paths.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/test_paths.h" @ONLY)
+# And where the programs the tests run are (support/programs.h.in), from the
+# targets themselves; a test executable that runs one depends on it, below.
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/programs.h" INPUT support/programs.h.in)
 add_library(serenity_test_support INTERFACE)
 target_include_directories(serenity_test_support INTERFACE
     "${PROJECT_SOURCE_DIR}/tests" "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -23,7 +26,7 @@ target_link_libraries(serenity_test_support INTERFACE doctest::doctest)
 target_compile_options(serenity_test_support INTERFACE
     ${SERENITY_WARNINGS} -Wconversion -Wsign-conversion -Wshadow -Wold-style-cast)
 
-# The tests that need no GPU: the core, and both command lines.
+# The tests that need no GPU: the core, and the three programs' command lines.
 add_executable(serenity_tests
     schedule_test.cpp
     graph_file_test.cpp
@@ -37,12 +40,19 @@ add_executable(serenity_tests
     coated_test.cpp
     frame_times_test.cpp
     png_test.cpp
+    linear_image_test.cpp
+    pfm_test.cpp
+    reference_test.cpp
+    error_test.cpp
+    measure_test.cpp
     options_test.cpp
     programs_test.cpp
     main_test.cpp
 )
 target_link_libraries(serenity_tests PRIVATE
-    serenity_app_options serenity_headless_options serenity_test_support)
+    serenity_app_options serenity_headless_options serenity_measure_options serenity_test_support)
+# measure_test runs serenity-measure as its user does (support/programs.h).
+add_dependencies(serenity_tests serenity-measure)
 # stb_image, to decode what png_test writes; the same pinned stb as the
 # writer's (CMakeLists.txt), test-only.
 target_include_directories(serenity_tests SYSTEM PRIVATE "${stb_SOURCE_DIR}")

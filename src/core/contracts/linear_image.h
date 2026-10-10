@@ -15,10 +15,10 @@
 //
 // Plain data with a stated invariant, rgb.size() == 3 x width x height,
 // which make_linear_image() establishes and every reader checks before it
-// indexes (I.5, SL.con.3); a struct, not a class, since every member is
-// public and the invariant is checked where an image arrives, not hidden
-// (C.2). The two functions are declared here and defined by Film, the
-// owner (core/film/linear_image.cpp).
+// indexes, by checked_values() (I.5, SL.con.3); a struct, not a class,
+// since every member is public and the invariant is checked where an image
+// arrives, not hidden (C.2). The functions are declared here and defined
+// by Film, the owner (core/film/linear_image.cpp).
 //
 // max_image_side bounds what a file may make a reader allocate: a side of
 // 16384 is at most 16384 x 16384 x 12 bytes, 3 GiB, for an image read
@@ -30,6 +30,8 @@
 #include <cstddef>
 #include <span>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/frame/extent.h"
@@ -52,5 +54,19 @@ LinearImage make_linear_image(frame::Extent extent);
 // floats, its count left out. Throws std::invalid_argument for an extent
 // make_linear_image() refuses, or `rgba` not 4 x width x height floats.
 LinearImage from_rgba(frame::Extent extent, std::span<const float> rgba);
+
+// The check every reader makes before it indexes (above): the number of
+// values `image` holds, 3 x width x height, once its extent is one
+// make_linear_image() accepts and rgb holds exactly that many. Throws
+// std::invalid_argument, its message starting with `what`, otherwise. One
+// definition for Output's and Measurement's readers alike (ES.3).
+std::size_t checked_values(const LinearImage& image, std::string_view what);
+
+// Where value `i` of an image of `extent` is, as a refusal names it:
+// "pixel (x, y) channel c", rows from the top. `i` is meant to be under
+// 3 x width x height, which a reader that has called checked_values()
+// knows; a width of 0, which has no positions, throws
+// std::invalid_argument rather than divide by it (ES.105).
+std::string value_position(frame::Extent extent, std::size_t i);
 
 }  // namespace serenity::contracts

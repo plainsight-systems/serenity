@@ -1,7 +1,8 @@
 // serenity-headless: renders a frame graph's frames, over a scene if one is
-// given, to PNG files (headless/options.h). Each frame's time is computed
-// from its index, or frozen by --time, never measured; its camera is the
-// scene's; and which samples each frame is, and what a converging graph's
+// given, to PNG files as displayed, or to PFM files of the accumulated
+// image's radiance (headless/options.h, --format). Each frame's time is
+// computed from its index, or frozen by --time, never measured; its camera
+// is the scene's; and which samples each frame is, and what a converging graph's
 // image holds, is the core's plan (core/frame/history.h, plan_headless). So
 // the same command writes the same files (principle 1), into a directory
 // that holds nothing else (headless/options.h, prepare_output).
@@ -26,12 +27,16 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "core/contracts/linear_image.h"
 #include "core/frame/frame_inputs.h"
 #include "core/frame/graph_file.h"
 #include "core/frame/history.h"
 #include "core/frame/schedule.h"
+#include "core/output/image_format.h"
+#include "core/output/pfm.h"
 #include "core/output/png.h"
 #include "core/scene/scene.h"
 #include "headless/options.h"
@@ -58,6 +63,12 @@ int main(int argc, char** argv) {
     try {
         const headless::Options options = headless::parse(arguments(argc, argv));
         const frame::Schedule schedule = frame::load_schedule(options.graph);
+        // A PFM is the accumulated image, which only a graph that accumulates
+        // has: refused before anything renders or is made (headless/options.h).
+        if (options.format == output::ImageFormat::pfm && !frame::accumulates(schedule)) {
+            throw headless::OptionsError("--format pfm writes the accumulated image, and the graph " +
+                                         options.graph.string() + " accumulates nothing");
+        }
         const std::optional<scene::SceneDescription> loaded =
             options.scene.empty() ? std::nullopt : std::optional{scene::load(options.scene)};
 
@@ -67,7 +78,40 @@ int main(int argc, char** argv) {
         metal::Renderer renderer(device, submission, schedule, loaded ? &*loaded : nullptr);
 
         headless::prepare_output(options.out);
-        std::vector<std::uint8_t> rgba(target.rgba_size());
+        // Throws for a value no kind names, before any frame renders, so the
+        // switches below need no default (P.6); and with none, a kind with no
+        // readback fails to compile (ES.79).
+        const std::string_view extension = output::extension(options.format);
+        // The one buffer a written frame is read back into, of its format's
+        // kind, allocated once (MEM.9).
+        std::vector<std::uint8_t> rgba;
+        std::vector<float> accumulated;
+        switch (options.format) {
+        case output::ImageFormat::png:
+            rgba.resize(target.rgba_size());
+            break;
+        case output::ImageFormat::pfm: {
+            // RGBA32Float a pixel (metal/frame/renderer.h, read_accumulated).
+            constexpr std::size_t accumulated_channels = 4;
+            accumulated.resize(std::size_t{options.size.width} * options.size.height * accumulated_channels);
+            break;
+        }
+        }
+        // Frame `index`, read back and written; its path.
+        const auto write_frame = [&](std::uint64_t index) {
+            const std::filesystem::path path = options.out / std::format("frame-{:06}.{}", index, extension);
+            switch (options.format) {
+            case output::ImageFormat::png:
+                target.read_rgba(rgba);
+                output::write_png(path, options.size, rgba);
+                break;
+            case output::ImageFormat::pfm:
+                renderer.read_accumulated(accumulated);
+                output::write_pfm(path, contracts::from_rgba(options.size, accumulated));
+                break;
+            }
+            return path;
+        };
 
         // Which samples each frame is, and what its image holds, is the
         // core's plan (core/frame/history.h).
@@ -110,10 +154,7 @@ int main(int argc, char** argv) {
                                                      index, failed));
             }
             if (headless::written(options.write, {.after_first = n, .frames = options.frames})) {
-                target.read_rgba(rgba);
-                const std::filesystem::path path = options.out / std::format("frame-{:06}.png", index);
-                output::write_png(path, options.size, rgba);
-                std::cout << path.string() << '\n';
+                std::cout << write_frame(index).string() << '\n';
             }
         }
         submission.finish();

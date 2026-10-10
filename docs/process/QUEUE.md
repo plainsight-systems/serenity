@@ -54,7 +54,13 @@ This file tracks active and accepted work.
    opening.md). The time baseline the estimators are measured against: the
    naive path tracer at 1a617ab on the marbles at t = 120, every firefly
    awake, 29.90 ms at 3456 x 2234, by the method that note keeps; the
-   opening's frames beside it, 19.1 ms with none awake.
+   opening's frames beside it, 19.1 ms with none awake. The reference and
+   its error, built (docs/research/2026-10-10-reference.md): the headless
+   renderer's --format pfm, sample indices held under 2^32,
+   serenity-measure, and make reference and make convergence. Left: the
+   references at t = 120 and t = 8 rendered, their floors, the
+   two-reference check, and the naive estimator's convergence at both
+   times, into that note's Results.
 
 Then, each in its turn: ReSTIR DI; ReSTIR GI; caustics by manifold next
 event estimation; reservoir reuse as kernels; a denoiser of its own against

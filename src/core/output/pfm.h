@@ -55,8 +55,11 @@ namespace serenity::output {
 // The floats themselves are read as they are.
 //
 // Not performance-sensitive: one file a reference batch or a measured
-// image, some 25 MB at 1920 x 1080, read or written whole with one stream
-// operation, after its frame is done.
+// image, some 25 MB at 1920 x 1080, after its frame is done. Read whole
+// into the image with one stream operation, its rows then turned in place;
+// written a row at a time, bottom first, through the stream's buffer. No
+// copy of the image is made either way, so a file read holds no more than
+// its image (max_image_side's bound).
 
 class PfmError : public std::runtime_error {
 public:

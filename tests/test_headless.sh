@@ -79,6 +79,57 @@ expect_refusal "a graph that does not read" --graph "${SCRATCH}/broken.toml" --o
 grep -q 'no_such_pass' "${SCRATCH}/stderr" || fail "a broken graph's message does not name the pass"
 [ ! -e "${SCRATCH}/broken" ] || fail "a broken graph made its output directory"
 
+# --format pfm: the accumulated image's radiance, of the path graph over a
+# lit scene, written doubling (of three frames, all three), each named
+# frame-NNNNNN.pfm and holding its header and 6 x 4 x 3 floats. That each is
+# the accumulated image, bit for bit, is tests/gpu/headless_pfm_test.cpp's.
+cat >"${SCRATCH}/lit.toml" <<'SCENE'
+[camera]
+position = [0, 1, 3]
+look_at = [0, 0, 0]
+vertical_fov_degrees = 50
+[environment]
+kind = "gradient"
+zenith = [0.2, 0.3, 0.5]
+horizon = [0.6, 0.6, 0.6]
+[materials.ball]
+kind = "rough"
+color = [0.7, 0.4, 0.2]
+[[shapes]]
+kind = "sphere"
+center = [0, 0, 0]
+radius = 0.6
+material = "ball"
+SCENE
+PFM="${SCRATCH}/pfm"
+"${BIN}" --graph "${GRAPHS}/path.toml" --scene "${SCRATCH}/lit.toml" --out "${PFM}" --size 6x4 --frames 3 \
+    --samples 2 --time 0 --write doubling --format pfm >"${SCRATCH}/stdout" || fail "a pfm run exited with $?"
+PFM_EXPECTED="frame-000000.pfm frame-000001.pfm frame-000002.pfm"
+[ "$(names "${PFM}")" = "${PFM_EXPECTED}" ] || fail "a pfm run wrote '$(names "${PFM}")', not '${PFM_EXPECTED}'"
+for n in 0 1 2; do printf '%s/frame-%06d.pfm\n' "${PFM}" "${n}"; done >"${SCRATCH}/expected"
+cmp -s "${SCRATCH}/stdout" "${SCRATCH}/expected" || fail "a pfm run printed '$(cat "${SCRATCH}/stdout")'"
+printf 'PF\n6 4\n-1.0\n' >"${SCRATCH}/pfm_header"
+for f in "${PFM}"/*.pfm; do
+    # The header, 12 bytes, and 6 x 4 x 3 floats, 288.
+    [ "$(wc -c <"${f}" | tr -d ' ')" = "300" ] || fail "${f} is $(wc -c <"${f}") bytes, not 300"
+    head -c 12 "${f}" | cmp -s - "${SCRATCH}/pfm_header" || fail "${f}'s header is not 'PF 6 4 -1.0'"
+done
+
+# Refused before anything renders or is made: a pfm of a graph that
+# accumulates nothing, naming it; a format that is not Output's; and a run
+# past sample index 2^32 - 1.
+expect_refusal "pfm of a graph that accumulates nothing" --graph "${GRAPHS}/test_pattern.toml" \
+    --out "${SCRATCH}/pattern-pfm" --format pfm
+grep -q "graph ${GRAPHS}/test_pattern.toml accumulates nothing" "${SCRATCH}/stderr" ||
+    fail "a pfm of the test pattern: '$(cat "${SCRATCH}/stderr")'"
+[ ! -e "${SCRATCH}/pattern-pfm" ] || fail "a pfm of a graph that accumulates nothing made its output directory"
+expect_refusal "an unknown format" --graph "${GRAPHS}/test_pattern.toml" --out "${SCRATCH}/exr" --format exr
+grep -q -- '--format needs png or pfm' "${SCRATCH}/stderr" || fail "an unknown format: '$(cat "${SCRATCH}/stderr")'"
+expect_refusal "a sample past 2^32 - 1" --graph "${GRAPHS}/test_pattern.toml" --out "${SCRATCH}/wrapped" \
+    --first 4194304 --samples 1024
+grep -q 'past sample index 2^32 - 1' "${SCRATCH}/stderr" || fail "a sample past 2^32 - 1: '$(cat "${SCRATCH}/stderr")'"
+[ ! -e "${SCRATCH}/wrapped" ] || fail "a run past sample index 2^32 - 1 made its output directory"
+
 # A frame that left samples out for not being finite fails the run once it
 # has completed, naming the count, before it is written: two lights at the
 # most radiance a float holds, close over a floor, whose light overflows

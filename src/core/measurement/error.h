@@ -48,7 +48,17 @@ struct ImageError {
     double relative_mse = 0.0;
 };
 
-// The error of `image` against `reference`; see above.
-ImageError error_against(const contracts::LinearImage& image, const contracts::LinearImage& reference);
+// The two images an error is of, each by name, so they cannot be passed in
+// each other's places (I.24): the relative MSE divides by the reference's
+// values, and the image's alone may be below 0. A parameter only, held for
+// the call it is made for, so its members refer rather than copy some 25 MB
+// each.
+struct Judged {
+    const contracts::LinearImage& image;
+    const contracts::LinearImage& reference;
+};
+
+// The error of `judged.image` against `judged.reference`; see above.
+ImageError error_against(Judged judged);  // two references: cheap to copy (F.16)
 
 }  // namespace serenity::measurement

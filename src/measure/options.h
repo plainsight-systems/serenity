@@ -30,7 +30,9 @@ namespace serenity::measure {
 //
 //     Prints a CSV: the header `image,mse,relative_mse`, then a row an
 //     image, in the order given, its error against FILE
-//     (core/measurement/error.h), each number %.9g.
+//     (core/measurement/error.h), each number %.9g; the image as its path
+//     was given, quoted as RFC 4180 has it if it holds a comma, a double
+//     quote or a line break, so no path splits its row.
 //
 // parse() checks the command line before any file is read and throws
 // OptionsError naming the argument (E.2, E.14): an unknown command or

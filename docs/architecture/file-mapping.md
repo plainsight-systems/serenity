@@ -21,15 +21,20 @@ change that first needs it. The directories exist now, empty.
 - **The app, `src/app/`, and the headless renderer, `src/headless/`,** are
   the two ways to run a frame: in a window, with the measured clock, or to
   files, with a fixed step.
+- **The measuring program, `src/measure/`,** makes a reference from the
+  headless renderer's files and judges images against it, on the CPU, with
+  the core alone.
 - **Scene descriptions, `scenes/`,** and **frame graphs, `graphs/`,** are
   data, at the repository root, in separate files: what is rendered, and
   which passes render it, so one scene runs under any graph.
 
 Dependencies point one way: the app and the headless renderer depend on the
-backend and the core, the backend on the core, and the core on nothing
-platform-specific. Nothing in `src/core/` uses a platform API or includes
-from a backend, the app or the headless renderer; `tools/check_boundaries.sh`
-enforces that end, and `make check` proves each rule fires.
+backend and the core, the measuring program on the core alone, the backend
+on the core, and the core on nothing platform-specific. Nothing in
+`src/core/` uses a platform API or includes from a backend or a program,
+and the measuring program includes from no backend;
+`tools/check_boundaries.sh` enforces both, and `make check` proves each
+rule fires.
 
 ## Composition
 
@@ -86,6 +91,7 @@ data or adds a kind; it does not change a family that already exists.
 | `src/metal/frame/` | Frame graph | running the core's schedule on Metal |
 | `src/app/` | Presentation | the macOS window, its event loop and the measured clock |
 | `src/headless/` | Presentation | rendering frames to files at a fixed step |
+| `src/measure/` | Measurement | the measuring program's command line: a reference made from files, and images judged against it |
 | `scenes/` | Scene content | scene descriptions, as data |
 | `graphs/` | Frame graph | frame graphs, as data |
 

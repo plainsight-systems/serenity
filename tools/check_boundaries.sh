@@ -36,7 +36,7 @@ METAL_DIR=src/metal/
 status=0
 fail() { echo "BOUNDARY VIOLATION: $1" >&2; status=1; }
 
-for dir in src src/core src/metal; do
+for dir in src src/core src/metal src/measure; do
     [ -d "${dir}" ] || { echo "check_boundaries: ${dir} is missing; nothing would be checked" >&2; exit 2; }
 done
 
@@ -61,12 +61,23 @@ if [ -n "${hits}" ]; then
     fail "src/core/ uses a platform GPU or windowing API. The core must build with none."
 fi
 
-# 2. The core does not depend outward on a backend or the app. Quoted and
-#    angled forms alike, and any relative path into them.
-hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal|vulkan|app|headless)/' src/core/)"
+# 2. The core does not depend outward on a backend or a program (the app,
+#    the headless renderer, the measuring program). Quoted and angled forms
+#    alike, and any relative path into them.
+hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal|vulkan|app|headless|measure)/' src/core/)"
 if [ -n "${hits}" ]; then
     echo "${hits}" | sed 's/^/  /' >&2
-    fail "src/core/ includes from a backend or the app. Dependencies point into the core only."
+    fail "src/core/ includes from a backend or a program. Dependencies point into the core only."
+fi
+
+# 2b. The measuring program is the core's alone (src/measure/options.h): it
+#     includes from no backend and no other program, so a reference is made
+#     and judged on any machine the core builds on. Rule 3 keeps the
+#     platform APIs out of it, as out of all of src/ but src/metal/.
+hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal|vulkan|app|headless)/' src/measure/)"
+if [ -n "${hits}" ]; then
+    echo "${hits}" | sed 's/^/  /' >&2
+    fail "src/measure/ includes from a backend or another program. It uses the core alone."
 fi
 
 # 3. Within src/, only src/metal/ uses Metal's host API. An exact directory

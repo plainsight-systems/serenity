@@ -1,0 +1,15 @@
+#pragma once
+
+// Where the programs the tests run as their users run them are: written by
+// tests/CMakeLists.txt (file(GENERATE)) from the build's own targets, as
+// named constants rather than macros (ES.31). Each test executable that
+// runs one depends on its target, so it is built first.
+
+#include <filesystem>
+
+namespace serenity::tests {
+
+inline const std::filesystem::path measure_program{"$<TARGET_FILE:serenity-measure>"};
+inline const std::filesystem::path headless_program{"$<TARGET_FILE:serenity-headless>"};
+
+}  // namespace serenity::tests
