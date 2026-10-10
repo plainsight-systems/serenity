@@ -228,16 +228,21 @@ for i, (kind, x, z, r) in enumerate(placed):
     else:
         w(f'[[shapes]]\nkind = "sphere"\nname = "{name}"\ncenter = {c}\nradius = {f(r)}\nmaterial = "{metals[k % len(metals)][0]}"\n')
 targets = ", ".join(f'"{n}"' for n in names)
-# The held swarm, above the frame, wakes from 10 to 45 s and comes down; the
-# perched swarm, on the table and the marbles in the frame (the box is the
-# camera's view of the table, the marbles' tops inside it), wakes from 1 to
-# 20 s, lingers 3 to 12 s glowing, then rises.
+# Paced to be full within some 20 s: a viewer decides in the first few
+# seconds. The perched swarm, on the table and the marbles in the frame (the
+# box is the camera's view of the table, the marbles' tops inside it, its
+# near edge where a loop can start above a perch: the volume's near face
+# less the start's margin, some 11 cm), wakes from 0.5 to 8 s, lingers 10
+# to 20 s glowing, then rises; the held swarm, above the frame, wakes from 1
+# to 12 s and comes down while the perched still glow, so the frame holds
+# some 100 to 140 lit fireflies from 8 s to 24 s, and the perched rise past
+# the descending as it thins to the loops' some 40.
 openings = {
     "firefly_gold": ('start = { kind = "above", depth = 0.15 }',
-                     "wake = { from = 10, to = 45, power = 2, ramp = 2 }"),
-    "firefly_white": ('start = { kind = "perch", min = [-0.16, 0.75, -0.3], max = [0.16, 0.8, 0.09], '
-                      'linger = [3, 12] }',
-                      "wake = { from = 1, to = 20, power = 2, ramp = 1.5 }"),
+                     "wake = { from = 1, to = 12, power = 2, ramp = 1 }"),
+    "firefly_white": ('start = { kind = "perch", min = [-0.16, 0.75, -0.3], max = [0.16, 0.8, 0.0], '
+                      'linger = [10, 20] }',
+                      "wake = { from = 0.5, to = 8, power = 2, ramp = 1 }"),
 }
 for material, count, seed in (("firefly_gold", 480, 1), ("firefly_white", 136, 2)):
     start, wake = openings[material]
@@ -245,8 +250,11 @@ for material, count, seed in (("firefly_gold", 480, 1), ("firefly_white", 136, 2
 count = {count}
 radius = 0.0015
 material = "{material}"
+# Its near face 20 cm in front of the lens: nearer, a firefly blurs to a
+# disc a tenth of the frame tall (focused at 39 cm); here, some 30 pixels
+# of 1080 at most.
 min = [-0.6, 0.795, -0.75]
-max = [0.6, 1.25, 0.22]
+max = [0.6, 1.25, 0.1]
 targets = [{targets}]
 # Calm, and mostly circling the marbles, where a firefly flashes most.
 speed = 0.05

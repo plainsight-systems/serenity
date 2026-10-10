@@ -579,8 +579,11 @@ material = "green_core"
 count = 480
 radius = 0.0015
 material = "firefly_gold"
+# Its near face 20 cm in front of the lens: nearer, a firefly blurs to a
+# disc a tenth of the frame tall (focused at 39 cm); here, some 30 pixels
+# of 1080 at most.
 min = [-0.6, 0.795, -0.75]
-max = [0.6, 1.25, 0.22]
+max = [0.6, 1.25, 0.1]
 targets = ["marble_00", "marble_01", "marble_02", "marble_03", "marble_04", "marble_05", "marble_06", "marble_07", "marble_08", "marble_09", "marble_10", "marble_11", "marble_12", "marble_13", "marble_14", "marble_15", "marble_16", "marble_17", "marble_18", "marble_19", "marble_20", "marble_21", "marble_22", "marble_23", "marble_24", "marble_25", "marble_26", "marble_27", "marble_28", "marble_29", "marble_30", "marble_31", "marble_32", "marble_33", "marble_34", "marble_35"]
 # Calm, and mostly circling the marbles, where a firefly flashes most.
 speed = 0.05
@@ -592,14 +595,17 @@ flash = 0.9
 dim = 0.1
 seed = 1
 start = { kind = "above", depth = 0.15 }
-wake = { from = 10, to = 45, power = 2, ramp = 2 }
+wake = { from = 1, to = 12, power = 2, ramp = 1 }
 
 [[swarms]]
 count = 136
 radius = 0.0015
 material = "firefly_white"
+# Its near face 20 cm in front of the lens: nearer, a firefly blurs to a
+# disc a tenth of the frame tall (focused at 39 cm); here, some 30 pixels
+# of 1080 at most.
 min = [-0.6, 0.795, -0.75]
-max = [0.6, 1.25, 0.22]
+max = [0.6, 1.25, 0.1]
 targets = ["marble_00", "marble_01", "marble_02", "marble_03", "marble_04", "marble_05", "marble_06", "marble_07", "marble_08", "marble_09", "marble_10", "marble_11", "marble_12", "marble_13", "marble_14", "marble_15", "marble_16", "marble_17", "marble_18", "marble_19", "marble_20", "marble_21", "marble_22", "marble_23", "marble_24", "marble_25", "marble_26", "marble_27", "marble_28", "marble_29", "marble_30", "marble_31", "marble_32", "marble_33", "marble_34", "marble_35"]
 # Calm, and mostly circling the marbles, where a firefly flashes most.
 speed = 0.05
@@ -610,5 +616,5 @@ drift = 1
 flash = 0.9
 dim = 0.1
 seed = 2
-start = { kind = "perch", min = [-0.16, 0.75, -0.3], max = [0.16, 0.8, 0.09], linger = [3, 12] }
-wake = { from = 1, to = 20, power = 2, ramp = 1.5 }
+start = { kind = "perch", min = [-0.16, 0.75, -0.3], max = [0.16, 0.8, 0.0], linger = [10, 20] }
+wake = { from = 0.5, to = 8, power = 2, ramp = 1 }
