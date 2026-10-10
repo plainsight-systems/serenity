@@ -427,24 +427,25 @@ TEST_CASE("every shape lies within the world") {
     CHECK_NOTHROW((void)scene::parse(with("max = [6, 0, 6]", "max = [6, 0, 1000000]"), "s"));
 }
 
-TEST_CASE("the marbles' scene reads: a walnut table, fourteen marbles, 512 fireflies") {
+TEST_CASE("the marbles' scene reads: a walnut table, thirty-six marbles, 616 fireflies") {
     const scene::SceneDescription s = scene::load(SERENITY_SCENES_DIR "/marbles.toml");
     CHECK(s.woods.size() == 1);
-    CHECK(s.swirls.size() == 3);
-    CHECK(s.coated.size() == 3);
-    CHECK(s.media.size() == 3);
-    CHECK(s.absorbing.size() == 3);
-    // The table's top, legs and the ground; fourteen marbles and three cores.
-    CHECK(s.shapes.records.size() == 6 + 14 + 3 + 512);
+    CHECK(s.swirls.size() == 5);
+    CHECK(s.coated.size() == 7);
+    CHECK(s.media.size() == 6);
+    CHECK(s.absorbing.size() == 6);
+    // The table's top, legs and the ground; thirty-six marbles, nine cores,
+    // and two swarms' fireflies.
+    CHECK(s.shapes.records.size() == 6 + 36 + 9 + 480 + 136);
     std::size_t filled = 0;
     for (const shapes::ShapeRecord& record : s.shapes.records) {
         filled += record.interior != contracts::no_medium;
     }
-    CHECK(filled == 3);
-    CHECK(s.sphere_lights.size() == 512);
-    CHECK(s.animation.movers.size() == 512);
-    CHECK(s.animation.glowers.size() == 512);
-    CHECK(s.animation.motions.flights.size() == 512);
+    CHECK(filled == 9);
+    CHECK(s.sphere_lights.size() == 616);
+    CHECK(s.animation.movers.size() == 616);
+    CHECK(s.animation.glowers.size() == 616);
+    CHECK(s.animation.motions.flights.size() == 616);
 }
 
 TEST_CASE("a camera's lens reads, and a camera without one is a pinhole") {
