@@ -37,11 +37,11 @@ namespace shaders {
 
 // Every material, as a shader reads it: the records and one array per kind.
 struct Materials {
-    device const serenity::materials::MaterialRecord* records;
-    device const serenity::materials::RoughData* rough;
-    device const serenity::materials::DielectricData* dielectrics;
-    device const serenity::materials::ConductorData* conductors;
-    device const serenity::materials::CoatedData* coated;
+    constant serenity::materials::MaterialRecord* records;
+    constant serenity::materials::RoughData* rough;
+    constant serenity::materials::DielectricData* dielectrics;
+    constant serenity::materials::ConductorData* conductors;
+    constant serenity::materials::CoatedData* coated;
 };
 
 inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures textures,

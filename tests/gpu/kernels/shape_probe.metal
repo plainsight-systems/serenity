@@ -11,9 +11,9 @@ using namespace serenity::shaders;
 kernel void interaction_probe(device serenity::contracts::SurfaceInteraction* out [[buffer(0)]],
                               device const float4* queries [[buffer(1)]],
                               constant uint& count [[buffer(2)]],
-                              device const serenity::shapes::ShapeRecord* records [[buffer(3)]],
-                              device const serenity::contracts::Transform* transforms [[buffer(4)]],
-                              device const serenity::shapes::BoxData* boxes [[buffer(5)]],
+                              constant serenity::shapes::ShapeRecord* records [[buffer(3)]],
+                              constant serenity::contracts::Transform* transforms [[buffer(4)]],
+                              constant serenity::shapes::BoxData* boxes [[buffer(5)]],
                               uint i [[thread_position_in_grid]]) {
     if (i < count) {
         out[i] = surface_interaction(Shapes{records, transforms, boxes}, uint(queries[i].w), queries[i].xyz,

@@ -24,9 +24,9 @@ kernel void trace_probe(device float2* out [[buffer(0)]],
                         device const ProbeRay* rays [[buffer(1)]],
                         constant uint& count [[buffer(2)]],
                         metal::raytracing::primitive_acceleration_structure structure [[buffer(3)]],
-                        device const serenity::shapes::ShapeRecord* records [[buffer(4)]],
-                        device const serenity::contracts::Transform* transforms [[buffer(5)]],
-                        device const serenity::shapes::BoxData* boxes [[buffer(6)]],
+                        constant serenity::shapes::ShapeRecord* records [[buffer(4)]],
+                        constant serenity::contracts::Transform* transforms [[buffer(5)]],
+                        constant serenity::shapes::BoxData* boxes [[buffer(6)]],
                         uint i [[thread_position_in_grid]]) {
     if (i >= count) {
         return;

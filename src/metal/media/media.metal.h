@@ -19,8 +19,8 @@ namespace serenity {
 namespace shaders {
 
 struct Media {
-    device const serenity::media::MediumRecord* records;
-    device const serenity::media::AbsorbingData* absorbing;
+    constant serenity::media::MediumRecord* records;
+    constant serenity::media::AbsorbingData* absorbing;
 };
 
 // The share of light, per channel, kept over a stretch `t` long inside

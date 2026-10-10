@@ -20,10 +20,10 @@ namespace serenity {
 namespace shaders {
 
 struct Textures {
-    device const serenity::textures::TextureRecord* records;
-    device const serenity::textures::CheckerData* checkers;
-    device const serenity::textures::WoodData* woods;
-    device const serenity::textures::SwirlData* swirls;
+    constant serenity::textures::TextureRecord* records;
+    constant serenity::textures::CheckerData* checkers;
+    constant serenity::textures::WoodData* woods;
+    constant serenity::textures::SwirlData* swirls;
 };
 
 // `reference` names a texture: its index is not no_texture. `world` is the

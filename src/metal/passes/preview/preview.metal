@@ -33,8 +33,8 @@ kernel void preview(constant serenity::contracts::FrameConstants& frame [[buffer
                     constant serenity::contracts::CameraData& camera [[buffer(1)]],
                     primitive_acceleration_structure structure [[buffer(2)]],
                     constant serenity::gpu::SceneBlock& block [[buffer(3)]],
-                    device const float* sphere_glows [[buffer(4)]],
-                    device const serenity::contracts::Transform* transforms [[buffer(5)]],
+                    constant float* sphere_glows [[buffer(4)]],
+                    constant serenity::contracts::Transform* transforms [[buffer(5)]],
                     texture2d<float, access::write> radiance [[texture(0)]],
                     uint2 pixel [[thread_position_in_grid]]) {
     if (pixel.x >= frame.width || pixel.y >= frame.height) {

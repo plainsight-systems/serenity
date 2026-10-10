@@ -15,10 +15,12 @@
 // Each view is built where it is used, not once per thread and carried
 // through the path: a view carried is pointers held in registers across
 // every ray query and BSDF, loaded once from the block and never reloaded;
-// built at its use, it is loaded then from the block, a constant buffer.
-// Measured on the M3 Max, five spheres at 3456 x 2234, path traced, nothing
-// else on the GPU: views carried 16.2 ms a frame, built at use 15.6, each
-// array bound at a slot of its own (before the block) 14.8.
+// built at its use, it is loaded then from the block. Apple names the
+// register cost of many live buffer pointers in a ray tracing loop (WWDC22
+// "Maximize your Metal ray tracing performance"). What it saved is measured
+// in scene_block.h. The frame's transforms and glows are in the constant
+// address space as the block's arrays are, for the same reason; that
+// measured the same as device.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -39,8 +41,8 @@ template <typename Selection>
 struct SceneView {
     metal::raytracing::primitive_acceleration_structure structure;
     constant serenity::gpu::SceneBlock* block;
-    device const serenity::contracts::Transform* transforms;  // as this frame places the shapes
-    device const float* glows;                                // as bright as this frame lights them
+    constant serenity::contracts::Transform* transforms;  // as this frame places the shapes
+    constant float* glows;                                // as bright as this frame lights them
 
     Shapes shapes() const { return Shapes{block->shapes, transforms, block->boxes}; }
 

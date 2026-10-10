@@ -28,11 +28,11 @@ namespace shaders {
 // through sphere_light_at(), so none can see it brighter or elsewhere than
 // another.
 struct Lights {
-    device const serenity::lights::LightRecord* records;
-    device const uint* shape_lights;
-    device const serenity::lights::SphereLightData* spheres;
-    device const serenity::contracts::Transform* transforms;
-    device const float* sphere_glows;
+    constant serenity::lights::LightRecord* records;
+    constant uint* shape_lights;
+    constant serenity::lights::SphereLightData* spheres;
+    constant serenity::contracts::Transform* transforms;
+    constant float* sphere_glows;
 };
 
 // Sphere light `index`, where its shape is this frame, as bright as its glow.

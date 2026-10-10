@@ -31,9 +31,9 @@ namespace serenity {
 namespace shaders {
 
 struct Shapes {
-    device const serenity::shapes::ShapeRecord* records;
-    device const serenity::contracts::Transform* transforms;  // as this frame places them
-    device const serenity::shapes::BoxData* boxes;
+    constant serenity::shapes::ShapeRecord* records;
+    constant serenity::contracts::Transform* transforms;  // as this frame places them
+    constant serenity::shapes::BoxData* boxes;
 };
 
 // The exact hit of a world ray on shape `shape`'s geometry, tested in its

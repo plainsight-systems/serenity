@@ -19,7 +19,7 @@ namespace serenity {
 namespace shaders {
 
 struct UniformLight {
-    device const serenity::lights::LightRecord* records;
+    constant serenity::lights::LightRecord* records;
     uint count;  // at least 1: an estimator in a scene with no light does not select
 };
 

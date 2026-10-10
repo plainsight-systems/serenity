@@ -20,7 +20,7 @@ namespace serenity {
 namespace shaders {
 
 struct EveryLight {
-    device const serenity::lights::LightRecord* records;
+    constant serenity::lights::LightRecord* records;
     uint count;
 };
 
