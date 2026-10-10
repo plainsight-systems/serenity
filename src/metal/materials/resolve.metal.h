@@ -10,8 +10,16 @@
 //   rough       lambert: color from its texture or constant
 //   conductor   conductor: f0, alpha = roughness^2, at least 1e-3 (a GGX
 //               with alpha 0 has no density to sample)
-//   dielectric  dielectric: ior
+//   dielectric  dielectric: ior, and its absorption, 0 for clear glass
+//   coated      coated: color from its texture or constant, the coat's
+//               ior, and its internal reflectance (materials/coated.h)
 //   emissive    none: it scatters nothing; its light is the emitter's
+//
+// A texture is read at the surface's point twice over (textures/texture.h):
+// in the world, and in the shape's own coordinates, the point taken back
+// through the shape's transform at the frame (contract 10; metal/math/
+// transform.metal.h), from the frame's transforms, so a core's swirl moves
+// with its core.
 
 #include <metal_stdlib>
 

@@ -8,8 +8,8 @@
 // are its own files; a new kind changes no other.
 //
 // Each kind resolves at a surface to a BSDF (contracts/bsdf.h): rough to
-// lambert, conductor to conductor, dielectric to dielectric, and emissive
-// to none, its light being the emitter's.
+// lambert, conductor to conductor, dielectric to dielectric, coated to
+// coated, and emissive to none, its light being the emitter's.
 
 #if defined(__METAL_VERSION__)
 #include <metal_stdlib>
@@ -25,6 +25,7 @@ enum class MaterialKind : uint32_t {
     dielectric = 1,  // glass: passed through, reflecting and refracting
     conductor = 2,   // metal: reflects, sharply or softly by its roughness
     emissive = 3,    // gives light: a sphere that wears it is a light
+    coated = 4,      // opaque glossy: a clear coat over a matte color (coated.h)
 };
 
 struct MaterialRecord {

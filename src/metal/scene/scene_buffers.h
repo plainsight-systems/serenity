@@ -46,11 +46,13 @@ public:
         MTL::GPUAddress textures = 0;
         MTL::GPUAddress checkers = 0;
         MTL::GPUAddress woods = 0;
+        MTL::GPUAddress swirls = 0;
         MTL::GPUAddress materials = 0;
         MTL::GPUAddress rough = 0;
         MTL::GPUAddress dielectrics = 0;
         MTL::GPUAddress conductors = 0;
         MTL::GPUAddress emissives = 0;
+        MTL::GPUAddress coated = 0;
         MTL::GPUAddress shapes = 0;  // the shape records
         MTL::GPUAddress boxes = 0;   // the box geometries
         MTL::GPUAddress light_records = 0;

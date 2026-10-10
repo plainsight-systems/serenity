@@ -34,8 +34,10 @@ This file tracks active and accepted work.
 
 ## Next, in order
 
-1. Milestone 1, the rest: the reference render and its error measure.
-   Done: the marbles' scene (a plank table of procedural wood, three glass
+1. Milestone 1, the rest: the marbles themselves (in design: porcelain
+   under a clear coat, tinted glass, cat's-eyes with swirled cores, a steel
+   bearing, fourteen marbles at real scale through a macro lens); the
+   reference render and its error measure. Done: the marbles' scene (a plank table of procedural wood, three glass
    and two brass spheres, 512 fireflies from one swarm, their flights made
    in parallel; scenes/marbles.toml);
    moving fireflies (the wander; shapes as a geometry and a transform; one

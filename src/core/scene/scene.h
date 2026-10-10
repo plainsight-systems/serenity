@@ -11,6 +11,7 @@
 #include "core/lights/gradient_sky.h"
 #include "core/lights/light.h"
 #include "core/lights/sphere_light.h"
+#include "core/materials/coated.h"
 #include "core/materials/conductor.h"
 #include "core/materials/dielectric.h"
 #include "core/materials/emissive.h"
@@ -18,6 +19,7 @@
 #include "core/materials/rough.h"
 #include "core/shapes/shapes.h"
 #include "core/textures/checker.h"
+#include "core/textures/swirl.h"
 #include "core/textures/texture.h"
 #include "core/textures/wood.h"
 
@@ -69,9 +71,29 @@ namespace serenity::scene {
 //   board = 0.16                    # meters across a board; boards run along x
 //   seed = 3
 //
+//   [textures.cats_eye]
+//   kind = "swirl"                  # a marble's core, on its shape (core/textures/swirl.h)
+//   a = [0.9, 0.35, 0.05]           # the two colors, linear RGB in [0, 1]
+//   b = [0.95, 0.9, 0.8]
+//   vanes = 3                       # bands of each color around; 1 to 16
+//   twist = 0.5                     # turns per unit of height
+//   seed = 2
+//
 //   [materials.glass]               # a name, used by shapes
 //   kind = "dielectric"
 //   ior = 1.5
+//
+//   [materials.blue_glass]
+//   kind = "dielectric"
+//   ior = 1.5
+//   tint = [0.25, 0.5, 0.95]        # optional, with tint_distance: the color
+//   tint_distance = 0.01            # white light keeps through so many meters
+//                                   # of it (core/materials/dielectric.h)
+//
+//   [materials.porcelain]
+//   kind = "coated"                 # opaque glossy (core/materials/coated.h)
+//   color = [0.6, 0.05, 0.04]       # the base's; or texture = "..."
+//   ior = 1.5                       # the coat's
 //
 //   [materials.floor]
 //   kind = "rough"
@@ -191,21 +213,25 @@ namespace serenity::scene {
 // Every key is checked, as in graph files: a missing or unknown key, a value
 // of the wrong type or out of range (a radius or size not greater than 0, an
 // ior not greater than 1, an f0 outside [0, 1], a roughness outside (0, 1], a
-// negative radiance, a box whose min is not below its max, a lens radius
-// below 0 or focus not above 0, a camera that cannot be framed, a reach or speed not greater than 0, a seed below 0, a
-// shape outside the world or a motion that could carry it out, a flight's box
-// whose min is not below its max, a negative clearance or weight, weights all
-// 0, a circle weight with no targets, a period or flash out of range, a dim
-// outside [0, 1), a wood color outside [0, 1], a ring under wood_least_ring or
-// a board outside wood_least_board to wood_most_board (core/textures/wood.h),
-// a wood's seed past 2^32 - 1, a swarm's count outside 1 to 4096), an unknown
-// kind, a name used twice, a name used and never defined, a target that is not
-// a still sphere, an emissive material or a motion on anything but a sphere, a
-// swarm whose material is not emissive, a glow on anything but a light, a
-// flight glow on a light that does not fly, a motion that cannot be made clear
-// of the still shapes, a swarm whose fireflies cannot start clear of them, or
-// no shapes at all is an Error naming the file and the line (E.2, E.14).
-// Nothing has a silent default except `up`.
+// negative radiance, a box whose min is not below its max, a lens radius below
+// 0 or focus not above 0, a camera that cannot be framed, a reach or speed not
+// greater than 0, a seed below 0, a shape outside the world or a motion that
+// could carry it out, a flight's box whose min is not below its max, a
+// negative clearance or weight, weights all 0, a circle weight with no
+// targets, a period or flash out of range, a dim outside [0, 1), a wood, swirl
+// or coated color outside [0, 1], a ring under wood_least_ring or a board
+// outside wood_least_board to wood_most_board (core/textures/wood.h), a wood's
+// or swirl's seed past 2^32 - 1, a swirl's vanes outside 1 to 16, a tint
+// outside (0, 1] or a tint_distance not greater than 0, or one of the two
+// without the other, a swarm's count outside 1 to 4096), an unknown kind, a
+// name used twice, a name used and never defined, a target that is not a still
+// sphere, an emissive material or a motion on anything but a sphere, a swarm
+// whose material is not emissive, a glow on anything but a light, a flight
+// glow on a light that does not fly, a motion that cannot be made clear of the
+// still shapes, a swarm whose fireflies cannot start clear of them, or no
+// shapes at all is an Error naming the file and the line (E.2, E.14). Nothing
+// has a silent default except `up`, and the absences that mean something: no
+// lens is a pinhole, no tint is clear glass, no motion is still.
 //
 // Read once, at start-up. Every flight in the scene, written or a swarm's,
 // is made once every shape is read, all together, in parallel
@@ -230,12 +256,14 @@ struct SceneDescription {
     std::vector<textures::TextureRecord> textures;
     std::vector<textures::CheckerData> checkers;
     std::vector<textures::WoodData> woods;
+    std::vector<textures::SwirlData> swirls;
 
     std::vector<materials::MaterialRecord> materials;
     std::vector<materials::RoughData> rough;
     std::vector<materials::DielectricData> dielectrics;
     std::vector<materials::ConductorData> conductors;
     std::vector<materials::EmissiveData> emissives;
+    std::vector<materials::CoatedData> coated;
 
     // In file order, the [[shapes]] and then each swarm's fireflies
     // (swarm.h): shape i is shapes.records[i] and shapes.transforms[i],

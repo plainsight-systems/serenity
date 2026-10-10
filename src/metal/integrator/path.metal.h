@@ -14,10 +14,14 @@
 // The algorithm, whose steps the code below carries by number:
 //
 //   L = 0, the radiance found; beta = 1, the path's throughput; the ray from
-//   the camera; and "counts emission", true for the camera's own ray.
+//   the camera; "counts emission", true for the camera's own ray; and
+//   sigma = 0, the absorption of the glass the path is inside
+//   (materials/dielectric.h), 0 in air.
 //   For each surface, until Russian roulette ends the path (step 7):
 //
-//   Step 1  Trace: the nearest surface along the ray.
+//   Step 1  Trace: the nearest surface along the ray, t away; beta *=
+//           exp(-sigma t), what the glass it crossed kept of it (Beer and
+//           Lambert). In air, and in clear glass, 1.
 //   Step 2  Escape: if there is none, L += beta x sky(direction), and stop.
 //           The sky is not aimed at, so this is the one way it is counted.
 //   Step 3  Emission: if the surface is a light (contract 3, light_at) and
@@ -42,7 +46,13 @@
 //           (principle 9).
 //   Step 6  Sample the BSDF: wi, f and pdf (contract 2). If pdf is 0, stop.
 //           beta *= f |cos(wi)| / pdf. The path counts emission at the next
-//           surface only if this lobe was delta.
+//           surface only if this lobe was delta. If the lobe was a
+//           transmission, the path crossed glass: entering it (arriving from
+//           outside), sigma = the glass's absorption (Bsdf::absorption);
+//           leaving it, sigma = 0. One glass at a time: glass inside glass
+//           is not modelled, and an opaque core inside glass reflects
+//           without changing sigma, so the stretches between the glass and
+//           its core are dimmed as the glass's.
 //   Step 7  Russian roulette, from the 4th surface: survive with
 //           q = min(the largest channel of beta, 0.95), else stop;
 //           beta /= q, so the mean is unchanged. This, not a depth limit,

@@ -81,6 +81,7 @@ enum class BsdfKind : uint32_t {
     lambert = 1,     // rough: albedo / pi, every way
     conductor = 2,   // metal: GGX microfacets, Schlick's Fresnel from f0
     dielectric = 3,  // smooth glass: mirror reflection and refraction, by Fresnel
+    coated = 4,      // a smooth clear coat's mirror reflection over a Lambert base (materials/coated.h)
 };
 
 // Bits of lobes() and BsdfSample::lobe, as pbrt-v4's BxDFFlags: each lobe
@@ -116,13 +117,16 @@ struct Bsdf {
     Float3 normal;   // the normal to shade with, unit, outward: the surface's shading normal
                      // (contracts/surface_interaction.h), as the material perturbs it, if it does
     BsdfKind kind;
-    Float3 color;    // lambert: albedo; conductor: f0; dielectric: unused, 1
+    Float3 color;    // lambert, coated: albedo; conductor: f0; dielectric: unused, 1
     float alpha;     // conductor: GGX alpha = roughness^2; otherwise 0
-    float ior;       // dielectric: index of refraction inside, against 1 outside; otherwise 0
+    float ior;       // dielectric: index of refraction inside; coated: the coat's; against 1 outside;
+                     // otherwise 0
+    Float3 absorption;  // dielectric: per meter inside, per channel (materials/dielectric.h); otherwise 0
+    float internal;     // coated: the coat's internal reflectance, F_in (materials/coated.h); otherwise 0
     uint32_t padding[3];
 };
 
-static_assert(sizeof(Bsdf) == 48, "Bsdf must be the same 48 bytes on the host and in shaders");
+static_assert(sizeof(Bsdf) == 64, "Bsdf must be the same 64 bytes on the host and in shaders");
 
 // What sample() returns.
 struct BsdfSample {

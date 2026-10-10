@@ -42,7 +42,9 @@ namespace serenity::animation {
 //            of radius r0 in a plane tilted up to 25 degrees from level, or
 //            less where the volume's floor leaves no room for that tilt (a
 //            marble on a table, its orbit skimming the top), raised up to
-//            the target's radius above its center, either way
+//            the target's radius above its center, and higher where that
+//            would leave its bob no room above the volume's floor (a marble
+//            a centimeter across, sitting on the table), either way
 //            round, at the cruising speed; its radius breathes by up to 10%
 //            and it bobs by up to 5 cm, each at a frequency of its own. Four
 //            to nine seconds: part of a loop about a wide orbit, more than
