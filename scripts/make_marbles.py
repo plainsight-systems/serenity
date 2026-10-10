@@ -55,8 +55,8 @@ w = out.append
 w('''# The marbles at night: the scene the renderer is for (docs/process/
 # MEMORY.md, brief: the look of NVIDIA's Marbles at Night). A cluster of
 # real marbles, 1.2 to 2.5 cm across, on a plank table, seen from 13 cm above
-# it through a lens focused on them, under a moonless sky, lit by fireflies
-# circling among them, the scene's only lights but a faint sky.
+# it through a lens focused on them, under a black sky, lit by fireflies
+# alone: the scene's only light.
 #
 # Thirty-six marbles, each of a kind that shows its own part of the light:
 #
@@ -79,6 +79,15 @@ w('''# The marbles at night: the scene the renderer is for (docs/process/
 # estimation is for; the clear and tinted glass, the caustics. The preview
 # counts every light at every pixel and is not for this scene.
 #
+# It opens in the dark (docs/research/2026-10-10-dark-opening.md): no light
+# at all until the first firefly wakes. One swarm rests on the table and the
+# marbles, in the frame; its fireflies wake one by one, light what they rest
+# on, linger, and rise. The other holds above the frame, dark, and wakes
+# later, coming down to circle the marbles. The share of each awake grows
+# as the square of the time, so the first come one at a time and the last
+# in a flood. The opening is the naive estimator's worst case: one light of
+# 616 chosen uniformly, nearly all of them dark.
+#
 # Scale: meters, real ones. The table top is at 0.75 m; each marble rests on
 # it, its center its radius above. Written by a script, the marbles placed
 # at random without touching, seeded, by scripts/make_marbles.py: edit the
@@ -94,10 +103,10 @@ lens = { radius = 0.003, focus = 0.39 }
 
 [environment]
 kind = "gradient"
-# Moonless, near black, a trace of blue at the horizon: the fireflies are
-# the light.
-zenith = [0.0006, 0.0008, 0.0025]
-horizon = [0.004, 0.0045, 0.009]
+# Black: the fireflies are the only light, so the frame is black until the
+# first wakes.
+zenith = [0.0, 0.0, 0.0]
+horizon = [0.0, 0.0, 0.0]
 
 [textures.walnut]
 kind = "wood"
@@ -219,7 +228,19 @@ for i, (kind, x, z, r) in enumerate(placed):
     else:
         w(f'[[shapes]]\nkind = "sphere"\nname = "{name}"\ncenter = {c}\nradius = {f(r)}\nmaterial = "{metals[k % len(metals)][0]}"\n')
 targets = ", ".join(f'"{n}"' for n in names)
+# The held swarm, above the frame, wakes from 10 to 45 s and comes down; the
+# perched swarm, on the table and the marbles in the frame (the box is the
+# camera's view of the table, the marbles' tops inside it), wakes from 1 to
+# 20 s, lingers 3 to 12 s glowing, then rises.
+openings = {
+    "firefly_gold": ('start = { kind = "above", depth = 0.15 }',
+                     "wake = { from = 10, to = 45, power = 2, ramp = 2 }"),
+    "firefly_white": ('start = { kind = "perch", min = [-0.16, 0.75, -0.3], max = [0.16, 0.8, 0.09], '
+                      'linger = [3, 12] }',
+                      "wake = { from = 1, to = 20, power = 2, ramp = 1.5 }"),
+}
 for material, count, seed in (("firefly_gold", 480, 1), ("firefly_white", 136, 2)):
+    start, wake = openings[material]
     w(f'''[[swarms]]
 count = {count}
 radius = 0.0015
@@ -236,5 +257,7 @@ drift = 1
 flash = 0.9
 dim = 0.1
 seed = {seed}
+{start}
+{wake}
 ''')
 sys.stdout.write("\n".join(out))
