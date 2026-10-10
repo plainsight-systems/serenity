@@ -71,9 +71,13 @@ int main(int argc, char** argv) {
 
         // Which samples each frame is, and what its image holds, is the
         // core's plan (core/frame/history.h).
-        const frame::HeadlessPlan plan =
-            frame::plan_headless(options.first, options.samples, frame::accumulates(schedule),
-                                 loaded && scene::changes(*loaded), options.time.has_value());
+        const frame::HeadlessPlan plan = frame::plan_headless({
+            .first = options.first,
+            .samples = options.samples,
+            .accumulates = frame::accumulates(schedule),
+            .scene_changes = loaded && scene::changes(*loaded),
+            .time_frozen = options.time.has_value(),
+        });
 
         // Frame `index`'s samples, each committed; the last one's sequence.
         // The plan has at least one sample a frame (core/frame/history.h).
@@ -81,7 +85,7 @@ int main(int argc, char** argv) {
             const frame::Seconds time = options.time ? *options.time : options.step * static_cast<double>(index);
             std::optional<std::uint64_t> last;
             for (std::uint64_t s = 0; s < plan.samples; ++s) {
-                const frame::Sample sample = plan.sample(index, s);
+                const frame::Sample sample = plan.sample({.frame = index, .sample = s});
                 const frame::FrameInputs inputs{
                     .time = time,
                     .index = sample.index,
