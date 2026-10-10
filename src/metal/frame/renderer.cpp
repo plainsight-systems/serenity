@@ -26,11 +26,11 @@ static_assert(constants_offset + sizeof(contracts::FrameConstants) <= camera_off
 static_assert(camera_offset + sizeof(contracts::CameraData) <= slot_stride);
 
 // Every pass binds at most this many buffers and textures through the table:
-// the path pass binds buffers 0 to 23 (path.metal): the constants, the
-// camera, the structure, the scene's arrays, the frame's transforms and
-// glows, and its image's counter. All 24: a pass that binds more raises
-// this.
-constexpr NS::UInteger max_buffers = 24;
+// the path pass binds buffers 0 to 6 (path.metal): the constants, the
+// camera, the structure, the scene's block (metal/scene/scene_block.h), the
+// frame's glows and transforms, and its image's counter. A new kind of
+// material, texture, medium or light adds to the block, not here.
+constexpr NS::UInteger max_buffers = 8;
 constexpr NS::UInteger max_textures = 4;
 
 // Shaders read the time as a float (contracts/frame_constants.h): a double
@@ -209,7 +209,7 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
         resources.camera = constants_->gpuAddress() + slot + camera_offset;
     }
     if (scene_) {
-        resources.scene = &scene_->addresses();
+        resources.scene = scene_->block_address();
         resources.transforms = transforms_->address(frame.slot);
         resources.glows = glows_->address(frame.slot);
         resources.acceleration = acceleration_->resource(frame.slot);

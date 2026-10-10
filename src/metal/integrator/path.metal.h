@@ -18,9 +18,12 @@
 //   medium the path is in (contract 12), no_medium, air, at the camera.
 //   For each surface, until Russian roulette ends the path (step 7):
 //
-//   Step 1  Trace: the nearest surface along the ray, t away; beta *=
+//   Step 1  Trace: the nearest surface along the ray; beta *=
 //           transmittance(medium, t) (contract 12), what the medium the ray
-//           crossed kept of it: 1 in air.
+//           crossed kept of it, t the stretch from the surface the ray truly
+//           left, not from the point `offset` off it the ray starts at: at a
+//           marble's scale, and its tint's absorption of some 140 per meter,
+//           that 0.1 mm is a percent of its light. 1 in air.
 //   Step 2  Escape: if there is none, L += beta x sky(direction), and stop.
 //           The sky is not aimed at, so this is the one way it is counted.
 //   Step 3  Emission: if the surface is a light (contract 3, light_at) and
@@ -40,7 +43,10 @@
 //           (light_selection/uniform_light.metal.h); draw a direction toward
 //           it, pdf p (contract 3); trace one shadow ray, to the light's
 //           surface, the light itself ignored; if nothing blocks it,
-//             L += beta x f(wo, wi) |cos(wi)| x L_e / (P x p).
+//             L += beta x f(wo, wi) |cos(wi)| x L_e x T / (P x p),
+//           T the transmittance of the medium the path is in over the
+//           shadow ray's length: 1 in air; a light inside the same glass as
+//           the surface, dimmed as the glass dims.
 //           The cost per surface is the same for any number of lights
 //           (principle 9).
 //   Step 6  Sample the BSDF: wi, f and pdf (contract 2). If pdf is 0, stop.
@@ -59,6 +65,8 @@
 //           a987908), carrying the medium costs 0.58 ms of a 14.8 ms frame:
 //           the state the loop keeps, not the branch, since guarding the
 //           call or marking air likely each saved under 0.07 ms (GPU.10).
+//           Measuring each stretch from the true point and dimming each
+//           light sample by the medium add 0.07 ms more.
 //   Step 7  Russian roulette, from the 4th surface: survive with
 //           q = min(the largest channel of beta, 0.95), else stop;
 //           beta /= q, so the mean is unchanged. This, not a depth limit,
@@ -108,6 +116,7 @@
 #include "metal/materials/resolve.metal.h"
 #include "metal/media/media.metal.h"
 #include "metal/sampler/sampler.metal.h"
+#include "metal/scene/scene_block.metal.h"
 #include "metal/shapes/shapes.metal.h"
 #include "metal/textures/textures.metal.h"
 
@@ -123,16 +132,9 @@ constant constexpr uint roulette_from = 3;  // the 4th surface, counting from 0
 constant constexpr uint safety_stop = 256;
 constant constexpr float max_survival = 0.95f;
 
-struct Scene {
-    metal::raytracing::primitive_acceleration_structure structure;
-    Shapes shapes;
-    Materials materials;
-    Textures textures;
-    UniformLight selection;
-    Lights lights;
-    Media media;
-    serenity::lights::GradientSkyData sky;
-};
+// The scene (metal/scene/scene_block.metal.h), its lights chosen among
+// uniformly.
+using Scene = SceneView<UniformLight>;
 
 // A point off the surface whose geometric normal is `n`, on the side
 // `direction` leaves toward.
@@ -147,21 +149,26 @@ inline float3 radiance(Scene scene, float3 origin, float3 direction, thread Path
     float3 beta = float3(1.0f);
     bool counts_emission = true;                       // the camera's own ray
     uint medium = serenity::contracts::no_medium;      // air, at the camera
+    // Where the ray truly left from: the camera, then each surface's point.
+    // The ray itself starts `offset` off that surface, so its hit distance
+    // is short of the stretch by that much; a medium's stretch is measured
+    // from here.
+    float3 from = origin;
 
     for (uint surface = 0; surface < safety_stop; ++surface) {
         // Step 1: Trace: the nearest surface along the ray, and what the
         // medium the ray crossed kept of it (contract 12).
-        const Hit hit = trace(scene.structure, scene.shapes, origin, direction, 0.0f, INFINITY);
+        const Hit hit = trace(scene.structure, scene.shapes(), origin, direction, 0.0f, INFINITY);
 
         // Step 2: Escape: the sky, the one way it is counted.
         if (!hit.found) {
-            L += beta * gradient_sky(scene.sky, direction);
+            L += beta * gradient_sky(scene.sky(), direction);
             break;
         }
-        beta *= transmittance(scene.media, medium, hit.t);
         const float3 point = origin + hit.t * direction;
+        beta *= transmittance(scene.media(), medium, metal::distance(from, point));
         const serenity::contracts::SurfaceInteraction surface_at =
-            surface_interaction(scene.shapes, hit.primitive, point, direction);
+            surface_interaction(scene.shapes(), hit.primitive, point, direction);
 
         // Step 3: Emission, through the emitter (contract 3): counted on the
         // camera's ray and after a delta lobe; after any other bounce, step 5
@@ -169,29 +176,30 @@ inline float3 radiance(Scene scene, float3 origin, float3 direction, thread Path
         // scatters is its BSDF's: a glowing sphere's scatters nothing, so its
         // path ends at step 6.
         serenity::lights::LightRecord glowing;
-        if (counts_emission && light_at(scene.lights, hit.primitive, glowing)) {
-            L += beta * light_emitted(scene.lights, glowing, point, -direction);
+        if (counts_emission && light_at(scene.lights(), hit.primitive, glowing)) {
+            L += beta * light_emitted(scene.lights(), glowing, point, -direction);
         }
 
         // Step 4: Resolve the surface's BSDF (contract 2).
-        const serenity::contracts::Bsdf bsdf = resolve_bsdf(scene.materials, scene.textures, surface_at);
+        const serenity::contracts::Bsdf bsdf = resolve_bsdf(scene.materials(), scene.textures(), surface_at);
         const float3 wo = -direction;
         const float3 n = to_float3(surface_at.geometric_normal);
         const float3 shading = to_float3(bsdf.normal);
 
         // Step 5: Next event estimation: one light, chosen uniformly, one
         // direction toward it, one shadow ray to its surface.
-        if (serenity::contracts::aims_at_lights(bsdf_lobes(bsdf)) && scene.selection.count > 0u) {
-            const SelectedLight chosen = select_light(scene.selection, next_number(numbers));
+        if (serenity::contracts::aims_at_lights(bsdf_lobes(bsdf)) && scene.selection().count > 0u) {
+            const SelectedLight chosen = select_light(scene.selection(), next_number(numbers));
             const serenity::contracts::LightSample sample =
-                sample_light(scene.lights, chosen.light, point, next_numbers2(numbers));
+                sample_light(scene.lights(), chosen.light, point, next_numbers2(numbers));
             if (sample.pdf > 0.0f) {
                 const float3 wi = to_float3(sample.direction);
                 const float3 f = bsdf_evaluate(bsdf, wo, wi);
-                if (metal::any(f > 0.0f) && !occluded(scene.structure, scene.shapes, leave(point, n, wi), wi, 0.0f,
+                if (metal::any(f > 0.0f) && !occluded(scene.structure, scene.shapes(), leave(point, n, wi), wi, 0.0f,
                                                       sample.distance, sample.primitive)) {
-                    L += beta * f * metal::abs(metal::dot(wi, shading)) * to_float3(sample.radiance) /
-                         (chosen.probability * sample.pdf);
+                    // The shadow ray crosses the medium the path is in.
+                    L += beta * f * metal::abs(metal::dot(wi, shading)) * to_float3(sample.radiance) *
+                         transmittance(scene.media(), medium, sample.distance) / (chosen.probability * sample.pdf);
                 }
             }
         }
@@ -221,6 +229,7 @@ inline float3 radiance(Scene scene, float3 origin, float3 direction, thread Path
         }
 
         // Step 8: Continue along wi.
+        from = point;
         origin = leave(point, n, wi);
         direction = wi;
     }

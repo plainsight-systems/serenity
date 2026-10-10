@@ -43,11 +43,12 @@ struct FrameResources {
     std::uint32_t accumulated_frames = 0;
     MTL::GPUAddress non_finite_counter = 0;
 
-    // The scene's still arrays; the shapes' transforms as this frame places
+    // The scene's block, the address of each still array
+    // (metal/scene/scene_block.h); the shapes' transforms as this frame places
     // them (metal/scene/shape_transforms.h); and the structure this frame
     // traces (metal/acceleration/scene_acceleration.h). Null, 0 and no
     // structure when the frame has no scene.
-    const SceneBuffers::Addresses* scene = nullptr;
+    MTL::GPUAddress scene = 0;  // the scene's block (scene_block.h)
     MTL::GPUAddress transforms = 0;
     MTL::GPUAddress glows = 0;  // the sphere lights' glows this frame (metal/scene/light_glows.h)
     MTL::ResourceID acceleration{};

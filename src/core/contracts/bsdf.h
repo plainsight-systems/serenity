@@ -136,7 +136,8 @@ struct Bsdf {
     float alpha;     // conductor: GGX alpha = roughness^2; otherwise 0
     float ior;       // dielectric: index of refraction inside; coated: the coat's; against 1 outside;
                      // otherwise 0
-    float internal;  // coated: the coat's internal reflectance, F_in (materials/coated.h); otherwise 0
+    float escape;    // coated: 1 - F_in, what the coat lets out of the base's light (materials/coated.h);
+                     // otherwise 0
     uint32_t padding[2];
 };
 

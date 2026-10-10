@@ -1,7 +1,11 @@
 #include "metal/scene/scene_buffers.h"
 
 #include <array>
+#include <cstdint>
+#include <cstring>
 #include <span>
+
+#include "metal/device/error.h"
 
 namespace serenity::metal {
 
@@ -17,19 +21,19 @@ std::span<const std::byte> bytes(const T& one) {
     return std::as_bytes(std::span(&one, 1));
 }
 
-// The one list of the scene's arrays: each with the field of Addresses that
-// holds its address, named, so no array can be given another's address.
-// Every field has an entry: the assertion below counts them, at compile
-// time rather than at run time (P.5).
+// The one list of the scene's arrays: each with the field of the scene's
+// block (scene_block.h) that holds its address, named, so no array can be
+// given another's address. Every field has an entry: the assertion below
+// counts them, at compile time rather than at run time (P.5).
 struct Entry {
-    MTL::GPUAddress SceneBuffers::Addresses::*field;
+    std::uint64_t gpu::SceneBlock::*field;
     std::span<const std::byte> bytes;
 };
 
-using A = SceneBuffers::Addresses;
+using A = gpu::SceneBlock;
 constexpr std::size_t array_count = 19;
-static_assert(sizeof(A) == array_count * sizeof(MTL::GPUAddress),
-              "every field of SceneBuffers::Addresses needs its entry in entries_of()");
+static_assert(sizeof(A) == array_count * sizeof(std::uint64_t),
+              "every field of gpu::SceneBlock needs its entry in entries_of()");
 
 std::array<Entry, array_count> entries_of(const scene::SceneDescription& scene) {
     return {{
@@ -70,8 +74,16 @@ SceneBuffers::SceneBuffers(const Device& device, Submission& submission, const s
     : arrays_(device, submission, arrays_of(scene)) {
     const auto entries = entries_of(scene);
     for (std::size_t i = 0; i < array_count; ++i) {
-        addresses_.*entries[i].field = arrays_.address(i);
+        block_.*entries[i].field = arrays_.address(i);
     }
+    // The block itself, written once (scene_block.h); shared storage, which
+    // Apple silicon's unified memory lets the GPU read where the CPU wrote.
+    block_buffer_ = NS::TransferPtr(device.handle()->newBuffer(sizeof(block_), MTL::ResourceStorageModeShared));
+    if (!block_buffer_) {
+        throw Error("SceneBuffers: the device made no buffer for the scene's block");
+    }
+    std::memcpy(block_buffer_->contents(), &block_, sizeof(block_));
+    submission.make_resident(block_buffer_.get());
 }
 
 }  // namespace serenity::metal

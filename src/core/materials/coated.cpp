@@ -23,13 +23,15 @@ double fresnel(double cos_i, double eta) {
 
 }  // namespace
 
-double internal_reflectance(double ior) {
+double internal_escape(double ior) {
     // From the coat's side, eta = ior / 1. Past the critical angle theta_c
-    // all reflects: the integral of 2 cos sin over [theta_c, pi / 2] is
-    // cos^2 theta_c = 1 - 1 / ior^2, exactly. Below it the reflectance's
-    // slope is infinite at theta_c, which Simpson's rule converges on
-    // slowly; theta = theta_c - s^2 makes the integrand smooth in s, over
-    // [0, sqrt(theta_c)], 4096 intervals.
+    // all reflects and nothing escapes; below it, what the reflectance lets
+    // through, (1 - F) 2 cos sin, integrated directly, so a coat that lets
+    // almost nothing out (a high ior) keeps that little exactly, rather than
+    // as 1 less a reflectance rounded to 1. Its slope is infinite at
+    // theta_c, which Simpson's rule converges on slowly; theta = theta_c -
+    // s^2 makes the integrand smooth in s, over [0, sqrt(theta_c)], 4096
+    // intervals.
     const double critical = std::asin(1.0 / ior);
     constexpr int intervals = 4096;
     const double end = std::sqrt(critical);
@@ -39,11 +41,15 @@ double internal_reflectance(double ior) {
         const double s = i * h;
         const double theta = critical - s * s;
         const double c = std::cos(theta);
-        const double value = fresnel(c, ior) * 2.0 * c * std::sin(theta) * 2.0 * s;
+        const double value = (1.0 - fresnel(c, ior)) * 2.0 * c * std::sin(theta) * 2.0 * s;
         const double weight = (i == 0 || i == intervals) ? 1.0 : (i % 2 == 1 ? 4.0 : 2.0);
         sum += weight * value;
     }
-    return sum * h / 3.0 + (1.0 - 1.0 / (ior * ior));
+    return sum * h / 3.0;
+}
+
+double internal_reflectance(double ior) {
+    return 1.0 - internal_escape(ior);
 }
 
 }  // namespace serenity::materials

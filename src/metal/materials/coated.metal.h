@@ -11,7 +11,7 @@
 
 #include "core/contracts/bsdf.h"
 #include "metal/device/layout.metal.h"
-#include "metal/materials/dielectric.metal.h"
+#include "metal/materials/fresnel.metal.h"
 #include "metal/math/warp.metal.h"
 
 namespace serenity {
@@ -33,7 +33,9 @@ inline float3 coated_evaluate(serenity::contracts::Bsdf bsdf, float3 n, float3 w
     }
     const float3 rho = to_float3(bsdf.color);
     const float through = (1.0f - coat_reflectance(bsdf, cos_i)) * (1.0f - coat_reflectance(bsdf, cos_o));
-    return through * rho * M_1_PI_F / (bsdf.ior * bsdf.ior * (1.0f - rho * bsdf.internal));
+    // 1 - rho F_in, as (1 - rho) + rho (1 - F_in): no rounded value taken
+    // from 1, so finite while the escape is above 0 (materials/coated.h).
+    return through * rho * M_1_PI_F / (bsdf.ior * bsdf.ior * ((1.0f - rho) + rho * bsdf.escape));
 }
 
 // Step 3: the base's density as sample() draws it; the coat's is delta.

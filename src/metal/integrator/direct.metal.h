@@ -46,6 +46,7 @@
 #include "metal/materials/resolve.metal.h"
 #include "metal/media/media.metal.h"
 #include "metal/sampler/sampler.metal.h"
+#include "metal/scene/scene_block.metal.h"
 #include "metal/shapes/shapes.metal.h"
 #include "metal/textures/textures.metal.h"
 
@@ -75,16 +76,9 @@ enum Purpose : uint {
     purpose_light = 16,  // + the light's index
 };
 
-struct Scene {
-    metal::raytracing::primitive_acceleration_structure structure;
-    Shapes shapes;
-    Materials materials;
-    Textures textures;
-    EveryLight selection;
-    Lights lights;
-    Media media;
-    serenity::lights::GradientSkyData sky;
-};
+// The scene (metal/scene/scene_block.metal.h), its lights chosen among
+// all at once.
+using Scene = SceneView<EveryLight>;
 
 // Where a sample's numbers come from: the pixel, and which of its positions
 // this is, so each estimate's samples spread over all the pixel's positions.
@@ -96,19 +90,17 @@ struct Pixel {
 // What a ray reached.
 struct Reached {
     bool found;
-    float t;  // how far along the ray
     float3 point;
     serenity::contracts::SurfaceInteraction surface;
 };
 
 inline Reached reach(Scene scene, float3 origin, float3 direction) {
-    const Hit hit = trace(scene.structure, scene.shapes, origin, direction, 0.0f, INFINITY);
+    const Hit hit = trace(scene.structure, scene.shapes(), origin, direction, 0.0f, INFINITY);
     Reached r;
     r.found = hit.found;
-    r.t = hit.t;
     if (hit.found) {
         r.point = origin + hit.t * direction;
-        r.surface = surface_interaction(scene.shapes, hit.primitive, r.point, direction);
+        r.surface = surface_interaction(scene.shapes(), hit.primitive, r.point, direction);
     }
     return r;
 }
@@ -124,31 +116,33 @@ inline float3 leave(float3 point, float3 n, float3 direction) {
 // sphere, uniformly over its cone), each f(wo, wi) |cos| L / pdf where no
 // shape but the light lies before it (glass among them: the light glass
 // would focus is a caustic, which this estimator leaves out), averaged, and
-// divided by the light's selection probability.
+// divided by the light's selection probability; each dimmed by `medium`,
+// the medium the surface is in, over the shadow ray's length (contract 12).
 inline float3 from_lights(Scene scene, Reached at, serenity::contracts::Bsdf bsdf, float3 wo, Pixel px,
-                          uint count) {
+                          uint count, uint medium) {
     const float3 n = to_float3(at.surface.geometric_normal);
     const float3 shading = to_float3(bsdf.normal);
     float3 total = float3(0.0f);
-    for (uint j = 0; j < selected_count(scene.selection); ++j) {
-        const serenity::lights::LightRecord light = selected(scene.selection, j);
+    for (uint j = 0; j < selected_count(scene.selection()); ++j) {
+        const serenity::lights::LightRecord light = selected(scene.selection(), j);
         const float2 offset_2d = sample_offset(px.pixel, purpose_light + j);
         float3 sum = float3(0.0f);
         for (uint i = 0; i < count; ++i) {
             const serenity::contracts::LightSample sample =
-                sample_light(scene.lights, light, at.point, sample_2d(offset_2d, px.position * count + i));
+                sample_light(scene.lights(), light, at.point, sample_2d(offset_2d, px.position * count + i));
             if (sample.pdf <= 0.0f) {
                 continue;
             }
             const float3 wi = to_float3(sample.direction);
             const float3 f = bsdf_evaluate(bsdf, wo, wi);
-            if (metal::all(f == 0.0f) || occluded(scene.structure, scene.shapes, leave(at.point, n, wi), wi, 0.0f,
+            if (metal::all(f == 0.0f) || occluded(scene.structure, scene.shapes(), leave(at.point, n, wi), wi, 0.0f,
                                                   sample.distance, sample.primitive)) {
                 continue;
             }
-            sum += f * metal::abs(metal::dot(wi, shading)) * to_float3(sample.radiance) / sample.pdf;
+            sum += f * metal::abs(metal::dot(wi, shading)) * to_float3(sample.radiance) *
+                   transmittance(scene.media(), medium, sample.distance) / sample.pdf;
         }
-        total += sum / float(count) / selection_probability(scene.selection, j);
+        total += sum / float(count) / selection_probability(scene.selection(), j);
     }
     return total;
 }
@@ -157,43 +151,49 @@ inline float3 from_lights(Scene scene, Reached at, serenity::contracts::Bsdf bsd
 // (preview.h): a light's glow when `see_glow`; a surface with a diffuse lobe
 // by each light toward its middle, one shadow ray each, and the sky above it
 // unblocked, f(wo, n) pi sky(n); any other surface by the sky along the ray.
-inline float3 shade_reflected(Scene scene, float3 origin, float3 direction, bool see_glow) {
+// The reflected ray starts at `origin`, off the surface it left at `from`,
+// in `medium`: what it shows is dimmed over the stretch from `from` (contract
+// 12), and the lights its surface sees over theirs.
+inline float3 shade_reflected(Scene scene, float3 from, float3 origin, float3 direction, bool see_glow,
+                              uint medium) {
     const Reached at = reach(scene, origin, direction);
     if (!at.found) {
-        return gradient_sky(scene.sky, direction);
+        return gradient_sky(scene.sky(), direction);
     }
+    const float3 dimmed = transmittance(scene.media(), medium, metal::distance(from, at.point));
     float3 color = float3(0.0f);
     serenity::lights::LightRecord glowing;
-    if (light_at(scene.lights, at.surface.primitive, glowing) && see_glow) {
-        color += light_emitted(scene.lights, glowing, at.point, -direction);
+    if (light_at(scene.lights(), at.surface.primitive, glowing) && see_glow) {
+        color += light_emitted(scene.lights(), glowing, at.point, -direction);
     }
-    const serenity::contracts::Bsdf bsdf = resolve_bsdf(scene.materials, scene.textures, at.surface);
+    const serenity::contracts::Bsdf bsdf = resolve_bsdf(scene.materials(), scene.textures(), at.surface);
     const uint lobes = bsdf_lobes(bsdf);
     if (lobes == 0u) {
-        return color;  // scatters nothing: a light's own surface
+        return dimmed * color;  // scatters nothing: a light's own surface
     }
     if ((lobes & serenity::contracts::lobe_diffuse) == 0u) {
-        return color + gradient_sky(scene.sky, direction);
+        return dimmed * (color + gradient_sky(scene.sky(), direction));
     }
     const float3 wo = -direction;
     const float3 n = to_float3(at.surface.geometric_normal);
     const float3 shading = facing(bsdf, wo);
-    for (uint j = 0; j < selected_count(scene.selection); ++j) {
-        const serenity::lights::LightRecord light = selected(scene.selection, j);
+    for (uint j = 0; j < selected_count(scene.selection()); ++j) {
+        const serenity::lights::LightRecord light = selected(scene.selection(), j);
         // u = (0, 0): toward the light's middle, for a sphere.
-        const serenity::contracts::LightSample sample = sample_light(scene.lights, light, at.point, float2(0.0f));
+        const serenity::contracts::LightSample sample = sample_light(scene.lights(), light, at.point, float2(0.0f));
         if (sample.pdf <= 0.0f) {
             continue;
         }
         const float3 wi = to_float3(sample.direction);
         const float3 f = bsdf_evaluate(bsdf, wo, wi);
-        if (!metal::all(f == 0.0f) && !occluded(scene.structure, scene.shapes, leave(at.point, n, wi), wi, 0.0f,
+        if (!metal::all(f == 0.0f) && !occluded(scene.structure, scene.shapes(), leave(at.point, n, wi), wi, 0.0f,
                                                 sample.distance, sample.primitive)) {
-            color += f * metal::abs(metal::dot(wi, shading)) * to_float3(sample.radiance) / sample.pdf /
-                     selection_probability(scene.selection, j);
+            color += f * metal::abs(metal::dot(wi, shading)) * to_float3(sample.radiance) *
+                     transmittance(scene.media(), medium, sample.distance) / sample.pdf /
+                     selection_probability(scene.selection(), j);
         }
     }
-    return color + bsdf_evaluate(bsdf, wo, shading) * M_PI_F * gradient_sky(scene.sky, shading);
+    return dimmed * (color + bsdf_evaluate(bsdf, wo, shading) * M_PI_F * gradient_sky(scene.sky(), shading));
 }
 
 // The light a surface with a lobe that is not delta sends toward wo: from
@@ -204,8 +204,8 @@ inline float3 shade_reflected(Scene scene, float3 origin, float3 direction, bool
 // reach, shaded as a reflection, lights not counted again, from_lights
 // having counted them.
 inline float3 shade_scattering(Scene scene, Reached at, serenity::contracts::Bsdf bsdf, float3 wo, uint lobes,
-                               Pixel px) {
-    float3 color = from_lights(scene, at, bsdf, wo, px, light_samples);
+                               Pixel px, uint medium) {
+    float3 color = from_lights(scene, at, bsdf, wo, px, light_samples, medium);
     const uint count = (lobes & serenity::contracts::lobe_glossy) != 0u ? glossy_samples : diffuse_samples;
     const float2 direction_offset = sample_offset(px.pixel, purpose_bsdf);
     const float2 lobe_offset = sample_offset(px.pixel, purpose_lobe);
@@ -224,11 +224,11 @@ inline float3 shade_scattering(Scene scene, Reached at, serenity::contracts::Bsd
         const float3 weight = to_float3(sample.value) * metal::abs(metal::dot(wi, shading)) / sample.pdf;
         const float3 from = leave(at.point, n, wi);
         if ((sample.lobe & serenity::contracts::lobe_diffuse) != 0u) {
-            if (!occluded(scene.structure, scene.shapes, from, wi, 0.0f, INFINITY, ~0u)) {
-                bounced += weight * gradient_sky(scene.sky, wi);
+            if (!occluded(scene.structure, scene.shapes(), from, wi, 0.0f, INFINITY, ~0u)) {
+                bounced += weight * gradient_sky(scene.sky(), wi);
             }
         } else {
-            bounced += weight * shade_reflected(scene, from, wi, false);
+            bounced += weight * shade_reflected(scene, at.point, from, wi, false, medium);
         }
     }
     // A delta lobe beside these (a coat's mirror): found at one end of u.x
@@ -240,7 +240,7 @@ inline float3 shade_scattering(Scene scene, Reached at, serenity::contracts::Bsd
             if (end.pdf > 0.0f && (end.lobe & serenity::contracts::lobe_delta) != 0u) {
                 const float3 r = to_float3(end.direction);
                 color += to_float3(end.value) * metal::abs(metal::dot(r, shading)) *
-                         shade_reflected(scene, leave(at.point, n, r), r, true);
+                         shade_reflected(scene, at.point, leave(at.point, n, r), r, true, medium);
                 break;
             }
         }
@@ -258,25 +258,26 @@ inline float3 radiance(Scene scene, float3 origin, float3 direction, Pixel px) {
     float3 color = float3(0.0f);
     float3 weight = float3(1.0f);
     uint medium = serenity::contracts::no_medium;  // air, at the camera
+    float3 from = origin;  // where the ray truly left from, for a medium's stretch
     for (uint delta = 0; delta < max_delta; ++delta) {
         const Reached at = reach(scene, origin, direction);
         if (!at.found) {
-            return color + weight * gradient_sky(scene.sky, direction);
+            return color + weight * gradient_sky(scene.sky(), direction);
         }
-        weight *= transmittance(scene.media, medium, at.t);
+        weight *= transmittance(scene.media(), medium, metal::distance(from, at.point));
         const bool entering = (at.surface.flags & serenity::contracts::arrived_from_outside) != 0u;
         const float3 wo = -direction;
         serenity::lights::LightRecord glowing;
-        if (light_at(scene.lights, at.surface.primitive, glowing)) {
-            color += weight * light_emitted(scene.lights, glowing, at.point, wo);
+        if (light_at(scene.lights(), at.surface.primitive, glowing)) {
+            color += weight * light_emitted(scene.lights(), glowing, at.point, wo);
         }
-        const serenity::contracts::Bsdf bsdf = resolve_bsdf(scene.materials, scene.textures, at.surface);
+        const serenity::contracts::Bsdf bsdf = resolve_bsdf(scene.materials(), scene.textures(), at.surface);
         const uint lobes = bsdf_lobes(bsdf);
         if (lobes == 0u) {
             return color;  // scatters nothing: a light's own surface
         }
         if (serenity::contracts::aims_at_lights(lobes)) {
-            return color + weight * shade_scattering(scene, at, bsdf, wo, lobes, px);
+            return color + weight * shade_scattering(scene, at, bsdf, wo, lobes, px, medium);
         }
 
         const float3 n = to_float3(at.surface.geometric_normal);
@@ -291,11 +292,12 @@ inline float3 radiance(Scene scene, float3 origin, float3 direction, Pixel px) {
             if ((at.surface.flags & serenity::contracts::arrived_from_outside) != 0u) {
                 const float3 r = to_float3(reflected.direction);
                 color += weight * to_float3(reflected.value) * metal::abs(metal::dot(r, shading)) *
-                         shade_reflected(scene, leave(at.point, n, r), r, true);
+                         shade_reflected(scene, at.point, leave(at.point, n, r), r, true, medium);
             }
             const float3 t = to_float3(passed.direction);
             weight *= to_float3(passed.value) * metal::abs(metal::dot(t, shading));
             medium = entering ? at.surface.interior : serenity::contracts::no_medium;
+            from = at.point;
             origin = leave(at.point, n, t);
             direction = t;
         } else {
@@ -308,6 +310,7 @@ inline float3 radiance(Scene scene, float3 origin, float3 direction, Pixel px) {
             if ((only.lobe & serenity::contracts::lobe_transmission) != 0u) {
                 medium = entering ? at.surface.interior : serenity::contracts::no_medium;
             }
+            from = at.point;
             origin = leave(at.point, n, d);
             direction = d;
         }

@@ -62,6 +62,12 @@ std::array<int, 3> displayed(Vec linear) {
     return {encode(c.x), encode(c.y), encode(c.z)};
 }
 
+// The display's 8 bits back to linear.
+double linear_of(int displayed_value) {
+    const double c = displayed_value / 255.0;
+    return c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+}
+
 // The rotated grid of positions within a pixel (preview.metal).
 constexpr double positions[4][2] = {{0.375, 0.125}, {0.875, 0.375}, {0.625, 0.875}, {0.125, 0.625}};
 
@@ -253,6 +259,60 @@ TEST_CASE("glass: the Fresnel term splits a ray, and what is refracted goes on")
     const double l = 0.5 * (f0 + (1.0 - f0) * (1.0 - f0));
     check_near(image.at(16, 16), displayed({l, l, l}), 1);
     check_near(image.at(0, 0), displayed({0.5, 0.5, 0.5}), 1);
+}
+
+
+// Glass of radius 1 filled with a medium keeping half its red over 1 m;
+// inside it an opaque white core of radius 0.3, and a light of radius 0.05
+// at (0, 0.45, 0.45), which nothing hides from the core's front. The sky is
+// black, so the middle of the image is the core, lit by that light, seen
+// through the glass. Red is dimmed over the camera's stretch to the core,
+// 0.7, and over the light's to the core, |(0, 0.45, 0.15)| - 0.05 = 0.424;
+// green over neither.
+std::string core_lit_inside_glass() {
+    return camera_text("[0, 0, 4]", "[0, 0, 0]", 30) + sky("[0, 0, 0]", "[0, 0, 0]") +
+           "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
+           "[materials.white]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
+           "[materials.glow]\nkind = \"emissive\"\nradiance = [40, 40, 40]\n"
+           "[media.red_out]\nkind = \"absorbing\"\ntint = [0.5, 1, 1]\ntint_distance = 1\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"glass\"\n"
+           "interior = \"red_out\"\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.3\nmaterial = \"white\"\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.45, 0.45]\nradius = 0.05\nmaterial = \"glow\"\n";
+}
+
+// A bead of radius 1 mm, filled with a medium keeping exp(-0.7) of its red
+// over 1 mm: 700 per meter. At this scale the 0.1 mm a ray starts off a
+// surface is 7% of a crossing's light; the stretch must be measured from the
+// surface itself.
+std::string tinted_bead() {
+    return camera_text("[0, 0, 0.004]", "[0, 0, 0]", 30) + sky("[0.5, 0.5, 0.5]", "[0.5, 0.5, 0.5]") +
+           "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
+           "[media.red_out]\nkind = \"absorbing\"\ntint = [0.4965853, 1, 1]\ntint_distance = 0.001\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.001\nmaterial = \"glass\"\n"
+           "interior = \"red_out\"\n";
+}
+
+TEST_CASE("an absorbing medium at a bead's scale: its stretch measured from the surface, not the ray's start") {
+    const Image image = render(tinted_bead(), {33, 33});
+    const double f0 = 0.04, tau = std::exp(-1.4);
+    const double clear = 0.5 * (f0 + (1.0 - f0) * (1.0 - f0));
+    const double red = 0.5 * (f0 + (1.0 - f0) * (1.0 - f0) * tau);
+    check_near(image.at(16, 16), displayed({red, clear, clear}), 1);
+}
+
+TEST_CASE("a light inside the same medium as the surface it lights: its light dimmed over the shadow ray") {
+    const Image image = render(core_lit_inside_glass(), {65, 65});
+    double red = 0.0, green = 0.0;
+    for (std::uint32_t y = 31; y <= 33; ++y) {
+        for (std::uint32_t x = 31; x <= 33; ++x) {
+            red += linear_of(image.at(x, y)[0]);
+            green += linear_of(image.at(x, y)[1]);
+        }
+    }
+    const double sigma = std::log(2.0);
+    INFO("red over green " << red / green);
+    CHECK(red / green == doctest::Approx(std::exp(-sigma * 0.7) * std::exp(-sigma * 0.424)).scale(0).epsilon(0.05));
 }
 
 TEST_CASE("a coated sphere of black base shows its coat's mirror: F0 of the sky at its middle") {

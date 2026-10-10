@@ -13,6 +13,7 @@
 #include "metal/camera/thin_lens.metal.h"
 #include "metal/film/accumulate.metal.h"
 #include "metal/integrator/path.metal.h"
+#include "metal/scene/scene_block.metal.h"
 
 using namespace metal;
 using namespace metal::raytracing;
@@ -21,27 +22,10 @@ using namespace serenity::shaders;
 kernel void path_trace(constant serenity::contracts::FrameConstants& frame [[buffer(0)]],
                        constant serenity::contracts::CameraData& camera [[buffer(1)]],
                        primitive_acceleration_structure structure [[buffer(2)]],
-                       constant serenity::lights::GradientSkyData& sky [[buffer(3)]],
-                       device const serenity::textures::TextureRecord* texture_records [[buffer(4)]],
-                       device const serenity::textures::CheckerData* checkers [[buffer(5)]],
-                       device const serenity::textures::WoodData* woods [[buffer(19)]],
-                       device const serenity::textures::SwirlData* swirls [[buffer(20)]],
-                       device const serenity::materials::CoatedData* coated [[buffer(21)]],
-                       device const serenity::media::MediumRecord* medium_records [[buffer(22)]],
-                       device const serenity::media::AbsorbingData* absorbing [[buffer(23)]],
-                       device const serenity::materials::MaterialRecord* materials [[buffer(6)]],
-                       device const serenity::materials::RoughData* rough [[buffer(7)]],
-                       device const serenity::materials::DielectricData* dielectrics [[buffer(8)]],
-                       device const serenity::materials::ConductorData* conductors [[buffer(9)]],
-                       device const float* sphere_glows [[buffer(10)]],
-                       device const serenity::shapes::ShapeRecord* shape_records [[buffer(11)]],
-                       device const serenity::contracts::Transform* transforms [[buffer(12)]],
-                       device const serenity::shapes::BoxData* boxes [[buffer(13)]],
-                       device const serenity::lights::LightRecord* light_records [[buffer(14)]],
-                       device const uint* shape_lights [[buffer(15)]],
-                       device const serenity::lights::SphereLightData* sphere_lights [[buffer(16)]],
-                       constant serenity::lights::LightCounts& light_counts [[buffer(17)]],
-                       device atomic_uint* non_finite [[buffer(18)]],
+                       constant serenity::gpu::SceneBlock& block [[buffer(3)]],
+                       device const float* sphere_glows [[buffer(4)]],
+                       device const serenity::contracts::Transform* transforms [[buffer(5)]],
+                       device atomic_uint* non_finite [[buffer(6)]],
                        texture2d<float, access::read_write> accumulated [[texture(0)]],
                        texture2d<float, access::write> radiance [[texture(1)]],
                        uint2 pixel [[thread_position_in_grid]]) {
@@ -50,15 +34,13 @@ kernel void path_trace(constant serenity::contracts::FrameConstants& frame [[buf
     const bool inside = pixel.x < frame.width && pixel.y < frame.height;
     bool failed = false;
     if (inside) {
+        // The scene, through its block, and as this frame places and lights
+        // it (metal/scene/scene_block.metal.h).
         path::Scene scene;
         scene.structure = structure;
-        scene.shapes = Shapes{shape_records, transforms, boxes};
-        scene.materials = Materials{materials, rough, dielectrics, conductors, coated};
-        scene.textures = Textures{texture_records, checkers, woods, swirls};
-        scene.selection = UniformLight{light_records, light_counts.lights};
-        scene.lights = Lights{light_records, shape_lights, sphere_lights, transforms, sphere_glows};
-        scene.media = Media{medium_records, absorbing};
-        scene.sky = sky;
+        scene.block = &block;
+        scene.transforms = transforms;
+        scene.glows = sphere_glows;
 
         PathNumbers numbers = path_numbers(pixel, frame.frame_index);
         const float2 within = next_numbers2(numbers);  // the point in the pixel

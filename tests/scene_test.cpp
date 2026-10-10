@@ -499,7 +499,7 @@ tint_distance = 0.01
     const scene::SceneDescription s = scene::parse(scene_with("", "", "\ninterior = \"blue_tint\""), "s");
     REQUIRE(s.coated.size() == 1);
     CHECK(s.coated[0].ior == 1.5f);
-    CHECK(s.coated[0].internal == doctest::Approx(float(materials::internal_reflectance(1.5))));
+    CHECK(s.coated[0].escape == doctest::Approx(float(materials::internal_escape(1.5))));
     REQUIRE(s.swirls.size() == 1);
     CHECK(s.swirls[0].vanes == 3u);
     CHECK(s.swirls[0].twist == 0.5f);

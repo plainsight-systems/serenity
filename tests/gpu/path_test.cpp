@@ -112,8 +112,8 @@ TEST_CASE("furnace: a white Lambert sphere under a uniform sky converges to the 
     Rig rig(text, {64, 64});
     const auto image = rig.render(1024);
     // The sphere's middle, and the sky beside it.
-    CHECK(mean_over(image, rig.size, 32, 32, 6) == doctest::Approx(0.5).epsilon(0.02));
-    CHECK(mean_over(image, rig.size, 3, 3, 2) == doctest::Approx(0.5).epsilon(0.01));
+    CHECK(mean_over(image, rig.size, 32, 32, 6) == doctest::Approx(0.5).scale(0).epsilon(0.02));
+    CHECK(mean_over(image, rig.size, 3, 3, 2) == doctest::Approx(0.5).scale(0).epsilon(0.01));
 }
 
 TEST_CASE("integrating sphere: light bounced many times inside a white sphere converges to its closed form") {
@@ -136,7 +136,7 @@ TEST_CASE("integrating sphere: light bounced many times inside a white sphere co
     Rig rig(text, {64, 64});
     const auto image = rig.render(1024);
     const double expected = 0.8 * 50.0 * (0.05 * 0.05) / (1.0 - 0.8);  // 0.5
-    CHECK(mean_over(image, rig.size, 32, 32, 8) == doctest::Approx(expected).epsilon(0.03));
+    CHECK(mean_over(image, rig.size, 32, 32, 8) == doctest::Approx(expected).scale(0).epsilon(0.03));
 }
 
 TEST_CASE("furnace: a glass sphere under a uniform sky converges to the sky") {
@@ -147,7 +147,7 @@ TEST_CASE("furnace: a glass sphere under a uniform sky converges to the sky") {
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"glass\"\n";
     Rig rig(text, {64, 64});
     const auto image = rig.render(512);
-    CHECK(mean_over(image, rig.size, 32, 32, 6) == doctest::Approx(0.5).epsilon(0.02));
+    CHECK(mean_over(image, rig.size, 32, 32, 6) == doctest::Approx(0.5).scale(0).epsilon(0.02));
 }
 
 namespace {
@@ -177,16 +177,69 @@ TEST_CASE("furnace: a white coated sphere under a uniform sky converges to the s
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"white\"\n";
     Rig rig(text, {64, 64});
     const auto image = rig.render(1024);
-    CHECK(mean_over(image, rig.size, 32, 32, 6) == doctest::Approx(0.5).epsilon(0.02));
+    CHECK(mean_over(image, rig.size, 32, 32, 6) == doctest::Approx(0.5).scale(0).epsilon(0.02));
+}
+
+
+// Glass of radius 1 filled with a medium keeping half its red over 1 m;
+// inside it an opaque white core of radius 0.3, and a light of radius 0.05
+// at (0, 0.45, 0.45), which nothing hides from the core's front. The sky is
+// black, so the middle of the image is the core, lit by that light, seen
+// through the glass. Red is dimmed over the camera's stretch to the core,
+// 0.7, and over the light's to the core, |(0, 0.45, 0.15)| - 0.05 = 0.424;
+// green over neither.
+std::string core_lit_inside_glass() {
+    return camera_text("[0, 0, 4]", "[0, 0, 0]", 30) + sky("[0, 0, 0]", "[0, 0, 0]") +
+           "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
+           "[materials.white]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
+           "[materials.glow]\nkind = \"emissive\"\nradiance = [40, 40, 40]\n"
+           "[media.red_out]\nkind = \"absorbing\"\ntint = [0.5, 1, 1]\ntint_distance = 1\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"glass\"\n"
+           "interior = \"red_out\"\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.3\nmaterial = \"white\"\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.45, 0.45]\nradius = 0.05\nmaterial = \"glow\"\n";
+}
+
+// A bead of radius 1 mm, filled with a medium keeping exp(-0.7) of its red
+// over 1 mm: 700 per meter. At this scale the 0.1 mm a ray starts off a
+// surface is 7% of a crossing's light; the stretch must be measured from the
+// surface itself.
+std::string tinted_bead() {
+    return camera_text("[0, 0, 0.004]", "[0, 0, 0]", 30) + sky("[0.5, 0.5, 0.5]", "[0.5, 0.5, 0.5]") +
+           "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
+           "[media.red_out]\nkind = \"absorbing\"\ntint = [0.4965853, 1, 1]\ntint_distance = 0.001\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.001\nmaterial = \"glass\"\n"
+           "interior = \"red_out\"\n";
+}
+
+TEST_CASE("an absorbing medium at a bead's scale: its stretch measured from the surface, not the ray's start") {
+    Rig rig(tinted_bead(), {64, 64});
+    const auto image = rig.render(2048);
+    const double f = 0.04, tau = std::exp(-1.4);  // 2 mm of 700 per meter
+    const double expected = 0.5 * (f + (1.0 - f) * (1.0 - f) * tau / (1.0 - f * tau));
+    INFO("expected red " << expected);
+    CHECK(mean_channel(image, rig.size, 32, 32, 1, 0) == doctest::Approx(expected).scale(0).epsilon(0.03));
+}
+
+TEST_CASE("a light inside the same medium as the surface it lights: its light dimmed over the shadow ray") {
+    Rig rig(core_lit_inside_glass(), {64, 64});
+    const auto image = rig.render(2048);
+    const double ratio = mean_channel(image, rig.size, 32, 32, 2, 0) / mean_channel(image, rig.size, 32, 32, 2, 1);
+    const double sigma = std::log(2.0);
+    INFO("red over green " << ratio);
+    CHECK(ratio == doctest::Approx(std::exp(-sigma * 0.7) * std::exp(-sigma * 0.424)).scale(0).epsilon(0.06));
 }
 
 TEST_CASE("a coated sphere of black base shows its coat alone: F0 of the sky at its middle") {
     const std::string text = camera_text("[0, 0, 4]", "[0, 0, 0]", 30) + sky("[1, 1, 1]", "[1, 1, 1]") +
                              "[materials.black]\nkind = \"coated\"\ncolor = [0, 0, 0]\nior = 1.5\n"
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"black\"\n";
+    // The coat is drawn 4% of the time, so its mean is slow to settle:
+    // over 4096 frames each pixel's has some 8% of error, and the mean of
+    // 25 pixels some 1.5%, with 8-bit rounding beside it.
     Rig rig(text, {64, 64});
-    const auto image = rig.render(1024);
-    CHECK(mean_channel(image, rig.size, 32, 32, 1, 0) == doctest::Approx(0.04).epsilon(0.05));
+    const auto image = rig.render(4096);
+    CHECK(mean_channel(image, rig.size, 32, 32, 2, 0) == doctest::Approx(0.04).scale(0).epsilon(0.07));
 }
 
 TEST_CASE("an absorbing medium in glass: through its middle, what Beer and Lambert and Fresnel leave") {
@@ -205,8 +258,8 @@ TEST_CASE("an absorbing medium in glass: through its middle, what Beer and Lambe
     const double f = 0.04, tau = 0.25;
     const double expected = 0.5 * (f + (1.0 - f) * (1.0 - f) * tau / (1.0 - f * tau));
     INFO("expected red " << expected);
-    CHECK(mean_channel(image, rig.size, 32, 32, 1, 0) == doctest::Approx(expected).epsilon(0.03));
-    CHECK(mean_channel(image, rig.size, 32, 32, 1, 1) == doctest::Approx(0.5).epsilon(0.02));
+    CHECK(mean_channel(image, rig.size, 32, 32, 1, 0) == doctest::Approx(expected).scale(0).epsilon(0.03));
+    CHECK(mean_channel(image, rig.size, 32, 32, 1, 1) == doctest::Approx(0.5).scale(0).epsilon(0.02));
 }
 
 std::string lit_floor(const std::string& fireflies) {
@@ -254,7 +307,7 @@ void check_floor(const std::string& text, std::uint64_t frames) {
         // formula varies little over three pixels of floor.
         const double expected = expected_floor(rig.scene, rig.size, x, y);
         INFO("pixel " << x << ", " << y << ": expected " << expected);
-        CHECK(mean_over(image, rig.size, x, y, 1) == doctest::Approx(expected).epsilon(0.03));
+        CHECK(mean_over(image, rig.size, x, y, 1) == doctest::Approx(expected).scale(0).epsilon(0.03));
     }
 }
 
@@ -335,7 +388,7 @@ TEST_CASE("the camera sees a light's glow, through the emitter") {
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.5\nmaterial = \"glow\"\n";
     Rig rig(text, {33, 33});
     const auto image = rig.render(4);
-    CHECK(mean_over(image, rig.size, 16, 16, 2) == doctest::Approx(0.6).epsilon(0.01));
+    CHECK(mean_over(image, rig.size, 16, 16, 2) == doctest::Approx(0.6).scale(0).epsilon(0.01));
 }
 
 TEST_CASE("a frame time past what the shaders' float holds is refused before it is recorded") {

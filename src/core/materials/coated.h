@@ -25,9 +25,13 @@
 //            f(wo, wi) = (1 - F(cos theta_i)) (1 - F(cos theta_o)) rho
 //                        / (pi ior^2 (1 - rho F_in)),
 //          F_in the coat's reflectance from inside, averaged over the
-//          cosine-weighted hemisphere, total internal reflection included:
-//          internal_reflectance(ior), computed once, at load, into the
-//          material's data.
+//          cosine-weighted hemisphere, total internal reflection included.
+//          What is kept, computed once, at load, into the material's data,
+//          is 1 - F_in, the escape, internal_escape(ior), and the
+//          denominator is formed as (1 - rho) + rho (1 - F_in): a coat of
+//          high ior lets out almost none of the base's light, and 1 - F_in
+//          as a float stays above 0 where F_in itself rounds to 1 and 1 -
+//          rho F_in would divide by 0.
 //
 // Energy: for a white base, rho = 1, the two lobes reflect all the light
 // arriving, at every angle: the base's albedo, the integral of f |cos theta_i|,
@@ -58,15 +62,16 @@
 //
 // It resolves (metal/materials/resolve.metal.h) to BsdfKind::coated: color
 // rho, from its texture or its constant, as a rough surface's is
-// (rough.h); ior; and F_in, as Bsdf::internal.
+// (rough.h); ior; and 1 - F_in, as Bsdf::escape.
 //
-// internal_reflectance(ior), F_in: the integral over the hemisphere inside
+// internal_escape(ior), 1 - F_in, and internal_reflectance(ior), F_in: the
+// latter the integral over the hemisphere inside
 // the coat of F_inside(cos theta) 2 cos theta sin theta d theta, F_inside
 // the Fresnel reflectance from the coat's side, 1 past the critical angle
-// theta_c, whose part is 1 - 1 / ior^2 exactly. Below theta_c, by Simpson's
-// rule over 4096 intervals of s, theta = theta_c - s^2, which smooths the
-// reflectance's infinite slope at theta_c, in double: some 0.596 for ior
-// 1.5. A pure function of the ior (F.8), computed once a material, at
+// theta_c. The escape is computed directly, as the integral below theta_c
+// of (1 - F_inside) 2 cos sin, by Simpson's rule over 4096 intervals of s,
+// theta = theta_c - s^2, which smooths the reflectance's infinite slope at
+// theta_c, in double; F_in is 1 less it, some 0.596 for ior 1.5. A pure function of the ior (F.8), computed once a material, at
 // load, rather than at every hit that resolves it; the shaders read the
 // result. CPU only.
 
@@ -86,14 +91,15 @@ struct CoatedData {
     contracts::Float3 color;              // the base's albedo, each in [0, 1]; used when texture.index is no_texture
     contracts::TextureReference texture;  // the base's albedo from a texture, or no_texture
     float ior;                            // the coat's index of refraction; greater than 1
-    float internal;                       // internal_reflectance(ior), filled at load
+    float escape;                         // internal_escape(ior), 1 - F_in, filled at load
     uint32_t padding[2];
 };
 
 static_assert(sizeof(CoatedData) == 32, "CoatedData must be the same 32 bytes on the host and in shaders");
 
 #if !defined(__METAL_VERSION__)
-// F_in for a coat of `ior`, greater than 1: above.
+// 1 - F_in and F_in for a coat of `ior`, greater than 1: above.
+double internal_escape(double ior);
 double internal_reflectance(double ior);
 #endif
 

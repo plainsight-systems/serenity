@@ -47,3 +47,13 @@ TEST_CASE("the coat's internal reflectance: glass's published value, and recipro
     // Nearer air, less is reflected inside.
     CHECK(internal_reflectance(1.05) < internal_reflectance(1.5));
 }
+
+TEST_CASE("the escape stays above 0 as a float where the reflectance rounds to 1") {
+    using serenity::materials::internal_escape;
+    using serenity::materials::internal_reflectance;
+    // A coat of ior 1000: F_in is 1 as a float, its escape is not.
+    CHECK(static_cast<float>(internal_reflectance(1000.0)) == 1.0f);
+    CHECK(static_cast<float>(internal_escape(1000.0)) > 0.0f);
+    // And reciprocity holds there too: 1 - F_out = ior^2 (1 - F_in).
+    CHECK(1.0 - external_reflectance(1000.0) == doctest::Approx(1000.0 * 1000.0 * internal_escape(1000.0)).epsilon(1e-4));
+}

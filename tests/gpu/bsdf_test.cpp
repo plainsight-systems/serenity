@@ -249,7 +249,7 @@ TEST_CASE("Lambert: sampling follows the pdf, and every sample's weight is the a
         albedo += cells[i][0] * std::abs(dot({r * std::cos(phi), r * std::sin(phi), z}, n)) * 4.0 *
                   std::numbers::pi / (double(grid) * grid);
     }
-    CHECK(albedo == doctest::Approx(0.5).epsilon(0.005));
+    CHECK(albedo == doctest::Approx(0.5).scale(0).epsilon(0.005));
 
     // wo on the far side of the normal: it reflects there instead. Checked
     // against the normal directly, not only against evaluate() and pdf(),
@@ -298,7 +298,7 @@ TEST_CASE("conductor: sampling follows the pdf, and a metal of f0 = 1 returns no
                 const double x = std::sqrt(std::max(0.0, 1.0 - z * z)) * std::cos(phi);  // n . wi
                 albedo += cells[i][0] * std::abs(x) * 4.0 * std::numbers::pi / (double(grid) * grid);
             }
-            CHECK(total / sample_count == doctest::Approx(albedo).epsilon(0.01));
+            CHECK(total / sample_count == doctest::Approx(albedo).scale(0).epsilon(0.01));
         }
     }
 }
@@ -325,7 +325,7 @@ TEST_CASE("dielectric: Fresnel chooses reflection, the weights are 1 and 1 / eta
             CHECK(weight == doctest::Approx(1.0 / 2.25));
         }
     }
-    CHECK(double(reflected) / sample_count == doctest::Approx(0.04).epsilon(0.03));
+    CHECK(double(reflected) / sample_count == doctest::Approx(0.04).scale(0).epsilon(0.03));
 
     // From inside, 60 degrees from the normal: past the critical angle,
     // asin(1 / 1.5) = 41.8 degrees, so every sample reflects, weight 1.
@@ -351,7 +351,7 @@ double fresnel_from_air(double cos_i, double ior) {
 
 Bsdf coated(V3 n, std::array<float, 3> color, float ior) {
     Bsdf b = make(BsdfKind::coated, n, color, 0.0f, ior);
-    b.internal = float(materials::internal_reflectance(ior));
+    b.escape = float(materials::internal_escape(ior));
     return b;
 }
 
@@ -382,7 +382,7 @@ TEST_CASE("coated: the base follows its pdf, the coat is chosen by its Fresnel r
             wrong += (off < 1e-4 && std::abs(p.pdf - f_o) < 1e-4 && std::abs(weight - 1.0) < 1e-4) ? 0u : 1u;
         }
         CHECK(wrong == 0);
-        CHECK(double(coats) / sample_count == doctest::Approx(f_o).epsilon(0.02));
+        CHECK(double(coats) / sample_count == doctest::Approx(f_o).scale(0).epsilon(0.02));
     }
 }
 
@@ -400,7 +400,7 @@ TEST_CASE("coated: a white base reflects all the light that arrives, at every an
                                       : 0.0;
             }
             INFO("ior " << ior << ", cos theta_o " << cos_o);
-            CHECK(white / sample_count == doctest::Approx(1.0).epsilon(0.003));
+            CHECK(white / sample_count == doctest::Approx(1.0).scale(0).epsilon(0.003));
             // A base of half: the coat's F, and the base's share of the rest.
             double half = 0.0;
             for (const Probe& p : samples(gpu, coated(n, {0.5f, 0.5f, 0.5f}, ior), wo)) {
@@ -412,9 +412,25 @@ TEST_CASE("coated: a white base reflects all the light that arrives, at every an
             // (1 - F_o)(1 - F_out) rho / (ior^2 (1 - rho F_in)), 1 - F_out =
             // ior^2 (1 - F_in) (coated.h).
             const double expected = f_o + (1.0 - f_o) * 0.5 * (1.0 - f_in) / (1.0 - 0.5 * f_in);
-            CHECK(half / sample_count == doctest::Approx(expected).epsilon(0.003));
+            CHECK(half / sample_count == doctest::Approx(expected).scale(0).epsilon(0.003));
         }
     }
+}
+
+TEST_CASE("coated: a coat of very high ior keeps every sample finite, and a white base still reflects all") {
+    // ior 1000: F_in rounds to 1 as a float; the escape, stored instead,
+    // does not, so the base's denominator stays above 0 (coated.h).
+    Gpu gpu;
+    const V3 n = unit(0.0, 0.0, 1.0);
+    const V3 wo = unit(0.6, 0.0, 0.8);
+    double white = 0.0;
+    std::uint32_t not_finite = 0;
+    for (const Probe& p : samples(gpu, coated(n, {1.0f, 1.0f, 1.0f}, 1000.0f), wo)) {
+        not_finite += std::isfinite(p.value.x) && std::isfinite(p.pdf) && std::isfinite(p.evaluated.x) ? 0u : 1u;
+        white += p.pdf > 0.0f ? p.value.x * dot({p.direction.x, p.direction.y, p.direction.z}, n) / p.pdf : 0.0;
+    }
+    CHECK(not_finite == 0);
+    CHECK(white / sample_count == doctest::Approx(1.0).scale(0).epsilon(0.01));
 }
 
 TEST_CASE("lobes: each kind's, from the shader, and an estimator aims at lights only where one is not delta") {
@@ -543,5 +559,5 @@ material = "a_checks"
     CHECK(resolved[8].kind == BsdfKind::coated);
     CHECK(resolved[8].color.x == doctest::Approx(0.6f));
     CHECK(resolved[8].ior == doctest::Approx(1.5f));
-    CHECK(resolved[8].internal == doctest::Approx(float(materials::internal_reflectance(1.5))));
+    CHECK(resolved[8].escape == doctest::Approx(float(materials::internal_escape(1.5))));
 }

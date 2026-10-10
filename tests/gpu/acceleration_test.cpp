@@ -71,9 +71,9 @@ std::vector<ProbeHit> probe(metal::Device& device, metal::Submission& submission
     table->setAddress(ray_buffer->gpuAddress(), 1);
     table->setAddress(count_buffer->gpuAddress(), 2);
     table->setResource(acceleration.resource(frame.slot), 3);
-    table->setAddress(buffers.addresses().shapes, 4);
+    table->setAddress(buffers.block().shapes, 4);
     table->setAddress(transforms.address(frame.slot), 5);
-    table->setAddress(buffers.addresses().boxes, 6);
+    table->setAddress(buffers.block().boxes, 6);
     encoder->setArgumentTable(table.get());
     encoder->setComputePipelineState(pipeline.get());
     encoder->dispatchThreads(MTL::Size(count, 1, 1), MTL::Size(pipeline->threadExecutionWidth(), 1, 1));

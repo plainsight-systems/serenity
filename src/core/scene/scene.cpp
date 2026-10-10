@@ -380,7 +380,7 @@ std::map<std::string, std::uint32_t, std::less<>> read_materials(
                 r.fail(r.required(t, "ior", what), what + "'s ior must be greater than 1");
             }
             // Once a material, at load (F.8): the shaders read it.
-            coated.internal = static_cast<float>(materials::internal_reflectance(coated.ior));
+            coated.escape = static_cast<float>(materials::internal_escape(coated.ior));
             scene.materials.push_back(
                 {materials::MaterialKind::coated, static_cast<std::uint32_t>(scene.coated.size())});
             scene.coated.push_back(coated);

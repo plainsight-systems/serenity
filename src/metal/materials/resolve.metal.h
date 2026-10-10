@@ -52,7 +52,7 @@ inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures text
     bsdf.color = to_packed(float3(1.0f));
     bsdf.alpha = 0.0f;
     bsdf.ior = 0.0f;
-    bsdf.internal = 0.0f;
+    bsdf.escape = 0.0f;
     bsdf.padding[0] = bsdf.padding[1] = 0u;
     const float3 world = to_float3(surface.position);
     const float3 object = to_float3(surface.object_position);
@@ -83,7 +83,7 @@ inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures text
         base.texture = coat.texture;
         bsdf.color = to_packed(rough_color(base, textures, world, object));
         bsdf.ior = coat.ior;
-        bsdf.internal = coat.internal;
+        bsdf.escape = coat.escape;
         break;
     }
     }
