@@ -315,3 +315,80 @@ the world), GDSA.3 (the draws keep their keys: an air swarm's starts and
 every loop are unchanged, the pinned loop included), CDSA.21 (no new
 threshold), MEM.9 (nothing allocated per frame; a sleeping glow now does
 less).
+
+## The redraw of a refused firefly
+
+The design of 623d807 and 85df79b (swarm.h, step 5; flight.h,
+try_flights; scene.h, the load's later rounds), implemented in the commit
+after d4ab2eb. Both corpora answered: cpp-guidelines over MCP, the
+performance corpus over HTTP at :7015. Every category of both was walked
+again over this diff: `src/core/animation/flight.{h,cpp}` (one private
+batch, `make_flights`, `try_flights`), `src/core/scene/swarm.{h,cpp}`
+(`FireflyDraw`, `firefly_seed`, `make_firefly`), `src/core/scene/scene.cpp`
+(`fly`, `redraw`, `swarm_job`, `draw_firefly`), and the tests in
+`tests/swarm_test.cpp`.
+
+| Verdict | Count |
+|---|---|
+| Fixed | 3 |
+| Rejected, with reason | 2 |
+
+Findings:
+
+| Rule | Finding | Verdict |
+|---|---|---|
+| I.5 | `make_firefly` took a `FireflyDraw` past the swarm's count or firefly_draws as given; FireflyDraw states both ranges | **Fixed.** Refused with std::invalid_argument, swarm.h says so; tested at draw 8, firefly 8 of 8, and the last valid |
+| I.7, P.1 | The swarm refusal said "each of its 8 draws" from the constant, whatever the rounds did: a round too few would still claim eight (shown: that mutation survived the first test) | **Fixed.** The count is the refused firefly's last draw and one; the mutation now fails the test |
+| CP.41 | flight.h said the threads are made "once a load"; with step 5's rounds a load makes a batch's threads up to firefly_draws times | **Fixed** in the header's words, as a statement of the cost: once a call, at most firefly_draws - 1 calls more a load, each with no more threads than refused jobs. A pool kept across calls was not made: a few rounds of a few jobs, against flights of milliseconds each (Per.1, Per.2) |
+| CP.41 | A thread pool shared by the rounds | **Rejected** (above): the rounds are rare (a scene that loaded before makes none) and small |
+| I.24 | `redraw(std::size_t at, std::uint32_t draw, ...)`: two integers side by side | **Rejected:** different types, and the swap that compiles silently, a draw where a pending index goes, widens a uint32 nobody passes there; the other swap narrows a size_t, which `-Wshorten-64-to-32 -Werror` refuses. The pending firefly's index is the caller's own loop variable |
+
+Rules that bear on the diff, checked and clean:
+
+- **P** P.1 (`FlightOutcome` says a job's flight or its refusal), P.6/P.7
+  (each refusal reported where its line is, the written at once).
+- **I** I.10 (no failure lost: a non-refusal rethrown, the lowest job's),
+  I.23 (`FireflyDraw` one argument), I.24 (`FireflyDraw`'s named fields,
+  the design's).
+- **F** F.2/F.3 (`fly` makes and redraws; its parts `redraw`, `swarm_job`,
+  `draw_firefly` each one thing), F.20/F.21 (outcomes returned, not output
+  parameters), F.48 (`std::move(batch.flights)` moves a member, not a local
+  whose return would be elided).
+- **C** C.181/C.182 (`std::variant<Flight, FlightRefusal>`: a refused job
+  holds no flight that looks made), C.2 (`FireflyDraw`, `FlightRefusal`
+  structs of independent values).
+- **Enum** none new.
+- **R** no ownership; `std::exception_ptr` kept per job (R.1).
+- **ES** ES.3 (one batch behind both policies, one `swarm_job` for the first
+  and later rounds, one `draw_firefly` for both), ES.45 (firefly_draws
+  named), ES.46 (no narrowing: draws are uint32 from a uint32 loop),
+  ES.77 (`try_flights` an if/else, no continue), ES.100 (the draw loop
+  unsigned against an unsigned bound).
+- **Per** Per.1/Per.2 (no pool; rounds only for refusals), Per.14 (one
+  outcomes vector a batch).
+- **CP** CP.2 (each job's slot written by one thread), CP.4 and CP.25 as
+  before; CP.41 above.
+- **E** E.2/E.3 (refusals the only expected failures; anything else
+  rethrown as itself), E.14 (MotionError for a refusal; FlightsError keeps
+  make_flights' contract), E.17 (only MotionError caught in try_flights;
+  everything else passes through), E.31 (one catch clause).
+- **Con** Con.4 (outcomes moved in place; `refused` rebuilt per round).
+- **T** none new.
+- **SF** SF.10 (`<variant>`, `<string>` in flight.h already).
+- **SL** SL.con.2 (vectors), SL.4 (`std::get_if` before `std::get`, so a
+  refusal is never read as a flight).
+- **NL** NL.8 (names after the header's: `try_flights`, `FlightOutcome`,
+  `FireflyDraw`, `firefly_draws`).
+- **MEM** MEM.9 (load only; nothing per frame).
+- **COPY** COPY.7 (a refused job's `FlightJob` copied once into its round's
+  batch, a few a load); COPY.8 (outcomes returned by value).
+- **CACHE** CACHE.1 (each batch slot written once by one thread, as
+  before).
+- **CONC** CONC.1 (the batch's relaxed counter, unchanged), CONC.3.
+- **GEN** none.
+- **CDSA** CDSA.21 (firefly_draws named, with its reason in swarm.h).
+- **GDSA** GDSA.3 (each draw's seed keyed by (seed, i, d); draw 0 is the
+  seed it was, so every firefly whose first flight is made is unchanged,
+  shown bit for bit; the result is the same for any worker count, shown
+  against step 5 done one firefly at a time).
+- **GPU, LIFE, EMB, SIMD, TLM, WASM** not applicable to this diff.

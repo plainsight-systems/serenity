@@ -388,8 +388,10 @@ Flight make_flight(const FlightJob& job, const contracts::Obstacles& obstacles);
 // result is the same for any count; the scene reader passes
 // flight_workers(). If any cannot be made, throws, once every thread
 // has finished, the failure of the lowest k that failed: tasks, not
-// threads (CP.4), the threads made once a load (CP.41) and joined however
-// the call ends (CP.25). Each failure is caught in the worker that met it,
+// threads (CP.4), the threads made once a call (CP.41: once a load, and
+// once more for each of a swarm's later rounds, swarm.h step 5, at most
+// firefly_draws - 1 of them, each with no more threads than refused jobs)
+// and joined however the call ends (CP.25). Each failure is caught in the worker that met it,
 // kept as a std::exception_ptr and rethrown here, in the caller, which can
 // report it: an exception that left a worker's function would end the
 // program. A refusal, make_flight's MotionError, is rethrown as a FlightsError

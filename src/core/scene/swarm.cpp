@@ -59,9 +59,9 @@ contracts::Float3 to_float(const std::array<double, 3>& p) noexcept {
 // step rather than five or six (I.23); read through references, so never
 // copied (C.12).
 struct Drawing {
-    Drawing(const Swarm& s, std::uint32_t n, const contracts::Obstacles& o)
-        : swarm(s), i(n), seed(firefly_seed(s.flight.seed, n)), range(shrunk(s, n)), needed(needed_of(s)),
-          obstacles(o) {}
+    Drawing(const Swarm& s, FireflyDraw which, const contracts::Obstacles& o)
+        : swarm(s), i(which.index), seed(firefly_seed(s.flight.seed, which)), range(shrunk(s, which.index)),
+          needed(needed_of(s)), obstacles(o) {}
     Drawing(const Drawing&) = delete;
     Drawing& operator=(const Drawing&) = delete;
     Drawing(Drawing&&) = delete;
@@ -245,14 +245,19 @@ void check_numbers(const Swarm& swarm) {
 
 }  // namespace
 
-std::uint64_t firefly_seed(std::uint64_t swarm_seed, std::uint32_t i) {
-    // Step 1.
-    return animation::splitmix64(animation::splitmix64(swarm_seed) ^ i);
+std::uint64_t firefly_seed(std::uint64_t swarm_seed, FireflyDraw which) {
+    // Step 1: draw 0's seed as it was before redraws; each later draw's from
+    // it and its own number, mixed (GDSA.3).
+    const std::uint64_t first = animation::splitmix64(animation::splitmix64(swarm_seed) ^ which.index);
+    return which.draw == 0 ? first : animation::splitmix64(first ^ animation::splitmix64(which.draw));
 }
 
-Firefly make_firefly(const Swarm& swarm, std::uint32_t i, const contracts::Obstacles& obstacles) {
+Firefly make_firefly(const Swarm& swarm, FireflyDraw which, const contracts::Obstacles& obstacles) {
+    if (!(which.index < swarm.count && which.draw < firefly_draws)) {
+        throw std::invalid_argument("make_firefly: a swarm's firefly or draw past its count or firefly_draws");
+    }
     check_numbers(swarm);
-    const Drawing d{swarm, i, obstacles};
+    const Drawing d{swarm, which, obstacles};
     Firefly firefly;
 
     // Step 3: its wake, the share awake by t ((t - from) / (to - from))^power

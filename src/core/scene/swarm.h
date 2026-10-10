@@ -250,7 +250,8 @@ std::uint64_t firefly_seed(std::uint64_t swarm_seed, FireflyDraw which);
 // a linger's least 0 or more, its most at least that and at most most_wait;
 // a wake's from 0 or more, its to from that to most_wait, its power above
 // 0, its ramp 0 or more; and a wake's to (0 with no wake) plus a linger's
-// most at most most_wait, compared without adding, so no sum overflows.
+// most at most most_wait, compared without adding, so no sum overflows;
+// and a `which` past the swarm's count or firefly_draws (FireflyDraw).
 Firefly make_firefly(const Swarm& swarm, FireflyDraw which, const contracts::Obstacles& obstacles);
 
 }  // namespace serenity::scene

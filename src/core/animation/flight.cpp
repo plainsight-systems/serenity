@@ -1093,12 +1093,21 @@ std::size_t flight_workers() {
     return std::max(1u, std::thread::hardware_concurrency());
 }
 
-std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles,
-                                 std::size_t workers) {
+namespace {
+
+// Many flights' outcomes, as one batch: flight k made, or failure k kept,
+// whatever it threw. The one private batch behind make_flights() and
+// try_flights() (flight.h, ES.3), each of which applies its own rule to it.
+struct Batch {
+    std::vector<Flight> flights;
+    std::vector<std::exception_ptr> failures;
+};
+
+Batch make_batch(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles, std::size_t workers) {
     std::vector<Flight> flights(jobs.size());
-    // Each job's failure, whatever it threw, kept to be rethrown here, where
-    // it can be reported: catching it in the worker keeps any exception from
-    // ending the program there. Taking it cannot throw.
+    // Each job's failure, whatever it threw, kept to be rethrown by the
+    // caller, where it can be reported: catching it in the worker keeps any
+    // exception from ending the program there. Taking it cannot throw.
     std::vector<std::exception_ptr> failures(jobs.size());
     // Optimization: relaxed. The counter hands out jobs and publishes
     // nothing; joining the threads publishes every flight and failure
@@ -1118,7 +1127,7 @@ std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contr
         }
     };
     // Tasks, not threads (CP.4): each thread takes the next unmade flight.
-    // The threads are made once a load (CP.41) and joined as this block
+    // The threads are made once a batch (CP.41) and joined as this block
     // ends, however it ends (CP.25).
     {
         const std::size_t threads = std::min<std::size_t>(std::max<std::size_t>(workers, 1),
@@ -1134,16 +1143,48 @@ std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contr
         }
         work();
     }
+    return {.flights = std::move(flights), .failures = std::move(failures)};
+}
+
+}  // namespace
+
+std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles,
+                                 std::size_t workers) {
+    Batch batch = make_batch(jobs, obstacles, workers);
+    // The lowest k that failed, of any kind; a refusal as a FlightsError.
     for (std::size_t k = 0; k < jobs.size(); ++k) {
-        if (failures[k]) {
+        if (batch.failures[k]) {
             try {
-                std::rethrow_exception(failures[k]);
+                std::rethrow_exception(batch.failures[k]);
             } catch (const MotionError& refused) {
                 throw FlightsError(k, refused.what());
             }
         }
     }
-    return flights;
+    return std::move(batch.flights);
+}
+
+std::vector<FlightOutcome> try_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles,
+                                       std::size_t workers) {
+    Batch batch = make_batch(jobs, obstacles, workers);
+    std::vector<FlightOutcome> outcomes;
+    outcomes.reserve(jobs.size());
+    // In job order, so the failure rethrown, the first that is not a
+    // refusal, is the lowest k's, whatever refusals lower jobs met
+    // (flight.h). A refusal becomes its outcome; anything else leaves the
+    // catch clause, which matches refusals alone, as itself.
+    for (std::size_t k = 0; k < jobs.size(); ++k) {
+        if (batch.failures[k]) {
+            try {
+                std::rethrow_exception(batch.failures[k]);
+            } catch (const MotionError& refused) {
+                outcomes.emplace_back(FlightRefusal{.reason = refused.what()});
+            }
+        } else {
+            outcomes.emplace_back(std::move(batch.flights[k]));
+        }
+    }
+    return outcomes;
 }
 
 Extent extent(const Flight& flight) {

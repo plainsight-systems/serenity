@@ -668,6 +668,7 @@ struct Pending {
     const toml::node* glow = nullptr;    // and its glow's
     std::size_t swarm = no_swarm;        // a swarm's firefly: its swarm's index
     std::uint32_t firefly = 0;           // which of it
+    std::uint32_t draw = 0;              // and which of its draws (swarm.h, steps 1 and 5)
     contracts::Float3 start{};           // and where it starts (swarm.h, step 2)
     animation::Prelude prelude;          // what it does before its loop (swarm.h, step 4)
     std::optional<animation::Wake> wake;  // and when its glow wakes (step 3)
@@ -741,7 +742,11 @@ private:
     std::optional<animation::MotionRecord> make_wander(const Pending& p, const toml::table& t, const std::string& what,
                                                        float body, const contracts::Obstacles& obstacles);
     animation::GlowRecord make_glow(const Pending& p, const animation::MotionRecord* motion);
-    [[noreturn]] void report(const animation::FlightsError& refused, const std::vector<std::size_t>& job_of) const;
+    Firefly draw_firefly(std::size_t swarm, FireflyDraw which, const contracts::Obstacles& obstacles) const;
+    animation::FlightJob swarm_job(const Pending& p) const;
+    void redraw(std::size_t at, std::uint32_t draw, const contracts::Obstacles& obstacles);
+    std::vector<animation::Flight> fly(std::vector<animation::FlightJob>& jobs, const std::vector<std::size_t>& job_of,
+                                       const contracts::Obstacles& obstacles);
     const toml::node& flight_node(const Pending& p) const;
 
     const Reader& r_;
@@ -962,13 +967,7 @@ void ShapeReading::read_swarms(const toml::array& all, const contracts::Obstacle
         const std::size_t swarm_index = swarms_.size() - 1;
         const Swarm& swarm = swarms_.back().swarm;
         for (std::uint32_t i = 0; i < swarm.count; ++i) {
-            const Firefly firefly = [&] {
-                try {
-                    return make_firefly(swarm, i, obstacles);  // swarm.h, steps 2 to 3
-                } catch (const animation::MotionError& refused) {
-                    r_.fail(t, what + ": " + refused.what());
-                }
-            }();
+            const Firefly firefly = draw_firefly(swarm_index, FireflyDraw{.index = i, .draw = 0}, obstacles);
             const std::uint32_t index = add_sphere(firefly.start, swarm.radius, worn);
             moving_.push_back(true);
             pending_.push_back({.shape = index,
@@ -1060,20 +1059,106 @@ animation::GlowRecord ShapeReading::make_glow(const Pending& p, const animation:
     r_.fail(r_.required(t, "kind", what), "unknown glow kind '" + std::string(kind) + "'; known kinds: rhythm, flight");
 }
 
-// The lowest job that failed, reported against its own line, without the
-// job number, which is no line of the file.
-void ShapeReading::report(const animation::FlightsError& refused, const std::vector<std::size_t>& job_of) const {
+// Swarm `swarm`'s firefly `which` (swarm.h, steps 2 to 3), a refusal to
+// draw it reported at the swarm's table.
+Firefly ShapeReading::draw_firefly(std::size_t swarm, FireflyDraw which, const contracts::Obstacles& obstacles) const {
+    const SwarmEntry& entry = swarms_[swarm];
+    try {
+        return make_firefly(entry.swarm, which, obstacles);
+    } catch (const animation::MotionError& refused) {
+        r_.fail(entry.table.get(), entry.what + ": " + refused.what());
+    }
+}
+
+// A swarm firefly's flight job: the swarm's numbers, the seed of its
+// current draw (swarm.h, step 1), its start, body and prelude.
+animation::FlightJob ShapeReading::swarm_job(const Pending& p) const {
+    animation::FlightParams params = swarms_[p.swarm].swarm.flight;
+    params.seed = firefly_seed(params.seed, FireflyDraw{.index = p.firefly, .draw = p.draw});
+    return {.params = std::move(params),
+            .start = p.start,
+            .body = contracts::scale(description_.shapes.transforms[p.shape]),  // a sphere's radius
+            .prelude = p.prelude};
+}
+
+// Step 5 (swarm.h): pending firefly `at` drawn again from its draw `draw`,
+// whole: its start, so its sphere's placed transform, its prelude and its
+// wake. Its light record names its shape, and so follows it.
+void ShapeReading::redraw(std::size_t at, std::uint32_t draw, const contracts::Obstacles& obstacles) {
+    Pending& p = pending_[at];
+    const Firefly firefly = draw_firefly(p.swarm, FireflyDraw{.index = p.firefly, .draw = draw}, obstacles);
+    p.draw = draw;
+    p.start = firefly.start;
+    p.prelude = firefly.prelude;
+    p.wake = firefly.wake;
+    description_.shapes.transforms[p.shape] = contracts::placed(firefly.start, swarms_[p.swarm].swarm.radius);
+}
+
+// Every flight, made all together (core/animation/flight.h, try_flights);
+// then, round by round, each swarm firefly refused drawn again and made
+// with the others of its round, at most firefly_draws draws a firefly
+// (swarm.h, step 5). A written flight refused refuses the scene from the
+// first batch, the lowest job's first: its numbers are its author's. A
+// swarm's firefly refused at its last draw refuses the swarm, the lowest
+// job's first, naming it and its last refusal. Returns the flights by job.
+std::vector<animation::Flight> ShapeReading::fly(std::vector<animation::FlightJob>& jobs,
+                                                 const std::vector<std::size_t>& job_of,
+                                                 const contracts::Obstacles& obstacles) {
+    std::vector<animation::FlightOutcome> outcomes =
+        animation::try_flights(jobs, obstacles, animation::flight_workers());
+    std::vector<std::size_t> pending_of(jobs.size());
     for (std::size_t i = 0; i < pending_.size(); ++i) {
-        if (job_of[i] == refused.job) {
-            const Pending& p = pending_[i];
-            r_.fail(flight_node(p), p.what + (p.swarm != no_swarm ? "'s flight: " : "'s motion: ") + refused.reason);
+        if (job_of[i] < jobs.size()) {
+            pending_of[job_of[i]] = i;
         }
     }
-    throw std::logic_error("a flight was refused that no shape asked for");
+    const auto refusal = [&](std::size_t k) { return std::get_if<animation::FlightRefusal>(&outcomes[k]); };
+    std::vector<std::size_t> refused;  // the swarms' refused jobs, in job order
+    for (std::size_t k = 0; k < jobs.size(); ++k) {
+        if (const animation::FlightRefusal* r = refusal(k)) {
+            const Pending& p = pending_[pending_of[k]];
+            if (p.swarm == no_swarm) {
+                r_.fail(*p.motion, p.what + "'s motion: " + r->reason);
+            }
+            refused.push_back(k);
+        }
+    }
+    for (std::uint32_t draw = 1; draw < firefly_draws && !refused.empty(); ++draw) {
+        std::vector<animation::FlightJob> again;
+        again.reserve(refused.size());
+        for (const std::size_t k : refused) {
+            redraw(pending_of[k], draw, obstacles);
+            jobs[k] = swarm_job(pending_[pending_of[k]]);
+            again.push_back(jobs[k]);
+        }
+        std::vector<animation::FlightOutcome> made =
+            animation::try_flights(again, obstacles, animation::flight_workers());
+        std::vector<std::size_t> still;
+        for (std::size_t j = 0; j < refused.size(); ++j) {
+            outcomes[refused[j]] = std::move(made[j]);
+            if (refusal(refused[j])) {
+                still.push_back(refused[j]);
+            }
+        }
+        refused = std::move(still);
+    }
+    if (!refused.empty()) {
+        // The draws counted as made, its last draw's number and one: what
+        // the rounds did, not what they were meant to.
+        const Pending& p = pending_[pending_of[refused.front()]];
+        r_.fail(flight_node(p), p.what + "'s flight was refused at each of its " + std::to_string(p.draw + 1) +
+                                    " draws; the last: " + refusal(refused.front())->reason);
+    }
+    std::vector<animation::Flight> flights;
+    flights.reserve(jobs.size());
+    for (animation::FlightOutcome& outcome : outcomes) {
+        flights.push_back(std::get<animation::Flight>(std::move(outcome)));
+    }
+    return flights;
 }
 
 // Where a flight's errors are reported: a swarm's firefly's at its swarm's
-// table, a written firefly's at its motion (ES.3: report() and the reach's
+// table, a written firefly's at its motion (ES.3: fly() and the reach's
 // check both ask).
 const toml::node& ShapeReading::flight_node(const Pending& p) const {
     if (p.swarm != no_swarm) {
@@ -1093,10 +1178,8 @@ void ShapeReading::make_animation(const contracts::Obstacles& obstacles) {
         const contracts::Transform& placed = description_.shapes.transforms[p.shape];
         const float body = contracts::scale(placed);  // a sphere's radius (core/shapes/sphere.h)
         if (p.swarm != no_swarm) {
-            animation::FlightParams params = swarms_[p.swarm].swarm.flight;
-            params.seed = firefly_seed(params.seed, p.firefly);  // swarm.h, step 1
             job_of[i] = jobs.size();
-            jobs.push_back({.params = std::move(params), .start = p.start, .body = body, .prelude = p.prelude});
+            jobs.push_back(swarm_job(p));  // swarm.h, step 1's seed of its draw
             continue;
         }
         if (!p.motion) {
@@ -1127,12 +1210,7 @@ void ShapeReading::make_animation(const contracts::Obstacles& obstacles) {
         }
     }
 
-    std::vector<animation::Flight> flights;
-    try {
-        flights = animation::make_flights(jobs, obstacles, animation::flight_workers());
-    } catch (const animation::FlightsError& refused) {
-        report(refused, job_of);
-    }
+    std::vector<animation::Flight> flights = fly(jobs, job_of, obstacles);
 
     for (std::size_t i = 0; i < pending_.size(); ++i) {
         const Pending& p = pending_[i];

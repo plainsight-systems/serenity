@@ -1,8 +1,9 @@
 // Swarms (core/scene/swarm.h): many fireflies from one entry, each what a
 // written firefly is, its seed and start a function of the swarm's seed and
-// its number; and flights made in parallel (core/animation/flight.h,
-// make_flights), the same flights and the same error as made one by one,
-// whatever the number of threads.
+// its number and its draw; flights made in parallel (core/animation/flight.h,
+// make_flights and try_flights), the same flights, outcomes and error as
+// made one by one, whatever the number of threads; and a refused firefly
+// drawn again (swarm.h, step 5).
 
 #include <algorithm>
 #include <array>
@@ -32,6 +33,12 @@ using tests::contains;
 using tests::replaced;
 
 namespace {
+
+// Firefly i's first draw, d = 0: the one every firefly had before redraws
+// (swarm.h, step 1).
+constexpr scene::FireflyDraw first(std::uint32_t i) {
+    return {.index = i, .draw = 0};
+}
 
 // A swarm's numbers, as written below.
 constexpr float firefly_radius = 0.02f;
@@ -123,8 +130,8 @@ TEST_CASE("a firefly is a function of its swarm's seed and its number alone") {
     }
     // Another seed, other fireflies.
     CHECK(a.shapes.transforms[written_shapes].m[0][3] != c.shapes.transforms[written_shapes].m[0][3]);
-    CHECK(scene::firefly_seed(4, 0) != scene::firefly_seed(4, 1));
-    CHECK(scene::firefly_seed(4, 0) != scene::firefly_seed(5, 0));
+    CHECK(scene::firefly_seed(4, first(0)) != scene::firefly_seed(4, first(1)));
+    CHECK(scene::firefly_seed(4, first(0)) != scene::firefly_seed(5, first(0)));
 }
 
 TEST_CASE("every mistake in a swarm is refused, naming the file and the line") {
@@ -344,7 +351,7 @@ contracts::Float3 start_before_kinds(const scene::Swarm& swarm, std::uint32_t i,
         low[axis] = contracts::component(swarm.flight.volume.min, static_cast<int>(axis)) + margin;
         high[axis] = contracts::component(swarm.flight.volume.max, static_cast<int>(axis)) - margin;
     }
-    const std::uint64_t seed = scene::firefly_seed(swarm.flight.seed, i);
+    const std::uint64_t seed = scene::firefly_seed(swarm.flight.seed, first(i));
     for (int attempt = 0; attempt < scene::start_attempts; ++attempt) {
         std::array<double, 3> p{};
         for (std::size_t axis = 0; axis < 3; ++axis) {
@@ -379,7 +386,7 @@ TEST_CASE("an air swarm with no wake draws exactly the starts it drew before sta
     const scene::Swarm swarm = swarm_with(scene::AirStart{}, std::nullopt);
     for (std::uint32_t i = 0; i < swarm.count; ++i) {
         CAPTURE(i);
-        const scene::Firefly f = scene::make_firefly(swarm, i, obstacles);
+        const scene::Firefly f = scene::make_firefly(swarm, first(i), obstacles);
         const contracts::Float3 before = start_before_kinds(swarm, i, obstacles);
         CHECK(f.start.x == before.x);
         CHECK(f.start.y == before.y);
@@ -390,7 +397,7 @@ TEST_CASE("an air swarm with no wake draws exactly the starts it drew before sta
     // A wake draws apart from the starts: they are the same with one.
     const scene::Swarm woken = swarm_with(scene::AirStart{}, a_wake);
     for (std::uint32_t i = 0; i < 8; ++i) {
-        const scene::Firefly f = scene::make_firefly(woken, i, obstacles);
+        const scene::Firefly f = scene::make_firefly(woken, first(i), obstacles);
         const contracts::Float3 before = start_before_kinds(swarm, i, obstacles);
         CHECK(f.start.x == before.x);
         CHECK(f.start.y == before.y);
@@ -409,7 +416,7 @@ TEST_CASE("an above swarm starts in its volume's top slab and holds there until 
         const scene::Swarm swarm = swarm_with(scene::AboveStart{.depth = depth}, wake);
         for (std::uint32_t i = 0; i < swarm.count; ++i) {
             CAPTURE(i);
-            const scene::Firefly f = scene::make_firefly(swarm, i, obstacles);
+            const scene::Firefly f = scene::make_firefly(swarm, first(i), obstacles);
             CHECK(static_cast<double>(f.start.y) >= static_cast<double>(static_cast<float>(top - depth)));
             CHECK(static_cast<double>(f.start.y) <= static_cast<double>(static_cast<float>(top)));
             REQUIRE(std::holds_alternative<animation::Hold>(f.prelude));
@@ -420,8 +427,8 @@ TEST_CASE("an above swarm starts in its volume's top slab and holds there until 
     const scene::Swarm deep = swarm_with(scene::AboveStart{.depth = 100.0}, std::nullopt);
     const scene::Swarm air = swarm_with(scene::AirStart{}, std::nullopt);
     for (std::uint32_t i = 0; i < 8; ++i) {
-        const contracts::Float3 a = scene::make_firefly(deep, i, obstacles).start;
-        const contracts::Float3 b = scene::make_firefly(air, i, obstacles).start;
+        const contracts::Float3 a = scene::make_firefly(deep, first(i), obstacles).start;
+        const contracts::Float3 b = scene::make_firefly(air, first(i), obstacles).start;
         CHECK((a.x == b.x && a.y == b.y && a.z == b.z));
     }
 }
@@ -442,8 +449,8 @@ int not_straight_above(const scene::Swarm& swarm, const contracts::Obstacles& ob
     std::vector<animation::FlightJob> jobs;
     std::vector<contracts::Float3> perches;
     for (std::uint32_t i = 0; i < swarm.count; ++i) {
-        const scene::Firefly f = scene::make_firefly(swarm, i, obstacles);
-        animation::FlightJob j = job(scene::firefly_seed(swarm.flight.seed, i), f.start);
+        const scene::Firefly f = scene::make_firefly(swarm, first(i), obstacles);
+        animation::FlightJob j = job(scene::firefly_seed(swarm.flight.seed, first(i)), f.start);
         j.prelude = f.prelude;
         jobs.push_back(j);
         perches.push_back(std::get<animation::Perch>(f.prelude).at);
@@ -473,7 +480,7 @@ TEST_CASE("a perched firefly rests a perch_gap above an upward-facing surface in
         CHECK(not_straight_above(swarm, obstacles) == 0);
         for (std::uint32_t i = 0; i < swarm.count; ++i) {
             CAPTURE(i);
-            const scene::Firefly f = scene::make_firefly(swarm, i, obstacles);
+            const scene::Firefly f = scene::make_firefly(swarm, first(i), obstacles);
             REQUIRE(std::holds_alternative<animation::Perch>(f.prelude));
             const animation::Perch& perch = std::get<animation::Perch>(f.prelude);
             const contracts::Float3 p = perch.at;
@@ -491,7 +498,7 @@ TEST_CASE("a perched firefly rests a perch_gap above an upward-facing surface in
                    p.z >= box.min.z && p.z <= box.max.z));
             // Its start, the first point less the flight's first_offset(), in
             // step 2's range and clear as any start.
-            const std::array<double, 3> offset = animation::first_offset(scene::firefly_seed(4, i));
+            const std::array<double, 3> offset = animation::first_offset(scene::firefly_seed(4, first(i)));
             CHECK(static_cast<float>(static_cast<double>(f.start.x) + offset[0]) == p.x);
             CHECK(static_cast<float>(static_cast<double>(f.start.z) + offset[2]) == p.z);
             CHECK((in_range(f.start.x, 0) && in_range(f.start.y, 1) && in_range(f.start.z, 2)));
@@ -510,7 +517,7 @@ TEST_CASE("a perch box with no upward-facing surface, or its top inside a shape,
     const auto refusal = [&](const contracts::Box& box) {
         const scene::Swarm swarm = swarm_with(scene::PerchStart{.box = box, .linger_least = 1.0, .linger_most = 2.0},
                                               std::nullopt);
-        return tests::error_of<animation::MotionError>([&] { return scene::make_firefly(swarm, 0, obstacles); });
+        return tests::error_of<animation::MotionError>([&] { return scene::make_firefly(swarm, first(0), obstacles); });
     };
     // In the air, nothing below it above its floor.
     CHECK(contains(refusal({{1.0f, 1.0f, 1.0f}, {1.5f, 1.2f, 1.5f}}), "firefly 0: no perch found"));
@@ -519,11 +526,11 @@ TEST_CASE("a perch box with no upward-facing surface, or its top inside a shape,
     // On the ball's flank: surfaces, all steeper than perch_steepest.
     CHECK(contains(refusal({{0.49f, 0.35f, -0.01f}, {0.53f, 0.65f, 0.01f}}), "firefly 0: no perch found"));
     // Numbers make_firefly takes as given are refused, not drawn from.
-    CHECK_THROWS_AS((void)scene::make_firefly(swarm_with(scene::AboveStart{.depth = 0.0}, std::nullopt), 0,
+    CHECK_THROWS_AS((void)scene::make_firefly(swarm_with(scene::AboveStart{.depth = 0.0}, std::nullopt), first(0),
                                               obstacles),
                     std::invalid_argument);
     CHECK_THROWS_AS((void)scene::make_firefly(
-                        swarm_with(scene::AirStart{}, scene::SwarmWake{.from = 5.0, .to = 1.0, .power = 1.0}), 0,
+                        swarm_with(scene::AirStart{}, scene::SwarmWake{.from = 5.0, .to = 1.0, .power = 1.0}), first(0),
                         obstacles),
                     std::invalid_argument);
 }
@@ -532,7 +539,7 @@ TEST_CASE("make_firefly refuses every wait past most_wait and a perch box not fi
     const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
     const tests::BallAndFloor obstacles(s);
     const auto make = [&](const scene::SwarmStart& start, std::optional<scene::SwarmWake> wake) {
-        return scene::make_firefly(swarm_with(start, wake), 0, obstacles);
+        return scene::make_firefly(swarm_with(start, wake), first(0), obstacles);
     };
     constexpr double most = animation::most_wait;
     const auto perch = [](double least, double most_linger) {
@@ -601,8 +608,8 @@ TEST_CASE("a perched firefly's loop begins above its perch, never below it") {
         std::nullopt, 64);
     int below = 0;
     for (std::uint32_t i = 0; i < swarm.count; ++i) {
-        const scene::Firefly f = scene::make_firefly(swarm, i, shelf);
-        const std::array<double, 3> offset = animation::first_offset(scene::firefly_seed(swarm.flight.seed, i));
+        const scene::Firefly f = scene::make_firefly(swarm, first(i), shelf);
+        const std::array<double, 3> offset = animation::first_offset(scene::firefly_seed(swarm.flight.seed, first(i)));
         const contracts::Float3 perch = std::get<animation::Perch>(f.prelude).at;
         CHECK(perch.y > 1.5f);
         below += static_cast<double>(f.start.y) + offset[1] > static_cast<double>(perch.y) ? 0 : 1;
@@ -624,14 +631,14 @@ TEST_CASE("a perch box partly outside the flight's range perches only where a lo
     CHECK(not_straight_above(partly, obstacles) == 0);
     int moved = 0;
     for (std::uint32_t i = 0; i < partly.count; ++i) {
-        const scene::Firefly f = scene::make_firefly(partly, i, obstacles);
+        const scene::Firefly f = scene::make_firefly(partly, first(i), obstacles);
         const contracts::Float3 perch = std::get<animation::Perch>(f.prelude).at;
         CHECK(in_range(f.start.x, 0));
         CHECK(perch.x <= 1.97f + 1e-6f);
         // Never moved: the perch is on a line some attempt drew, keyed
         // (seed_i, perch_draws, attempt, axis) (swarm.h, step 2p), its start
         // the drawn x and z less the offset, its line that start plus it.
-        const std::uint64_t seed = scene::firefly_seed(partly.flight.seed, i);
+        const std::uint64_t seed = scene::firefly_seed(partly.flight.seed, first(i));
         const std::array<double, 3> offset = animation::first_offset(seed);
         const auto line_of = [&](std::uint64_t attempt, std::uint64_t axis, float lo, float hi, std::size_t at) {
             const double value = lo + animation::draw(seed, scene::perch_draws, attempt, axis) *
@@ -648,8 +655,9 @@ TEST_CASE("a perch box partly outside the flight's range perches only where a lo
     const scene::Swarm outside = swarm_with(
         scene::PerchStart{.box = {{2.1f, -0.05f, 1.0f}, {2.5f, 0.3f, 1.5f}}, .linger_least = 1.0, .linger_most = 2.0},
         std::nullopt);
-    CHECK(contains(tests::error_of<animation::MotionError>([&] { return scene::make_firefly(outside, 0, obstacles); }),
-                   "firefly 0: no perch found"));
+    CHECK(contains(
+        tests::error_of<animation::MotionError>([&] { return scene::make_firefly(outside, first(0), obstacles); }),
+        "firefly 0: no perch found"));
 }
 
 TEST_CASE("wake times lie in [from, to], the share awake by t growing as ((t - from) / (to - from))^power") {
@@ -664,7 +672,7 @@ TEST_CASE("wake times lie in [from, to], the share awake by t growing as ((t - f
         std::vector<double> at;
         at.reserve(count);
         for (std::uint32_t i = 0; i < count; ++i) {
-            at.push_back(scene::make_firefly(swarm, i, obstacles).wake->at);
+            at.push_back(scene::make_firefly(swarm, first(i), obstacles).wake->at);
         }
         CHECK(std::ranges::all_of(at, [&](double t) { return t >= w.from && t <= w.to; }));
         // The Kolmogorov-Smirnov distance from the stated distribution. The
@@ -699,7 +707,7 @@ TEST_CASE("a firefly's wake is drawn apart from its start") {
     const double high = static_cast<double>(volume_high) - start_margin;
     int alike = 0;
     for (std::uint32_t i = 0; i < count; ++i) {
-        const scene::Firefly f = scene::make_firefly(swarm, i, obstacles);
+        const scene::Firefly f = scene::make_firefly(swarm, first(i), obstacles);
         const double wake_u = (f.wake->at - w.from) / (w.to - w.from);
         const double height_u = (static_cast<double>(f.start.y) - low) / (high - low);
         alike += std::abs(wake_u - height_u) < 1e-6 ? 1 : 0;
@@ -714,8 +722,8 @@ TEST_CASE("perched fireflies' flights made in parallel are the ones made one by 
         swarm_with(scene::PerchStart{.box = over_ball, .linger_least = 1.0, .linger_most = 3.0}, a_wake, 12);
     std::vector<animation::FlightJob> jobs;
     for (std::uint32_t i = 0; i < swarm.count; ++i) {
-        const scene::Firefly f = scene::make_firefly(swarm, i, obstacles);
-        animation::FlightJob j = job(scene::firefly_seed(4, i), f.start);
+        const scene::Firefly f = scene::make_firefly(swarm, first(i), obstacles);
+        animation::FlightJob j = job(scene::firefly_seed(4, first(i)), f.start);
         j.prelude = f.prelude;
         jobs.push_back(j);
     }
@@ -734,4 +742,405 @@ TEST_CASE("perched fireflies' flights made in parallel are the ones made one by 
             }
         }
     }
+}
+
+// Step 5's redraw (swarm.h), and the flights' outcomes it is made from
+// (flight.h, try_flights).
+
+namespace {
+
+// The marbles' case at a modest count: a table top, nine marbles in a
+// cluster on it, a swarm perched on them and the table among them, and a
+// swarm held above, both waking.
+constexpr float marble_radius = 0.01f;
+constexpr std::array<float, 3> marble_rows = {-0.06f, 0.0f, 0.06f};
+constexpr contracts::Box table_volume{{-0.25f, 0.795f, -0.25f}, {0.25f, 1.1f, 0.25f}};
+constexpr std::uint32_t perched_count = 40;
+constexpr std::uint32_t above_count = 24;
+constexpr std::uint32_t table_shapes = 10;  // the table and the nine marbles
+
+std::string table_text(std::uint64_t perched_seed, std::uint64_t above_seed) {
+    std::string text = tests::camera_text("[0, 0.95, 0.5]", "[0, 0.76, 0]", 40) + tests::sky("[0, 0, 0]", "[0, 0, 0]") +
+                       "[materials.wood]\nkind = \"rough\"\ncolor = [0.2, 0.1, 0.05]\n"
+                       "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
+                       "[materials.glow]\nkind = \"emissive\"\nradiance = [10, 9, 3]\n"
+                       "[[shapes]]\nkind = \"box\"\nmin = [-0.5, 0.7, -0.5]\nmax = [0.5, 0.75, 0.5]\n"
+                       "material = \"wood\"\n";
+    std::string targets;
+    int n = 0;
+    for (const float x : marble_rows) {
+        for (const float z : marble_rows) {
+            text += "[[shapes]]\nkind = \"sphere\"\nname = \"m" + std::to_string(n) + "\"\ncenter = [" +
+                    std::to_string(x) + ", 0.76, " + std::to_string(z) + "]\nradius = 0.01\nmaterial = \"glass\"\n";
+            targets += (n == 0 ? "\"m" : ", \"m") + std::to_string(n) + "\"";
+            ++n;
+        }
+    }
+    const std::string flight = "radius = 0.0015\nmaterial = \"glow\"\nmin = [-0.25, 0.795, -0.25]\n"
+                               "max = [0.25, 1.1, 0.25]\ntargets = [" +
+                               targets +
+                               "]\nspeed = 0.05\nclearance = 0.008\ncircle = 6\nswoop = 0\ndrift = 1\n"
+                               "flash = 0.9\ndim = 0.1\n";
+    text += "[[swarms]]\ncount = " + std::to_string(perched_count) + "\n" + flight +
+            "seed = " + std::to_string(perched_seed) +
+            "\nstart = { kind = \"perch\", min = [-0.09, 0.74, -0.09], max = [0.09, 0.8, 0.09], linger = [1, 3] }\n"
+            "wake = { from = 1, to = 20, power = 2, ramp = 1 }\n";
+    text += "[[swarms]]\ncount = " + std::to_string(above_count) + "\n" + flight +
+            "seed = " + std::to_string(above_seed) +
+            "\nstart = { kind = \"above\", depth = 0.08 }\nwake = { from = 0, to = 10, power = 1, ramp = 1 }\n";
+    return text;
+}
+
+// The table's swarms as the reader reads them (swarm.h): the perched one,
+// or the one held above.
+scene::Swarm table_swarm(bool perched, std::uint64_t seed) {
+    animation::FlightParams params{
+        .volume = table_volume, .speed = 0.05f, .clearance = 0.008f, .weights = {6.0f, 0.0f, 1.0f}, .seed = seed};
+    for (const float x : marble_rows) {
+        for (const float z : marble_rows) {
+            params.targets.push_back({{x, 0.76f, z}, marble_radius});
+        }
+    }
+    scene::Swarm swarm{.count = perched ? perched_count : above_count,
+                       .radius = 0.0015f,
+                       .flight = params,
+                       .flash = 0.9f,
+                       .dim = 0.1f};
+    if (perched) {
+        swarm.start = scene::PerchStart{
+            .box = {{-0.09f, 0.74f, -0.09f}, {0.09f, 0.8f, 0.09f}}, .linger_least = 1.0, .linger_most = 3.0};
+        swarm.wake = scene::SwarmWake{.from = 1.0, .to = 20.0, .power = 2.0, .ramp = 1.0};
+    } else {
+        // The reader reads its numbers as floats: 0.08 as the float nearest.
+        swarm.start = scene::AboveStart{.depth = static_cast<double>(0.08f)};
+        swarm.wake = scene::SwarmWake{.from = 0.0, .to = 10.0, .power = 1.0, .ramp = 1.0};
+    }
+    return swarm;
+}
+
+// A scene's first `count` shapes, which do not move, as contract 11 asks of
+// them: each shape kind's exact tests (core/shapes/shapes.h).
+class StillShapesOf final : public contracts::Obstacles {
+public:
+    StillShapesOf(const scene::SceneDescription& s, std::uint32_t count) : scene_(&s), count_(count) {}
+    double distance(contracts::Float3 p) const override {
+        double nearest = std::numeric_limits<double>::infinity();
+        for (std::uint32_t k = 0; k < count_; ++k) {
+            nearest = std::min(nearest, shapes::distance(scene_->shapes, k, p));
+        }
+        return nearest;
+    }
+    bool touches(const contracts::Box& box) const override {
+        for (std::uint32_t k = 0; k < count_; ++k) {
+            if (shapes::touches(scene_->shapes, k, {box.min, box.max})) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+private:
+    const scene::SceneDescription* scene_;
+    std::uint32_t count_;
+};
+
+// Which of a swarm's fireflies, its first at shape `first_shape`, the
+// reader placed somewhere other than its first draw's start: drawn again.
+std::vector<std::uint32_t> redrawn(const scene::SceneDescription& s, const scene::Swarm& swarm,
+                                   std::uint32_t first_shape, const contracts::Obstacles& still) {
+    std::vector<std::uint32_t> again;
+    for (std::uint32_t i = 0; i < swarm.count; ++i) {
+        const contracts::Float3 placed = contracts::translation(s.shapes.transforms[first_shape + i]);
+        const contracts::Float3 drawn = scene::make_firefly(swarm, first(i), still).start;
+        if (!(placed.x == drawn.x && placed.y == drawn.y && placed.z == drawn.z)) {
+            again.push_back(i);
+        }
+    }
+    return again;
+}
+
+}  // namespace
+
+TEST_CASE("a firefly's seed for each draw: its first the one it had before redraws, every one its own") {
+    std::vector<std::uint64_t> seeds;
+    for (const std::uint64_t swarm_seed : {0ull, 4ull, 0xffffffffffffffffull}) {
+        for (std::uint32_t i = 0; i < 64; ++i) {
+            // Draw 0 is step 1's seed as it was, bit for bit.
+            CHECK(scene::firefly_seed(swarm_seed, first(i)) ==
+                  animation::splitmix64(animation::splitmix64(swarm_seed) ^ i));
+            for (std::uint32_t d = 0; d < scene::firefly_draws; ++d) {
+                seeds.push_back(scene::firefly_seed(swarm_seed, {.index = i, .draw = d}));
+            }
+        }
+    }
+    std::ranges::sort(seeds);
+    CHECK(std::ranges::adjacent_find(seeds) == seeds.end());
+    // A draw past firefly_draws, or a firefly past the count, is refused.
+    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
+    const tests::BallAndFloor obstacles(s);
+    const scene::Swarm swarm = swarm_with(scene::AirStart{}, std::nullopt, 8);
+    CHECK_THROWS_AS((void)scene::make_firefly(swarm, {.index = 0, .draw = scene::firefly_draws}, obstacles),
+                    std::invalid_argument);
+    CHECK_THROWS_AS((void)scene::make_firefly(swarm, {.index = 8, .draw = 0}, obstacles), std::invalid_argument);
+    CHECK_NOTHROW((void)scene::make_firefly(swarm, {.index = 7, .draw = scene::firefly_draws - 1}, obstacles));
+}
+
+namespace {
+
+// The ball and floor, and a contract-11 answer that throws what no flight
+// expects for any point past x = 5 m: a failure that is not a refusal, met
+// only by a job whose volume is there.
+class BreaksFarOut final : public contracts::Obstacles {
+public:
+    explicit BreaksFarOut(const scene::SceneDescription& s) : inner_(s) {}
+    double distance(contracts::Float3 p) const override {
+        if (p.x > 5.0f) {
+            throw std::runtime_error("the obstacles broke far out");
+        }
+        return inner_.distance(p);
+    }
+    bool touches(const contracts::Box& box) const override { return inner_.touches(box); }
+
+private:
+    tests::BallAndFloor inner_;
+};
+
+// A job whose flight meets BreaksFarOut's failure at its first sample.
+animation::FlightJob far_out_job() {
+    animation::FlightJob j = job(77, {10.0f, 1.0f, 0.0f});
+    j.params.volume = {{8.0f, volume_low, -volume_reach}, {12.0f, volume_high, volume_reach}};
+    j.params.targets.clear();
+    j.params.weights = {0.0f, 1.0f, 2.0f};
+    return j;
+}
+
+constexpr std::array<std::size_t, 3> some_workers = {1, 3, 8};
+
+}  // namespace
+
+TEST_CASE("try_flights keeps each job's outcome: its flight, or its refusal's reason") {
+    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
+    const tests::BallAndFloor obstacles(s);
+    std::vector<animation::FlightJob> jobs;
+    for (std::uint64_t k = 0; k < 12; ++k) {
+        jobs.push_back(job(200 + k, clear_start));
+    }
+    jobs[3].start = inside_ball;
+    jobs[7].start = {0.1f, 0.5f, 0.0f};
+    for (const std::size_t workers : some_workers) {
+        CAPTURE(workers);
+        const std::vector<animation::FlightOutcome> outcomes = animation::try_flights(jobs, obstacles, workers);
+        REQUIRE(outcomes.size() == jobs.size());
+        for (std::size_t k = 0; k < jobs.size(); ++k) {
+            CAPTURE(k);
+            const std::string refused =
+                tests::error_of<animation::MotionError>([&] { return animation::make_flight(jobs[k], obstacles); });
+            if (k == 3 || k == 7) {
+                REQUIRE(std::holds_alternative<animation::FlightRefusal>(outcomes[k]));
+                CHECK(std::get<animation::FlightRefusal>(outcomes[k]).reason == refused);
+                CHECK(refused.starts_with("the flight's start"));
+            } else {
+                REQUIRE(std::holds_alternative<animation::Flight>(outcomes[k]));
+                const animation::Flight& made = std::get<animation::Flight>(outcomes[k]);
+                const animation::Flight alone = animation::make_flight(jobs[k], obstacles);
+                CHECK(made.loop == alone.loop);
+                CHECK(made.flashes.starts == alone.flashes.starts);
+                const contracts::Float3 a = animation::position(made, Seconds(23.25));
+                const contracts::Float3 b = animation::position(alone, Seconds(23.25));
+                CHECK((a.x == b.x && a.y == b.y && a.z == b.z));
+            }
+        }
+    }
+}
+
+TEST_CASE("try_flights rethrows the lowest failure that is not a refusal; make_flights the lowest of any kind") {
+    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
+    const BreaksFarOut obstacles(s);
+    std::vector<animation::FlightJob> jobs;
+    for (std::uint64_t k = 0; k < 12; ++k) {
+        jobs.push_back(job(300 + k, clear_start));
+    }
+    // A refusal at 5, a failure of another kind at 9.
+    std::vector<animation::FlightJob> refusal_first = jobs;
+    refusal_first[5].start = inside_ball;
+    refusal_first[9] = far_out_job();
+    // The reverse.
+    std::vector<animation::FlightJob> failure_first = jobs;
+    failure_first[5] = far_out_job();
+    failure_first[9].start = inside_ball;
+    for (const std::size_t workers : some_workers) {
+        CAPTURE(workers);
+        CHECK(tests::error_of<std::runtime_error>([&] {
+                  return animation::try_flights(refusal_first, obstacles, workers);
+              }) == "the obstacles broke far out");
+        try {
+            (void)animation::make_flights(refusal_first, obstacles, workers);
+            FAIL("expected an error");
+        } catch (const animation::FlightsError& error) {
+            CHECK(error.job == 5);
+        }
+        CHECK(tests::error_of<std::runtime_error>([&] {
+                  return animation::try_flights(failure_first, obstacles, workers);
+              }) == "the obstacles broke far out");
+        CHECK(tests::error_of<std::runtime_error>([&] {
+                  return animation::make_flights(failure_first, obstacles, workers);
+              }) == "the obstacles broke far out");
+    }
+}
+
+TEST_CASE("a swarm with no refusals is the swarm it was before redraws, bit for bit") {
+    constexpr std::uint32_t count = 24;
+    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(static_cast<int>(count))), "s");
+    const tests::BallAndFloor obstacles(s);
+    const scene::Swarm swarm = swarm_with(scene::AirStart{}, std::nullopt, count);
+    int differ = 0;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        CAPTURE(i);
+        // The first draw, as it was made before there were redraws.
+        const scene::Firefly f = scene::make_firefly(swarm, first(i), obstacles);
+        const animation::Flight alone =
+            animation::make_flight(job(scene::firefly_seed(swarm.flight.seed, first(i)), f.start), obstacles);
+        const contracts::Transform& placed = s.shapes.transforms[written_shapes + i];
+        const contracts::Transform expected = contracts::placed(f.start, firefly_radius);
+        for (std::size_t r = 0; r < 3; ++r) {
+            for (std::size_t c = 0; c < 4; ++c) {
+                differ += placed.m[r][c] == expected.m[r][c] ? 0 : 1;
+            }
+        }
+        const animation::Flight& made = s.animation.motions.flights[i];
+        REQUIRE(made.segments.size() == alone.segments.size());
+        for (std::size_t k = 0; k < made.segments.size(); ++k) {
+            differ += made.segments[k].start == alone.segments[k].start &&
+                              made.segments[k].numbers == alone.segments[k].numbers
+                          ? 0
+                          : 1;
+        }
+        differ += made.loop == alone.loop && made.flashes.starts == alone.flashes.starts ? 0 : 1;
+        const animation::ScheduleGlow& glow = s.animation.glows.schedules[s.animation.glowers[i].glow.index];
+        differ += glow.schedule.starts == alone.flashes.starts ? 0 : 1;
+    }
+    CHECK(differ == 0);
+}
+
+namespace {
+
+// Step 5 done one firefly at a time: its first draw whose flight is made,
+// and that flight; none if every draw is refused. The reference the
+// reader's rounds, made in parallel, must match.
+struct Drawn {
+    std::uint32_t draw = 0;
+    scene::Firefly firefly;
+    animation::Flight flight;
+};
+
+std::optional<Drawn> drawn_one_by_one(const scene::Swarm& swarm, std::uint32_t i, const contracts::Obstacles& still) {
+    for (std::uint32_t d = 0; d < scene::firefly_draws; ++d) {
+        const scene::Firefly f = scene::make_firefly(swarm, {.index = i, .draw = d}, still);
+        animation::FlightJob j{.params = swarm.flight, .start = f.start, .body = swarm.radius, .prelude = f.prelude};
+        j.params.seed = scene::firefly_seed(swarm.flight.seed, {.index = i, .draw = d});
+        try {
+            return Drawn{.draw = d, .firefly = f, .flight = animation::make_flight(j, still)};
+        } catch (const animation::MotionError&) {
+            // refused: its next draw
+        }
+    }
+    return std::nullopt;
+}
+
+}  // namespace
+
+TEST_CASE("a swarm with refused fireflies loads, each drawn again whole, as step 5 one by one would draw it") {
+    // Seeds whose swarms on the table have fireflies refused at their first
+    // draw (the marbles' case, below): each refused firefly is drawn again
+    // from its next draws, its sphere placed at its new start, its light
+    // still its sphere's, its glow woken as its new draw wakes; the rest
+    // are their first draws. The reader makes each round in parallel; the
+    // reference here, one at a time, is the same whatever the threads.
+    int again = 0;
+    for (const std::uint64_t seed : {0ull, 6ull}) {
+        CAPTURE(seed);
+        const scene::SceneDescription s = scene::parse(table_text(seed, seed + 100), "t");
+        const StillShapesOf still(s, table_shapes);
+        std::uint32_t shape = table_shapes;
+        for (const scene::Swarm& swarm : {table_swarm(true, seed), table_swarm(false, seed + 100)}) {
+            for (std::uint32_t i = 0; i < swarm.count; ++i, ++shape) {
+                CAPTURE(i);
+                const std::optional<Drawn> expected = drawn_one_by_one(swarm, i, still);
+                REQUIRE(expected.has_value());
+                again += expected->draw > 0 ? 1 : 0;
+                // Its sphere, placed at its start, and its light, its sphere's.
+                const contracts::Float3 at = contracts::translation(s.shapes.transforms[shape]);
+                CHECK((at.x == expected->firefly.start.x && at.y == expected->firefly.start.y &&
+                       at.z == expected->firefly.start.z));
+                const std::uint32_t light = s.shape_lights[shape];
+                REQUIRE(light != lights::no_light);
+                CHECK(s.sphere_lights[s.lights[light].index].shape == shape);
+                // Its flight, and its glow's flashes and wake.
+                const std::size_t motion = shape - table_shapes;
+                const animation::Flight& made = s.animation.motions.flights[motion];
+                CHECK(made.loop == expected->flight.loop);
+                CHECK(made.begin == expected->flight.begin);
+                for (const double t : {0.0, made.begin + 1.5, 77.25}) {
+                    const contracts::Float3 a = animation::position(made, Seconds(t));
+                    const contracts::Float3 b = animation::position(expected->flight, Seconds(t));
+                    CHECK((a.x == b.x && a.y == b.y && a.z == b.z));
+                }
+                const animation::ScheduleGlow& glow =
+                    s.animation.glows.schedules[s.animation.glowers[motion].glow.index];
+                CHECK(glow.schedule.opening == expected->flight.flashes.opening);
+                REQUIRE(glow.wake.has_value());
+                CHECK(glow.wake->at == expected->firefly.wake->at);
+            }
+        }
+    }
+    INFO(again << " fireflies drawn again");
+    CHECK(again > 0);
+}
+
+TEST_CASE("the marbles' case loads for every seed: perched and held swarms on a table among marbles") {
+    // Twenty seeds of each swarm. A refused firefly in any would once have
+    // refused the scene; each is drawn again, and none is refused eight
+    // times. Some are drawn again in most seeds (shown), so this fails
+    // without the redraw.
+    int seeds_redrawn = 0;
+    for (std::uint64_t seed = 0; seed < 20; ++seed) {
+        CAPTURE(seed);
+        const std::string text = table_text(seed, seed + 100);
+        const scene::SceneDescription s = scene::parse(text, "t");
+        CHECK(s.animation.motions.flights.size() == perched_count + above_count);
+        const StillShapesOf still(s, table_shapes);
+        const std::size_t perched = redrawn(s, table_swarm(true, seed), table_shapes, still).size();
+        const std::size_t above =
+            redrawn(s, table_swarm(false, seed + 100), table_shapes + perched_count, still).size();
+        const std::size_t again = perched + above;
+        seeds_redrawn += again > 0 ? 1 : 0;
+    }
+    CHECK(seeds_redrawn > 10);
+}
+
+TEST_CASE("a swarm no draw can fly is refused after firefly_draws draws, naming its line, the firefly and why") {
+    // A volume too tight to circle the ball in, and only circling: every
+    // draw's flight is refused.
+    const std::string tight = replaced(replaced(swarm_of(2), "min = [-2, 0.05, -2]\nmax = [2, 2.2, 2]",
+                                                "min = [-0.7, 0.05, -0.7]\nmax = [1.4, 1.3, 1.0]"),
+                                       "circle = 2\nswoop = 1\ndrift = 2", "circle = 1\nswoop = 0\ndrift = 0");
+    const std::string refused = error_of(swarmed(tight));
+    INFO(refused);
+    CHECK(contains(refused, "s.toml:26: swarm 1's firefly 0's flight was refused at each of its 8 draws; the last: "));
+    CHECK(contains(refused, "could not be drawn clear"));
+}
+
+TEST_CASE("a written flight that is refused refuses the scene at once: no redraw") {
+    // A swarm beside it that loads, and a written firefly circling in a
+    // volume too tight: the written refusal, at its motion's line.
+    const std::string text = swarmed(swarm_of(4)) +
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [1.2, 1.0, 0.8]\nradius = 0.03\nmaterial = "
+                             "\"glow\"\nmotion = { kind = \"flight\", min = [-0.7, 0.05, -0.7], max = [1.4, 1.3, 1.0], "
+                             "targets = [\"ball\"], speed = 0.45, clearance = 0.06, circle = 1, swoop = 0, drift = 0, "
+                             "seed = 5 }\n";
+    const std::string refused = error_of(text);
+    INFO(refused);
+    CHECK(contains(refused, "shape 3's motion: flight episode"));
+    CHECK(contains(refused, "could not be drawn clear"));
+    CHECK_FALSE(contains(refused, "each of its"));
 }
