@@ -58,10 +58,10 @@ public:
     MTL::GPUAddress address(std::uint32_t slot) const;
 
     // The samples left out over every completed frame; see above.
-    std::uint64_t count() const;
+    std::uint64_t count() const noexcept;
 
 private:
-    std::uint32_t* counter(std::uint32_t slot) const;
+    std::uint32_t* counter(std::uint32_t slot) const noexcept;
 
     const Submission& submission_;
     NS::SharedPtr<MTL::Buffer> counters_;  // one uint per slot

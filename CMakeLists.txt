@@ -154,6 +154,7 @@ add_library(serenity_metal STATIC
     src/metal/device/frame_array.cpp
     src/metal/device/static_arrays.cpp
     src/metal/device/submission.cpp
+    src/metal/device/support.cpp
     src/metal/acceleration/scene_acceleration.cpp
     src/metal/scene/light_glows.cpp
     src/metal/scene/scene_buffers.cpp

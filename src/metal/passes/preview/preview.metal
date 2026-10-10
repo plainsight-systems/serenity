@@ -30,7 +30,8 @@ constant constexpr float2 positions[pixel_samples] = {
 
 }  // namespace
 
-kernel void preview(constant serenity::contracts::FrameConstants& frame [[buffer(serenity::bindings::preview::constants)]],
+kernel void preview(constant serenity::contracts::FrameConstants& frame
+                    [[buffer(serenity::bindings::preview::constants)]],
                     constant serenity::contracts::CameraData& camera [[buffer(serenity::bindings::preview::camera)]],
                     primitive_acceleration_structure structure [[buffer(serenity::bindings::preview::structure)]],
                     constant serenity::gpu::SceneBlock& block [[buffer(serenity::bindings::preview::scene)]],

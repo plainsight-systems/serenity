@@ -1,10 +1,13 @@
 #include "metal/device/submission.h"
 
+#include <array>
 #include <chrono>
+#include <string>
 #include <thread>
 #include <utility>
 
 #include "metal/device/error.h"
+#include "metal/device/support.h"
 
 namespace serenity::metal {
 
@@ -13,44 +16,54 @@ namespace {
 // How long a frame may take before the GPU is taken to have stopped. Far
 // beyond any frame this renderer means to draw, so reaching it is a failure,
 // not a slow frame.
-constexpr std::uint64_t timeout_ms = 5000;
+constexpr std::chrono::milliseconds timeout{5000};
 
-std::string describe(const NS::Error* error) {
-    if (error == nullptr || error->localizedDescription() == nullptr) {
-        return "Metal gave no description";
+// How long settle() sleeps between looks at a slot's feedback, which almost
+// always has arrived by the time the event says the GPU is done.
+constexpr std::chrono::microseconds feedback_poll{20};
+
+// The residency set's room before it grows: more than the allocations a
+// renderer makes resident (a dozen or so).
+constexpr NS::UInteger residency_capacity = 16;
+
+NS::SharedPtr<MTL4::CommandQueue> make_queue(MTL::Device* device) {
+    auto queue = NS::TransferPtr(device->newMTL4CommandQueue());
+    if (!queue) {
+        throw Error("the device made no Metal 4 command queue");
     }
-    return error->localizedDescription()->utf8String();
+    return queue;
 }
 
-NS::SharedPtr<NS::AutoreleasePool> pool() {
-    return NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+NS::SharedPtr<MTL::ResidencySet> make_residency_set(MTL::Device* device) {
+    const auto pool = scoped_pool();  // Metal's error, if any, is autoreleased
+    auto descriptor = NS::TransferPtr(MTL::ResidencySetDescriptor::alloc()->init());
+    descriptor->setInitialCapacity(residency_capacity);
+    NS::Error* error = nullptr;
+    auto set = NS::TransferPtr(device->newResidencySet(descriptor.get(), &error));
+    if (!set) {
+        throw Error("the device made no residency set: " + describe(error));
+    }
+    return set;
+}
+
+NS::SharedPtr<MTL::SharedEvent> make_event(MTL::Device* device) {
+    auto event = NS::TransferPtr(device->newSharedEvent());
+    if (!event) {
+        throw Error("the device made no shared event");
+    }
+    event->setSignaledValue(0);
+    return event;
 }
 
 }  // namespace
 
-Submission::Submission(const Device& device) : device_(NS::RetainPtr(device.handle())) {
-    auto drained = pool();
-
-    queue_ = NS::TransferPtr(device_->newMTL4CommandQueue());
-    if (!queue_) {
-        throw Error("the device made no Metal 4 command queue");
-    }
-
-    auto descriptor = NS::TransferPtr(MTL::ResidencySetDescriptor::alloc()->init());
-    descriptor->setInitialCapacity(16);
-    NS::Error* error = nullptr;
-    residency_ = NS::TransferPtr(device_->newResidencySet(descriptor.get(), &error));
-    if (!residency_) {
-        throw Error("the device made no residency set: " + describe(error));
-    }
+Submission::Submission(const Device& device)
+    : device_(NS::RetainPtr(device.handle())),
+      queue_(make_queue(device_.get())),
+      residency_(make_residency_set(device_.get())),
+      completed_(make_event(device_.get())) {
+    const auto pool = scoped_pool();
     queue_->addResidencySet(residency_.get());
-
-    completed_ = NS::TransferPtr(device_->newSharedEvent());
-    if (!completed_) {
-        throw Error("the device made no shared event");
-    }
-    completed_->setSignaledValue(0);
-
     for (Slot& slot : slots_) {
         slot.allocator = NS::TransferPtr(device_->newCommandAllocator());
         slot.commands = NS::TransferPtr(device_->newCommandBuffer());
@@ -72,34 +85,34 @@ Submission::~Submission() {
 
 bool Submission::wait_idle() noexcept {
     const std::uint64_t committed = open_ ? next_ - 1 : next_;
-    return committed == 0 || completed_->waitUntilSignaledValue(committed, timeout_ms);
+    return committed == 0 || completed_->waitUntilSignaledValue(committed, timeout.count());
 }
 
 std::optional<Completed> Submission::settle(std::uint64_t sequence) {
     Slot& slot = slots_[sequence % frames_in_flight];
-    if (slot.settled >= sequence + 1) {
+    if (slot.settled_through >= sequence + 1) {
         return std::nullopt;
     }
-    if (!completed_->waitUntilSignaledValue(sequence + 1, timeout_ms)) {
+    if (!completed_->waitUntilSignaledValue(sequence + 1, timeout.count())) {
         throw Error("submission " + std::to_string(sequence) + " did not complete within " +
-                    std::to_string(timeout_ms) + " ms: the GPU has stopped");
+                    std::to_string(timeout.count()) + " ms: the GPU has stopped");
     }
     // The event says the GPU is done; the feedback, which carries any error,
     // comes separately and usually just after. Wait for it, bounded.
     const Feedback& feedback = *slot.feedback;
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (feedback.arrived.load(std::memory_order_acquire) < sequence + 1) {
         if (std::chrono::steady_clock::now() > deadline) {
             throw Error("no feedback for submission " + std::to_string(sequence) + " within " +
-                        std::to_string(timeout_ms) + " ms");
+                        std::to_string(timeout.count()) + " ms");
         }
-        std::this_thread::sleep_for(std::chrono::microseconds(20));
+        std::this_thread::sleep_for(feedback_poll);
     }
     if (feedback.failed.load(std::memory_order_acquire)) {
         throw Error(feedback.failure);
     }
-    slot.settled = sequence + 1;
-    return Completed{sequence, frame::Seconds(feedback.gpu_start), frame::Seconds(feedback.gpu_end)};
+    slot.settled_through = sequence + 1;
+    return Completed{sequence, feedback.gpu_start, feedback.gpu_end};
 }
 
 FrameSlot Submission::begin() {
@@ -139,7 +152,7 @@ void Submission::end_and_commit(const MTL::Drawable* drawable) {
     Slot& slot = slots_[sequence % frames_in_flight];
     slot.commands->endCommandBuffer();
 
-    auto drained = pool();
+    const auto pool = scoped_pool();
     if (drawable != nullptr) {
         queue_->wait(drawable);
     }
@@ -158,14 +171,14 @@ void Submission::end_and_commit(const MTL::Drawable* drawable) {
             state->failed.store(true, std::memory_order_release);
         }
         if (feedback != nullptr) {
-            state->gpu_start = feedback->GPUStartTime();
-            state->gpu_end = feedback->GPUEndTime();
+            state->gpu_start = frame::Seconds{feedback->GPUStartTime()};
+            state->gpu_end = frame::Seconds{feedback->GPUEndTime()};
         }
         state->arrived.store(sequence + 1, std::memory_order_release);
     });
 
-    const MTL4::CommandBuffer* buffers[] = {slot.commands.get()};
-    queue_->commit(buffers, 1, options.get());
+    const std::array<const MTL4::CommandBuffer*, 1> buffers{slot.commands.get()};
+    queue_->commit(buffers.data(), buffers.size(), options.get());
     if (drawable != nullptr) {
         queue_->signalDrawable(drawable);
     }
@@ -205,10 +218,11 @@ std::vector<Completed> Submission::drain() {
     if (open_) {
         throw Error("drain() or finish() while submission " + std::to_string(next_ - 1) + " is still open");
     }
-    // Every submission before these was settled when its slot was reused.
+    // The submissions that may be unsettled: the last frames_in_flight
+    // committed. Every one before them was settled when its slot was reused.
+    const std::uint64_t first = next_ > frames_in_flight ? next_ - frames_in_flight : 0;
     std::vector<Completed> settled;
-    for (std::uint64_t sequence = next_ > frames_in_flight ? next_ - frames_in_flight : 0; sequence < next_;
-         ++sequence) {
+    for (std::uint64_t sequence = first; sequence < next_; ++sequence) {
         if (std::optional<Completed> completed = settle(sequence)) {
             settled.push_back(*completed);
         }
@@ -216,7 +230,7 @@ std::vector<Completed> Submission::drain() {
     return settled;
 }
 
-bool Submission::has_completed(std::uint64_t sequence) const {
+bool Submission::has_completed(std::uint64_t sequence) const noexcept {
     return completed_->signaledValue() >= sequence + 1;
 }
 

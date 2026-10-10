@@ -38,8 +38,9 @@ namespace serenity::metal {
 // what the one before wrote, so a barrier from dispatch to dispatch sits
 // between each two: each a real hazard, the level just written and read
 // next, at the dispatch stage alone (GPU.8). All twelve are recorded into
-// the frame's one encoder (GPU.6). The radiance image was written by an earlier pass in the frame;
-// the renderer records that barrier (metal/frame/renderer.h).
+// the frame's one encoder (GPU.6). The radiance image was written by an
+// earlier pass in the frame; the renderer records that barrier
+// (metal/frame/renderer.h).
 //
 // The settings reach the shader in a 16-byte buffer of the pass's own
 // (passes::ToneMap's shared layout), made at construction and never written

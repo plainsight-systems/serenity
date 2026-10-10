@@ -20,7 +20,8 @@ using namespace metal;
 using namespace metal::raytracing;
 using namespace serenity::shaders;
 
-kernel void path_trace(constant serenity::contracts::FrameConstants& frame [[buffer(serenity::bindings::path::constants)]],
+kernel void path_trace(constant serenity::contracts::FrameConstants& frame
+                       [[buffer(serenity::bindings::path::constants)]],
                        constant serenity::contracts::CameraData& camera [[buffer(serenity::bindings::path::camera)]],
                        primitive_acceleration_structure structure [[buffer(serenity::bindings::path::structure)]],
                        constant serenity::gpu::SceneBlock& block [[buffer(serenity::bindings::path::scene)]],

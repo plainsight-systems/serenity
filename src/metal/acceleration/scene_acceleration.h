@@ -107,7 +107,7 @@ public:
     // Submission::begin() returning the slot and the frame's commit; throws
     // Error when nothing moves, or if `transforms` is not the shape count.
     void update(MTL4::ComputeCommandEncoder* encoder, std::uint32_t slot,
-                std::span<const contracts::Transform> transforms) const;
+                std::span<const contracts::Transform> transforms);
 
     // The structure frame slot `slot` traces, as a shader binds it.
     MTL::ResourceID resource(std::uint32_t slot) const;

@@ -51,7 +51,7 @@ public:
 
     // Frame slot `slot`'s transforms, to place the frame's shapes in, under
     // FrameArray's rule for writing (frame_array.h).
-    std::span<contracts::Transform> transforms(std::uint32_t slot) const;
+    std::span<contracts::Transform> transforms(std::uint32_t slot);
 
     // Frame slot `slot`'s transforms, as a shader binds them.
     MTL::GPUAddress address(std::uint32_t slot) const { return array_.address(slot); }

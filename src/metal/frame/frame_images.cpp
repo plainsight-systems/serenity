@@ -4,41 +4,22 @@
 #include <string>
 
 #include "metal/device/error.h"
+#include "metal/device/support.h"
 
 namespace serenity::metal {
 
 namespace {
 
-NS::SharedPtr<MTL::Texture> make_image(MTL::Device* device, MTL::PixelFormat format, frame::Extent size,
-                                       const char* what) {
-    auto descriptor = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
-    descriptor->setTextureType(MTL::TextureType2D);
-    descriptor->setPixelFormat(format);
-    descriptor->setWidth(size.width);
-    descriptor->setHeight(size.height);
-    descriptor->setStorageMode(MTL::StorageModePrivate);
-    descriptor->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
-    auto texture = NS::TransferPtr(device->newTexture(descriptor.get()));
-    if (!texture) {
-        throw Error("the device made no " + std::to_string(size.width) + " x " + std::to_string(size.height) + " " +
-                    what);
-    }
-    return texture;
-}
-
 // Half of `size` on each axis, rounded up, at least 1 (core/passes/tone_map.h,
 // step 2).
-frame::Extent half(frame::Extent size) {
+constexpr frame::Extent half(frame::Extent size) noexcept {
     return {std::max(1u, (size.width + 1) / 2), std::max(1u, (size.height + 1) / 2)};
 }
 
 }  // namespace
 
-FrameImages::FrameImages(const Device& device, Submission& submission, bool radiance, bool pyramid)
-    : device_(NS::RetainPtr(device.handle())),
-      submission_(submission),
-      wants_radiance_(radiance),
-      wants_pyramid_(pyramid) {}
+FrameImages::FrameImages(const Device& device, Submission& submission, Bloom bloom)
+    : device_(NS::RetainPtr(device.handle())), submission_(submission), bloom_(bloom) {}
 
 MTL::Texture* FrameImages::bloom(std::uint32_t level) const {
     if (level >= pyramid_.size()) {
@@ -56,15 +37,15 @@ void FrameImages::prepare(frame::Extent size) {
     // failed prepare(), in part. What the drain settles goes untimed: a
     // resize's frame or two.
     size_ = {};
-    bool drained_queue = false;
+    bool settled_in_flight = false;
     const auto release = [&](Image& image) {
         if (!image.texture) {
             return;
         }
-        if (!drained_queue) {
+        if (!settled_in_flight) {
             // Settled here, so a failure in a frame in flight is reported.
             submission_.drain();
-            drained_queue = true;
+            settled_in_flight = true;
         }
         image.resident.reset();
         image.texture.reset();
@@ -73,15 +54,13 @@ void FrameImages::prepare(frame::Extent size) {
     for (auto& level : pyramid_) {
         release(level);
     }
-    auto drained = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+    const auto pool = scoped_pool();
     const auto make = [&](Image& image, MTL::PixelFormat format, frame::Extent at, const char* what) {
-        image.texture = make_image(device_.get(), format, at, what);
+        image.texture = make_private_texture(device_.get(), format, at, what);
         image.resident = submission_.keep_resident(image.texture.get());
     };
-    if (wants_radiance_) {
-        make(radiance_, MTL::PixelFormatRGBA32Float, size, "radiance image");
-    }
-    if (wants_pyramid_) {
+    make(radiance_, MTL::PixelFormatRGBA32Float, size, "radiance image");
+    if (bloom_ == Bloom::pyramid) {
         frame::Extent level = size;
         for (auto& image : pyramid_) {
             level = half(level);

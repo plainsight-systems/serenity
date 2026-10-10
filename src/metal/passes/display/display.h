@@ -3,7 +3,6 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
-#include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/frame/frame_resources.h"
 
@@ -32,7 +31,7 @@ namespace serenity::metal {
 // bytes read and 4 written a pixel, and a few flops.
 class DisplayPass {
 public:
-    DisplayPass(const Device& device, const Library& library);
+    explicit DisplayPass(const Library& library);
 
     // Records the pass. Throws Error if `resources` has no radiance image.
     void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;

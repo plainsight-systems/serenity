@@ -50,8 +50,8 @@ public:
     Offscreen& operator=(Offscreen&&) = delete;
     ~Offscreen() = default;
 
-    MTL::Texture* texture() const { return texture_.get(); }
-    frame::Extent size() const { return size_; }
+    MTL::Texture* texture() const noexcept { return texture_.get(); }
+    frame::Extent size() const noexcept { return size_; }
 
     // The bytes read_rgba() fills: width x height x 4. The one place that
     // size is computed (ES.3).

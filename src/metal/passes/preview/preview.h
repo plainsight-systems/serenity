@@ -3,7 +3,6 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
-#include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/frame/frame_resources.h"
 
@@ -82,7 +81,7 @@ namespace serenity::metal {
 // later.
 class PreviewPass {
 public:
-    PreviewPass(const Device& device, const Library& library);
+    explicit PreviewPass(const Library& library);
 
     // Records the pass. Throws Error if `resources` has no scene, no camera
     // or no radiance image.

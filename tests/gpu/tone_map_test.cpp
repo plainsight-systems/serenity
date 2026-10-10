@@ -234,7 +234,7 @@ Bytes tone_map(const Field& radiance, passes::ToneMap settings, Field* base = nu
     image->replaceRegion(MTL::Region(0, 0, size.width, size.height), 0, texels.data(), size.width * 16);
     submission.make_resident(image.get());
 
-    metal::FrameImages pyramid(device, submission, false, true);
+    metal::FrameImages pyramid(device, submission, metal::FrameImages::Bloom::pyramid);
     pyramid.prepare(size);
     std::array<NS::SharedPtr<MTL::Texture>, passes::bloom_levels> readable;
     if (base != nullptr) {

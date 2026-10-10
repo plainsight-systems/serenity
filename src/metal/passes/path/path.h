@@ -3,7 +3,6 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
-#include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/frame/frame_resources.h"
 
@@ -44,7 +43,7 @@ namespace serenity::metal {
 // image's 16 written.
 class PathPass {
 public:
-    PathPass(const Device& device, const Library& library);
+    explicit PathPass(const Library& library);
 
     // Records the pass. Throws Error if `resources` has no scene, no camera,
     // no accumulated image or no radiance image.

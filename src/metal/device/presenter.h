@@ -58,7 +58,7 @@ public:
     ~Presenter();
 
     void resize(frame::Extent size);
-    frame::Extent size() const { return size_; }
+    frame::Extent size() const noexcept { return size_; }
 
     // The next drawable, or null if Core Animation had none to give. Owned
     // by Core Animation; valid until it is presented (Submission::present).

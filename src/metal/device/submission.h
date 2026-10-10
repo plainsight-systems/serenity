@@ -204,11 +204,11 @@ public:
     // Whether submission `sequence` has completed on the GPU, without
     // waiting: its event has been signalled, so what it wrote to shared
     // memory may be read. Says nothing of failure, which settling reports.
-    bool has_completed(std::uint64_t sequence) const;
+    bool has_completed(std::uint64_t sequence) const noexcept;
 
     // The sequence the next begin() hands out: every submission from here on
     // has this sequence or a later one.
-    std::uint64_t next_sequence() const { return next_; }
+    std::uint64_t next_sequence() const noexcept { return next_; }
 
     // Blocks until every committed submission has completed, or the timeout
     // passes; returns whether they all completed. Never throws, and reports
@@ -247,8 +247,8 @@ private:
         std::atomic<std::uint64_t> arrived{0};
         std::atomic<bool> failed{false};
         std::string failure;
-        double gpu_start = 0.0;  // host seconds; written before `arrived` is released
-        double gpu_end = 0.0;
+        frame::Seconds gpu_start{0.0};  // host time; written before `arrived` is released
+        frame::Seconds gpu_end{0.0};
     };
 
     struct Slot {
@@ -257,7 +257,7 @@ private:
         std::shared_ptr<Feedback> feedback = std::make_shared<Feedback>();
         // The sequence + 1 of the last submission in this slot settled; read
         // and written only on the caller's thread.
-        std::uint64_t settled = 0;
+        std::uint64_t settled_through = 0;
     };
 
     // Waits for submission `sequence`'s event, then its feedback, and throws

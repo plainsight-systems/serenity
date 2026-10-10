@@ -3,7 +3,6 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
-#include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/frame/frame_resources.h"
 
@@ -38,7 +37,7 @@ class TestPatternPass {
 public:
     // Builds the pipeline for test_pattern from `library`. Throws Error if it
     // cannot.
-    TestPatternPass(const Device& device, const Library& library);
+    explicit TestPatternPass(const Library& library);
 
     // Records the pass into `encoder`: binds the frame's constants and its
     // target through the resources' argument table, and dispatches one thread

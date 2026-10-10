@@ -3,6 +3,7 @@
 #include <string>
 
 #include "metal/device/error.h"
+#include "metal/device/support.h"
 
 namespace serenity::metal {
 
@@ -28,7 +29,7 @@ std::uint32_t Accumulation::prepare(const frame::FrameInputs& inputs, frame::Ext
     // Starting over at a new size: the image's contents are not read (the
     // pass treats every pixel as empty), so only its size matters. Checked
     // before the old image goes, so a size Metal cannot make changes nothing.
-    check_texture_size(size, "the accumulated image");
+    check_texture_size(size, "accumulated image");
     if (texture_) {
         // Frames in flight may still read the old image: settled here, so a
         // failure among them is reported, and untimed, a resize's frame or
@@ -39,19 +40,8 @@ std::uint32_t Accumulation::prepare(const frame::FrameInputs& inputs, frame::Ext
         texture_.reset();
         history_ = frame::History{};
     }
-    auto drained = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
-    auto descriptor = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
-    descriptor->setTextureType(MTL::TextureType2D);
-    descriptor->setPixelFormat(MTL::PixelFormatRGBA32Float);
-    descriptor->setWidth(size.width);
-    descriptor->setHeight(size.height);
-    descriptor->setStorageMode(MTL::StorageModePrivate);
-    descriptor->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
-    texture_ = NS::TransferPtr(device_->newTexture(descriptor.get()));
-    if (!texture_) {
-        throw Error("the device made no " + std::to_string(size.width) + " x " + std::to_string(size.height) +
-                    " accumulated image");
-    }
+    const auto pool = scoped_pool();
+    texture_ = make_private_texture(device_.get(), MTL::PixelFormatRGBA32Float, size, "accumulated image");
     resident_ = submission_.keep_resident(texture_.get());
     history_ = next;
     return joined.held;

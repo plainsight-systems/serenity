@@ -1,10 +1,12 @@
 #include "metal/acceleration/scene_acceleration.h"
 
+#include <array>
 #include <cstddef>
 #include <string>
 #include <type_traits>
 
 #include "metal/device/error.h"
+#include "metal/device/support.h"
 
 namespace serenity::metal {
 
@@ -15,17 +17,6 @@ static_assert(sizeof(shapes::Bounds) == sizeof(MTL::AxisAlignedBoundingBox));
 static_assert(offsetof(shapes::Bounds, min) == offsetof(MTL::AxisAlignedBoundingBox, min));
 static_assert(offsetof(shapes::Bounds, max) == offsetof(MTL::AxisAlignedBoundingBox, max));
 static_assert(std::is_trivially_copyable_v<shapes::Bounds>);
-
-namespace {
-
-std::string describe(const NS::Error* error) {
-    if (error == nullptr || error->localizedDescription() == nullptr) {
-        return "Metal gave no description";
-    }
-    return error->localizedDescription()->utf8String();
-}
-
-}  // namespace
 
 SceneAcceleration::SceneAcceleration(const Device& device, Submission& submission, const shapes::Shapes& shapes,
                                      std::span<const std::uint32_t> moving) {
@@ -50,10 +41,10 @@ SceneAcceleration::SceneAcceleration(const Device& device, Submission& submissio
         at_rest[i] = shapes::world_bounds(shapes::object_bounds(shapes, shapes.records[i]), shapes.transforms[i]);
     }
     boxes_ = std::make_unique<FrameArray>(device, submission, std::as_bytes(std::span(at_rest)),
-                                          moves ? frames_in_flight : 1u);
+                                          moves ? FrameArray::Copies::per_frame : FrameArray::Copies::one);
 
-    auto drained = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
-    MTL::Device* mtl = device.handle();
+    const auto pool = scoped_pool();
+    MTL::Device* metal_device = device.handle();
     // What only the start-up build reads, resident for its command buffer
     // alone: a still scene's scratch. A moving scene builds every frame, and
     // its scratch is resident for good; it has no start-up build.
@@ -61,7 +52,7 @@ SceneAcceleration::SceneAcceleration(const Device& device, Submission& submissio
     if (!moves) {
         auto set_descriptor = NS::TransferPtr(MTL::ResidencySetDescriptor::alloc()->init());
         NS::Error* error = nullptr;
-        build_only = NS::TransferPtr(mtl->newResidencySet(set_descriptor.get(), &error));
+        build_only = NS::TransferPtr(metal_device->newResidencySet(set_descriptor.get(), &error));
         if (!build_only) {
             throw Error("SceneAcceleration: the device made no residency set: " + describe(error));
         }
@@ -76,13 +67,13 @@ SceneAcceleration::SceneAcceleration(const Device& device, Submission& submissio
         geometry->setBoundingBoxStride(sizeof(shapes::Bounds));
         geometry->setOpaque(true);
         built.descriptor = NS::TransferPtr(MTL4::PrimitiveAccelerationStructureDescriptor::alloc()->init());
-        const NS::Object* list[] = {geometry.get()};
-        built.descriptor->setGeometryDescriptors(NS::Array::array(list, 1));
+        const std::array<const NS::Object*, 1> geometries{geometry.get()};
+        built.descriptor->setGeometryDescriptors(NS::Array::array(geometries.data(), geometries.size()));
 
-        const MTL::AccelerationStructureSizes sizes = mtl->accelerationStructureSizes(built.descriptor.get());
-        built.structure = NS::TransferPtr(mtl->newAccelerationStructure(sizes.accelerationStructureSize));
+        const MTL::AccelerationStructureSizes sizes = metal_device->accelerationStructureSizes(built.descriptor.get());
+        built.structure = NS::TransferPtr(metal_device->newAccelerationStructure(sizes.accelerationStructureSize));
         built.scratch =
-            NS::TransferPtr(mtl->newBuffer(sizes.buildScratchBufferSize, MTL::ResourceStorageModePrivate));
+            NS::TransferPtr(metal_device->newBuffer(sizes.buildScratchBufferSize, MTL::ResourceStorageModePrivate));
         if (!built.structure || !built.scratch) {
             throw Error("SceneAcceleration: the device made no acceleration structure or scratch buffer");
         }
@@ -123,7 +114,7 @@ SceneAcceleration::SceneAcceleration(const Device& device, Submission& submissio
 }
 
 void SceneAcceleration::update(MTL4::ComputeCommandEncoder* encoder, std::uint32_t slot,
-                               std::span<const contracts::Transform> transforms) const {
+                               std::span<const contracts::Transform> transforms) {
     if (moving_.empty()) {
         throw Error("SceneAcceleration::update: nothing in the scene moves");
     }

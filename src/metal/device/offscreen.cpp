@@ -4,6 +4,7 @@
 #include <string>
 
 #include "metal/device/error.h"
+#include "metal/device/support.h"
 
 namespace serenity::metal {
 
@@ -15,7 +16,7 @@ constexpr std::size_t bytes_per_pixel = 4;  // RGBA8Unorm
 
 Offscreen::Offscreen(const Device& device, Submission& submission, frame::Extent size) : size_(size) {
     check_texture_size(size, "Offscreen");
-    auto drained = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+    const auto pool = scoped_pool();
     MTL::TextureDescriptor* descriptor =
         MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormatRGBA8Unorm, size.width, size.height, false);
     descriptor->setStorageMode(MTL::StorageModeShared);
@@ -39,7 +40,7 @@ void Offscreen::read_rgba(std::span<std::uint8_t> out) const {
         throw Error("read_rgba: " + std::to_string(out.size()) + " bytes given for an image of " +
                     std::to_string(expected));
     }
-    texture_->getBytes(out.data(), row_bytes, MTL::Region(0, 0, size_.width, size_.height), 0);
+    texture_->getBytes(out.data(), row_bytes, MTL::Region{0, 0, size_.width, size_.height}, 0);
 }
 
 }  // namespace serenity::metal

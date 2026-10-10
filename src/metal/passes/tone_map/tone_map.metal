@@ -74,7 +74,8 @@ float2 center(uint2 pixel, uint2 size) {
 // Steps 1 and 2 for B_0: the exposed radiance, filtered to B_0's size and
 // divided by the level count.
 kernel void tone_map_down_first(constant ToneMap& settings [[buffer(serenity::bindings::tone_map::settings)]],
-                                texture2d<float, access::sample> radiance [[texture(serenity::bindings::tone_map::input)]],
+                                texture2d<float, access::sample> radiance
+                                [[texture(serenity::bindings::tone_map::input)]],
                                 texture2d<float, access::write> level [[texture(serenity::bindings::tone_map::level)]],
                                 uint2 pixel [[thread_position_in_grid]]) {
     const uint2 size = uint2(level.get_width(), level.get_height());

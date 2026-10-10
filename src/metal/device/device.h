@@ -60,9 +60,9 @@ public:
 
     // Valid for the Device's lifetime. Not retained for the caller: retain
     // it (NS::RetainPtr) to keep it longer.
-    MTL::Device* handle() const { return device_.get(); }
+    MTL::Device* handle() const noexcept { return device_.get(); }
 
-    const DeviceInfo& info() const { return info_; }
+    const DeviceInfo& info() const noexcept { return info_; }
 
 private:
     NS::SharedPtr<MTL::Device> device_;

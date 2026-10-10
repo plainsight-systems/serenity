@@ -1,11 +1,12 @@
 #include "metal/passes/path/path.h"
 
 #include "metal/device/error.h"
+#include "metal/device/support.h"
 #include "metal/passes/bindings.h"
 
 namespace serenity::metal {
 
-PathPass::PathPass(const Device&, const Library& library) : pipeline_(library.compute_pipeline("path_trace")) {}
+PathPass::PathPass(const Library& library) : pipeline_(library.compute_pipeline("path_trace")) {}
 
 void PathPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
     if (resources.scene == 0 || resources.transforms == 0 || resources.glows == 0 || resources.camera == 0 ||
@@ -28,11 +29,7 @@ void PathPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources
     arguments->setTexture(resources.accumulation->gpuResourceID(), binding::accumulated);
     arguments->setTexture(resources.radiance->gpuResourceID(), binding::radiance);
     encoder->setComputePipelineState(pipeline_.get());
-
-    // Rows of the execution width (GPU.2).
-    const NS::UInteger width = pipeline_->threadExecutionWidth();
-    const NS::UInteger rows = pipeline_->maxTotalThreadsPerThreadgroup() / width;
-    encoder->dispatchThreads(MTL::Size(resources.size.width, resources.size.height, 1), MTL::Size(width, rows, 1));
+    dispatch_per_pixel(encoder, pipeline_.get(), resources.size);
 }
 
 }  // namespace serenity::metal

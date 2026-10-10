@@ -74,8 +74,13 @@ namespace serenity::metal {
 // (metal/device/device.h, max_texture_side), or the device cannot make one.
 class FrameImages {
 public:
-    // `radiance` and `pyramid`: which the schedule uses.
-    FrameImages(const Device& device, Submission& submission, bool radiance, bool pyramid);
+    // Whether the schedule has the tone-map pass, which needs the pyramid.
+    // A type, not a bool, so the call says which (I.4).
+    enum class Bloom { none, pyramid };
+
+    // The radiance image always (a schedule with no light pass makes no
+    // FrameImages), and the pyramid as `bloom` says.
+    FrameImages(const Device& device, Submission& submission, Bloom bloom);
 
     FrameImages(const FrameImages&) = delete;
     FrameImages& operator=(const FrameImages&) = delete;
@@ -88,14 +93,13 @@ public:
 
     // Null when the schedule does not use it, or before the first prepare().
     // bloom() throws Error for a level past passes::bloom_levels.
-    MTL::Texture* radiance() const { return radiance_.texture.get(); }
+    MTL::Texture* radiance() const noexcept { return radiance_.texture.get(); }
     MTL::Texture* bloom(std::uint32_t level) const;
 
 private:
     NS::SharedPtr<MTL::Device> device_;
     Submission& submission_;
-    bool wants_radiance_;
-    bool wants_pyramid_;
+    Bloom bloom_;
     frame::Extent size_;
     // Each image with its residency, released after the GPU is done with it
     // (submission.h, Lifetime).

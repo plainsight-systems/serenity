@@ -34,9 +34,9 @@ namespace serenity::metal {
 // Throws Error if the backend cannot make the array.
 class LightGlows {
 public:
-    // `lights` factors of 1: one copy when `glows` is false, one per frame
+    // `lights` factors of 1: one copy when `glowing` is false, one per frame
     // in flight when it is true.
-    LightGlows(const Device& device, Submission& submission, std::uint32_t lights, bool glows);
+    LightGlows(const Device& device, Submission& submission, std::uint32_t lights, bool glowing);
 
     LightGlows(const LightGlows&) = delete;
     LightGlows& operator=(const LightGlows&) = delete;
@@ -46,7 +46,7 @@ public:
 
     // Frame slot `slot`'s factors, to light the frame's lights in, under
     // FrameArray's rule for writing (frame_array.h).
-    std::span<float> glows(std::uint32_t slot) const;
+    std::span<float> glows(std::uint32_t slot);
 
     // Frame slot `slot`'s factors, as a shader binds them.
     MTL::GPUAddress address(std::uint32_t slot) const { return array_.address(slot); }

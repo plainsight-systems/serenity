@@ -61,15 +61,16 @@ TEST_CASE("both programs read a number whole: no sign, no space, nothing after i
         INFO("--scale '" << wrong << "'");
         CHECK_THROWS_AS(serenity::app::parse(std::vector<const char*>{"--graph", "g", "--scale", wrong}), OptionsError);
     }
+    const auto headless = [](const char* option, const char* value) {
+        return serenity::headless::parse(std::vector<const char*>{"--graph", "g", "--out", "o", option, value});
+    };
     for (const char* wrong : {"+3", " 3", "3 ", "-0"}) {
         INFO("--frames '" << wrong << "'");
-        CHECK_THROWS_AS(serenity::headless::parse(std::vector<const char*>{"--graph", "g", "--out", "o", "--frames", wrong}),
-                        serenity::headless::OptionsError);
+        CHECK_THROWS_AS(headless("--frames", wrong), serenity::headless::OptionsError);
     }
     for (const char* wrong : {"+0.5", " 0.5"}) {
         INFO("--step '" << wrong << "'");
-        CHECK_THROWS_AS(serenity::headless::parse(std::vector<const char*>{"--graph", "g", "--out", "o", "--step", wrong}),
-                        serenity::headless::OptionsError);
+        CHECK_THROWS_AS(headless("--step", wrong), serenity::headless::OptionsError);
     }
 }
 

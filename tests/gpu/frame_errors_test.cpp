@@ -115,7 +115,7 @@ TEST_CASE("a frame slot that is not one is refused, however many copies an array
     metal::Device device;
     metal::Submission submission(device);
     const std::vector<std::byte> bytes(16);
-    for (const std::uint32_t copies : {1u, metal::frames_in_flight}) {
+    for (const auto copies : {metal::FrameArray::Copies::one, metal::FrameArray::Copies::per_frame}) {
         metal::FrameArray array(device, submission, bytes, copies);
         CHECK_NOTHROW(array.bytes(metal::frames_in_flight - 1));
         CHECK_THROWS_AS(array.bytes(metal::frames_in_flight), metal::Error);

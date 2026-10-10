@@ -9,7 +9,8 @@
 using namespace metal;
 using namespace serenity::shaders;
 
-kernel void display(constant serenity::contracts::FrameConstants& frame [[buffer(serenity::bindings::display::constants)]],
+kernel void display(constant serenity::contracts::FrameConstants& frame
+                    [[buffer(serenity::bindings::display::constants)]],
                     texture2d<float, access::read> radiance [[texture(serenity::bindings::display::radiance)]],
                     texture2d<float, access::write> target [[texture(serenity::bindings::display::target)]],
                     uint2 pixel [[thread_position_in_grid]]) {

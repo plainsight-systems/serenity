@@ -65,8 +65,7 @@ public:
     std::uint32_t prepare(const frame::FrameInputs& inputs, frame::Extent size, bool scene_changes);
 
     // The image, valid until the next prepare(); null before the first.
-    MTL::Texture* texture() const { return texture_.get(); }
-
+    MTL::Texture* texture() const noexcept { return texture_.get(); }
 
 private:
     NS::SharedPtr<MTL::Device> device_;
