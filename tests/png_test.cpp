@@ -12,7 +12,7 @@
 #include "core/output/png.h"
 
 using serenity::frame::Extent;
-using serenity::output::Error;
+using serenity::output::PngError;
 using serenity::output::write_png;
 
 namespace {
@@ -52,12 +52,12 @@ TEST_CASE("a buffer of the wrong size is refused, and nothing is written") {
     const auto path = temp_path("serenity-png-wrong.png");
     std::filesystem::remove(path);
     const std::vector<std::uint8_t> rgba(3 * 2 * 4 - 1, 0);
-    CHECK_THROWS_AS(write_png(path, Extent{3, 2}, rgba), Error);
-    CHECK_THROWS_AS(write_png(path, Extent{0, 2}, {}), Error);
+    CHECK_THROWS_AS(write_png(path, Extent{3, 2}, rgba), PngError);
+    CHECK_THROWS_AS(write_png(path, Extent{0, 2}, {}), PngError);
     CHECK_FALSE(std::filesystem::exists(path));
 }
 
 TEST_CASE("a path that cannot be written is an error") {
     const std::vector<std::uint8_t> rgba(4, 0);
-    CHECK_THROWS_AS(write_png("/no/such/directory/x.png", Extent{1, 1}, rgba), Error);
+    CHECK_THROWS_AS(write_png("/no/such/directory/x.png", Extent{1, 1}, rgba), PngError);
 }

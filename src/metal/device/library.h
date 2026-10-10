@@ -22,7 +22,7 @@ namespace serenity::metal {
 // then fixed by the source revision, and a shader that does not compile fails
 // the build rather than a run.
 //
-// Failures throw Error, naming the cause and Metal's own description where it
+// Failures throw MetalError, naming the cause and Metal's own description where it
 // gave one (E.2, E.14): bytes Metal will not load as a library, a function
 // the library does not have, a function that cannot be a compute pipeline.
 //

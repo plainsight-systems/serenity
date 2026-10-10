@@ -11,7 +11,7 @@ PreviewPass::PreviewPass(const Library& library) : pipeline_(library.compute_pip
 void PreviewPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
     if (resources.scene == 0 || resources.transforms == 0 || resources.glows == 0 || resources.camera == 0 ||
         resources.radiance == nullptr) {
-        throw Error("PreviewPass: the frame lacks one of its scene, transforms, glows, camera, or radiance image");
+        throw MetalError("PreviewPass: the frame lacks one of its scene, transforms, glows, camera, or radiance image");
     }
     // Bindings: passes/bindings.h, as preview.metal declares them: the
     // scene's block whole, and what changes per frame beside it

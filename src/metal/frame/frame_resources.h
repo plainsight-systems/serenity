@@ -17,7 +17,7 @@ namespace serenity::metal {
 // writes, the argument table it binds through, and the scene, the framed
 // camera and the accumulated image, if the frame has them. One struct for
 // every pass, so the renderer records any pass the same way (renderer.h); each
-// pass takes what it needs and refuses, by Error, to run without what it
+// pass takes what it needs and refuses, by MetalError, to run without what it
 // needs.
 struct FrameResources {
     MTL4::ArgumentTable* arguments = nullptr;

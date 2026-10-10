@@ -83,7 +83,7 @@ namespace serenity::metal {
 // build cost a frame, and a build alone by shape count, is measured in the
 // same note.
 //
-// Throws Error if there are no shapes, if the device cannot make a
+// Throws MetalError if there are no shapes, if the device cannot make a
 // structure, its scratch memory or a buffer, or if the start-up build fails
 // on the GPU (submission.h).
 class SceneAcceleration {
@@ -91,7 +91,7 @@ public:
     // Builds the structure over `shapes` at rest. `moving` are the indices
     // of the shapes that move, in increasing order: none, and the one
     // structure is built here; some, and each slot's is built by its frame's
-    // update(). Throws Error if an index is not a shape's.
+    // update(). Throws MetalError if an index is not a shape's.
     SceneAcceleration(const Device& device, Submission& submission, const shapes::Shapes& shapes,
                       std::span<const std::uint32_t> moving);
 
@@ -105,7 +105,7 @@ public:
     // from the frame's `transforms`, one per shape. Called once a frame,
     // before any pass that traces, when shapes move, between
     // Submission::begin() returning the slot and the frame's commit; throws
-    // Error when nothing moves, or if `transforms` is not the shape count.
+    // MetalError when nothing moves, or if `transforms` is not the shape count.
     void update(MTL4::ComputeCommandEncoder* encoder, std::uint32_t slot,
                 std::span<const contracts::Transform> transforms);
 

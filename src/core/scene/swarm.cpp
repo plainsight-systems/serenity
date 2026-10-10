@@ -26,7 +26,7 @@ contracts::Float3 firefly_start(const Swarm& swarm, std::uint32_t i, const contr
         low[axis] = contracts::component(swarm.flight.volume.min, static_cast<int>(axis)) + margin;
         high[axis] = contracts::component(swarm.flight.volume.max, static_cast<int>(axis)) - margin;
         if (!(low[axis] < high[axis])) {
-            throw animation::Refusal("firefly " + std::to_string(i) +
+            throw animation::MotionError("firefly " + std::to_string(i) +
                                      ": the volume is too small for a firefly to drift in");
         }
     }
@@ -43,7 +43,7 @@ contracts::Float3 firefly_start(const Swarm& swarm, std::uint32_t i, const contr
             return start;
         }
     }
-    throw animation::Refusal("firefly " + std::to_string(i) + ": no start clear of the still shapes in " +
+    throw animation::MotionError("firefly " + std::to_string(i) + ": no start clear of the still shapes in " +
                              std::to_string(start_attempts) + " draws; the volume is too full");
 }
 

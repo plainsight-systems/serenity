@@ -33,14 +33,15 @@ ToneMapPass::ToneMapPass(const Device& device, const Library& library, Submissio
       up_(library.compute_pipeline("tone_map_up")),
       finish_(library.compute_pipeline("tone_map_finish")) {
     if (const std::optional<std::string> reason = frame::invalid(settings)) {
-        throw Error("ToneMapPass: " + *reason);
+        throw MetalError("ToneMapPass: " + *reason);
     }
     if (!device.handle()->supports32BitFloatFiltering()) {
-        throw Error("ToneMapPass: the device cannot filter the 32-bit radiance image (supports32BitFloatFiltering)");
+        throw MetalError(
+            "ToneMapPass: the device cannot filter the 32-bit radiance image (supports32BitFloatFiltering)");
     }
     settings_ = NS::TransferPtr(device.handle()->newBuffer(sizeof(passes::ToneMap), MTL::ResourceStorageModeShared));
     if (!settings_) {
-        throw Error("ToneMapPass: the device made no buffer for the settings");
+        throw MetalError("ToneMapPass: the device made no buffer for the settings");
     }
     static_assert(std::is_trivially_copyable_v<passes::ToneMap>, "the settings are copied as their bytes");
     std::memcpy(settings_->contents(), &settings, sizeof(settings));
@@ -49,11 +50,11 @@ ToneMapPass::ToneMapPass(const Device& device, const Library& library, Submissio
 
 void ToneMapPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
     if (resources.radiance == nullptr) {
-        throw Error("ToneMapPass: the frame has no radiance image");
+        throw MetalError("ToneMapPass: the frame has no radiance image");
     }
     for (const MTL::Texture* level : resources.bloom) {
         if (level == nullptr) {
-            throw Error("ToneMapPass: the frame has no bloom pyramid");
+            throw MetalError("ToneMapPass: the frame has no bloom pyramid");
         }
     }
     // Bindings: passes/bindings.h, as tone_map.metal declares them.

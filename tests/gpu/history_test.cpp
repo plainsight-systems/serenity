@@ -72,7 +72,7 @@ TEST_CASE("a moving scene's image holds one instant; a still scene's, any") {
         (void)metal::render_to_offscreen(submission, target, renderer, at(moving, 1, 0, 1.5));
         // A frame of another instant is refused, not averaged in.
         CHECK_THROWS_WITH_AS(metal::render_to_offscreen(submission, target, renderer, at(moving, 2, 0, 1.6)),
-                             doctest::Contains("an image holds one instant"), metal::Error);
+                             doctest::Contains("an image holds one instant"), metal::MetalError);
         // Starting over at the new instant is fine.
         const std::uint64_t sequence = metal::render_to_offscreen(submission, target, renderer, at(moving, 2, 2, 1.6));
         (void)submission.wait_until_complete(sequence);

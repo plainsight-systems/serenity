@@ -35,7 +35,7 @@ namespace serenity::metal {
 // constants.
 class TestPatternPass {
 public:
-    // Builds the pipeline for test_pattern from `library`. Throws Error if it
+    // Builds the pipeline for test_pattern from `library`. Throws MetalError if it
     // cannot.
     explicit TestPatternPass(const Library& library);
 

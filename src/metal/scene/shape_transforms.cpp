@@ -8,7 +8,7 @@ namespace {
 
 std::span<const contracts::Transform> nonempty(std::span<const contracts::Transform> at_rest) {
     if (at_rest.empty()) {
-        throw Error("ShapeTransforms: the scene has no shapes");
+        throw MetalError("ShapeTransforms: the scene has no shapes");
     }
     return at_rest;
 }

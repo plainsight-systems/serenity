@@ -551,7 +551,7 @@ Episodes draw_episodes(const Context& c, Vec3 start) {
     e.transits.resize(episodes);
     const Segment first = drift_about(c.params, Draws{c.params.seed, 0, 0}, start);
     if (!clear(c, first)) {
-        throw Refusal("the flight's start, the shape's center, is not clear of the still shapes and inside the "
+        throw MotionError("the flight's start, the shape's center, is not clear of the still shapes and inside the "
                       "volume by the clearance");
     }
     e.behaviours.push_back(first);
@@ -570,7 +570,7 @@ Episodes draw_episodes(const Context& c, Vec3 start) {
         const bool no_earlier = k == 1;
         const bool earlier_spent = !no_earlier && round[at - 1] + 1 >= rounds;
         if (no_earlier || earlier_spent || backtracks == most_backtracks) {
-            throw Refusal("flight episode " + std::to_string(k) + " could not be drawn clear of the still shapes, "
+            throw MotionError("flight episode " + std::to_string(k) + " could not be drawn clear of the still shapes, "
                           "after " + std::to_string(backtracks) + " redraws of the episodes before it: a target "
                           "with no room to circle it, or a volume too tight");
         }
@@ -605,7 +605,7 @@ std::vector<Segment> close_loop(const Context& c, Episodes& e) {
         closing = transit(c, e.behaviours.back(), e.behaviours.front());
     }
     if (closing.empty()) {
-        throw Refusal("the flight's loop could not be closed clear of the still shapes");
+        throw MotionError("the flight's loop could not be closed clear of the still shapes");
     }
     return closing;
 }
@@ -773,7 +773,7 @@ std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contr
         if (failures[k]) {
             try {
                 std::rethrow_exception(failures[k]);
-            } catch (const Refusal& refused) {
+            } catch (const MotionError& refused) {
                 throw FlightsError(k, refused.what());
             }
         }

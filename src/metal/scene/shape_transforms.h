@@ -35,7 +35,7 @@ namespace serenity::metal {
 // only the moving ones in the copy of the frame being recorded
 // (animation::animate).
 //
-// Throws Error if there are no shapes or the backend cannot make the array.
+// Throws MetalError if there are no shapes or the backend cannot make the array.
 class ShapeTransforms {
 public:
     // One copy of `at_rest` when `moves` is false; one per frame in flight

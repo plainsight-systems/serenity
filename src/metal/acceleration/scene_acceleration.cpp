@@ -22,11 +22,11 @@ SceneAcceleration::SceneAcceleration(const Device& device, Submission& submissio
                                      std::span<const std::uint32_t> moving) {
     const std::size_t count = shapes.records.size();
     if (count == 0 || shapes.transforms.size() != count) {
-        throw Error("SceneAcceleration: no shapes, or not one transform per shape");
+        throw MetalError("SceneAcceleration: no shapes, or not one transform per shape");
     }
     for (std::size_t i = 0; i < moving.size(); ++i) {
         if (moving[i] >= count || (i > 0 && moving[i] <= moving[i - 1])) {
-            throw Error("SceneAcceleration: the moving shapes are not shapes' indices in increasing order");
+            throw MetalError("SceneAcceleration: the moving shapes are not shapes' indices in increasing order");
         }
     }
     moving_.assign(moving.begin(), moving.end());
@@ -54,7 +54,7 @@ SceneAcceleration::SceneAcceleration(const Device& device, Submission& submissio
         NS::Error* error = nullptr;
         build_only = NS::TransferPtr(metal_device->newResidencySet(set_descriptor.get(), &error));
         if (!build_only) {
-            throw Error("SceneAcceleration: the device made no residency set: " + describe(error));
+            throw MetalError("SceneAcceleration: the device made no residency set: " + describe(error));
         }
     }
 
@@ -75,7 +75,7 @@ SceneAcceleration::SceneAcceleration(const Device& device, Submission& submissio
         built.scratch =
             NS::TransferPtr(metal_device->newBuffer(sizes.buildScratchBufferSize, MTL::ResourceStorageModePrivate));
         if (!built.structure || !built.scratch) {
-            throw Error("SceneAcceleration: the device made no acceleration structure or scratch buffer");
+            throw MetalError("SceneAcceleration: the device made no acceleration structure or scratch buffer");
         }
         // Traced every frame: resident until this object is destroyed.
         built.structure_resident = submission.keep_resident(built.structure.get());
@@ -95,7 +95,7 @@ SceneAcceleration::SceneAcceleration(const Device& device, Submission& submissio
     build.commands->useResidencySet(build_only.get());
     MTL4::ComputeCommandEncoder* encoder = build.commands->computeCommandEncoder();
     if (encoder == nullptr) {
-        throw Error("SceneAcceleration: the command buffer made no compute encoder");
+        throw MetalError("SceneAcceleration: the command buffer made no compute encoder");
     }
     Built& built = structures_[0];
     encoder->buildAccelerationStructure(built.structure.get(), built.descriptor.get(),
@@ -116,14 +116,14 @@ SceneAcceleration::SceneAcceleration(const Device& device, Submission& submissio
 void SceneAcceleration::update(MTL4::ComputeCommandEncoder* encoder, std::uint32_t slot,
                                std::span<const contracts::Transform> transforms) {
     if (moving_.empty()) {
-        throw Error("SceneAcceleration::update: nothing in the scene moves");
+        throw MetalError("SceneAcceleration::update: nothing in the scene moves");
     }
     if (encoder == nullptr || slot >= frames_in_flight) {
-        throw Error("SceneAcceleration::update: no encoder, or no frame slot " + std::to_string(slot));
+        throw MetalError("SceneAcceleration::update: no encoder, or no frame slot " + std::to_string(slot));
     }
     const std::span<shapes::Bounds> boxes = boxes_->view<shapes::Bounds>(slot);  // made from boxes
     if (transforms.size() != boxes.size()) {
-        throw Error("SceneAcceleration::update: not one transform per shape");
+        throw MetalError("SceneAcceleration::update: not one transform per shape");
     }
     // Step 1: the moving shapes' boxes, where this frame places them.
     for (std::size_t i = 0; i < moving_.size(); ++i) {
@@ -141,7 +141,7 @@ void SceneAcceleration::update(MTL4::ComputeCommandEncoder* encoder, std::uint32
 
 MTL::ResourceID SceneAcceleration::resource(std::uint32_t slot) const {
     if (slot >= frames_in_flight) {
-        throw Error("SceneAcceleration::resource: no frame slot " + std::to_string(slot));
+        throw MetalError("SceneAcceleration::resource: no frame slot " + std::to_string(slot));
     }
     const Built& built = moving_.empty() ? structures_[0] : structures_[slot];
     return built.structure->gpuResourceID();

@@ -31,7 +31,7 @@ namespace serenity::metal {
 // frame being recorded (animation::animate). A scene with no sphere lights
 // keeps one factor, unread, since a buffer must have bytes.
 //
-// Throws Error if the backend cannot make the array.
+// Throws MetalError if the backend cannot make the array.
 class LightGlows {
 public:
     // `lights` factors of 1: one copy when `glowing` is false, one per frame

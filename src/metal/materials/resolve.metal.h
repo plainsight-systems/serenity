@@ -42,10 +42,10 @@ constant constexpr float least_alpha = 1e-3f;
 // Every material, as a shader reads it: the records and one array per kind.
 struct Materials {
     constant serenity::materials::MaterialRecord* records;
-    constant serenity::materials::RoughData* rough;
+    constant serenity::materials::RoughData* roughs;
     constant serenity::materials::DielectricData* dielectrics;
     constant serenity::materials::ConductorData* conductors;
-    constant serenity::materials::CoatedData* coated;
+    constant serenity::materials::CoatedData* coateds;
 };
 
 inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures textures,
@@ -62,7 +62,7 @@ inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures text
     switch (record.kind) {
     case serenity::materials::MaterialKind::rough:
         bsdf.kind = serenity::contracts::BsdfKind::lambert;
-        bsdf.color = to_packed(rough_color(materials.rough[record.index], textures, world, object));
+        bsdf.color = to_packed(rough_color(materials.roughs[record.index], textures, world, object));
         break;
     case serenity::materials::MaterialKind::conductor: {
         const serenity::materials::ConductorData conductor = materials.conductors[record.index];
@@ -79,7 +79,7 @@ inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures text
         bsdf.kind = serenity::contracts::BsdfKind::none;
         break;
     case serenity::materials::MaterialKind::coated: {
-        const serenity::materials::CoatedData coat = materials.coated[record.index];
+        const serenity::materials::CoatedData coat = materials.coateds[record.index];
         bsdf.kind = serenity::contracts::BsdfKind::coated;
         serenity::materials::RoughData base{};
         base.color = coat.color;

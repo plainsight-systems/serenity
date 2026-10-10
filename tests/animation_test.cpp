@@ -10,7 +10,7 @@
 #include <doctest/doctest.h>
 
 #include "core/animation/animate.h"
-#include "core/animation/refusal.h"
+#include "core/animation/motion_error.h"
 #include "core/animation/wander.h"
 
 using namespace serenity;
@@ -168,19 +168,19 @@ public:
 
 }  // namespace
 
-TEST_CASE("a wander's refusals: its numbers say which is wrong, a still shape in reach is a Refusal") {
+TEST_CASE("a wander's refusals: its numbers say which is wrong, a still shape in reach is a MotionError") {
     const Nothing nothing;
     const contracts::Float3 anchor{1.0f, 1.5f, -0.5f};
     try {
         (void)animation::make_wander({anchor, 0.25f, 0.3f, 7}, -1.0f, nothing);
         FAIL("expected an error");
-    } catch (const animation::Refusal&) {
+    } catch (const animation::MotionError&) {
         FAIL("numbers out of range are not a refusal");
     } catch (const std::invalid_argument& error) {
         CHECK(std::string(error.what()).find("body") != std::string::npos);
     }
     const Everything everything;
-    CHECK_THROWS_AS(animation::make_wander({anchor, 0.25f, 0.3f, 7}, 0.0f, everything), animation::Refusal);
+    CHECK_THROWS_AS(animation::make_wander({anchor, 0.25f, 0.3f, 7}, 0.0f, everything), animation::MotionError);
 }
 
 TEST_CASE("a motion or glow record whose kind no enumerator names is refused, never placed") {

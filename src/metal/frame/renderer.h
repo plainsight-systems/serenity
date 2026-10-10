@@ -54,7 +54,7 @@ namespace serenity::metal {
 // The scene. A frame graph whose passes read a scene (frame::needs_scene)
 // needs one: the renderer copies it to the GPU (scene_buffers.h) and builds
 // its acceleration structures (scene_acceleration.h) at construction, and
-// refuses, by Error, a graph that needs a scene when given none. Each frame
+// refuses, by MetalError, a graph that needs a scene when given none. Each frame
 // then gives
 // every pass the same resources (frame_resources.h), the scene among them.
 // A graph that reads no scene runs with or without one; given one, it is not
@@ -90,19 +90,19 @@ namespace serenity::metal {
 // the caller chooses it, and the renderer holds none. Each frame the
 // renderer frames the camera it is given for the target's size
 // (camera/thin_lens.h) and binds it; a frame of a graph that reads a scene
-// and has no camera is refused, by Error, in prepare().
+// and has no camera is refused, by MetalError, in prepare().
 //
 // The accumulated image. A frame graph with a pass that averages its frames
 // (frame::accumulates) has one (accumulation.h), and at most one such pass,
 // a rule of the core's (frame::invalid, core/frame/schedule.h) that the
-// renderer applies at construction, refusing by Error any schedule the core
+// renderer applies at construction, refusing by MetalError any schedule the core
 // would not accept. Each frame, prepare() readies it from the frame's inputs
 // before the frame's submission begins, since remaking it for a new size
 // waits for the frames in flight; record() then gives the pass the image and
 // the count of frames it holds, through the frame constants, and Film's
 // counter of samples left out for not being finite (metal/film/
 // non_finite.h), which non_finite_samples() reads. A frame whose inputs
-// claim an image the history does not hold is refused, by Error, and so is a
+// claim an image the history does not hold is refused, by MetalError, and so is a
 // frame recorded without being prepared, and, when the scene changes, a
 // frame at another time than the frames the image holds (accumulation.h).
 //
@@ -167,7 +167,7 @@ public:
     // library, compiled into the program (cmake/MetalLibrary.cmake), makes the
     // ring resident through `submission`, and, if any pass reads the scene,
     // puts `scene` on the GPU. `scene` may be null when no pass reads it.
-    // Throws Error if the schedule is invalid (frame::invalid), a pass needs a
+    // Throws MetalError if the schedule is invalid (frame::invalid), a pass needs a
     // scene and there is none, a glowing light is not one of the scene's, or
     // a pipeline, buffer or structure cannot be built.
     Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
@@ -187,7 +187,7 @@ public:
     // image, if the graph has one (accumulation.h), must hold what the
     // inputs claim; and the images between passes, if the graph has any
     // (frame_images.h), are made at `size`. Called before the frame's
-    // submission begins, for every graph; throws Error if any fails.
+    // submission begins, for every graph; throws MetalError if any fails.
     //
     // Everything a frame's inputs or the scene can get wrong is checked here
     // or at construction, before the submission begins (E.4): an exception
@@ -197,7 +197,7 @@ public:
     void prepare(const frame::FrameInputs& inputs, frame::Extent size);
 
     // Records frame `inputs` into `begun`, writing `target`, of `size`.
-    // `begun` is what Submission::begin() returned. Throws Error if the
+    // `begun` is what Submission::begin() returned. Throws MetalError if the
     // frame was not prepared at this size, if the graph uses images or
     // accumulates; if it has no camera and the graph reads a scene; or if
     // Metal makes no encoder.
@@ -258,7 +258,7 @@ private:
 // measure; or none, having done nothing, when Core Animation had no drawable
 // to give (presenter.h).
 //
-// render_to_window() refuses, by Error, a drawable whose texture is not the
+// render_to_window() refuses, by MetalError, a drawable whose texture is not the
 // size the layer was given: the passes would write past it.
 //
 // render_to_offscreen() records the frame into `target` and commits it,

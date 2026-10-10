@@ -56,13 +56,13 @@ namespace serenity::metal {
 // docs/research/2026-10-09-pass-costs.md.
 class ToneMapPass {
 public:
-    // Throws Error if `settings` are out of range (core/passes/tone_map.h),
+    // Throws MetalError if `settings` are out of range (core/passes/tone_map.h),
     // the device cannot filter 32-bit floats, or it cannot make the
     // pipelines or the settings' buffer.
     ToneMapPass(const Device& device, const Library& library, Submission& submission,
                 const passes::ToneMap& settings);
 
-    // Records the pass. Throws Error if `resources` has no radiance image or
+    // Records the pass. Throws MetalError if `resources` has no radiance image or
     // no bloom pyramid.
     void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
 

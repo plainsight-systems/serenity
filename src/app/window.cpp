@@ -10,13 +10,13 @@ namespace serenity::app {
 namespace {
 
 [[noreturn]] void fail(const char* what) {
-    throw Error(std::string{what} + ": " + SDL_GetError());
+    throw WindowError(std::string{what} + ": " + SDL_GetError());
 }
 
 // SDL takes a window's size as int.
 int points(std::uint32_t side) {
     if (side == 0 || side > INT_MAX) {
-        throw Error("a window side of " + std::to_string(side) + " points is not one SDL takes");
+        throw WindowError("a window side of " + std::to_string(side) + " points is not one SDL takes");
     }
     return static_cast<int>(side);
 }
@@ -43,7 +43,7 @@ void* make_view(SDL_Window* window) {
 Window::SdlVideo::SdlVideo() {
     // SDL's video is the main thread's alone (window.h).
     if (!SDL_IsMainThread()) {
-        throw Error("a window must be opened on the main thread");
+        throw WindowError("a window must be opened on the main thread");
     }
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         fail("SDL_Init");

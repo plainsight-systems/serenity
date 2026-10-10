@@ -343,13 +343,13 @@ TEST_CASE("the accumulated image holds what the inputs claim, or the frame is re
     (void)metal::render_to_offscreen(submission, small, renderer, inputs(0, 0));
     (void)metal::render_to_offscreen(submission, small, renderer, inputs(1, 0));
     // A frame skipped.
-    CHECK_THROWS_AS(metal::render_to_offscreen(submission, small, renderer, inputs(3, 0)), metal::Error);
+    CHECK_THROWS_AS(metal::render_to_offscreen(submission, small, renderer, inputs(3, 0)), metal::MetalError);
     // A size changed without starting over.
-    CHECK_THROWS_AS(metal::render_to_offscreen(submission, large, renderer, inputs(2, 0)), metal::Error);
+    CHECK_THROWS_AS(metal::render_to_offscreen(submission, large, renderer, inputs(2, 0)), metal::MetalError);
     // accumulated_since moved without starting over.
-    CHECK_THROWS_AS(metal::render_to_offscreen(submission, small, renderer, inputs(2, 1)), metal::Error);
+    CHECK_THROWS_AS(metal::render_to_offscreen(submission, small, renderer, inputs(2, 1)), metal::MetalError);
     // accumulated_since after the frame.
-    CHECK_THROWS_AS(metal::render_to_offscreen(submission, small, renderer, inputs(2, 5)), metal::Error);
+    CHECK_THROWS_AS(metal::render_to_offscreen(submission, small, renderer, inputs(2, 5)), metal::MetalError);
     // Starting over at a new size remakes the image, frames in flight
     // drained, and accumulates on from there.
     (void)metal::render_to_offscreen(submission, large, renderer, inputs(2, 2));
@@ -359,7 +359,7 @@ TEST_CASE("the accumulated image holds what the inputs claim, or the frame is re
 
     // More frames than an image holds.
     metal::Renderer fresh(device, submission, path_graph(), &scene);
-    CHECK_THROWS_AS(fresh.prepare(inputs(frame::max_accumulated_frames + 1, 0), {16, 16}), metal::Error);
+    CHECK_THROWS_AS(fresh.prepare(inputs(frame::max_accumulated_frames + 1, 0), {16, 16}), metal::MetalError);
 }
 
 TEST_CASE("a frame recorded without being prepared is refused, and so is a graph with two accumulating passes") {
@@ -373,11 +373,11 @@ TEST_CASE("a frame recorded without being prepared is refused, and so is a graph
                                     frame::FrameInputs{.time = frame::Seconds(0.0), .index = 0,
                                                        .accumulated_since = 0, .camera = scene.camera},
                                     target.texture(), target.size()),
-                    metal::Error);
+                    metal::MetalError);
 
     metal::Submission other(device);
     const frame::Schedule twice{{frame::PassKind::path, frame::PassKind::path, frame::PassKind::display}, std::nullopt};
-    CHECK_THROWS_AS(metal::Renderer(device, other, twice, &scene), metal::Error);
+    CHECK_THROWS_AS(metal::Renderer(device, other, twice, &scene), metal::MetalError);
 }
 
 TEST_CASE("the camera sees a light's glow, through the emitter") {
@@ -402,7 +402,7 @@ TEST_CASE("a frame time past what the shaders' float holds is refused before it 
         CHECK_THROWS_AS(metal::render_to_offscreen(submission, target, renderer,
                                                    frame::FrameInputs{.time = frame::Seconds(seconds), .index = 0,
                                                                       .camera = scene.camera}),
-                        metal::Error);
+                        metal::MetalError);
     }
     const auto fine = metal::render_to_offscreen(
         submission, target, renderer,

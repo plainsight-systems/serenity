@@ -9,7 +9,7 @@
 
 #include "core/animation/extent.h"
 #include "core/animation/flashes.h"
-#include "core/animation/refusal.h"
+#include "core/animation/motion_error.h"
 #include "core/contracts/float3.h"
 #include "core/contracts/obstacles.h"
 #include "core/frame/frame_inputs.h"
@@ -111,7 +111,7 @@ namespace serenity::animation {
 //           In time order.
 //
 // If an episode cannot be drawn clear within those redraws, make_flight throws
-// a Refusal (refusal.h) naming it: a target with no room to circle it, a
+// a MotionError (motion_error.h) naming it: a target with no room to circle it, a
 // volume too tight for the clearance. The scene reader reports it against
 // the motion's line (core/scene/scene.h). Numbers out of range, which the
 // reader checks first, are a std::invalid_argument.
@@ -222,14 +222,14 @@ Flight make_flight(const FlightParams& params, contracts::Float3 start, float bo
 // the call ends (CP.25). Each failure is caught in the worker that met it,
 // kept as a std::exception_ptr and rethrown here, in the caller, which can
 // report it: an exception that left a worker's function would end the
-// program. A refusal, make_flight's Refusal, is rethrown as a FlightsError
+// program. A refusal, make_flight's MotionError, is rethrown as a FlightsError
 // that carries k and the refusal's reason, its message "flight k: " and the
 // reason; anything else as itself. So the error does not depend on the
 // threads either.
-class FlightsError : public Refusal {
+class FlightsError : public MotionError {
 public:
     FlightsError(std::size_t job, const std::string& reason)
-        : Refusal("flight " + std::to_string(job) + ": " + reason), job(job), reason(reason) {}
+        : MotionError("flight " + std::to_string(job) + ": " + reason), job(job), reason(reason) {}
     std::size_t job;     // which job was refused
     std::string reason;  // why, as make_flight said it (I.4: not parsed back out of what())
 };

@@ -645,8 +645,8 @@ material = "a_checks"
     Gpu gpu;
     const auto resolved = gpu.run<Bsdf>(
         "bsdf_resolve", count,
-        {bytes(surfaces), bytes(scene.materials), bytes(scene.rough), bytes(scene.dielectrics),
-         bytes(scene.conductors), bytes(scene.textures), bytes(scene.checkers), bytes(count), bytes(scene.coated),
+        {bytes(surfaces), bytes(scene.materials), bytes(scene.roughs), bytes(scene.dielectrics),
+         bytes(scene.conductors), bytes(scene.textures), bytes(scene.checkers), bytes(count), bytes(scene.coateds),
          bytes(scene.woods), bytes(scene.swirls)});
 
     CHECK(resolved[0].kind == BsdfKind::lambert);

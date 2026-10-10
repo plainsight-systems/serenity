@@ -359,7 +359,7 @@ TEST_CASE("a graph that reads a scene refuses to run without one, and a frame wi
     metal::Device device;
     metal::Submission submission(device);
     const frame::Schedule preview = frame::parse_schedule("passes = [\"preview\", \"display\"]\n", "test");
-    CHECK_THROWS_AS(metal::Renderer(device, submission, preview, nullptr), metal::Error);
+    CHECK_THROWS_AS(metal::Renderer(device, submission, preview, nullptr), metal::MetalError);
 
     const scene::SceneDescription scene = scene::parse(
         camera_text("[0, 0, 3]", "[0, 0, 0]", 30) + sky("[0, 0, 0]", "[0, 0, 0]") +
@@ -370,7 +370,7 @@ TEST_CASE("a graph that reads a scene refuses to run without one, and a frame wi
     metal::Renderer renderer(device, submission, preview, &scene);
     CHECK_THROWS_AS(metal::render_to_offscreen(submission, target, renderer,
                                                frame::FrameInputs{.time = frame::Seconds(0.0), .index = 0}),
-                    metal::Error);
+                    metal::MetalError);
 }
 
 TEST_CASE("start-up work is settled before the first frame, so it is never measured as one") {

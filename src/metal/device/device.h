@@ -32,13 +32,13 @@ struct DeviceInfo {
 // checked against it first (check_texture_size).
 inline constexpr std::uint32_t max_texture_side = 16384;
 
-// Throws Error, naming `what`, if `size` has a zero side or one longer than
+// Throws MetalError, naming `what`, if `size` has a zero side or one longer than
 // max_texture_side.
 void check_texture_size(frame::Extent size, const char* what);
 
 // The system's default Metal device, required to support ray tracing.
 //
-// Construction establishes the invariant or throws Error naming why it could
+// Construction establishes the invariant or throws MetalError naming why it could
 // not (E.5): there is no Metal device, or the device does not support ray
 // tracing. The renderer has no path without ray tracing, so a device that
 // lacks it is refused here, at start-up, rather than discovered at the first

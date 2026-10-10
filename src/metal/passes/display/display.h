@@ -33,7 +33,7 @@ class DisplayPass {
 public:
     explicit DisplayPass(const Library& library);
 
-    // Records the pass. Throws Error if `resources` has no radiance image.
+    // Records the pass. Throws MetalError if `resources` has no radiance image.
     void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
 
 private:

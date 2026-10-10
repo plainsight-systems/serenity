@@ -11,7 +11,7 @@ PathPass::PathPass(const Library& library) : pipeline_(library.compute_pipeline(
 void PathPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
     if (resources.scene == 0 || resources.transforms == 0 || resources.glows == 0 || resources.camera == 0 ||
         resources.accumulation == nullptr || resources.non_finite_counter == 0 || resources.radiance == nullptr) {
-        throw Error("PathPass: the frame lacks one of its scene, transforms, glows, camera, accumulated image, "
+        throw MetalError("PathPass: the frame lacks one of its scene, transforms, glows, camera, accumulated image, "
                     "counter of samples not finite, or radiance image");
     }
     // Bindings: passes/bindings.h, as path.metal declares them: the scene's

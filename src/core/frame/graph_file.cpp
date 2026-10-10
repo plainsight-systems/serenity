@@ -151,7 +151,7 @@ Schedule parse_schedule(std::string_view text, std::string_view source) {
 
 Schedule load_schedule(const std::filesystem::path& path) {
     // Sized from the file, and read whole or refused: a read that fails, a
-    // directory, or a file that ends early is an Error, never an empty or a
+    // directory, or a file that ends early is a GraphFileError, never an empty or a
     // shorter graph (I.10, SL.io.2).
     std::error_code error;
     const std::uintmax_t size = std::filesystem::file_size(path, error);

@@ -39,7 +39,7 @@ constexpr std::size_t align_up(std::size_t bytes) noexcept {
 }
 
 // A 2D image of `format` and `size` in private storage, read and written by
-// shaders: the GPU's alone. Throws Error naming `what` if `size` is not one
+// shaders: the GPU's alone. Throws MetalError naming `what` if `size` is not one
 // Metal makes (check_texture_size, device.h) or the device makes none. Not
 // made resident: the caller keeps it so (submission.h, keep_resident).
 NS::SharedPtr<MTL::Texture> make_private_texture(MTL::Device* device, MTL::PixelFormat format, frame::Extent size,

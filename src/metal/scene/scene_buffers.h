@@ -31,7 +31,7 @@ namespace serenity::metal {
 // change when shapes move, are not here: ShapeTransforms keeps them, a copy
 // per frame in flight when they move (shape_transforms.h).
 //
-// Throws Error if the arrays cannot be put on the GPU (static_arrays.h).
+// Throws MetalError if the arrays cannot be put on the GPU (static_arrays.h).
 class SceneBuffers {
 public:
     SceneBuffers(const Device& device, Submission& submission, const scene::SceneDescription& scene);

@@ -38,7 +38,7 @@ namespace serenity::metal {
 // A frame's counter holds at most its pixels, 7.7 million at the display's
 // size, and the total is 64-bit, so neither overflows.
 //
-// Throws Error if the device cannot make the counters. Not
+// Throws MetalError if the device cannot make the counters. Not
 // performance-sensitive: a few bytes, once a frame.
 class NonFinite {
 public:
@@ -53,7 +53,7 @@ public:
     // Before frame `sequence` is recorded into `slot`; see above.
     void begin_frame(std::uint32_t slot, std::uint64_t sequence);
 
-    // Slot `slot`'s counter, as a shader binds it. Throws Error for a slot
+    // Slot `slot`'s counter, as a shader binds it. Throws MetalError for a slot
     // that is not one, as begin_frame() does.
     MTL::GPUAddress address(std::uint32_t slot) const;
 

@@ -17,7 +17,7 @@ std::uint32_t count(FrameArray::Copies copies) {
     case FrameArray::Copies::per_frame:
         return frames_in_flight;
     }
-    throw Error("FrameArray: a number of copies with no count");
+    throw MetalError("FrameArray: a number of copies with no count");
 }
 
 }  // namespace
@@ -26,13 +26,13 @@ FrameArray::FrameArray(const Device& device, Submission& submission, std::span<c
                        Copies copies)
     : size_(initial.size()), stride_(align_up(initial.size())), copies_(copies) {
     if (initial.empty()) {
-        throw Error("FrameArray: an empty array");
+        throw MetalError("FrameArray: an empty array");
     }
     const std::uint32_t total = count(copies);
     const auto pool = scoped_pool();
     buffer_ = NS::TransferPtr(device.handle()->newBuffer(stride_ * total, MTL::ResourceStorageModeShared));
     if (!buffer_) {
-        throw Error("FrameArray: the device made no buffer of " + std::to_string(stride_ * total) + " bytes");
+        throw MetalError("FrameArray: the device made no buffer of " + std::to_string(stride_ * total) + " bytes");
     }
     auto* bytes = static_cast<std::byte*>(buffer_->contents());
     for (std::uint32_t copy = 0; copy < total; ++copy) {
@@ -43,7 +43,7 @@ FrameArray::FrameArray(const Device& device, Submission& submission, std::span<c
 
 std::size_t FrameArray::offset(std::uint32_t slot) const {
     if (slot >= frames_in_flight) {
-        throw Error("FrameArray: no frame slot " + std::to_string(slot));
+        throw MetalError("FrameArray: no frame slot " + std::to_string(slot));
     }
     return copies_ == Copies::one ? 0 : std::size_t{slot} * stride_;
 }

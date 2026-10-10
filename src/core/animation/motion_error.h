@@ -14,7 +14,7 @@ namespace serenity::animation {
 // an argument the kind cannot make a motion of, so it is one of
 // std::invalid_argument; numbers out of a kind's range, which the reader
 // checks before it asks, are a plain std::invalid_argument.
-class Refusal : public std::invalid_argument {
+class MotionError : public std::invalid_argument {
 public:
     using std::invalid_argument::invalid_argument;
 };

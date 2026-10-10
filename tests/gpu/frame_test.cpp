@@ -119,25 +119,25 @@ TEST_CASE("finish() settles every frame, and nothing begins after it") {
                                          frame::FrameInputs{.time = frame::Seconds(0.0), .index = i});
     }
     rig.submission.finish();
-    CHECK_THROWS_AS((void)rig.submission.begin(), metal::Error);
+    CHECK_THROWS_AS((void)rig.submission.begin(), metal::MetalError);
 }
 
 TEST_CASE("the submission protocol refuses misuse") {
     metal::Device device;
     metal::Submission submission(device);
-    CHECK_THROWS_AS(submission.commit(), metal::Error);
+    CHECK_THROWS_AS(submission.commit(), metal::MetalError);
     (void)submission.begin();
-    CHECK_THROWS_AS((void)submission.begin(), metal::Error);
-    CHECK_THROWS_AS(submission.wait_until_complete(0), metal::Error);
+    CHECK_THROWS_AS((void)submission.begin(), metal::MetalError);
+    CHECK_THROWS_AS(submission.wait_until_complete(0), metal::MetalError);
     submission.commit();
     submission.wait_until_complete(0);
-    CHECK_THROWS_AS(submission.wait_until_complete(5), metal::Error);
+    CHECK_THROWS_AS(submission.wait_until_complete(5), metal::MetalError);
 }
 
 TEST_CASE("an empty schedule is refused") {
     metal::Device device;
     metal::Submission submission(device);
-    CHECK_THROWS_AS(metal::Renderer(device, submission, frame::Schedule{}, nullptr), metal::Error);
+    CHECK_THROWS_AS(metal::Renderer(device, submission, frame::Schedule{}, nullptr), metal::MetalError);
 }
 
 TEST_CASE("each submission is settled once, by whichever call comes first") {

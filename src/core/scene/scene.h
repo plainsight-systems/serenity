@@ -235,7 +235,7 @@ namespace serenity::scene {
 // only what light can pass into), a glow on anything but a light, a flight
 // glow on a light that does not fly, a motion that cannot be made clear of the
 // still shapes, a swarm whose fireflies cannot start clear of them, or no
-// shapes at all is an Error naming the file and the line (E.2, E.14). Nothing
+// shapes at all is a SceneError naming the file and the line (E.2, E.14). Nothing
 // has a silent default except `up`, and the absences that mean something: no
 // lens is a pinhole, no interior is air, no motion is still.
 //
@@ -244,15 +244,15 @@ namespace serenity::scene {
 // (core/animation/flight.h, make_flights): for the marbles' fireflies the
 // load's largest cost (docs/research/2026-10-10-flight-load.md measures
 // it). load() reads the file whole, sized from the file system, and a read
-// that fails or ends early, a directory's included, is an Error, never a
+// that fails or ends early, a directory's included, is a SceneError, never a
 // shorter scene.
 
 // How far the world reaches from the origin on every axis, in meters (above).
 inline constexpr double world_extent = 1.0e6;
 
-class Error : public std::runtime_error {
+class SceneError : public std::runtime_error {
 public:
-    explicit Error(const std::string& what) : std::runtime_error(what) {}
+    explicit SceneError(const std::string& what) : std::runtime_error(what) {}
 };
 
 struct SceneDescription {
@@ -262,23 +262,26 @@ struct SceneDescription {
     contracts::Camera camera;
     lights::GradientSkyData environment;
 
+    // Each kind's array is named for its kind, plural, adjectives included
+    // (NL.8): MaterialKind::coated's is `coateds`, MediumKind::absorbing's
+    // `absorbings`; gpu::SceneBlock names them the same.
     std::vector<textures::TextureRecord> textures;
     std::vector<textures::CheckerData> checkers;
     std::vector<textures::WoodData> woods;
     std::vector<textures::SwirlData> swirls;
 
     std::vector<materials::MaterialRecord> materials;
-    std::vector<materials::RoughData> rough;
+    std::vector<materials::RoughData> roughs;
     std::vector<materials::DielectricData> dielectrics;
     std::vector<materials::ConductorData> conductors;
     std::vector<materials::EmissiveData> emissives;
-    std::vector<materials::CoatedData> coated;
+    std::vector<materials::CoatedData> coateds;
 
     // The media shapes are filled with (contract 12): one record per
     // medium, one array per kind, as for materials. A shape names one by
     // its record's index in ShapeRecord::interior.
     std::vector<media::MediumRecord> media;
-    std::vector<media::AbsorbingData> absorbing;
+    std::vector<media::AbsorbingData> absorbings;
 
     // In file order, the [[shapes]] and then each swarm's fireflies
     // (swarm.h): shape i is shapes.records[i] and shapes.transforms[i],

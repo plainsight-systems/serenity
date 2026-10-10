@@ -43,7 +43,7 @@ namespace serenity::metal {
 //                 blocks until the display frees it (presenter.h).
 // Each begin() is followed by exactly one commit() or present() before the
 // next begin(). Anything else is a programming error, checked: it throws
-// Error.
+// MetalError.
 //
 // Anything else the CPU writes for a frame and the GPU reads (frame constants,
 // renderer.h) is ringed by the same slot, so it is never overwritten while the
@@ -58,11 +58,11 @@ namespace serenity::metal {
 // through commit feedback, on a queue of its own, separately from the event
 // that says the GPU is done. So a slot is reused only once both have arrived:
 // begin() waits for the event and then for the feedback of the submission
-// that last used the slot, and throws Error naming it if it failed;
+// that last used the slot, and throws MetalError naming it if it failed;
 // wait_until_complete() does the same for the submission it waits on, and
 // finish() for every submission still unchecked, so a failure in the last
 // frames before shutdown is reported too. A submission whose event or
-// feedback does not arrive within the timeout throws Error as well, rather
+// feedback does not arrive within the timeout throws MetalError as well, rather
 // than blocking forever on a GPU that has stopped.
 //
 // The feedback handlers run on Metal's queue, possibly after this object is
@@ -102,7 +102,7 @@ namespace serenity::metal {
 // destructors before anything of theirs is released. After the normal end of
 // a run (finish()) the wait returns at once. A submission still open when an
 // allocation leaves the set may have recorded a use of it, so it can no
-// longer be committed: commit() and present() then throw Error.
+// longer be committed: commit() and present() then throw MetalError.
 //
 // Cost of a frame, from the CPU: one event wait (it returns at once unless
 // the GPU is two frames behind); a poll for that submission's feedback,
@@ -189,13 +189,13 @@ public:
     void present(CA::MetalDrawable* drawable);
 
     // Blocks until submission `sequence` has completed on the GPU, and
-    // throws Error if it failed. For readback, and for start-up work that
+    // throws MetalError if it failed. For readback, and for start-up work that
     // must finish before frames begin. Returns its record if this call
     // settled it, none if an earlier call had.
     std::optional<Completed> wait_until_complete(std::uint64_t sequence);
 
     // Blocks until every committed submission has completed and reported,
-    // and throws Error if any failed. Called once, at the end of a run, so a
+    // and throws MetalError if any failed. Called once, at the end of a run, so a
     // failure in its last frames is not lost. Returns the records of those it
     // settled, in sequence order. The destructor waits too, but a destructor
     // cannot report.
@@ -223,17 +223,17 @@ public:
     bool wait_idle() noexcept;
 
     // Makes `allocation` resident for every frame from now on, until the
-    // returned Resident is destroyed. Throws Error if it is null.
+    // returned Resident is destroyed. Throws MetalError if it is null.
     [[nodiscard]] Resident keep_resident(MTL::Allocation* allocation);
 
     // Makes `allocation` resident for as long as this Submission lives: for
-    // memory that lives as long (a test's probe buffers). Throws Error if it
+    // memory that lives as long (a test's probe buffers). Throws MetalError if it
     // is null.
     void make_resident(MTL::Allocation* allocation);
 
     // Adds a residency set another object owns (a layer's) to the queue, and
     // takes it out again: remove_residency_set() first waits as wait_idle()
-    // does, for the owner's destructor. Throws Error if `set` is null.
+    // does, for the owner's destructor. Throws MetalError if `set` is null.
     void add_residency_set(MTL::ResidencySet* set);
     void remove_residency_set(MTL::ResidencySet* set) noexcept;
 

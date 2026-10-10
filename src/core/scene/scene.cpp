@@ -21,7 +21,7 @@
 
 #include "core/animation/flight.h"
 #include "core/animation/glow.h"
-#include "core/animation/refusal.h"
+#include "core/animation/motion_error.h"
 #include "core/animation/wander.h"
 #include "core/camera/thin_lens.h"
 #include "core/contracts/medium.h"
@@ -45,14 +45,16 @@ public:
     [[noreturn]] void fail(const toml::source_region& where, const std::string& message) const {
         std::ostringstream s;
         s << source_ << ':' << where.begin.line << ": " << message;
-        throw Error(s.str());
+        throw SceneError(s.str());
     }
 
     [[noreturn]] void fail(const toml::node& node, const std::string& message) const {
         fail(node.source(), message);
     }
 
-    [[noreturn]] void fail(const std::string& message) const { throw Error(std::string(source_) + ": " + message); }
+    [[noreturn]] void fail(const std::string& message) const {
+        throw SceneError(std::string(source_) + ": " + message);
+    }
 
     // Every key in `t` must be one of `allowed`.
     void only(const toml::table& t, std::initializer_list<std::string_view> allowed, std::string_view what) const {
@@ -96,7 +98,7 @@ public:
         return number(required(t, key, what), std::string(what) + "'s " + std::string(key));
     }
 
-    // An integer from `least` to `most`, or an Error saying so in `range`
+    // An integer from `least` to `most`, or a SceneError saying so in `range`
     // words (ES.3: the one way the file's integers are read).
     std::int64_t integer(const toml::node& node, std::int64_t least, std::int64_t most,
                          const std::string& message) const {
@@ -370,8 +372,8 @@ NameIndex read_media(const Reader& r, const toml::table& all, SceneDescription& 
         const std::string_view kind = r.text(t, "kind", what);
         if (kind == "absorbing") {
             description.media.push_back(
-                {media::MediumKind::absorbing, static_cast<std::uint32_t>(description.absorbing.size())});
-            description.absorbing.push_back(read_absorbing(r, t, what));
+                {media::MediumKind::absorbing, static_cast<std::uint32_t>(description.absorbings.size())});
+            description.absorbings.push_back(read_absorbing(r, t, what));
         } else {
             r.fail(r.required(t, "kind", what),
                    "unknown medium kind '" + std::string(kind) + "'; known kinds: absorbing");
@@ -492,12 +494,12 @@ NameIndex read_materials(const Reader& r, const toml::table& all, const NameInde
             materials::RoughData rough{};
             rough.color = base.color;
             rough.texture = base.texture;
-            record(materials::MaterialKind::rough, description.rough.size());
-            description.rough.push_back(rough);
+            record(materials::MaterialKind::rough, description.roughs.size());
+            description.roughs.push_back(rough);
         } else if (kind == "coated") {
             const materials::CoatedData coated = read_coated(r, t, what, texture_index, description);
-            record(materials::MaterialKind::coated, description.coated.size());
-            description.coated.push_back(coated);
+            record(materials::MaterialKind::coated, description.coateds.size());
+            description.coateds.push_back(coated);
         } else if (kind == "dielectric") {
             record(materials::MaterialKind::dielectric, description.dielectrics.size());
             description.dielectrics.push_back(read_dielectric(r, t, what));
@@ -818,7 +820,7 @@ void ShapeReading::read_swarms(const toml::array& all, const contracts::Obstacle
             const contracts::Float3 start = [&] {
                 try {
                     return firefly_start(swarm, i, obstacles);  // swarm.h, step 2
-                } catch (const animation::Refusal& refused) {
+                } catch (const animation::MotionError& refused) {
                     r_.fail(t, what + ": " + refused.what());
                 }
             }();
@@ -850,7 +852,7 @@ std::optional<animation::MotionRecord> ShapeReading::make_wander(const Pending& 
     animation::Motions& motions = description_.animation.motions;
     try {
         motions.wanders.push_back(animation::make_wander(params, body, obstacles));
-    } catch (const animation::Refusal& refused) {
+    } catch (const animation::MotionError& refused) {
         r_.fail(*p.motion, what + ": " + refused.what());
     }
     const animation::MotionRecord record{animation::MotionKind::wander,
@@ -1062,18 +1064,18 @@ SceneDescription parse(std::string_view text, std::string_view source) {
 
 SceneDescription load(const std::filesystem::path& path) {
     // Sized from the file, and read whole or refused: a read that fails, a
-    // directory, or a file that ends early is an Error, never an empty or a
+    // directory, or a file that ends early is a SceneError, never an empty or a
     // shorter scene (I.10, SL.io.2).
     std::error_code error;
     const std::uintmax_t size = std::filesystem::file_size(path, error);
     std::ifstream file{path, std::ios::binary};
     if (error || !file || size > static_cast<std::uintmax_t>(std::numeric_limits<std::streamsize>::max())) {
-        throw Error("cannot read scene file " + path.string());
+        throw SceneError("cannot read scene file " + path.string());
     }
     std::string text(static_cast<std::size_t>(size), '\0');
     file.read(text.data(), static_cast<std::streamsize>(size));
     if (!file || file.gcount() != static_cast<std::streamsize>(size)) {
-        throw Error("cannot read scene file " + path.string());
+        throw SceneError("cannot read scene file " + path.string());
     }
     return parse(text, path.string());
 }

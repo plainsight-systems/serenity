@@ -1,5 +1,5 @@
 // What a frame's inputs, a scene or a target can get wrong is refused by
-// Error before the frame's submission begins (metal/frame/renderer.h,
+// MetalError before the frame's submission begins (metal/frame/renderer.h,
 // prepare), so the run can go on, or end, with nothing left open; and a
 // refusal changes nothing (E.4).
 
@@ -50,7 +50,7 @@ TEST_CASE("a frame with no camera is refused before its submission begins, and t
     const std::uint64_t next = submission.next_sequence();
     CHECK_THROWS_AS(metal::render_to_offscreen(submission, target, renderer,
                                                frame::FrameInputs{.time = frame::Seconds{0.0}, .index = 0}),
-                    metal::Error);
+                    metal::MetalError);
     CHECK(submission.next_sequence() == next);  // nothing was begun
     const std::uint64_t done = metal::render_to_offscreen(submission, target, renderer, at(0, 0, scene));
     CHECK_NOTHROW(submission.wait_until_complete(done));
@@ -62,15 +62,15 @@ TEST_CASE("a glowing light that is not one of the scene's is refused when the re
     scene.animation.glowers.back().target = scene.light_counts.spheres;
     metal::Device device;
     metal::Submission submission(device);
-    CHECK_THROWS_AS(metal::Renderer(device, submission, path_graph(), &scene), metal::Error);
+    CHECK_THROWS_AS(metal::Renderer(device, submission, path_graph(), &scene), metal::MetalError);
 }
 
 TEST_CASE("an image Metal cannot make is refused by Error, not by Metal stopping the program") {
     metal::Device device;
     metal::Submission submission(device);
     const frame::Extent too_wide{metal::max_texture_side + 1, 16};
-    CHECK_THROWS_AS(metal::Offscreen(device, submission, too_wide), metal::Error);
-    CHECK_THROWS_AS(metal::Offscreen(device, submission, {0, 16}), metal::Error);
+    CHECK_THROWS_AS(metal::Offscreen(device, submission, too_wide), metal::MetalError);
+    CHECK_THROWS_AS(metal::Offscreen(device, submission, {0, 16}), metal::MetalError);
     CHECK_NOTHROW(metal::Offscreen(device, submission, {metal::max_texture_side, 1}));
 }
 
@@ -83,7 +83,7 @@ TEST_CASE("the accumulated image refused at a size it cannot have keeps what it 
     MTL::Texture* image = accumulation.texture();
     REQUIRE(image != nullptr);
     // Starting over at a size Metal makes no image of: refused...
-    CHECK_THROWS_AS(accumulation.prepare(at(1, 1, scene), {metal::max_texture_side + 1, 16}, false), metal::Error);
+    CHECK_THROWS_AS(accumulation.prepare(at(1, 1, scene), {metal::max_texture_side + 1, 16}, false), metal::MetalError);
     // ...and nothing changed: the image and what it holds are still frame 0's.
     CHECK(accumulation.texture() == image);
     CHECK(accumulation.prepare(at(1, 0, scene), {16, 16}, false) == 1);
@@ -96,7 +96,7 @@ TEST_CASE("the window's drawable must be the size the layer was given") {
     auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
     CA::MetalLayer* layer = CA::MetalLayer::layer();
     REQUIRE(layer != nullptr);
-    CHECK_THROWS_AS(metal::Presenter(device, submission, metal::LayerHandle{layer}, {0, 0}), metal::Error);
+    CHECK_THROWS_AS(metal::Presenter(device, submission, metal::LayerHandle{layer}, {0, 0}), metal::MetalError);
 
     metal::Presenter presenter(device, submission, metal::LayerHandle{layer}, {16, 16});
     metal::Renderer renderer(device, submission, frame::parse_schedule("passes = [\"test_pattern\"]\n", "test"),
@@ -106,7 +106,7 @@ TEST_CASE("the window's drawable must be the size the layer was given") {
     // The layer's drawables changed size behind the presenter's back.
     layer->setDrawableSize(CGSize{32.0, 32.0});
     const std::uint64_t next = submission.next_sequence();
-    CHECK_THROWS_AS(metal::render_to_window(submission, presenter, renderer, inputs), metal::Error);
+    CHECK_THROWS_AS(metal::render_to_window(submission, presenter, renderer, inputs), metal::MetalError);
     CHECK(submission.next_sequence() == next);  // refused before anything was begun
     CHECK_NOTHROW(submission.finish());
 }
@@ -118,13 +118,13 @@ TEST_CASE("a frame slot that is not one is refused, however many copies an array
     for (const auto copies : {metal::FrameArray::Copies::one, metal::FrameArray::Copies::per_frame}) {
         metal::FrameArray array(device, submission, bytes, copies);
         CHECK_NOTHROW(array.bytes(metal::frames_in_flight - 1));
-        CHECK_THROWS_AS(array.bytes(metal::frames_in_flight), metal::Error);
-        CHECK_THROWS_AS(array.address(metal::frames_in_flight), metal::Error);
+        CHECK_THROWS_AS(array.bytes(metal::frames_in_flight), metal::MetalError);
+        CHECK_THROWS_AS(array.address(metal::frames_in_flight), metal::MetalError);
     }
     metal::NonFinite counters(device, submission);
-    CHECK_THROWS_AS(counters.address(metal::frames_in_flight), metal::Error);
+    CHECK_THROWS_AS(counters.address(metal::frames_in_flight), metal::MetalError);
     const std::span<const std::byte> one = bytes;
     metal::StaticArrays arrays(device, submission, std::span(&one, 1));
     CHECK_NOTHROW(arrays.address(0));
-    CHECK_THROWS_AS(arrays.address(1), metal::Error);
+    CHECK_THROWS_AS(arrays.address(1), metal::MetalError);
 }

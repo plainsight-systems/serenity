@@ -10,7 +10,7 @@ DisplayPass::DisplayPass(const Library& library) : pipeline_(library.compute_pip
 
 void DisplayPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
     if (resources.radiance == nullptr) {
-        throw Error("DisplayPass: the frame has no radiance image");
+        throw MetalError("DisplayPass: the frame has no radiance image");
     }
     // Bindings: passes/bindings.h, as display.metal declares them.
     resources.arguments->setAddress(resources.constants, bindings::display::constants);

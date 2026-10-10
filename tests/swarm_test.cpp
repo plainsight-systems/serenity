@@ -64,7 +64,7 @@ std::string swarm_of(int count, int seed = 4, const std::string& extra = "") {
 std::string error_of(const std::string& text) {
     try {
         (void)scene::parse(text, "s.toml");
-    } catch (const scene::Error& error) {
+    } catch (const scene::SceneError& error) {
         return error.what();
     }
     return "";
@@ -278,14 +278,14 @@ TEST_CASE("a flight too fast or too long to sample is refused, its count never c
     const BallAndFloor obstacles(s);
     animation::FlightJob fast = job(3, {1.2f, 1.0f, 0.8f});
     fast.params.speed = 1e30f;  // within float's range, as the reader accepts
-    CHECK_THROWS_AS(animation::make_flight(fast.params, fast.start, fast.body, obstacles), animation::Refusal);
+    CHECK_THROWS_AS(animation::make_flight(fast.params, fast.start, fast.body, obstacles), animation::MotionError);
     // The bound is the params': a small one refuses the first drift, the
     // default makes the flight.
     animation::FlightJob bounded = job(3, {1.2f, 1.0f, 0.8f});
     CHECK_NOTHROW((void)animation::make_flight(bounded.params, bounded.start, bounded.body, obstacles));
     bounded.params.most_steps = 2;
     CHECK_THROWS_WITH_AS(animation::make_flight(bounded.params, bounded.start, bounded.body, obstacles),
-                         doctest::Contains("is not clear"), animation::Refusal);
+                         doctest::Contains("is not clear"), animation::MotionError);
 }
 
 namespace {
@@ -315,7 +315,7 @@ TEST_CASE("a refusal carries its job and its reason; another std::invalid_argume
     try {
         (void)animation::make_flights({job(1, {1.2f, 1.0f, 0.8f})}, arguing);
         FAIL("expected an error");
-    } catch (const animation::Refusal&) {
+    } catch (const animation::MotionError&) {
         FAIL("an Obstacles' own exception was taken for a refusal");
     } catch (const std::invalid_argument& error) {
         CHECK(std::string(error.what()) == "the obstacles argued");

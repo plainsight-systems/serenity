@@ -23,7 +23,7 @@ FrameImages::FrameImages(const Device& device, Submission& submission, Bloom blo
 
 MTL::Texture* FrameImages::bloom(std::uint32_t level) const {
     if (level >= pyramid_.size()) {
-        throw Error("FrameImages: no bloom level " + std::to_string(level));
+        throw MetalError("FrameImages: no bloom level " + std::to_string(level));
     }
     return pyramid_[level].texture.get();
 }

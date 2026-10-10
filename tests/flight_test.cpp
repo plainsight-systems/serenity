@@ -174,7 +174,7 @@ TEST_CASE("a flight that cannot be made clear is refused, naming its line") {
     const auto error_of = [](const std::string& text) {
         try {
             (void)scene::parse(text, "s.toml");
-        } catch (const scene::Error& e) {
+        } catch (const scene::SceneError& e) {
             return std::string(e.what());
         }
         return std::string();
