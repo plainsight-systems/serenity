@@ -26,6 +26,13 @@ int highest_apple_family(MTL::Device* device) {
 
 }  // namespace
 
+void check_texture_size(frame::Extent size, const char* what) {
+    if (size.width == 0 || size.height == 0 || size.width > max_texture_side || size.height > max_texture_side) {
+        throw Error(std::string(what) + ": " + std::to_string(size.width) + " x " + std::to_string(size.height) +
+                    " is not an image Metal makes (each side from 1 to " + std::to_string(max_texture_side) + ")");
+    }
+}
+
 Device::Device() : device_(NS::TransferPtr(MTL::CreateSystemDefaultDevice())) {
     if (!device_) {
         throw Error("no Metal device: MTL::CreateSystemDefaultDevice returned none");

@@ -48,4 +48,11 @@ StaticArrays::StaticArrays(const Device& device, Submission& submission,
     resident_ = submission.keep_resident(buffer_.get());
 }
 
+MTL::GPUAddress StaticArrays::address(std::size_t i) const {
+    if (i >= addresses_.size()) {
+        throw Error("StaticArrays: no array " + std::to_string(i) + " of " + std::to_string(addresses_.size()));
+    }
+    return addresses_[i];
+}
+
 }  // namespace serenity::metal

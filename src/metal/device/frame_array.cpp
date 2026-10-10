@@ -36,14 +36,19 @@ FrameArray::FrameArray(const Device& device, Submission& submission, std::span<c
     resident_ = submission.keep_resident(buffer_.get());
 }
 
+std::size_t FrameArray::offset(std::uint32_t slot) const {
+    if (slot >= frames_in_flight) {
+        throw Error("FrameArray: no frame slot " + std::to_string(slot));
+    }
+    return copies_ == 1 ? 0 : std::size_t{slot} * stride_;
+}
+
 std::span<std::byte> FrameArray::bytes(std::uint32_t slot) const {
-    const std::size_t copy = copies_ == 1 ? 0 : slot % copies_;
-    return {static_cast<std::byte*>(buffer_->contents()) + copy * stride_, size_};
+    return {static_cast<std::byte*>(buffer_->contents()) + offset(slot), size_};
 }
 
 MTL::GPUAddress FrameArray::address(std::uint32_t slot) const {
-    const std::size_t copy = copies_ == 1 ? 0 : slot % copies_;
-    return buffer_->gpuAddress() + copy * stride_;
+    return buffer_->gpuAddress() + offset(slot);
 }
 
 }  // namespace serenity::metal

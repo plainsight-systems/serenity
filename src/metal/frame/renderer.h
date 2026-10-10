@@ -163,8 +163,8 @@ public:
     // ring resident through `submission`, and, if any pass reads the scene,
     // puts `scene` on the GPU. `scene` may be null when no pass reads it.
     // Throws Error if the schedule is invalid (frame::invalid), a pass needs a
-    // scene and there is none, or a pipeline, buffer or structure cannot be
-    // built.
+    // scene and there is none, a glowing light is not one of the scene's, or
+    // a pipeline, buffer or structure cannot be built.
     Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
              const scene::SceneDescription* scene);
 
@@ -177,17 +177,25 @@ public:
     ~Renderer();
 
     // Checks frame `inputs` and readies what it needs from before it: its
-    // time must be finite within float's range, which the shaders read; the
-    // accumulated image, if the graph has one (accumulation.h), must hold
-    // what the inputs claim; and the images between passes, if the graph
-    // has any (frame_images.h), are made at `size`. Called before the
-    // frame's submission begins, for every graph; throws Error if any fails.
+    // time must be finite within float's range, which the shaders read; a
+    // graph that reads a scene needs the frame's camera; the accumulated
+    // image, if the graph has one (accumulation.h), must hold what the
+    // inputs claim; and the images between passes, if the graph has any
+    // (frame_images.h), are made at `size`. Called before the frame's
+    // submission begins, for every graph; throws Error if any fails.
+    //
+    // Everything a frame's inputs or the scene can get wrong is checked here
+    // or at construction, before the submission begins (E.4): an exception
+    // after begin() leaves the submission open, never to be committed
+    // (submission.h), so record() throws only for a broken protocol or a
+    // Metal failure, which end the run.
     void prepare(const frame::FrameInputs& inputs, frame::Extent size);
 
     // Records frame `inputs` into `frame`, writing `target`, of `size`.
     // `frame` is what Submission::begin() returned. Throws Error if the
-    // schedule reads a scene and `inputs` has no camera, or uses images or
-    // accumulates and the frame was not prepared at this size.
+    // frame was not prepared at this size, if the graph uses images or
+    // accumulates; if it has no camera and the graph reads a scene; or if
+    // Metal makes no encoder.
     void record(const FrameSlot& frame, const frame::FrameInputs& inputs, MTL::Texture* target,
                 frame::Extent size);
 
@@ -240,11 +248,15 @@ private:
 // measure; or none, having done nothing, when Core Animation had no drawable
 // to give (presenter.h).
 //
+// render_to_window() refuses, by Error, a drawable whose texture is not the
+// size the layer was given: the passes would write past it.
+//
 // render_to_offscreen() records the frame into `target` and commits it,
 // without waiting; it returns the submission's sequence, for
 // Submission::wait_until_complete() before reading `target` back. The
 // headless renderer measures nothing, so what its begin() settled is not
-// returned.
+// returned. It drains an autorelease pool of its own too, so a caller with
+// none (the headless renderer) leaks nothing a frame.
 struct WindowFrame {
     std::uint64_t sequence = 0;
     std::optional<Completed> settled;

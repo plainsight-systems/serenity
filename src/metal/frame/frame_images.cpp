@@ -40,10 +40,15 @@ FrameImages::FrameImages(const Device& device, Submission& submission, bool radi
       wants_radiance_(radiance),
       wants_pyramid_(pyramid) {}
 
-void FrameImages::prepare(frame::Extent size) {
-    if (size.width == 0 || size.height == 0) {
-        throw Error("FrameImages: an empty frame");
+MTL::Texture* FrameImages::bloom(std::uint32_t level) const {
+    if (level >= pyramid_.size()) {
+        throw Error("FrameImages: no bloom level " + std::to_string(level));
     }
+    return pyramid_[level].texture.get();
+}
+
+void FrameImages::prepare(frame::Extent size) {
+    check_texture_size(size, "FrameImages");
     if (size == size_) {
         return;
     }

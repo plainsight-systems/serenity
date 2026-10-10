@@ -34,6 +34,9 @@ void NonFinite::begin_frame(std::uint32_t slot, std::uint64_t sequence) {
 }
 
 MTL::GPUAddress NonFinite::address(std::uint32_t slot) const {
+    if (slot >= frames_in_flight) {
+        throw Error("NonFinite::address: no slot " + std::to_string(slot));
+    }
     return counters_->gpuAddress() + sizeof(std::uint32_t) * slot;
 }
 

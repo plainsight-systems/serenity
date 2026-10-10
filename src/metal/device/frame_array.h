@@ -36,7 +36,9 @@ namespace serenity::metal {
 // and it is written only before the first frame.
 //
 // Throws Error if `initial` is empty, `copies` is neither 1 nor
-// frames_in_flight, or the device cannot make the buffer.
+// frames_in_flight, or the device cannot make the buffer; and bytes() and
+// address() throw Error for a slot that is not one (with one copy too, so a
+// wrong slot is caught however the array is made).
 //
 // Cost: the array's size times the copies, once; nothing per frame but what
 // the writer writes, and nothing allocated (MEM.9).
@@ -58,6 +60,10 @@ public:
     MTL::GPUAddress address(std::uint32_t slot) const;
 
 private:
+    // Where slot `slot`'s copy starts; throws Error for a slot that is not
+    // one (I.6).
+    std::size_t offset(std::uint32_t slot) const;
+
     NS::SharedPtr<MTL::Buffer> buffer_;
     Resident resident_;       // released after the GPU is done with it (submission.h)
     std::size_t size_ = 0;    // bytes in each copy

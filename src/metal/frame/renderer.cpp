@@ -133,6 +133,15 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         animation_ = scene->animation;
         const bool moves = animation::moves(animation_);
         transforms_ = std::make_unique<ShapeTransforms>(device, submission, scene->shapes.transforms, moves);
+        // Checked here, not by animate() in a frame, so nothing about the
+        // scene can fail once a frame's submission has begun (renderer.h).
+        for (const animation::Glower& glower : animation_.glowers) {
+            if (glower.target >= scene->light_counts.spheres) {
+                throw Error("Renderer: a glowing light's target, " + std::to_string(glower.target) +
+                            ", is not one of the scene's " + std::to_string(scene->light_counts.spheres) +
+                            " sphere lights");
+            }
+        }
         glows_ = std::make_unique<LightGlows>(device, submission, scene->light_counts.spheres,
                                               !animation_.glowers.empty());
         // Where the families meet: the acceleration structure learns which
@@ -154,6 +163,10 @@ Renderer::~Renderer() {
 
 void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
     check_time(inputs);
+    if (needs_scene_ && !inputs.camera) {
+        throw Error("Renderer: frame " + std::to_string(inputs.index) +
+                    ": the frame graph reads a scene, and the frame has no camera");
+    }
     if (!accumulation_ && !images_) {
         return;
     }
@@ -174,8 +187,9 @@ std::uint64_t Renderer::non_finite_samples() const {
 
 void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, MTL::Texture* target,
                       frame::Extent size) {
-    if (frame.commands == nullptr || target == nullptr || size.width == 0 || size.height == 0) {
-        throw Error("Renderer::record: no command buffer, no target, or an empty image");
+    if (frame.commands == nullptr || frame.slot >= frames_in_flight || target == nullptr || size.width == 0 ||
+        size.height == 0) {
+        throw Error("Renderer::record: no command buffer, no frame slot, no target, or an empty image");
     }
     check_time(inputs);
     std::uint32_t accumulated_frames = 0;
@@ -234,6 +248,9 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
     }
 
     MTL4::ComputeCommandEncoder* encoder = frame.commands->computeCommandEncoder();
+    if (encoder == nullptr) {
+        throw Error("Renderer::record: the command buffer made no compute encoder");
+    }
     // Animate: every moving shape placed and every glowing light lit at the
     // frame's time, by the core, in the slot's transforms and glows; and,
     // when shapes move, the slot's structure rebuilt over them, before any
@@ -273,15 +290,28 @@ std::optional<WindowFrame> render_to_window(Submission& submission, Presenter& p
     if (drawable == nullptr) {
         return std::nullopt;
     }
-    renderer.prepare(inputs, presenter.size());
+    // The passes dispatch a thread per pixel of the size asked for, and write
+    // the drawable's texture: a drawable of another size would be written
+    // out of bounds (I.6).
+    const frame::Extent size = presenter.size();
+    MTL::Texture* texture = drawable->texture();
+    if (texture == nullptr || texture->width() != size.width || texture->height() != size.height) {
+        throw Error("render_to_window: the drawable is not the " + std::to_string(size.width) + " x " +
+                    std::to_string(size.height) + " the layer was given");
+    }
+    renderer.prepare(inputs, size);
     const FrameSlot frame = submission.begin();
-    renderer.record(frame, inputs, drawable->texture(), presenter.size());
+    renderer.record(frame, inputs, texture, size);
     submission.present(drawable);
     return WindowFrame{frame.sequence, frame.settled};
 }
 
 std::uint64_t render_to_offscreen(Submission& submission, Offscreen& target, Renderer& renderer,
                                   const frame::FrameInputs& inputs) {
+    // What recording gets from Metal autoreleased (the frame's encoder) is
+    // released at the end of the frame, not whenever the caller's pool, if it
+    // has one, drains (P.8).
+    auto drained = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
     renderer.prepare(inputs, target.size());
     const FrameSlot frame = submission.begin();
     renderer.record(frame, inputs, target.texture(), target.size());

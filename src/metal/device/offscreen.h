@@ -33,7 +33,9 @@ namespace serenity::metal {
 //
 // read_rgba() copies the image out as R, G, B, A, rows from the top, the
 // order output/png.h takes. `out` must hold exactly width x height x 4
-// bytes; any other size throws Error.
+// bytes; any other size throws Error. Construction throws Error for a size
+// Metal makes no image of (device.h, max_texture_side), or if the device
+// cannot make the texture.
 //
 // Cost of a readback: width x height x 4 bytes, copied once. At 3456 x 2234
 // that is 30.9 MB. Not on any budgeted path.

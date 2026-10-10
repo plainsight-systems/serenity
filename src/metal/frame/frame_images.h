@@ -68,7 +68,8 @@ namespace serenity::metal {
 // texels, then P exact reads (passes/tone_map/tone_map.h); what that costs
 // in memory traffic is the pass's measured time, not a count here.
 //
-// Throws Error if the device cannot make an image.
+// Throws Error if the frame's size is not one Metal makes an image of
+// (metal/device/device.h, max_texture_side), or the device cannot make one.
 class FrameImages {
 public:
     // `radiance` and `pyramid`: which the schedule uses.
@@ -84,8 +85,9 @@ public:
     void prepare(frame::Extent size);
 
     // Null when the schedule does not use it, or before the first prepare().
+    // bloom() throws Error for a level past passes::bloom_levels.
     MTL::Texture* radiance() const { return radiance_.texture.get(); }
-    MTL::Texture* bloom(std::uint32_t level) const { return pyramid_.at(level).texture.get(); }
+    MTL::Texture* bloom(std::uint32_t level) const;
 
 private:
     NS::SharedPtr<MTL::Device> device_;

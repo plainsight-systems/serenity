@@ -34,7 +34,10 @@ namespace serenity::metal {
 // frame joins, and returns the count of frames the image holds before it;
 // where the rule says the image is made anew (a first frame, or a start over
 // at another size) it makes it. A frame the rule refuses is refused here, by
-// Error with the rule's reason, and nothing changes.
+// Error with the rule's reason, and nothing changes; so is a size Metal
+// cannot make an image of (metal/device/device.h, max_texture_side). The
+// rule is asked on a copy of the history, kept once the image exists, so
+// the history never claims an image that is not there (E.4).
 //
 // The image is the GPU's alone, in private storage, made resident through
 // the submission. Remaking it for a new size first drains the submission,

@@ -9,6 +9,9 @@ Presenter::Presenter(const Device& device, Submission& submission, LayerHandle l
     if (layer.ca_metal_layer == nullptr) {
         throw Error("Presenter: the layer handle is null");
     }
+    // A size to render at from the first frame (C.41); resize() keeps the
+    // last one for a window minimized later.
+    check_texture_size(size, "Presenter");
     layer_ = NS::RetainPtr(static_cast<CA::MetalLayer*>(layer.ca_metal_layer));
     layer_->setDevice(device.handle());
     layer_->setPixelFormat(MTL::PixelFormatBGRA8Unorm);

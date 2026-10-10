@@ -5,9 +5,7 @@
 namespace serenity::metal {
 
 Offscreen::Offscreen(const Device& device, Submission& submission, frame::Extent size) : size_(size) {
-    if (size.width == 0 || size.height == 0) {
-        throw Error("Offscreen: an image needs a width and a height");
-    }
+    check_texture_size(size, "Offscreen");
     auto drained = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
     MTL::TextureDescriptor* descriptor =
         MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormatRGBA8Unorm, size.width, size.height, false);
