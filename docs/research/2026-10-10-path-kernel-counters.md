@@ -87,4 +87,7 @@ run. The candidates, to be spiked and measured against these counters:
 - Within the one kernel, keep one intersection query live at a time and
   less shading state across it.
 
-Open: the marbles' counters; what each intersection query costs in scratch.
+Open: what each intersection query costs in scratch. The marbles' counters,
+recorded after the guideline sweep with a shorter recording window (11 s
+saves where 25 s did not), are in 2026-10-10-corpus-sweep.md: the same
+picture, stronger.
