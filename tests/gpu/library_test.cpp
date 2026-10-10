@@ -1,6 +1,7 @@
 // metal::Library: a compiled-in library loads, its kernel runs and writes
 // what it should, and every failure throws metal::Error naming its cause.
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -69,7 +70,7 @@ TEST_CASE("a null function name is an error") {
 
 TEST_CASE("bytes that are not a library are an error") {
     Device device;
-    const std::vector<unsigned char> garbage(4096, 0x5a);
+    const std::vector<std::byte> garbage(4096, std::byte{0x5a});
     CHECK_THROWS_AS(Library(device, garbage), Error);
-    CHECK_THROWS_AS(Library(device, std::span<const unsigned char>()), Error);
+    CHECK_THROWS_AS(Library(device, std::span<const std::byte>()), Error);
 }

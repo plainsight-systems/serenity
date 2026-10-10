@@ -26,7 +26,12 @@ def diff_positions(commit):
     A position counts lines down from a file's first hunk header: the line
     after it is 1, and each later hunk header takes a position of its own."""
     positions, path, position, line = {}, None, 0, 0
-    for text in run("git", "show", "--format=", "--unified=3", "--no-color", commit).splitlines():
+    # Prefixes, drivers and path quoting fixed here, not left to the user's git
+    # configuration (diff.noprefix, external diff drivers, core.quotepath),
+    # which would change the lines this parses.
+    shown = run("git", "-c", "core.quotepath=false", "show", "--format=", "--unified=3", "--no-color",
+                "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", commit)
+    for text in shown.splitlines():
         if text.startswith("diff --git "):
             path, position = None, 0
         elif text.startswith("+++ "):

@@ -1,8 +1,11 @@
 {
- "$comment": "The toolchain every build and every recorded figure assumes. Metal has no container image to pin, as Charlotte pinned emsdk's, so the versions are pinned here instead and tools/check_toolchain.py compares them with the machine's at configure time; a mismatch stops the build. To move to a new Xcode, change this file in its own commit and rerun the tests: a new Metal compiler can change what the shaders compute.",
+ "$comment": "The toolchain every build and every recorded figure assumes. Metal has no container image to pin, as Charlotte pinned emsdk's, so the versions are pinned here instead and tools/check_toolchain.py compares them with the machine's at configure time: the compilers CMake resolved (C++, and C and Objective-C, which build SDL), the SDK the build compiles against, the Metal compiler, Xcode, and CMake, whose version decides the compile lines; a mismatch stops the build. To move to a new Xcode or CMake, change this file in its own commit and rerun the tests: a new Metal compiler can change what the shaders compute.",
  "xcode": "Xcode 26.2",
  "xcode_build": "Build version 17C52",
  "macos_sdk": "26.2",
  "metal": "Apple metal version 32023.864 (metalfe-32023.864)",
- "cxx": "Apple clang version 17.0.0 (clang-1700.6.3.2)"
+ "cxx": "Apple clang version 17.0.0 (clang-1700.6.3.2)",
+ "cc": "Apple clang version 17.0.0 (clang-1700.6.3.2)",
+ "objc": "Apple clang version 17.0.0 (clang-1700.6.3.2)",
+ "cmake": "cmake version 4.2.3"
 }

@@ -26,7 +26,7 @@ NS::SharedPtr<NS::AutoreleasePool> pool() {
 
 }  // namespace
 
-Library::Library(const Device& device, std::span<const unsigned char> metallib)
+Library::Library(const Device& device, std::span<const std::byte> metallib)
     : device_(NS::RetainPtr(device.handle())) {
     auto drained = pool();
 

@@ -2,8 +2,9 @@
 #
 #   cmake -DINPUT=<.metallib> -DOUTPUT=<header> -DNAME=<identifier> -P <this>
 #
-# The header holds serenity::metallib::<NAME>, an inline constexpr array of
-# the file's bytes, sixteen to a line. A missing or empty input is a build
+# The header holds serenity::metallib::<NAME>, the file's bytes as a span of
+# std::byte over an inline constexpr array of them, sixteen to a line (the
+# array of unsigned char a literal can spell). A missing or empty input is a build
 # failure: an empty array would load as a library Metal rejects at run time,
 # which is later and further from the cause.
 
@@ -25,12 +26,23 @@ file(WRITE "${OUTPUT}"
 "// Generated from ${source_name} by cmake/embed_metallib_script.cmake. Do not edit.
 #pragma once
 
+#include <array>
+#include <cstddef>
+#include <span>
+
 namespace serenity::metallib {
 
-// ${size} bytes.
-inline constexpr unsigned char ${NAME}[] = {
+namespace stored {
+
+// ${size} bytes, as a std::array (SL.con.1) of what a literal can spell.
+inline constexpr std::array<unsigned char, ${size}> ${NAME} = {
     ${bytes}
 };
+
+}  // namespace stored
+
+// The same bytes as bytes (SL.str.5), as metal::Library takes them.
+inline const std::span<const std::byte> ${NAME} = std::as_bytes(std::span(stored::${NAME}));
 
 }  // namespace serenity::metallib
 ")

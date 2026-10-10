@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
-project(serenity LANGUAGES CXX)
+# C and Objective-C as well as C++: SDL is built with them, so they are
+# checked against the pin with the C++ compiler, below.
+project(serenity LANGUAGES C CXX OBJC)
 
 # ---------------------------------------------------------------------------
 # One target for now: Apple silicon, through Metal. The Vulkan backend for the
@@ -9,17 +11,30 @@ project(serenity LANGUAGES CXX)
 if(NOT APPLE)
     message(FATAL_ERROR "serenity: only the Metal backend exists yet, which needs macOS.")
 endif()
-if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-    message(FATAL_ERROR
-        "serenity: the compiler is ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER}, not Apple's.\n"
-        "Configure through a preset (cmake --preset native-debug), which selects /usr/bin/clang++.")
-endif()
+foreach(language CXX C OBJC)
+    if(NOT CMAKE_${language}_COMPILER_ID STREQUAL "AppleClang")
+        message(FATAL_ERROR
+            "serenity: the ${language} compiler is ${CMAKE_${language}_COMPILER_ID} "
+            "${CMAKE_${language}_COMPILER}, not Apple's.\n"
+            "Configure through a preset (cmake --preset native-debug), which selects /usr/bin/clang and clang++.")
+    endif()
+endforeach()
 
 # The toolchain must be the pinned one (cmake/toolchain.json). Checked here so
-# that every way into the build is checked, not only the Makefile's.
+# that every way into the build is checked, not only the Makefile's: each
+# compiler CMake resolved, the SDK it compiles against (the presets name it,
+# CMAKE_OSX_SYSROOT; CMake 4 sets none by default, which leaves the SDK to
+# the environment), and CMake itself. Python runs the check and builds
+# nothing; it is found here, explicitly, rather than taken from PATH, and
+# given a floor.
+find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
 execute_process(
-    COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_toolchain.py"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_toolchain.py"
             --cxx "${CMAKE_CXX_COMPILER}"
+            --cc "${CMAKE_C_COMPILER}"
+            --objc "${CMAKE_OBJC_COMPILER}"
+            --sdk "${CMAKE_OSX_SYSROOT}"
+            --cmake "${CMAKE_COMMAND}"
     RESULT_VARIABLE toolchain_status)
 if(NOT toolchain_status EQUAL 0)
     message(FATAL_ERROR "serenity: toolchain does not match cmake/toolchain.json (above).")
@@ -74,6 +89,7 @@ FetchContent_Declare(
     SDL3
     URL      https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz
     URL_HASH SHA256=9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3
+    SYSTEM  # its headers' warnings are its own, as the other dependencies' are
 )
 FetchContent_MakeAvailable(SDL3)
 

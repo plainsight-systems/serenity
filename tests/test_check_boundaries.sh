@@ -45,6 +45,12 @@ probe "Metal host include in core" src/core/_probe1.h '#pragma once\n#include <M
 probe "QuartzCore include in core" src/core/_probe2.h '#pragma once\n#include <QuartzCore/QuartzCore.hpp>\n'
 probe "Vulkan include in core" src/core/_probe3.h '#pragma once\n#include <vulkan/vulkan.h>\n'
 probe "metal-cpp name in core" src/core/_probe4.h '#pragma once\nvoid f(MTL::Device* d);\n'
+probe "MetalFX name in core" src/core/_probe13.h '#pragma once\nvoid f(MTLFX::SpatialScaler* s);\n'
+probe "Metal 4 MetalFX name in core" src/core/_probe14.h '#pragma once\nvoid f(MTL4FX::SpatialScaler* s);\n'
+probe "MetalPerformanceShaders include in core" src/core/_probe15.h '#pragma once\n#include <MetalPerformanceShaders/MetalPerformanceShaders.h>\n'
+probe "IOSurface include in core" src/core/_probe16.h '#pragma once\n#include <IOSurface/IOSurface.h>\n'
+probe "CoreVideo include in core" src/core/_probe17.h '#pragma once\n#include <CoreVideo/CoreVideo.h>\n'
+probe "Objective-C module import in core" src/core/_probe18.mm '@import Metal;\n'
 
 # 2. The core including a backend, by quoted and by relative path.
 probe "core includes the Metal backend" src/core/_probe5.h '#pragma once\n#include "metal/device/device.h"\n'
@@ -60,6 +66,15 @@ probe "Metal host API outside src/metal/" src/metal_extra/_probe7.cpp '#include 
 probe "SDL outside src/app/" src/core/_probe10.h '#pragma once\n#include <SDL3/SDL.h>\n'
 probe "toml++ outside the frame graph reader" src/core/frame/_probe11.cpp '#include <toml++/toml.hpp>\n'
 probe "stb outside the PNG writer" src/core/frame/_probe12.cpp '#include <stb_image_write.h>\n'
+
+# 5. A search that cannot read a file fails the check, rather than finding
+#    nothing in it and passing.
+F=src/core/_probe19.h; CREATED="${CREATED} ${F}"
+printf '#pragma once\n' > "${F}"
+chmod 000 "${F}"
+expect_violation "an unreadable file in core"
+chmod 644 "${F}"
+rm -f "${F}"
 
 # The shading language's own headers in the core are allowed.
 F=src/core/_probe8.h; CREATED="${CREATED} ${F}"
