@@ -10,9 +10,9 @@
 #include <metal_stdlib>
 
 #include "core/contracts/emitter.h"
+#include "core/contracts/transform.h"
 #include "core/lights/light.h"
 #include "core/lights/sphere_light.h"
-#include "core/contracts/transform.h"
 #include "metal/lights/sphere_light.metal.h"
 
 namespace serenity {
@@ -41,14 +41,19 @@ inline SphereLight sphere_light_at(Lights lights, uint index) {
     return sphere_light(light, lights.transforms[light.shape], lights.sphere_glows[index]);
 }
 
-// Whether shape `primitive` is a light, and if so which, in `light`.
-inline bool light_at(Lights lights, uint primitive, thread serenity::lights::LightRecord& light) {
+// Whether a shape is a light, and if so which: one result (F.21).
+struct ShapeLight {
+    bool is_light;
+    serenity::lights::LightRecord light;  // read only where is_light
+};
+
+// Whether shape `primitive` is a light, and if so which.
+inline ShapeLight light_at(Lights lights, uint primitive) {
     const uint index = lights.shape_lights[primitive];
     if (index == serenity::lights::no_light) {
-        return false;
+        return ShapeLight{false, serenity::lights::LightRecord{}};
     }
-    light = lights.records[index];
-    return true;
+    return ShapeLight{true, lights.records[index]};
 }
 
 inline serenity::contracts::LightSample sample_light(Lights lights, serenity::lights::LightRecord light, float3 point,

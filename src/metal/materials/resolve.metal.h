@@ -77,7 +77,7 @@ inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures text
     case serenity::materials::MaterialKind::coated: {
         const serenity::materials::CoatedData coat = materials.coated[record.index];
         bsdf.kind = serenity::contracts::BsdfKind::coated;
-        serenity::materials::RoughData base;
+        serenity::materials::RoughData base{};
         base.color = coat.color;
         base.texture = coat.texture;
         bsdf.color = to_packed(rough_color(base, textures, world, object));

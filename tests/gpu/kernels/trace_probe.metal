@@ -32,6 +32,7 @@ kernel void trace_probe(device float2* out [[buffer(0)]],
         return;
     }
     const Shapes shapes{records, transforms, boxes};
-    const Hit hit = trace(structure, shapes, rays[i].origin.xyz, rays[i].direction.xyz, 0.0f, unbounded);
+    const Hit hit =
+        trace(structure, shapes, metal::raytracing::ray(rays[i].origin.xyz, rays[i].direction.xyz, 0.0f, unbounded));
     out[i] = hit.found ? float2(hit.t, float(hit.primitive)) : float2(-1.0f, 0.0f);
 }

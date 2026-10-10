@@ -47,12 +47,8 @@ struct SphereLight {
 
 inline SphereLight sphere_light(serenity::lights::SphereLightData light, serenity::contracts::Transform placed,
                                 float glow) {
-    SphereLight s;
-    s.center = transform_translation(placed);
-    s.radius = transform_scale(placed);
-    s.radiance = to_float3(light.radiance) * glow;
-    s.primitive = light.shape;
-    return s;
+    return SphereLight{transform_translation(placed), transform_scale(placed), to_float3(light.radiance) * glow,
+                       light.shape};
 }
 
 struct LightView {
@@ -66,17 +62,14 @@ struct LightView {
 
 inline LightView view_light(SphereLight light, float3 point) {
     const float3 to_center = light.center - point;
-    LightView v;
-    v.distance = metal::length(to_center);
-    v.direction = to_center / v.distance;
-    v.sin2 = metal::min(1.0f, (light.radius * light.radius) / (v.distance * v.distance));
-    v.cos_max = metal::sqrt(1.0f - v.sin2);
+    const float distance = metal::length(to_center);
+    const float sin2 = metal::min(1.0f, (light.radius * light.radius) / (distance * distance));
+    const float cos_max = metal::sqrt(1.0f - sin2);
     // 1 - cos a = sin^2 a / (1 + cos a): the direct difference cancels to 0
     // for a small, distant light (r / d = 1e-4 makes 1 - sin^2 round to 1),
     // and the light would vanish; this form keeps its precision.
-    v.one_minus_cos = v.sin2 / (1.0f + v.cos_max);
-    v.solid_angle = 2.0f * M_PI_F * v.one_minus_cos;
-    return v;
+    const float one_minus_cos = sin2 / (1.0f + cos_max);
+    return LightView{to_center / distance, distance, sin2, cos_max, one_minus_cos, 2.0f * M_PI_F * one_minus_cos};
 }
 
 // A direction within the light's cone, uniform in solid angle, from a point
@@ -85,10 +78,8 @@ inline float3 direction_to_light(LightView v, float2 u) {
     const float cos_t = 1.0f - u.x * v.one_minus_cos;
     const float sin_t = metal::sqrt(metal::max(0.0f, 1.0f - cos_t * cos_t));
     const float phi = 2.0f * M_PI_F * u.y;
-    float3 t;
-    float3 b;
-    basis(v.direction, t, b);
-    return sin_t * metal::cos(phi) * t + sin_t * metal::sin(phi) * b + cos_t * v.direction;
+    const Tangents f = tangents(v.direction);
+    return sin_t * metal::cos(phi) * f.t + sin_t * metal::sin(phi) * f.b + cos_t * v.direction;
 }
 
 // How far along unit `direction`, within the light's cone, the ray reaches
@@ -104,29 +95,18 @@ inline float distance_to_light(SphereLight light, LightView v, float3 direction)
     return along - metal::sqrt(metal::max(0.0f, light.radius * light.radius - off2));
 }
 
-// Contract 3, for a sphere light. A point inside the light has no sample.
+// Contract 3, for a sphere light. A point inside the light has no sample:
+// LightSample{}, its pdf 0.
 
-inline serenity::contracts::LightSample sphere_sample_light(SphereLight light, float3 point,
-                                                            float2 u) {
-    serenity::contracts::LightSample s;
+inline serenity::contracts::LightSample sphere_sample_light(SphereLight light, float3 point, float2 u) {
     const LightView v = view_light(light, point);
     if (v.distance <= light.radius) {
-        s.direction = to_packed(float3(0.0f, 1.0f, 0.0f));
-        s.distance = 0.0f;
-        s.radiance = to_packed(float3(0.0f));
-        s.pdf = 0.0f;
-        s.primitive = light.primitive;
-        s.padding[0] = s.padding[1] = s.padding[2] = 0u;
-        return s;
+        return serenity::contracts::LightSample{};
     }
     const float3 d = direction_to_light(v, u);
-    s.direction = to_packed(d);
-    s.distance = distance_to_light(light, v, d);
-    s.radiance = to_packed(light.radiance);
-    s.pdf = 1.0f / v.solid_angle;
-    s.primitive = light.primitive;
-    s.padding[0] = s.padding[1] = s.padding[2] = 0u;
-    return s;
+    return serenity::contracts::LightSample{
+        to_packed(d), distance_to_light(light, v, d), to_packed(light.radiance), 1.0f / v.solid_angle,
+        light.primitive, {0u, 0u, 0u}};
 }
 
 // The same radiance from every point of it, every way.

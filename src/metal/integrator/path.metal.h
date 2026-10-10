@@ -21,7 +21,7 @@
 //   Step 1  Trace: the nearest surface along the ray; beta *=
 //           transmittance(medium, t) (contract 12), what the medium the ray
 //           crossed kept of it, t the stretch from the surface the ray truly
-//           left, not from the point `offset` off it the ray starts at: at a
+//           left, not from the point ray_offset off it the ray starts at: at a
 //           marble's scale, and its tint's absorption of some 140 per meter,
 //           that 0.1 mm is a percent of its light. 1 in air.
 //   Step 2  Escape: if there is none, L += beta x sky(direction), and stop.
@@ -103,6 +103,7 @@
 // surface, so about twice the mean path length, a handful of surfaces in
 // practice; 512 rays at the safety stop.
 
+
 #include <metal_raytracing>
 #include <metal_stdlib>
 
@@ -110,9 +111,10 @@
 #include "core/contracts/emitter.h"
 #include "core/contracts/medium.h"
 #include "core/contracts/surface_interaction.h"
-#include "core/lights/light.h"
 #include "metal/acceleration/trace.metal.h"
+#include "metal/camera/thin_lens.metal.h"
 #include "metal/device/layout.metal.h"
+#include "metal/integrator/surface.metal.h"
 #include "metal/light_selection/uniform_light.metal.h"
 #include "metal/lights/emitter.metal.h"
 #include "metal/lights/gradient_sky.metal.h"
@@ -122,16 +124,11 @@
 #include "metal/sampler/sampler.metal.h"
 #include "metal/scene/scene_block.metal.h"
 #include "metal/shapes/shapes.metal.h"
-#include "metal/textures/textures.metal.h"
 
 namespace serenity {
 namespace shaders {
 namespace path {
 
-// How far a ray that leaves a surface starts off it, along the side's
-// normal, so it does not hit that surface again: far below the scene's
-// scale, far above float rounding there.
-constant constexpr float offset = 1e-4f;
 constant constexpr uint roulette_from = 3;  // the 4th surface, counting from 0
 constant constexpr uint safety_stop = 256;
 constant constexpr float max_survival = 0.95f;
@@ -140,93 +137,90 @@ constant constexpr float max_survival = 0.95f;
 // uniformly.
 using Scene = SceneView<UniformLight>;
 
-// A point off the surface whose geometric normal is `n`, on the side
-// `direction` leaves toward.
-inline float3 leave(float3 point, float3 n, float3 direction) {
-    return point + offset * (metal::dot(direction, n) >= 0.0f ? n : -n);
+// Step 5 at `here`: what one light, chosen uniformly, sends toward wo along
+// one direction drawn toward it, f |cos| L_e T / (P p), or 0 where the
+// shadow ray to its surface is blocked. T is over `here`'s medium, which the
+// shadow ray crosses.
+inline float3 next_event(Scene scene, Shading here, thread PathNumbers& numbers) {
+    const SelectedLight chosen = select_light(scene.selection(), next_number(numbers));
+    const serenity::contracts::LightSample sample =
+        sample_light(scene.lights(), chosen.light, to_float3(here.surface.position), next_numbers2(numbers));
+    if (sample.pdf <= 0.0f) {
+        return float3(0.0f);
+    }
+    const float3 wi = to_float3(sample.direction);
+    const float3 f = bsdf_evaluate(here.bsdf, here.wo, wi);
+    if (!metal::any(f > 0.0f) ||
+        occluded(scene.structure, scene.shapes(), leave(here.surface, wi, sample.distance), sample.primitive)) {
+        return float3(0.0f);
+    }
+    return f * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) * to_float3(sample.radiance) *
+           transmittance(scene.media(), here.medium, sample.distance) / (chosen.probability * sample.pdf);
 }
 
-// The radiance arriving along the ray from `origin` along unit `direction`,
-// the camera's, by the algorithm above; `numbers` the path's own.
-inline float3 radiance(Scene scene, float3 origin, float3 direction, thread PathNumbers& numbers) {
+// The radiance arriving along the camera's ray, by the algorithm above;
+// `numbers` the path's own.
+inline float3 radiance(Scene scene, CameraRay camera, thread PathNumbers& numbers) {
     float3 L = float3(0.0f);
     float3 beta = float3(1.0f);
-    float eta_scale = 1.0f;                            // step 6: what transmissions scaled beta by, undone
-    bool counts_emission = true;                     // the camera's own ray
-    uint medium = serenity::contracts::no_medium;      // air, at the camera
+    float eta_scale = 1.0f;                        // step 6: what transmissions scaled beta by, undone
+    bool counts_emission = true;                   // the camera's own ray
+    uint medium = serenity::contracts::no_medium;  // air, at the camera
+    metal::raytracing::ray along(camera.origin, camera.direction, 0.0f, unbounded);
     // Where the ray truly left from: the camera, then each surface's point.
-    // The ray itself starts `offset` off that surface, so its hit distance
+    // The ray itself starts ray_offset off that surface, so its hit distance
     // is short of the stretch by that much; a medium's stretch is measured
     // from here.
-    float3 from = origin;
+    float3 from = camera.origin;
 
     for (uint surface = 0; surface < safety_stop; ++surface) {
-        // Step 1: Trace: the nearest surface along the ray, and what the
-        // medium the ray crossed kept of it (contract 12).
-        const Hit hit = trace(scene.structure, scene.shapes(), origin, direction, 0.0f, unbounded);
+        // Step 1.
+        const Hit hit = trace(scene.structure, scene.shapes(), along);
 
-        // Step 2: Escape: the sky, the one way it is counted.
+        // Step 2.
         if (!hit.found) {
-            L += beta * gradient_sky(scene.sky(), direction);
+            L += beta * gradient_sky(scene.sky(), along.direction);
             break;
         }
-        const float3 point = origin + hit.t * direction;
+        const float3 point = along.origin + hit.t * along.direction;
         beta *= transmittance(scene.media(), medium, metal::distance(from, point));
         const serenity::contracts::SurfaceInteraction surface_at =
-            surface_interaction(scene.shapes(), hit.primitive, point, direction);
+            surface_interaction(scene.shapes(), hit.primitive, point, along.direction);
 
-        // Step 3: Emission, through the emitter (contract 3): counted on the
-        // camera's ray and after a delta lobe; after any other bounce, step 5
-        // at the surface before counted it. What the light's surface
-        // scatters is its BSDF's: a glowing sphere's scatters nothing, so its
-        // path ends at step 6.
-        serenity::lights::LightRecord glowing;
-        if (counts_emission && light_at(scene.lights(), hit.primitive, glowing)) {
-            L += beta * light_emitted(scene.lights(), glowing, point, -direction);
-        }
-
-        // Step 4: Resolve the surface's BSDF (contract 2).
-        const serenity::contracts::Bsdf bsdf = resolve_bsdf(scene.materials(), scene.textures(), surface_at);
-        const float3 wo = -direction;
-        const float3 n = to_float3(surface_at.geometric_normal);
-        const float3 shading = to_float3(bsdf.normal);
-
-        // Step 5: Next event estimation: one light, chosen uniformly, one
-        // direction toward it, one shadow ray to its surface.
-        if (serenity::contracts::aims_at_lights(bsdf_lobes(bsdf)) && scene.selection().count > 0u) {
-            const SelectedLight chosen = select_light(scene.selection(), next_number(numbers));
-            const serenity::contracts::LightSample sample =
-                sample_light(scene.lights(), chosen.light, point, next_numbers2(numbers));
-            if (sample.pdf > 0.0f) {
-                const float3 wi = to_float3(sample.direction);
-                const float3 f = bsdf_evaluate(bsdf, wo, wi);
-                if (metal::any(f > 0.0f) && !occluded(scene.structure, scene.shapes(), leave(point, n, wi), wi, 0.0f,
-                                                      sample.distance, sample.primitive)) {
-                    // The shadow ray crosses the medium the path is in.
-                    L += beta * f * metal::abs(metal::dot(wi, shading)) * to_float3(sample.radiance) *
-                         transmittance(scene.media(), medium, sample.distance) / (chosen.probability * sample.pdf);
-                }
+        // Step 3: a shape's light record is read only where emission counts.
+        if (counts_emission) {
+            const ShapeLight glowing = light_at(scene.lights(), hit.primitive);
+            if (glowing.is_light) {
+                L += beta * light_emitted(scene.lights(), glowing.light, point, -along.direction);
             }
         }
 
-        // Step 6: Sample the BSDF for the next direction.
-        const serenity::contracts::BsdfSample next = bsdf_sample(bsdf, wo, next_numbers3(numbers));
+        // Step 4.
+        const Shading here{surface_at, resolve_bsdf(scene.materials(), scene.textures(), surface_at),
+                           -along.direction, medium};
+
+        // Step 5.
+        if (serenity::contracts::aims_at_lights(bsdf_lobes(here.bsdf)) && scene.selection().count > 0u) {
+            L += beta * next_event(scene, here, numbers);
+        }
+
+        // Step 6.
+        const serenity::contracts::BsdfSample next = bsdf_sample(here.bsdf, here.wo, next_numbers3(numbers));
         if (next.pdf <= 0.0f) {
             break;
         }
         const float3 wi = to_float3(next.direction);
-        beta *= to_float3(next.value) * metal::abs(metal::dot(wi, shading)) / next.pdf;
+        beta *= to_float3(next.value) * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) / next.pdf;
         counts_emission = (next.lobe & serenity::contracts::lobe_delta) != 0u;
-        // Through the surface: into its shape's interior, or out into air.
         if ((next.lobe & serenity::contracts::lobe_transmission) != 0u) {
             medium = (surface_at.flags & serenity::contracts::arrived_from_outside) != 0u
                          ? surface_at.interior
                          : serenity::contracts::no_medium;
-            const float eta = bsdf_eta(bsdf, wo);
+            const float eta = bsdf_eta(here.bsdf, here.wo);
             eta_scale *= eta * eta;
         }
 
-        // Step 7: Russian roulette, from the 4th surface.
+        // Step 7.
         if (surface >= roulette_from) {
             const float energy = metal::max(metal::max(beta.r, beta.g), beta.b) * eta_scale;
             const float q = metal::min(energy, max_survival);
@@ -236,10 +230,9 @@ inline float3 radiance(Scene scene, float3 origin, float3 direction, thread Path
             beta /= q;
         }
 
-        // Step 8: Continue along wi.
+        // Step 8.
         from = point;
-        origin = leave(point, n, wi);
-        direction = wi;
+        along = leave(surface_at, wi);
     }
     return L;
 }

@@ -15,7 +15,7 @@ kernel void camera_probe(device float4* out [[buffer(0)]],
                          constant serenity::contracts::CameraData& camera [[buffer(3)]],
                          uint i [[thread_position_in_grid]]) {
     if (i < count) {
-        const CameraRay ray = camera_ray(camera, queries[i].xy, queries[i].zw, 1600u, 900u);
+        const CameraRay ray = camera_ray(camera, queries[i].xy, queries[i].zw, uint2(1600u, 900u));
         out[2 * i] = float4(ray.origin, 0.0f);
         out[2 * i + 1] = float4(ray.direction, 0.0f);
     }

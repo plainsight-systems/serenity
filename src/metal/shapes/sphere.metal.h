@@ -15,42 +15,44 @@
 // a (1 - |l|^2) instead, l = o - (b / a) d the vector from the center to the
 // ray's nearest point. And the roots are c / q and q / a, q = -(b + sign(b)
 // sqrt(disc)), which adds numbers of one sign where -b + sqrt(disc) would
-// cancel. The nearer of the two that lies in (t_min, t_max), so a ray that
-// starts inside the sphere hits it on the way out.
+// cancel. The nearer of the two that lies within the ray's (min_distance,
+// max_distance), so a ray that starts inside the sphere hits it on the way
+// out.
 
+#include <metal_raytracing>
 #include <metal_stdlib>
+
+#include "metal/shapes/crossing.metal.h"
 
 namespace serenity {
 namespace shaders {
 
-// `origin` and `direction` in object space, `direction` of any length. On a
-// hit, `t` is its parameter, the world's too (contracts/transform.h).
-inline bool intersect_sphere(float3 origin, float3 direction, float t_min, float t_max, thread float& t) {
-    const float a = metal::dot(direction, direction);
-    const float b = metal::dot(origin, direction);
-    const float3 nearest = origin - (b / a) * direction;
+// `r` in object space, its direction of any length. A crossing's t is the
+// world's too (contracts/transform.h).
+inline Crossing intersect_sphere(metal::raytracing::ray r) {
+    const float a = metal::dot(r.direction, r.direction);
+    const float b = metal::dot(r.origin, r.direction);
+    const float3 nearest = r.origin - (b / a) * r.direction;
     const float discriminant = a * (1.0f - metal::dot(nearest, nearest));
     if (discriminant < 0.0f) {
-        return false;
+        return no_crossing();
     }
     const float q = -(b + metal::copysign(metal::sqrt(discriminant), b));
     if (q == 0.0f) {
-        return false;  // a ray from the sphere's surface, along it: both roots 0
+        return no_crossing();  // a ray from the sphere's surface, along it: both roots 0
     }
-    const float c = metal::dot(origin, origin) - 1.0f;
-    const float one = c / q;
-    const float other = q / a;
-    const float near = metal::min(one, other);
-    const float far = metal::max(one, other);
-    if (near > t_min && near < t_max) {
-        t = near;
-        return true;
+    const float c = metal::dot(r.origin, r.origin) - 1.0f;
+    const float root_c = c / q;
+    const float root_a = q / a;
+    const float near = metal::min(root_c, root_a);
+    const float far = metal::max(root_c, root_a);
+    if (near > r.min_distance && near < r.max_distance) {
+        return Crossing{true, near};
     }
-    if (far > t_min && far < t_max) {
-        t = far;
-        return true;
+    if (far > r.min_distance && far < r.max_distance) {
+        return Crossing{true, far};
     }
-    return false;
+    return no_crossing();
 }
 
 // The outward normal at `point`, in object space: the point itself, on the

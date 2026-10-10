@@ -10,6 +10,9 @@
 // Reflecting kinds are two-sided: they reflect on whichever side wo is, the
 // shading normal turned to face it. Glass decides entering from leaving by
 // the unturned normal.
+//
+// "No sample" is one value everywhere: BsdfSample{}, its pdf 0 (contract
+// 2), every other field 0.
 
 #include <metal_stdlib>
 
@@ -64,7 +67,7 @@ inline float bsdf_pdf(serenity::contracts::Bsdf bsdf, float3 wo, float3 wi) {
 inline serenity::contracts::BsdfSample bsdf_sample(serenity::contracts::Bsdf bsdf, float3 wo, float3 u) {
     switch (bsdf.kind) {
     case serenity::contracts::BsdfKind::none:
-        break;
+        return serenity::contracts::BsdfSample{};  // scatters nothing: no sample
     case serenity::contracts::BsdfKind::lambert:
         return lambert_sample(bsdf, facing(bsdf, wo), u.yz);
     case serenity::contracts::BsdfKind::conductor:
@@ -74,12 +77,7 @@ inline serenity::contracts::BsdfSample bsdf_sample(serenity::contracts::Bsdf bsd
     case serenity::contracts::BsdfKind::coated:
         return coated_sample(bsdf, facing(bsdf, wo), wo, u);
     }
-    serenity::contracts::BsdfSample none;
-    none.direction = to_packed(float3(0.0f));
-    none.pdf = 0.0f;
-    none.value = to_packed(float3(0.0f));
-    none.lobe = 0u;
-    return none;
+    return serenity::contracts::BsdfSample{};
 }
 
 // eta_t of a transmission sample drawn for wo: the index of refraction on
