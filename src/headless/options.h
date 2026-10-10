@@ -22,7 +22,7 @@ namespace serenity::headless {
 //                     [--size WIDTHxHEIGHT] [--write all|last|doubling]
 //                     [--samples N]
 //
-// It renders the frame graph in FILE (core/frame/graph_file.h), over the
+// DIRECTORY must be new or empty (prepare_output, below). It renders the frame graph in FILE (core/frame/graph_file.h), over the
 // scene in --scene's FILE if the graph reads one (core/scene/scene.h), frames
 // first .. first + frames - 1, frame i at time i x step, each to
 // DIRECTORY/frame-NNNNNN.png (i, zero-padded to six digits). Time is

@@ -72,8 +72,8 @@ the metal spheres are polished: they had to be shiny.
 
 ## Run it locally
 
-You need an Apple silicon Mac, Xcode 26.2 with its Metal toolchain, CMake 3.25
-or later, and Python 3. Apple's M3 and later trace rays in hardware; earlier
+You need an Apple silicon Mac, Xcode 26.2 with its Metal toolchain, CMake
+4.2.3, and Python 3.9 or later. Apple's M3 and later trace rays in hardware; earlier
 Apple silicon runs the same code in software.
 
 ```sh
@@ -84,6 +84,11 @@ make check    # structural rules, and tests proving each check fires
 make run      # the window, running graphs/test_pattern.toml
 make headless # the same frames, as 60 PNGs in frames/
 ```
+
+`serenity-headless` writes into its `--out` directory only if it is new or
+empty, and refuses one that holds anything, so no earlier run's frame sits
+beside this run's; `make headless` clears its own frames from `frames/`
+first.
 
 `make run GRAPH=graphs/other.toml` runs another frame graph, and `SCENE=` gives
 it a scene. The first lit scene, a soft brass sphere on a checkerboard at night
@@ -114,7 +119,8 @@ instant (64 unless given), and encodes them with ffmpeg into `media/`, which
 git ignores.
 
 The build is pinned to one toolchain. Metal can't run in a container, so the
-versions of Xcode, the SDK, the Metal compiler and Apple's clang are recorded
+versions of Xcode, the SDK the build compiles against, the Metal compiler,
+Apple's clang (as the C, C++ and Objective-C compiler) and CMake are recorded
 in [`cmake/toolchain.json`](cmake/toolchain.json), and configuring the build
 stops if yours differ. Shaders are compiled when the project builds and
 compiled into the binary. The first build fetches metal-cpp, SDL3, toml++,
