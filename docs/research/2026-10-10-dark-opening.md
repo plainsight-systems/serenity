@@ -118,8 +118,9 @@ was 0, and is not computed.
 Measured: the path graph at 3456 x 2234 on the M3 Max, 200 frames, each
 waited for, the median GPU time of frames 21 to 199; the two builds
 alternated three times, each run started after the GPU had been under 5%
-busy for six seconds. The scene is the marbles with their opening
-(scripts/make_marbles.py's), at three times:
+busy for six seconds. Each figure is the mean of the three rounds'
+medians, the rounds' range beside it. The scene is the marbles with their
+opening (scripts/make_marbles.py's), at three times:
 
 | Time | Lights awake | Without the test | With it |
 |---|---|---|---|
@@ -128,7 +129,7 @@ busy for six seconds. The scene is the marbles with their opening
 | 120 s | all | 29.89 ms (29.88–29.90) | 29.77 ms (29.76–29.78) |
 
 The marbles without an opening, every light lit, at t = 628: 29.78 ms
-without the test, 29.67 ms with it (round medians 29.48 / 29.39, 29.93 /
+without the test, 29.67 ms with it, the same means (round medians 29.48 / 29.39, 29.93 /
 29.81, 29.94 / 29.82). With every light lit the test saves nothing to
 trace; its 0.1 ms in every round is the compiled kernel's, not fewer
 rays, and is not claimed. These frames were each waited for, so their
