@@ -46,14 +46,15 @@ This file tracks active and accepted work.
    checked clear at load, glows on the GPU); tone mapping with bloom (a
    radiance image between passes, display and tone_map as the presenting
    passes, Jimenez's bloom pyramid, Khronos PBR Neutral), so a firefly's
-   flash shows on the firefly. Designed, in the headers: the dark opening
-   (a black sky; fireflies that wake one by one, one swarm perched on the
-   table and the marbles that rises, the other held above that comes down;
-   docs/research/2026-10-10-dark-opening.md). Its core is implemented and
-   tested (src/core: wakes, openings, preludes, starts, the reader's keys;
-   the guideline pass in docs/research/2026-10-10-dark-opening/); the
-   scene's art (scenes/marbles.toml) and the load and frame measurements
-   the note asks for are next.
+   flash shows on the firefly; the dark opening (a black sky; fireflies
+   that wake one by one, one swarm perched on the table and the marbles
+   that rises, the other held above that comes down; a sleeping light's
+   shadow ray not traced, as pbrt-v4 does; a swarm's firefly whose flight
+   is refused by chance drawn again; docs/research/2026-10-10-dark-
+   opening.md). The time baseline the estimators are measured against: the
+   naive path tracer at 1a617ab on the marbles at t = 120, every firefly
+   awake, 29.90 ms at 3456 x 2234, by the method that note keeps; the
+   opening's frames beside it, 19.1 ms with none awake.
 
 Then, each in its turn: ReSTIR DI; ReSTIR GI; caustics by manifold next
 event estimation; reservoir reuse as kernels; a denoiser of its own against
