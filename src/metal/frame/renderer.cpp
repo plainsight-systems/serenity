@@ -11,6 +11,7 @@
 #include "core/contracts/camera.h"
 #include "core/contracts/frame_constants.h"
 #include "metal/device/error.h"
+#include "metal/passes/bindings.h"
 #include "serenity/metallib/shaders.h"
 
 namespace serenity::metal {
@@ -29,13 +30,16 @@ static_assert(camera_offset + sizeof(contracts::CameraData) <= slot_stride);
 static_assert(std::is_trivially_copyable_v<contracts::FrameConstants>);
 static_assert(std::is_trivially_copyable_v<contracts::CameraData>);
 
-// Every pass binds at most this many buffers and textures through the table:
-// the path pass binds buffers 0 to 6 (path.metal): the constants, the
-// camera, the structure, the scene's block (metal/scene/scene_block.h), the
-// frame's glows and transforms, and its image's counter. A new kind of
-// material, texture, medium or light adds to the block, not here.
+// Every pass binds at most this many buffers and textures through the table
+// (metal/passes/bindings.h): the path pass binds the most buffers, 0 to 6
+// (the constants, the camera, the structure, the scene's block, the frame's
+// glows and transforms, and its image's counter), the tone map the most
+// textures, 0 to 2. A new kind of material, texture, medium or light adds
+// to the block, not here.
 constexpr NS::UInteger max_buffers = 8;
 constexpr NS::UInteger max_textures = 4;
+static_assert(bindings::path::non_finite < max_buffers);
+static_assert(bindings::tone_map::target < max_textures);
 
 // Shaders read the time as a float (contracts/frame_constants.h): a double
 // past float's range would reach them as infinity.

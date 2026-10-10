@@ -7,6 +7,7 @@
 
 #include "core/frame/schedule.h"
 #include "metal/device/error.h"
+#include "metal/passes/bindings.h"
 
 namespace serenity::metal {
 
@@ -57,13 +58,15 @@ void ToneMapPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
             throw Error("ToneMapPass: the frame has no bloom pyramid");
         }
     }
+    // Bindings: passes/bindings.h, as tone_map.metal declares them.
+    namespace binding = bindings::tone_map;
     MTL4::ArgumentTable* arguments = resources.arguments;
     const auto& bloom = resources.bloom;
 
-    // Steps 1 and 2 for B_0. Bindings match tone_map.metal.
-    arguments->setAddress(settings_->gpuAddress(), 0);
-    arguments->setTexture(resources.radiance->gpuResourceID(), 0);
-    arguments->setTexture(bloom[0]->gpuResourceID(), 1);
+    // Steps 1 and 2 for B_0.
+    arguments->setAddress(settings_->gpuAddress(), binding::settings);
+    arguments->setTexture(resources.radiance->gpuResourceID(), binding::input);
+    arguments->setTexture(bloom[0]->gpuResourceID(), binding::level);
     encoder->setComputePipelineState(down_first_.get());
     dispatch(encoder, down_first_.get(), bloom[0]->width(), bloom[0]->height());
 
@@ -71,8 +74,8 @@ void ToneMapPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
     encoder->setComputePipelineState(down_.get());
     for (std::size_t k = 1; k < bloom.size(); ++k) {
         barrier(encoder);
-        arguments->setTexture(bloom[k - 1]->gpuResourceID(), 0);
-        arguments->setTexture(bloom[k]->gpuResourceID(), 1);
+        arguments->setTexture(bloom[k - 1]->gpuResourceID(), binding::input);
+        arguments->setTexture(bloom[k]->gpuResourceID(), binding::level);
         dispatch(encoder, down_.get(), bloom[k]->width(), bloom[k]->height());
     }
 
@@ -80,16 +83,16 @@ void ToneMapPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
     encoder->setComputePipelineState(up_.get());
     for (std::size_t k = bloom.size() - 1; k-- > 0;) {
         barrier(encoder);
-        arguments->setTexture(bloom[k + 1]->gpuResourceID(), 0);
-        arguments->setTexture(bloom[k]->gpuResourceID(), 1);
+        arguments->setTexture(bloom[k + 1]->gpuResourceID(), binding::input);
+        arguments->setTexture(bloom[k]->gpuResourceID(), binding::level);
         dispatch(encoder, up_.get(), bloom[k]->width(), bloom[k]->height());
     }
 
     // Steps 1 and 4 to 6, into the target.
     barrier(encoder);
-    arguments->setTexture(resources.radiance->gpuResourceID(), 0);
-    arguments->setTexture(bloom[0]->gpuResourceID(), 1);
-    arguments->setTexture(resources.target->gpuResourceID(), 2);
+    arguments->setTexture(resources.radiance->gpuResourceID(), binding::input);
+    arguments->setTexture(bloom[0]->gpuResourceID(), binding::bloom);
+    arguments->setTexture(resources.target->gpuResourceID(), binding::target);
     encoder->setComputePipelineState(finish_.get());
     dispatch(encoder, finish_.get(), resources.size.width, resources.size.height);
 }

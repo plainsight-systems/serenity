@@ -1,14 +1,16 @@
 #include "metal/passes/test_pattern/test_pattern.h"
 
+#include "metal/passes/bindings.h"
+
 namespace serenity::metal {
 
 TestPatternPass::TestPatternPass(const Device&, const Library& library)
     : pipeline_(library.compute_pipeline("test_pattern")) {}
 
 void TestPatternPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
-    // Bindings match test_pattern.metal: buffer 0, texture 0.
-    resources.arguments->setAddress(resources.constants, 0);
-    resources.arguments->setTexture(resources.target->gpuResourceID(), 0);
+    // Bindings: passes/bindings.h, as test_pattern.metal declares them.
+    resources.arguments->setAddress(resources.constants, bindings::test_pattern::constants);
+    resources.arguments->setTexture(resources.target->gpuResourceID(), bindings::test_pattern::target);
     const frame::Extent size = resources.size;
     encoder->setComputePipelineState(pipeline_.get());
 

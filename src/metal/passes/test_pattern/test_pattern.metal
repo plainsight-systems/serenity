@@ -4,11 +4,13 @@
 #include <metal_stdlib>
 
 #include "core/contracts/frame_constants.h"
+#include "metal/passes/bindings.h"
 
 using namespace metal;
 
-kernel void test_pattern(constant serenity::contracts::FrameConstants& frame [[buffer(0)]],
-                         texture2d<float, access::write> target [[texture(0)]],
+kernel void test_pattern(constant serenity::contracts::FrameConstants& frame
+                         [[buffer(serenity::bindings::test_pattern::constants)]],
+                         texture2d<float, access::write> target [[texture(serenity::bindings::test_pattern::target)]],
                          uint2 pixel [[thread_position_in_grid]]) {
     if (pixel.x >= frame.width || pixel.y >= frame.height) {
         return;

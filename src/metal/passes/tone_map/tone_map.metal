@@ -9,6 +9,7 @@
 #include <metal_stdlib>
 
 #include "core/passes/tone_map.h"
+#include "metal/passes/bindings.h"
 #include "metal/math/srgb.metal.h"
 
 using namespace metal;
@@ -72,9 +73,9 @@ float2 center(uint2 pixel, uint2 size) {
 
 // Steps 1 and 2 for B_0: the exposed radiance, filtered to B_0's size and
 // divided by the level count.
-kernel void tone_map_down_first(constant ToneMap& settings [[buffer(0)]],
-                                texture2d<float, access::sample> radiance [[texture(0)]],
-                                texture2d<float, access::write> level [[texture(1)]],
+kernel void tone_map_down_first(constant ToneMap& settings [[buffer(serenity::bindings::tone_map::settings)]],
+                                texture2d<float, access::sample> radiance [[texture(serenity::bindings::tone_map::input)]],
+                                texture2d<float, access::write> level [[texture(serenity::bindings::tone_map::level)]],
                                 uint2 pixel [[thread_position_in_grid]]) {
     const uint2 size = uint2(level.get_width(), level.get_height());
     if (pixel.x >= size.x || pixel.y >= size.y) {
@@ -88,8 +89,8 @@ kernel void tone_map_down_first(constant ToneMap& settings [[buffer(0)]],
 }
 
 // Step 2 for B_1 .. B_5: the level before, filtered to this one's size.
-kernel void tone_map_down(texture2d<float, access::sample> source [[texture(0)]],
-                          texture2d<float, access::write> level [[texture(1)]],
+kernel void tone_map_down(texture2d<float, access::sample> source [[texture(serenity::bindings::tone_map::input)]],
+                          texture2d<float, access::write> level [[texture(serenity::bindings::tone_map::level)]],
                           uint2 pixel [[thread_position_in_grid]]) {
     const uint2 size = uint2(level.get_width(), level.get_height());
     if (pixel.x >= size.x || pixel.y >= size.y) {
@@ -101,8 +102,8 @@ kernel void tone_map_down(texture2d<float, access::sample> source [[texture(0)]]
 }
 
 // Step 3 for one level: B_k += tent(B_(k+1)), in place.
-kernel void tone_map_up(texture2d<float, access::sample> below [[texture(0)]],
-                        texture2d<float, access::read_write> level [[texture(1)]],
+kernel void tone_map_up(texture2d<float, access::sample> below [[texture(serenity::bindings::tone_map::input)]],
+                        texture2d<float, access::read_write> level [[texture(serenity::bindings::tone_map::level)]],
                         uint2 pixel [[thread_position_in_grid]]) {
     const uint2 size = uint2(level.get_width(), level.get_height());
     if (pixel.x >= size.x || pixel.y >= size.y) {
@@ -113,10 +114,10 @@ kernel void tone_map_up(texture2d<float, access::sample> below [[texture(0)]],
 }
 
 // Steps 1 and 4 to 6, at the frame's size, into the target.
-kernel void tone_map_finish(constant ToneMap& settings [[buffer(0)]],
-                            texture2d<float, access::read> radiance [[texture(0)]],
-                            texture2d<float, access::sample> bloom [[texture(1)]],
-                            texture2d<float, access::write> target [[texture(2)]],
+kernel void tone_map_finish(constant ToneMap& settings [[buffer(serenity::bindings::tone_map::settings)]],
+                            texture2d<float, access::read> radiance [[texture(serenity::bindings::tone_map::input)]],
+                            texture2d<float, access::sample> bloom [[texture(serenity::bindings::tone_map::bloom)]],
+                            texture2d<float, access::write> target [[texture(serenity::bindings::tone_map::target)]],
                             uint2 pixel [[thread_position_in_grid]]) {
     const uint2 size = uint2(radiance.get_width(), radiance.get_height());
     if (pixel.x >= size.x || pixel.y >= size.y) {

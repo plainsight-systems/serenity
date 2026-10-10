@@ -1,6 +1,7 @@
 #include "metal/passes/display/display.h"
 
 #include "metal/device/error.h"
+#include "metal/passes/bindings.h"
 
 namespace serenity::metal {
 
@@ -10,10 +11,10 @@ void DisplayPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
     if (resources.radiance == nullptr) {
         throw Error("DisplayPass: the frame has no radiance image");
     }
-    // Bindings match display.metal.
-    resources.arguments->setAddress(resources.constants, 0);
-    resources.arguments->setTexture(resources.radiance->gpuResourceID(), 0);
-    resources.arguments->setTexture(resources.target->gpuResourceID(), 1);
+    // Bindings: passes/bindings.h, as display.metal declares them.
+    resources.arguments->setAddress(resources.constants, bindings::display::constants);
+    resources.arguments->setTexture(resources.radiance->gpuResourceID(), bindings::display::radiance);
+    resources.arguments->setTexture(resources.target->gpuResourceID(), bindings::display::target);
     encoder->setComputePipelineState(pipeline_.get());
 
     // Rows of the execution width (GPU.2).
