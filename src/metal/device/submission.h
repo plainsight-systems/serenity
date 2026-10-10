@@ -105,9 +105,15 @@ namespace serenity::metal {
 // longer be committed: commit() and present() then throw Error.
 //
 // Cost of a frame, from the CPU: one event wait (it returns at once unless
-// the GPU is two frames behind), one allocator reset, one command buffer
-// begun and ended, one commit, one event signal. Nothing of ours is allocated
-// per frame (MEM.9). Metal 4 takes the feedback handler through commit
+// the GPU is two frames behind); a poll for that submission's feedback,
+// which Metal delivers just after the event; one allocator reset, one
+// command buffer begun and ended, one commit, one event signal. The poll
+// usually sleeps once or twice, a few tens of microseconds while the GPU
+// runs the frame between. A blocking wait on a second event, set by the
+// feedback handler, would wake once instead (CONC.4); it is kept a poll,
+// since a frame's time is the GPU's and the poll was measured to cost it
+// nothing (Per.6; docs/research/2026-10-09-pass-costs.md). Nothing of ours
+// is allocated per frame (MEM.9). Metal 4 takes the feedback handler through commit
 // options, an object made per commit, and metal-cpp hands the handler on as
 // a block that Metal copies to the heap with what it captures: a few small
 // allocations a frame, by the API's shape. Kept: an options object cannot

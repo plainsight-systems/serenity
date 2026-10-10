@@ -77,3 +77,18 @@ other. The kernel is limited by occupancy and the ray tracing unit
 (`2026-10-10-path-kernel-counters.md`), and a second frame's threads only
 compete for them. The barrier stays, and a copy of the images per frame in
 flight would buy nothing.
+
+## The submission's wait for feedback
+
+`Submission::settle()`, which `begin()` calls each frame for the submission
+two back, waits for its completion event and then polls for its commit
+feedback, which Metal delivers on a queue of its own, sleeping 20 us between
+looks (`src/metal/device/submission.h`). Counted 2026-10-10 in a scratch
+build of the same harness (counters added to `settle()`, not committed), the
+path tracer on the marbles as above: all 200 settles slept, 297 sleeps in
+all, about one and a half a frame. The run's frames took 27.23 ms of GPU
+time and 27.61 ms of wall time a frame, as without the counters: the frame
+is the GPU's, and the CPU's few tens of microseconds of polling fall while
+the GPU runs the frame in flight. A blocking wait on a second event, which
+the feedback handler would signal, would wake the CPU once instead of one
+or two times; it would not change the frame. Not adopted.
