@@ -35,15 +35,21 @@ float lit(float dim, double brightness) {
     return static_cast<float>(dim + (1.0 - dim) * brightness);
 }
 
-float rhythm_glow(const Rhythm& r, double t) {
-    // Flash k starts at k period + jitter(k), the jitter within a fifth of
-    // the period: only flashes k - 1 .. k + 1 of k = floor(t / period) can
-    // be lit at t. k is compared as a double before it is converted (ES.46).
+// A rhythm's beat at t, k = floor(t / period), checked: a t whose k would
+// pass most_flash_number, or is not a number, is refused (glow.h). k is
+// compared as a double before it is converted (ES.46).
+std::int64_t rhythm_beat(const Rhythm& r, double t) {
     const double k_real = std::floor(t / r.period);
     if (!(std::abs(k_real) < most_flash_number)) {
         throw std::invalid_argument("glow: a rhythm's time is past what its period counts to, or not a number");
     }
-    const auto k0 = static_cast<std::int64_t>(k_real);
+    return static_cast<std::int64_t>(k_real);
+}
+
+// A rhythm's glow at t, from its checked beat k0. Flash k starts at k period
+// + jitter(k), the jitter within a fifth of the period: only flashes k0 - 1
+// .. k0 + 1 can be lit at t.
+float rhythm_glow(const Rhythm& r, double t, std::int64_t k0) {
     double p = 0.0;
     for (std::int64_t k = k0 - 1; k <= k0 + 1; ++k) {
         const double jitter = (draw(r.seed, static_cast<std::uint64_t>(k)) - 0.5) * jitter_span * r.period;
@@ -100,14 +106,20 @@ double opening_pulse(const ScheduleGlow& g, double t) {
     return opening.empty() ? 0.0 : pulse(t, opening.back(), flash);
 }
 
-float schedule_glow(const ScheduleGlow& g, double t) {
-    const FlashSchedule& s = g.schedule;
+// A schedule's preconditions (glow.h): its loop longer than 0, its begin
+// finite and 0 or more.
+void check_schedule(const FlashSchedule& s) {
     if (!(s.loop > 0.0)) {
         throw std::invalid_argument("glow: a schedule whose loop is not longer than 0");
     }
     if (!(std::isfinite(s.begin) && s.begin >= 0.0)) {
         throw std::invalid_argument("glow: a schedule whose begin is not finite and 0 or more");
     }
+}
+
+// A checked schedule's glow at t.
+float schedule_glow(const ScheduleGlow& g, double t) {
+    const FlashSchedule& s = g.schedule;
     if (s.opening.empty() && s.begin == 0.0) {
         // No opening: one loop from 0, for every t, as before openings.
         return s.starts.empty() ? g.dim : lit(g.dim, loop_pulse(g, t));
@@ -116,30 +128,35 @@ float schedule_glow(const ScheduleGlow& g, double t) {
 }
 
 // w(t), the wake's factor (glow.h), the one function both kinds call
-// (ES.3). Its tests in the header's order: a woken light first, which also
-// takes a ramp of 0 at t = at, with no division; then a light not yet
-// awake; then the ramp's smoothstep. x is held to 1 at most: (t - at) / ramp
-// is rounded, and the smoothstep past 1 turns back down.
-double wake_factor(const Wake& w, double t) {
+// (ES.3); 1 with no wake, lit from the start. Its tests in the header's
+// order: not yet awake; then the ramp over, judged from t - at, never from
+// at + ramp, which a large at would round to at and so erase the ramp. A
+// ramp of 0 is over at once, t - at >= 0, by that same comparison: a
+// switch with no division and no test of its own. Then the smoothstep:
+// t - at < ramp there, so x = (t - at) / ramp is at most 1, rounded or not.
+double wake_factor(const std::optional<Wake>& wake, double t) {
+    if (!wake) {
+        return 1.0;
+    }
+    const Wake& w = *wake;
     if (!(std::isfinite(w.at) && std::isfinite(w.ramp) && w.ramp >= 0.0)) {
         throw std::invalid_argument("glow: a wake whose at is not finite, or whose ramp is not finite and 0 or more");
-    }
-    if (t >= w.at + w.ramp) {
-        return 1.0;
     }
     if (t < w.at) {
         return 0.0;
     }
-    const double x = std::min((t - w.at) / w.ramp, 1.0);
+    const double since = t - w.at;
+    if (since >= w.ramp) {
+        return 1.0;
+    }
+    const double x = since / w.ramp;
     return x * x * (3.0 - 2.0 * x);
 }
 
-// The kind's glow `g` at `t`, scaled by its wake if it has one.
-float woken(const std::optional<Wake>& wake, float g, double t) {
-    if (!wake) {
-        return g;  // lit from the start, as before wakes
-    }
-    return static_cast<float>(wake_factor(*wake, t) * static_cast<double>(g));
+// The kind's glow `g` scaled by its wake's factor `w`: g itself with no
+// wake, or once woken, bit for bit.
+float woken(const std::optional<Wake>& wake, double w, float g) {
+    return wake ? static_cast<float>(w * static_cast<double>(g)) : g;
 }
 
 }  // namespace
@@ -147,16 +164,24 @@ float woken(const std::optional<Wake>& wake, float g, double t) {
 float glow(const Glows& glows, GlowRecord record, frame::Seconds t) {
     // No default: a kind without a glow fails to compile (-Wswitch,
     // -Werror). .at() checks the record's index, which the scene reader
-    // guarantees. The kind's glow is found first, so its checks of t hold
-    // whether the light is awake or not.
+    // guarantees. Each kind's checks and its wake's come first, on every
+    // call, awake or not, so a bad record never hides behind a wake (I.5,
+    // E.2); a light not yet awake answers 0 before its glow is evaluated,
+    // which is the work the wake saves (COPY.9: not as an argument, which
+    // would be evaluated first).
+    const double time = t.count();
     switch (record.kind) {
     case GlowKind::rhythm: {
         const Rhythm& r = glows.rhythms.at(record.index);
-        return woken(r.wake, rhythm_glow(r, t.count()), t.count());
+        const std::int64_t beat = rhythm_beat(r, time);
+        const double w = wake_factor(r.wake, time);
+        return w == 0.0 ? 0.0f : woken(r.wake, w, rhythm_glow(r, time, beat));
     }
     case GlowKind::schedule: {
         const ScheduleGlow& g = glows.schedules.at(record.index);
-        return woken(g.wake, schedule_glow(g, t.count()), t.count());
+        check_schedule(g.schedule);
+        const double w = wake_factor(g.wake, time);
+        return w == 0.0 ? 0.0f : woken(g.wake, w, schedule_glow(g, time));
     }
     }
     throw std::logic_error("glow: a record whose kind is no GlowKind");

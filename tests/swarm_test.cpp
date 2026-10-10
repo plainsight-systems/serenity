@@ -426,6 +426,39 @@ TEST_CASE("an above swarm starts in its volume's top slab and holds there until 
     }
 }
 
+namespace {
+
+// Step 2's range, the volume shrunk by the margin, on axis `axis`.
+bool in_range(float v, int axis) {
+    const double low = static_cast<double>(contracts::component(job(0, clear_start).params.volume.min, axis));
+    const double high = static_cast<double>(contracts::component(job(0, clear_start).params.volume.max, axis));
+    return static_cast<double>(v) >= low + start_margin && static_cast<double>(v) <= high - start_margin;
+}
+
+// For each of `swarm`'s fireflies, perched: its loop's first point as its
+// made flight places it, position() at its loop's begin, has its perch's x
+// and z, bit for bit, and lies above it. Returns how many fail.
+int not_straight_above(const scene::Swarm& swarm, const contracts::Obstacles& obstacles) {
+    std::vector<animation::FlightJob> jobs;
+    std::vector<contracts::Float3> perches;
+    for (std::uint32_t i = 0; i < swarm.count; ++i) {
+        const scene::Firefly f = scene::make_firefly(swarm, i, obstacles);
+        animation::FlightJob j = job(scene::firefly_seed(swarm.flight.seed, i), f.start);
+        j.prelude = f.prelude;
+        jobs.push_back(j);
+        perches.push_back(std::get<animation::Perch>(f.prelude).at);
+    }
+    const std::vector<animation::Flight> flights = animation::make_flights(jobs, obstacles, 8);
+    int failing = 0;
+    for (std::size_t k = 0; k < flights.size(); ++k) {
+        const contracts::Float3 first = animation::position(flights[k], Seconds(flights[k].begin));
+        failing += first.x == perches[k].x && first.z == perches[k].z && first.y > perches[k].y ? 0 : 1;
+    }
+    return failing;
+}
+
+}  // namespace
+
 TEST_CASE("a perched firefly rests a perch_gap above an upward-facing surface in its box, its loop straight "
           "above") {
     const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
@@ -436,6 +469,8 @@ TEST_CASE("a perched firefly rests a perch_gap above an upward-facing surface in
     for (const contracts::Box& box : {over_ball, on_floor}) {
         const scene::Swarm swarm =
             swarm_with(scene::PerchStart{.box = box, .linger_least = 2.0, .linger_most = 8.0}, a_wake);
+        // Its loop's first point, as its flight places it, straight above.
+        CHECK(not_straight_above(swarm, obstacles) == 0);
         for (std::uint32_t i = 0; i < swarm.count; ++i) {
             CAPTURE(i);
             const scene::Firefly f = scene::make_firefly(swarm, i, obstacles);
@@ -454,10 +489,12 @@ TEST_CASE("a perched firefly rests a perch_gap above an upward-facing surface in
             // Inside its box.
             CHECK((p.x >= box.min.x && p.x <= box.max.x && p.y >= box.min.y && p.y <= box.max.y &&
                    p.z >= box.min.z && p.z <= box.max.z));
-            // Its loop starts straight above it, clear as any start.
-            CHECK(f.start.x == p.x);
-            CHECK(f.start.z == p.z);
-            CHECK(f.start.y > p.y);
+            // Its start, the first point less the flight's first_offset(), in
+            // step 2's range and clear as any start.
+            const std::array<double, 3> offset = animation::first_offset(scene::firefly_seed(4, i));
+            CHECK(static_cast<float>(static_cast<double>(f.start.x) + offset[0]) == p.x);
+            CHECK(static_cast<float>(static_cast<double>(f.start.z) + offset[2]) == p.z);
+            CHECK((in_range(f.start.x, 0) && in_range(f.start.y, 1) && in_range(f.start.z, 2)));
             CHECK(obstacles.distance(f.start) >= needed);
             // It rests until its wake and its linger.
             REQUIRE(f.wake.has_value());
@@ -489,6 +526,130 @@ TEST_CASE("a perch box with no upward-facing surface, or its top inside a shape,
                         swarm_with(scene::AirStart{}, scene::SwarmWake{.from = 5.0, .to = 1.0, .power = 1.0}), 0,
                         obstacles),
                     std::invalid_argument);
+}
+
+TEST_CASE("make_firefly refuses every wait past most_wait and a perch box not finite") {
+    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
+    const tests::BallAndFloor obstacles(s);
+    const auto make = [&](const scene::SwarmStart& start, std::optional<scene::SwarmWake> wake) {
+        return scene::make_firefly(swarm_with(start, wake), 0, obstacles);
+    };
+    constexpr double most = animation::most_wait;
+    const auto perch = [](double least, double most_linger) {
+        return scene::PerchStart{.box = over_ball, .linger_least = least, .linger_most = most_linger};
+    };
+    // make_firefly's own refusal of its numbers, not a MotionError (which is
+    // one of std::invalid_argument) from failing to draw with them.
+    const auto numbers_refused = doctest::Contains("make_firefly: a swarm's");
+    // A wake's to past most_wait, with any start.
+    CHECK_THROWS_WITH_AS((void)make(scene::AboveStart{.depth = 0.3},
+                                    scene::SwarmWake{.from = most + 1.0, .to = most + 1.0, .power = 1.0}),
+                         numbers_refused, std::invalid_argument);
+    CHECK_THROWS_WITH_AS((void)make(scene::AirStart{}, scene::SwarmWake{.from = 0.0, .to = 1e300, .power = 1.0}),
+                         numbers_refused, std::invalid_argument);
+    CHECK_NOTHROW((void)make(scene::AboveStart{.depth = 0.3}, scene::SwarmWake{.from = most, .to = most}));
+    // A linger's most past most_wait, alone or with the wake's to; a sum
+    // that would overflow is refused, not added.
+    CHECK_THROWS_WITH_AS((void)make(perch(most + 1.0, most + 1.0), std::nullopt), numbers_refused,
+                         std::invalid_argument);
+    CHECK_THROWS_WITH_AS((void)make(perch(0.0, 700.0), scene::SwarmWake{.from = 0.0, .to = 3000.0}),
+                         numbers_refused, std::invalid_argument);
+    CHECK_THROWS_WITH_AS((void)make(perch(0.0, std::numeric_limits<double>::max()),
+                                    scene::SwarmWake{.from = 0.0, .to = std::numeric_limits<double>::max()}),
+                         numbers_refused, std::invalid_argument);
+    CHECK_NOTHROW((void)make(perch(0.0, 600.0), scene::SwarmWake{.from = 0.0, .to = 3000.0}));
+    // A perch box with a coordinate not finite.
+    for (const float bad : {std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity(),
+                            std::numeric_limits<float>::quiet_NaN()}) {
+        CAPTURE(bad);
+        scene::PerchStart minned = perch(1.0, 2.0);
+        minned.box.min.x = bad;
+        CHECK_THROWS_WITH_AS((void)make(minned, std::nullopt), numbers_refused, std::invalid_argument);
+        scene::PerchStart maxed = perch(1.0, 2.0);
+        maxed.box.max.z = bad;
+        CHECK_THROWS_WITH_AS((void)make(maxed, std::nullopt), numbers_refused, std::invalid_argument);
+    }
+}
+
+namespace {
+
+// The floor's top at y = 0 and a thin shelf over it, 0.6 m square and 1 cm
+// thick, its top at 1.5 m: a perch on the shelf has open air straight below
+// it as well as above, where a start could be clear and its loop's first
+// point below the perch. Exact distances, as contract 11 asks.
+class Shelf final : public contracts::Obstacles {
+public:
+    double distance(contracts::Float3 p) const override {
+        const double qx = std::abs(static_cast<double>(p.x)) - 0.3;
+        const double qy = std::abs(static_cast<double>(p.y) - 1.495) - 0.005;
+        const double qz = std::abs(static_cast<double>(p.z)) - 0.3;
+        const double outside = std::hypot(std::max(qx, 0.0), std::max(qy, 0.0), std::max(qz, 0.0));
+        const double inside = std::min(std::max({qx, qy, qz}), 0.0);
+        return std::min(static_cast<double>(p.y), outside + inside);
+    }
+    bool touches(const contracts::Box&) const override { return true; }
+};
+
+}  // namespace
+
+TEST_CASE("a perched firefly's loop begins above its perch, never below it") {
+    // On the shelf, starts are drawn from 0.18 to 2.07 m and many below it
+    // are clear: each accepted perch has its loop's first point above it.
+    const Shelf shelf;
+    const scene::Swarm swarm = swarm_with(
+        scene::PerchStart{.box = {{-0.2f, 1.45f, -0.2f}, {0.2f, 1.8f, 0.2f}}, .linger_least = 1.0, .linger_most = 2.0},
+        std::nullopt, 64);
+    int below = 0;
+    for (std::uint32_t i = 0; i < swarm.count; ++i) {
+        const scene::Firefly f = scene::make_firefly(swarm, i, shelf);
+        const std::array<double, 3> offset = animation::first_offset(scene::firefly_seed(swarm.flight.seed, i));
+        const contracts::Float3 perch = std::get<animation::Perch>(f.prelude).at;
+        CHECK(perch.y > 1.5f);
+        below += static_cast<double>(f.start.y) + offset[1] > static_cast<double>(perch.y) ? 0 : 1;
+    }
+    CHECK(below == 0);
+}
+
+TEST_CASE("a perch box partly outside the flight's range perches only where a loop can start straight above") {
+    // The volume's x reaches 2 m, its start's range 2 - 0.13 = 1.87 m; a
+    // first point is at most first_drift_reach from its start, so no perch
+    // past 1.97 m can have one straight above it. A box from 1.6 to 2.4 m on
+    // the floor: every perch accepted has its loop's first point straight
+    // above; none is moved in, so a box wholly past 1.97 m is refused.
+    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
+    const tests::BallAndFloor obstacles(s);
+    const scene::Swarm partly = swarm_with(
+        scene::PerchStart{.box = {{1.6f, -0.05f, 1.0f}, {2.4f, 0.3f, 1.5f}}, .linger_least = 1.0, .linger_most = 2.0},
+        std::nullopt, 32);
+    CHECK(not_straight_above(partly, obstacles) == 0);
+    int moved = 0;
+    for (std::uint32_t i = 0; i < partly.count; ++i) {
+        const scene::Firefly f = scene::make_firefly(partly, i, obstacles);
+        const contracts::Float3 perch = std::get<animation::Perch>(f.prelude).at;
+        CHECK(in_range(f.start.x, 0));
+        CHECK(perch.x <= 1.97f + 1e-6f);
+        // Never moved: the perch is on a line some attempt drew, keyed
+        // (seed_i, perch_draws, attempt, axis) (swarm.h, step 2p), its start
+        // the drawn x and z less the offset, its line that start plus it.
+        const std::uint64_t seed = scene::firefly_seed(partly.flight.seed, i);
+        const std::array<double, 3> offset = animation::first_offset(seed);
+        const auto line_of = [&](std::uint64_t attempt, std::uint64_t axis, float lo, float hi, std::size_t at) {
+            const double value = lo + animation::draw(seed, scene::perch_draws, attempt, axis) *
+                                          (static_cast<double>(hi) - lo);
+            return static_cast<float>(static_cast<double>(static_cast<float>(value - offset[at])) + offset[at]);
+        };
+        bool drawn = false;
+        for (std::uint64_t a = 0; a < static_cast<std::uint64_t>(scene::start_attempts); ++a) {
+            drawn = drawn || (line_of(a, 0, 1.6f, 2.4f, 0) == perch.x && line_of(a, 2, 1.0f, 1.5f, 2) == perch.z);
+        }
+        moved += drawn ? 0 : 1;
+    }
+    CHECK(moved == 0);
+    const scene::Swarm outside = swarm_with(
+        scene::PerchStart{.box = {{2.1f, -0.05f, 1.0f}, {2.5f, 0.3f, 1.5f}}, .linger_least = 1.0, .linger_most = 2.0},
+        std::nullopt);
+    CHECK(contains(tests::error_of<animation::MotionError>([&] { return scene::make_firefly(outside, 0, obstacles); }),
+                   "firefly 0: no perch found"));
 }
 
 TEST_CASE("wake times lie in [from, to], the share awake by t growing as ((t - from) / (to - from))^power") {

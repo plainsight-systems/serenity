@@ -40,8 +40,8 @@ namespace serenity::scene {
 //   perch   resting on a still surface, a marble's top or the table, at a
 //           point found in the swarm's perch box, until it wakes and has
 //           lingered there a drawn while, glowing; then it rises to its
-//           loop's start, straight above the perch, and flies: the prelude
-//           perch.
+//           loop's first point, straight above the perch, and flies: the
+//           prelude perch.
 //
 // When its fireflies wake (none written: lit from the start): each its own
 // moment from `from` to `to` seconds, then brightening over `ramp` seconds
@@ -80,28 +80,42 @@ namespace serenity::scene {
 //           otherwise air's, keyed alike.
 //   Step 2p For perch, in place of step 2, each attempt up to
 //           start_attempts, from draws keyed (seed_i, perch_draws, attempt,
-//           axis), apart from step 2's:
-//             - x and z uniformly within the perch box's; from the box's
-//               top, sphere tracing down the vertical (Hart 1996): step
-//               down by d - (radius + perch_gap), d the distance to the
-//               still surfaces there (contract 11), until within
-//               perch_gap / 10 of it, at most perch_steps steps, and never
-//               below the box's floor. The distance is exact, so no step
-//               passes a surface: the perch is the first point down the
-//               line at the perch's height above a surface;
+//           axis), apart from step 2's. The loop's first point, where the
+//           rise ends, is not the start but the start plus
+//           first_offset(seed_i) (flight.h, step 2), up to
+//           first_drift_reach on each axis; the start is placed so that
+//           the first point is straight above the perch:
+//             - x and z drawn uniformly within the perch box's; the start's
+//               x and z, those less the offset's, rounded to float; the
+//               vertical line traced is the first point's, the start's x
+//               and z plus the offset's. The start's x and z must lie in
+//               step 2's shrunk range: one outside it fails the attempt,
+//               never moved into it;
+//             - from the box's top, sphere tracing down that line (Hart
+//               1996): step down by d - (radius + perch_gap), d the
+//               distance to the still surfaces there (contract 11), until
+//               within perch_gap / 10 of it, at most perch_steps steps, and
+//               never below the box's floor. The distance is exact, so no
+//               step passes a surface: the perch is the first point down
+//               the line at the perch's height above a surface, its x and z
+//               the line's rounded to float, and within the box;
 //             - that surface must face up: the distance's rise along y, by
 //               a central difference over perch_gap / 2, at least
 //               cos(perch_steepest), so the firefly sits on a marble's top
 //               or the table, not on a marble's flank;
-//             - its loop's start straight above it: x and z the perch's,
-//               held within step 2's shrunk range, the height drawn
-//               uniformly in that range, and clear as step 2's start must
+//             - the start's height drawn uniformly in step 2's shrunk
+//               range, as step 2 draws it; the first point, that plus the
+//               offset's, above the perch; the start clear as step 2's must
 //               be.
-//           A box with no surface in it, its top inside a shape, or a
-//           perch whose loop start is never clear, fails the attempt;
-//           failing all, the swarm is refused, naming the firefly. The
-//           flight checks the perch and the rise again, as it checks any
-//           (flight.h, P1 and P2).
+//           So the first point placed (position() at the loop's begin) has
+//           the perch's x and z exactly, and the rise's chord is vertical.
+//           A box with no surface in it, its top inside a shape, a perch
+//           whose start would leave step 2's range, or one whose start is
+//           never clear, fails the attempt; failing all, the swarm is
+//           refused, naming the firefly: a box wholly outside the range a
+//           first point can be above is refused so. The flight checks the
+//           perch and the rise again, as it checks any (flight.h, P1 and
+//           P2).
 //   Step 3  Its wake, with the swarm's: at = from + (to - from) u^(1/power),
 //           u = draw(seed_i, wake_draws), so the share of the swarm awake by
 //           t, from u's uniform draw, is ((t - from) / (to - from))^power;
@@ -140,7 +154,7 @@ struct AboveStart {
 };
 
 struct PerchStart {
-    contracts::Box box{};       // where perches are found; min below max
+    contracts::Box box{};       // where perches are found; finite, min below max
     double linger_least = 0.0;  // seconds it stays after waking; 0 or more
     double linger_most = 0.0;   // at least linger_least; with the wake's to, at most most_wait (flight.h)
 };
@@ -200,7 +214,11 @@ std::uint64_t firefly_seed(std::uint64_t swarm_seed, std::uint32_t i);
 // if its volume has no room for a drift, or none of its draws is clear or
 // finds a perch; and std::invalid_argument for a start's or a wake's
 // numbers outside the ranges above, which the scene reader checks first
-// (I.5).
+// (I.5): a perch box's coordinates finite, min below max; a depth above 0;
+// a linger's least 0 or more, its most at least that and at most most_wait;
+// a wake's from 0 or more, its to from that to most_wait, its power above
+// 0, its ramp 0 or more; and a wake's to (0 with no wake) plus a linger's
+// most at most most_wait, compared without adding, so no sum overflows.
 Firefly make_firefly(const Swarm& swarm, std::uint32_t i, const contracts::Obstacles& obstacles);
 
 }  // namespace serenity::scene

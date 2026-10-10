@@ -30,6 +30,9 @@ project-wide departure recorded in AGENTS.md, "Guideline deviations"), or
 | Convention (AGENTS.md) | 2 |
 | Rejected, with reason | 6 |
 
+The review of 55f968a found five more; they are fixed in the commit after
+it, and listed under [The review of 55f968a](#the-review-of-55f968a) below.
+
 ## C++ Core Guidelines
 
 ### P (Philosophy)
@@ -220,7 +223,10 @@ telemetry, wasm.
 - Clean: COPY.1/COPY.8 (results returned as prvalues), COPY.3 (the reader
   moves `FlightParams` into each job), COPY.7 (no hidden copy: the range-for
   over `controls_of_transit(...)` binds a temporary whose life is extended;
-  `Pending` copies a `Prelude` of at most 20 bytes), COPY.4 (rule of zero for
+  `Pending` copies a `Prelude` of 32 bytes, once per firefly at load:
+  measured with the pinned clang on arm64, `sizeof(Perch)` 24, its
+  `Float3` padded to the `double`'s alignment, and `sizeof(Prelude)` 32 with
+  the variant's index; corrected after the review, below), COPY.4 (rule of zero for
   every new data struct; `Drawing`, which holds references, deletes all).
 
 ### CACHE (cache-layout)
@@ -282,3 +288,30 @@ telemetry, wasm.
 | F.16 | `hermite()` takes `End` by value | Existing code outside this change; the new `perch_opening` takes `const End&` |
 | C.21 | Other existing classes | Only the two this change touches (`Context`, `Drawing`) were brought in line |
 | I.4 | Seconds as `double` in `Wake`, `Hold`, `Perch` | The headers' types, as every scene time (`Rhythm::period`) is; `frame::Seconds` is a frame's time |
+
+## The review of 55f968a
+
+Codex reviewed 55f968a for performance and architecture
+(`.cache/reviews/55f968a-*.json`). Its findings in `src/core` and in this
+note, each checked against both corpora again and fixed in the next commit.
+The GPU finding (shadow rays toward lights of zero radiance,
+`metal/integrator/`) is outside this change and is being handled
+separately.
+
+| Finding | Rule | Verdict and what changed |
+|---|---|---|
+| A perched firefly's rise is not vertical: the perch's x and z were clamped into the flight's range, and the loop's first point is episode 0's drift at time 0, up to 10 cm off its center (P1) | I.7 (the postcondition the header states: the first point straight above) | **Fixed.** `first_offset(seed)` (flight.h) gives the first point less the start, a function of the seed alone; step 2p places the start at the drawn line less that offset, never clamped, an attempt whose start leaves step 2's range redrawn, the line traced the first point's, its height required above the perch. position() at the loop's begin has the perch's x and z, bit for bit; tested from the made flights, with a box partly and one wholly outside the range, every perch on a line some attempt drew (never moved), and a shelf with clear air below it, where no first point is below its perch |
+| `make_firefly` accepts waits past most_wait and a perch box not finite (P2) | I.5, P.6 | **Fixed.** A wake's to at most most_wait, and a linger's most at most most_wait less the wake's to (0 with no wake), compared without adding (ES.103: no sum to overflow), which holds the linger's most to most_wait as well; every box coordinate finite. Each tested for make_firefly's own refusal, not the MotionError a box it cannot draw in would give. The reader compares the sum the same way, so the two cannot disagree at a rounding. The perch's until is held to most_wait against the sum's rounding |
+| At at = 2^100 and a ramp of 1, at + ramp rounds to at, and t = at answered 1 (P2) | I.7 (the header's w(t)) | **Fixed.** The wake's tests are t < at, then t - at >= ramp, then the smoothstep; t - at < ramp there, so x is at most 1 and the clamp is gone. A ramp of 0 is answered by the same comparison (t - at >= 0), with no division: a test of its own for it could never change the answer, and a mutation removing one survived every test, so there is none (P.9). Tested at 2^100 |
+| Sleeping glows evaluated their schedule or rhythm before the wake discarded it (P2) | COPY.9 (arguments are evaluated before the call; the frame's path, per glowing light) | **Fixed.** The kind's checks and the wake's run on every call, awake or not (I.5, E.2: a bad record never hides behind a wake); the glow itself only when the factor is above 0. A rhythm's check of t is its beat, which its glow then reuses. Results bit for bit as before, tested at every millisecond across sleep, ramp and waking |
+| This note said `Pending` copies a `Prelude` of at most 20 bytes (P1, doc) | COPY.7 | **Fixed.** Measured with the pinned clang on arm64: `Perch` 24 bytes, `Prelude` 32; the text says so |
+
+Rules checked for the new code and found clean: I.23/I.24 (`perch_from`
+takes its drawing, its start kind, the offset and the attempt; the offset
+an array, not three doubles), F.4/F.8 (`first_offset` a pure function of
+its seed), ES.3 (`drift_shape` drawn once for the drift and the offset, so
+they cannot disagree), ES.46 (each narrowing to float is of a value inside
+the world), GDSA.3 (the draws keep their keys: an air swarm's starts and
+every loop are unchanged, the pinned loop included), CDSA.21 (no new
+threshold), MEM.9 (nothing allocated per frame; a sleeping glow now does
+less).

@@ -52,16 +52,26 @@ namespace serenity::animation {
 // come on one by one. The factor is the kind's g(t) times
 //
 //   w(t) = 0,                    t < at,
-//          smoothstep((t - at) / ramp),   at <= t < at + ramp,
-//          1,                    at + ramp <= t,
+//          smoothstep((t - at) / ramp),   0 <= t - at < ramp,
+//          1,                    ramp <= t - at,
 //
 // smoothstep(x) = x^2 (3 - 2x), so the light comes up without a jump in its
-// rate; a ramp of 0 is a switch at `at`. The wake scales the whole glow,
-// dim and flashes alike: a flash during the ramp is as much dimmer. One
-// wake, Wake, kept by each kind's record as an optional member: no wake is
-// lit from the start, for any t, as a glow was before wakes (an absence that
-// means something, scene.h); its arithmetic is one function both kinds call
-// (ES.3). `at` finite, `ramp` finite and 0 or more, which glow() checks.
+// rate; a ramp of 0 is a switch at `at`. The ramp's end is judged from
+// t - at, never from at + ramp: at a large at, at + ramp rounds to at and
+// would erase the ramp (at 2^100, a ramp of a second). The wake scales the
+// whole glow, dim and flashes alike: a flash during the ramp is as much
+// dimmer. One wake, Wake, kept by each kind's record as an optional member:
+// no wake is lit from the start, for any t, as a glow was before wakes (an
+// absence that means something, scene.h); its arithmetic is one function
+// both kinds call (ES.3). `at` finite, `ramp` finite and 0 or more, which
+// glow() checks.
+//
+// The checks of a glow's preconditions, its kind's and its wake's, are made
+// on every call, awake or not: a bad record never hides behind a wake (I.5,
+// E.2). A rhythm's check of t is its beat, floor(t / period), which its
+// glow then uses. Only then is the light's glow found, and only when its
+// wake's factor is above 0: a light not yet awake answers 0 without
+// searching its schedule or drawing its rhythm's jitters.
 //
 // The factor reaches the GPU per light per frame (metal/scene/
 // light_glows.h); the radiance in the scene is the peak.
@@ -69,12 +79,13 @@ namespace serenity::animation {
 // Not performance-sensitive per light: a few comparisons and one sine, once
 // per glowing light per frame. A wake adds, per glowing light per frame: a
 // test that it has one, and the three checks of its at and ramp (I.5); then
-// t >= at + ramp first, which answers 1 for a
-// woken light, and a ramp of 0 at t = at, with no division; then t < at,
-// which answers 0; and only during the ramp a subtraction, a division, a
-// min holding x to 1 (the division is rounded, and the smoothstep past 1
-// turns back down), the smoothstep's three multiplications and a
-// subtraction, and the product with the kind's glow.
+// t < at, which answers 0, and the kind's glow is not found; then a
+// subtraction and its comparison with the ramp, which answers 1 for a woken
+// light, and for a ramp of 0 at once (t - at >= 0), with no division; and only
+// during the ramp a division, the smoothstep's three multiplications and a
+// subtraction, and the product with the kind's glow. t - at < ramp there,
+// so the rounded x is at most 1: no clamp. A light not yet awake costs its
+// checks and these comparisons alone, not its glow's search or draws.
 
 // Seconds: the shortest period a rhythm may have, a thousand flashes a
 // second, past any firefly's.
@@ -90,7 +101,8 @@ struct GlowRecord {
     std::uint32_t index = 0;  // into that kind's array
 };
 
-// When a glow wakes (above): dark before `at`, its full glow from at + ramp.
+// When a glow wakes (above): dark before `at`, its full glow from `ramp`
+// seconds after it.
 struct Wake {
     double at = 0.0;    // seconds; finite
     double ramp = 0.0;  // seconds; finite, 0 or more
@@ -122,7 +134,7 @@ struct Glows {
 // .at() checks it. A switch with no default; a kind no enumerator names is
 // refused by std::logic_error, never answered (P.6). Throws
 // std::invalid_argument for a t or a glow outside the kinds' preconditions
-// above.
+// above, awake or not.
 float glow(const Glows& glows, GlowRecord record, frame::Seconds t);
 
 }  // namespace serenity::animation

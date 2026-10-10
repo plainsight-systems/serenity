@@ -947,10 +947,12 @@ void ShapeReading::read_swarms(const toml::array& all, const contracts::Obstacle
         entry.swarm.start = read_start(r_, t, what);
         entry.swarm.wake = read_swarm_wake(r_, t, what);
         // A perched firefly waits its wake and its linger: at most most_wait
-        // in all (core/animation/flight.h, step P1).
+        // in all (core/animation/flight.h, step P1). Compared as make_firefly
+        // compares it, against what most_wait leaves after the wake's to
+        // (swarm.h), so the two cannot disagree at a rounding.
         if (const PerchStart* perch = std::get_if<PerchStart>(&entry.swarm.start)) {
             const double latest = entry.swarm.wake ? entry.swarm.wake->to : 0.0;
-            if (!(latest + perch->linger_most <= animation::most_wait)) {
+            if (!(perch->linger_most <= animation::most_wait - latest)) {
                 r_.fail(entry.swarm.wake ? *t.get("wake") : *t.get("start"),
                         what + "'s wake's to plus its linger's most must be at most " + words(animation::most_wait) +
                             " s, an hour");

@@ -409,23 +409,36 @@ Vec3 nearby(const Context& c, const Draws& d, Vec3 from, double reach, Room room
             pick(Purpose::where_z, toward.z, box.min.z + m + room.around, box.max.z - m - room.around)};
 }
 
+// A drift's shape on each axis, its amplitude and phase: what its draws
+// alone fix, whatever its center and speed. Drawn once here for the drift
+// and for first_offset() (ES.3), so the two cannot disagree.
+struct DriftShape {
+    std::array<double, 3> amplitude{};
+    std::array<double, 3> phase{};
+};
+
+DriftShape drift_shape(const Draws& d) {
+    // A reach of at most first_drift_reach on each axis.
+    return {.amplitude = {d.between(Purpose::amplitude_x, drift_least_reach, first_drift_reach),
+                          d.between(Purpose::amplitude_y, drift_least_reach, first_drift_reach),
+                          d.between(Purpose::amplitude_z, drift_least_reach, first_drift_reach)},
+            .phase = {d.between(Purpose::phase_x, 0.0, 2.0 * pi), d.between(Purpose::phase_y, 0.0, 2.0 * pi),
+                      d.between(Purpose::phase_z, 0.0, 2.0 * pi)}};
+}
+
 Segment drift_about(const FlightParams& params, const Draws& d, Vec3 center) {
     Segment s;
     s.behaviour = Behaviour::drift;
     s.duration = d.between(Purpose::lasting, drift_shortest, drift_longest);
     put_triple(s, DriftAt::center, center);
-    // A reach of at most first_drift_reach on each axis, at a third of the
-    // cruising speed: each axis's frequency from its amplitude,
-    // f = (speed / 3) / (2 pi a sqrt 3).
-    const std::array<double, 3> a = {d.between(Purpose::amplitude_x, drift_least_reach, first_drift_reach),
-                                     d.between(Purpose::amplitude_y, drift_least_reach, first_drift_reach),
-                                     d.between(Purpose::amplitude_z, drift_least_reach, first_drift_reach)};
-    const std::array<Purpose, 3> phases = {Purpose::phase_x, Purpose::phase_y, Purpose::phase_z};
+    // At a third of the cruising speed: each axis's frequency from its
+    // amplitude, f = (speed / 3) / (2 pi a sqrt 3).
+    const DriftShape shape = drift_shape(d);
     const double v = static_cast<double>(params.speed) / drift_slowdown;
     for (std::size_t i = 0; i < 3; ++i) {
-        s.numbers[DriftAt::amplitude + i] = a[i];
-        s.numbers[DriftAt::frequency + i] = v / (2.0 * pi * a[i] * std::sqrt(3.0));
-        s.numbers[DriftAt::phase + i] = d.between(phases[i], 0.0, 2.0 * pi);
+        s.numbers[DriftAt::amplitude + i] = shape.amplitude[i];
+        s.numbers[DriftAt::frequency + i] = v / (2.0 * pi * shape.amplitude[i] * std::sqrt(3.0));
+        s.numbers[DriftAt::phase + i] = shape.phase[i];
     }
     return s;
 }
@@ -1015,6 +1028,16 @@ double rounding_allowance(double largest) {
     }
     const double spacing = static_cast<double>(std::nextafter(at, infinity)) - static_cast<double>(at);
     return std::numbers::sqrt3 * spacing;
+}
+
+std::array<double, 3> first_offset(std::uint64_t seed) {
+    // Episode 0's draws, as draw_episodes() keys them: (seed, episode 0,
+    // attempt 0). evaluate() at tau = 0 is center + a sin(2 pi f 0 + phi)
+    // per axis: 2 pi f 0 is +0 for the finite, positive f any speed gives,
+    // and +0 + phi is phi, so the offset is a sin(phi), bit for bit.
+    const DriftShape shape = drift_shape(Draws{seed, 0, 0});
+    return {shape.amplitude[0] * std::sin(shape.phase[0]), shape.amplitude[1] * std::sin(shape.phase[1]),
+            shape.amplitude[2] * std::sin(shape.phase[2])};
 }
 
 Flight make_flight(const FlightJob& job, const contracts::Obstacles& obstacles) {

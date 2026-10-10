@@ -101,7 +101,11 @@ namespace serenity::animation {
 //           swoop or drift (a circle only if the scene names targets), and
 //           a circle's target uniformly among them.
 //   Step 2  Draw the behaviour's numbers. Episode 0 is a drift about the
-//           shape's center in the scene file: where the loop starts.
+//           shape's center in the scene file, the flight's start. Its point
+//           at time 0, the loop's first point, is the start plus an offset
+//           that its seed alone fixes, first_offset(seed), below: episode
+//           0's amplitudes and phases are drawn from (seed, 0, 0) whatever
+//           the start, and its frequencies, the speed's, vanish at time 0.
 //   Step 3  Check it: samples along its path, close enough that the path
 //           between two lies within delta = 1 cm of them, must each be at
 //           least clearance + body radius + delta from every still surface
@@ -171,9 +175,12 @@ namespace serenity::animation {
 //            the loop's first point, arriving at the loop's own velocity
 //            there, so the path is smooth through both of its joins; its
 //            duration a transit's (from its chord at the cruising speed). A
-//            cubic from rest to a point above sets off toward that point:
-//            up, for a loop start straight above the perch. A still segment of no length
-//            is left out. The rise is checked by conservative advancement
+//            cubic from rest sets off toward its second control point, the
+//            loop's first point less a third of its arrival: up, for a
+//            loop whose first point is straight above the perch, as a
+//            swarm's perched firefly's is (core/scene/swarm.h, step 2p,
+//            which places the start by first_offset() so that it is). A
+//            still segment of no length is left out. The rise is checked by conservative advancement
 //            (Mirtich 1996; Hart 1996, sphere tracing): from u = 0, at the
 //            point p(u) the distance d to the still surfaces is exact for
 //            the kinds there are (contract 11), so no surface lies within
@@ -402,6 +409,15 @@ std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contr
 // As many workers as the machine has cores (std::thread::hardware_concurrency),
 // at least one: the one place the machine is asked.
 std::size_t flight_workers();
+
+// Where the loop's first point is from the flight's start, in meters, for
+// a flight of seed `seed` (step 2): episode 0's drift at time 0, less its
+// center. A function of the seed alone, so a start can be placed for a
+// first point chosen first: make_flight()'s first loop point, in double, is
+// start + first_offset(seed), each axis bit for bit, and position() at the
+// loop's begin is that rounded to float. Each axis at most
+// first_drift_reach.
+std::array<double, 3> first_offset(std::uint64_t seed);
 
 // Where it is at `t`, by steps E0 to E3.
 contracts::Float3 position(const Flight& flight, frame::Seconds t);

@@ -979,6 +979,112 @@ TEST_CASE("a perch too far out for its gap is refused; one nearer the origin is 
                          doctest::Contains("too far from the origin for its gap"), animation::MotionError);
 }
 
+TEST_CASE("a flight's first loop point is its start plus first_offset(seed), bit for bit") {
+    const scene::SceneDescription s = scene::parse(flying(), "flight");
+    const tests::BallAndFloor obstacles(s);
+    int differ = 0;
+    int far = 0;
+    for (std::uint64_t seed = 0; seed < 24; ++seed) {
+        for (const contracts::Float3 start : {flying_start, above_ball, contracts::Float3{-1.3f, 1.4f, -0.9f}}) {
+            animation::FlightJob j = job_with(animation::Hold{.until = 2.0}, start);
+            j.params.seed = seed;
+            const animation::Flight f = animation::make_flight(j, obstacles);
+            const std::array<double, 3> offset = animation::first_offset(seed);
+            const contracts::Float3 expected{static_cast<float>(static_cast<double>(start.x) + offset[0]),
+                                             static_cast<float>(static_cast<double>(start.y) + offset[1]),
+                                             static_cast<float>(static_cast<double>(start.z) + offset[2])};
+            // Where it holds, and where its loop begins.
+            differ += same(animation::position(f, Seconds(0.5)), expected) ? 0 : 1;
+            differ += same(animation::position(f, Seconds(f.begin)), expected) ? 0 : 1;
+            far += std::ranges::any_of(offset, [](double o) { return std::abs(o) > animation::first_drift_reach; })
+                       ? 1
+                       : 0;
+        }
+    }
+    CHECK(differ == 0);
+    CHECK(far == 0);
+    // Not the start itself: the offset is the drift's, up to 10 cm an axis.
+    const std::array<double, 3> offset = animation::first_offset(5);
+    CHECK(std::abs(offset[0]) + std::abs(offset[1]) + std::abs(offset[2]) > 0.0);
+}
+
+TEST_CASE("a wake at a large at keeps its ramp: the end is judged from t - at, not at + ramp") {
+    // At 2^100, at + 1 rounds to at; a ramp judged from at + ramp would be
+    // gone, the light full at at. Judged from t - at, it is 0 at at, and full
+    // a float spacing of at later, 2^48 s, past the ramp.
+    constexpr float dim = 0.5f;
+    constexpr double at = 0x1p100;
+    const animation::Glows glows = dim_schedule(dim, animation::Wake{.at = at, .ramp = 1.0});
+    CHECK(animation::glow(glows, first_schedule, Seconds(at)) == 0.0f);
+    CHECK(animation::glow(glows, first_schedule, Seconds(std::nextafter(at, 0.0))) == 0.0f);
+    CHECK(animation::glow(glows, first_schedule, Seconds(std::nextafter(at, 2.0 * at))) == dim);
+    animation::Glows rhythm;
+    rhythm.rhythms.push_back({.period = 1e30, .flash = 0.4, .dim = dim, .seed = 9, .wake = animation::Wake{.at = at,
+                                                                                                       .ramp = 1.0}});
+    CHECK(animation::glow(rhythm, first_rhythm, Seconds(at)) == 0.0f);
+}
+
+TEST_CASE("a glow not yet awake is still checked: a bad record is refused whether it is awake or not") {
+    const animation::Wake late{.at = 1e6, .ramp = 1.0};
+    animation::Glows bad_loop = dim_schedule(0.5f, late);
+    bad_loop.schedules[0].schedule.loop = 0.0;
+    CHECK_THROWS_AS((void)animation::glow(bad_loop, first_schedule, Seconds(1.0)), std::invalid_argument);
+    animation::Glows bad_begin = dim_schedule(0.5f, late);
+    bad_begin.schedules[0].schedule.begin = -1.0;
+    CHECK_THROWS_AS((void)animation::glow(bad_begin, first_schedule, Seconds(1.0)), std::invalid_argument);
+    // A rhythm's t past what its period counts to, while it sleeps.
+    animation::Glows rhythm;
+    rhythm.rhythms.push_back({.period = animation::least_period,
+                              .flash = animation::least_period / 4.0,
+                              .dim = 0.1f,
+                              .seed = 3,
+                              .wake = animation::Wake{.at = 1e18, .ramp = 1.0}});
+    CHECK_THROWS_AS((void)animation::glow(rhythm, first_rhythm, Seconds(1e17)), std::invalid_argument);
+    // And a wake not yet reached that is itself bad.
+    CHECK_THROWS_AS((void)animation::glow(dim_schedule(0.5f, animation::Wake{.at = 5.0, .ramp = -1.0}),
+                                          first_schedule, Seconds(1.0)),
+                    std::invalid_argument);
+}
+
+TEST_CASE("a woken glow is its plain glow times its wake's factor, bit for bit, asleep, waking and awake") {
+    // The factor in glow.h's arithmetic; the plain glow is the same record
+    // without its wake. Every millisecond from 2 s before at to 2 s past the
+    // ramp, for both kinds, a schedule with an opening included.
+    constexpr double at = 6.0;
+    constexpr double ramp = 3.0;
+    const auto factor = [](double t) {
+        if (t < at) {
+            return 0.0;
+        }
+        if (t - at >= ramp) {
+            return 1.0;
+        }
+        const double x = (t - at) / ramp;
+        return x * x * (3.0 - 2.0 * x);
+    };
+    animation::Glows plain;
+    plain.rhythms.push_back({.period = 0.9, .flash = 0.3, .dim = 0.1f, .seed = 4});
+    animation::ScheduleGlow g;
+    g.schedule = {.begin = 5.0, .opening = {1.0, 4.5}, .loop = 3.0, .starts = {0.5, 2.0}};
+    g.flash = 0.4;
+    g.dim = 0.2f;
+    plain.schedules.push_back(g);
+    animation::Glows woken = plain;
+    woken.rhythms[0].wake = animation::Wake{.at = at, .ramp = ramp};
+    woken.schedules[0].wake = animation::Wake{.at = at, .ramp = ramp};
+    int differ = 0;
+    for (int i = 4000; i < 11000; ++i) {
+        const double t = static_cast<double>(i) * 0.001;
+        for (const animation::GlowRecord r : {first_rhythm, first_schedule}) {
+            const double w = factor(t);
+            const float p = animation::glow(plain, r, Seconds(t));
+            const float expected = w == 0.0 ? 0.0f : static_cast<float>(w * static_cast<double>(p));
+            differ += animation::glow(woken, r, Seconds(t)) == expected ? 0 : 1;
+        }
+    }
+    CHECK(differ == 0);
+}
+
 TEST_CASE("the rounding allowance: sqrt 3 float spacings at the largest coordinate") {
     constexpr double sqrt3 = std::numbers::sqrt3;
     CHECK(animation::rounding_allowance(1.0) == sqrt3 * 0x1p-23);
