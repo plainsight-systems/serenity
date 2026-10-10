@@ -36,14 +36,17 @@ namespace serenity::metal {
 // is RGBA32Float, so the pass needs a device that filters 32-bit floats
 // (the M3 Max does), and refuses one that does not. Each dispatch reads
 // what the one before wrote, so a barrier from dispatch to dispatch sits
-// between each two (GPU.7). The radiance image was written by an earlier pass in the frame;
+// between each two: each a real hazard, the level just written and read
+// next, at the dispatch stage alone (GPU.8). All twelve are recorded into
+// the frame's one encoder (GPU.6). The radiance image was written by an earlier pass in the frame;
 // the renderer records that barrier (metal/frame/renderer.h).
 //
 // The settings reach the shader in a 16-byte buffer of the pass's own
 // (passes::ToneMap's shared layout), made at construction and never written
 // again: the graph's, the same every frame.
 //
-// Cost, per frame, for P pixels: step 2 reads 13 texels per output pixel
+// Cost, counted in passes over memory (GDSA.6), per frame, for P pixels:
+// step 2 reads 13 texels per output pixel
 // over P/4 + P/16 + ... (about P/3 pixels), 4.3 P reads; step 3, 9 per
 // pixel over levels 0 to 4, about 3 P; step 4, 1 full-size read and 9 of
 // B_0, 10 P; 17 P reads in all, most of them of half floats at reduced

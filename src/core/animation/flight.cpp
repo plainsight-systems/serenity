@@ -3,9 +3,9 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <exception>
 #include <limits>
 #include <numbers>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -530,37 +530,51 @@ contracts::Float3 position(const Flight& flight, frame::Seconds t) {
 
 std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles) {
     std::vector<Flight> flights(jobs.size());
-    std::vector<std::optional<std::string>> failures(jobs.size());
-    // Each thread takes the next unmade flight; each flight is written to
-    // its own slot, so the result is in job order whatever the threads.
+    // Each job's failure, whatever it threw, kept to be rethrown here, where
+    // it can be reported (E.17): catching it in the worker keeps any
+    // exception from ending the program there. Taking it cannot throw.
+    std::vector<std::exception_ptr> failures(jobs.size());
+    // Optimization: relaxed. The counter hands out jobs and publishes
+    // nothing; joining the threads publishes every flight and failure
+    // (CONC.1). One increment per flight, flights milliseconds apart, so
+    // there is no contention to shard (CONC.3), and each slot of `flights`
+    // and `failures` is written once, by one thread, at its job's end, so
+    // neighbours sharing a cache line cost nothing worth padding (CACHE.1).
     std::atomic<std::size_t> next{0};
-    const auto work = [&]() {
-        for (std::size_t k = next++; k < jobs.size(); k = next++) {
+    const auto work = [&]() noexcept {
+        for (std::size_t k = next.fetch_add(1, std::memory_order_relaxed); k < jobs.size();
+             k = next.fetch_add(1, std::memory_order_relaxed)) {
             try {
                 flights[k] = make_flight(jobs[k].params, jobs[k].start, jobs[k].body, obstacles);
-            } catch (const std::invalid_argument& refused) {
-                failures[k] = refused.what();
+            } catch (...) {
+                failures[k] = std::current_exception();
             }
         }
     };
-    const std::size_t threads =
-        std::min<std::size_t>(std::max(1u, std::thread::hardware_concurrency()), std::max<std::size_t>(jobs.size(), 1));
-    std::vector<std::thread> workers;
-    workers.reserve(threads - 1);
-    for (std::size_t t = 1; t < threads; ++t) {
-        try {
-            workers.emplace_back(work);
-        } catch (const std::system_error&) {
-            break;  // fewer threads: the same flights, made more slowly
+    // Tasks, not threads (CP.4): each thread takes the next unmade flight.
+    // The threads are made once a load (CP.41) and joined as this block
+    // ends, however it ends (CP.25).
+    {
+        const std::size_t threads = std::min<std::size_t>(std::max(1u, std::thread::hardware_concurrency()),
+                                                          std::max<std::size_t>(jobs.size(), 1));
+        std::vector<std::jthread> workers;
+        workers.reserve(threads - 1);
+        for (std::size_t t = 1; t < threads; ++t) {
+            try {
+                workers.emplace_back(work);
+            } catch (const std::system_error&) {
+                break;  // fewer threads: the same flights, made more slowly
+            }
         }
-    }
-    work();
-    for (std::thread& worker : workers) {
-        worker.join();
+        work();
     }
     for (std::size_t k = 0; k < jobs.size(); ++k) {
         if (failures[k]) {
-            throw FlightsError(k, "flight " + std::to_string(k) + ": " + *failures[k]);
+            try {
+                std::rethrow_exception(failures[k]);
+            } catch (const std::invalid_argument& refused) {
+                throw FlightsError(k, "flight " + std::to_string(k) + ": " + refused.what());
+            }
         }
     }
     return flights;

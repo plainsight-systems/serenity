@@ -21,7 +21,9 @@
 //           hashed with the seed by pcg3d (Jarzynski and Olano, "Hash
 //           Functions for GPU Rendering", JCGT 2020): h = pcg3d(uint3(c) +
 //           uint3(seed)), the corner's integers taken as 32-bit unsigned,
-//           wrapping. pcg3d of v, in 32-bit unsigned arithmetic:
+//           wrapping: a number keyed by (seed, lattice point), no state
+//           carried from one to the next (GDSA.3). pcg3d of v, in 32-bit
+//           unsigned arithmetic:
 //
 //             v = v * 1664525 + 1013904223
 //             v.x += v.y v.z;  v.y += v.z v.x;  v.z += v.x v.y

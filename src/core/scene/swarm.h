@@ -30,7 +30,9 @@ namespace serenity::scene {
 //   Step 1  Firefly i, from 0 to count - 1, has its own seed:
 //           splitmix64(splitmix64(seed) ^ i) (core/animation/draw.h), the
 //           swarm's seed and i alone, so adding a swarm, or fireflies at the
-//           end of one, moves no other firefly.
+//           end of one, moves no other firefly: numbers from (seed, stream,
+//           counter), never from a shared sequence (GDSA.3), and each step a
+//           pure function of them (F.8).
 //   Step 2  Its start, where its flight's first drift hovers (flight.h,
 //           step 2), which may carry it first_drift_reach from the start on
 //           each axis: a point drawn uniformly within the swarm's volume

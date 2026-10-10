@@ -89,6 +89,11 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     }
 
     kinds_ = schedule.passes;
+    for (std::size_t i = 0; i < kinds_.size() && first_cross_frame_ == no_pass; ++i) {
+        if (frame::writes_radiance(kinds_[i]) || frame::accumulates(kinds_[i])) {
+            first_cross_frame_ = i;
+        }
+    }
     passes_.reserve(schedule.passes.size());
     for (frame::PassKind kind : schedule.passes) {
         // No default: a kind this backend does not implement fails the build
@@ -236,9 +241,12 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
     encoder->setArgumentTable(resources.arguments);
     for (std::size_t i = 0; i < passes_.size(); ++i) {
         const frame::PassKind kind = kinds_[i];
-        if (frame::writes_radiance(kind)) {
-            // The frames in flight share the images between passes: none
-            // writes them while the frame before still reads them.
+        if (i == first_cross_frame_) {
+            // The frames in flight share the images between passes and the
+            // accumulated image: none writes them while the frame before
+            // still reads them, and none reads the accumulated image before
+            // the frame before has written it. One barrier for both hazards,
+            // before the first pass that touches either (GPU.8).
             encoder->barrierAfterQueueStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
         }
         if (frame::reads_radiance(kind)) {

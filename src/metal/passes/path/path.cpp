@@ -39,10 +39,6 @@ void PathPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources
     arguments->setTexture(resources.radiance->gpuResourceID(), 1);
     encoder->setComputePipelineState(pipeline_.get());
 
-    // The previous frame's dispatch wrote the accumulated image this one
-    // reads; Metal 4 does not order them unless asked (path.h).
-    encoder->barrierAfterQueueStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
-
     // Rows of the execution width (GPU.2).
     const NS::UInteger width = pipeline_->threadExecutionWidth();
     const NS::UInteger rows = pipeline_->maxTotalThreadsPerThreadgroup() / width;

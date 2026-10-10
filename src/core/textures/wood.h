@@ -76,7 +76,9 @@
 // checker's edges.
 //
 // Cost, per evaluation: four noises (three octaves and the pores), one
-// pcg3d for the board, a square root and a few dozen flops.
+// pcg3d for the board, a square root and a few dozen flops; one branch,
+// the seam's, which neighboring pixels take alike but along a seam's line
+// (GPU.4). Every tuning number is a named constant below (ES.45).
 
 #if defined(__METAL_VERSION__)
 #include <metal_stdlib>

@@ -4,6 +4,7 @@
 // make_flights), the same flights and the same error whatever the threads.
 
 #include <cmath>
+#include <stdexcept>
 #include <limits>
 #include <string>
 #include <vector>
@@ -232,5 +233,42 @@ TEST_CASE("of flights made in parallel, the lowest that fails is the one reporte
             CHECK(error.job == 7);
             CHECK(std::string(error.what()).rfind("flight 7: ", 0) == 0);
         }
+    }
+}
+
+namespace {
+
+// The ball and floor, but an answer near one start throws what no flight
+// expects: a failure that is not a refusal.
+struct Breaking final : contracts::Obstacles {
+    explicit Breaking(const scene::SceneDescription& s) : inner(s) {}
+    double distance(contracts::Float3 p) const override {
+        if (p.z > 1.7f) {
+            throw std::runtime_error("the obstacles broke");
+        }
+        return inner.distance(p);
+    }
+    bool touches(const contracts::Box& box) const override { return inner.touches(box); }
+    BallAndFloor inner;
+};
+
+}  // namespace
+
+TEST_CASE("of flights made in parallel, any exception reaches the caller, the lowest job's, after every thread ends") {
+    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
+    const Breaking obstacles(s);
+    std::vector<animation::FlightJob> jobs;
+    for (std::uint64_t k = 0; k < 24; ++k) {
+        jobs.push_back(job(k, {1.2f, 1.0f, 0.8f}));
+    }
+    jobs[5].start = {1.2f, 1.0f, 1.8f};  // breaks
+    jobs[9].start = {0.0f, 0.5f, 0.0f};  // refused: inside the ball
+    try {
+        (void)animation::make_flights(jobs, obstacles);
+        FAIL("expected an error");
+    } catch (const animation::FlightsError&) {
+        FAIL("the refusal at 9 was reported, not the failure at 5");
+    } catch (const std::runtime_error& error) {
+        CHECK(std::string(error.what()) == "the obstacles broke");
     }
 }

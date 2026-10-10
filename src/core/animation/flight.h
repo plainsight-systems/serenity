@@ -196,9 +196,13 @@ Flight make_flight(const FlightParams& params, contracts::Float3 start, float bo
 // the same from any thread (contract 11). As many threads as the machine
 // has cores (std::thread::hardware_concurrency, at least one), each taking
 // the next unmade flight. If any cannot be made, throws, once every thread
-// has finished, the std::invalid_argument of the lowest k that failed,
-// prefixed "flight k: ", as a FlightsError that also carries k, so the
-// error does not depend on the threads either.
+// has finished, the failure of the lowest k that failed: tasks, not
+// threads (CP.4), the threads made once a load (CP.41) and joined however
+// the call ends (CP.25), and each failure caught where it happens and
+// rethrown to the caller (E.17), so no exception ends a worker. A refusal,
+// make_flight's std::invalid_argument, is rethrown as a FlightsError that
+// carries k, its message prefixed "flight k: "; anything else as itself. So
+// the error does not depend on the threads either.
 struct FlightsError : std::invalid_argument {
     FlightsError(std::size_t job, const std::string& what) : std::invalid_argument(what), job(job) {}
     std::size_t job;

@@ -19,7 +19,8 @@ std::span<const std::byte> bytes(const T& one) {
 
 // The one list of the scene's arrays: each with the field of Addresses that
 // holds its address, named, so no array can be given another's address.
-// Every field has an entry: the assertion below counts them.
+// Every field has an entry: the assertion below counts them, at compile
+// time rather than at run time (P.5).
 struct Entry {
     MTL::GPUAddress SceneBuffers::Addresses::*field;
     std::span<const std::byte> bytes;

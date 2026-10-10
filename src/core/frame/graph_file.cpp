@@ -61,7 +61,7 @@ const toml::node& required(std::string_view source, const toml::table& table, st
 
 // `node` as a float: a number, finite and within float's range, checked
 // while it is still a double, since narrowing one past that range is
-// undefined.
+// undefined (ES.46).
 float finite_float(std::string_view source, const toml::node& node, std::string_view key) {
     const std::optional<double> value = node.value<double>();
     if (!value) {

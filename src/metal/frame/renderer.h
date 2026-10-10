@@ -121,11 +121,15 @@ namespace serenity::metal {
 // after the pass that wrote it. Within a pass of several dispatches, the
 // pass records its own (passes/tone_map/tone_map.h). Between frames, the
 // images between passes are one set the frames in flight share
-// (frame_images.h), so before the first pass of a frame that writes them the
-// renderer records a barrier waiting for the queue's earlier dispatches
-// (barrierAfterQueueStages, dispatch before dispatch): a frame never writes
-// them while the frame before still reads them. A pass that reads its own
-// history waits the same way itself (passes/path/path.h). The queue's wait
+// (frame_images.h), and the accumulated image is the frame before's history:
+// before the first pass of a frame that writes the images or accumulates,
+// the renderer records one barrier waiting for the queue's earlier
+// dispatches (barrierAfterQueueStages, dispatch before dispatch), so a frame
+// never writes the images while the frame before still reads them, nor reads
+// the accumulated image before the frame before has written it. Each
+// barrier names its hazard and none is recorded twice (GPU.8: barriers
+// describe real hazards, and the frame graph, which knows every pass,
+// synthesizes them). The queue's wait
 // for the drawable orders the frame against the display
 // (submission.h).
 //
@@ -213,6 +217,10 @@ private:
     std::array<NS::SharedPtr<MTL4::ArgumentTable>, frames_in_flight> arguments_;
     std::vector<frame::PassKind> kinds_;  // the schedule's
     std::vector<Pass> passes_;            // in schedule order, one per kind
+    static constexpr std::size_t no_pass = static_cast<std::size_t>(-1);
+    // The first pass that writes the images between passes or accumulates,
+    // before which the queue barrier is recorded; no_pass if none does.
+    std::size_t first_cross_frame_ = no_pass;
 };
 
 // One frame, start to finish, for each kind of target. The window and the

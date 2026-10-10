@@ -47,7 +47,10 @@
 // meets the same point of the plane of focus (Kolb, Mitchell and Hanrahan
 // 1995; pbrt-v4's PerspectiveCamera). With lens_radius 0 the ray is the
 // pinhole's, exactly: start is origin and the direction is d's, so a camera
-// without a lens renders as it did before lenses.
+// without a lens renders as it did before lenses. Which of the two a ray
+// takes is the frame's camera's, the same for every thread of a dispatch,
+// so the branch costs no divergence (GPU.4). A Camera without a lens is a
+// pinhole by its default member initializers (C.48).
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 

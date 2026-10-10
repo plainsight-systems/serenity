@@ -50,6 +50,15 @@ namespace serenity::metal {
 // 290 MB at the display's size; the barrier's cost is measured at
 // implementation.
 //
+// Made outside the frame loop, at a size, and kept until the size changes
+// (GPU.9); nothing else lives only within a frame for them to share memory
+// with yet. The radiance image is an intermediate the frame writes and reads
+// back, which GDSA.16 says to stream through on-chip memory instead: the
+// tone map cannot, since its bloom reads every pixel's neighbourhood as far
+// as B_5's 64 pixels; the display pass could fold back into the light pass,
+// as it was, and is kept apart so a graph has one presenting pass, at a
+// measured 0.6 ms (passes/display/display.h).
+//
 // Cost: at 3456 x 2234 (P = 7.7 M pixels), the radiance image is 123 MB
 // and the pyramid 21 MB. Per frame, the light pass writes the radiance
 // image once, P texels; the display pass reads it once, P texels, 247 MB of

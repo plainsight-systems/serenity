@@ -1,7 +1,6 @@
 #include "core/scene/scene.h"
 
 #include <cmath>
-#include <deque>
 #include <fstream>
 #include <initializer_list>
 #include <limits>
@@ -335,6 +334,9 @@ struct SwarmEntry {
     std::string what;  // "swarm N"
 };
 
+// A Pending that is not a swarm's firefly.
+constexpr std::size_t no_swarm = static_cast<std::size_t>(-1);
+
 // A shape's motion and glow, as read: made once every shape is read, when
 // the still shapes it must keep clear of and the names it circles are known.
 // A written shape's are its tables; a swarm's firefly's, its swarm's.
@@ -343,7 +345,7 @@ struct Pending {
     std::string what;                    // "shape N", or "swarm N's firefly i", for errors
     const toml::node* motion = nullptr;  // a written shape's motion's table, if any
     const toml::node* glow = nullptr;    // and its glow's
-    const SwarmEntry* swarm = nullptr;   // a swarm's firefly: its swarm
+    std::size_t swarm = no_swarm;        // a swarm's firefly: its swarm's index
     std::uint32_t firefly = 0;           // which of it
     contracts::Float3 start{};           // and where it starts (swarm.h, step 2)
 };
@@ -494,6 +496,7 @@ animation::GlowRecord make_glow(const Reader& r, const Pending& p, const animati
 // parallel (core/animation/flight.h, make_flights), then each motion and glow
 // is recorded in the order the shapes come.
 void make_animation(const Reader& r, const std::vector<Pending>& pending,
+                    const std::vector<SwarmEntry>& swarms,
                     const std::map<std::string, std::uint32_t, std::less<>>& names, const std::vector<bool>& moving,
                     const contracts::Obstacles& obstacles, SceneDescription& scene) {
     constexpr std::size_t no_job = static_cast<std::size_t>(-1);
@@ -505,8 +508,8 @@ void make_animation(const Reader& r, const std::vector<Pending>& pending,
         const Pending& p = pending[i];
         const contracts::Transform& placed = scene.shapes.transforms[p.shape];
         const float body = placed.m[0][0];  // a sphere's radius (core/shapes/sphere.h)
-        if (p.swarm != nullptr) {
-            animation::FlightParams params = p.swarm->swarm.flight;
+        if (p.swarm != no_swarm) {
+            animation::FlightParams params = swarms[p.swarm].swarm.flight;
             params.seed = firefly_seed(params.seed, p.firefly);  // swarm.h, step 1
             job_of[i] = jobs.size();
             jobs.push_back({std::move(params), p.start, body});
@@ -562,8 +565,8 @@ void make_animation(const Reader& r, const std::vector<Pending>& pending,
         for (std::size_t i = 0; i < pending.size(); ++i) {
             if (job_of[i] == refused.job) {
                 const Pending& p = pending[i];
-                if (p.swarm != nullptr) {
-                    r.fail(*p.swarm->table, p.what + "'s flight: " + reason);
+                if (p.swarm != no_swarm) {
+                    r.fail(*swarms[p.swarm].table, p.what + "'s flight: " + reason);
                 }
                 r.fail(*p.motion, p.what + "'s motion: " + reason);
             }
@@ -583,12 +586,12 @@ void make_animation(const Reader& r, const std::vector<Pending>& pending,
             scene.animation.movers.push_back({p.shape, *motion});
         }
         const std::uint32_t light = scene.shape_lights[p.shape];
-        if (p.swarm != nullptr) {
+        if (p.swarm != no_swarm) {
             // A flight glow with the swarm's flash and dim (swarm.h, step 3).
             animation::ScheduleGlow glow;
             glow.schedule = motions.flights[motion->index].flashes;
-            glow.flash = p.swarm->swarm.flash;
-            glow.dim = p.swarm->swarm.dim;
+            glow.flash = swarms[p.swarm].swarm.flash;
+            glow.dim = swarms[p.swarm].swarm.dim;
             scene.animation.glows.schedules.push_back(glow);
             const animation::GlowRecord record{animation::GlowKind::schedule,
                                                static_cast<std::uint32_t>(scene.animation.glows.schedules.size() - 1)};
@@ -609,7 +612,7 @@ void make_animation(const Reader& r, const std::vector<Pending>& pending,
 void read_swarms(const Reader& r, const toml::array& all,
                  const std::map<std::string, std::uint32_t, std::less<>>& material_index,
                  const std::map<std::string, std::uint32_t, std::less<>>& names, std::vector<bool>& moving,
-                 const contracts::Obstacles& obstacles, SceneDescription& scene, std::deque<SwarmEntry>& swarms,
+                 const contracts::Obstacles& obstacles, SceneDescription& scene, std::vector<SwarmEntry>& swarms,
                  std::vector<Pending>& pending) {
     std::size_t number = 0;
     for (const toml::node& node : all) {
@@ -652,6 +655,7 @@ void read_swarms(const Reader& r, const toml::array& all,
             r.fail(r.required(t, "dim", what), what + "'s dim must be in [0, 1)");
         }
         swarms.push_back(std::move(entry));
+        const std::size_t swarm_index = swarms.size() - 1;
         const SwarmEntry& swarm = swarms.back();
         for (std::uint32_t i = 0; i < swarm.swarm.count; ++i) {
             contracts::Float3 start;
@@ -662,7 +666,8 @@ void read_swarms(const Reader& r, const toml::array& all,
             }
             const std::uint32_t index = add_sphere(scene, start, swarm.swarm.radius, found->second);
             moving.push_back(true);
-            pending.push_back({index, what + "'s firefly " + std::to_string(i), nullptr, nullptr, &swarm, i, start});
+            pending.push_back(
+                {index, what + "'s firefly " + std::to_string(i), nullptr, nullptr, swarm_index, i, start});
         }
     }
 }
@@ -769,7 +774,7 @@ SceneDescription read_scene(const Reader& r, const toml::table& root) {
         moving[p.shape] = moving[p.shape] || p.motion != nullptr;
     }
     const StillShapes obstacles(scene.shapes, moving);
-    std::deque<SwarmEntry> swarms;  // pending fireflies point into it, so it never moves an entry
+    std::vector<SwarmEntry> swarms;  // pending fireflies name theirs by index
     if (const toml::node* swarm_node = root.get("swarms")) {
         const toml::array* swarm_list = swarm_node->as_array();
         if (swarm_list == nullptr) {
@@ -777,7 +782,7 @@ SceneDescription read_scene(const Reader& r, const toml::table& root) {
         }
         read_swarms(r, *swarm_list, material_index, names, moving, obstacles, scene, swarms, pending);
     }
-    make_animation(r, pending, names, moving, obstacles, scene);
+    make_animation(r, pending, swarms, names, moving, obstacles, scene);
     scene.light_counts.lights = static_cast<std::uint32_t>(scene.lights.size());
     scene.light_counts.spheres = static_cast<std::uint32_t>(scene.sphere_lights.size());
     return scene;

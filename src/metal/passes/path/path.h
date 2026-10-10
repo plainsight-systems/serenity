@@ -32,10 +32,10 @@ namespace serenity::metal {
 //     (core/frame/schedule.h) to show.
 //
 // Ordering: the pass reads the image the previous frame wrote. Metal 4 does
-// not track hazards, so before its dispatch the pass records a barrier that
-// waits for the queue's earlier dispatches (barrierAfterQueueStages, dispatch
-// before dispatch): frames in flight overlap their recording, not their
-// writes to the image.
+// not track hazards; the renderer records the barrier that waits for the
+// queue's earlier dispatches before the first pass of the frame that touches
+// state the frames share, this one (metal/frame/renderer.h, GPU.8): frames
+// in flight overlap their recording, not their writes to the image.
 //
 // Cost: one thread per pixel, in rows of the execution width (GPU.2); per
 // pixel, the integrator's path (about twice its length in rays, a handful
