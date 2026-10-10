@@ -10,7 +10,7 @@
 #include "core/lights/gradient_sky.h"
 #include "core/lights/light.h"
 #include "core/lights/sphere_light.h"
-#include "metal/camera/pinhole.metal.h"
+#include "metal/camera/thin_lens.metal.h"
 #include "metal/integrator/direct.metal.h"
 
 using namespace metal;
@@ -63,8 +63,13 @@ kernel void preview(constant serenity::contracts::FrameConstants& frame [[buffer
 
     float3 color = float3(0.0f);
     for (uint i = 0; i < pixel_samples; ++i) {
-        const float3 direction = pinhole_direction(camera, float2(pixel) + positions[i], frame.width, frame.height);
-        color += direct::radiance(scene, to_float3(camera.origin), direction, direct::Pixel{pixel, i});
+        // Through a lens, each position with another of the four as its
+        // point on the lens (contracts/camera.h): fixed, as everything here
+        // is, so a thing far from focus shows as up to four copies.
+        const CameraRay ray =
+            camera_ray(camera, float2(pixel) + positions[i], positions[(i + 2) % pixel_samples], frame.width,
+                       frame.height);
+        color += direct::radiance(scene, ray.origin, ray.direction, direct::Pixel{pixel, i});
     }
     radiance.write(float4(color / float(pixel_samples), 1.0f), pixel);
 }

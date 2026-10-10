@@ -26,7 +26,7 @@
 
 #include <doctest/doctest.h>
 
-#include "core/camera/pinhole.h"
+#include "core/camera/thin_lens.h"
 #include "core/frame/graph_file.h"
 #include "core/scene/scene.h"
 #include "metal/device/device.h"

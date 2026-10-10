@@ -22,7 +22,10 @@ namespace serenity::metal {
 // agree with.
 //
 // Per pixel, four camera rays, at a rotated grid of positions within it
-// (anti-aliasing), each followed until it reaches something that ends it.
+// (anti-aliasing), and, through a lens, from the same grid's points on the
+// lens, each position paired with another (contracts/camera.h): a coarse,
+// fixed depth of field, a thing far from focus showing as up to four
+// copies; each followed until it reaches something that ends it.
 // What it does at a surface it decides by the surface's BSDF and its lobes
 // (contract 2), and every light it reads through the emitter (contract 3),
 // naming no material and no light kind (metal/integrator/direct.metal.h):

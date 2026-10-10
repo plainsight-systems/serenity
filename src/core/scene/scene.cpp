@@ -15,7 +15,7 @@
 #include "core/animation/glow.h"
 #include "core/animation/wander.h"
 #include "core/contracts/obstacles.h"
-#include "core/camera/pinhole.h"
+#include "core/camera/thin_lens.h"
 #include "core/scene/swarm.h"
 
 namespace serenity::scene {
@@ -123,12 +123,24 @@ bool within(contracts::Float3 a, float low, float high) {
 }
 
 contracts::Camera read_camera(const Reader& r, const toml::table& t) {
-    r.only(t, {"position", "look_at", "up", "vertical_fov_degrees"}, "[camera]");
+    r.only(t, {"position", "look_at", "up", "vertical_fov_degrees", "lens"}, "[camera]");
     contracts::Camera camera{};
     camera.position = r.triple(t, "position", "the camera");
     camera.look_at = r.triple(t, "look_at", "the camera");
     camera.up = t.contains("up") ? r.triple(t, "up", "the camera") : contracts::Float3{0.0f, 1.0f, 0.0f};
     camera.vertical_fov_degrees = r.number(t, "vertical_fov_degrees", "the camera");
+    if (const toml::node* lens_node = t.get("lens")) {
+        const toml::table& lens = r.table(*lens_node, "the camera's lens");
+        r.only(lens, {"radius", "focus"}, "the camera's lens");
+        camera.lens_radius = r.number(lens, "radius", "the camera's lens");
+        if (!(camera.lens_radius >= 0.0f)) {
+            r.fail(r.required(lens, "radius", "the camera's lens"), "the camera's lens's radius must be 0 or more");
+        }
+        camera.focus_distance = r.number(lens, "focus", "the camera's lens");
+        if (!(camera.focus_distance > 0.0f)) {
+            r.fail(r.required(lens, "focus", "the camera's lens"), "the camera's lens's focus must be greater than 0");
+        }
+    }
     const char* reason = nullptr;
     if (!camera::valid(camera, &reason)) {
         r.fail(t, std::string("the camera cannot be framed: ") + reason);

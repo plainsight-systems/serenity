@@ -87,7 +87,7 @@ namespace serenity::metal {
 // The camera. It is the frame's, an input like its time (frame_inputs.h):
 // the caller chooses it, and the renderer holds none. Each frame the
 // renderer frames the camera it is given for the target's size
-// (camera/pinhole.h) and binds it; a frame of a graph that reads a scene and
+// (camera/thin_lens.h) and binds it; a frame of a graph that reads a scene and
 // has no camera is refused, by Error.
 //
 // The accumulated image. A frame graph with a pass that averages its frames

@@ -27,6 +27,10 @@
 position = [0.0, 0.93, 1.45]
 look_at = [0.0, 0.87, 0.0]
 vertical_fov_degrees = 38
+# A lens of 12 mm radius, a 50 mm lens near f/2, focused on the spheres: the
+# fireflies far behind them and close to the camera spread into soft discs,
+# which is how their distance reads (contracts/camera.h).
+lens = { radius = 0.012, focus = 1.4 }
 
 [environment]
 kind = "gradient"
@@ -139,16 +143,16 @@ center = [-0.3, 0.84, 0.4]
 radius = 0.09
 material = "brass"
 
-# The fireflies: over the table, past its sides and far beyond its far end,
-# so they are seen at every depth, from just above its top
-# to a meter and a half over it: room for a swoop, whose dip, climb and
-# headroom take up to 1.2 m.
+# The fireflies: over the table and a little past it on every side, from
+# just above its top to 1.25 m over it, room for most swoops (a dip, climb
+# and headroom take up to 1.35 m): low and near, so most of them are about
+# the spheres rather than up in the sky.
 [[swarms]]
 count = 512
 radius = 0.008
 material = "firefly"
-min = [-2.6, 0.78, -3.0]
-max = [2.6, 2.2, 1.0]
+min = [-2.2, 0.78, -2.0]
+max = [2.2, 2.0, 1.0]
 targets = ["glass_left", "glass_middle", "glass_right", "brass_back", "brass_front"]
 speed = 0.35
 clearance = 0.03

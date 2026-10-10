@@ -10,7 +10,7 @@
 #include "core/lights/gradient_sky.h"
 #include "core/lights/light.h"
 #include "core/lights/sphere_light.h"
-#include "metal/camera/pinhole.metal.h"
+#include "metal/camera/thin_lens.metal.h"
 #include "metal/film/accumulate.metal.h"
 #include "metal/integrator/path.metal.h"
 
@@ -57,8 +57,11 @@ kernel void path_trace(constant serenity::contracts::FrameConstants& frame [[buf
 
         PathNumbers numbers = path_numbers(pixel, frame.frame_index);
         const float2 within = next_numbers2(numbers);  // the point in the pixel
-        const float3 direction = pinhole_direction(camera, float2(pixel) + within, frame.width, frame.height);
-        const float3 sample = path::radiance(scene, to_float3(camera.origin), direction, numbers);
+        // The point on the lens, drawn only through one, so a pinhole's
+        // paths draw what they drew before lenses.
+        const float2 lens = camera.lens_radius > 0.0f ? next_numbers2(numbers) : float2(0.5f);
+        const CameraRay ray = camera_ray(camera, float2(pixel) + within, lens, frame.width, frame.height);
+        const float3 sample = path::radiance(scene, ray.origin, ray.direction, numbers);
 
         failed = !finite(sample);
         const float4 held = accumulate(accumulated.read(pixel), sample, frame.accumulated_frames == 0u);

@@ -20,7 +20,9 @@ namespace serenity::metal {
 //
 //   - the camera ray passes through a point in the pixel drawn anew each
 //     frame (metal/sampler/sampler.metal.h), so anti-aliasing comes from the
-//     average, not from extra rays;
+//     average, not from extra rays; through a lens, from a point on the lens
+//     drawn anew each frame too, so depth of field comes from the average
+//     as well (contracts/camera.h);
 //   - the integrator returns the radiance along it;
 //   - the accumulated image's mean for the pixel takes it in, n being the
 //     frames the image held (contracts/frame_constants.h,

@@ -1,12 +1,12 @@
 #pragma once
 
-// Axis: Camera (pinhole).
+// Axis: Camera (thin lens).
 //
-// Framing a camera (contracts/camera.h) as a pinhole, for an image of a
-// given size: the pure function from the camera a scene describes to the
-// form a shader generates rays from (F.8), and the conditions a camera must
-// meet to be framed. The ray formula is in the contract; the shader half is
-// metal/camera/pinhole.metal.h.
+// Framing a camera (contracts/camera.h) as a thin lens, a pinhole when its
+// radius is 0, for an image of a given size: the pure function from the
+// camera a scene describes to the form a shader generates rays from (F.8),
+// and the conditions a camera must meet to be framed. The ray formula is in
+// the contract; the shader half is metal/camera/thin_lens.metal.h.
 //
 // The camera's pose at t joins this family when the camera moves; until then
 // a frame's camera is the scene's.

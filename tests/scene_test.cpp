@@ -433,3 +433,21 @@ TEST_CASE("the marbles' scene reads: a walnut table, five spheres, 512 fireflies
     CHECK(s.animation.glowers.size() == 512);
     CHECK(s.animation.motions.flights.size() == 512);
 }
+
+TEST_CASE("a camera's lens reads, and a camera without one is a pinhole") {
+    const scene::SceneDescription pinhole = scene::parse(example, "s");
+    CHECK(pinhole.camera.lens_radius == 0.0f);
+    const scene::SceneDescription lensed =
+        scene::parse(with("vertical_fov_degrees = 40", "vertical_fov_degrees = 40\nlens = { radius = 0.012, focus = 4 }"),
+                     "s");
+    CHECK(lensed.camera.lens_radius == 0.012f);
+    CHECK(lensed.camera.focus_distance == 4.0f);
+    const auto lens = [](const std::string& value) {
+        return error_of(with("vertical_fov_degrees = 40", "vertical_fov_degrees = 40\nlens = " + value));
+    };
+    CHECK(contains(lens("{ radius = -0.01, focus = 4 }"), "s.toml:7: the camera's lens's radius must be 0 or more"));
+    CHECK(contains(lens("{ radius = 0.01, focus = 0 }"), "the camera's lens's focus must be greater than 0"));
+    CHECK(contains(lens("{ radius = 0.01 }"), "the camera's lens has no 'focus'"));
+    CHECK(contains(lens("{ radius = 0.01, focus = 4, blades = 6 }"), "unknown key 'blades' in the camera's lens"));
+    CHECK(contains(lens("0.01"), "the camera's lens must be a table"));
+}

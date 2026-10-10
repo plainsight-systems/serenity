@@ -1,4 +1,4 @@
-#include "core/camera/pinhole.h"
+#include "core/camera/thin_lens.h"
 
 #include <cmath>
 #include <numbers>
@@ -53,6 +53,10 @@ bool valid(const contracts::Camera& camera, const char** reason) {
         failed = "up is parallel to the direction the camera looks";
     } else if (!(camera.vertical_fov_degrees > 0.0f && camera.vertical_fov_degrees < 180.0f)) {
         failed = "vertical_fov_degrees is not strictly between 0 and 180";
+    } else if (!(std::isfinite(camera.lens_radius) && camera.lens_radius >= 0.0f)) {
+        failed = "the lens's radius is not a finite number, 0 or more";
+    } else if (!(std::isfinite(camera.focus_distance) && camera.focus_distance > 0.0f)) {
+        failed = "the lens's focus is not a finite number greater than 0";
     }
     if (reason != nullptr) {
         *reason = failed;
@@ -73,6 +77,8 @@ contracts::CameraData shader_form(const contracts::Camera& camera, frame::Extent
     data.forward = forward;
     data.right = scaled(right_unit, half_width);
     data.up = scaled(up_unit, half_height);
+    data.lens_radius = camera.lens_radius;
+    data.focus_distance = camera.focus_distance;
     return data;
 }
 

@@ -1,4 +1,4 @@
-// The pinhole camera: which cameras can be framed, and the framing itself,
+// The thin-lens camera: which cameras can be framed, and the framing itself,
 // against the formula in contracts/camera.h.
 
 #include <cmath>
@@ -7,7 +7,7 @@
 
 #include <doctest/doctest.h>
 
-#include "core/camera/pinhole.h"
+#include "core/camera/thin_lens.h"
 
 using serenity::contracts::Camera;
 using serenity::contracts::Float3;
@@ -90,4 +90,27 @@ TEST_CASE("framing: up need not be perpendicular to the view") {
     CHECK(dot(data.forward, data.up) == doctest::Approx(0.0f).epsilon(1e-6));
     CHECK(data.up.y > 0.0f);
     CHECK(data.forward.y < 0.0f);
+}
+
+TEST_CASE("a lens is framed with the camera, its radius 0 or more and its focus greater than 0") {
+    Camera lensed = looking_down_minus_z();
+    lensed.lens_radius = 0.012f;
+    lensed.focus_distance = 1.4f;
+    CHECK(serenity::camera::valid(lensed, nullptr));
+    const auto data = serenity::camera::shader_form(lensed, {1600, 900});
+    CHECK(data.lens_radius == 0.012f);
+    CHECK(data.focus_distance == 1.4f);
+    // Without one, a pinhole.
+    CHECK(serenity::camera::shader_form(looking_down_minus_z(), {16, 9}).lens_radius == 0.0f);
+
+    for (float radius : {-0.001f, std::nanf(""), INFINITY}) {
+        Camera wrong = lensed;
+        wrong.lens_radius = radius;
+        CHECK(std::string(why(wrong)).find("lens's radius") != std::string::npos);
+    }
+    for (float focus : {0.0f, -1.0f, std::nanf(""), INFINITY}) {
+        Camera wrong = lensed;
+        wrong.focus_distance = focus;
+        CHECK(std::string(why(wrong)).find("lens's focus") != std::string::npos);
+    }
 }

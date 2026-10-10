@@ -45,6 +45,10 @@ namespace serenity::scene {
 //   look_at = [0, 0.8, 0]
 //   up = [0, 1, 0]                  # optional; this is the default
 //   vertical_fov_degrees = 40
+//   lens = { radius = 0.012, focus = 4.0 }  # optional (contracts/camera.h):
+//                                   # a thin lens, its radius and the distance
+//                                   # in meters to the plane in focus;
+//                                   # without one, a pinhole, all in focus
 //
 //   [environment]
 //   kind = "gradient"
@@ -187,8 +191,8 @@ namespace serenity::scene {
 // Every key is checked, as in graph files: a missing or unknown key, a value
 // of the wrong type or out of range (a radius or size not greater than 0, an
 // ior not greater than 1, an f0 outside [0, 1], a roughness outside (0, 1], a
-// negative radiance, a box whose min is not below its max, a camera that
-// cannot be framed, a reach or speed not greater than 0, a seed below 0, a
+// negative radiance, a box whose min is not below its max, a lens radius
+// below 0 or focus not above 0, a camera that cannot be framed, a reach or speed not greater than 0, a seed below 0, a
 // shape outside the world or a motion that could carry it out, a flight's box
 // whose min is not below its max, a negative clearance or weight, weights all
 // 0, a circle weight with no targets, a period or flash out of range, a dim
@@ -218,7 +222,7 @@ public:
 
 struct SceneDescription {
     // The camera as the file places it (contracts/camera.h); valid
-    // (camera/pinhole.h). Each frame is seen through it until the camera
+    // (camera/thin_lens.h). Each frame is seen through it until the camera
     // moves.
     contracts::Camera camera;
     lights::GradientSkyData environment;

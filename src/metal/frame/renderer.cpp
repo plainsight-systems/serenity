@@ -6,7 +6,7 @@
 #include <optional>
 #include <string>
 
-#include "core/camera/pinhole.h"
+#include "core/camera/thin_lens.h"
 #include "core/contracts/camera.h"
 #include "core/contracts/frame_constants.h"
 #include "metal/device/error.h"
