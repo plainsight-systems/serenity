@@ -27,10 +27,8 @@
 #
 # Scale: meters, real ones. The table top is at 0.75 m; each marble rests on
 # it, its center its radius above. The firefly radiance is set against a
-# converged still at exposure 0 (graphs/path.toml).
-#
-# Loads in 128 ms (its flights made in parallel); a frame at 3456 x 2234,
-# path traced and tone mapped, is 11.2 ms of the M3 Max's GPU.
+# converged still at exposure 0 (graphs/path.toml). What it costs to load
+# and to render: docs/research/2026-10-09-medium-cost.md.
 
 [camera]
 position = [0.0, 0.78, 0.3]

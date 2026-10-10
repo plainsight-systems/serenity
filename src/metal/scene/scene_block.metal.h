@@ -14,13 +14,10 @@
 //
 // Each view is built where it is used, not once per thread and carried
 // through the path: a view carried is pointers held in registers across
-// every ray query and BSDF, loaded once from the block and never reloaded;
-// built at its use, it is loaded then from the block. Apple names the
-// register cost of many live buffer pointers in a ray tracing loop (WWDC22
-// "Maximize your Metal ray tracing performance"). What it saved is measured
-// in scene_block.h. The frame's transforms and glows are in the constant
-// address space as the block's arrays are, for the same reason; that
-// measured the same as device.
+// every ray query and BSDF (GPU.3); built at its use, it is loaded then from
+// the block (docs/research/2026-10-10-scene-block.md). The frame's
+// transforms and glows are in the constant address space, as the block's
+// arrays are, for the same reason (scene_block.h).
 
 #include <metal_raytracing>
 #include <metal_stdlib>

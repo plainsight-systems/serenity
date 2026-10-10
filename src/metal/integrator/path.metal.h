@@ -60,13 +60,8 @@
 //           marble's medium, so the stretches between glass and core are
 //           dimmed as the glass's. A path in air asks no medium anything;
 //           lanes diverge only where a SIMD group straddles glass and air,
-//           a marble's few pixels (GPU.4). Measured on the M3 Max at 3456 x
-//           2234, in a scene with no medium (the five-sphere marbles of
-//           a987908), carrying the medium costs 0.58 ms of a 14.8 ms frame:
-//           the state the loop keeps, not the branch, since guarding the
-//           call or marking air likely each saved under 0.07 ms (GPU.10).
-//           Measuring each stretch from the true point and dimming each
-//           light sample by the medium add 0.07 ms more.
+//           a marble's few pixels (GPU.4). What a scene with no medium
+//           pays for it: docs/research/2026-10-09-medium-cost.md.
 //   Step 7  Russian roulette, from the 4th surface: survive with
 //           q = min(the largest channel of beta, 0.95), else stop;
 //           beta /= q, so the mean is unchanged. This, not a depth limit,

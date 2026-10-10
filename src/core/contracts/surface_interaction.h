@@ -43,10 +43,8 @@
 // field pads another (CACHE.5); 64 bytes, from 48 before object_position
 // and interior. In the path kernel each surface's interaction is live in
 // registers through its shading, so the 16 bytes are register pressure,
-// judged by the frame's time, not by occupancy (GPU.3, GPU.10). Measured on
-// the M3 Max at 3456 x 2234, the five-sphere marbles of a987908, nothing
-// else on the GPU: storing object_position costs 0.21 ms of the frame's
-// 14.8 ms.
+// judged by the frame's time, not by occupancy (GPU.3, GPU.10;
+// docs/research/2026-10-09-medium-cost.md).
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
