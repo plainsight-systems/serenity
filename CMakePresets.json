@@ -35,6 +35,20 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "native-sanitize",
+      "displayName": "Native debug under UndefinedBehaviorSanitizer (tests)",
+      "description": "UBSan only: AddressSanitizer's runtime hangs initializing on macOS 26.6.2, docs/research/2026-10-10-sanitizers.md",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/native-sanitize",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_FLAGS": "-fsanitize=undefined -fno-sanitize-recover=all -fsanitize-ignorelist=${sourceDir}/cmake/ubsan_ignorelist.txt -fno-omit-frame-pointer",
+        "CMAKE_CXX_FLAGS": "-fsanitize=undefined -fno-sanitize-recover=all -fsanitize-ignorelist=${sourceDir}/cmake/ubsan_ignorelist.txt -fno-omit-frame-pointer",
+        "CMAKE_OBJC_FLAGS": "-fsanitize=undefined -fno-sanitize-recover=all -fsanitize-ignorelist=${sourceDir}/cmake/ubsan_ignorelist.txt -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=undefined"
+      }
     }
   ],
   "buildPresets": [
@@ -45,6 +59,10 @@
     {
       "name": "native-release",
       "configurePreset": "native-release"
+    },
+    {
+      "name": "native-sanitize",
+      "configurePreset": "native-sanitize"
     }
   ],
   "testPresets": [
@@ -60,6 +78,16 @@
       "configurePreset": "native-release",
       "output": {
         "outputOnFailure": true
+      }
+    },
+    {
+      "name": "native-sanitize",
+      "configurePreset": "native-sanitize",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
       }
     }
   ]

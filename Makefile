@@ -1,10 +1,14 @@
 # Thin task wrapper. Every target is a one-liner you could run by hand.
 #
-# Two configurations: native-debug (make test) and native-release
-# (make test-release). Both run the same tests, including the GPU tests on
-# this machine's GPU. There is no CI yet (docs/process/QUEUE.md).
+# Three configurations, each running the same tests, including the GPU
+# tests on this machine's GPU: native-debug (make test), native-release
+# (make test-release), and native-sanitize (make test-sanitize), a debug
+# build under UndefinedBehaviorSanitizer. AddressSanitizer is not among
+# them: its runtime hangs before main on this machine's macOS
+# (docs/research/2026-10-10-sanitizers.md). There is no CI yet
+# (docs/process/QUEUE.md).
 
-.PHONY: test test-release run headless movie check toolchain clean
+.PHONY: test test-release test-sanitize run headless movie check toolchain clean
 
 # Configure quietly: dependencies' status summaries (SDL prints its whole
 # option list) are hidden; warnings and errors still show. VERBOSE=1 shows all.
@@ -22,6 +26,16 @@ test-release:
 	cmake --preset native-release $(CONFIGURE_QUIET)
 	cmake --build --preset native-release
 	ctest --preset native-release
+
+## The same tests, debug build under UndefinedBehaviorSanitizer: an overflow
+## of a signed integer, a shift past the width, a misaligned or null access,
+## an index past an array's bound or a value outside its enum or bool
+## stops the test that made it (CMakePresets.json, native-sanitize;
+## cmake/ubsan_ignorelist.txt names the one third-party idiom let pass).
+test-sanitize:
+	cmake --preset native-sanitize $(CONFIGURE_QUIET)
+	cmake --build --preset native-sanitize
+	ctest --preset native-sanitize
 
 ## The window, release build, running the frame graph GRAPH (default: the
 ## test pattern) over the scene SCENE, if given (a graph that reads a scene
