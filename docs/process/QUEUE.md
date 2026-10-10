@@ -46,7 +46,10 @@ This file tracks active and accepted work.
    checked clear at load, glows on the GPU); tone mapping with bloom (a
    radiance image between passes, display and tone_map as the presenting
    passes, Jimenez's bloom pyramid, Khronos PBR Neutral), so a firefly's
-   flash shows on the firefly.
+   flash shows on the firefly. Designed, in the headers: the dark opening
+   (a black sky; fireflies that wake one by one, one swarm perched on the
+   table and the marbles that rises, the other held above that comes down;
+   docs/research/2026-10-10-dark-opening.md).
 
 Then, each in its turn: ReSTIR DI; ReSTIR GI; caustics by manifold next
 event estimation; reservoir reuse as kernels; a denoiser of its own against

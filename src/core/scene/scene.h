@@ -57,8 +57,8 @@ namespace serenity::scene {
 //
 //   [environment]
 //   kind = "gradient"
-//   zenith = [0.02, 0.03, 0.08]     # linear RGB
-//   horizon = [0.15, 0.17, 0.25]
+//   zenith = [0.02, 0.03, 0.08]     # linear RGB, 0 or more: all 0 is a
+//   horizon = [0.15, 0.17, 0.25]    # black sky, the scene lit by its lights alone
 //
 //   [textures.floor_checks]         # a name, used by materials
 //   kind = "checker"
@@ -145,8 +145,11 @@ namespace serenity::scene {
 //   material = "glow"
 //   motion = { kind = "flight", min = [-3, 0.1, -3], max = [3, 2.5, 3],
 //              targets = ["marble"], speed = 0.5, clearance = 0.08,
-//              circle = 3, swoop = 1, drift = 1, seed = 11 }
-//   glow = { kind = "flight", flash = 0.35, dim = 0.05 }
+//              circle = 3, swoop = 1, drift = 1, seed = 11,
+//              prelude = { kind = "perch", at = [2, 0.8305, 0], until = 9 } }
+//                                   # optional: hold (until), or perch (at, until)
+//   glow = { kind = "flight", flash = 0.35, dim = 0.05,
+//            wake = { at = 4, ramp = 1.5 } }  # optional: dark until at
 //
 //   [[swarms]]                      # many fireflies (swarm.h)
 //   count = 512                     # 1 to 4096
@@ -163,6 +166,11 @@ namespace serenity::scene {
 //   flash = 0.35                    # its flight glows'
 //   dim = 0.25
 //   seed = 1
+//   start = { kind = "perch", min = [-0.2, 0.75, -0.3], max = [0.1, 0.8, 0.1],
+//             linger = [2, 8] }     # optional (swarm.h): air, the default;
+//                                   # above, with depth; or perch, with a box
+//                                   # and a linger's least and most
+//   wake = { from = 2, to = 30, power = 2, ramp = 1.5 }  # optional (swarm.h)
 //
 // A name is optional and unique among the shapes: it is how a flight names
 // what it circles.
@@ -181,7 +189,14 @@ namespace serenity::scene {
 //     and drifting, in the proportions `circle`, `swoop` and `drift` (each 0
 //     or more, not all 0), at a cruising `speed`, its surface at least
 //     `clearance` meters from every still surface, on a loop drawn from
-//     `seed`. Its every stretch is checked clear at load.
+//     `seed`. Its every stretch is checked clear at load. A `prelude`
+//     (flight.h) is optional: none, it flies from the first moment; hold,
+//     it waits still where its loop starts until `until` seconds; perch, it
+//     rests with its center at `at`, at least its radius and 3/4 of
+//     perch_gap from every still surface, until `until`, then rises to its
+//     loop, the rise checked clear as the flight checks it. Its reach, the
+//     volume grown to hold the prelude, grown by the sphere's radius, must
+//     lie in the world.
 //
 // The world is the cube within world_extent of the origin on every axis:
 // every shape must lie inside it, a sphere's center grown by its radius and
@@ -199,7 +214,15 @@ namespace serenity::scene {
 // numbers and a flight glow of its `flash` and `dim`, each with its own seed
 // and start, drawn from the swarm's seed: what a firefly written as a
 // [[shapes]] entry with a flight and a flight glow is, checked by the same
-// rules. Its shapes follow the file's [[shapes]], swarm by swarm.
+// rules. Its shapes follow the file's [[shapes]], swarm by swarm. Its
+// `start` (swarm.h) is optional: air, the default, anywhere in the volume
+// from the first moment; above, with `depth`, held in the volume's top that
+// many meters until each wakes; perch, with a box `min` to `max` and a
+// `linger` of a least and a most in seconds, resting on the still surfaces
+// found in the box until each wakes and lingers. Its `wake` is optional:
+// none, its fireflies are lit from the start; else each wakes between
+// `from` and `to` seconds, as the swarm's `power` spreads them, over `ramp`
+// seconds.
 //
 // A glow (core/animation/glow.h) is optional, and only a sphere that is a
 // light has one; without it, the light shines at its radiance always. Its
@@ -214,6 +237,10 @@ namespace serenity::scene {
 //     copied into a glow of the schedule kind, core/animation/flashes.h).
 //     The sphere's motion must be a flight; `flash` under a second.
 //
+// Either kind may have a `wake` (core/animation/glow.h): dark until `at`
+// seconds, then brightening to its glow over `ramp` seconds. Without one,
+// the light is lit from the start.
+//
 // Every key is checked, as in graph files: a missing or unknown key, a value
 // of the wrong type or out of range (a radius or size not greater than 0, an
 // ior not greater than 1, an f0 outside [0, 1], a roughness outside (0, 1], a
@@ -223,7 +250,12 @@ namespace serenity::scene {
 // could carry it out, a flight's box whose min is not below its max, a
 // negative clearance or weight, weights all 0, a circle weight with no
 // targets, a period under least_period or a flash out of range, a dim
-// outside [0, 1), a wood, swirl
+// outside [0, 1), a sky color below 0, a wake whose at is not finite or
+// whose ramp is below 0, a swarm wake whose from is below 0, whose to is
+// below its from, or whose power is not above 0, a prelude or start of an
+// unknown kind or missing what its kind needs (an until below 0, a depth not
+// above 0, a perch box whose min is not below its max or outside the world,
+// a linger whose least is below 0 or above its most), a wood, swirl
 // or coated color outside [0, 1], a ring under wood_least_ring or a board
 // outside wood_least_board to wood_most_board (core/textures/wood.h), a wood's
 // or swirl's seed past 2^32 - 1, a swirl's vanes outside 1 to 16, a medium's
@@ -234,10 +266,13 @@ namespace serenity::scene {
 // an interior on a shape whose material is not a dielectric (a medium fills
 // only what light can pass into), a glow on anything but a light, a flight
 // glow on a light that does not fly, a motion that cannot be made clear of the
-// still shapes, a swarm whose fireflies cannot start clear of them, or no
-// shapes at all is a SceneError naming the file and the line (E.2, E.14). Nothing
-// has a silent default except `up`, and the absences that mean something: no
-// lens is a pinhole, no interior is air, no motion is still.
+// still shapes, a perch too near a surface or a rise not clear, a swarm whose
+// fireflies cannot start clear of them or find perches, a flight whose
+// prelude could carry it out of the world, or no shapes at all is a
+// SceneError naming the file and the line (E.2, E.14). Nothing has a silent
+// default except `up`, and the absences that mean something: no lens is a
+// pinhole, no interior is air, no motion is still, no prelude flies at once,
+// no swarm start is air, no wake is lit from the start.
 //
 // Read once, at start-up. Every flight in the scene, written or a swarm's,
 // is made once every shape is read, all together, in parallel

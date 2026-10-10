@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "core/animation/extent.h"
@@ -20,11 +21,12 @@ namespace serenity::animation {
 //
 // A firefly flying free: circling the marbles and the brass sphere, swooping
 // in J-strokes, drifting, and travelling between them, never touching a
-// still shape and never leaving its volume. Made once, at load, as a loop of
-// episodes, then evaluated in closed form: where it is at t is a lookup and
-// a formula, with no state carried from the frame before (logical-
-// overview.md, principle 1), so any instant renders directly and the same t
-// always places it in the same spot.
+// still shape and, once its loop begins, never leaving its volume. Made
+// once, at load, as an opening, its prelude, and a loop of episodes, then
+// evaluated in closed form: where it is at t is a lookup and a formula, with
+// no state carried from the frame before (logical-overview.md, principle 1),
+// so any instant renders directly and the same t always places it in the
+// same spot.
 //
 // Why a loop made at load, and not a formula of t alone, as the wander is:
 // each episode must start where the last one ended, and every stretch of the
@@ -67,6 +69,30 @@ namespace serenity::animation {
 //            velocities, so the path is smooth through every join; over a
 //            waypoint at the volume's top when the direct curve would touch
 //            something.
+//   still    holding one point: a prelude's wait (below).
+//
+// The prelude, what it does before its loop begins, a Prelude given with
+// each flight (FlightJob), its kind one of:
+//
+//   NoPrelude  the loop begins at once, at t = 0: the flight as it was
+//              before preludes, the same loop for the same seed.
+//   Hold       it holds still at the loop's first point until `until`, then
+//              the loop begins: a firefly that waits, dark (glow.h, its
+//              wake), at the top of its volume, and comes down lit.
+//   Perch      it rests at `at`, a point on a still surface, until `until`,
+//              then rises to the loop's first point and the loop begins: a
+//              firefly that wakes on a marble or the table, glows and
+//              flashes there, and takes off. The perch is outside the volume
+//              as a rule (the volume's floor is above the marbles), and so
+//              is the rise's start: the volume bounds the loop, not the
+//              prelude.
+//
+// A perched firefly sits closer to the surface below it than the clearance
+// allows the loop, by design: `perch_gap` from it. Its perch and its rise are held instead to keeping the body at
+// least perch_gap / 2 from every still surface, at every point of the path,
+// not only at samples (steps P1 and P2). So the guarantee that a flight
+// never touches a still shape holds through the prelude; the clearance is
+// the loop's.
 //
 // make_flight(), by these steps, which the code carries by number:
 //
@@ -103,12 +129,55 @@ namespace serenity::animation {
 //           ..., each starting where the one before ends; the loop's length
 //           is their sum.
 //   Step 7  The flashes, the starts of the firefly's own blinks, as a
-//           schedule over the loop (flashes.h, read by a glow, glow.h): one
+//           schedule (flashes.h, read by a glow, glow.h): over the loop, one
 //           at each swoop's climb, and, at a rate drawn per firefly, a few
 //           while circling and fewer while drifting; a flash that would
 //           start within flash_spacing (a second) of the one before is left
 //           out, so no two are closer, the loop's last and first included.
-//           In time order.
+//           In time order. The loop's flashes are drawn as they were before
+//           preludes, from the same keys, so a flight's loop flashes the
+//           same with any prelude. Over the opening, once each: while it
+//           waits (hold or perch), at its drifting rate, as seldom as a
+//           drifting firefly; none on the rise. Those are drawn from keys of
+//           their own, and an opening flash within flash_spacing of the one
+//           before, or of the loop's first, is left out. A held firefly is
+//           dark while it waits, as the scene gives it (its glow's wake,
+//           scene.h), so its opening flashes show only where a wake comes
+//           before the hold ends: the schedule is the flight's, the wake the
+//           glow's, and neither knows the other.
+//
+// Then the prelude, by these steps, made after the loop, since it ends where
+// the loop starts:
+//
+//   Step P1  Check the prelude's numbers: `until` finite and 0 or more; a
+//            perch's distance to the still surfaces (contract 11) at least
+//            body + 3 perch_gap / 4, so the rise starts with room (P2). A
+//            perch nearer is refused, as an episode is.
+//   Step P2  The opening's segments: for hold, a still segment at the
+//            loop's first point lasting `until`; for perch, a still segment
+//            at the perch lasting `until`, then the rise, a transit from the
+//            perch, leaving straight up at the cruising speed, to the loop's
+//            first point, arriving at the loop's own velocity there, so the
+//            path is smooth into the loop; its duration a transit's (from
+//            its chord at the cruising speed). A still segment of no length
+//            is left out. The rise is checked by conservative advancement
+//            (Mirtich 1996; Hart 1996, sphere tracing): from u = 0, at the
+//            point p(u) the distance d to the still surfaces is exact for
+//            the kinds there are (contract 11), so no surface lies within
+//            d - r of any point within r of p; the slack s = d - body -
+//            perch_gap / 2 is how far the path may go before it could come
+//            too near, and the next sample is at u + s / V, V bounding the
+//            curve's speed in u (its derivative's Bezier hull, as step 3's
+//            bound). A slack under perch_gap / 4 refuses the rise, which
+//            keeps every step at least perch_gap / (4 V) and the samples at
+//            most 4 V / perch_gap: compared with most_steps as a double
+//            before the walk (ES.46). The rise must also keep within the
+//            world, which its hull, below, shows the reader.
+//            A rise that is not clear is refused (a MotionError): a perch
+//            under an overhang, or with something between it and the loop.
+//   Step P3  Lay the opening out from 0; the loop begins at its end,
+//            `begin`. No prelude, or a hold of no length: no opening, begin
+//            0.
 //
 // If an episode cannot be drawn clear within those redraws, make_flight throws
 // a MotionError (motion_error.h) naming it: a target with no room to circle it, a
@@ -121,7 +190,11 @@ namespace serenity::animation {
 // std::invalid_argument for one that is not (I.5, E.2); a default Flight is
 // not one.
 //
-//   Step E1  t into the loop: tau = t mod the loop's length.
+//   Step E0  A flight with an opening, at t before `begin`: the opening's
+//            segment holding t, or its first at t before 0, where it is at
+//            0; its closed form there. A flight without one keeps E1's
+//            repeat before 0, as it did before preludes.
+//   Step E1  t into the loop: tau = (t - begin) mod the loop's length.
 //   Step E2  The segment holding tau, by binary search on the starts.
 //   Step E3  Its closed form at tau - its start.
 //
@@ -138,12 +211,13 @@ namespace serenity::animation {
 // Cost. At load, per firefly: 64 episodes and 64 transits, each some tens to
 // a few hundred samples, each sample one distance (contract 11) over every
 // still shape: some 10^4 to 10^5 distance tests per firefly per still
-// shape, the load's largest cost. The load's measurements, and when a
+// shape, the load's largest cost. A rise adds tens to hundreds (step P2). The load's measurements, and when a
 // spatial index behind the obstacles would pay, are in
 // docs/research/2026-10-10-flight-load.md. Memory: some 140 segments of 22
 // doubles, some 25 KB per firefly. Per frame: one binary search over some
 // 140 starts and one closed form of a few sines or a cubic, nothing
-// allocated (MEM.9).
+// allocated (MEM.9); a flight with an opening, one comparison with begin
+// more, and before it a search of at most two segments.
 
 // Step 3's sampling bound, delta, in meters.
 inline constexpr double flight_delta = 0.01;
@@ -167,6 +241,11 @@ inline constexpr double swoop_flash_at = 0.55;
 // reach it (ES.45, CDSA.21).
 inline constexpr std::int64_t flight_most_steps = 1'000'000;
 
+// How far a perched firefly's body sits from the surface it rests on, in
+// meters: half a millimeter, a firefly's legs (step P1). Its perch and rise
+// keep at least half of it from every still surface (step P2).
+inline constexpr double perch_gap = 0.0005;
+
 // A still sphere a flight circles: where it is and how big.
 struct Target {
     contracts::Float3 center{};
@@ -188,7 +267,26 @@ enum class Behaviour {
     circle,
     swoop,
     drift,
+    still,
 };
+
+// What a flight does before its loop begins (above): one of three kinds,
+// each with only its own numbers, as a std::variant, a tagged union the
+// library keeps type safe (C.181, C.182): a hold's numbers cannot be read as
+// a perch's. Made at load and read there, never on a frame's path. Visited
+// with a case per kind, so a kind without one fails the build.
+struct NoPrelude {};
+
+struct Hold {
+    double until = 0.0;  // seconds it waits; finite, 0 or more
+};
+
+struct Perch {
+    contracts::Float3 at{};  // where its center rests (step P1)
+    double until = 0.0;      // seconds it rests; finite, 0 or more
+};
+
+using Prelude = std::variant<NoPrelude, Hold, Perch>;
 
 // One stretch of the path: its behaviour, when it starts within the loop,
 // how long it lasts, and the numbers of its closed form, whose meaning is
@@ -202,23 +300,37 @@ struct Segment {
 };
 
 struct Flight {
-    Extent volume;
-    std::vector<Segment> segments;  // in time order, covering [0, loop)
+    Extent volume;                  // the loop's
+    Extent reach;                   // the box its center never leaves: the volume, grown to hold the opening
+    std::vector<Segment> opening;   // the prelude, in time order, covering [0, begin); none without one
+    double begin = 0.0;             // when the loop begins, in seconds
+    std::vector<Segment> segments;  // the loop, in time order, covering [0, loop) from begin
     double loop = 0.0;              // the loop's length, in seconds
-    FlashSchedule flashes;          // its flashes, over the same loop (step 7)
+    FlashSchedule flashes;          // its flashes, over the opening and the loop (step 7)
 };
 
-// The flight for these numbers, starting at `start`, of a body of radius
-// `body`, kept clear of `obstacles`, by steps 1 to 7. Throws
-// std::invalid_argument for numbers out of range (above), a start not clear,
-// or an episode that cannot be drawn clear.
-Flight make_flight(const FlightParams& params, contracts::Float3 start, float body,
-                   const contracts::Obstacles& obstacles);
+// One flight's inputs: the shared numbers, where its loop starts (episode
+// 0's drift is about it), its body's radius and its prelude. One argument
+// for make_flight() rather than five (I.23), the same record make_flights()
+// takes a vector of.
+struct FlightJob {
+    FlightParams params;
+    contracts::Float3 start{};
+    float body = 0.0f;
+    Prelude prelude;
+};
+
+// The flight for `job`, of a body of radius job.body, kept clear of
+// `obstacles`, by steps 1 to 7 and P1 to P3. Throws std::invalid_argument
+// for numbers out of range (above, and a prelude's until), and a MotionError
+// for a start, a perch or a rise not clear, or an episode that cannot be
+// drawn clear.
+Flight make_flight(const FlightJob& job, const contracts::Obstacles& obstacles);
 
 // Many flights, each as make_flight() makes it, made in parallel: flight k
-// of the result is make_flight(jobs[k]...), whatever the number of threads,
-// since each is a function of its own numbers alone and `obstacles` answers
-// the same from any thread (contract 11). `workers` threads (at least one,
+// of the result is make_flight(jobs[k], obstacles), whatever the number of
+// threads, since each is a function of its own numbers alone and
+// `obstacles` answers the same from any thread (contract 11). `workers` threads (at least one,
 // and no more than there are jobs), each taking the next unmade flight: an
 // input, not read from the machine here (I.1), so a test can show the
 // result is the same for any count; the scene reader passes
@@ -240,11 +352,6 @@ public:
     std::string reason;  // why, as make_flight said it (I.4: not parsed back out of what())
 };
 
-struct FlightJob {
-    FlightParams params;
-    contracts::Float3 start{};
-    float body = 0.0f;
-};
 std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles,
                                  std::size_t workers);
 
@@ -255,7 +362,9 @@ std::size_t flight_workers();
 // Where it is at `t`, by steps E1 to E3.
 contracts::Float3 position(const Flight& flight, frame::Seconds t);
 
-// The box its center never leaves: its volume.
+// The box its center never leaves: its reach, the volume grown to hold the
+// opening: the perch, and the rise's Bezier control points, whose box holds
+// the curve (the convex hull property), rounded outward to float.
 Extent extent(const Flight& flight);
 
 }  // namespace serenity::animation

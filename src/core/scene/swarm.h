@@ -1,8 +1,12 @@
 #pragma once
 
 #include <cstdint>
+#include <numbers>
+#include <optional>
+#include <variant>
 
 #include "core/animation/flight.h"
+#include "core/animation/glow.h"
 #include "core/contracts/float3.h"
 #include "core/contracts/obstacles.h"
 
@@ -16,12 +20,34 @@ namespace serenity::scene {
 // the swarm's radius wearing its emissive material, so a sphere light,
 // flying (core/animation/flight.h) and flashing with its flight
 // (core/animation/glow.h, the flight kind). They differ only in their
-// seeds and where they start, which a rule draws, so a scene of five hundred
-// fireflies is one entry, not five hundred that differ in two numbers.
+// seeds, where they start and when they wake, which rules draw, so a scene
+// of five hundred fireflies is one entry, not five hundred that differ in a
+// few numbers.
 //
 // A swarm adds no kind to any family: no shape, light, motion or glow kind,
 // and nothing past the scene reader knows a firefly came from one. Its
-// fireflies are checked as written ones are, by the same rules (scene.h).
+// fireflies are checked as written ones are, by the same rules (scene.h):
+// a written firefly may hold or perch, and wake, as a swarm's does.
+//
+// How its fireflies start, the swarm's start kind (none written: air):
+//
+//   air     in the air, anywhere in the volume, flying from the first
+//           moment: the flight's prelude none (core/animation/flight.h).
+//   above   in the top `depth` meters of the volume, holding still there
+//           until it wakes (its glow's wake, below), then flying: the
+//           prelude hold. Its loop, mostly circling the marbles below where
+//           the scene weights it so, brings it down lit.
+//   perch   resting on a still surface, a marble's top or the table, at a
+//           point found in the swarm's perch box, until it wakes and has
+//           lingered there a drawn while, glowing; then it rises to its
+//           loop's start, straight above the perch, and flies: the prelude
+//           perch.
+//
+// When its fireflies wake (none written: lit from the start): each its own
+// moment from `from` to `to` seconds, then brightening over `ramp` seconds
+// (glow.h, Wake). The moments are drawn so that the share awake by t grows
+// as ((t - from) / (to - from))^power: power 1 an even rate, larger a slow
+// start, one by one, and then many.
 //
 // The fireflies of a swarm, by these steps, which the code carries by
 // number:
@@ -43,20 +69,86 @@ namespace serenity::scene {
 //           start_attempts times. So the whole first drift keeps the
 //           flight's clearance and stays in its volume, as the flight
 //           requires of its start. Failing all, the swarm is refused, naming
-//           the firefly: a volume the still shapes fill.
-//   Step 3  It becomes a sphere at its start, of the swarm's radius, wearing
+//           the firefly: a volume the still shapes fill. For above, the
+//           height is drawn within the top `depth` of that shrunk range
+//           (all of it, if it is shallower than `depth`); the draws are
+//           otherwise air's, keyed alike.
+//   Step 2p For perch, in place of step 2, each attempt up to
+//           start_attempts, from draws keyed (seed_i, perch_draws, attempt,
+//           axis), apart from step 2's:
+//             - x and z uniformly within the perch box's; from the box's
+//               top, sphere tracing down the vertical (Hart 1996): step
+//               down by d - (radius + perch_gap), d the distance to the
+//               still surfaces there (contract 11), until within
+//               perch_gap / 10 of it, at most perch_steps steps, and never
+//               below the box's floor. The distance is exact, so no step
+//               passes a surface: the perch is the first point down the
+//               line at the perch's height above a surface;
+//             - that surface must face up: the distance's rise along y, by
+//               a central difference over perch_gap / 2, at least
+//               cos(perch_steepest), so the firefly sits on a marble's top
+//               or the table, not on a marble's flank;
+//             - its loop's start straight above it: x and z the perch's,
+//               held within step 2's shrunk range, the height drawn
+//               uniformly in that range, and clear as step 2's start must
+//               be.
+//           A box with no surface in it, its top inside a shape, or a
+//           perch whose loop start is never clear, fails the attempt;
+//           failing all, the swarm is refused, naming the firefly. The
+//           flight checks the perch and the rise again, as it checks any
+//           (flight.h, P1 and P2).
+//   Step 3  Its wake, with the swarm's: at = from + (to - from) u^(1/power),
+//           u = draw(seed_i, wake_draws), so the share of the swarm awake by
+//           t, from u's uniform draw, is ((t - from) / (to - from))^power;
+//           its ramp the swarm's. For perch, its linger, uniform from
+//           draw(seed_i, linger_draws) between the swarm's least and most.
+//   Step 4  It becomes a sphere at its start, of the swarm's radius, wearing
 //           the swarm's material; a sphere light; a flight with the swarm's
-//           volume, targets, speed, clearance and weights and its own seed;
-//           and a flight glow with the swarm's flash and dim. Shapes of
-//           swarms follow the file's [[shapes]], swarm by swarm in file
-//           order, firefly by firefly: a firefly's index, and so its
-//           primitive and its light, is fixed by the file.
+//           volume, targets, speed, clearance and weights, its own seed, and
+//           its prelude: for air none; for above, hold until its wake's at
+//           (0 with no wake); for perch, perch at its perch until its wake's
+//           at (0 with no wake) plus its linger; and a flight glow with the
+//           swarm's flash and dim, and its wake. Shapes of swarms follow the
+//           file's [[shapes]], swarm by swarm in file order, firefly by
+//           firefly: a firefly's index, and so its primitive and its light,
+//           is fixed by the file.
+//
+// A firefly's draws are keyed apart by purpose: step 2's by attempt, under
+// start_attempts; the others' first counters, perch_draws, wake_draws and
+// linger_draws, at 2^32 and up, past any attempt. So a swarm of air
+// fireflies with no wake starts each where it started before starts and
+// wakes had kinds (GDSA.3).
 //
 // The flights themselves are made with every other flight in the scene,
 // in parallel (flight.h, make_flights).
 //
 // Cost, at load: step 2 asks contract 11 for a distance a few times per
-// firefly; the flights are flight.h's.
+// firefly; step 2p some tens, a trace of a few steps and its checks, per
+// attempt; the flights are flight.h's.
+
+// How a swarm's fireflies start (above): one of three kinds, each with only
+// its own numbers, a std::variant as the flight's Prelude is (C.181, C.182).
+struct AirStart {};
+
+struct AboveStart {
+    double depth = 0.0;  // meters of the volume's top it starts in; > 0
+};
+
+struct PerchStart {
+    contracts::Box box{};       // where perches are found; min below max
+    double linger_least = 0.0;  // seconds it stays after waking; 0 or more
+    double linger_most = 0.0;   // at least linger_least
+};
+
+using SwarmStart = std::variant<AirStart, AboveStart, PerchStart>;
+
+// When a swarm's fireflies wake (above, step 3).
+struct SwarmWake {
+    double from = 0.0;   // seconds; finite, 0 or more
+    double to = 0.0;     // seconds; finite, at least from
+    double power = 1.0;  // finite, > 0
+    double ramp = 0.0;   // seconds; finite, 0 or more
+};
 
 // A swarm as read from its table (scene.h): everything but the material,
 // which the scene reader keeps.
@@ -66,21 +158,42 @@ struct Swarm {
     animation::FlightParams flight;      // the swarm's seed in flight.seed
     float flash = 0.0f;                  // the flight glow's (glow.h)
     float dim = 0.0f;
+    SwarmStart start;                    // none written: air
+    std::optional<SwarmWake> wake;       // none written: lit from the start
+};
+
+// One firefly as steps 2 to 3 draw it: where its loop starts, its prelude
+// (flight.h) and its wake (glow.h).
+struct Firefly {
+    contracts::Float3 start{};
+    animation::Prelude prelude;
+    std::optional<animation::Wake> wake;
 };
 
 // The most fireflies one swarm makes: some 25 KB of flight each (flight.h),
 // 100 MB at this count, and a load of seconds.
 inline constexpr std::uint32_t max_swarm = 4096;
 
-// Step 2's draws before the swarm is refused.
+// Step 2's and step 2p's draws before the swarm is refused.
 inline constexpr int start_attempts = 64;
+
+// Step 2p's sphere tracing: its most steps, and the steepest a surface may
+// be from level for a firefly to perch on it, in radians (30 degrees).
+inline constexpr int perch_steps = 64;
+inline constexpr double perch_steepest = 30.0 * std::numbers::pi / 180.0;
+
+// The first counters of a firefly's draws other than step 2's (above).
+inline constexpr std::uint64_t perch_draws = std::uint64_t{1} << 32;
+inline constexpr std::uint64_t wake_draws = perch_draws + 1;
+inline constexpr std::uint64_t linger_draws = perch_draws + 2;
 
 // Step 1: firefly i's seed.
 std::uint64_t firefly_seed(std::uint64_t swarm_seed, std::uint32_t i);
 
-// Step 2: firefly i's start, clear of `obstacles`. Throws an
-// animation::MotionError (core/animation/motion_error.h) naming the firefly if its
-// volume has no room for a drift or none of its draws is clear.
-contracts::Float3 firefly_start(const Swarm& swarm, std::uint32_t i, const contracts::Obstacles& obstacles);
+// Steps 2 to 3: firefly i, clear of `obstacles`. Throws an
+// animation::MotionError (core/animation/motion_error.h) naming the firefly
+// if its volume has no room for a drift, or none of its draws is clear or
+// finds a perch.
+Firefly make_firefly(const Swarm& swarm, std::uint32_t i, const contracts::Obstacles& obstacles);
 
 }  // namespace serenity::scene

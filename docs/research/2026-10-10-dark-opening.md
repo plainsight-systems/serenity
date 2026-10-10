@@ -1,0 +1,78 @@
+# The dark opening: fireflies that wake, perch and descend
+
+*2026-10-10. Design note for the marbles' opening; the headers are the
+design (core/animation/flight.h, glow.h, flashes.h; core/scene/swarm.h,
+scene.h). This note keeps what the headers should not: the facts behind
+the design, and the alternatives weighed and set aside.*
+
+## Question
+
+The marbles' first seconds show no firefly: at t = 1 the frame holds the
+table, the marbles and a faint sky. The art direction (2026-10-10) is the
+opposite of an empty frame that fills by chance: start pitch black, with no
+sky; a few fireflies wake one by one, some resting on the table and the
+marbles, lighting what they rest on, then rise; the main swarm comes down
+from above; and the scene fills. What must the animation do for that, and
+how is it kept a closed form of t, checked at load, as everything else is?
+
+## Facts
+
+- The camera is at y = 0.88, looking down at the cluster, about 0.3 by
+  0.2 m in frame at the focus. The marbles stand on the table top at
+  0.75, their tops at most 0.775. The swarms' volume starts at 0.795.
+- A swarm's start (swarm.h, step 2) must be clearance + radius + delta +
+  first_drift_reach sqrt 3, some 0.19 m, from every still surface: every
+  start is at y 0.97 or higher, above the camera. A firefly reaches the
+  frame only when its loop brings it down, so the frame at t = 0 is empty,
+  and fills at the loops' pace.
+- The naive path tracer traces a shadow ray to the light it chooses
+  whatever its glow (metal/integrator/direct.metal.h, from_lights: no test
+  of the radiance before `occluded`). A dark firefly costs a frame what a
+  lit one does: the opening changes the image, not the frame's time.
+- It does change the image's noise. The path tracer chooses one light of
+  616 uniformly; with a few awake, almost every choice is dark. The opening
+  is the naive estimator's worst case, which is the case ReSTIR DI is for.
+- Fireflies themselves (Photinus, Lloyd 1966): the males fly and flash,
+  the females answer from perches in the grass; their flashing begins at
+  dusk, a few, then many. A swarm that perches and one that flies, waking
+  over tens of seconds, is that, at the scene's scale.
+
+## Design, and what was set aside
+
+| Choice | Kept | Set aside, and why |
+|---|---|---|
+| How a light comes on | A wake on the glow: 0 before `at`, a smoothstep up to the glow over `ramp` | A one-time flash at the wake: a flash outside the flight's schedule, with spacing rules of its own against it, for what the ramp and the next scheduled flash already show |
+| Where the wake lives | An optional member of each glow kind's record, one function both call (ES.3) | On the Glower in animate.h: the Animate step would then compute brightness, which is glow.h's question; animate() stays a loop over records |
+| Wake times | Drawn per firefly so the share awake grows as a power of time | Uniform times: an even rate, no "one by one, then many"; a fixed order by index: the first lights would all sit at the swarm's first-drawn starts |
+| Above | Start in the volume's top, hold still until the wake, then the loop | A descent segment of its own: the loop's first transit already goes down to a circle, which the marbles' weights (circle 6, drift 1) make most first episodes |
+| Perch | A point a perch_gap above an upward-facing surface, found by sphere tracing down (Hart 1996) | Perching at the loop's clearance, some 2 cm above with delta: hovering, not resting; allowing any surface: fireflies stuck to a marble's flank |
+| Checking the rise | Conservative advancement (Mirtich 1996) to perch_gap / 2, exact everywhere on the path | Step 3's uniform samples at the perch's scale, perch_gap / 4 apart: some four thousand per rise, nearly all far from any surface; relaxing the clearance to 0: the body could touch |
+| A perched firefly's loop start | Straight above its perch, at a drawn height | Step 2's start anywhere in the volume: a rise up to a meter across, some 24 s at the marbles' speed |
+| Kinds with their own numbers | std::variant (C.181, C.182) for Prelude and SwarmStart | A kind and fields read for some kinds only, as the GPU records are: those are shared layouts, which a variant cannot be; these never leave the CPU |
+| Written fireflies | May hold, perch and wake as a swarm's do | Swarm-only preludes: swarm.h's rule is that a swarm's firefly is what a written one is |
+| Flashes before the loop | The flight draws its opening's flashes at its drifting rate, from keys of their own | None while waiting: a perched firefly that only glows, which Photinus females do not do |
+
+The loop of every flight without a prelude is what it was: the same
+episodes, the same flashes, from the same keys. A swarm with no start and
+no wake draws its fireflies as before. tests/flight_test.cpp pins one
+seed's loop, which this change must leave unmoved.
+
+## Cost, to be measured
+
+- Per frame: one comparison in position() and in glow(), a search of at
+  most two segments for a firefly in its opening, a polynomial during a
+  ramp. `animate()` took 43 µs a frame for the marbles; it is measured
+  before and after.
+- At load: a perch's sphere trace and checks, and its rise's advancement,
+  some tens to hundreds of distances per perched firefly, beside the
+  10^4 to 10^5 of its loop. The load is measured before and after.
+- On the GPU: none per frame (above). The time baseline (28.44 ms,
+  2026-10-10-corpus-sweep.md) is of the marbles as they were; the scene
+  this change makes is re-measured at the same frames, and the baseline
+  recorded again if it moves.
+
+## Open
+
+The art itself: wake ranges, the perch box, the lingers and the ramp are
+the scene's numbers, set by rendering the opening as a short clip and
+looking at it.
