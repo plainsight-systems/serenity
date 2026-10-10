@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "core/film/linear_image.h"
+#include "core/contracts/linear_image.h"
 #include "core/frame/extent.h"
 
 namespace serenity::measurement {
@@ -21,7 +21,8 @@ namespace serenity::measurement {
 // A reference is made of batches: B independent images of the same scene,
 // time, size and graph, each the GPU's mean of N samples (the headless
 // renderer, --time, --samples N, --first k for batch k, so no two batches
-// share a sample's random numbers: headless/options.h). Why batches, and
+// share a sample's random numbers, every index under 2^32, which the
+// headless renderer holds them to: headless/options.h). Why batches, and
 // not one image of B x N samples: the GPU keeps a pixel's running mean in
 // float (metal/film/accumulate.metal.h), and a sample's step, (sample -
 // mean) / (n + 1), under half the mean's last place is lost; at n = 2^16
@@ -69,13 +70,13 @@ namespace serenity::measurement {
 class ReferenceBuilder {
 public:
     // Folds `batch` in; see above.
-    void add(const film::LinearImage& batch);
+    void add(const contracts::LinearImage& batch);
 
     std::size_t batches() const noexcept { return count_; }
 
     // The reference: the batches' mean, rounded to float. Throws
     // std::logic_error before the first batch.
-    film::LinearImage mean() const;
+    contracts::LinearImage mean() const;
 
     // The two floors, above. Throw std::logic_error with fewer than two
     // batches.

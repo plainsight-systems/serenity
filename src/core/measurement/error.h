@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/film/linear_image.h"
+#include "core/contracts/linear_image.h"
 
 namespace serenity::measurement {
 
@@ -49,6 +49,6 @@ struct ImageError {
 };
 
 // The error of `image` against `reference`; see above.
-ImageError error_against(const film::LinearImage& image, const film::LinearImage& reference);
+ImageError error_against(const contracts::LinearImage& image, const contracts::LinearImage& reference);
 
 }  // namespace serenity::measurement

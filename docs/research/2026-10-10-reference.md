@@ -1,9 +1,9 @@
 # The reference, and the error against it
 
 *2026-10-10. Design note for Milestone 1's last item; the headers are the
-design (core/film/linear_image.h, core/output/pfm.h,
-core/measurement/reference.h, error.h, headless/options.h --format,
-measure/options.h). This note keeps the facts behind it and what was set
+design (core/contracts/linear_image.h, contract 13; core/output/pfm.h,
+image_format.h; core/measurement/reference.h, error.h; headless/options.h
+--format; measure/options.h). This note keeps the facts behind it and what was set
 aside.*
 
 ## Question
@@ -56,8 +56,13 @@ how far an image is from it, or how far the reference is from the truth.
 
 The headless renderer gains --format pfm, the accumulated image's radiance
 before tone mapping; a new program, serenity-measure, makes a reference
-from batches and measures images against it. Both are CPU-side after the
-frame: no shader, no pass and no frame-time cost change.
+from batches and measures images against it, on the CPU. No shader or pass
+is added, and no frame of the window costs more. A reference does cost the
+GPU what its graph does: graphs/path.toml is the path pass and then the
+tone map, so every sample of a batch also tone maps, into an image a PFM
+never reads; and each batch's PFM is one readback of the accumulated
+image, 16 bytes a pixel, 33 MB at 1920 x 1080, copied once (GPU.1). Both
+are budgeted below, under the review.
 
 ## How it is run (the Makefile's targets)
 
@@ -83,6 +88,42 @@ frame: no shader, no pass and no frame-time cost change.
   as 1 / samples, a slope of -1 on doubling axes, until it nears the floor.
   A slope that is not -1 says the reference, the measure or the estimator
   is wrong.
+
+## Review
+
+Codex reviewed the design (4376269, both focuses). Taken, in the headers:
+
+- A PFM's scale is a factor on every value, which pbrt-v4's reader
+  applies; the reader here took any negative scale and ignored it. Now a
+  scale other than exactly -1 is refused.
+- The headless renderer accepted sample indices past 2^32, while the
+  shaders key random numbers by the low 32 bits: a batch from --first
+  4194304 at 1024 samples would have drawn batch 0's numbers again,
+  silently. Indices past 2^32 - 1 are now refused (headless/options.h).
+  Older than this design; found by it.
+- The image passed between Film, Output and Measurement is now contract
+  13 (core/contracts/linear_image.h), not a Film header the others
+  include (file-mapping.md: families depend on contracts).
+- Its side limit no longer derives from Metal's: the core's own bound on
+  what a file may make a reader allocate.
+- The list of output formats is Output's (core/output/image_format.h), not
+  the headless renderer's.
+- This note said the reference costs the GPU nothing beyond its frames;
+  corrected above.
+
+Set aside, as costs too small to design around (Per.2), each to be
+confirmed by timing a batch when the first reference is rendered:
+
+- Frozen time rebuilds the same acceleration structure every sample:
+  animate() is 43 µs a frame and a rebuild some 95 to 161 µs, so some 9
+  to 13 s of a 65,536-sample reference's some 9 minutes, 2%. Caching the
+  scene by its time would touch the renderer's frame loop for every run.
+- The tone map runs every sample into an image no PFM reads: at 1920 x
+  1080 some 0.2 ms a sample (0.6 ms over the display pass at 3456 x 2234,
+  2026-10-09-pass-costs.md, scaled by pixels, the display pass's own
+  share unmeasured), some 13 s of a reference, 2%. A graph that ends
+  after the path pass would change the rule that a graph computing light
+  ends in a presenting pass (core/frame/schedule.h), for every graph.
 
 ## Results
 

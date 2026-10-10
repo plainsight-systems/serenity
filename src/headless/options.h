@@ -8,6 +8,7 @@
 #include <string>
 
 #include "core/frame/extent.h"
+#include "core/output/image_format.h"
 #include "core/frame/frame_inputs.h"
 
 namespace serenity::headless {
@@ -63,12 +64,14 @@ namespace serenity::headless {
 // counted in frames, not samples. A frame not written is not read back
 // either, so `last` costs little more than the GPU's time.
 //
-// What a written frame is, --format:
+// What a written frame is, --format, one of Output's kinds
+// (core/output/image_format.h), each written to frame-NNNNNN and its
+// extension:
 //   png  the frame as displayed, 8 bits a channel, tone mapped: for
 //        looking at, and the default (core/output/png.h);
 //   pfm  the graph's accumulated image, linear radiance in floats before
 //        tone mapping, its pixels' counts left out: for measuring
-//        (core/output/pfm.h, core/film/linear_image.h), to frame-NNNNNN.pfm.
+//        (core/output/pfm.h, core/contracts/linear_image.h).
 //        What a reference is made of, and what is judged against one
 //        (core/measurement/). Only a graph that accumulates has that image
 //        (core/frame/history.h, accumulates): asked of one that does not,
@@ -84,8 +87,14 @@ namespace serenity::headless {
 // frame::max_accumulated_frames, core/frame/frame_inputs.h), a size
 // with a zero side, a step that is not positive and finite, a time that is
 // not finite or is negative, --time with --step, a range whose last sample's
-// index, (first + frames) x N - 1, is past the last there can be, a missing
-// --graph or --out. A run that accumulates more samples across its frames
+// index, (first + frames) x N - 1, is past 2^32 - 1, a missing --graph or
+// --out. The shaders key every random number by an index's low 32 bits
+// (contracts/frame_constants.h, frame_index), so a sample at 2^32 + k
+// would draw sample k's numbers again: two samples of a run, or a
+// reference's batch and an image judged against it, that look independent
+// and are one (core/measurement/reference.h). The window's frames wrap
+// there, after two years; a headless run is refused before it renders one
+// (E.2, ES.46). A run that accumulates more samples across its frames
 // than an image holds is refused by the renderer at the first sample past
 // it: whether it accumulates across frames depends on the scene, which
 // parse() does not read. It does not touch the file system: the graph is
@@ -108,10 +117,6 @@ enum class Write {
     doubling,
 };
 
-enum class Format {
-    png,
-    pfm,
-};
 
 // What parse() read: plain values, which parse() alone makes and checks
 // (C.2: a struct, since nothing here keeps an invariant after it).
@@ -126,7 +131,7 @@ struct Options {
     std::filesystem::path out;
     Write write = Write::all;
     std::uint64_t samples = 1;  // rendered per frame, at its instant
-    Format format = Format::png;
+    output::ImageFormat format = output::ImageFormat::png;
 };
 
 // Which of a run's frames: the one `after_first` frames after its first, of

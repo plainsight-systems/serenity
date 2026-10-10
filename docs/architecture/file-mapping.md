@@ -114,6 +114,7 @@ depend on contracts, not on each other.
 | 10 | **Transform**: where an instance of a geometry is, from its own coordinates to the world's | Shape | Animation, Light, Acceleration |
 | 11 | **Obstacles**: what a motion must keep clear of, as distances and touches against the still shapes | Animation | Scene content (answers) |
 | 12 | **Medium**: what fills a shape's inside, and the share of light a stretch through it keeps | Medium | Integrator; named by Shape |
+| 13 | **Linear image**: a rendered image's radiance on the CPU, three floats a pixel, before tone mapping | Film | Output, Measurement |
 
 Each is designed on its own, header first, before the code that uses it.
 Contract 7 was the first written: `src/core/contracts/frame_constants.h`.
@@ -123,7 +124,9 @@ tracer: `surface_interaction.h` and `bsdf.h`, the shared layouts, with the
 functions' semantics stated there and written by each backend; contract 3,
 `emitter.h`, with them. Contract 6 starts as one image, the accumulated
 mean a converging pass folds its frames into (`metal/frame/accumulation.h`),
-and grows into the images between passes when a pass first reads another's. The camera is one contract for every
+and grows into the images between passes when a pass first reads another's.
+Contract 13, `linear_image.h`, came with the reference: the radiance Film
+hands to Output's files and Measurement's errors. The camera is one contract for every
 camera, as Falcor's `CameraData` is, since a frame has one camera and
 cameras differ by parameters, not code.
 
