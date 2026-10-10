@@ -10,6 +10,7 @@
 // scene_acceleration.h). The exact hit and the normal are the shader half
 // (metal/shapes/sphere.metal.h).
 
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 #include "core/contracts/transform.h"
 #include "core/shapes/primitive.h"
@@ -19,7 +20,7 @@ namespace shapes {
 
 #if !defined(__METAL_VERSION__)
 // Its extent in object space: [-1, 1] on each axis.
-inline Bounds sphere_bounds() {
+constexpr Bounds sphere_bounds() noexcept {
     return Bounds{{-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}};
 }
 

@@ -20,6 +20,12 @@
 //       in [0, 1), with the radiance arriving along it, the distance to the
 //       light's surface along it, and its pdf per unit solid angle. pdf 0
 //       means no sample (the point is inside the light).
+//
+//       u = (0, 0) draws the light's middle as seen from the point: for a
+//       sphere, the direction to its center. Every kind maps u so, and an
+//       estimator that aims at a light with one fixed sample, as the
+//       deterministic preview does, passes (0, 0) and relies on this alone,
+//       never on a kind's mapping (I.1, I.5).
 //   float light_pdf(light, point, direction)
 //       the density with which sample_light() draws `direction` from
 //       `point`: what ReSTIR's resampling weights need of a candidate, and
@@ -44,7 +50,9 @@
 // precision for any fixed margin to fall reliably short.
 //
 // The sphere light (lights/sphere_light.h) draws uniformly over the cone it
-// fills from the point, pdf = 1 / (2 pi (1 - cos a)), sin a = r / d, and its
+// fills from the point, cos t = 1 - u.x (1 - cos a) from the cone's axis, so
+// u.x = 0 is the axis, toward the center, pdf = 1 / (2 pi (1 - cos a)),
+// sin a = r / d, and its
 // radiance is the same everywhere on it and every way.
 //
 // A light sample is given the light: the probability of choosing that light
@@ -52,23 +60,14 @@
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
-
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 
 namespace serenity {
 namespace contracts {
 
 // The shape a light is not, for primitive below.
-#if defined(__METAL_VERSION__)
-constant constexpr uint32_t no_primitive = 0xffffffffu;
-#else
-constexpr uint32_t no_primitive = 0xffffffffu;
-#endif
+SERENITY_CONSTANT uint32_t no_primitive = 0xffffffffu;
 
 struct LightSample {
     Float3 direction;    // unit, from the point toward the light
@@ -80,6 +79,9 @@ struct LightSample {
 };
 
 static_assert(sizeof(LightSample) == 48, "LightSample must be the same 48 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<LightSample>, "LightSample is written to the GPU as bytes");
+#endif
 
 }  // namespace contracts
 }  // namespace serenity

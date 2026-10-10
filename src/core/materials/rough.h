@@ -9,6 +9,7 @@
 // albedo / pi, which the preview evaluates for the light reaching it
 // straight from the lights and the sky (metal/passes/preview/preview.h).
 
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 #include "core/contracts/texture_reference.h"
 
@@ -21,6 +22,9 @@ struct RoughData {
 };
 
 static_assert(sizeof(RoughData) == 16, "RoughData must be the same 16 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<RoughData>, "RoughData is written to the GPU as bytes");
+#endif
 
 }  // namespace materials
 }  // namespace serenity

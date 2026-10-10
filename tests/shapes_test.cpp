@@ -2,6 +2,7 @@
 // whether it touches a world box, whatever its kind.
 
 #include <cmath>
+#include <stdexcept>
 
 #include <doctest/doctest.h>
 
@@ -90,4 +91,12 @@ TEST_CASE("a placed geometry's world box: the tight box of the transformed box, 
     const Bounds turned_box = world_bounds(Bounds{{-2.0f, -1.0f, -1.0f}, {2.0f, 1.0f, 1.0f}}, diagonal);
     CHECK(turned_box.max.x == doctest::Approx(3.0 * std::sqrt(0.5)).epsilon(1e-6));
     CHECK(double(turned_box.max.x) >= 3.0 * double(c));
+}
+
+TEST_CASE("a record whose kind is no ShapeKind is refused, never answered as a shape") {
+    Shapes shapes = two_spheres_and_a_box();
+    shapes.records[0].kind = static_cast<ShapeKind>(7);
+    CHECK_THROWS_AS(distance(shapes, 0, {0.0f, 0.0f, 0.0f}), std::logic_error);
+    CHECK_THROWS_AS(touches(shapes, 0, Bounds{{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}}), std::logic_error);
+    CHECK_THROWS_AS(object_bounds(shapes, shapes.records[0]), std::logic_error);
 }

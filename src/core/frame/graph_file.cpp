@@ -1,9 +1,15 @@
 #include "core/frame/graph_file.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
+#include <initializer_list>
 #include <limits>
+#include <optional>
 #include <sstream>
+#include <string>
+#include <system_error>
 
 #include <toml++/toml.hpp>
 
@@ -38,13 +44,9 @@ std::string known_pass_names() {
 void only(std::string_view source, const toml::table& table, std::initializer_list<std::string_view> allowed,
           std::string_view where) {
     for (const auto& [key, value] : table) {
-        bool known = false;
-        for (std::string_view name : allowed) {
-            known = known || key.str() == name;
-        }
-        if (!known) {
-            throw GraphFileError(at(source, key.source(),
-                           "unknown key '" + std::string(key.str()) + "' in " + std::string(where)));
+        if (std::ranges::none_of(allowed, [&](std::string_view allowed_key) { return key.str() == allowed_key; })) {
+            throw GraphFileError(
+                at(source, key.source(), "unknown key '" + std::string(key.str()) + "' in " + std::string(where)));
         }
     }
 }
@@ -53,7 +55,7 @@ void only(std::string_view source, const toml::table& table, std::initializer_li
 const toml::node& required(std::string_view source, const toml::table& table, std::string_view key,
                            std::string_view where) {
     const toml::node* node = table.get(key);
-    if (node == nullptr) {
+    if (!node) {
         throw GraphFileError(at(source, table, std::string(where) + " has no '" + std::string(key) + "'"));
     }
     return *node;
@@ -96,11 +98,11 @@ Schedule read_schedule(std::string_view source, const toml::table& root) {
     only(source, root, {"passes", "tone_map"}, "the frame graph");
 
     const toml::node* passes_node = root.get("passes");
-    if (passes_node == nullptr) {
+    if (!passes_node) {
         throw GraphFileError(std::string(source) + ": no 'passes'");
     }
     const toml::array* passes = passes_node->as_array();
-    if (passes == nullptr || passes->empty()) {
+    if (!passes || passes->empty()) {
         throw GraphFileError(at(source, *passes_node, "'passes' must be a non-empty array of pass names"));
     }
 
@@ -122,9 +124,9 @@ Schedule read_schedule(std::string_view source, const toml::table& root) {
     // The tone map's settings, each mistake reported at the line it is
     // about; whether they come with their pass, by the rule for the whole.
     const toml::node* tone_map_node = root.get("tone_map");
-    if (tone_map_node != nullptr) {
+    if (tone_map_node) {
         const toml::table* table = tone_map_node->as_table();
-        if (table == nullptr) {
+        if (!table) {
             throw GraphFileError(at(source, *tone_map_node, "'tone_map' must be a table, [tone_map]"));
         }
         schedule.tone_map = read_tone_map(source, *table);
@@ -148,16 +150,21 @@ Schedule parse_schedule(std::string_view text, std::string_view source) {
 }
 
 Schedule load_schedule(const std::filesystem::path& path) {
-    std::ifstream file(path, std::ios::binary);
-    if (!file) {
+    // Sized from the file, and read whole or refused: a read that fails, a
+    // directory, or a file that ends early is an Error, never an empty or a
+    // shorter graph (I.10, SL.io.2).
+    std::error_code error;
+    const std::uintmax_t size = std::filesystem::file_size(path, error);
+    std::ifstream file{path, std::ios::binary};
+    if (error || !file || size > static_cast<std::uintmax_t>(std::numeric_limits<std::streamsize>::max())) {
         throw GraphFileError("cannot read frame graph file " + path.string());
     }
-    std::ostringstream text;
-    text << file.rdbuf();
-    if (!file && !file.eof()) {
+    std::string text(static_cast<std::size_t>(size), '\0');
+    file.read(text.data(), static_cast<std::streamsize>(size));
+    if (!file || file.gcount() != static_cast<std::streamsize>(size)) {
         throw GraphFileError("cannot read frame graph file " + path.string());
     }
-    return parse_schedule(text.str(), path.string());
+    return parse_schedule(text, path.string());
 }
 
 }  // namespace serenity::frame

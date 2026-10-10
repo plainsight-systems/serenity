@@ -11,11 +11,7 @@
 // Each kind answers contract 12 (contracts/medium.h); the one place a shader
 // dispatches on MediumKind is metal/media/media.metal.h.
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace media {
@@ -30,6 +26,9 @@ struct MediumRecord {
 };
 
 static_assert(sizeof(MediumRecord) == 8, "MediumRecord must be the same 8 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<MediumRecord>, "MediumRecord is written to the GPU as bytes");
+#endif
 
 }  // namespace media
 }  // namespace serenity

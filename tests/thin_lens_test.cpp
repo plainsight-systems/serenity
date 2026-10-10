@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <numbers>
+#include <stdexcept>
 #include <string>
 
 #include <doctest/doctest.h>
@@ -26,40 +27,42 @@ Camera looking_down_minus_z() {
     return Camera{{0.0f, 1.0f, 5.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 60.0f};
 }
 
-const char* why(const Camera& camera) {
-    const char* reason = nullptr;
-    CHECK_FALSE(serenity::camera::valid(camera, &reason));
-    return reason == nullptr ? "" : reason;
+std::string why(const Camera& camera) {
+    const auto reason = serenity::camera::invalid(camera);
+    CHECK(reason.has_value());
+    return std::string(reason.value_or(""));
+}
+
+bool finite(Float3 a) {
+    return std::isfinite(a.x) && std::isfinite(a.y) && std::isfinite(a.z);
 }
 
 }  // namespace
 
 TEST_CASE("a camera is valid only when it can be framed") {
-    const char* reason = "unset";
-    CHECK(serenity::camera::valid(looking_down_minus_z(), &reason));
-    CHECK(reason == nullptr);
+    CHECK_FALSE(serenity::camera::invalid(looking_down_minus_z()).has_value());
 
     Camera at_itself = looking_down_minus_z();
     at_itself.look_at = at_itself.position;
-    CHECK(std::string(why(at_itself)).find("position") != std::string::npos);
+    CHECK(why(at_itself).find("position") != std::string::npos);
 
     Camera up_along_view = looking_down_minus_z();
     up_along_view.up = {0.0f, 0.0f, -3.0f};
-    CHECK(std::string(why(up_along_view)).find("parallel") != std::string::npos);
+    CHECK(why(up_along_view).find("parallel") != std::string::npos);
 
     Camera no_up = looking_down_minus_z();
     no_up.up = {0.0f, 0.0f, 0.0f};
-    CHECK(std::string(why(no_up)).find("up") != std::string::npos);
+    CHECK(why(no_up).find("up") != std::string::npos);
 
     for (float fov : {0.0f, 180.0f, -10.0f, 200.0f}) {
         Camera wrong_fov = looking_down_minus_z();
         wrong_fov.vertical_fov_degrees = fov;
-        CHECK(std::string(why(wrong_fov)).find("vertical_fov_degrees") != std::string::npos);
+        CHECK(why(wrong_fov).find("vertical_fov_degrees") != std::string::npos);
     }
 
     Camera not_finite = looking_down_minus_z();
     not_finite.position.x = std::nanf("");
-    CHECK(std::string(why(not_finite)).find("finite") != std::string::npos);
+    CHECK(why(not_finite).find("finite") != std::string::npos);
 }
 
 TEST_CASE("framing: the basis spans the field of view, with square pixels") {
@@ -96,7 +99,7 @@ TEST_CASE("a lens is framed with the camera, its radius 0 or more and its focus 
     Camera lensed = looking_down_minus_z();
     lensed.lens_radius = 0.012f;
     lensed.focus_distance = 1.4f;
-    CHECK(serenity::camera::valid(lensed, nullptr));
+    CHECK_FALSE(serenity::camera::invalid(lensed).has_value());
     const auto data = serenity::camera::shader_form(lensed, {1600, 900});
     CHECK(data.lens_radius == 0.012f);
     CHECK(data.focus_distance == 1.4f);
@@ -106,11 +109,40 @@ TEST_CASE("a lens is framed with the camera, its radius 0 or more and its focus 
     for (float radius : {-0.001f, std::nanf(""), INFINITY}) {
         Camera wrong = lensed;
         wrong.lens_radius = radius;
-        CHECK(std::string(why(wrong)).find("lens's radius") != std::string::npos);
+        CHECK(why(wrong).find("lens's radius") != std::string::npos);
     }
     for (float focus : {0.0f, -1.0f, std::nanf(""), INFINITY}) {
         Camera wrong = lensed;
         wrong.focus_distance = focus;
-        CHECK(std::string(why(wrong)).find("lens's focus") != std::string::npos);
+        CHECK(why(wrong).find("lens's focus") != std::string::npos);
     }
+}
+
+TEST_CASE("a camera far from the origin is judged, and framed, without overflowing a float") {
+    // look_at - position is past float's range; in double it is not, so the
+    // camera frames to finite numbers rather than to a NaN that was called
+    // valid.
+    const Camera far_apart{{3e38f, 0.0f, 0.0f}, {-3e38f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 40.0f};
+    CHECK_FALSE(serenity::camera::invalid(far_apart).has_value());
+    const auto data = serenity::camera::shader_form(far_apart, {16, 9});
+    CHECK(finite(data.forward));
+    CHECK(finite(data.right));
+    CHECK(finite(data.up));
+    CHECK(data.forward.x == doctest::Approx(-1.0f));
+
+    // Squared in float, 1e20 overflows, and up was once called parallel to
+    // the view; it is not.
+    const Camera far_out{{1e20f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 40.0f};
+    CHECK_FALSE(serenity::camera::invalid(far_out).has_value());
+    CHECK(finite(serenity::camera::shader_form(far_out, {16, 9}).right));
+}
+
+TEST_CASE("framing refuses what it cannot frame: an invalid camera, an empty image") {
+    Camera at_itself = looking_down_minus_z();
+    at_itself.look_at = at_itself.position;
+    CHECK_THROWS_AS(serenity::camera::shader_form(at_itself, {16, 9}), std::invalid_argument);
+    CHECK_THROWS_AS(serenity::camera::shader_form(looking_down_minus_z(), {16, 0}), std::invalid_argument);
+    CHECK_THROWS_AS(serenity::camera::shader_form(looking_down_minus_z(), {0, 9}), std::invalid_argument);
+    // A Camera given nothing is not valid (contracts/camera.h).
+    CHECK(why(Camera{}).find("position") != std::string::npos);
 }

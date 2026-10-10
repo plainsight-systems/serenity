@@ -13,12 +13,7 @@
 // scene.h), absorption = -ln(tint) / tint_distance, tint in (0, 1] per
 // channel. The shader half is metal/media/absorbing.metal.h.
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
-
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 
 namespace serenity {
@@ -30,6 +25,9 @@ struct AbsorbingData {
 };
 
 static_assert(sizeof(AbsorbingData) == 16, "AbsorbingData must be the same 16 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<AbsorbingData>, "AbsorbingData is written to the GPU as bytes");
+#endif
 
 }  // namespace media
 }  // namespace serenity

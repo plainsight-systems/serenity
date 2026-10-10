@@ -34,22 +34,14 @@
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace contracts {
 
 // A shape's interior, or a path's medium, when it is air: no medium. A
 // named value, not a bare all-ones (ES.45), as no_texture is.
-#if defined(__METAL_VERSION__)
-constant constexpr uint32_t no_medium = 0xffffffffu;
-#else
-constexpr uint32_t no_medium = 0xffffffffu;
-#endif
+SERENITY_CONSTANT uint32_t no_medium = 0xffffffffu;
 
 }  // namespace contracts
 }  // namespace serenity

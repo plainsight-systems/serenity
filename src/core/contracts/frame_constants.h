@@ -18,13 +18,14 @@
 //   - no pointers, no bool (its size is not fixed across the two languages),
 //     nothing that only the host has;
 //   - the size is asserted on both sides, so a field added on one side alone
-//     fails to compile on the other.
+//     fails to compile on the other, and on the host that the type is
+//     trivially copyable, since the host writes it as bytes (SL.con.4);
+//   - the differences between the two languages, the standard headers and
+//     how a namespace-scope constant is declared (SERENITY_CONSTANT), are
+//     written once, in contracts/shared_layout.h, which every shared header
+//     includes (P.11).
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace contracts {
@@ -46,6 +47,9 @@ struct FrameConstants {
 };
 
 static_assert(sizeof(FrameConstants) == 32, "FrameConstants must be the same 32 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<FrameConstants>, "FrameConstants is written to the GPU as bytes");
+#endif
 
 }  // namespace contracts
 }  // namespace serenity

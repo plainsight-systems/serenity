@@ -18,11 +18,7 @@
 // which turn, move and scale with the core, so one swirl serves every core
 // of its colors.
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace textures {
@@ -39,6 +35,9 @@ struct TextureRecord {
 };
 
 static_assert(sizeof(TextureRecord) == 8, "TextureRecord must be the same 8 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<TextureRecord>, "TextureRecord is written to the GPU as bytes");
+#endif
 
 }  // namespace textures
 }  // namespace serenity

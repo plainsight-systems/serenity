@@ -78,12 +78,7 @@
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
-
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 
 namespace serenity {
@@ -107,23 +102,15 @@ enum class BsdfKind : uint32_t {
 //   diffuse  spreads over the hemisphere (Lambert);
 //   glossy   spreads about a direction (rough metal);
 //   delta    one direction only: evaluate() and pdf() are 0 for it.
-#if defined(__METAL_VERSION__)
-constant constexpr uint32_t lobe_reflection = 1u;    // wi on wo's side
-constant constexpr uint32_t lobe_transmission = 2u;  // wi on the other side
-constant constexpr uint32_t lobe_diffuse = 4u;
-constant constexpr uint32_t lobe_glossy = 8u;
-constant constexpr uint32_t lobe_delta = 16u;
-#else
-constexpr uint32_t lobe_reflection = 1u;
-constexpr uint32_t lobe_transmission = 2u;
-constexpr uint32_t lobe_diffuse = 4u;
-constexpr uint32_t lobe_glossy = 8u;
-constexpr uint32_t lobe_delta = 16u;
-#endif
+SERENITY_CONSTANT uint32_t lobe_reflection = 1u;    // wi on wo's side
+SERENITY_CONSTANT uint32_t lobe_transmission = 2u;  // wi on the other side
+SERENITY_CONSTANT uint32_t lobe_diffuse = 4u;
+SERENITY_CONSTANT uint32_t lobe_glossy = 8u;
+SERENITY_CONSTANT uint32_t lobe_delta = 16u;
 
 // Whether a surface with `lobes` can be lit by aiming at a light: it has a
 // lobe that is not delta.
-inline bool aims_at_lights(uint32_t lobes) {
+constexpr bool aims_at_lights(uint32_t lobes) {
     return (lobes & (lobe_diffuse | lobe_glossy)) != 0u;
 }
 
@@ -142,6 +129,9 @@ struct Bsdf {
 };
 
 static_assert(sizeof(Bsdf) == 48, "Bsdf must be the same 48 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<Bsdf>, "Bsdf is written to the GPU as bytes");
+#endif
 
 // What sample() returns.
 struct BsdfSample {
@@ -152,6 +142,9 @@ struct BsdfSample {
 };
 
 static_assert(sizeof(BsdfSample) == 32, "BsdfSample must be the same 32 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<BsdfSample>, "BsdfSample is written to the GPU as bytes");
+#endif
 
 }  // namespace contracts
 }  // namespace serenity

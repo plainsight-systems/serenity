@@ -22,11 +22,17 @@ namespace serenity::measurement {
 // submissions were frames by their sequences, and the backend hands each
 // submission's instants back exactly once.
 //
-// A frame time is a measurement of this machine and this build; whoever
-// shows it says which (the window's title names the resolution).
+// A frame time is a measurement of this machine, this build and this run,
+// not a benchmark (TLM.6): whoever shows one names the build type and the
+// resolution beside it, and that it was measured in a running window, which
+// shares the GPU with whatever else draws, not on an idle GPU. A figure
+// quoted as the renderer's speed is measured as docs/research's notes are,
+// on the release build, with the GPU otherwise idle.
 //
-// Pure: add() and take() are given everything they use, including the time
-// a period is reported at, so a test drives it with numbers (F.8).
+// Deterministic, with no ambient input: add() and take() change the
+// summary they keep, and are given everything they use, including the time
+// a period is reported at, so a test drives them with numbers (I.1). Not
+// pure functions (F.8): they are the summary's update.
 struct Summary {
     std::uint64_t frames = 0;
     frame::Seconds mean{0.0};
@@ -39,7 +45,9 @@ public:
     explicit FrameTimes(frame::Seconds period) : period_(period) {}
 
     // Adds one frame, from when the GPU began it to when it finished, both
-    // in host time. `gpu_end` is not before `gpu_start`.
+    // in host time. Precondition, checked (I.5, E.2): `gpu_end` is not
+    // before `gpu_start`, or the frame is refused by std::invalid_argument
+    // and nothing is added.
     void add(frame::Seconds gpu_start, frame::Seconds gpu_end);
 
     // At `now`, if a period has passed since the last summary and at least
@@ -52,7 +60,7 @@ private:
     frame::Seconds period_;
     std::optional<frame::Seconds> started_;
     Summary current_;
-    double total_ = 0.0;
+    frame::Seconds total_{0.0};  // the period's frames' durations, summed (I.4)
 };
 
 }  // namespace serenity::measurement

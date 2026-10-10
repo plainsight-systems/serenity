@@ -12,11 +12,7 @@
 // media/absorbing.h), not the material's: a tinted marble is a sphere
 // wearing this material with an absorbing medium inside.
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace materials {
@@ -27,6 +23,9 @@ struct DielectricData {
 };
 
 static_assert(sizeof(DielectricData) == 16, "DielectricData must be the same 16 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<DielectricData>, "DielectricData is written to the GPU as bytes");
+#endif
 
 }  // namespace materials
 }  // namespace serenity

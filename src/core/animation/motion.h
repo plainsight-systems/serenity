@@ -40,14 +40,14 @@ namespace serenity::animation {
 // positions they give reach the GPU, as the translations of the moving
 // shapes' transforms (core/animation/animate.h).
 
-enum class MotionKind : std::uint32_t {
-    wander = 0,  // a drift about a fixed point (wander.h)
-    flight = 1,  // flying free among the still shapes (flight.h)
+enum class MotionKind {
+    wander,  // a drift about a fixed point (wander.h)
+    flight,  // flying free among the still shapes (flight.h)
 };
 
 struct MotionRecord {
-    MotionKind kind;
-    std::uint32_t index;  // into that kind's array
+    MotionKind kind = MotionKind::wander;
+    std::uint32_t index = 0;  // into that kind's array
 };
 
 struct Motions {
@@ -58,7 +58,8 @@ struct Motions {
 // Where the motion `record` names places its point at `t`. The record must
 // index its kind's array; the scene reader makes it so. The mapping from
 // kind to position is a switch with no default, so a kind without one fails
-// the build.
+// the build, and a value no enumerator names is refused by std::logic_error,
+// never answered with a point that looks real (P.6).
 contracts::Float3 position(const Motions& motions, MotionRecord record, frame::Seconds t);
 
 // The box the motion `record` names keeps its point inside, for all t.

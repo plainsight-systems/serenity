@@ -272,3 +272,52 @@ TEST_CASE("of flights made in parallel, any exception reaches the caller, the lo
         CHECK(std::string(error.what()) == "the obstacles broke");
     }
 }
+
+TEST_CASE("a flight too fast or too long to sample is refused, its count never converted past int64") {
+    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
+    const BallAndFloor obstacles(s);
+    animation::FlightJob fast = job(3, {1.2f, 1.0f, 0.8f});
+    fast.params.speed = 1e30f;  // within float's range, as the reader accepts
+    CHECK_THROWS_AS(animation::make_flight(fast.params, fast.start, fast.body, obstacles), animation::Refusal);
+    // The bound is the params': a small one refuses the first drift, the
+    // default makes the flight.
+    animation::FlightJob bounded = job(3, {1.2f, 1.0f, 0.8f});
+    CHECK_NOTHROW((void)animation::make_flight(bounded.params, bounded.start, bounded.body, obstacles));
+    bounded.params.most_steps = 2;
+    CHECK_THROWS_WITH_AS(animation::make_flight(bounded.params, bounded.start, bounded.body, obstacles),
+                         doctest::Contains("is not clear"), animation::Refusal);
+}
+
+namespace {
+
+// Contract 11 answered with an exception of the standard type a refusal
+// derives from: not a refusal of any flight.
+struct Arguing final : contracts::Obstacles {
+    double distance(contracts::Float3) const override { throw std::invalid_argument("the obstacles argued"); }
+    bool touches(const contracts::Box&) const override { return false; }
+};
+
+}  // namespace
+
+TEST_CASE("a refusal carries its job and its reason; another std::invalid_argument is not taken for one") {
+    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
+    const BallAndFloor obstacles(s);
+    std::vector<animation::FlightJob> jobs = {job(1, {1.2f, 1.0f, 0.8f}), job(2, {0.0f, 0.5f, 0.0f})};
+    try {
+        (void)animation::make_flights(jobs, obstacles);
+        FAIL("expected an error");
+    } catch (const animation::FlightsError& error) {
+        CHECK(error.job == 1);
+        CHECK(error.reason.rfind("the flight's start", 0) == 0);
+        CHECK(std::string(error.what()) == "flight 1: " + error.reason);
+    }
+    const Arguing arguing;
+    try {
+        (void)animation::make_flights({job(1, {1.2f, 1.0f, 0.8f})}, arguing);
+        FAIL("expected an error");
+    } catch (const animation::Refusal&) {
+        FAIL("an Obstacles' own exception was taken for a refusal");
+    } catch (const std::invalid_argument& error) {
+        CHECK(std::string(error.what()) == "the obstacles argued");
+    }
+}

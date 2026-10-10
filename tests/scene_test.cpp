@@ -368,6 +368,11 @@ TEST_CASE("names, and glows: what they read into, and every mistake refused") {
                    "dim must be in [0, 1)"));
     CHECK(contains(error_of(lamp("glow = { kind = \"flight\", flash = 0.4, dim = 0.1 }")), "does not fly"));
     CHECK(contains(error_of(lamp("glow = { kind = \"candle\" }")), "unknown glow kind 'candle'"));
+    // A period too short to count flashes in exactly for any t (glow.h).
+    CHECK(contains(error_of(lamp("glow = { kind = \"rhythm\", period = 0.0001, flash = 0.00004, dim = 0.1, seed = 2 }")),
+                   "period must be at least 0.001 s"));
+    CHECK_NOTHROW((void)scene::parse(
+        lamp("glow = { kind = \"rhythm\", period = 0.001, flash = 0.0004, dim = 0.1, seed = 2 }"), "s"));
     CHECK(contains(error_of(with("radius = 0.8", "radius = 0.8\nglow = { kind = \"rhythm\", period = 5, "
                                                  "flash = 0.4, dim = 0.1, seed = 2 }")),
                    "has a glow, and is not a light"));
@@ -541,4 +546,10 @@ tint_distance = 0.01
         "[[shapes]]", extra + "[materials.tiled]\nkind = \"coated\"\ntexture = \"floor_checks\"\nior = 1.5\n[[shapes]]");
     bright_checks.replace(bright_checks.find("a = [0.9, 0.9, 0.9]"), 19, "a = [1.9, 0.9, 0.9]");
     CHECK(contains(error_of(bright_checks), "material 'tiled''s texture's colors must be within [0, 1]"));
+}
+
+TEST_CASE("a scene file that cannot be read whole is refused, never read as an empty scene") {
+    // A directory opens, and reads nothing: once parsed as an empty scene and
+    // reported as one with no camera; now refused as unreadable.
+    CHECK_THROWS_WITH_AS(scene::load("scenes"), doctest::Contains("cannot read scene file scenes"), scene::Error);
 }

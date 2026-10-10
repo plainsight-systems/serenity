@@ -30,10 +30,11 @@ namespace serenity::frame {
 // array of strings, an unknown pass name, a [tone_map] table without a
 // tone_map pass or the pass without the table, a setting missing or out of
 // range, a schedule the core does not accept (schedule.h, invalid()), or a
-// key nobody reads is an Error,
-// never a default or an ignored line: a typo must fail the run that reads
-// it, not render something else (E.2, E.14). Each Error names the file and
-// the line, and an unknown pass name lists the known ones.
+// key nobody reads is an Error, never a default or an ignored line: a typo
+// must fail the run that reads it, not render something else (E.2, E.14).
+// Each Error names the file and the line, and an unknown pass name lists the
+// known ones. A file that cannot be read whole, a directory's path or one
+// that ends early, is an Error naming it, never an empty graph.
 //
 // Not performance-sensitive: read once, at start-up.
 

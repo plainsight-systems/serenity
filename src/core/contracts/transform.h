@@ -31,10 +31,7 @@
 // makes is a translation and a scale (core/scene/scene.h), and the Shape
 // family's world-space tests say where they rely on it.
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#endif
-
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 
 namespace serenity {
@@ -45,27 +42,34 @@ struct Transform {
 };
 
 static_assert(sizeof(Transform) == 48, "Transform must be the same 48 bytes on the host and in shaders");
-
 #if !defined(__METAL_VERSION__)
-// The transform that scales by `scale` (> 0) and then moves by `translation`.
-inline Transform placed(Float3 translation, float scale) {
+static_assert(std::is_trivially_copyable_v<Transform>, "Transform is written to the GPU as bytes");
+
+// The transform that scales by `factor` (> 0) and then moves by `offset`.
+constexpr Transform placed(Float3 offset, float factor) noexcept {
     return Transform{{
-        {scale, 0.0f, 0.0f, translation.x},
-        {0.0f, scale, 0.0f, translation.y},
-        {0.0f, 0.0f, scale, translation.z},
+        {factor, 0.0f, 0.0f, offset.x},
+        {0.0f, factor, 0.0f, offset.y},
+        {0.0f, 0.0f, factor, offset.z},
     }};
 }
 
-inline Float3 translation(const Transform& t) {
+constexpr Float3 translation(const Transform& t) noexcept {
     return {t.m[0][3], t.m[1][3], t.m[2][3]};
 }
 
-// `t` with its translation replaced: what a motion changes
+// The uniform scale of a transform the scene reader made, a translation and
+// a scale (above): a sphere's radius (shapes/sphere.h).
+constexpr float scale(const Transform& t) noexcept {
+    return t.m[0][0];
+}
+
+// `t` with its translation replaced by `to`: what a motion changes
 // (animation/animate.h).
-inline Transform moved_to(Transform t, Float3 translation) {
-    t.m[0][3] = translation.x;
-    t.m[1][3] = translation.y;
-    t.m[2][3] = translation.z;
+constexpr Transform moved_to(Transform t, Float3 to) noexcept {
+    t.m[0][3] = to.x;
+    t.m[1][3] = to.y;
+    t.m[2][3] = to.z;
     return t;
 }
 #endif

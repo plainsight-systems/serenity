@@ -2,6 +2,8 @@
 // join it, and the window's and the headless renderer's plans for when it
 // starts over. No GPU: the rule is the core's.
 
+#include <limits>
+#include <stdexcept>
 #include <string>
 
 #include <doctest/doctest.h>
@@ -108,4 +110,19 @@ TEST_CASE("headless: samples of one instant, the run converging only while the s
     CHECK(once.samples == 1);
     CHECK(once.sample(4, 0).index == 4);
     CHECK(once.sample(4, 0).accumulated_since == 4);
+}
+
+TEST_CASE("the plans refuse what would wrap an index: frames out of order, a sample past the frame's, too many") {
+    frame::LiveHistory live(false);
+    CHECK(live.since(10, true) == 10);
+    CHECK_THROWS_AS(live.since(9, false), HistoryError);  // before the image's first: index - since would wrap
+
+    const frame::HeadlessPlan plan = frame::plan_headless(0, 4, true, false, false);
+    CHECK_THROWS_AS(plan.sample(3, 4), std::invalid_argument);
+    CHECK(plan.sample(3, 3).index == 15);
+    const std::uint64_t most = std::numeric_limits<std::uint64_t>::max();
+    CHECK_THROWS_AS(plan.sample(most / 4, 0), std::overflow_error);
+    CHECK(plan.sample(most / 4 - 1, 3).index == most / 4 * 4 - 1);
+    const frame::HeadlessPlan none = frame::plan_headless(0, 0, true, false, false);
+    CHECK_THROWS_AS(none.sample(0, 0), std::invalid_argument);
 }

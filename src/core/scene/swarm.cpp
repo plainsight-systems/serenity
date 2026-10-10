@@ -1,19 +1,12 @@
 #include "core/scene/swarm.h"
 
+#include <array>
 #include <cmath>
 #include <string>
 
 #include "core/animation/draw.h"
 
 namespace serenity::scene {
-
-namespace {
-
-double component(contracts::Float3 v, int axis) {
-    return axis == 0 ? v.x : axis == 1 ? v.y : v.z;
-}
-
-}  // namespace
 
 std::uint64_t firefly_seed(std::uint64_t swarm_seed, std::uint32_t i) {
     // Step 1.
@@ -27,19 +20,20 @@ contracts::Float3 firefly_start(const Swarm& swarm, std::uint32_t i, const contr
     const double margin = body + animation::flight_delta + animation::first_drift_reach;
     const double needed = static_cast<double>(swarm.flight.clearance) + body + animation::flight_delta +
                           animation::first_drift_reach * std::sqrt(3.0);
-    double low[3], high[3];
-    for (int axis = 0; axis < 3; ++axis) {
-        low[axis] = component(swarm.flight.volume.min, axis) + margin;
-        high[axis] = component(swarm.flight.volume.max, axis) - margin;
+    std::array<double, 3> low{};
+    std::array<double, 3> high{};
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+        low[axis] = contracts::component(swarm.flight.volume.min, static_cast<int>(axis)) + margin;
+        high[axis] = contracts::component(swarm.flight.volume.max, static_cast<int>(axis)) - margin;
         if (!(low[axis] < high[axis])) {
-            throw std::invalid_argument("firefly " + std::to_string(i) +
-                                        ": the volume is too small for a firefly to drift in");
+            throw animation::Refusal("firefly " + std::to_string(i) +
+                                     ": the volume is too small for a firefly to drift in");
         }
     }
     const std::uint64_t seed = firefly_seed(swarm.flight.seed, i);
     for (int attempt = 0; attempt < start_attempts; ++attempt) {
-        double p[3];
-        for (int axis = 0; axis < 3; ++axis) {
+        std::array<double, 3> p{};
+        for (std::size_t axis = 0; axis < 3; ++axis) {
             const double u =
                 animation::draw(seed, static_cast<std::uint64_t>(attempt), static_cast<std::uint64_t>(axis));
             p[axis] = low[axis] + u * (high[axis] - low[axis]);
@@ -49,8 +43,8 @@ contracts::Float3 firefly_start(const Swarm& swarm, std::uint32_t i, const contr
             return start;
         }
     }
-    throw std::invalid_argument("firefly " + std::to_string(i) + ": no start clear of the still shapes in " +
-                                std::to_string(start_attempts) + " draws; the volume is too full");
+    throw animation::Refusal("firefly " + std::to_string(i) + ": no start clear of the still shapes in " +
+                             std::to_string(start_attempts) + " draws; the volume is too full");
 }
 
 }  // namespace serenity::scene

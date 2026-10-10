@@ -1,5 +1,7 @@
 // Frame times over a reporting period, driven with numbers.
 
+#include <stdexcept>
+
 #include <doctest/doctest.h>
 
 #include "core/measurement/frame_times.h"
@@ -30,4 +32,11 @@ TEST_CASE("a summary covers the frames of one period, then starts the next") {
     REQUIRE(next.has_value());
     CHECK(next->frames == 1);
     CHECK(next->mean.count() == doctest::Approx(0.001));
+}
+
+TEST_CASE("a frame that ends before it begins is refused, and nothing is added") {
+    FrameTimes times(Seconds(1.0));
+    CHECK_FALSE(times.take(Seconds(0.0)).has_value());
+    CHECK_THROWS_AS(times.add(Seconds(2.0), Seconds(1.0)), std::invalid_argument);
+    CHECK_FALSE(times.take(Seconds(5.0)).has_value());  // no frame was added
 }

@@ -23,12 +23,7 @@
 // object-space bounds, and its object-space test; it changes no other kind,
 // and nothing outside the Shape family.
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
-
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 
 namespace serenity {
@@ -48,6 +43,9 @@ struct ShapeRecord {
 };
 
 static_assert(sizeof(ShapeRecord) == 16, "ShapeRecord must be the same 16 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<ShapeRecord>, "ShapeRecord is written to the GPU as bytes");
+#endif
 
 #if !defined(__METAL_VERSION__)
 // An axis-aligned box: a geometry's extent in object space, what its
@@ -60,6 +58,7 @@ struct Bounds {
 };
 
 static_assert(sizeof(Bounds) == 24, "Bounds must be two packed triples of floats");
+static_assert(std::is_trivially_copyable_v<Bounds>, "Bounds is written to the GPU as bytes");
 #endif
 
 }  // namespace shapes

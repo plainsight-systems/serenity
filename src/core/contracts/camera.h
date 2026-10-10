@@ -49,17 +49,14 @@
 // pinhole's, exactly: start is origin and the direction is d's, so a camera
 // without a lens renders as it did before lenses. Which of the two a ray
 // takes is the frame's camera's, the same for every thread of a dispatch,
-// so the branch costs no divergence (GPU.4). A Camera without a lens is a
-// pinhole by its default member initializers (C.48).
+// so the branch costs no divergence (GPU.4). Every member of a Camera has a
+// default member initializer (C.48, ES.20): a Camera without a lens is a
+// pinhole, and a Camera given nothing else is not valid (its look_at is its
+// position, camera/thin_lens.h), so none is framed by accident.
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
-
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 
 namespace serenity {
@@ -77,13 +74,16 @@ struct CameraData {
 };
 
 static_assert(sizeof(CameraData) == 64, "CameraData must be the same 64 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<CameraData>, "CameraData is written to the GPU as bytes");
+#endif
 
 #if !defined(__METAL_VERSION__)
 struct Camera {
-    Float3 position;
-    Float3 look_at;              // not equal to position
-    Float3 up;                   // not parallel to look_at - position
-    float vertical_fov_degrees;   // strictly between 0 and 180
+    Float3 position{};
+    Float3 look_at{};             // not equal to position
+    Float3 up{};                  // not parallel to look_at - position
+    float vertical_fov_degrees = 0.0f;  // strictly between 0 and 180
     float lens_radius = 0.0f;     // meters, 0 or more; 0 is a pinhole
     float focus_distance = 1.0f;  // meters, greater than 0; read only through a lens
 };

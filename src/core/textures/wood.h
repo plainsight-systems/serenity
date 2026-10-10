@@ -33,7 +33,8 @@
 //           r = sqrt(a^2 + d^2) from it, a = (u - h0) board being how far
 //           across from the axis it is. On the face, rings of radius r are
 //           the long arcs, tightest over the axis.
-//   Step 4  The grain's waver: r += wood_waver ring fbm(q, 3, seed) (noise.h),
+//   Step 4  The grain's waver: r += wood_waver ring fbm(q, wood_waver_octaves,
+//           seed) (noise.h),
 //           at q = (p.x / wood_waver_along, 0, p.z / wood_waver_across): the
 //           noise stretched along the board, so the rings wander slowly
 //           along it and quickly across, and taken at height 0 whatever p's,
@@ -45,8 +46,9 @@
 //           light (1 - w) + dark w. The next ring starts light again, so
 //           each ring is a gradual darkening and a sharp edge, as wood is.
 //   Step 6  The pores: the color times 1 - wood_pores saturate(0.5 + 0.5
-//           noise(g, seed + 1)), the noise's bound being past 1, g = (p.x / wood_pores_along, 0, p.z /
-//           wood_pores_across): fine streaks along the board.
+//           noise(g, seed + wood_pores_seed)), the noise's bound being past
+//           1, g = (p.x / wood_pores_along, 0, p.z / wood_pores_across):
+//           fine streaks along the board.
 //   Step 7  The board: the color times s (step 2); and within wood_seam of
 //           the board's edge, min(u, 1 - u) board < wood_seam, times
 //           wood_seam_shade: the gap between boards.
@@ -78,16 +80,11 @@
 // Cost, per evaluation: four noises (three octaves and the pores), one
 // pcg3d for the board, a square root and a few dozen flops; one branch,
 // the seam's, which neighboring pixels take alike but along a seam's line
-// (GPU.4). Every tuning number is a named constant below (ES.45).
+// (GPU.4). Every tuning number, the octave count and the pores' seed offset
+// included, is a named constant below (ES.45), for the shader half to read
+// rather than repeat.
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#define SERENITY_CONSTANT constant constexpr
-#else
-#include <stdint.h>
-#define SERENITY_CONSTANT inline constexpr
-#endif
-
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 
 namespace serenity {
@@ -100,10 +97,12 @@ SERENITY_CONSTANT float wood_board_shade = 0.12f;         // step 2: boards up t
 SERENITY_CONSTANT float wood_waver = 1.5f;                // step 4: in rings
 SERENITY_CONSTANT float wood_waver_along = 0.5f;          // step 4: meters
 SERENITY_CONSTANT float wood_waver_across = 0.05f;        // step 4: meters
+SERENITY_CONSTANT uint32_t wood_waver_octaves = 3u;       // step 4: fbm's octaves
 SERENITY_CONSTANT float wood_latewood = 0.7f;             // step 5: where in a ring it darkens from
 SERENITY_CONSTANT float wood_pores = 0.25f;               // step 6: how much the pores darken
 SERENITY_CONSTANT float wood_pores_along = 0.08f;         // step 6: meters
 SERENITY_CONSTANT float wood_pores_across = 0.0015f;      // step 6: meters
+SERENITY_CONSTANT uint32_t wood_pores_seed = 1u;          // step 6: added to the seed
 SERENITY_CONSTANT float wood_seam = 0.0015f;              // step 7: meters
 SERENITY_CONSTANT float wood_seam_shade = 0.25f;          // step 7
 SERENITY_CONSTANT float wood_least_ring = 1.0e-4f;        // meters: the finest rings read
@@ -120,8 +119,9 @@ struct WoodData {
 };
 
 static_assert(sizeof(WoodData) == 48, "WoodData must be the same 48 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<WoodData>, "WoodData is written to the GPU as bytes");
+#endif
 
 }  // namespace textures
 }  // namespace serenity
-
-#undef SERENITY_CONSTANT

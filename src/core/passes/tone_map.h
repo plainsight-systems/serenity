@@ -69,14 +69,12 @@
 //           divided last because the pyramid is half floats: six levels at
 //           the ceiling would sum past it, to infinity, which step 5 turns
 //           to NaN. Divided, each level holds at most bloom_ceiling /
-//           bloom_levels, 10917.3 (step 1, and each filter's weights sum to
-//           1, so no filter exceeds its largest input). Stored rounded to
-//           the nearest half float, that is 10920, and the sums at most
-//           21840, 32768, 43680, 54592 and 65504, the ceiling exactly;
-//           rounded toward zero, as the M3 Max's texture writes round (it
-//           stores 10912), at most their exact values, within it. Rounding
-//           is monotone, so a field at the ceiling everywhere is the most
-//           any level holds.
+//           bloom_levels (step 1, and each filter's weights sum to 1, so no
+//           filter exceeds its largest input), and every partial sum, stored
+//           rounded to the nearest half float or toward zero, stays within
+//           the ceiling: the sums are worked through, with the rounding the
+//           M3 Max's texture writes do, in
+//           docs/research/2026-10-10-bloom-half-float.md.
 //   Step 4  Composite: C = (1 - bloom) E + bloom tent(B_0), at the frame's
 //           size. Each blur keeps E's mean (each filter's weights sum to 1,
 //           and edges clamp), so their mean does, and C is a mean of E and
@@ -91,18 +89,12 @@
 //           colors pass as they are; above, they roll off toward 1 and toward
 //           white, so a firefly's core goes white-hot while its glare keeps
 //           its yellow. Chosen over ACES and AgX because it keeps hues where
-//           they are: AgX moves brass's hue (a Blender user measured 52
-//           degrees to 46), and the brass and the fireflies are the scene's
-//           colors. Every input is finite (step 1), so every output is.
+//           they are, and the brass and the fireflies are the scene's colors
+//           (the note above gives AgX's measured shift of brass). Every
+//           input is finite (step 1), so every output is.
 //   Step 6  Encode: sRGB's transfer function, into the target.
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#define SERENITY_CONSTANT constant constexpr
-#else
-#include <cstdint>
-#define SERENITY_CONSTANT inline constexpr
-#endif
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace passes {
@@ -123,8 +115,9 @@ struct ToneMap {
 };
 
 static_assert(sizeof(ToneMap) == 16, "ToneMap must be the same 16 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<ToneMap>, "ToneMap is written to the GPU as bytes");
+#endif
 
 }  // namespace passes
 }  // namespace serenity
-
-#undef SERENITY_CONSTANT

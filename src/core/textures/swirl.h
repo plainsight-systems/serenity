@@ -19,8 +19,8 @@
 //   Step 1  Where q is about the axis, y: its angle phi = atan2(q.z, q.x),
 //           in (-pi, pi], and its height q.y.
 //   Step 2  Its phase among the vanes: s = vanes (phi / (2 pi) + twist q.y)
-//           + swirl_waver fbm(swirl_scale (cos phi, q.y, sin phi), 2, seed)
-//           (noise.h): vanes bands around, a band's middle, where s is
+//           + swirl_waver fbm(swirl_scale (cos phi, q.y, sin phi),
+//           swirl_waver_octaves, seed) (noise.h): vanes bands around, a band's middle, where s is
 //           constant, at phi = 2 pi (k / vanes - twist q.y), so each turns
 //           twist times round per unit of height, whatever the vanes, its
 //           edges wavering; the noise read on the unit cylinder at q's angle
@@ -40,17 +40,12 @@
 // passes/preview/preview.metal).
 //
 // Cost, per evaluation: an atan2, two noises and a few dozen flops, with no
-// branch. Every tuning number is a named constant below (ES.45); its noise
-// is keyed by (seed, lattice point), as noise.h's always is (GDSA.3).
+// branch. Every tuning number, the octave count included, is a named
+// constant below (ES.45), for the shader half to read rather than repeat;
+// its noise is keyed by (seed, lattice point), as noise.h's always is
+// (GDSA.3).
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#define SERENITY_CONSTANT constant constexpr
-#else
-#include <stdint.h>
-#define SERENITY_CONSTANT inline constexpr
-#endif
-
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 
 namespace serenity {
@@ -59,10 +54,12 @@ namespace textures {
 SERENITY_CONSTANT float swirl_waver = 0.15f;  // step 2: in bands
 SERENITY_CONSTANT float swirl_scale = 2.0f;   // step 2: noise cells across the unit sphere
 SERENITY_CONSTANT float swirl_edge = 0.08f;   // step 3: in bands
+SERENITY_CONSTANT uint32_t swirl_waver_octaves = 2u;  // step 2: fbm's octaves
+SERENITY_CONSTANT uint32_t swirl_most_vanes = 16u;    // the most vanes a scene may give
 
 struct SwirlData {
     contracts::Float3 a;  // linear RGB in [0, 1]
-    uint32_t vanes;       // bands of each color around the axis; 1 to 16
+    uint32_t vanes;       // bands of each color around the axis; 1 to swirl_most_vanes
     contracts::Float3 b;  // linear RGB in [0, 1]
     float twist;          // turns per unit of height, in the shape's own coordinates; finite
     uint32_t seed;
@@ -70,8 +67,9 @@ struct SwirlData {
 };
 
 static_assert(sizeof(SwirlData) == 48, "SwirlData must be the same 48 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<SwirlData>, "SwirlData is written to the GPU as bytes");
+#endif
 
 }  // namespace textures
 }  // namespace serenity
-
-#undef SERENITY_CONSTANT

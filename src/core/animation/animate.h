@@ -39,7 +39,7 @@ namespace serenity::animation {
 // glowers' factors; the rest the caller filled at start-up (every glow
 // starts at 1, its light's full radiance) and nothing changes them. Throws
 // std::invalid_argument, before writing anything, if a target is not an
-// index into its span (I.6).
+// index into its span: a precondition stated and checked (I.5, E.2).
 //
 // moves() says whether anything moves, which is what the acceleration
 // structure is rebuilt for (metal/acceleration/scene_acceleration.h);
@@ -52,12 +52,12 @@ namespace serenity::animation {
 // (MEM.9).
 
 struct Mover {
-    std::uint32_t target;  // the index of its transform
+    std::uint32_t target = 0;  // the index of its transform
     MotionRecord motion;
 };
 
 struct Glower {
-    std::uint32_t target;  // the index of its glow factor
+    std::uint32_t target = 0;  // the index of its glow factor
     GlowRecord glow;
 };
 
@@ -68,11 +68,11 @@ struct Animation {
     std::vector<Glower> glowers;  // in target order
 };
 
-inline bool moves(const Animation& animation) {
+inline bool moves(const Animation& animation) noexcept {
     return !animation.movers.empty();
 }
 
-inline bool changes(const Animation& animation) {
+inline bool changes(const Animation& animation) noexcept {
     return !animation.movers.empty() || !animation.glowers.empty();
 }
 

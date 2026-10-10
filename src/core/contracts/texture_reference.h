@@ -10,11 +10,7 @@
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace contracts {
@@ -24,14 +20,13 @@ struct TextureReference {
 };
 
 static_assert(sizeof(TextureReference) == 4, "TextureReference must be the same 4 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<TextureReference>, "TextureReference is written to the GPU as bytes");
+#endif
 
 // The index of a reference to no texture. A constant at namespace scope must
 // be in the shading language's constant address space.
-#if defined(__METAL_VERSION__)
-constant constexpr uint32_t no_texture = 0xffffffffu;
-#else
-constexpr uint32_t no_texture = 0xffffffffu;
-#endif
+SERENITY_CONSTANT uint32_t no_texture = 0xffffffffu;
 
 }  // namespace contracts
 }  // namespace serenity

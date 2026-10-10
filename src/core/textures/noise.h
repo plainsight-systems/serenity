@@ -52,12 +52,7 @@
 // Cost, per noise: one pcg3d per corner, eight, each a dozen integer
 // operations; eight dot products and seven blends.
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#define SERENITY_CONSTANT constant constexpr
-#else
-#define SERENITY_CONSTANT inline constexpr
-#endif
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace textures {
@@ -75,5 +70,3 @@ SERENITY_CONSTANT float noise_bound = 1.1f;
 
 }  // namespace textures
 }  // namespace serenity
-
-#undef SERENITY_CONSTANT

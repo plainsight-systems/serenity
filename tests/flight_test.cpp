@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
 #include <string>
 
 #include <doctest/doctest.h>
@@ -302,4 +303,42 @@ motion = { kind = "flight", min = [-0.9, 0.76, -0.9], max = [0.9, 2.0, 0.9], tar
     CHECK(circles > 10);
     // Its body inside the volume: above the floor by the body and delta.
     CHECK(lowest - 0.003 >= 0.76);
+}
+
+TEST_CASE("one seed's loop, pinned: the level of determinism flight.h states") {
+    // On the development machine's toolchain, libm and flags (flight.h,
+    // GDSA.2): a change of any of them that moves the loop fails here.
+    const scene::SceneDescription s = scene::parse(flying(normal), "flight");
+    const animation::Flight& f = s.animation.motions.flights[0];
+    CHECK(f.loop == 0x1.016e3730c1826p+9);
+    CHECK(f.segments.size() == 138);
+    CHECK(f.flashes.starts.size() == 63);
+    const contracts::Float3 at_20 = animation::position(f, Seconds(20.0));
+    CHECK(at_20.x == 0x1.63f23cp-1f);
+    CHECK(at_20.y == 0x1.a5bdd8p-1f);
+    CHECK(at_20.z == 0x1.89affp-1f);
+    const contracts::Float3 at_400 = animation::position(f, Seconds(400.5));
+    CHECK(at_400.x == 0x1.ed9c5p-1f);
+    CHECK(at_400.y == 0x1.dfdb5cp-1f);
+    CHECK(at_400.z == -0x1.2b2918p-1f);
+}
+
+TEST_CASE("a flight make_flight did not make is refused, as is a segment of no behaviour") {
+    CHECK_THROWS_AS(animation::position(animation::Flight{}, Seconds(1.0)), std::invalid_argument);
+    const scene::SceneDescription s = scene::parse(flying(normal), "flight");
+    animation::Flight corrupt = s.animation.motions.flights[0];
+    corrupt.segments[0].behaviour = static_cast<animation::Behaviour>(9);
+    CHECK_THROWS_AS(animation::position(corrupt, Seconds(0.0)), std::logic_error);
+}
+
+TEST_CASE("a glow refuses a time past what its rhythm counts, and a schedule with no loop") {
+    animation::Glows glows;
+    glows.rhythms.push_back({animation::least_period, animation::least_period / 4.0, 0.1f, 3});
+    const animation::GlowRecord rhythm{animation::GlowKind::rhythm, 0};
+    CHECK_NOTHROW((void)animation::glow(glows, rhythm, Seconds(86400.0 * 365.0)));  // a year
+    CHECK_THROWS_AS((void)animation::glow(glows, rhythm, Seconds(1e17)), std::invalid_argument);
+    CHECK_THROWS_AS((void)animation::glow(glows, rhythm, Seconds(std::nan(""))), std::invalid_argument);
+    glows.schedules.push_back({});
+    const animation::GlowRecord schedule{animation::GlowKind::schedule, 0};
+    CHECK_THROWS_AS((void)animation::glow(glows, schedule, Seconds(1.0)), std::invalid_argument);
 }

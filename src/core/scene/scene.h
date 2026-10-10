@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -32,8 +33,8 @@ namespace serenity::scene {
 // What is rendered, as data: the camera, the environment, the textures,
 // the materials, the shapes that wear them, the lights, which are the
 // spheres that wear an emissive material, and how the shapes that move
-// move; and swarms, many fireflies from one entry (swarm.h). Read from a scene file in
-// scenes/, kept apart from frame graph files (core/frame/graph_file.h), so
+// move; and swarms, many fireflies from one entry (swarm.h). Read from a
+// scene file in scenes/, kept apart from frame graph files (core/frame/graph_file.h), so
 // one scene runs under any graph.
 //
 // The description is the scene as the GPU will hold it, built on the CPU: an
@@ -205,8 +206,9 @@ namespace serenity::scene {
 // brightness is a factor on the radiance, from `dim` between flashes (in
 // [0, 1)) up to 1 at a flash's peak, a flash lasting `flash` seconds:
 //
-//   - rhythm flashes every `period` seconds, each moved by up to a fifth of
-//     it, drawn from `seed`; `flash` at most half the period;
+//   - rhythm flashes every `period` seconds, at least least_period
+//     (core/animation/glow.h), each moved by up to a fifth of it, drawn from
+//     `seed`; `flash` at most half the period;
 //   - flight flashes when the light's flight says: on each swoop's climb,
 //     now and then while circling or drifting (its flight's flash schedule,
 //     copied into a glow of the schedule kind, core/animation/flashes.h).
@@ -220,7 +222,8 @@ namespace serenity::scene {
 // greater than 0, a seed below 0, a shape outside the world or a motion that
 // could carry it out, a flight's box whose min is not below its max, a
 // negative clearance or weight, weights all 0, a circle weight with no
-// targets, a period or flash out of range, a dim outside [0, 1), a wood, swirl
+// targets, a period under least_period or a flash out of range, a dim
+// outside [0, 1), a wood, swirl
 // or coated color outside [0, 1], a ring under wood_least_ring or a board
 // outside wood_least_board to wood_most_board (core/textures/wood.h), a wood's
 // or swirl's seed past 2^32 - 1, a swirl's vanes outside 1 to 16, a medium's
@@ -238,8 +241,11 @@ namespace serenity::scene {
 //
 // Read once, at start-up. Every flight in the scene, written or a swarm's,
 // is made once every shape is read, all together, in parallel
-// (core/animation/flight.h, make_flights): for the marbles' 512 fireflies
-// the load's largest cost (flight.h gives its measure).
+// (core/animation/flight.h, make_flights): for the marbles' fireflies the
+// load's largest cost (docs/research/2026-10-10-flight-load.md measures
+// it). load() reads the file whole, sized from the file system, and a read
+// that fails or ends early, a directory's included, is an Error, never a
+// shorter scene.
 
 // How far the world reaches from the origin on every axis, in meters (above).
 inline constexpr double world_extent = 1.0e6;

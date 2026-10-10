@@ -1,93 +1,103 @@
 #include "core/animation/wander.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <numbers>
 #include <stdexcept>
+
+#include "core/animation/draw.h"
 
 namespace serenity::animation {
 
 namespace {
 
 constexpr int terms = 3;
+constexpr double two_pi = 2.0 * std::numbers::pi;
+constexpr double float_max = std::numeric_limits<float>::max();
 
-// splitmix64's finalizer (Steele, Lea and Flood 2014): a bijection on 64
-// bits whose outputs pass BigCrush for consecutive inputs.
-std::uint64_t splitmix64(std::uint64_t x) {
-    x += 0x9e3779b97f4a7c15ull;
-    x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ull;
-    x = (x ^ (x >> 27)) * 0x94d049bb133111ebull;
-    return x ^ (x >> 31);
-}
+// Step 1's draws: the weight in [0.5, 1) and the frequency ratio in
+// [0.4, 1.6) of a term, each as least + span x a draw.
+constexpr double least_weight = 0.5;
+constexpr double weight_span = 0.5;
+constexpr double least_ratio = 0.4;
+constexpr double ratio_span = 1.2;
 
 enum class Draw : std::uint64_t { weight = 0, ratio = 1, phase = 2 };
 
 // A number in [0, 1) that is a function of the seed, the axis, the term and
 // which of the term's numbers it is, alone: the top 53 bits of the hash, a
-// double's mantissa.
-double draw(std::uint64_t seed, int axis, int term, Draw which) {
+// double's mantissa. The values of Draw and the key's layout are the
+// wander's keying, which its tests pin.
+double wander_draw(std::uint64_t seed, int axis, int term, Draw which) {
     const std::uint64_t key = (static_cast<std::uint64_t>(axis) << 16) | (static_cast<std::uint64_t>(term) << 8) |
                               static_cast<std::uint64_t>(which);
     const std::uint64_t bits = splitmix64(splitmix64(seed) ^ key);
     return static_cast<double>(bits >> 11) * 0x1.0p-53;
 }
 
-double component(contracts::Float3 v, int axis) {
-    return axis == 0 ? v.x : (axis == 1 ? v.y : v.z);
+// `x` rounded to a float no greater, and no less: so a float box holds every
+// point of the double one it rounds (F.10).
+float round_down(double x) noexcept {
+    const auto f = static_cast<float>(x);
+    return static_cast<double>(f) > x ? std::nextafter(f, -std::numeric_limits<float>::infinity()) : f;
+}
+
+float round_up(double x) noexcept {
+    const auto f = static_cast<float>(x);
+    return static_cast<double>(f) < x ? std::nextafter(f, std::numeric_limits<float>::infinity()) : f;
+}
+
+// The box `center` +/- `grown` on each axis, in double, rounded outward.
+contracts::Box outward(contracts::Float3 center, double grown) {
+    return contracts::Box{
+        {round_down(center.x - grown), round_down(center.y - grown), round_down(center.z - grown)},
+        {round_up(center.x + grown), round_up(center.y + grown), round_up(center.z + grown)},
+    };
 }
 
 }  // namespace
 
-Wander make_wander(contracts::Float3 anchor, float reach, float speed, std::uint64_t seed, float body,
-                   const contracts::Obstacles& obstacles) {
-    constexpr double float_max = std::numeric_limits<float>::max();
+Wander make_wander(const WanderParams& params, float body, const contracts::Obstacles& obstacles) {
+    const float reach = params.reach;
+    const float speed = params.speed;
     if (!(std::isfinite(reach) && reach > 0.0f) || !(std::isfinite(speed) && speed > 0.0f) ||
         !(std::isfinite(body) && body >= 0.0f)) {
-        throw std::invalid_argument("make_wander: reach and speed must be finite and greater than 0");
+        throw std::invalid_argument(
+            "make_wander: reach and speed must be finite and greater than 0, and body finite and 0 or more");
     }
     for (int axis = 0; axis < 3; ++axis) {
-        const double a = component(anchor, axis);
+        const double a = contracts::component(params.anchor, axis);
         if (!std::isfinite(a) || std::abs(a) + static_cast<double>(reach) + static_cast<double>(body) > float_max) {
             throw std::invalid_argument("make_wander: anchor +/- (reach + body) must lie within float's range");
         }
     }
     // Wherever it wanders, its body touches no still shape: the reach grown
     // by the body, rounded outward, against every still shape.
-    const auto down = [](double x) {
-        const float f = static_cast<float>(x);
-        return static_cast<double>(f) > x ? std::nextafter(f, -std::numeric_limits<float>::infinity()) : f;
-    };
-    const auto up = [](double x) {
-        const float f = static_cast<float>(x);
-        return static_cast<double>(f) < x ? std::nextafter(f, std::numeric_limits<float>::infinity()) : f;
-    };
-    const double grown = static_cast<double>(reach) + static_cast<double>(body);
-    const contracts::Box swept{{down(anchor.x - grown), down(anchor.y - grown), down(anchor.z - grown)},
-                               {up(anchor.x + grown), up(anchor.y + grown), up(anchor.z + grown)}};
-    if (obstacles.touches(swept)) {
-        throw std::invalid_argument("its wander could carry it into a still shape");
+    if (obstacles.touches(outward(params.anchor, static_cast<double>(reach) + static_cast<double>(body)))) {
+        throw Refusal("its wander could carry it into a still shape");
     }
-    constexpr double two_pi = 2.0 * std::numbers::pi;
 
-    Wander wander;
-    wander.anchor = anchor;
-    wander.reach = reach;
+    Wander wander{.anchor = params.anchor, .reach = reach};
     double mean_square_speed = 0.0;  // s0^2, with the ratios g as frequencies
     for (int axis = 0; axis < 3; ++axis) {
+        const auto a = static_cast<std::size_t>(axis);
         // Step 1: the weights, ratios and phases, from the seed alone.
-        double weights[terms];
+        std::array<double, terms> weights{};
         double total = 0.0;
         for (int k = 0; k < terms; ++k) {
-            weights[k] = 0.5 + 0.5 * draw(seed, axis, k, Draw::weight);
-            total += weights[k];
-            wander.frequency[axis][k] = 0.4 + 1.2 * draw(seed, axis, k, Draw::ratio);
-            wander.phase[axis][k] = two_pi * draw(seed, axis, k, Draw::phase);
+            const auto i = static_cast<std::size_t>(k);
+            weights[i] = least_weight + weight_span * wander_draw(params.seed, axis, k, Draw::weight);
+            total += weights[i];
+            wander.frequency[a][i] = least_ratio + ratio_span * wander_draw(params.seed, axis, k, Draw::ratio);
+            wander.phase[a][i] = two_pi * wander_draw(params.seed, axis, k, Draw::phase);
         }
         // Step 2: the amplitudes, summing to the reach on each axis.
-        for (int k = 0; k < terms; ++k) {
-            wander.amplitude[axis][k] = static_cast<double>(reach) * weights[k] / total;
-            const double v = two_pi * wander.frequency[axis][k] * wander.amplitude[axis][k];
+        for (std::size_t i = 0; i < terms; ++i) {
+            wander.amplitude[a][i] = static_cast<double>(reach) * weights[i] / total;
+            const double v = two_pi * wander.frequency[a][i] * wander.amplitude[a][i];
             mean_square_speed += 0.5 * v * v;
         }
     }
@@ -102,13 +112,11 @@ Wander make_wander(contracts::Float3 anchor, float reach, float speed, std::uint
 }
 
 contracts::Float3 position(const Wander& wander, frame::Seconds t) {
-    constexpr double two_pi = 2.0 * std::numbers::pi;
-    constexpr double float_max = std::numeric_limits<float>::max();
     const double seconds = t.count();
-    double p[3];
-    for (int axis = 0; axis < 3; ++axis) {
-        double sum = component(wander.anchor, axis);
-        for (int k = 0; k < terms; ++k) {
+    std::array<double, 3> p{};
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+        double sum = contracts::component(wander.anchor, static_cast<int>(axis));
+        for (std::size_t k = 0; k < terms; ++k) {
             sum += wander.amplitude[axis][k] *
                    std::sin(two_pi * wander.frequency[axis][k] * seconds + wander.phase[axis][k]);
         }
@@ -123,20 +131,7 @@ contracts::Float3 position(const Wander& wander, frame::Seconds t) {
 Extent extent(const Wander& wander) {
     // Rounded outward, so the float box holds every point the path reaches:
     // the scene reader's check against still shapes stays conservative.
-    const auto down = [](double x) {
-        const float f = static_cast<float>(x);
-        return static_cast<double>(f) > x ? std::nextafter(f, -std::numeric_limits<float>::infinity()) : f;
-    };
-    const auto up = [](double x) {
-        const float f = static_cast<float>(x);
-        return static_cast<double>(f) < x ? std::nextafter(f, std::numeric_limits<float>::infinity()) : f;
-    };
-    const double r = wander.reach;
-    const contracts::Float3& a = wander.anchor;
-    return Extent{
-        {down(a.x - r), down(a.y - r), down(a.z - r)},
-        {up(a.x + r), up(a.y + r), up(a.z + r)},
-    };
+    return outward(wander.anchor, static_cast<double>(wander.reach));
 }
 
 }  // namespace serenity::animation

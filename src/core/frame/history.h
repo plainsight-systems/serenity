@@ -95,7 +95,8 @@ public:
 
     // accumulated_since for frame `index`, the frames asked for in order;
     // `view_changed` when what the window shows changed since the last
-    // frame (its size).
+    // frame (its size). Throws HistoryError for an index before the one the
+    // image started at: frames out of order (I.5).
     std::uint64_t since(std::uint64_t index, bool view_changed);
 
 private:
@@ -117,7 +118,10 @@ struct HeadlessPlan {
     std::uint64_t samples = 1;  // rendered per frame: 1 for a graph that accumulates nothing
     bool instants = false;      // each frame's image its own: the scene changes and time advances
 
-    // Sample `s` (< samples) of frame `frame`.
+    // Sample `s` of frame `frame`. Preconditions, checked (I.5, E.2): s <
+    // samples, else std::invalid_argument; and the frame's indices within
+    // 64 bits, else std::overflow_error rather than a wrapped index, which
+    // would seed a sample with numbers another already used.
     Sample sample(std::uint64_t frame, std::uint64_t s) const;
 };
 

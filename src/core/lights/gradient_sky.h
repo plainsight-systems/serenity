@@ -9,6 +9,7 @@
 // that leaves the scene sees (metal/passes/preview/preview.h). The shader
 // half is metal/lights/gradient_sky.metal.h.
 
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 
 namespace serenity {
@@ -22,6 +23,9 @@ struct GradientSkyData {
 };
 
 static_assert(sizeof(GradientSkyData) == 32, "GradientSkyData must be the same 32 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<GradientSkyData>, "GradientSkyData is written to the GPU as bytes");
+#endif
 
 }  // namespace lights
 }  // namespace serenity

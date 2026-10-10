@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "core/animation/extent.h"
+#include "core/animation/refusal.h"
 #include "core/contracts/float3.h"
 #include "core/contracts/obstacles.h"
 #include "core/frame/frame_inputs.h"
@@ -18,9 +19,11 @@ namespace serenity::animation {
 // (logical-overview.md, principle 1): the headless renderer jumps to any
 // instant, and the same t always places it in the same spot.
 //
-// The scene gives four numbers (core/scene/scene.h): the anchor, the shape's
-// own center; the reach, how far it strays along each axis; the speed, its
-// root-mean-square speed; and a seed, so no two wander alike. make_wander()
+// The scene gives four numbers (core/scene/scene.h), a WanderParams: the
+// anchor, the shape's own center; the reach, how far it strays along each
+// axis; the speed, its root-mean-square speed; and a seed, so no two wander
+// alike. Named fields, not adjacent floats a caller could swap (I.24).
+// make_wander()
 // turns them into the path, by these steps, which the code carries by
 // number:
 //
@@ -45,7 +48,9 @@ namespace serenity::animation {
 // drift and not an orbit.
 //
 // The draws are a hash of (seed, axis, term, which number), splitmix64
-// (Steele, Lea and Flood 2014), its top 53 bits as a double in [0, 1). Not
+// (Steele, Lea and Flood 2014; draw.h's, shared, ES.3), keyed as
+// splitmix64(splitmix64(seed) ^ key), the wander's own keying, its top 53
+// bits as a double in [0, 1). Not
 // <random>'s distributions: the standard fixes their results but not their
 // algorithms, so the same seed would wander differently under another
 // standard library (environmental determinism). Evaluated in double: at
@@ -55,13 +60,21 @@ namespace serenity::animation {
 // The extent is the box the center never leaves: anchor +/- reach on each
 // axis. make_wander() checks that the body, wherever in it (the extent grown
 // by the body's radius, rounded outward), touches no still shape
-// (contracts::Obstacles::touches, contract 11), and refuses otherwise.
+// (contracts::Obstacles::touches, contract 11), and refuses otherwise, by a
+// Refusal (refusal.h).
 //
 // Not performance-sensitive per wander: make_wander() runs once, at load;
 // position() is 9 sines in double, once per moving shape per frame.
 
+struct WanderParams {
+    contracts::Float3 anchor{};
+    float reach = 0.0f;  // finite, greater than 0
+    float speed = 0.0f;  // finite, greater than 0
+    std::uint64_t seed = 0;
+};
+
 struct Wander {
-    contracts::Float3 anchor;
+    contracts::Float3 anchor{};
     float reach = 0.0f;  // greater than 0
     // Per axis (x, y, z), per term: the amplitude, the frequency in hertz,
     // and the phase in radians.
@@ -71,13 +84,13 @@ struct Wander {
 };
 
 // The path for these numbers, by steps 1 to 3, of a body of radius `body`
-// kept clear of `obstacles`. `reach` and `speed` must be finite and greater
-// than 0, and every point the body can reach a float: |anchor| + reach +
-// body no greater than FLT_MAX on each axis, in double, so no position rounds
-// to an infinity. Throws std::invalid_argument for numbers that are not, or
-// a reach whose body could touch a still shape (I.6).
-Wander make_wander(contracts::Float3 anchor, float reach, float speed, std::uint64_t seed, float body,
-                   const contracts::Obstacles& obstacles);
+// kept clear of `obstacles`. Preconditions, checked (I.5, E.2): `reach` and
+// `speed` finite and greater than 0, `body` finite and 0 or more, and every
+// point the body can reach a float: |anchor| + reach + body no greater than
+// FLT_MAX on each axis, in double, so no position rounds to an infinity.
+// Throws std::invalid_argument for numbers that are not, and a Refusal for a
+// reach whose body could touch a still shape.
+Wander make_wander(const WanderParams& params, float body, const contracts::Obstacles& obstacles);
 
 // Where it is at `t`.
 contracts::Float3 position(const Wander& wander, frame::Seconds t);

@@ -1,7 +1,7 @@
 #include "core/materials/coated.h"
 
 #include <cmath>
-#include <numbers>
+#include <stdexcept>
 
 namespace serenity::materials {
 
@@ -10,7 +10,7 @@ namespace {
 // The unpolarized Fresnel reflectance at a smooth boundary, cos_i the cosine
 // of incidence and eta = n_from / n_to: 1 past the critical angle. The
 // shaders' (metal/materials/dielectric.metal.h), in double, for load.
-double fresnel(double cos_i, double eta) {
+double fresnel(double cos_i, double eta) noexcept {
     const double sin2_t = eta * eta * (1.0 - cos_i * cos_i);
     if (sin2_t > 1.0) {
         return 1.0;
@@ -24,6 +24,9 @@ double fresnel(double cos_i, double eta) {
 }  // namespace
 
 double internal_escape(double ior) {
+    if (!(std::isfinite(ior) && ior > 1.0)) {
+        throw std::invalid_argument("internal_escape: a coat's ior must be finite and greater than 1");
+    }
     // From the coat's side, eta = ior / 1. Past the critical angle theta_c
     // all reflects and nothing escapes; below it, what the reflectance lets
     // through, (1 - F) 2 cos sin, integrated directly, so a coat that lets

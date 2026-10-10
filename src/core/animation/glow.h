@@ -31,12 +31,18 @@ namespace serenity::animation {
 //           k period + jitter(seed, k). For a light that is not flying, or
 //           should not follow its flight. Found for any t from k =
 //           floor(t / period) and its neighbors: no state. `flash` at most
-//           half the period, so neighbors cannot overlap.
+//           half the period, so neighbors cannot overlap. The period is at
+//           least least_period, which the scene reader holds it to, so k
+//           stays an exact integer for any t a run reaches: glow() refuses,
+//           by std::invalid_argument, a t whose k would pass 2^62 (some
+//           10^8 years at the least period), rather than convert a double
+//           past int64's range, which is undefined (ES.46).
 //   schedule  flashes at the starts a schedule gives (flashes.h), in its
 //           loop. A flying firefly's schedule is its flight's (flight.h,
 //           step 7): on each swoop's climb, and now and then while it circles
 //           or drifts; the scene reader copies it in, so this kind names no
-//           motion. Found by binary search on the starts.
+//           motion. Found by binary search on the starts. Its loop must be
+//           longer than 0, which glow() checks (I.5).
 //
 // The factor reaches the GPU per light per frame (metal/scene/
 // light_glows.h); the radiance in the scene is the peak.
@@ -44,18 +50,22 @@ namespace serenity::animation {
 // Not performance-sensitive per light: a few comparisons and one sine, once
 // per glowing light per frame.
 
-enum class GlowKind : std::uint32_t {
-    rhythm = 0,
-    schedule = 1,
+// Seconds: the shortest period a rhythm may have, a thousand flashes a
+// second, past any firefly's.
+inline constexpr double least_period = 1e-3;
+
+enum class GlowKind {
+    rhythm,
+    schedule,
 };
 
 struct GlowRecord {
-    GlowKind kind;
-    std::uint32_t index;  // into that kind's array
+    GlowKind kind = GlowKind::rhythm;
+    std::uint32_t index = 0;  // into that kind's array
 };
 
 struct Rhythm {
-    double period = 0.0;  // seconds between flashes; > 0
+    double period = 0.0;  // seconds between flashes; at least least_period
     double flash = 0.0;   // a flash's length; in (0, period / 2]
     float dim = 0.0f;     // brightness between flashes; in [0, 1)
     std::uint64_t seed = 0;
@@ -63,7 +73,7 @@ struct Rhythm {
 
 struct ScheduleGlow {
     FlashSchedule schedule;
-    double flash = 0.0;  // a flash's length; in (0, 1): a schedule's flashes are at least a second apart
+    double flash = 0.0;  // a flash's length; in (0, flash_spacing): a schedule's flashes are that far apart
     float dim = 0.0f;    // brightness between flashes; in [0, 1)
 };
 
@@ -73,8 +83,11 @@ struct Glows {
 };
 
 // The factor on its radiance the glow `record` gives at `t`, in [dim, 1].
-// The record must index its kind's array; the scene reader makes it so. A
-// switch with no default.
+// The record must index its kind's array; the scene reader makes it so, and
+// .at() checks it. A switch with no default; a kind no enumerator names is
+// refused by std::logic_error, never answered (P.6). Throws
+// std::invalid_argument for a t or a glow outside the kinds' preconditions
+// above.
 float glow(const Glows& glows, GlowRecord record, frame::Seconds t);
 
 }  // namespace serenity::animation

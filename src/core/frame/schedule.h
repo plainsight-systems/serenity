@@ -41,10 +41,10 @@ namespace serenity::frame {
 // So a frame graph that computes light ends in a presenting pass, which
 // decides how its light looks: display shows it as it is, as tests and
 // diagnostics want; tone_map gives it exposure, glare and a film-like
-// roll-off, as the window and movies want (core/passes/tone_map.h). The backend records
-// the barrier between a pass that writes an image and a later one that reads
-// it (metal/frame/renderer.h).
-enum class PassKind : std::uint8_t {
+// roll-off, as the window and movies want (core/passes/tone_map.h). The
+// backend records the barrier between a pass that writes an image and a
+// later one that reads it (metal/frame/renderer.h).
+enum class PassKind {
     test_pattern,  // a diagnostic image, a function of pixel and time; writes the target
     preview,       // deterministic ray tracing, direct light only; needs a scene; writes radiance
     path,          // path tracing, naive, accumulating while the image holds still; needs a scene; writes radiance
@@ -104,8 +104,12 @@ std::optional<std::string> invalid(const Schedule& schedule);
 // passes.
 std::optional<std::string> invalid(const passes::ToneMap& settings);
 
-// The name each kind is written as in a frame graph file, and back. One table, so
-// a kind and its name cannot disagree in two places.
+// The name each kind is written as in a frame graph file, and back: name()
+// is the one mapping, a switch with no default (-Wswitch), and pass_kind()
+// reads it back through the list of every kind, which a static_assert holds
+// to the enum's length (schedule.cpp), so a kind cannot have a name and be
+// missing from the list. A kind no enumerator names is refused by
+// std::logic_error here and in every function above, never answered (P.6).
 std::string_view name(PassKind kind);
 std::optional<PassKind> pass_kind(std::string_view name);
 

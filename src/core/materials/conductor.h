@@ -10,12 +10,7 @@
 // mirror, 0.3 to 0.5 a soft, satin metal. The shader half is
 // metal/materials/conductor.metal.h.
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
-
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 
 namespace serenity {
@@ -27,6 +22,9 @@ struct ConductorData {
 };
 
 static_assert(sizeof(ConductorData) == 16, "ConductorData must be the same 16 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<ConductorData>, "ConductorData is written to the GPU as bytes");
+#endif
 
 }  // namespace materials
 }  // namespace serenity

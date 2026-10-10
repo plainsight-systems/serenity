@@ -1,14 +1,32 @@
 #include "core/frame/schedule.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <initializer_list>
+#include <iterator>
+#include <stdexcept>
+#include <string>
 
 namespace serenity::frame {
 
 namespace {
 
+// Every kind, in declaration order: the list pass_kind() reads names back
+// through. The switches below cover every kind (-Wswitch); this list is
+// held to the enum by its length, so a kind added last and left out of it
+// fails to compile (schedule.h).
 constexpr std::array<PassKind, 5> kinds = {PassKind::test_pattern, PassKind::preview, PassKind::path,
                                            PassKind::display, PassKind::tone_map};
+static_assert(kinds.size() == static_cast<std::size_t>(PassKind::tone_map) + 1,
+              "every PassKind is in `kinds`, in declaration order");
+static_assert(kinds.back() == PassKind::tone_map, "the last PassKind is last in `kinds`");
+
+[[noreturn]] void no_case(const char* where) {
+    // After a switch over every PassKind: reached only by a value no
+    // enumerator names, which is refused rather than answered (P.6).
+    throw std::logic_error(std::string(where) + ": a pass kind that is no PassKind");
+}
 
 // "a, b, c": the names of `passes`.
 std::string listed(const std::vector<PassKind>& passes) {
@@ -35,7 +53,7 @@ std::string_view name(PassKind kind) {
     case PassKind::tone_map:
         return "tone_map";
     }
-    return {};  // unreachable for a valid PassKind
+    no_case("name");
 }
 
 bool needs_scene(PassKind kind) {
@@ -49,7 +67,7 @@ bool needs_scene(PassKind kind) {
     case PassKind::path:
         return true;
     }
-    return true;  // unreachable for a valid PassKind
+    no_case("needs_scene");
 }
 
 bool accumulates(PassKind kind) {
@@ -63,7 +81,7 @@ bool accumulates(PassKind kind) {
     case PassKind::path:
         return true;
     }
-    return false;  // unreachable for a valid PassKind
+    no_case("accumulates");
 }
 
 bool writes_radiance(PassKind kind) {
@@ -77,7 +95,7 @@ bool writes_radiance(PassKind kind) {
     case PassKind::path:
         return true;
     }
-    return false;  // unreachable for a valid PassKind
+    no_case("writes_radiance");
 }
 
 bool reads_radiance(PassKind kind) {
@@ -91,7 +109,7 @@ bool reads_radiance(PassKind kind) {
     case PassKind::tone_map:
         return true;
     }
-    return false;  // unreachable for a valid PassKind
+    no_case("reads_radiance");
 }
 
 bool writes_target(PassKind kind) {
@@ -105,35 +123,30 @@ bool writes_target(PassKind kind) {
     case PassKind::tone_map:
         return true;
     }
-    return false;  // unreachable for a valid PassKind
+    no_case("writes_target");
 }
 
-std::optional<std::string> invalid(const Schedule& schedule) {
-    const std::vector<PassKind>& passes = schedule.passes;
-    if (passes.empty()) {
-        return "the frame graph has no passes";
-    }
+namespace {
 
-    // At most one pass accumulates.
+// The rules of schedule.h, invalid(), one function each (F.3), in the
+// order they are checked: none if `passes` keeps the rule, else why not.
+
+// At most one pass accumulates.
+std::optional<std::string> accumulation_broken(const std::vector<PassKind>& passes) {
     std::vector<PassKind> accumulating;
-    for (PassKind kind : passes) {
-        if (accumulates(kind)) {
-            accumulating.push_back(kind);
-        }
-    }
+    std::ranges::copy_if(passes, std::back_inserter(accumulating), [](PassKind kind) { return accumulates(kind); });
     if (accumulating.size() > 1) {
         return "the frame graph has " + std::to_string(accumulating.size()) + " passes that accumulate (" +
                listed(accumulating) + "); one accumulated image holds one pass's history, so a graph may have at "
                "most one";
     }
+    return std::nullopt;
+}
 
-    // One pass writes the target, the last.
+// One pass writes the target, the last.
+std::optional<std::string> presentation_broken(const std::vector<PassKind>& passes) {
     std::vector<PassKind> presenting;
-    for (PassKind kind : passes) {
-        if (writes_target(kind)) {
-            presenting.push_back(kind);
-        }
-    }
+    std::ranges::copy_if(passes, std::back_inserter(presenting), [](PassKind kind) { return writes_target(kind); });
     if (presenting.empty()) {
         return "no pass in the frame graph writes the image shown (" + listed(passes) +
                "); end it with display or tone_map";
@@ -147,9 +160,12 @@ std::optional<std::string> invalid(const Schedule& schedule) {
                ", does not write the image shown; " + std::string(name(presenting.front())) +
                ", which does, must be last";
     }
+    return std::nullopt;
+}
 
-    // At most one pass writes radiance; every pass that reads it follows it,
-    // and one does.
+// At most one pass writes radiance; every pass that reads it follows it,
+// and one does.
+std::optional<std::string> radiance_broken(const std::vector<PassKind>& passes) {
     std::optional<PassKind> writer;
     bool shown = false;
     for (PassKind kind : passes) {
@@ -172,12 +188,24 @@ std::optional<std::string> invalid(const Schedule& schedule) {
         return std::string(name(*writer)) +
                " computes light and no pass after it shows it; end the frame graph with display or tone_map";
     }
+    return std::nullopt;
+}
+
+}  // namespace
+
+std::optional<std::string> invalid(const Schedule& schedule) {
+    const std::vector<PassKind>& passes = schedule.passes;
+    if (passes.empty()) {
+        return "the frame graph has no passes";
+    }
+    for (const auto broken : {accumulation_broken, presentation_broken, radiance_broken}) {
+        if (std::optional<std::string> reason = broken(passes)) {
+            return reason;
+        }
+    }
 
     // The tone map's settings, exactly with its pass.
-    bool tone_maps = false;
-    for (PassKind kind : passes) {
-        tone_maps = tone_maps || kind == PassKind::tone_map;
-    }
+    const bool tone_maps = std::ranges::find(passes, PassKind::tone_map) != passes.end();
     if (tone_maps && !schedule.tone_map) {
         return "the frame graph has a tone_map pass and no tone-map settings";
     }
@@ -203,12 +231,8 @@ std::optional<std::string> invalid(const passes::ToneMap& settings) {
 }
 
 std::optional<PassKind> pass_kind(std::string_view text) {
-    for (PassKind kind : kinds) {
-        if (name(kind) == text) {
-            return kind;
-        }
-    }
-    return std::nullopt;
+    const auto found = std::ranges::find_if(kinds, [&](PassKind kind) { return name(kind) == text; });
+    return found == kinds.end() ? std::nullopt : std::optional<PassKind>{*found};
 }
 
 std::span<const PassKind> all_pass_kinds() {
@@ -216,12 +240,7 @@ std::span<const PassKind> all_pass_kinds() {
 }
 
 bool accumulates(const Schedule& schedule) {
-    for (PassKind kind : schedule.passes) {
-        if (accumulates(kind)) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(schedule.passes, [](PassKind kind) { return accumulates(kind); });
 }
 
 }  // namespace serenity::frame

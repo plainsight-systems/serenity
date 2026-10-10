@@ -71,16 +71,11 @@
 // theta_c. The escape is computed directly, as the integral below theta_c
 // of (1 - F_inside) 2 cos sin, by Simpson's rule over 4096 intervals of s,
 // theta = theta_c - s^2, which smooths the reflectance's infinite slope at
-// theta_c, in double; F_in is 1 less it, some 0.596 for ior 1.5. A pure function of the ior (F.8), computed once a material, at
-// load, rather than at every hit that resolves it; the shaders read the
-// result. CPU only.
+// theta_c, in double; F_in is 1 less it, some 0.596 for ior 1.5. A pure
+// function of the ior (F.8), computed once a material, at load, rather than
+// at every hit that resolves it; the shaders read the result. CPU only.
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
-
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 #include "core/contracts/texture_reference.h"
 
@@ -96,9 +91,14 @@ struct CoatedData {
 };
 
 static_assert(sizeof(CoatedData) == 32, "CoatedData must be the same 32 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<CoatedData>, "CoatedData is written to the GPU as bytes");
+#endif
 
 #if !defined(__METAL_VERSION__)
-// 1 - F_in and F_in for a coat of `ior`, greater than 1: above.
+// 1 - F_in and F_in for a coat of `ior`: above. Precondition, checked (I.5,
+// E.2): ior finite and greater than 1, without which there is no critical
+// angle and asin(1 / ior) is not a number; std::invalid_argument otherwise.
 double internal_escape(double ior);
 double internal_reflectance(double ior);
 #endif

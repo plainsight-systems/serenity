@@ -9,6 +9,7 @@
 
 #include "core/animation/extent.h"
 #include "core/animation/flashes.h"
+#include "core/animation/refusal.h"
 #include "core/contracts/float3.h"
 #include "core/contracts/obstacles.h"
 #include "core/frame/frame_inputs.h"
@@ -31,9 +32,8 @@ namespace serenity::animation {
 // any t could promise neither without walking every episode before it. Made
 // at load, the whole loop is built in order and checked once, and the
 // guarantee holds for all time; the loop then repeats. At 64 episodes of a
-// few seconds each, with the transits between, it lasts some ten minutes
-// (598 s for the first of scenes/brass_sphere_flight.toml), and among many
-// fireflies, each with its own loop, a repeat is not seen.
+// few seconds each, with the transits between, it lasts some ten minutes,
+// and among many fireflies, each with its own loop, a repeat is not seen.
 //
 // The behaviours, each a closed form over its own time tau from 0 to its
 // duration, every number drawn from the seed:
@@ -83,7 +83,11 @@ namespace serenity::animation {
 //           of the path is within delta of a sample, so the whole path, not
 //           only the samples, keeps the clearance and keeps its body inside
 //           the volume. If any sample is not, draw again (step 2), up to 16
-//           times.
+//           times. A segment that would take more than the params'
+//           most_steps samples is not clear either: its count is compared
+//           as a double, before it is made an integer (ES.46), so no number
+//           the scene reader accepts, a speed near FLT_MAX included, can
+//           overflow the conversion.
 //   Step 4  The transit into it from episode k - 1's end: the direct curve,
 //           checked as in step 3; failing that, over the waypoint; failing
 //           both, draw episode k again (step 2). An episode's 16 draws are a
@@ -102,39 +106,44 @@ namespace serenity::animation {
 //           schedule over the loop (flashes.h, read by a glow, glow.h): one
 //           at each swoop's climb, and, at a rate drawn per firefly, a few
 //           while circling and fewer while drifting; a flash that would
-//           start within a second of the one before is left out, so no two
-//           are closer than a second, the loop's last and first included. In
-//           time order.
+//           start within flash_spacing (a second) of the one before is left
+//           out, so no two are closer, the loop's last and first included.
+//           In time order.
 //
 // If an episode cannot be drawn clear within those redraws, make_flight throws
-// std::invalid_argument naming it: a target with no room to circle it, a
+// a Refusal (refusal.h) naming it: a target with no room to circle it, a
 // volume too tight for the clearance. The scene reader reports it against
-// the motion's line (core/scene/scene.h).
+// the motion's line (core/scene/scene.h). Numbers out of range, which the
+// reader checks first, are a std::invalid_argument.
 //
-// position(), by these steps:
+// position(), by these steps, of a flight make_flight made: one with
+// segments and a loop longer than 0, which it checks, throwing
+// std::invalid_argument for one that is not (I.5, E.2); a default Flight is
+// not one.
 //
 //   Step E1  t into the loop: tau = t mod the loop's length.
 //   Step E2  The segment holding tau, by binary search on the starts.
 //   Step E3  Its closed form at tau - its start.
 //
 // The draws are splitmix64 hashes of (seed, episode, attempt, which number),
-// as the wander's are (wander.h): the same seed flies the same loop under
-// any standard library. Evaluated in double, rounded to float once.
+// as the wander's are (wander.h): integers, the same under any standard
+// library. The loop they make is evaluated in double, rounded to float once,
+// with libm's sin, cos and asin, which are not correctly rounded and differ
+// between libms and with floating-point contraction; step 3 accepts or
+// rejects on a threshold, so one ulp can choose another attempt. The level
+// held is therefore: the same seed flies the same loop on the same
+// toolchain, libm and flags (GDSA.2). A test pins one seed's loop
+// (tests/flight_test.cpp), so a change of any of them that moves it is seen.
 //
 // Cost. At load, per firefly: 64 episodes and 64 transits, each some tens to
 // a few hundred samples, each sample one distance (contract 11) over every
 // still shape: some 10^4 to 10^5 distance tests per firefly per still
-// shape. Measured on the M3 Max, release: scenes/brass_sphere_flight.toml,
-// six fireflies among two still shapes, loads in 12.4 ms, 2 ms a firefly
-// (837 segments in all). The marbles' scene as it was at a987908, 512
-// fireflies among eleven still shapes (five spheres): 1.3 s one flight after
-// another, and loaded whole in 104 ms with its flights made in parallel
-// (make_flights) on the M3 Max's 16 cores. Its fourteen marbles, among 23
-// still shapes, load whole in 128 ms. A thousand fireflies among fifty marbles would want
-// a spatial index behind the obstacles as well, made when such a scene is.
-// Memory: some 140 segments of 22 doubles, some 25 KB per firefly. Per frame:
-// one binary search over 128 starts and one closed form of a few sines or a
-// cubic, nothing allocated (MEM.9).
+// shape, the load's largest cost. The load's measurements, and when a
+// spatial index behind the obstacles would pay, are in
+// docs/research/2026-10-10-flight-load.md. Memory: some 140 segments of 22
+// doubles, some 25 KB per firefly. Per frame: one binary search over some
+// 140 starts and one closed form of a few sines or a cubic, nothing
+// allocated (MEM.9).
 
 // Step 3's sampling bound, delta, in meters.
 inline constexpr double flight_delta = 0.01;
@@ -145,9 +154,18 @@ inline constexpr double flight_delta = 0.01;
 // (core/scene/swarm.h draws its starts so).
 inline constexpr double first_drift_reach = 0.1;
 
+// The most samples step 3 checks one segment in, by default: a bound on the
+// work one segment can ask for, each sample one distance over every still
+// shape, not a tuning number. A firefly's segment needs some 10^2 to 10^3
+// (at most some 0.5 m/s for at most some 9 s, a sample a centimeter); a
+// million is a path of 10 km in one segment, which no volume a scene can
+// hold a firefly in asks for, so only numbers that are not a firefly's
+// reach it (ES.45, CDSA.21).
+inline constexpr std::int64_t flight_most_steps = 1'000'000;
+
 // A still sphere a flight circles: where it is and how big.
 struct Target {
-    contracts::Float3 center;
+    contracts::Float3 center{};
     float radius = 0.0f;
 };
 
@@ -158,18 +176,20 @@ struct FlightParams {
     float clearance = 0.0f;        // from every still surface to its own, in meters; >= 0
     std::array<float, 3> weights{};  // circle, swoop, drift: >= 0, summing > 0; circle 0 with no targets
     std::uint64_t seed = 0;
+    std::int64_t most_steps = flight_most_steps;  // step 3's bound on one segment's samples; > 0
 };
 
-enum class Behaviour : std::uint32_t {
-    transit = 0,
-    circle = 1,
-    swoop = 2,
-    drift = 3,
+enum class Behaviour {
+    transit,
+    circle,
+    swoop,
+    drift,
 };
 
 // One stretch of the path: its behaviour, when it starts within the loop,
-// how long it lasts, and the numbers of its closed form (whose meaning is
-// its behaviour's, flight.cpp).
+// how long it lasts, and the numbers of its closed form, whose meaning is
+// its behaviour's: flight.cpp names where each number is, per behaviour
+// (P.1), and reads them only by those names.
 struct Segment {
     Behaviour behaviour = Behaviour::transit;
     double start = 0.0;
@@ -199,19 +219,24 @@ Flight make_flight(const FlightParams& params, contracts::Float3 start, float bo
 // the next unmade flight. If any cannot be made, throws, once every thread
 // has finished, the failure of the lowest k that failed: tasks, not
 // threads (CP.4), the threads made once a load (CP.41) and joined however
-// the call ends (CP.25), and each failure caught where it happens and
-// rethrown to the caller (E.17), so no exception ends a worker. A refusal,
-// make_flight's std::invalid_argument, is rethrown as a FlightsError that
-// carries k, its message prefixed "flight k: "; anything else as itself. So
-// the error does not depend on the threads either.
-struct FlightsError : std::invalid_argument {
-    FlightsError(std::size_t job, const std::string& what) : std::invalid_argument(what), job(job) {}
-    std::size_t job;
+// the call ends (CP.25). Each failure is caught in the worker that met it,
+// kept as a std::exception_ptr and rethrown here, in the caller, which can
+// report it: an exception that left a worker's function would end the
+// program. A refusal, make_flight's Refusal, is rethrown as a FlightsError
+// that carries k and the refusal's reason, its message "flight k: " and the
+// reason; anything else as itself. So the error does not depend on the
+// threads either.
+class FlightsError : public Refusal {
+public:
+    FlightsError(std::size_t job, const std::string& reason)
+        : Refusal("flight " + std::to_string(job) + ": " + reason), job(job), reason(reason) {}
+    std::size_t job;     // which job was refused
+    std::string reason;  // why, as make_flight said it (I.4: not parsed back out of what())
 };
 
 struct FlightJob {
     FlightParams params;
-    contracts::Float3 start;
+    contracts::Float3 start{};
     float body = 0.0f;
 };
 std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles);

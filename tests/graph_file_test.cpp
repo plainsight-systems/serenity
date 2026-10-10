@@ -138,3 +138,8 @@ TEST_CASE("the preview's graph in graphs/ reads") {
     REQUIRE(schedule.passes.size() == 2);
     CHECK(schedule.passes[1] == serenity::frame::PassKind::display);
 }
+
+TEST_CASE("a graph file that cannot be read whole is refused, never read as an empty graph") {
+    CHECK_THROWS_WITH_AS(load_schedule("graphs"), doctest::Contains("cannot read frame graph file graphs"),
+                         GraphFileError);
+}

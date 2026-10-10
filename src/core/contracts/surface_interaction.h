@@ -40,31 +40,22 @@
 // through this surface into the shape enters.
 //
 // Layout: four groups of a packed triple and a word, 16 bytes each, so no
-// field pads another (CACHE.5); 64 bytes, from 48 before object_position
-// and interior. In the path kernel each surface's interaction is live in
-// registers through its shading, so the 16 bytes are register pressure,
-// judged by the frame's time, not by occupancy (GPU.3, GPU.10;
-// docs/research/2026-10-09-medium-cost.md).
+// field pads another (CACHE.5); 64 bytes. In the path kernel each surface's
+// interaction is live in registers through its shading, so its size is
+// register pressure, judged by the frame's time, not by occupancy (GPU.3,
+// GPU.10); what the last 16 bytes cost is measured in
+// docs/research/2026-10-09-medium-cost.md.
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
-
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 
 namespace serenity {
 namespace contracts {
 
 // Bits of SurfaceInteraction::flags.
-#if defined(__METAL_VERSION__)
-constant constexpr uint32_t arrived_from_outside = 1u;  // against the outward normal
-#else
-constexpr uint32_t arrived_from_outside = 1u;
-#endif
+SERENITY_CONSTANT uint32_t arrived_from_outside = 1u;  // against the outward normal
 
 struct SurfaceInteraction {
     Float3 position;
@@ -79,6 +70,9 @@ struct SurfaceInteraction {
 
 static_assert(sizeof(SurfaceInteraction) == 64,
               "SurfaceInteraction must be the same 64 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<SurfaceInteraction>, "SurfaceInteraction is written to the GPU as bytes");
+#endif
 
 }  // namespace contracts
 }  // namespace serenity

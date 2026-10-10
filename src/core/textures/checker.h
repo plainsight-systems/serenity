@@ -7,12 +7,7 @@
 // floor(p.z / size) is even, b if odd. The shader half is
 // metal/textures/checker.metal.h.
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
-
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 
 namespace serenity {
@@ -26,6 +21,9 @@ struct CheckerData {
 };
 
 static_assert(sizeof(CheckerData) == 32, "CheckerData must be the same 32 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<CheckerData>, "CheckerData is written to the GPU as bytes");
+#endif
 
 }  // namespace textures
 }  // namespace serenity

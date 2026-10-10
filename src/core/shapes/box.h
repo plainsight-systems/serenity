@@ -12,6 +12,7 @@
 // first scene, are boxes. The shader half (metal/shapes/box.metal.h)
 // computes the exact entry point and the face's normal.
 
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 #include "core/contracts/transform.h"
 #include "core/shapes/primitive.h"
@@ -27,10 +28,13 @@ struct BoxData {
 };
 
 static_assert(sizeof(BoxData) == 32, "BoxData must be the same 32 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<BoxData>, "BoxData is written to the GPU as bytes");
+#endif
 
 #if !defined(__METAL_VERSION__)
 // Its extent in object space: itself.
-inline Bounds bounds(const BoxData& box) {
+constexpr Bounds bounds(const BoxData& box) noexcept {
     return Bounds{box.min, box.max};
 }
 

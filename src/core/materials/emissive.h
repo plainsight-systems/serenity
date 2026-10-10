@@ -7,12 +7,7 @@
 // lights). Only a sphere may wear it, and each sphere that does is a light
 // (lights/sphere_light.h); the scene reader refuses it on any other shape.
 
-#if defined(__METAL_VERSION__)
-#include <metal_stdlib>
-#else
-#include <stdint.h>
-#endif
-
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
 
 namespace serenity {
@@ -24,6 +19,9 @@ struct EmissiveData {
 };
 
 static_assert(sizeof(EmissiveData) == 16, "EmissiveData must be the same 16 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<EmissiveData>, "EmissiveData is written to the GPU as bytes");
+#endif
 
 }  // namespace materials
 }  // namespace serenity

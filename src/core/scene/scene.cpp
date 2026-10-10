@@ -1,29 +1,43 @@
 #include "core/scene/scene.h"
 
+#include <algorithm>
+#include <array>
+#include <charconv>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
+#include <functional>
 #include <initializer_list>
 #include <limits>
 #include <map>
 #include <optional>
 #include <sstream>
+#include <string>
+#include <system_error>
+#include <utility>
+#include <vector>
 
 #include <toml++/toml.hpp>
 
 #include "core/animation/flight.h"
 #include "core/animation/glow.h"
+#include "core/animation/refusal.h"
 #include "core/animation/wander.h"
+#include "core/camera/thin_lens.h"
 #include "core/contracts/medium.h"
 #include "core/contracts/obstacles.h"
-#include "core/camera/thin_lens.h"
 #include "core/scene/swarm.h"
 
 namespace serenity::scene {
 
 namespace {
 
+// Names in the file, to the index of what they name (T.42).
+using NameIndex = std::map<std::string, std::uint32_t, std::less<>>;
+
 // Reads one scene file; every error names the file and the line, in the
-// form compilers use, so editors can jump to it.
+// form compilers use, so editors can jump to it. The text of an error is
+// built only when it is raised.
 class Reader {
 public:
     explicit Reader(std::string_view source) : source_(source) {}
@@ -40,30 +54,26 @@ public:
 
     [[noreturn]] void fail(const std::string& message) const { throw Error(std::string(source_) + ": " + message); }
 
-    // Every key in `table` must be one of `allowed`.
-    void only(const toml::table& table, std::initializer_list<std::string_view> allowed, std::string_view what) const {
-        for (const auto& [key, value] : table) {
-            bool known = false;
-            for (std::string_view name : allowed) {
-                known = known || key.str() == name;
-            }
-            if (!known) {
+    // Every key in `t` must be one of `allowed`.
+    void only(const toml::table& t, std::initializer_list<std::string_view> allowed, std::string_view what) const {
+        for (const auto& [key, value] : t) {
+            if (std::ranges::none_of(allowed, [&](std::string_view name) { return key.str() == name; })) {
                 fail(key.source(), "unknown key '" + std::string(key.str()) + "' in " + std::string(what));
             }
         }
     }
 
-    const toml::node& required(const toml::table& table, std::string_view key, std::string_view what) const {
-        const toml::node* node = table.get(key);
-        if (node == nullptr) {
-            fail(table, std::string(what) + " has no '" + std::string(key) + "'");
+    const toml::node& required(const toml::table& t, std::string_view key, std::string_view what) const {
+        const toml::node* node = t.get(key);
+        if (!node) {
+            fail(t, std::string(what) + " has no '" + std::string(key) + "'");
         }
         return *node;
     }
 
     const toml::table& table(const toml::node& node, std::string_view what) const {
         const toml::table* t = node.as_table();
-        if (t == nullptr) {
+        if (!t) {
             fail(node, std::string(what) + " must be a table");
         }
         return *t;
@@ -86,9 +96,20 @@ public:
         return number(required(t, key, what), std::string(what) + "'s " + std::string(key));
     }
 
+    // An integer from `least` to `most`, or an Error saying so in `range`
+    // words (ES.3: the one way the file's integers are read).
+    std::int64_t integer(const toml::node& node, std::int64_t least, std::int64_t most,
+                         const std::string& message) const {
+        const std::optional<std::int64_t> value = node.is_integer() ? node.value<std::int64_t>() : std::nullopt;
+        if (!value || *value < least || *value > most) {
+            fail(node, message);
+        }
+        return *value;
+    }
+
     contracts::Float3 triple(const toml::node& node, std::string_view what) const {
         const toml::array* a = node.as_array();
-        if (a == nullptr || a->size() != 3) {
+        if (!a || a->size() != 3) {
             fail(node, std::string(what) + " must be an array of three numbers");
         }
         return {number((*a)[0], what), number((*a)[1], what), number((*a)[2], what)};
@@ -122,6 +143,49 @@ bool within(contracts::Float3 a, float low, float high) {
     return a.x >= low && a.x <= high && a.y >= low && a.y <= high && a.z >= low && a.z <= high;
 }
 
+// A number as an error message writes it, the shortest decimal that reads
+// back as it: 0.0001, 10 (ES.45: the message formats the constant it
+// states, so the two cannot disagree).
+std::string words(double value) {
+    std::array<char, 64> buffer{};
+    const auto [end, error] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value,
+                                            std::chars_format::fixed);
+    return error == std::errc{} ? std::string(buffer.data(), end) : std::to_string(value);
+}
+
+std::string words(float value) {
+    std::array<char, 64> buffer{};
+    const auto [end, error] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value,
+                                            std::chars_format::fixed);
+    return error == std::errc{} ? std::string(buffer.data(), end) : std::to_string(value);
+}
+
+// The flash-length messages say "under a second": the spacing a flight
+// keeps its flashes apart by, which this ties them to.
+static_assert(animation::flash_spacing == 1.0, "a flash's messages say 'under a second'");
+
+// What the world's bound says in an error: "within 1000 km of the origin
+// on every axis", from world_extent (I.22: built when an error is, not at
+// static initialization).
+std::string world_words() {
+    return "within " + words(world_extent / 1000.0) + " km of the origin on every axis";
+}
+
+// Whether [lo, hi] lies within the world on every axis (scene.h), in double.
+bool inside_world(double lo, double hi) {
+    return std::isfinite(lo) && std::isfinite(hi) && lo >= -world_extent && hi <= world_extent;
+}
+
+bool inside_world(contracts::Float3 lo, contracts::Float3 hi, double grown) {
+    for (int axis = 0; axis < 3; ++axis) {
+        if (!inside_world(static_cast<double>(contracts::component(lo, axis)) - grown,
+                          static_cast<double>(contracts::component(hi, axis)) + grown)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 contracts::Camera read_camera(const Reader& r, const toml::table& t) {
     r.only(t, {"position", "look_at", "up", "vertical_fov_degrees", "lens"}, "[camera]");
     contracts::Camera camera{};
@@ -141,9 +205,8 @@ contracts::Camera read_camera(const Reader& r, const toml::table& t) {
             r.fail(r.required(lens, "focus", "the camera's lens"), "the camera's lens's focus must be greater than 0");
         }
     }
-    const char* reason = nullptr;
-    if (!camera::valid(camera, &reason)) {
-        r.fail(t, std::string("the camera cannot be framed: ") + reason);
+    if (const std::optional<std::string_view> reason = camera::invalid(camera)) {
+        r.fail(t, "the camera cannot be framed: " + std::string(*reason));
     }
     return camera;
 }
@@ -162,12 +225,19 @@ lights::GradientSkyData read_environment(const Reader& r, const toml::table& t) 
 }
 
 std::uint64_t read_seed(const Reader& r, const toml::table& t, const std::string& what) {
-    const toml::node& node = r.required(t, "seed", what);
-    const std::optional<std::int64_t> seed = node.is_integer() ? node.value<std::int64_t>() : std::nullopt;
-    if (!seed || *seed < 0) {
-        r.fail(node, what + "'s seed must be an integer, 0 or more");
+    return static_cast<std::uint64_t>(r.integer(r.required(t, "seed", what), 0,
+                                                std::numeric_limits<std::int64_t>::max(),
+                                                what + "'s seed must be an integer, 0 or more"));
+}
+
+// A seed the shaders keep in 32 bits: a wood's or a swirl's.
+std::uint32_t read_seed_32(const Reader& r, const toml::table& t, const std::string& what) {
+    constexpr std::uint32_t most = std::numeric_limits<std::uint32_t>::max();
+    const std::uint64_t seed = read_seed(r, t, what);
+    if (seed > most) {
+        r.fail(r.required(t, "seed", what), what + "'s seed must be at most " + std::to_string(most));
     }
-    return static_cast<std::uint64_t>(*seed);
+    return static_cast<std::uint32_t>(seed);
 }
 
 float read_positive(const Reader& r, const toml::table& t, std::string_view key, const std::string& what) {
@@ -186,262 +256,283 @@ float read_at_least_zero(const Reader& r, const toml::table& t, std::string_view
     return v;
 }
 
-// Whether [lo, hi] lies within the world on every axis (scene.h), in double.
-bool inside_world(double lo, double hi) {
-    return std::isfinite(lo) && std::isfinite(hi) && lo >= -world_extent && hi <= world_extent;
+// A color at `key`, within [0, 1] in every channel.
+contracts::Float3 read_unit_color(const Reader& r, const toml::table& t, std::string_view key,
+                                  const std::string& what) {
+    const contracts::Float3 color = r.triple(t, key, what);
+    if (!within(color, 0.0f, 1.0f)) {
+        r.fail(r.required(t, key, what), what + "'s " + std::string(key) + " must be within [0, 1] in every channel");
+    }
+    return color;
 }
 
-bool inside_world(contracts::Float3 lo, contracts::Float3 hi, double grown) {
-    return inside_world(double(lo.x) - grown, double(hi.x) + grown) &&
-           inside_world(double(lo.y) - grown, double(hi.y) + grown) &&
-           inside_world(double(lo.z) - grown, double(hi.z) + grown);
+textures::CheckerData read_checker(const Reader& r, const toml::table& t, const std::string& what) {
+    r.only(t, {"kind", "size", "a", "b"}, what);
+    textures::CheckerData checker{};
+    checker.size = read_positive(r, t, "size", what);
+    checker.a = r.triple(t, "a", what);
+    checker.b = r.triple(t, "b", what);
+    return checker;
 }
 
-const std::string world_words = "within 1000 km of the origin on every axis";
+textures::WoodData read_wood(const Reader& r, const toml::table& t, const std::string& what) {
+    r.only(t, {"kind", "light", "dark", "ring", "board", "seed"}, what);
+    textures::WoodData wood{};
+    wood.light = read_unit_color(r, t, "light", what);
+    wood.dark = read_unit_color(r, t, "dark", what);
+    wood.ring = r.number(t, "ring", what);
+    if (!(wood.ring >= textures::wood_least_ring)) {
+        r.fail(r.required(t, "ring", what),
+               what + "'s ring must be at least " + words(textures::wood_least_ring) + " m");
+    }
+    wood.board = r.number(t, "board", what);
+    if (!(wood.board >= textures::wood_least_board && wood.board <= textures::wood_most_board)) {
+        r.fail(r.required(t, "board", what), what + "'s board must be from " + words(textures::wood_least_board) +
+                                                 " to " + words(textures::wood_most_board) + " m");
+    }
+    wood.seed = read_seed_32(r, t, what);
+    return wood;
+}
+
+textures::SwirlData read_swirl(const Reader& r, const toml::table& t, const std::string& what) {
+    r.only(t, {"kind", "a", "b", "vanes", "twist", "seed"}, what);
+    textures::SwirlData swirl{};
+    swirl.a = read_unit_color(r, t, "a", what);
+    swirl.b = read_unit_color(r, t, "b", what);
+    swirl.vanes = static_cast<std::uint32_t>(
+        r.integer(r.required(t, "vanes", what), 1, textures::swirl_most_vanes,
+                  what + "'s vanes must be an integer from 1 to " + std::to_string(textures::swirl_most_vanes)));
+    swirl.twist = r.number(t, "twist", what);
+    swirl.seed = read_seed_32(r, t, what);
+    return swirl;
+}
 
 // Textures, in name order; returns each name's index into the records.
-std::map<std::string, std::uint32_t, std::less<>> read_textures(const Reader& r, const toml::table& all,
-                                                                SceneDescription& scene) {
-    std::map<std::string, std::uint32_t, std::less<>> index;
+NameIndex read_textures(const Reader& r, const toml::table& all, SceneDescription& description) {
+    NameIndex index;
     for (const auto& [key, node] : all) {
-        const std::string name(key.str());
+        const std::string name{key.str()};
         const std::string what = "texture '" + name + "'";
         const toml::table& t = r.table(node, what);
         const std::string_view kind = r.text(t, "kind", what);
         if (kind == "checker") {
-            r.only(t, {"kind", "size", "a", "b"}, what);
-            textures::CheckerData checker{};
-            checker.size = r.number(t, "size", what);
-            if (!(checker.size > 0.0f)) {
-                r.fail(r.required(t, "size", what), what + "'s size must be greater than 0");
-            }
-            checker.a = r.triple(t, "a", what);
-            checker.b = r.triple(t, "b", what);
-            scene.textures.push_back({textures::TextureKind::checker, static_cast<std::uint32_t>(scene.checkers.size())});
-            scene.checkers.push_back(checker);
+            description.textures.push_back(
+                {textures::TextureKind::checker, static_cast<std::uint32_t>(description.checkers.size())});
+            description.checkers.push_back(read_checker(r, t, what));
         } else if (kind == "wood") {
-            r.only(t, {"kind", "light", "dark", "ring", "board", "seed"}, what);
-            textures::WoodData wood{};
-            wood.light = r.triple(t, "light", what);
-            wood.dark = r.triple(t, "dark", what);
-            for (const char* key : {"light", "dark"}) {
-                if (!within(r.triple(t, key, what), 0.0f, 1.0f)) {
-                    r.fail(r.required(t, key, what), what + "'s " + key + " must be within [0, 1] in every channel");
-                }
-            }
-            wood.ring = r.number(t, "ring", what);
-            if (!(wood.ring >= textures::wood_least_ring)) {
-                r.fail(r.required(t, "ring", what), what + "'s ring must be at least 0.0001 m");
-            }
-            wood.board = r.number(t, "board", what);
-            if (!(wood.board >= textures::wood_least_board && wood.board <= textures::wood_most_board)) {
-                r.fail(r.required(t, "board", what), what + "'s board must be from 0.001 to 10 m");
-            }
-            const std::uint64_t seed = read_seed(r, t, what);
-            if (seed > 0xFFFFFFFFull) {
-                r.fail(r.required(t, "seed", what), what + "'s seed must be at most 4294967295");
-            }
-            wood.seed = static_cast<std::uint32_t>(seed);
-            scene.textures.push_back({textures::TextureKind::wood, static_cast<std::uint32_t>(scene.woods.size())});
-            scene.woods.push_back(wood);
+            description.textures.push_back(
+                {textures::TextureKind::wood, static_cast<std::uint32_t>(description.woods.size())});
+            description.woods.push_back(read_wood(r, t, what));
         } else if (kind == "swirl") {
-            r.only(t, {"kind", "a", "b", "vanes", "twist", "seed"}, what);
-            textures::SwirlData swirl{};
-            swirl.a = r.triple(t, "a", what);
-            swirl.b = r.triple(t, "b", what);
-            for (const char* key : {"a", "b"}) {
-                if (!within(r.triple(t, key, what), 0.0f, 1.0f)) {
-                    r.fail(r.required(t, key, what), what + "'s " + key + " must be within [0, 1] in every channel");
-                }
-            }
-            const toml::node& vanes = r.required(t, "vanes", what);
-            const std::optional<std::int64_t> count = vanes.is_integer() ? vanes.value<std::int64_t>() : std::nullopt;
-            if (!count || *count < 1 || *count > 16) {
-                r.fail(vanes, what + "'s vanes must be an integer from 1 to 16");
-            }
-            swirl.vanes = static_cast<std::uint32_t>(*count);
-            swirl.twist = r.number(t, "twist", what);
-            const std::uint64_t seed = read_seed(r, t, what);
-            if (seed > 0xFFFFFFFFull) {
-                r.fail(r.required(t, "seed", what), what + "'s seed must be at most 4294967295");
-            }
-            swirl.seed = static_cast<std::uint32_t>(seed);
-            scene.textures.push_back({textures::TextureKind::swirl, static_cast<std::uint32_t>(scene.swirls.size())});
-            scene.swirls.push_back(swirl);
+            description.textures.push_back(
+                {textures::TextureKind::swirl, static_cast<std::uint32_t>(description.swirls.size())});
+            description.swirls.push_back(read_swirl(r, t, what));
         } else {
             r.fail(r.required(t, "kind", what),
                    "unknown texture kind '" + std::string(kind) + "'; known kinds: checker, wood, swirl");
         }
-        index.emplace(name, static_cast<std::uint32_t>(scene.textures.size() - 1));
+        index.emplace(name, static_cast<std::uint32_t>(description.textures.size() - 1));
     }
     return index;
+}
+
+media::AbsorbingData read_absorbing(const Reader& r, const toml::table& t, const std::string& what) {
+    r.only(t, {"kind", "tint", "tint_distance"}, what);
+    const contracts::Float3 tint = r.triple(t, "tint", what);
+    if (!(tint.x > 0.0f && tint.x <= 1.0f && tint.y > 0.0f && tint.y <= 1.0f && tint.z > 0.0f && tint.z <= 1.0f)) {
+        r.fail(r.required(t, "tint", what), what + "'s tint must be within (0, 1] in every channel");
+    }
+    const float distance = read_positive(r, t, "tint_distance", what);
+    // absorption = -ln(tint) / tint_distance (media/absorbing.h), in double,
+    // 0 or more for any tint in (0, 1], and checked within float's range
+    // before it is narrowed (ES.46).
+    const auto absorption = [&](float channel) {
+        const double a = -std::log(static_cast<double>(channel)) / static_cast<double>(distance);
+        if (!(a <= static_cast<double>(std::numeric_limits<float>::max()))) {
+            r.fail(r.required(t, "tint_distance", what),
+                   what + "'s tint over its tint_distance absorbs past what a float holds");
+        }
+        return static_cast<float>(a);
+    };
+    media::AbsorbingData absorbing{};
+    absorbing.absorption = {absorption(tint.x), absorption(tint.y), absorption(tint.z)};
+    return absorbing;
 }
 
 // Media, in name order (contract 12); returns each name's index into the
 // records.
-std::map<std::string, std::uint32_t, std::less<>> read_media(const Reader& r, const toml::table& all,
-                                                             SceneDescription& scene) {
-    std::map<std::string, std::uint32_t, std::less<>> index;
+NameIndex read_media(const Reader& r, const toml::table& all, SceneDescription& description) {
+    NameIndex index;
     for (const auto& [key, node] : all) {
-        const std::string name(key.str());
+        const std::string name{key.str()};
         const std::string what = "medium '" + name + "'";
         const toml::table& t = r.table(node, what);
         const std::string_view kind = r.text(t, "kind", what);
         if (kind == "absorbing") {
-            r.only(t, {"kind", "tint", "tint_distance"}, what);
-            const contracts::Float3 tint = r.triple(t, "tint", what);
-            if (!(tint.x > 0.0f && tint.x <= 1.0f && tint.y > 0.0f && tint.y <= 1.0f && tint.z > 0.0f &&
-                  tint.z <= 1.0f)) {
-                r.fail(r.required(t, "tint", what), what + "'s tint must be within (0, 1] in every channel");
-            }
-            const float distance = read_positive(r, t, "tint_distance", what);
-            // absorption = -ln(tint) / tint_distance (media/absorbing.h), in
-            // double, 0 or more for any tint in (0, 1], and checked within
-            // float's range before it is narrowed (ES.46).
-            const auto absorption = [&](float channel) {
-                const double a = -std::log(static_cast<double>(channel)) / static_cast<double>(distance);
-                if (!(a <= static_cast<double>(std::numeric_limits<float>::max()))) {
-                    r.fail(r.required(t, "tint_distance", what),
-                           what + "'s tint over its tint_distance absorbs past what a float holds");
-                }
-                return static_cast<float>(a);
-            };
-            media::AbsorbingData absorbing{};
-            absorbing.absorption = {absorption(tint.x), absorption(tint.y), absorption(tint.z)};
-            scene.media.push_back({media::MediumKind::absorbing, static_cast<std::uint32_t>(scene.absorbing.size())});
-            scene.absorbing.push_back(absorbing);
+            description.media.push_back(
+                {media::MediumKind::absorbing, static_cast<std::uint32_t>(description.absorbing.size())});
+            description.absorbing.push_back(read_absorbing(r, t, what));
         } else {
             r.fail(r.required(t, "kind", what),
                    "unknown medium kind '" + std::string(kind) + "'; known kinds: absorbing");
         }
-        index.emplace(name, static_cast<std::uint32_t>(scene.media.size() - 1));
+        index.emplace(name, static_cast<std::uint32_t>(description.media.size() - 1));
     }
     return index;
 }
 
+// A rough or coated surface's base: a color, or a texture by name, exactly
+// one.
+struct Albedo {
+    contracts::Float3 color{};
+    contracts::TextureReference texture{contracts::no_texture};
+};
+
+Albedo read_albedo(const Reader& r, const toml::table& t, const std::string& what, const NameIndex& texture_index) {
+    const bool has_color = t.contains("color");
+    const bool has_texture = t.contains("texture");
+    if (has_color == has_texture) {
+        r.fail(t, what + " needs exactly one of 'color' and 'texture'");
+    }
+    Albedo albedo;
+    if (has_color) {
+        albedo.color = r.triple(t, "color", what);
+        return albedo;
+    }
+    const std::string_view texture_name = r.text(t, "texture", what);
+    const auto found = texture_index.find(texture_name);
+    if (found == texture_index.end()) {
+        r.fail(r.required(t, "texture", what),
+               what + " uses texture '" + std::string(texture_name) + "', which is not defined");
+    }
+    albedo.texture.index = found->second;
+    return albedo;
+}
+
+materials::CoatedData read_coated(const Reader& r, const toml::table& t, const std::string& what,
+                                  const NameIndex& texture_index, const SceneDescription& description) {
+    r.only(t, {"kind", "color", "texture", "ior"}, what);
+    const Albedo base = read_albedo(r, t, what, texture_index);
+    materials::CoatedData coated{};
+    coated.color = base.color;
+    coated.texture = base.texture;
+    // Within [0, 1]: the base's bounces under the coat sum to
+    // rho / (1 - rho F_in), finite only below 1 / F_in (coated.h).
+    if (coated.texture.index == contracts::no_texture && !within(coated.color, 0.0f, 1.0f)) {
+        r.fail(r.required(t, "color", what), what + "'s color must be within [0, 1]");
+    }
+    // A texture's colors too: wood's and swirl's are read within it; a
+    // checker's are not otherwise checked.
+    if (coated.texture.index != contracts::no_texture) {
+        const textures::TextureRecord texture = description.textures[coated.texture.index];
+        if (texture.kind == textures::TextureKind::checker &&
+            (!within(description.checkers[texture.index].a, 0.0f, 1.0f) ||
+             !within(description.checkers[texture.index].b, 0.0f, 1.0f))) {
+            r.fail(r.required(t, "texture", what), what + "'s texture's colors must be within [0, 1]");
+        }
+    }
+    coated.ior = r.number(t, "ior", what);
+    if (!(coated.ior > 1.0f)) {
+        r.fail(r.required(t, "ior", what), what + "'s ior must be greater than 1");
+    }
+    // Once a material, at load (F.8): the shaders read it.
+    coated.escape = static_cast<float>(materials::internal_escape(coated.ior));
+    return coated;
+}
+
+materials::DielectricData read_dielectric(const Reader& r, const toml::table& t, const std::string& what) {
+    r.only(t, {"kind", "ior"}, what);
+    materials::DielectricData dielectric{};
+    dielectric.ior = r.number(t, "ior", what);
+    if (!(dielectric.ior > 1.0f)) {
+        r.fail(r.required(t, "ior", what), what + "'s ior must be greater than 1");
+    }
+    return dielectric;
+}
+
+materials::ConductorData read_conductor(const Reader& r, const toml::table& t, const std::string& what) {
+    r.only(t, {"kind", "f0", "roughness"}, what);
+    materials::ConductorData conductor{};
+    conductor.f0 = r.triple(t, "f0", what);
+    if (!within(conductor.f0, 0.0f, 1.0f)) {
+        r.fail(r.required(t, "f0", what), what + "'s f0 must be within [0, 1] in each channel");
+    }
+    conductor.roughness = r.number(t, "roughness", what);
+    if (!(conductor.roughness > 0.0f && conductor.roughness <= 1.0f)) {
+        r.fail(r.required(t, "roughness", what), what + "'s roughness must be in (0, 1]");
+    }
+    return conductor;
+}
+
+materials::EmissiveData read_emissive(const Reader& r, const toml::table& t, const std::string& what) {
+    r.only(t, {"kind", "radiance"}, what);
+    materials::EmissiveData emissive{};
+    emissive.radiance = r.triple(t, "radiance", what);
+    if (!within(emissive.radiance, 0.0f, std::numeric_limits<float>::max())) {
+        r.fail(r.required(t, "radiance", what), what + "'s radiance must not be negative");
+    }
+    return emissive;
+}
+
 // Materials, in name order; returns each name's index into the records.
-std::map<std::string, std::uint32_t, std::less<>> read_materials(
-    const Reader& r, const toml::table& all, const std::map<std::string, std::uint32_t, std::less<>>& texture_index,
-    SceneDescription& scene) {
-    std::map<std::string, std::uint32_t, std::less<>> index;
+NameIndex read_materials(const Reader& r, const toml::table& all, const NameIndex& texture_index,
+                         SceneDescription& description) {
+    NameIndex index;
+    const auto record = [&](materials::MaterialKind kind, std::size_t at) {
+        description.materials.push_back({kind, static_cast<std::uint32_t>(at)});
+    };
     for (const auto& [key, node] : all) {
-        const std::string name(key.str());
+        const std::string name{key.str()};
         const std::string what = "material '" + name + "'";
         const toml::table& t = r.table(node, what);
         const std::string_view kind = r.text(t, "kind", what);
-        // A color, or a texture by name: exactly one, as a rough and a
-        // coated surface's base both take it.
-        const auto albedo = [&](contracts::Float3& color, contracts::TextureReference& texture) {
-            const bool has_color = t.contains("color");
-            const bool has_texture = t.contains("texture");
-            if (has_color == has_texture) {
-                r.fail(t, what + " needs exactly one of 'color' and 'texture'");
-            }
-            texture.index = contracts::no_texture;
-            if (has_color) {
-                color = r.triple(t, "color", what);
-                return;
-            }
-            const std::string_view name = r.text(t, "texture", what);
-            const auto found = texture_index.find(name);
-            if (found == texture_index.end()) {
-                r.fail(r.required(t, "texture", what),
-                       what + " uses texture '" + std::string(name) + "', which is not defined");
-            }
-            texture.index = found->second;
-        };
         if (kind == "rough") {
             r.only(t, {"kind", "color", "texture"}, what);
+            const Albedo base = read_albedo(r, t, what, texture_index);
             materials::RoughData rough{};
-            albedo(rough.color, rough.texture);
-            scene.materials.push_back({materials::MaterialKind::rough, static_cast<std::uint32_t>(scene.rough.size())});
-            scene.rough.push_back(rough);
+            rough.color = base.color;
+            rough.texture = base.texture;
+            record(materials::MaterialKind::rough, description.rough.size());
+            description.rough.push_back(rough);
         } else if (kind == "coated") {
-            r.only(t, {"kind", "color", "texture", "ior"}, what);
-            materials::CoatedData coated{};
-            albedo(coated.color, coated.texture);
-            // Within [0, 1]: the base's bounces under the coat sum to
-            // rho / (1 - rho F_in), finite only below 1 / F_in (coated.h).
-            if (coated.texture.index == contracts::no_texture && !within(coated.color, 0.0f, 1.0f)) {
-                r.fail(r.required(t, "color", what), what + "'s color must be within [0, 1]");
-            }
-            // A texture's colors too: wood's and swirl's are read within it;
-            // a checker's are not otherwise checked.
-            if (coated.texture.index != contracts::no_texture) {
-                const textures::TextureRecord base = scene.textures[coated.texture.index];
-                if (base.kind == textures::TextureKind::checker &&
-                    (!within(scene.checkers[base.index].a, 0.0f, 1.0f) ||
-                     !within(scene.checkers[base.index].b, 0.0f, 1.0f))) {
-                    r.fail(r.required(t, "texture", what), what + "'s texture's colors must be within [0, 1]");
-                }
-            }
-            coated.ior = r.number(t, "ior", what);
-            if (!(coated.ior > 1.0f)) {
-                r.fail(r.required(t, "ior", what), what + "'s ior must be greater than 1");
-            }
-            // Once a material, at load (F.8): the shaders read it.
-            coated.escape = static_cast<float>(materials::internal_escape(coated.ior));
-            scene.materials.push_back(
-                {materials::MaterialKind::coated, static_cast<std::uint32_t>(scene.coated.size())});
-            scene.coated.push_back(coated);
+            const materials::CoatedData coated = read_coated(r, t, what, texture_index, description);
+            record(materials::MaterialKind::coated, description.coated.size());
+            description.coated.push_back(coated);
         } else if (kind == "dielectric") {
-            r.only(t, {"kind", "ior"}, what);
-            materials::DielectricData dielectric{};
-            dielectric.ior = r.number(t, "ior", what);
-            if (!(dielectric.ior > 1.0f)) {
-                r.fail(r.required(t, "ior", what), what + "'s ior must be greater than 1");
-            }
-            scene.materials.push_back(
-                {materials::MaterialKind::dielectric, static_cast<std::uint32_t>(scene.dielectrics.size())});
-            scene.dielectrics.push_back(dielectric);
+            record(materials::MaterialKind::dielectric, description.dielectrics.size());
+            description.dielectrics.push_back(read_dielectric(r, t, what));
         } else if (kind == "conductor") {
-            r.only(t, {"kind", "f0", "roughness"}, what);
-            materials::ConductorData conductor{};
-            conductor.f0 = r.triple(t, "f0", what);
-            if (!within(conductor.f0, 0.0f, 1.0f)) {
-                r.fail(r.required(t, "f0", what), what + "'s f0 must be within [0, 1] in each channel");
-            }
-            conductor.roughness = r.number(t, "roughness", what);
-            if (!(conductor.roughness > 0.0f && conductor.roughness <= 1.0f)) {
-                r.fail(r.required(t, "roughness", what), what + "'s roughness must be in (0, 1]");
-            }
-            scene.materials.push_back(
-                {materials::MaterialKind::conductor, static_cast<std::uint32_t>(scene.conductors.size())});
-            scene.conductors.push_back(conductor);
+            record(materials::MaterialKind::conductor, description.conductors.size());
+            description.conductors.push_back(read_conductor(r, t, what));
         } else if (kind == "emissive") {
-            r.only(t, {"kind", "radiance"}, what);
-            materials::EmissiveData emissive{};
-            emissive.radiance = r.triple(t, "radiance", what);
-            if (!within(emissive.radiance, 0.0f, std::numeric_limits<float>::max())) {
-                r.fail(r.required(t, "radiance", what), what + "'s radiance must not be negative");
-            }
-            scene.materials.push_back(
-                {materials::MaterialKind::emissive, static_cast<std::uint32_t>(scene.emissives.size())});
-            scene.emissives.push_back(emissive);
+            record(materials::MaterialKind::emissive, description.emissives.size());
+            description.emissives.push_back(read_emissive(r, t, what));
         } else {
             r.fail(r.required(t, "kind", what), "unknown material kind '" + std::string(kind) +
                                                     "'; known kinds: rough, coated, dielectric, conductor, emissive");
         }
-        index.emplace(name, static_cast<std::uint32_t>(scene.materials.size() - 1));
+        index.emplace(name, static_cast<std::uint32_t>(description.materials.size() - 1));
     }
     return index;
 }
 
-// A swarm as read (swarm.h), and where it was read, for errors.
+// A swarm as read (swarm.h), and where it was read, for errors: the table
+// is the parsed file's, which outlives the reading (I.12: a reference that
+// cannot be null, and copyable, C.12).
 struct SwarmEntry {
     Swarm swarm;
-    const toml::table* table = nullptr;
+    std::reference_wrapper<const toml::table> table;
     std::string what;  // "swarm N"
 };
 
 // A Pending that is not a swarm's firefly.
-constexpr std::size_t no_swarm = static_cast<std::size_t>(-1);
+constexpr std::size_t no_swarm = std::numeric_limits<std::size_t>::max();
 
 // A shape's motion and glow, as read: made once every shape is read, when
 // the still shapes it must keep clear of and the names it circles are known.
 // A written shape's are its tables; a swarm's firefly's, its swarm's.
 struct Pending {
-    std::uint32_t shape;
+    std::uint32_t shape = 0;
     std::string what;                    // "shape N", or "swarm N's firefly i", for errors
     const toml::node* motion = nullptr;  // a written shape's motion's table, if any
     const toml::node* glow = nullptr;    // and its glow's
@@ -450,207 +541,426 @@ struct Pending {
     contracts::Float3 start{};           // and where it starts (swarm.h, step 2)
 };
 
+// The indices of the shapes that do not move.
+std::vector<std::uint32_t> still_of(const std::vector<bool>& moving) {
+    std::vector<std::uint32_t> still;
+    for (std::uint32_t i = 0; i < moving.size(); ++i) {
+        if (!moving[i]) {
+            still.push_back(i);
+        }
+    }
+    return still;
+}
+
+// The still shapes, as contract 11 asks of them: each shape kind's exact
+// distance and touch tests over every shape that does not move, placed
+// once (shapes::StillShapes, core/shapes/shapes.h). Holds its own copy of
+// what the tests read, so the shapes added after it is made (a swarm's
+// fireflies, which move) change nothing it answers. Not copyable, as no
+// Obstacles is (C.67).
+class StillObstacles final : public contracts::Obstacles {
+public:
+    explicit StillObstacles(const shapes::Shapes& all, const std::vector<bool>& moving)
+        : still_{all, still_of(moving)} {}
+
+    double distance(contracts::Float3 point) const override { return still_.distance(point); }
+
+    bool touches(const contracts::Box& box) const override { return still_.touches(shapes::Bounds{box.min, box.max}); }
+
+private:
+    shapes::StillShapes still_;
+};
+
+// Reads the shapes, the swarms and every motion and glow into one scene
+// description: what each step reads and writes is this class's state, not
+// arguments threaded through every function (I.23, F.20).
+class ShapeReading {
+public:
+    ShapeReading(const Reader& r, SceneDescription& description, const NameIndex& material_index,
+                 const NameIndex& medium_index)
+        : r_(r), description_(description), material_index_(material_index), medium_index_(medium_index) {}
+
+    // [[shapes]]: each read, a sphere or a box; motions and glows pending.
+    void read_shapes(const toml::array& all);
+
+    // The still shapes are the written ones that do not move; every swarm's
+    // fireflies move, so none is added to them.
+    std::vector<bool> moving() const;
+
+    // [[swarms]]: each read, its fireflies' starts drawn clear of
+    // `obstacles`, each firefly added as a sphere and a light, pending its
+    // flight and glow, after every shape before it.
+    void read_swarms(const toml::array& all, const contracts::Obstacles& obstacles);
+
+    // Every motion and glow, made now that every shape is read: motions
+    // against the still shapes, glows from their motions. Wanders are made
+    // as they come; every flight, written or a swarm's, is gathered and made
+    // at once, in parallel (core/animation/flight.h, make_flights), then
+    // each motion and glow is recorded in the order the shapes come.
+    void make_animation(const contracts::Obstacles& obstacles);
+
+private:
+    std::uint32_t material(const toml::table& t, const std::string& what) const;
+    std::uint32_t interior(const toml::table& t, const std::string& what, std::uint32_t worn) const;
+    std::uint32_t add_sphere(contracts::Float3 center, float radius, std::uint32_t worn_index);
+    void read_sphere(const toml::table& t, const std::string& what, std::uint32_t index);
+    void read_box(const toml::table& t, const std::string& what);
+    animation::FlightParams read_flight_params(const toml::table& t, const std::string& what) const;
+    std::optional<animation::MotionRecord> make_wander(const Pending& p, const toml::table& t, const std::string& what,
+                                                       float body, const contracts::Obstacles& obstacles);
+    animation::GlowRecord make_glow(const Pending& p, const animation::MotionRecord* motion);
+    [[noreturn]] void report(const animation::FlightsError& refused, const std::vector<std::size_t>& job_of) const;
+
+    const Reader& r_;
+    SceneDescription& description_;
+    const NameIndex& material_index_;
+    const NameIndex& medium_index_;
+    NameIndex names_;  // the shapes', what a flight circles
+    std::vector<Pending> pending_;
+    std::vector<bool> moving_;  // per shape, once the shapes are read
+    std::vector<SwarmEntry> swarms_;  // pending fireflies name theirs by index
+};
+
+std::uint32_t ShapeReading::material(const toml::table& t, const std::string& what) const {
+    const std::string_view name = r_.text(t, "material", what);
+    const auto found = material_index_.find(name);
+    if (found == material_index_.end()) {
+        r_.fail(r_.required(t, "material", what),
+                what + " uses material '" + std::string(name) + "', which is not defined");
+    }
+    return found->second;
+}
+
+// The medium inside the shape (contract 12), named by `interior`, or air
+// without one: only a shape light passes into, one wearing a dielectric, may
+// be filled.
+std::uint32_t ShapeReading::interior(const toml::table& t, const std::string& what, std::uint32_t worn) const {
+    const toml::node* node = t.get("interior");
+    if (!node) {
+        return contracts::no_medium;
+    }
+    const std::string_view name = r_.text(*node, what + "'s interior");
+    const auto found = medium_index_.find(name);
+    if (found == medium_index_.end()) {
+        r_.fail(*node, what + "'s interior is medium '" + std::string(name) + "', which is not defined");
+    }
+    if (description_.materials[worn].kind != materials::MaterialKind::dielectric) {
+        r_.fail(*node, what + " has an interior, and light cannot pass into it: its material is not a dielectric");
+    }
+    return found->second;
+}
+
 // A sphere of `radius` at `center` wearing material `worn_index`, and, if
 // that is emissive, a sphere light; its index.
-std::uint32_t add_sphere(SceneDescription& scene, contracts::Float3 center, float radius, std::uint32_t worn_index) {
-    const auto index = static_cast<std::uint32_t>(scene.shapes.records.size());
-    const materials::MaterialRecord worn = scene.materials[worn_index];
-    scene.shape_lights.push_back(worn.kind == materials::MaterialKind::emissive
-                                     ? static_cast<std::uint32_t>(scene.lights.size())
-                                     : lights::no_light);
-    if (worn.kind == materials::MaterialKind::emissive) {
-        scene.lights.push_back({lights::LightKind::sphere, static_cast<std::uint32_t>(scene.sphere_lights.size())});
-        scene.sphere_lights.push_back({scene.emissives[worn.index].radiance, index});
+std::uint32_t ShapeReading::add_sphere(contracts::Float3 center, float radius, std::uint32_t worn_index) {
+    SceneDescription& d = description_;
+    const auto index = static_cast<std::uint32_t>(d.shapes.records.size());
+    const materials::MaterialRecord worn = d.materials[worn_index];
+    const bool glows = worn.kind == materials::MaterialKind::emissive;
+    d.shape_lights.push_back(glows ? static_cast<std::uint32_t>(d.lights.size()) : lights::no_light);
+    if (glows) {
+        d.lights.push_back({lights::LightKind::sphere, static_cast<std::uint32_t>(d.sphere_lights.size())});
+        d.sphere_lights.push_back({d.emissives[worn.index].radiance, index});
     }
-    scene.shapes.records.push_back({shapes::ShapeKind::sphere, 0u, worn_index, contracts::no_medium});
-    scene.shapes.transforms.push_back(contracts::placed(center, radius));
+    d.shapes.records.push_back({shapes::ShapeKind::sphere, 0u, worn_index, contracts::no_medium});
+    d.shapes.transforms.push_back(contracts::placed(center, radius));
     return index;
 }
 
+void ShapeReading::read_sphere(const toml::table& t, const std::string& what, std::uint32_t index) {
+    r_.only(t, {"kind", "name", "center", "radius", "material", "interior", "motion", "glow"}, what);
+    const contracts::Float3 center = r_.triple(t, "center", what);
+    const float radius = read_positive(r_, t, "radius", what);
+    if (!inside_world(center, center, radius)) {
+        r_.fail(t, what + " must lie " + world_words());
+    }
+    const std::uint32_t worn = material(t, what);
+    const std::uint32_t added = add_sphere(center, radius, worn);
+    description_.shapes.records[added].interior = interior(t, what, worn);
+    if (t.contains("motion") || t.contains("glow")) {
+        pending_.push_back({.shape = index, .what = what, .motion = t.get("motion"), .glow = t.get("glow")});
+    }
+}
 
-// The still shapes, as contract 11 asks of them: each shape kind's exact
-// distance and touch tests (core/shapes/shapes.h) over every shape that
-// does not move.
-class StillShapes final : public contracts::Obstacles {
-public:
-    StillShapes(const shapes::Shapes& shapes, const std::vector<bool>& moving) : shapes_(shapes) {
-        for (std::uint32_t i = 0; i < shapes.records.size(); ++i) {
-            if (!moving[i]) {
-                still_.push_back(i);
+void ShapeReading::read_box(const toml::table& t, const std::string& what) {
+    r_.only(t, {"kind", "name", "min", "max", "material", "interior"}, what);
+    const contracts::Float3 min = r_.triple(t, "min", what);
+    const contracts::Float3 max = r_.triple(t, "max", what);
+    if (!below(min, max)) {
+        r_.fail(t, what + "'s min must be below its max on every axis");
+    }
+    if (!inside_world(min, max, 0.0)) {
+        r_.fail(t, what + " must lie " + world_words());
+    }
+    const std::uint32_t worn = material(t, what);
+    if (description_.materials[worn].kind == materials::MaterialKind::emissive) {
+        r_.fail(r_.required(t, "material", what), what + " is a box; only a sphere may be emissive");
+    }
+    // Its corners as the file gives them, placed by the identity transform
+    // (core/shapes/box.h).
+    shapes::Shapes& all = description_.shapes;
+    description_.shape_lights.push_back(lights::no_light);
+    all.records.push_back(
+        {shapes::ShapeKind::box, static_cast<std::uint32_t>(all.boxes.size()), worn, interior(t, what, worn)});
+    all.transforms.push_back(contracts::placed({0.0f, 0.0f, 0.0f}, 1.0f));
+    all.boxes.push_back(shapes::BoxData{min, 0u, max, 0u});
+}
+
+void ShapeReading::read_shapes(const toml::array& all) {
+    std::size_t number = 0;
+    for (const toml::node& node : all) {
+        const std::string what = "shape " + std::to_string(++number);
+        const toml::table& t = r_.table(node, what);
+        const std::string_view kind = r_.text(t, "kind", what);
+        const auto index = static_cast<std::uint32_t>(description_.shapes.records.size());
+        if (const toml::node* name_node = t.get("name")) {
+            const std::string_view name = r_.text(*name_node, what + "'s name");
+            if (!names_.emplace(std::string(name), index).second) {
+                r_.fail(*name_node, "the name '" + std::string(name) + "' is used twice");
             }
         }
-    }
-
-    double distance(contracts::Float3 point) const override {
-        double nearest = std::numeric_limits<double>::infinity();
-        for (std::uint32_t i : still_) {
-            nearest = std::min(nearest, shapes::distance(shapes_, i, point));
+        if (kind == "sphere") {
+            read_sphere(t, what, index);
+        } else if (kind == "box") {
+            read_box(t, what);
+        } else {
+            r_.fail(r_.required(t, "kind", what),
+                    "unknown shape kind '" + std::string(kind) + "'; known kinds: sphere, box");
         }
-        return nearest;
     }
-
-    bool touches(const contracts::Box& box) const override {
-        const shapes::Bounds bounds{box.min, box.max};
-        for (std::uint32_t i : still_) {
-            if (shapes::touches(shapes_, i, bounds)) {
-                return true;
-            }
-        }
-        return false;
+    if (description_.shapes.records.empty()) {
+        r_.fail("the scene has no shapes");
     }
+    moving_.assign(description_.shapes.records.size(), false);
+    for (const Pending& p : pending_) {
+        moving_[p.shape] = moving_[p.shape] || p.motion;
+    }
+}
 
-private:
-    const shapes::Shapes& shapes_;
-    std::vector<std::uint32_t> still_;
-};
+std::vector<bool> ShapeReading::moving() const {
+    return moving_;
+}
 
 // A flight's numbers from table `t`, read as a written flight's motion and
 // a swarm both write them (scene.h); not yet made.
-animation::FlightParams read_flight_params(const Reader& r, const toml::table& t, const std::string& what,
-                                           const std::map<std::string, std::uint32_t, std::less<>>& names,
-                                           const std::vector<bool>& moving, const SceneDescription& scene) {
+animation::FlightParams ShapeReading::read_flight_params(const toml::table& t, const std::string& what) const {
     animation::FlightParams params;
-    params.volume = {r.triple(t, "min", what), r.triple(t, "max", what)};
+    params.volume = {r_.triple(t, "min", what), r_.triple(t, "max", what)};
     if (!below(params.volume.min, params.volume.max)) {
-        r.fail(t, what + "'s min must be below its max on every axis");
+        r_.fail(t, what + "'s min must be below its max on every axis");
     }
-    const toml::node& list_node = r.required(t, "targets", what);
+    const toml::node& list_node = r_.required(t, "targets", what);
     const toml::array* list = list_node.as_array();
-    if (list == nullptr) {
-        r.fail(list_node, what + "'s targets must be an array of shape names");
+    if (!list) {
+        r_.fail(list_node, what + "'s targets must be an array of shape names");
     }
     for (const toml::node& name_node : *list) {
-        const std::string_view name = r.text(name_node, what + "'s target");
-        const auto found = names.find(name);
-        if (found == names.end()) {
-            r.fail(name_node, what + " circles '" + std::string(name) + "', which is not defined");
+        const std::string_view name = r_.text(name_node, what + "'s target");
+        const auto found = names_.find(name);
+        if (found == names_.end()) {
+            r_.fail(name_node, what + " circles '" + std::string(name) + "', which is not defined");
         }
         const std::uint32_t target = found->second;
-        if (scene.shapes.records[target].kind != shapes::ShapeKind::sphere || moving[target]) {
-            r.fail(name_node, what + " circles '" + std::string(name) + "', which is not a still sphere");
+        if (description_.shapes.records[target].kind != shapes::ShapeKind::sphere || moving_[target]) {
+            r_.fail(name_node, what + " circles '" + std::string(name) + "', which is not a still sphere");
         }
-        const contracts::Transform& at = scene.shapes.transforms[target];
-        params.targets.push_back({contracts::translation(at), at.m[0][0]});
+        const contracts::Transform& at = description_.shapes.transforms[target];
+        params.targets.push_back({contracts::translation(at), contracts::scale(at)});
     }
-    params.speed = read_positive(r, t, "speed", what);
-    params.clearance = read_at_least_zero(r, t, "clearance", what);
-    params.weights = {read_at_least_zero(r, t, "circle", what), read_at_least_zero(r, t, "swoop", what),
-                      read_at_least_zero(r, t, "drift", what)};
+    params.speed = read_positive(r_, t, "speed", what);
+    params.clearance = read_at_least_zero(r_, t, "clearance", what);
+    params.weights = {read_at_least_zero(r_, t, "circle", what), read_at_least_zero(r_, t, "swoop", what),
+                      read_at_least_zero(r_, t, "drift", what)};
     if (params.weights[0] + params.weights[1] + params.weights[2] <= 0.0f) {
-        r.fail(t, what + "'s circle, swoop and drift are all 0");
+        r_.fail(t, what + "'s circle, swoop and drift are all 0");
     }
     if (params.weights[0] > 0.0f && params.targets.empty()) {
-        r.fail(r.required(t, "circle", what), what + " circles, and names no targets");
+        r_.fail(r_.required(t, "circle", what), what + " circles, and names no targets");
     }
-    params.seed = read_seed(r, t, what);
+    params.seed = read_seed(r_, t, what);
     return params;
 }
 
-animation::GlowRecord make_glow(const Reader& r, const Pending& p, const animation::MotionRecord* motion,
-                                SceneDescription& scene) {
+void ShapeReading::read_swarms(const toml::array& all, const contracts::Obstacles& obstacles) {
+    std::size_t number = 0;
+    for (const toml::node& node : all) {
+        const std::string what = "swarm " + std::to_string(++number);
+        const toml::table& t = r_.table(node, what);
+        r_.only(t,
+                {"count", "radius", "material", "min", "max", "targets", "speed", "clearance", "circle", "swoop",
+                 "drift", "flash", "dim", "seed"},
+                what);
+        SwarmEntry entry{.swarm = {}, .table = t, .what = what};
+        entry.swarm.count = static_cast<std::uint32_t>(
+            r_.integer(r_.required(t, "count", what), 1, max_swarm,
+                       what + "'s count must be an integer from 1 to " + std::to_string(max_swarm)));
+        entry.swarm.radius = read_positive(r_, t, "radius", what);
+        const std::uint32_t worn = material(t, what);
+        if (description_.materials[worn].kind != materials::MaterialKind::emissive) {
+            r_.fail(r_.required(t, "material", what), what + "'s material must be emissive: its fireflies are lights");
+        }
+        entry.swarm.flight = read_flight_params(t, what);
+        if (!inside_world(entry.swarm.flight.volume.min, entry.swarm.flight.volume.max, entry.swarm.radius)) {
+            r_.fail(t, what + "'s volume, grown by its radius, must lie " + world_words());
+        }
+        entry.swarm.flash = read_positive(r_, t, "flash", what);
+        if (!(entry.swarm.flash < animation::flash_spacing)) {
+            r_.fail(r_.required(t, "flash", what), what + "'s flash must be under a second");
+        }
+        entry.swarm.dim = r_.number(t, "dim", what);
+        if (!(entry.swarm.dim >= 0.0f && entry.swarm.dim < 1.0f)) {
+            r_.fail(r_.required(t, "dim", what), what + "'s dim must be in [0, 1)");
+        }
+        swarms_.push_back(std::move(entry));
+        const std::size_t swarm_index = swarms_.size() - 1;
+        const Swarm& swarm = swarms_.back().swarm;
+        for (std::uint32_t i = 0; i < swarm.count; ++i) {
+            const contracts::Float3 start = [&] {
+                try {
+                    return firefly_start(swarm, i, obstacles);  // swarm.h, step 2
+                } catch (const animation::Refusal& refused) {
+                    r_.fail(t, what + ": " + refused.what());
+                }
+            }();
+            const std::uint32_t index = add_sphere(start, swarm.radius, worn);
+            moving_.push_back(true);
+            pending_.push_back({.shape = index,
+                                .what = what + "'s firefly " + std::to_string(i),
+                                .swarm = swarm_index,
+                                .firefly = i,
+                                .start = start});
+        }
+    }
+}
+
+std::optional<animation::MotionRecord> ShapeReading::make_wander(const Pending& p, const toml::table& t,
+                                                                 const std::string& what, float body,
+                                                                 const contracts::Obstacles& obstacles) {
+    r_.only(t, {"kind", "reach", "speed", "seed"}, what);
+    const contracts::Float3 anchor = contracts::translation(description_.shapes.transforms[p.shape]);
+    const animation::WanderParams params{.anchor = anchor,
+                                         .reach = read_positive(r_, t, "reach", what),
+                                         .speed = read_positive(r_, t, "speed", what),
+                                         .seed = read_seed(r_, t, what)};
+    // Within the world before it is made: so every number make_wander takes
+    // is in its range, and only a refusal is left for it to report.
+    if (!inside_world(anchor, anchor, static_cast<double>(params.reach) + body)) {
+        r_.fail(*p.motion, what + " could carry " + p.what + " out of the world: it must stay " + world_words());
+    }
+    animation::Motions& motions = description_.animation.motions;
+    try {
+        motions.wanders.push_back(animation::make_wander(params, body, obstacles));
+    } catch (const animation::Refusal& refused) {
+        r_.fail(*p.motion, what + ": " + refused.what());
+    }
+    const animation::MotionRecord record{animation::MotionKind::wander,
+                                         static_cast<std::uint32_t>(motions.wanders.size() - 1)};
+    const animation::Extent reach_box = animation::extent(motions, record);
+    if (!inside_world(reach_box.min, reach_box.max, body)) {
+        r_.fail(*p.motion, what + " could carry " + p.what + " out of the world: it must stay " + world_words());
+    }
+    return record;
+}
+
+animation::GlowRecord ShapeReading::make_glow(const Pending& p, const animation::MotionRecord* motion) {
     const std::string what = p.what + "'s glow";
-    const toml::table& t = r.table(*p.glow, what);
-    const std::string_view kind = r.text(t, "kind", what);
+    const toml::table& t = r_.table(*p.glow, what);
+    const std::string_view kind = r_.text(t, "kind", what);
     const auto dim_of = [&]() {
-        const float dim = r.number(t, "dim", what);
+        const float dim = r_.number(t, "dim", what);
         if (!(dim >= 0.0f && dim < 1.0f)) {
-            r.fail(r.required(t, "dim", what), what + "'s dim must be in [0, 1)");
+            r_.fail(r_.required(t, "dim", what), what + "'s dim must be in [0, 1)");
         }
         return dim;
     };
-    animation::Glows& glows = scene.animation.glows;
+    animation::Glows& glows = description_.animation.glows;
     if (kind == "rhythm") {
-        r.only(t, {"kind", "period", "flash", "dim", "seed"}, what);
+        r_.only(t, {"kind", "period", "flash", "dim", "seed"}, what);
         animation::Rhythm rhythm;
-        rhythm.period = read_positive(r, t, "period", what);
-        rhythm.flash = read_positive(r, t, "flash", what);
+        rhythm.period = read_positive(r_, t, "period", what);
+        if (!(rhythm.period >= animation::least_period)) {
+            r_.fail(r_.required(t, "period", what),
+                    what + "'s period must be at least " + words(animation::least_period) + " s");
+        }
+        rhythm.flash = read_positive(r_, t, "flash", what);
         if (rhythm.flash > rhythm.period / 2.0) {
-            r.fail(r.required(t, "flash", what), what + "'s flash must be at most half its period");
+            r_.fail(r_.required(t, "flash", what), what + "'s flash must be at most half its period");
         }
         rhythm.dim = dim_of();
-        rhythm.seed = read_seed(r, t, what);
+        rhythm.seed = read_seed(r_, t, what);
         glows.rhythms.push_back(rhythm);
         return {animation::GlowKind::rhythm, static_cast<std::uint32_t>(glows.rhythms.size() - 1)};
     }
     if (kind == "flight") {
-        r.only(t, {"kind", "flash", "dim"}, what);
-        if (motion == nullptr || motion->kind != animation::MotionKind::flight) {
-            r.fail(*p.glow, what + " follows its flight, and " + p.what + " does not fly");
+        r_.only(t, {"kind", "flash", "dim"}, what);
+        if (!motion || motion->kind != animation::MotionKind::flight) {
+            r_.fail(*p.glow, what + " follows its flight, and " + p.what + " does not fly");
         }
         animation::ScheduleGlow glow;
-        glow.schedule = scene.animation.motions.flights[motion->index].flashes;
-        glow.flash = read_positive(r, t, "flash", what);
-        if (!(glow.flash < 1.0)) {
-            r.fail(r.required(t, "flash", what), what + "'s flash must be under a second");
+        glow.schedule = description_.animation.motions.flights[motion->index].flashes;
+        glow.flash = read_positive(r_, t, "flash", what);
+        if (!(glow.flash < animation::flash_spacing)) {
+            r_.fail(r_.required(t, "flash", what), what + "'s flash must be under a second");
         }
         glow.dim = dim_of();
-        glows.schedules.push_back(glow);
+        glows.schedules.push_back(std::move(glow));
         return {animation::GlowKind::schedule, static_cast<std::uint32_t>(glows.schedules.size() - 1)};
     }
-    r.fail(r.required(t, "kind", what), "unknown glow kind '" + std::string(kind) + "'; known kinds: rhythm, flight");
+    r_.fail(r_.required(t, "kind", what), "unknown glow kind '" + std::string(kind) + "'; known kinds: rhythm, flight");
 }
 
-// Every motion and glow, made now that every shape is read: motions against
-// the still shapes, glows from their motions. Wanders are made as they come;
-// every flight, written or a swarm's, is gathered and made at once, in
-// parallel (core/animation/flight.h, make_flights), then each motion and glow
-// is recorded in the order the shapes come.
-void make_animation(const Reader& r, const std::vector<Pending>& pending,
-                    const std::vector<SwarmEntry>& swarms,
-                    const std::map<std::string, std::uint32_t, std::less<>>& names, const std::vector<bool>& moving,
-                    const contracts::Obstacles& obstacles, SceneDescription& scene) {
-    constexpr std::size_t no_job = static_cast<std::size_t>(-1);
+// The lowest job that failed, reported against its own line, without the
+// job number, which is no line of the file.
+void ShapeReading::report(const animation::FlightsError& refused, const std::vector<std::size_t>& job_of) const {
+    for (std::size_t i = 0; i < pending_.size(); ++i) {
+        if (job_of[i] == refused.job) {
+            const Pending& p = pending_[i];
+            if (p.swarm != no_swarm) {
+                r_.fail(swarms_[p.swarm].table.get(), p.what + "'s flight: " + refused.reason);
+            }
+            r_.fail(*p.motion, p.what + "'s motion: " + refused.reason);
+        }
+    }
+    throw std::logic_error("a flight was refused that no shape asked for");
+}
+
+void ShapeReading::make_animation(const contracts::Obstacles& obstacles) {
+    constexpr std::size_t no_job = std::numeric_limits<std::size_t>::max();
     std::vector<animation::FlightJob> jobs;
-    std::vector<std::size_t> job_of(pending.size(), no_job);
-    std::vector<std::optional<animation::MotionRecord>> wander_of(pending.size());
-    animation::Motions& motions = scene.animation.motions;
-    for (std::size_t i = 0; i < pending.size(); ++i) {
-        const Pending& p = pending[i];
-        const contracts::Transform& placed = scene.shapes.transforms[p.shape];
-        const float body = placed.m[0][0];  // a sphere's radius (core/shapes/sphere.h)
+    std::vector<std::size_t> job_of(pending_.size(), no_job);
+    std::vector<std::optional<animation::MotionRecord>> wander_of(pending_.size());
+    animation::Motions& motions = description_.animation.motions;
+    for (std::size_t i = 0; i < pending_.size(); ++i) {
+        const Pending& p = pending_[i];
+        const contracts::Transform& placed = description_.shapes.transforms[p.shape];
+        const float body = contracts::scale(placed);  // a sphere's radius (core/shapes/sphere.h)
         if (p.swarm != no_swarm) {
-            animation::FlightParams params = swarms[p.swarm].swarm.flight;
+            animation::FlightParams params = swarms_[p.swarm].swarm.flight;
             params.seed = firefly_seed(params.seed, p.firefly);  // swarm.h, step 1
             job_of[i] = jobs.size();
             jobs.push_back({std::move(params), p.start, body});
             continue;
         }
-        if (p.motion == nullptr) {
+        if (!p.motion) {
             continue;
         }
         const std::string what = p.what + "'s motion";
-        const toml::table& t = r.table(*p.motion, what);
-        const std::string_view kind = r.text(t, "kind", what);
-        const contracts::Float3 center = contracts::translation(placed);
+        const toml::table& t = r_.table(*p.motion, what);
+        const std::string_view kind = r_.text(t, "kind", what);
         if (kind == "wander") {
-            r.only(t, {"kind", "reach", "speed", "seed"}, what);
-            const float reach = read_positive(r, t, "reach", what);
-            const float speed = read_positive(r, t, "speed", what);
-            const std::uint64_t seed = read_seed(r, t, what);
-            try {
-                motions.wanders.push_back(animation::make_wander(center, reach, speed, seed, body, obstacles));
-            } catch (const std::invalid_argument& refused) {
-                r.fail(*p.motion, what + ": " + refused.what());
-            }
-            const animation::MotionRecord record{animation::MotionKind::wander,
-                                                 static_cast<std::uint32_t>(motions.wanders.size() - 1)};
-            const animation::Extent reach_box = animation::extent(motions, record);
-            if (!inside_world(reach_box.min, reach_box.max, body)) {
-                r.fail(*p.motion, what + " could carry " + p.what + " out of the world: it must stay " + world_words);
-            }
-            wander_of[i] = record;
+            wander_of[i] = make_wander(p, t, what, body, obstacles);
         } else if (kind == "flight") {
-            r.only(t, {"kind", "min", "max", "targets", "speed", "clearance", "circle", "swoop", "drift", "seed"},
-                   what);
-            animation::FlightParams params = read_flight_params(r, t, what, names, moving, scene);
+            r_.only(t, {"kind", "min", "max", "targets", "speed", "clearance", "circle", "swoop", "drift", "seed"},
+                    what);
+            animation::FlightParams params = read_flight_params(t, what);
             if (!inside_world(params.volume.min, params.volume.max, body)) {
-                r.fail(t, what + "'s volume, grown by the sphere's radius, must lie " + world_words);
+                r_.fail(t, what + "'s volume, grown by the sphere's radius, must lie " + world_words());
             }
             job_of[i] = jobs.size();
-            jobs.push_back({std::move(params), center, body});
+            jobs.push_back({std::move(params), contracts::translation(placed), body});
         } else {
-            r.fail(r.required(t, "kind", what),
-                   "unknown motion kind '" + std::string(kind) + "'; known kinds: wander, flight");
+            r_.fail(r_.required(t, "kind", what),
+                    "unknown motion kind '" + std::string(kind) + "'; known kinds: wander, flight");
         }
     }
 
@@ -658,24 +968,11 @@ void make_animation(const Reader& r, const std::vector<Pending>& pending,
     try {
         flights = animation::make_flights(jobs, obstacles);
     } catch (const animation::FlightsError& refused) {
-        // The lowest job that failed, reported against its own line, without
-        // the job number, which is no line of the file.
-        const std::string message = refused.what();
-        const std::string reason = message.substr(message.find(": ") + 2);
-        for (std::size_t i = 0; i < pending.size(); ++i) {
-            if (job_of[i] == refused.job) {
-                const Pending& p = pending[i];
-                if (p.swarm != no_swarm) {
-                    r.fail(*swarms[p.swarm].table, p.what + "'s flight: " + reason);
-                }
-                r.fail(*p.motion, p.what + "'s motion: " + reason);
-            }
-        }
-        throw;  // unreachable: every job is some shape's
+        report(refused, job_of);
     }
 
-    for (std::size_t i = 0; i < pending.size(); ++i) {
-        const Pending& p = pending[i];
+    for (std::size_t i = 0; i < pending_.size(); ++i) {
+        const Pending& p = pending_[i];
         std::optional<animation::MotionRecord> motion = wander_of[i];
         if (job_of[i] != no_job) {
             motions.flights.push_back(std::move(flights[job_of[i]]));
@@ -683,234 +980,72 @@ void make_animation(const Reader& r, const std::vector<Pending>& pending,
                                              static_cast<std::uint32_t>(motions.flights.size() - 1)};
         }
         if (motion) {
-            scene.animation.movers.push_back({p.shape, *motion});
+            description_.animation.movers.push_back({p.shape, *motion});
         }
-        const std::uint32_t light = scene.shape_lights[p.shape];
+        const std::uint32_t light = description_.shape_lights[p.shape];
         if (p.swarm != no_swarm) {
             // A flight glow with the swarm's flash and dim (swarm.h, step 3).
             animation::ScheduleGlow glow;
             glow.schedule = motions.flights[motion->index].flashes;
-            glow.flash = swarms[p.swarm].swarm.flash;
-            glow.dim = swarms[p.swarm].swarm.dim;
-            scene.animation.glows.schedules.push_back(glow);
+            glow.flash = swarms_[p.swarm].swarm.flash;
+            glow.dim = swarms_[p.swarm].swarm.dim;
+            animation::Glows& glows = description_.animation.glows;
+            glows.schedules.push_back(std::move(glow));
             const animation::GlowRecord record{animation::GlowKind::schedule,
-                                               static_cast<std::uint32_t>(scene.animation.glows.schedules.size() - 1)};
-            scene.animation.glowers.push_back({scene.lights[light].index, record});
-        } else if (p.glow != nullptr) {
+                                               static_cast<std::uint32_t>(glows.schedules.size() - 1)};
+            description_.animation.glowers.push_back({description_.lights[light].index, record});
+        } else if (p.glow) {
             if (light == lights::no_light) {
-                r.fail(*p.glow, p.what + " has a glow, and is not a light");
+                r_.fail(*p.glow, p.what + " has a glow, and is not a light");
             }
-            const animation::GlowRecord glow = make_glow(r, p, motion ? &*motion : nullptr, scene);
-            scene.animation.glowers.push_back({scene.lights[light].index, glow});
+            const animation::GlowRecord glow = make_glow(p, motion ? &*motion : nullptr);
+            description_.animation.glowers.push_back({description_.lights[light].index, glow});
         }
     }
 }
 
-// The swarms (swarm.h): each read, its fireflies' starts drawn clear of the
-// still shapes, and each firefly added as a sphere and a light, pending its
-// flight and glow, after every shape before it.
-void read_swarms(const Reader& r, const toml::array& all,
-                 const std::map<std::string, std::uint32_t, std::less<>>& material_index,
-                 const std::map<std::string, std::uint32_t, std::less<>>& names, std::vector<bool>& moving,
-                 const contracts::Obstacles& obstacles, SceneDescription& scene, std::vector<SwarmEntry>& swarms,
-                 std::vector<Pending>& pending) {
-    std::size_t number = 0;
-    for (const toml::node& node : all) {
-        const std::string what = "swarm " + std::to_string(++number);
-        const toml::table& t = r.table(node, what);
-        r.only(t,
-               {"count", "radius", "material", "min", "max", "targets", "speed", "clearance", "circle", "swoop",
-                "drift", "flash", "dim", "seed"},
-               what);
-        SwarmEntry entry;
-        entry.table = &t;
-        entry.what = what;
-        const toml::node& count_node = r.required(t, "count", what);
-        const std::optional<std::int64_t> count = count_node.is_integer() ? count_node.value<std::int64_t>()
-                                                                           : std::nullopt;
-        if (!count || *count < 1 || *count > static_cast<std::int64_t>(max_swarm)) {
-            r.fail(count_node, what + "'s count must be an integer from 1 to " + std::to_string(max_swarm));
-        }
-        entry.swarm.count = static_cast<std::uint32_t>(*count);
-        entry.swarm.radius = read_positive(r, t, "radius", what);
-        const std::string_view material = r.text(t, "material", what);
-        const auto found = material_index.find(material);
-        if (found == material_index.end()) {
-            r.fail(r.required(t, "material", what),
-                   what + " uses material '" + std::string(material) + "', which is not defined");
-        }
-        if (scene.materials[found->second].kind != materials::MaterialKind::emissive) {
-            r.fail(r.required(t, "material", what), what + "'s material must be emissive: its fireflies are lights");
-        }
-        entry.swarm.flight = read_flight_params(r, t, what, names, moving, scene);
-        if (!inside_world(entry.swarm.flight.volume.min, entry.swarm.flight.volume.max, entry.swarm.radius)) {
-            r.fail(t, what + "'s volume, grown by its radius, must lie " + world_words);
-        }
-        entry.swarm.flash = read_positive(r, t, "flash", what);
-        if (!(entry.swarm.flash < 1.0f)) {
-            r.fail(r.required(t, "flash", what), what + "'s flash must be under a second");
-        }
-        entry.swarm.dim = r.number(t, "dim", what);
-        if (!(entry.swarm.dim >= 0.0f && entry.swarm.dim < 1.0f)) {
-            r.fail(r.required(t, "dim", what), what + "'s dim must be in [0, 1)");
-        }
-        swarms.push_back(std::move(entry));
-        const std::size_t swarm_index = swarms.size() - 1;
-        const SwarmEntry& swarm = swarms.back();
-        for (std::uint32_t i = 0; i < swarm.swarm.count; ++i) {
-            contracts::Float3 start;
-            try {
-                start = firefly_start(swarm.swarm, i, obstacles);  // swarm.h, step 2
-            } catch (const std::invalid_argument& refused) {
-                r.fail(t, what + ": " + refused.what());
-            }
-            const std::uint32_t index = add_sphere(scene, start, swarm.swarm.radius, found->second);
-            moving.push_back(true);
-            pending.push_back(
-                {index, what + "'s firefly " + std::to_string(i), nullptr, nullptr, swarm_index, i, start});
-        }
-    }
-}
-
-void read_shapes(const Reader& r, const toml::array& all,
-                 const std::map<std::string, std::uint32_t, std::less<>>& material_index,
-                 const std::map<std::string, std::uint32_t, std::less<>>& medium_index, SceneDescription& scene,
-                 std::vector<Pending>& pending, std::map<std::string, std::uint32_t, std::less<>>& names) {
-    shapes::Shapes& shapes = scene.shapes;
-    std::size_t number = 0;
-    for (const toml::node& node : all) {
-        const std::string what = "shape " + std::to_string(++number);
-        const toml::table& t = r.table(node, what);
-        const std::string_view kind = r.text(t, "kind", what);
-        const auto index = static_cast<std::uint32_t>(shapes.records.size());
-        if (const toml::node* name_node = t.get("name")) {
-            const std::string_view name = r.text(*name_node, what + "'s name");
-            if (!names.emplace(std::string(name), index).second) {
-                r.fail(*name_node, "the name '" + std::string(name) + "' is used twice");
-            }
-        }
-
-        const auto material = [&]() {
-            const std::string_view name = r.text(t, "material", what);
-            const auto found = material_index.find(name);
-            if (found == material_index.end()) {
-                r.fail(r.required(t, "material", what),
-                       what + " uses material '" + std::string(name) + "', which is not defined");
-            }
-            return found->second;
-        };
-
-        // The medium inside the shape (contract 12), named by `interior`, or
-        // air without one: only a shape light passes into, one wearing a
-        // dielectric, may be filled.
-        const auto interior = [&](std::uint32_t worn) {
-            const toml::node* node = t.get("interior");
-            if (node == nullptr) {
-                return contracts::no_medium;
-            }
-            const std::string_view name = r.text(*node, what + "'s interior");
-            const auto found = medium_index.find(name);
-            if (found == medium_index.end()) {
-                r.fail(*node, what + "'s interior is medium '" + std::string(name) + "', which is not defined");
-            }
-            if (scene.materials[worn].kind != materials::MaterialKind::dielectric) {
-                r.fail(*node, what + " has an interior, and light cannot pass into it: its material is not a "
-                                     "dielectric");
-            }
-            return found->second;
-        };
-
-        if (kind == "sphere") {
-            r.only(t, {"kind", "name", "center", "radius", "material", "interior", "motion", "glow"}, what);
-            const contracts::Float3 center = r.triple(t, "center", what);
-            const float radius = r.number(t, "radius", what);
-            if (!(radius > 0.0f)) {
-                r.fail(r.required(t, "radius", what), what + "'s radius must be greater than 0");
-            }
-            if (!inside_world(center, center, radius)) {
-                r.fail(t, what + " must lie " + world_words);
-            }
-            const std::uint32_t worn = material();
-            (void)add_sphere(scene, center, radius, worn);
-            shapes.records.back().interior = interior(worn);
-            if (t.contains("motion") || t.contains("glow")) {
-                pending.push_back({index, what, t.get("motion"), t.get("glow")});
-            }
-        } else if (kind == "box") {
-            r.only(t, {"kind", "name", "min", "max", "material", "interior"}, what);
-            const contracts::Float3 min = r.triple(t, "min", what);
-            const contracts::Float3 max = r.triple(t, "max", what);
-            if (!below(min, max)) {
-                r.fail(t, what + "'s min must be below its max on every axis");
-            }
-            if (!inside_world(min, max, 0.0)) {
-                r.fail(t, what + " must lie " + world_words);
-            }
-            const std::uint32_t worn = material();
-            if (scene.materials[worn].kind == materials::MaterialKind::emissive) {
-                r.fail(r.required(t, "material", what), what + " is a box; only a sphere may be emissive");
-            }
-            // Its corners as the file gives them, placed by the identity
-            // transform (core/shapes/box.h).
-            const shapes::BoxData box{min, 0u, max, 0u};
-            scene.shape_lights.push_back(lights::no_light);
-            shapes.records.push_back(
-                {shapes::ShapeKind::box, static_cast<std::uint32_t>(shapes.boxes.size()), worn, interior(worn)});
-            shapes.transforms.push_back(contracts::placed({0.0f, 0.0f, 0.0f}, 1.0f));
-            shapes.boxes.push_back(box);
-        } else {
-            r.fail(r.required(t, "kind", what), "unknown shape kind '" + std::string(kind) + "'; known kinds: sphere, box");
-        }
-    }
-    if (shapes.records.empty()) {
-        r.fail("the scene has no shapes");
-    }
+// A table of the root's at `key`, or an empty one if the file has none.
+const toml::table& optional_table(const Reader& r, const toml::table& root, std::string_view key,
+                                  const std::string& what, const toml::table& none) {
+    const toml::node* node = root.get(key);
+    return node ? r.table(*node, what) : none;
 }
 
 SceneDescription read_scene(const Reader& r, const toml::table& root) {
     r.only(root, {"camera", "environment", "textures", "materials", "media", "shapes", "swarms"}, "the scene");
-    SceneDescription scene{};
+    SceneDescription description{};
 
-    scene.camera = read_camera(r, r.table(r.required(root, "camera", "the scene"), "[camera]"));
-    scene.environment = read_environment(r, r.table(r.required(root, "environment", "the scene"), "[environment]"));
+    description.camera = read_camera(r, r.table(r.required(root, "camera", "the scene"), "[camera]"));
+    description.environment =
+        read_environment(r, r.table(r.required(root, "environment", "the scene"), "[environment]"));
 
     const toml::table no_entries;
-    const toml::table& textures = root.contains("textures") ? r.table(*root.get("textures"), "[textures]") : no_entries;
-    const toml::table& materials =
-        root.contains("materials") ? r.table(*root.get("materials"), "[materials]") : no_entries;
-    const toml::table& media = root.contains("media") ? r.table(*root.get("media"), "[media]") : no_entries;
-    const auto texture_index = read_textures(r, textures, scene);
-    const auto material_index = read_materials(r, materials, texture_index, scene);
-    const auto medium_index = read_media(r, media, scene);
+    const NameIndex texture_index =
+        read_textures(r, optional_table(r, root, "textures", "[textures]", no_entries), description);
+    const NameIndex material_index =
+        read_materials(r, optional_table(r, root, "materials", "[materials]", no_entries), texture_index, description);
+    const NameIndex medium_index = read_media(r, optional_table(r, root, "media", "[media]", no_entries), description);
 
-    const toml::node& shapes = r.required(root, "shapes", "the scene");
-    const toml::array* list = shapes.as_array();
-    if (list == nullptr) {
-        r.fail(shapes, "'shapes' must be an array of tables, written [[shapes]]");
+    const toml::node& shape_node = r.required(root, "shapes", "the scene");
+    const toml::array* shape_list = shape_node.as_array();
+    if (!shape_list) {
+        r.fail(shape_node, "'shapes' must be an array of tables, written [[shapes]]");
     }
-    std::vector<Pending> pending;
-    std::map<std::string, std::uint32_t, std::less<>> names;
-    read_shapes(r, *list, material_index, medium_index, scene, pending, names);
+    ShapeReading reading{r, description, material_index, medium_index};
+    reading.read_shapes(*shape_list);
 
-    // The still shapes are the written ones that do not move; every swarm's
-    // fireflies move, so none is added to them.
-    std::vector<bool> moving(scene.shapes.records.size(), false);
-    for (const Pending& p : pending) {
-        moving[p.shape] = moving[p.shape] || p.motion != nullptr;
-    }
-    const StillShapes obstacles(scene.shapes, moving);
-    std::vector<SwarmEntry> swarms;  // pending fireflies name theirs by index
+    const StillObstacles obstacles{description.shapes, reading.moving()};
     if (const toml::node* swarm_node = root.get("swarms")) {
         const toml::array* swarm_list = swarm_node->as_array();
-        if (swarm_list == nullptr) {
+        if (!swarm_list) {
             r.fail(*swarm_node, "'swarms' must be an array of tables, written [[swarms]]");
         }
-        read_swarms(r, *swarm_list, material_index, names, moving, obstacles, scene, swarms, pending);
+        reading.read_swarms(*swarm_list, obstacles);
     }
-    make_animation(r, pending, swarms, names, moving, obstacles, scene);
-    scene.light_counts.lights = static_cast<std::uint32_t>(scene.lights.size());
-    scene.light_counts.spheres = static_cast<std::uint32_t>(scene.sphere_lights.size());
-    return scene;
+    reading.make_animation(obstacles);
+    description.light_counts.lights = static_cast<std::uint32_t>(description.lights.size());
+    description.light_counts.spheres = static_cast<std::uint32_t>(description.sphere_lights.size());
+    return description;
 }
 
 }  // namespace
@@ -920,22 +1055,27 @@ SceneDescription parse(std::string_view text, std::string_view source) {
     try {
         root = toml::parse(text, source);
     } catch (const toml::parse_error& error) {
-        Reader(source).fail(error.source(), std::string(error.description()));
+        Reader{source}.fail(error.source(), std::string(error.description()));
     }
-    return read_scene(Reader(source), root);
+    return read_scene(Reader{source}, root);
 }
 
 SceneDescription load(const std::filesystem::path& path) {
-    std::ifstream file(path, std::ios::binary);
-    if (!file) {
+    // Sized from the file, and read whole or refused: a read that fails, a
+    // directory, or a file that ends early is an Error, never an empty or a
+    // shorter scene (I.10, SL.io.2).
+    std::error_code error;
+    const std::uintmax_t size = std::filesystem::file_size(path, error);
+    std::ifstream file{path, std::ios::binary};
+    if (error || !file || size > static_cast<std::uintmax_t>(std::numeric_limits<std::streamsize>::max())) {
         throw Error("cannot read scene file " + path.string());
     }
-    std::ostringstream text;
-    text << file.rdbuf();
-    if (!file && !file.eof()) {
+    std::string text(static_cast<std::size_t>(size), '\0');
+    file.read(text.data(), static_cast<std::streamsize>(size));
+    if (!file || file.gcount() != static_cast<std::streamsize>(size)) {
         throw Error("cannot read scene file " + path.string());
     }
-    return parse(text.str(), path.string());
+    return parse(text, path.string());
 }
 
 }  // namespace serenity::scene

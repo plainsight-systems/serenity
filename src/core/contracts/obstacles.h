@@ -21,6 +21,9 @@
 // and the same from any thread. An implementation keeps no state that a
 // question changes: both are const, and read only what was fixed before the
 // first was asked.
+//
+// An interface: used through a reference to it, never copied, so its copy
+// and move are deleted, and nothing sliced (C.67, COPY.4).
 
 #include "core/contracts/float3.h"
 
@@ -36,12 +39,19 @@ struct Box {
 class Obstacles {
 public:
     virtual ~Obstacles() = default;
+    Obstacles(const Obstacles&) = delete;
+    Obstacles& operator=(const Obstacles&) = delete;
+    Obstacles(Obstacles&&) = delete;
+    Obstacles& operator=(Obstacles&&) = delete;
 
     // The distance from `point` to the nearest still shape's surface.
     virtual double distance(Float3 point) const = 0;
 
     // Whether any still shape meets or touches `box`.
     virtual bool touches(const Box& box) const = 0;
+
+protected:
+    Obstacles() = default;
 };
 
 }  // namespace contracts

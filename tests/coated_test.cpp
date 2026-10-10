@@ -4,7 +4,9 @@
 // the reflectance from outside.
 
 #include <cmath>
+#include <limits>
 #include <numbers>
+#include <stdexcept>
 
 #include <doctest/doctest.h>
 
@@ -56,4 +58,10 @@ TEST_CASE("the escape stays above 0 as a float where the reflectance rounds to 1
     CHECK(static_cast<float>(internal_escape(1000.0)) > 0.0f);
     // And reciprocity holds there too: 1 - F_out = ior^2 (1 - F_in).
     CHECK(1.0 - external_reflectance(1000.0) == doctest::Approx(1000.0 * 1000.0 * internal_escape(1000.0)).epsilon(1e-4));
+}
+
+TEST_CASE("a coat with no critical angle is refused, not integrated to a NaN") {
+    for (double ior : {1.0, 0.5, -2.0, std::nan(""), std::numeric_limits<double>::infinity()}) {
+        CHECK_THROWS_AS(serenity::materials::internal_escape(ior), std::invalid_argument);
+    }
 }

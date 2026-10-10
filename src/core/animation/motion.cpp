@@ -1,5 +1,7 @@
 #include "core/animation/motion.h"
 
+#include <stdexcept>
+
 namespace serenity::animation {
 
 // No default in either switch: a kind without a position or an extent fails
@@ -13,7 +15,7 @@ contracts::Float3 position(const Motions& motions, MotionRecord record, frame::S
     case MotionKind::flight:
         return position(motions.flights.at(record.index), t);
     }
-    return {};
+    throw std::logic_error("position: a motion record whose kind is no MotionKind");
 }
 
 Extent extent(const Motions& motions, MotionRecord record) {
@@ -23,7 +25,7 @@ Extent extent(const Motions& motions, MotionRecord record) {
     case MotionKind::flight:
         return extent(motions.flights.at(record.index));
     }
-    return {};
+    throw std::logic_error("extent: a motion record whose kind is no MotionKind");
 }
 
 }  // namespace serenity::animation
