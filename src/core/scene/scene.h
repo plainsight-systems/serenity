@@ -280,9 +280,12 @@ namespace serenity::scene {
 //
 // Read once, at start-up. Every flight in the scene, written or a swarm's,
 // is made once every shape is read, all together, in parallel
-// (core/animation/flight.h, make_flights): for the marbles' fireflies the
+// (core/animation/flight.h, try_flights): for the marbles' fireflies the
 // load's largest cost (docs/research/2026-10-10-flight-load.md measures
-// it). load() reads the file whole, sized from the file system, and a read
+// it). Then, round by round, only the swarms' fireflies whose flights were
+// refused, each drawn again and made again with the others of its round,
+// in parallel, at most firefly_draws - 1 rounds (swarm.h, step 5); a
+// written flight refused refuses the scene from the first batch. load() reads the file whole, sized from the file system, and a read
 // that fails or ends early, a directory's included, is a SceneError, never a
 // shorter scene.
 

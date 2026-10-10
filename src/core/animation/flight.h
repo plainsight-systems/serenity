@@ -413,9 +413,18 @@ std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contr
 // reason. For a caller that can draw a refused job again (a swarm's
 // firefly, core/scene/swarm.h, step 5). A std::variant, the library's
 // tagged union (C.181, C.182): a refused job holds no flight that looks
-// made. Anything thrown that is not a MotionError is rethrown, the lowest
-// k's, as make_flights() rethrows it. make_flights() is this, throwing a
-// FlightsError for the lowest k refused (ES.3: one way to make many).
+// made.
+//
+// A refusal is chance in a job's draws, which a caller may draw again;
+// anything else thrown (a std::invalid_argument for numbers out of range,
+// an allocation that failed, an obstacle that threw) is not, and no outcome
+// stands for it: once every thread has finished, try_flights() rethrows the
+// lowest k's such failure, whatever refusals lower jobs met. make_flights()
+// keeps its own contract, the lowest k that failed of any kind, a refusal
+// as a FlightsError. Both are one private batch (ES.3), which keeps each
+// job's flight or its std::exception_ptr, and each applies its rule to that
+// batch once every thread has finished (I.10: the failure is the caller's
+// to see, never lost in a worker).
 struct FlightRefusal {
     std::string reason;  // as make_flight said it
 };
