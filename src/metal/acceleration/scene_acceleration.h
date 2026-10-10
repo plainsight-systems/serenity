@@ -122,6 +122,8 @@ private:
         NS::SharedPtr<MTL::Buffer> scratch;
         NS::SharedPtr<MTL4::PrimitiveAccelerationStructureDescriptor> descriptor;  // over the slot's boxes
         NS::SharedPtr<MTL::AccelerationStructure> structure;
+        Resident structure_resident;
+        Resident scratch_resident;  // when shapes move: each frame's build writes the scratch
     };
 
     std::vector<std::uint32_t> moving_;          // the shapes that move, whose boxes update() writes

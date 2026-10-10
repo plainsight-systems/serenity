@@ -14,7 +14,7 @@ NonFinite::NonFinite(const Device& device, Submission& submission) : submission_
         throw Error("the device made no buffer for the counts of samples not finite");
     }
     std::memset(counters_->contents(), 0, sizeof(std::uint32_t) * frames_in_flight);
-    submission.make_resident(counters_.get());
+    resident_ = submission.keep_resident(counters_.get());
 }
 
 std::uint32_t* NonFinite::counter(std::uint32_t slot) const {

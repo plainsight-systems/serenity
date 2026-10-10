@@ -82,10 +82,10 @@ SceneAcceleration::SceneAcceleration(const Device& device, Submission& submissio
         if (!built.structure || !built.scratch) {
             throw Error("SceneAcceleration: the device made no acceleration structure or scratch buffer");
         }
-        // Traced every frame: resident for good.
-        submission.make_resident(built.structure.get());
+        // Traced every frame: resident until this object is destroyed.
+        built.structure_resident = submission.keep_resident(built.structure.get());
         if (moves) {
-            submission.make_resident(built.scratch.get());  // each frame's build writes it
+            built.scratch_resident = submission.keep_resident(built.scratch.get());  // each frame's build writes it
         } else {
             build_only->addAllocation(built.scratch.get());
         }

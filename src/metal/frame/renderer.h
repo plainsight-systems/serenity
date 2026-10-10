@@ -172,7 +172,9 @@ public:
     Renderer& operator=(const Renderer&) = delete;
     Renderer(Renderer&&) = delete;
     Renderer& operator=(Renderer&&) = delete;
-    ~Renderer() = default;
+    // Waits for the GPU before anything of the renderer's is released
+    // (submission.h, Lifetime).
+    ~Renderer();
 
     // Checks frame `inputs` and readies what it needs from before it: its
     // time must be finite within float's range, which the shaders read; the
@@ -197,6 +199,7 @@ public:
 private:
     using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass>;
 
+    Submission& submission_;
     Library library_;
     bool needs_scene_ = false;  // some pass in the schedule reads the scene
     std::unique_ptr<SceneBuffers> scene_;
@@ -214,6 +217,7 @@ private:
     };
     std::optional<Prepared> prepared_;  // the frame prepare() readied, until recorded
     NS::SharedPtr<MTL::Buffer> constants_;
+    Resident constants_resident_;
     std::array<NS::SharedPtr<MTL4::ArgumentTable>, frames_in_flight> arguments_;
     std::vector<frame::PassKind> kinds_;  // the schedule's
     std::vector<Pass> passes_;            // in schedule order, one per kind

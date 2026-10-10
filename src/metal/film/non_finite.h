@@ -64,6 +64,7 @@ private:
 
     const Submission& submission_;
     NS::SharedPtr<MTL::Buffer> counters_;  // one uint per slot
+    Resident resident_;
     std::array<std::uint64_t, frames_in_flight> counting_{};  // sequence + 1 each slot counts for; 0 for none
     std::uint64_t total_ = 0;
 };

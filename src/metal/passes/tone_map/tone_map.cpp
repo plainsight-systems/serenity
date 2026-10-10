@@ -43,7 +43,7 @@ ToneMapPass::ToneMapPass(const Device& device, const Library& library, Submissio
         throw Error("ToneMapPass: the device made no buffer for the settings");
     }
     std::memcpy(settings_->contents(), &settings, sizeof(settings));
-    submission.make_resident(settings_.get());
+    resident_ = submission.keep_resident(settings_.get());
 }
 
 void ToneMapPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {

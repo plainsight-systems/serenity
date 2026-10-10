@@ -84,8 +84,8 @@ public:
     void prepare(frame::Extent size);
 
     // Null when the schedule does not use it, or before the first prepare().
-    MTL::Texture* radiance() const { return radiance_.get(); }
-    MTL::Texture* bloom(std::uint32_t level) const { return pyramid_.at(level).get(); }
+    MTL::Texture* radiance() const { return radiance_.texture.get(); }
+    MTL::Texture* bloom(std::uint32_t level) const { return pyramid_.at(level).texture.get(); }
 
 private:
     NS::SharedPtr<MTL::Device> device_;
@@ -93,8 +93,14 @@ private:
     bool wants_radiance_;
     bool wants_pyramid_;
     frame::Extent size_;
-    NS::SharedPtr<MTL::Texture> radiance_;
-    std::array<NS::SharedPtr<MTL::Texture>, passes::bloom_levels> pyramid_;
+    // Each image with its residency, released after the GPU is done with it
+    // (submission.h, Lifetime).
+    struct Image {
+        NS::SharedPtr<MTL::Texture> texture;
+        Resident resident;
+    };
+    Image radiance_;
+    std::array<Image, passes::bloom_levels> pyramid_;
 };
 
 }  // namespace serenity::metal

@@ -19,6 +19,7 @@ add_executable(serenity_gpu_tests
     texture_test.cpp
     camera_test.cpp
     shape_test.cpp
+    lifetime_test.cpp
     ../main_test.cpp
 )
 target_link_libraries(serenity_gpu_tests PRIVATE serenity_metal doctest::doctest)

@@ -33,7 +33,7 @@ FrameArray::FrameArray(const Device& device, Submission& submission, std::span<c
     for (std::uint32_t copy = 0; copy < copies; ++copy) {
         std::memcpy(bytes + copy * stride_, initial.data(), size_);
     }
-    submission.make_resident(buffer_.get());
+    resident_ = submission.keep_resident(buffer_.get());
 }
 
 std::span<std::byte> FrameArray::bytes(std::uint32_t slot) const {

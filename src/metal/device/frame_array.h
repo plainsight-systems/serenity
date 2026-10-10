@@ -24,9 +24,9 @@ namespace serenity::metal {
 //
 // One buffer, in shared storage (Apple silicon's unified memory: the CPU
 // writes in place, with no staging buffer and no submission), the copies at
-// a stride aligned to 256 bytes, made resident through the submission for
-// good: one allocation and one residency entry (GPU.9). Every copy starts as
-// the bytes given.
+// a stride aligned to 256 bytes, made resident through the submission until
+// the array is destroyed (submission.h, Lifetime): one allocation and one
+// residency entry (GPU.9). Every copy starts as the bytes given.
 //
 // When the CPU may write a copy: bytes(slot) is slot `slot`'s, to write only
 // between Submission::begin() returning the slot and the frame's commit. The
@@ -59,6 +59,7 @@ public:
 
 private:
     NS::SharedPtr<MTL::Buffer> buffer_;
+    Resident resident_;       // released after the GPU is done with it (submission.h)
     std::size_t size_ = 0;    // bytes in each copy
     std::size_t stride_ = 0;  // bytes between copies
     std::uint32_t copies_ = 0;

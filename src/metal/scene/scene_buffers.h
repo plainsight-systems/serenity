@@ -52,6 +52,7 @@ private:
     StaticArrays arrays_;
     gpu::SceneBlock block_{};
     NS::SharedPtr<MTL::Buffer> block_buffer_;
+    Resident resident_;
 };
 
 }  // namespace serenity::metal

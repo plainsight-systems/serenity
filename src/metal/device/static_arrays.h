@@ -48,6 +48,7 @@ public:
 
 private:
     NS::SharedPtr<MTL::Buffer> buffer_;
+    Resident resident_;  // released after the GPU is done with it (submission.h)
     std::vector<MTL::GPUAddress> addresses_;
 };
 

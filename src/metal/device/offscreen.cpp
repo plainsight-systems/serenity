@@ -18,7 +18,7 @@ Offscreen::Offscreen(const Device& device, Submission& submission, frame::Extent
         throw Error("Offscreen: the device made no " + std::to_string(size.width) + " x " +
                     std::to_string(size.height) + " texture");
     }
-    submission.make_resident(texture_.get());
+    resident_ = submission.keep_resident(texture_.get());
 }
 
 void Offscreen::read_rgba(std::span<std::uint8_t> out) const {

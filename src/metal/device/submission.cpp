@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <thread>
+#include <utility>
 
 #include "metal/device/error.h"
 
@@ -60,14 +61,18 @@ Submission::Submission(const Device& device) : device_(NS::RetainPtr(device.hand
 }
 
 Submission::~Submission() {
-    // Everything this queue's work refers to is owned by objects that outlive
-    // it only if the work has finished, so wait for it, bounded. A destructor
-    // cannot report what it finds; finish() is how a run reports. Late
-    // feedback is harmless: its handler holds the state it writes.
+    // What this queue's work refers to that this object owns (its allocators,
+    // command buffers and residency set) must outlive the work, so wait for
+    // it, bounded. Every other owner waits in its own destructor (Lifetime,
+    // submission.h). A destructor cannot report what it finds; finish() is
+    // how a run reports. Late feedback is harmless: its handler holds the
+    // state it writes.
+    wait_idle();
+}
+
+bool Submission::wait_idle() noexcept {
     const std::uint64_t committed = open_ ? next_ - 1 : next_;
-    if (committed > 0) {
-        completed_->waitUntilSignaledValue(committed, timeout_ms);
-    }
+    return committed == 0 || completed_->waitUntilSignaledValue(committed, timeout_ms);
 }
 
 std::optional<Completed> Submission::settle(std::uint64_t sequence) {
@@ -125,6 +130,10 @@ FrameSlot Submission::begin() {
 void Submission::end_and_commit(const MTL::Drawable* drawable) {
     if (!open_) {
         throw Error("commit with no submission begun");
+    }
+    if (abandoned_) {
+        throw Error("submission " + std::to_string(next_ - 1) +
+                    " cannot be committed: memory it may use was released while it was open");
     }
     const std::uint64_t sequence = next_ - 1;
     Slot& slot = slots_[sequence % frames_in_flight];
@@ -208,23 +217,68 @@ bool Submission::has_completed(std::uint64_t sequence) const {
     return completed_->signaledValue() >= sequence + 1;
 }
 
-void Submission::release_resident(MTL::Allocation* allocation) {
-    if (allocation == nullptr) {
-        throw Error("release_resident() with no allocation");
-    }
-    if (open_) {
-        throw Error("release_resident() while submission " + std::to_string(next_ - 1) + " is still open");
-    }
-    residency_->removeAllocation(allocation);
-    residency_->commit();
-}
-
 void Submission::make_resident(MTL::Allocation* allocation) {
     if (allocation == nullptr) {
         throw Error("make_resident() with no allocation");
     }
     residency_->addAllocation(allocation);
     residency_->commit();
+}
+
+Resident Submission::keep_resident(MTL::Allocation* allocation) {
+    make_resident(allocation);
+    return Resident(*this, allocation);
+}
+
+void Submission::retire(MTL::Allocation* allocation) noexcept {
+    wait_idle();
+    if (open_) {
+        abandoned_ = true;  // it may have recorded a use of `allocation`
+    }
+    residency_->removeAllocation(allocation);
+    residency_->commit();
+}
+
+void Submission::add_residency_set(MTL::ResidencySet* set) {
+    if (set == nullptr) {
+        throw Error("add_residency_set() with no set");
+    }
+    queue_->addResidencySet(set);
+}
+
+void Submission::remove_residency_set(MTL::ResidencySet* set) noexcept {
+    wait_idle();
+    if (open_) {
+        abandoned_ = true;  // it may have recorded a use of what `set` holds
+    }
+    queue_->removeResidencySet(set);
+}
+
+Resident::Resident(Submission& submission, MTL::Allocation* allocation)
+    : submission_(&submission), allocation_(NS::RetainPtr(allocation)) {}
+
+Resident::Resident(Resident&& other) noexcept
+    : submission_(std::exchange(other.submission_, nullptr)), allocation_(std::move(other.allocation_)) {}
+
+Resident& Resident::operator=(Resident&& other) noexcept {
+    if (this != &other) {
+        reset();
+        submission_ = std::exchange(other.submission_, nullptr);
+        allocation_ = std::move(other.allocation_);
+    }
+    return *this;
+}
+
+Resident::~Resident() {
+    reset();
+}
+
+void Resident::reset() noexcept {
+    if (submission_ != nullptr && allocation_) {
+        submission_->retire(allocation_.get());
+    }
+    submission_ = nullptr;
+    allocation_.reset();
 }
 
 }  // namespace serenity::metal

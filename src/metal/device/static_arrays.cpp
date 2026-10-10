@@ -45,7 +45,7 @@ StaticArrays::StaticArrays(const Device& device, Submission& submission,
         std::memcpy(bytes + offsets[i], arrays[i].data(), arrays[i].size());
         addresses_[i] = buffer_->gpuAddress() + offsets[i];
     }
-    submission.make_resident(buffer_.get());
+    resident_ = submission.keep_resident(buffer_.get());
 }
 
 }  // namespace serenity::metal

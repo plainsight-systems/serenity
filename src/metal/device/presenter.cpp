@@ -4,7 +4,8 @@
 
 namespace serenity::metal {
 
-Presenter::Presenter(const Device& device, Submission& submission, LayerHandle layer, frame::Extent size) {
+Presenter::Presenter(const Device& device, Submission& submission, LayerHandle layer, frame::Extent size)
+    : submission_(submission) {
     if (layer.ca_metal_layer == nullptr) {
         throw Error("Presenter: the layer handle is null");
     }
@@ -20,7 +21,14 @@ Presenter::Presenter(const Device& device, Submission& submission, LayerHandle l
     if (drawables == nullptr) {
         throw Error("Presenter: the layer has no residency set");
     }
-    submission.queue()->addResidencySet(drawables);
+    submission.add_residency_set(drawables);
+    drawables_ = NS::RetainPtr(drawables);
+}
+
+Presenter::~Presenter() {
+    if (drawables_) {
+        submission_.remove_residency_set(drawables_.get());
+    }
 }
 
 void Presenter::resize(frame::Extent size) {

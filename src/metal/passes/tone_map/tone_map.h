@@ -74,6 +74,7 @@ private:
     NS::SharedPtr<MTL::ComputePipelineState> up_;          // step 3
     NS::SharedPtr<MTL::ComputePipelineState> finish_;      // steps 4 to 6
     NS::SharedPtr<MTL::Buffer> settings_;
+    Resident resident_;
 };
 
 }  // namespace serenity::metal

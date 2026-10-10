@@ -24,8 +24,8 @@ std::uint32_t Accumulation::prepare(const frame::FrameInputs& inputs, frame::Ext
     if (texture_) {
         // Frames in flight may still read the old image. What the drain
         // settles goes untimed: a resize's frame or two.
-        (void)submission_.drain();
-        submission_.release_resident(texture_.get());
+        submission_.drain();
+        resident_.reset();
         texture_.reset();
     }
     auto drained = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -41,7 +41,7 @@ std::uint32_t Accumulation::prepare(const frame::FrameInputs& inputs, frame::Ext
         throw Error("the device made no " + std::to_string(size.width) + " x " + std::to_string(size.height) +
                     " accumulated image");
     }
-    submission_.make_resident(texture_.get());
+    resident_ = submission_.keep_resident(texture_.get());
     return joined.held;
 }
 

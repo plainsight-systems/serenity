@@ -69,6 +69,7 @@ private:
     NS::SharedPtr<MTL::Device> device_;
     Submission& submission_;
     NS::SharedPtr<MTL::Texture> texture_;
+    Resident resident_;  // released after the GPU is done with it (submission.h)
     frame::History history_;  // the core's rule, and what the image holds
 };
 

@@ -9,8 +9,8 @@ namespace serenity::metal {
 
 namespace {
 
-NS::SharedPtr<MTL::Texture> make_image(MTL::Device* device, Submission& submission, MTL::PixelFormat format,
-                                       frame::Extent size, const char* what) {
+NS::SharedPtr<MTL::Texture> make_image(MTL::Device* device, MTL::PixelFormat format, frame::Extent size,
+                                       const char* what) {
     auto descriptor = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
     descriptor->setTextureType(MTL::TextureType2D);
     descriptor->setPixelFormat(format);
@@ -23,7 +23,6 @@ NS::SharedPtr<MTL::Texture> make_image(MTL::Device* device, Submission& submissi
         throw Error("the device made no " + std::to_string(size.width) + " x " + std::to_string(size.height) + " " +
                     what);
     }
-    submission.make_resident(texture.get());
     return texture;
 }
 
@@ -53,30 +52,35 @@ void FrameImages::prepare(frame::Extent size) {
     // resize's frame or two.
     size_ = {};
     bool drained_queue = false;
-    const auto release = [&](NS::SharedPtr<MTL::Texture>& texture) {
-        if (!texture) {
+    const auto release = [&](Image& image) {
+        if (!image.texture) {
             return;
         }
         if (!drained_queue) {
-            (void)submission_.drain();
+            // Settled here, so a failure in a frame in flight is reported.
+            submission_.drain();
             drained_queue = true;
         }
-        submission_.release_resident(texture.get());
-        texture.reset();
+        image.resident.reset();
+        image.texture.reset();
     };
     release(radiance_);
     for (auto& level : pyramid_) {
         release(level);
     }
     auto drained = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+    const auto make = [&](Image& image, MTL::PixelFormat format, frame::Extent at, const char* what) {
+        image.texture = make_image(device_.get(), format, at, what);
+        image.resident = submission_.keep_resident(image.texture.get());
+    };
     if (wants_radiance_) {
-        radiance_ = make_image(device_.get(), submission_, MTL::PixelFormatRGBA32Float, size, "radiance image");
+        make(radiance_, MTL::PixelFormatRGBA32Float, size, "radiance image");
     }
     if (wants_pyramid_) {
         frame::Extent level = size;
-        for (auto& texture : pyramid_) {
+        for (auto& image : pyramid_) {
             level = half(level);
-            texture = make_image(device_.get(), submission_, MTL::PixelFormatRGBA16Float, level, "bloom level");
+            make(image, MTL::PixelFormatRGBA16Float, level, "bloom level");
         }
     }
     size_ = size;

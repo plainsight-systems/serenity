@@ -54,7 +54,7 @@ std::string describe(const NS::Error* error) {
 
 Renderer::Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
                    const scene::SceneDescription* scene)
-    : library_(device, serenity::metallib::shaders) {
+    : submission_(submission), library_(device, serenity::metallib::shaders) {
     // The core decides which schedules can be carried out (principle 10).
     if (const std::optional<std::string> reason = frame::invalid(schedule)) {
         throw Error("Renderer: " + *reason);
@@ -76,7 +76,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     if (!constants_) {
         throw Error("Renderer: the device made no buffer for the frame constants");
     }
-    submission.make_resident(constants_.get());
+    constants_resident_ = submission.keep_resident(constants_.get());
 
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
     descriptor->setMaxBufferBindCount(max_buffers);
@@ -144,6 +144,12 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         }
         acceleration_ = std::make_unique<SceneAcceleration>(device, submission, scene->shapes, moving);
     }
+}
+
+Renderer::~Renderer() {
+    // The pipelines and the argument tables are not in the residency set, so
+    // no Resident waits for them: this does, before any member is released.
+    submission_.wait_idle();
 }
 
 void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {

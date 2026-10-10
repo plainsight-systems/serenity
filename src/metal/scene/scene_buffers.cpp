@@ -83,7 +83,7 @@ SceneBuffers::SceneBuffers(const Device& device, Submission& submission, const s
         throw Error("SceneBuffers: the device made no buffer for the scene's block");
     }
     std::memcpy(block_buffer_->contents(), &block_, sizeof(block_));
-    submission.make_resident(block_buffer_.get());
+    resident_ = submission.keep_resident(block_buffer_.get());
 }
 
 }  // namespace serenity::metal

@@ -23,7 +23,8 @@ namespace serenity::metal {
 //
 // The texture is in shared storage, which Apple silicon's unified memory
 // allows, so reading it back is a copy out of memory the CPU can already see,
-// with no staging buffer. It is made resident once, at construction.
+// with no staging buffer. It is made resident once, at construction, until
+// it is destroyed, which waits for the GPU first (submission.h, Lifetime).
 //
 // Readback is the one place the CPU waits for a frame to finish (GPU.1): the
 // caller waits with Submission::wait_until_complete(i) and then calls
@@ -53,6 +54,7 @@ public:
 
 private:
     NS::SharedPtr<MTL::Texture> texture_;
+    Resident resident_;  // the texture's residency, released after the GPU is done with it
     frame::Extent size_;
 };
 
