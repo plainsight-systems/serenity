@@ -31,8 +31,9 @@ inline float3 wood(serenity::textures::WoodData data, float3 p) {
     const float a = (u - unit.x) * data.board;
     const float3 q =
         float3(p.x / serenity::textures::wood_waver_along, 0.0f, p.z / serenity::textures::wood_waver_across);
-    const float r =
-        metal::sqrt(a * a + depth * depth) + serenity::textures::wood_waver * data.ring * fbm(q, 3u, data.seed);
+    const float r = metal::sqrt(a * a + depth * depth) +
+                    serenity::textures::wood_waver * data.ring *
+                        fbm(q, serenity::textures::wood_waver_octaves, data.seed);
     // Step 5: the growth ring, light to dark.
     const float t = metal::fract(r / data.ring);
     const float w = metal::smoothstep(serenity::textures::wood_latewood, 1.0f, t);
@@ -40,7 +41,8 @@ inline float3 wood(serenity::textures::WoodData data, float3 p) {
     // Step 6: the pores.
     const float3 g =
         float3(p.x / serenity::textures::wood_pores_along, 0.0f, p.z / serenity::textures::wood_pores_across);
-    color *= 1.0f - serenity::textures::wood_pores * metal::saturate(0.5f + 0.5f * gradient_noise(g, data.seed + 1u));
+    const float pores = gradient_noise(g, data.seed + serenity::textures::wood_pores_seed);
+    color *= 1.0f - serenity::textures::wood_pores * metal::saturate(0.5f + 0.5f * pores);
     // Step 7: the board's shade and the seam.
     color *= shade;
     if (metal::min(u, 1.0f - u) * data.board < serenity::textures::wood_seam) {

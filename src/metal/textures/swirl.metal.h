@@ -21,7 +21,8 @@ inline float3 swirl(serenity::textures::SwirlData data, float3 q) {
     // cylinder at q's angle and height.
     const float3 on_cylinder = float3(metal::cos(phi), q.y, metal::sin(phi));
     const float s = float(data.vanes) * (phi * (0.5f * M_1_PI_F) + data.twist * q.y) +
-                    serenity::textures::swirl_waver * fbm(serenity::textures::swirl_scale * on_cylinder, 2u, data.seed);
+                    serenity::textures::swirl_waver * fbm(serenity::textures::swirl_scale * on_cylinder,
+                                                          serenity::textures::swirl_waver_octaves, data.seed);
     // Step 3: its color, a's bands and b's, their edges soft.
     const float v = metal::abs(2.0f * metal::fract(s) - 1.0f);
     const float w =

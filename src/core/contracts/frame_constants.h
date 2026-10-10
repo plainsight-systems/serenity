@@ -41,7 +41,7 @@ struct FrameConstants {
     uint32_t height;
     // frame::FrameInputs::index - accumulated_since: the frames already in
     // the accumulated image, which this one joins; 0 starts it over. At most
-    // 2^24 - 1 (metal/frame/accumulation.h).
+    // 2^24 - 1 (frame::max_accumulated_frames, core/frame/frame_inputs.h).
     uint32_t accumulated_frames;
     uint32_t padding[3];
 };
