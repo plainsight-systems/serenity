@@ -49,7 +49,9 @@ struct SceneView {
 
     Textures textures() const { return Textures{block->textures, block->checkers, block->woods, block->swirls}; }
 
-    Lights lights() const { return Lights{block->light_records, block->shape_lights, block->sphere_lights, transforms, glows}; }
+    Lights lights() const {
+        return Lights{block->light_records, block->shape_lights, block->sphere_lights, transforms, glows};
+    }
 
     Media media() const { return Media{block->media, block->absorbing}; }
 

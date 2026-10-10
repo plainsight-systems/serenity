@@ -13,7 +13,8 @@
 //   - glass: reflection with Fresnel's probability, weights 1 and 1 / eta^2,
 //     total internal reflection past the critical angle, nothing for
 //     evaluate() and pdf();
-//   - resolve(): each material kind to its Bsdf, a texture read at the point.
+//   - resolve(): each material kind to its Bsdf, a texture read at the point;
+//   - the numbers a path draws: a stream per pixel and frame, none shared.
 
 #include <algorithm>
 #include <array>
@@ -334,6 +335,116 @@ TEST_CASE("dielectric: Fresnel chooses reflection, the weights are 1 and 1 / eta
         CHECK(std::uint32_t(p.lobe) == (contracts::lobe_reflection | contracts::lobe_delta));
         CHECK(p.value.x * std::abs(p.direction.z) / p.pdf == doctest::Approx(1.0));
         CHECK(p.direction.z < 0.0f);  // stays inside
+    }
+}
+
+namespace {
+
+// PCG's output permutation, as the shaders compute it (metal/math/
+// hash.metal.h): to show which pixels the sampler's old 32-bit key merged.
+std::uint32_t pcg_hash(std::uint32_t v) {
+    const std::uint32_t state = v * 747796405u + 2891336453u;
+    const std::uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+}  // namespace
+
+TEST_CASE("a path's numbers: a stream per pixel and frame, none shared, each drawn again exactly") {
+    // Pixels (2627, 65) and (0, 818) of frame 0: the old key, a 32-bit hash
+    // of pixel and frame, was the same for both, and so were their paths'
+    // numbers, all the way down (GDSA.3). The stream is now (pixel, frame)
+    // itself (metal/sampler/sampler.metal.h).
+    const auto old_key = [](std::uint32_t x, std::uint32_t y, std::uint32_t frame) {
+        return pcg_hash(x ^ pcg_hash(y ^ pcg_hash(frame)));
+    };
+    REQUIRE(old_key(2627, 65, 0) == old_key(0, 818, 0));
+
+    Gpu gpu;
+    const std::vector<std::array<std::uint32_t, 4>> queries = {
+        {2627, 65, 0, 0}, {0, 818, 0, 0}, {2627, 65, 0, 0}, {2627, 65, 1, 0}, {65, 2627, 0, 0}};
+    const auto count = std::uint32_t(queries.size());
+    const auto numbers = gpu.run<std::array<float, 8>>("path_numbers_probe", queries.size(), {bytes(queries), bytes(count)});
+    for (const auto& path : numbers) {
+        for (const float u : path) {
+            CHECK(u >= 0.0f);
+            CHECK(u < 1.0f);
+        }
+    }
+    CHECK(numbers[0] != numbers[1]);  // the pixels the old key merged
+    CHECK(numbers[0] == numbers[2]);  // the same pixel and frame, drawn again
+    CHECK(numbers[0] != numbers[3]);  // the next frame
+    CHECK(numbers[0] != numbers[4]);  // x and y swapped
+    // Within a path, no number repeats the one before.
+    for (std::size_t k = 1; k < 8; ++k) {
+        CHECK(numbers[0][k] != numbers[0][k - 1]);
+    }
+}
+
+TEST_CASE("eta: what a transmission scales radiance by, which the path tracer's roulette undoes") {
+    // bsdf_eta() is eta_t, the index of wi's side over wo's, for a
+    // transmission sample drawn for wo; every refraction's weight is
+    // 1 / eta_t^2 (dielectric.metal.h), so weight x eta_t^2 is 1. 1 for a
+    // kind that does not transmit.
+    Gpu gpu;
+    const V3 n = unit(0.0, 0.0, 1.0);
+    const auto eta_of = [&](const Bsdf& bsdf, V3 wo) {
+        const float wo_count[4] = {float(wo.x), float(wo.y), float(wo.z), 1.0f};
+        return gpu.run<float>("bsdf_eta_of", 1, {bytes(bsdf), bytes(wo_count)})[0];
+    };
+    const Bsdf glass = make(BsdfKind::dielectric, n, {1.0f, 1.0f, 1.0f}, 0.0f, 1.5f);
+    const V3 outside = unit(0.3, 0.0, 1.0);
+    const V3 inside = unit(0.3, 0.0, -1.0);  // within the critical angle: some of it leaves
+    CHECK(eta_of(glass, outside) == doctest::Approx(1.5));
+    CHECK(eta_of(glass, inside) == doctest::Approx(1.0 / 1.5));
+    for (const V3 wo : {outside, inside}) {
+        const double eta = eta_of(glass, wo);
+        std::uint32_t transmitted = 0;
+        std::uint32_t wrong = 0;
+        for (const Probe& p : samples(gpu, glass, wo)) {
+            if ((p.lobe & contracts::lobe_transmission) == 0u) {
+                continue;
+            }
+            ++transmitted;
+            const double weight = p.value.x * std::abs(p.direction.z) / p.pdf;
+            wrong += std::abs(weight * eta * eta - 1.0) < 1e-4 ? 0u : 1u;
+        }
+        CHECK(transmitted > sample_count / 2);
+        CHECK(wrong == 0);
+    }
+    for (const BsdfKind kind : {BsdfKind::none, BsdfKind::lambert, BsdfKind::conductor, BsdfKind::coated}) {
+        INFO("kind " << int(kind));
+        CHECK(eta_of(make(kind, n, {0.5f, 0.5f, 0.5f}, 0.3f, 1.5f), outside) == 1.0f);
+    }
+}
+
+TEST_CASE("a wo in the surface's plane: glass and a coat have no sample there, and no kind's is ever infinite") {
+    // |cos wo| = 0 exactly: the delta lobes' value F / |cos| would divide by
+    // 0. The sample is refused instead (pdf 0); whatever arrived along it is
+    // weighed by that 0 cosine anyway.
+    Gpu gpu;
+    const V3 n = unit(0.0, 0.0, 1.0);
+    const V3 in_plane = unit(1.0, 0.0, 0.0);
+    for (const BsdfKind kind : {BsdfKind::lambert, BsdfKind::conductor, BsdfKind::dielectric, BsdfKind::coated}) {
+        Bsdf bsdf = make(kind, n, {0.5f, 0.5f, 0.5f}, kind == BsdfKind::conductor ? 0.3f : 0.0f,
+                         kind == BsdfKind::lambert || kind == BsdfKind::conductor ? 0.0f : 1.5f);
+        if (kind == BsdfKind::coated) {
+            bsdf.escape = float(materials::internal_escape(1.5));
+        }
+        std::uint32_t not_finite = 0;
+        std::uint32_t refused = 0;
+        for (const Probe& p : samples(gpu, bsdf, in_plane)) {
+            not_finite += std::isfinite(p.pdf) && std::isfinite(p.value.x) && std::isfinite(p.value.y) &&
+                                  std::isfinite(p.value.z)
+                              ? 0u
+                              : 1u;
+            refused += p.pdf == 0.0f ? 1u : 0u;
+        }
+        INFO("kind " << int(kind));
+        CHECK(not_finite == 0);
+        if (kind == BsdfKind::dielectric || kind == BsdfKind::coated) {
+            CHECK(refused == sample_count);
+        }
     }
 }
 

@@ -26,12 +26,13 @@
 // index wi's side to wo's. The 1 / eta_t^2 is radiance's: it is n^2-scaled
 // across a boundary (pbrt-v4, DielectricBxDF, TransportMode::Radiance), and
 // for a path through a whole sphere it cancels. A sample's weight is 1 when
-// it reflects and 1 / eta_t^2 when it refracts.
+// it reflects and 1 / eta_t^2 when it refracts. A wo in the surface's plane,
+// |cos| 0, has no sample (pdf 0): its value would divide by 0, and whatever
+// arrives along it is weighed by that 0.
 
 #include <metal_stdlib>
 
 #include "core/contracts/bsdf.h"
-#include "core/materials/dielectric.h"
 #include "metal/device/layout.metal.h"
 #include "metal/materials/fresnel.metal.h"
 
@@ -41,55 +42,58 @@ namespace shaders {
 struct Boundary {
     bool entering;         // arriving from outside, against the outward normal
     bool total_internal;   // no refracted direction; reflectance is 1
+    float cos_i;           // |cos| of the angle of incidence
     float reflectance;     // F
     float3 facing;         // the normal on the side the ray arrives from
     float3 reflected;
     float3 refracted;      // unit length unless total_internal
 };
 
-// `direction` and `normal` are unit length.
-inline Boundary dielectric_boundary(serenity::materials::DielectricData glass, float3 direction, float3 normal) {
-    Boundary b;
-    float cos_i = -metal::dot(direction, normal);
-    b.entering = cos_i > 0.0f;
-    b.facing = b.entering ? normal : -normal;
-    cos_i = metal::abs(cos_i);
-    const float eta = b.entering ? 1.0f / glass.ior : glass.ior;
+// `direction` and `normal` are unit length; `ior` the glass's, against 1
+// outside.
+inline Boundary dielectric_boundary(float ior, float3 direction, float3 normal) {
+    const float cos_signed = -metal::dot(direction, normal);
+    const bool entering = cos_signed > 0.0f;
+    const float3 facing = entering ? normal : -normal;
+    const float cos_i = metal::abs(cos_signed);
+    const float eta = entering ? 1.0f / ior : ior;
+    const Fresnel f = fresnel(cos_i, eta);
+    const float3 refracted =
+        f.total_internal ? float3(0.0f) : metal::normalize(eta * direction + (eta * cos_i - f.cos_t) * facing);
+    return Boundary{entering, f.total_internal, cos_i, f.reflectance, facing, metal::reflect(direction, facing),
+                    refracted};
+}
 
-    b.reflected = direction + 2.0f * cos_i * b.facing;
-    float cos_t;
-    b.reflectance = fresnel_reflectance(cos_i, eta, cos_t);
-    b.total_internal = eta * eta * (1.0f - cos_i * cos_i) > 1.0f;
-    b.refracted = b.total_internal ? float3(0.0f)
-                                   : metal::normalize(eta * direction + (eta * cos_i - cos_t) * b.facing);
-    return b;
+// eta_t of a refraction through glass of index `ior`: the index of wi's
+// side over wo's, wi's side being the one refracted into, inside when wo
+// is outside (`entering`).
+inline float transmitted_eta(float ior, bool entering) {
+    return entering ? ior : 1.0f / ior;
 }
 
 // `n` is the outward normal; wo points away from the surface, toward where
 // the light goes, so the light arrives along -wo's mirror image or through.
 inline serenity::contracts::BsdfSample dielectric_sample(serenity::contracts::Bsdf bsdf, float3 n, float3 wo,
                                                          float choose) {
-    serenity::materials::DielectricData glass;
-    glass.ior = bsdf.ior;
     // Traced backwards: the camera's ray arrives along -wo.
-    const Boundary b = dielectric_boundary(glass, -wo, n);
-    const float cos_o = metal::abs(metal::dot(wo, n));
-    serenity::contracts::BsdfSample s;
+    const Boundary b = dielectric_boundary(bsdf.ior, -wo, n);
+    const float cos_o = b.cos_i;
+    if (cos_o <= 0.0f) {
+        // wo in the surface's plane: no sample (I.5), not a value of F / 0.
+        return serenity::contracts::BsdfSample{};
+    }
     if (b.total_internal || choose < b.reflectance) {
-        s.direction = to_packed(b.reflected);
-        s.pdf = b.total_internal ? 1.0f : b.reflectance;
-        s.value = to_packed(float3(s.pdf / cos_o));
-        s.lobe = serenity::contracts::lobe_reflection | serenity::contracts::lobe_delta;
-        return s;
+        const float pdf = b.total_internal ? 1.0f : b.reflectance;
+        return serenity::contracts::BsdfSample{to_packed(b.reflected), pdf, to_packed(float3(pdf / cos_o)),
+                                               serenity::contracts::lobe_reflection |
+                                                   serenity::contracts::lobe_delta};
     }
     const float cos_t = metal::abs(metal::dot(b.refracted, n));
-    // wi's side is the side refracted into: inside when wo is outside.
-    const float eta_t = b.entering ? bsdf.ior : 1.0f / bsdf.ior;
-    s.direction = to_packed(b.refracted);
-    s.pdf = 1.0f - b.reflectance;
-    s.value = to_packed(float3(s.pdf / cos_t / (eta_t * eta_t)));
-    s.lobe = serenity::contracts::lobe_transmission | serenity::contracts::lobe_delta;
-    return s;
+    const float eta_t = transmitted_eta(bsdf.ior, b.entering);
+    const float pdf = 1.0f - b.reflectance;
+    return serenity::contracts::BsdfSample{to_packed(b.refracted), pdf,
+                                           to_packed(float3(pdf / cos_t / (eta_t * eta_t))),
+                                           serenity::contracts::lobe_transmission | serenity::contracts::lobe_delta};
 }
 
 }  // namespace shaders

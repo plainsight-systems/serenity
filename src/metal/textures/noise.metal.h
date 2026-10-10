@@ -7,32 +7,28 @@
 #include <metal_stdlib>
 
 #include "core/textures/noise.h"
+#include "metal/math/hash.metal.h"
 
 namespace serenity {
 namespace shaders {
 
-// noise.h, step 2's hash.
-inline uint3 pcg3d(uint3 v) {
-    v = v * 1664525u + 1013904223u;
-    v.x += v.y * v.z;
-    v.y += v.z * v.x;
-    v.z += v.x * v.y;
-    v ^= v >> 16u;
-    v.x += v.y * v.z;
-    v.y += v.z * v.x;
-    v.z += v.x * v.y;
-    return v;
-}
+// noise.h, step 3: as many gradients as its table holds.
+constant constexpr uint gradient_count =
+    sizeof(serenity::textures::noise_gradients) / sizeof(serenity::textures::noise_gradients[0]);
 
-// Step 3: corner c's gradient, dotted with the offset to the point.
+// Step 3: corner c's gradient, dotted with the offset to the point; step
+// 2's hash is pcg3d (math/hash.metal.h).
 inline float corner_value(int3 c, float3 offset, uint seed) {
     const uint3 h = pcg3d(as_type<uint3>(c) + uint3(seed));
-    const constant int* g = serenity::textures::noise_gradients[h.x % 12u];
+    const constant int* g = serenity::textures::noise_gradients[h.x % gradient_count];
     return float(g[0]) * offset.x + float(g[1]) * offset.y + float(g[2]) * offset.z;
 }
 
 inline float gradient_noise(float3 p, uint seed) {
-    // Step 1.
+    // Step 1. The cell's corner as 32-bit integers: within their range for
+    // every point a texture is read at (ES.46), as each texture's own
+    // header bounds it (core/textures/wood.h: at most some 6.7e8; the
+    // swirl's, on the unit cylinder, at most a few).
     const float3 cell = metal::floor(p);
     const int3 i = int3(cell);
     const float3 f = p - cell;
@@ -47,8 +43,10 @@ inline float gradient_noise(float3 p, uint seed) {
     const float n111 = corner_value(i + int3(1, 1, 1), f - float3(1, 1, 1), seed);
     // Step 4: the quintic fade.
     const float3 u = f * f * f * (f * (f * 6.0f - 15.0f) + 10.0f);
-    const float x00 = metal::mix(n000, n100, u.x), x10 = metal::mix(n010, n110, u.x);
-    const float x01 = metal::mix(n001, n101, u.x), x11 = metal::mix(n011, n111, u.x);
+    const float x00 = metal::mix(n000, n100, u.x);
+    const float x10 = metal::mix(n010, n110, u.x);
+    const float x01 = metal::mix(n001, n101, u.x);
+    const float x11 = metal::mix(n011, n111, u.x);
     return metal::mix(metal::mix(x00, x10, u.y), metal::mix(x01, x11, u.y), u.z);
 }
 

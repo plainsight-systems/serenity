@@ -39,12 +39,8 @@ inline float lambert_pdf(float3 n, float3 wi) {
 
 inline serenity::contracts::BsdfSample lambert_sample(serenity::contracts::Bsdf bsdf, float3 n, float2 u) {
     const float3 wi = cosine_direction(n, u);
-    serenity::contracts::BsdfSample s;
-    s.direction = to_packed(wi);
-    s.pdf = lambert_pdf(n, wi);
-    s.value = to_packed(lambert_evaluate(bsdf, n, wi));
-    s.lobe = serenity::contracts::lobe_reflection | serenity::contracts::lobe_diffuse;
-    return s;
+    return serenity::contracts::BsdfSample{to_packed(wi), lambert_pdf(n, wi), to_packed(lambert_evaluate(bsdf, n, wi)),
+                                           serenity::contracts::lobe_reflection | serenity::contracts::lobe_diffuse};
 }
 
 }  // namespace shaders

@@ -17,6 +17,7 @@
 // into object space the same way, asks the kind for its object-space normal
 // there, and turns that normal by the transform's rotation into the world's.
 
+#include <metal_raytracing>
 #include <metal_stdlib>
 
 #include "core/contracts/surface_interaction.h"
@@ -25,6 +26,7 @@
 #include "metal/device/layout.metal.h"
 #include "metal/math/transform.metal.h"
 #include "metal/shapes/box.metal.h"
+#include "metal/shapes/crossing.metal.h"
 #include "metal/shapes/sphere.metal.h"
 
 namespace serenity {
@@ -36,21 +38,18 @@ struct Shapes {
     constant serenity::shapes::BoxData* boxes;
 };
 
-// The exact hit of a world ray on shape `shape`'s geometry, tested in its
-// object space; `t` is the world's.
-inline bool intersect_shape(Shapes shapes, uint shape, float3 origin, float3 direction, float t_min, float t_max,
-                            thread float& t) {
+// The exact crossing of world ray `world` with shape `shape`'s geometry,
+// tested in its object space; its t is the world's.
+inline Crossing intersect_shape(Shapes shapes, uint shape, metal::raytracing::ray world) {
     const serenity::shapes::ShapeRecord record = shapes.records[shape];
-    float3 o;
-    float3 d;
-    transform_ray_to_object(shapes.transforms[shape], origin, direction, o, d);
+    const metal::raytracing::ray object = transform_ray_to_object(shapes.transforms[shape], world);
     switch (record.kind) {
     case serenity::shapes::ShapeKind::sphere:
-        return intersect_sphere(o, d, t_min, t_max, t);
+        return intersect_sphere(object);
     case serenity::shapes::ShapeKind::box:
-        return intersect_box(shapes.boxes[record.geometry], o, d, t_min, t_max, t);
+        return intersect_box(shapes.boxes[record.geometry], object);
     }
-    return false;
+    return no_crossing();
 }
 
 // The outward normal, in the world, of shape `shape` at `at`, a point on it
@@ -70,11 +69,6 @@ inline float3 normal_at(Shapes shapes, uint shape, float3 at) {
     return metal::normalize(transform_direction(shapes.transforms[shape], normal));
 }
 
-// The outward normal of shape `shape` at world `point`, in the world.
-inline float3 shape_normal(Shapes shapes, uint shape, float3 point) {
-    return normal_at(shapes, shape, transform_to_object(shapes.transforms[shape], point));
-}
-
 // Contract 1: where a ray along `direction` met shape `shape` at world
 // `point`, filled by the shape (contracts/surface_interaction.h). The
 // shading normal is the geometric one for every kind so far. The point in
@@ -85,7 +79,7 @@ inline serenity::contracts::SurfaceInteraction surface_interaction(Shapes shapes
     const serenity::shapes::ShapeRecord record = shapes.records[shape];
     const float3 at = transform_to_object(shapes.transforms[shape], point);
     const float3 normal = normal_at(shapes, shape, at);
-    serenity::contracts::SurfaceInteraction s;
+    serenity::contracts::SurfaceInteraction s{};
     s.position = to_packed(point);
     s.material = record.material;
     s.geometric_normal = to_packed(normal);

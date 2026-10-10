@@ -15,14 +15,26 @@
 // the world's (contracts/transform.h), so it is committed and compared as it
 // is. What a hit reports is the shape and t; where on it, in the world, is
 // surface_interaction()'s.
+//
+// A ray is Metal's own bundle, metal::raytracing::ray: origin, unit
+// direction, and the open interval (min_distance, max_distance) its hits lie
+// in (I.23), which the query takes as it is.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
 
+#include "metal/shapes/crossing.metal.h"
 #include "metal/shapes/shapes.metal.h"
 
 namespace serenity {
 namespace shaders {
+
+// The far end of a ray that runs until it meets something: the largest
+// finite float. Not INFINITY: every shader compiles with Metal's default
+// fast math, under which an infinite operand makes a comparison's result
+// undefined (no-infs-fp-math), and the shapes' exact tests compare their t
+// against this bound.
+constant constexpr float unbounded = metal::numeric_limits<float>::max();
 
 struct Hit {
     bool found;
@@ -30,55 +42,51 @@ struct Hit {
     uint primitive;  // the shape, as primitive i is shape i (shapes/primitive.h)
 };
 
-// `direction` is unit length; hits are in (t_min, t_max).
-inline Hit trace(metal::raytracing::primitive_acceleration_structure structure, Shapes shapes, float3 origin,
-                 float3 direction, float t_min, float t_max) {
+// The nearest shape along `r`, its direction unit length.
+inline Hit trace(metal::raytracing::primitive_acceleration_structure structure, Shapes shapes,
+                 metal::raytracing::ray r) {
     using namespace metal::raytracing;
     intersection_params params;
     params.assume_geometry_type(geometry_type::bounding_box);
     params.accept_any_intersection(false);
 
     intersection_query<> query;
-    query.reset(ray(origin, direction, t_min, t_max), structure, params);
-    float nearest = t_max;
+    query.reset(r, structure, params);
+    ray nearer = r;  // hits nearer than the nearest so far
     while (query.next()) {
         if (query.get_candidate_intersection_type() != intersection_type::bounding_box) {
             continue;
         }
-        const uint shape = query.get_candidate_primitive_id();
-        float t = 0.0f;
-        if (intersect_shape(shapes, shape, origin, direction, t_min, nearest, t)) {
-            query.commit_bounding_box_intersection(t);
-            nearest = t;
+        const Crossing crossing = intersect_shape(shapes, query.get_candidate_primitive_id(), nearer);
+        if (crossing.found) {
+            query.commit_bounding_box_intersection(crossing.t);
+            nearer.max_distance = crossing.t;
         }
     }
 
-    Hit hit;
-    hit.found = query.get_committed_intersection_type() == intersection_type::bounding_box;
-    hit.t = hit.found ? query.get_committed_distance() : 0.0f;
-    hit.primitive = hit.found ? query.get_committed_primitive_id() : 0u;
-    return hit;
+    const bool found = query.get_committed_intersection_type() == intersection_type::bounding_box;
+    return Hit{found, found ? query.get_committed_distance() : 0.0f,
+               found ? query.get_committed_primitive_id() : 0u};
 }
 
-// Whether any shape but `ignore` lies along the ray within (t_min, t_max): a
-// shadow ray's question. It stops at the first such shape, whichever it is,
-// rather than searching for the nearest.
-inline bool occluded(metal::raytracing::primitive_acceleration_structure structure, Shapes shapes, float3 origin,
-                     float3 direction, float t_min, float t_max, uint ignore) {
+// Whether any shape but `ignore` lies along `r`: a shadow ray's question. It
+// stops at the first such shape, whichever it is, rather than searching for
+// the nearest.
+inline bool occluded(metal::raytracing::primitive_acceleration_structure structure, Shapes shapes,
+                     metal::raytracing::ray r, uint ignore) {
     using namespace metal::raytracing;
     intersection_params params;
     params.assume_geometry_type(geometry_type::bounding_box);
     params.accept_any_intersection(true);
 
     intersection_query<> query;
-    query.reset(ray(origin, direction, t_min, t_max), structure, params);
+    query.reset(r, structure, params);
     while (query.next()) {
         if (query.get_candidate_intersection_type() != intersection_type::bounding_box) {
             continue;
         }
         const uint shape = query.get_candidate_primitive_id();
-        float t = 0.0f;
-        if (shape != ignore && intersect_shape(shapes, shape, origin, direction, t_min, t_max, t)) {
+        if (shape != ignore && intersect_shape(shapes, shape, r).found) {
             query.abort();
             return true;
         }

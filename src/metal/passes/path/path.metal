@@ -7,12 +7,11 @@
 
 #include "core/contracts/camera.h"
 #include "core/contracts/frame_constants.h"
-#include "core/lights/gradient_sky.h"
-#include "core/lights/light.h"
-#include "core/lights/sphere_light.h"
+#include "core/contracts/transform.h"
 #include "metal/camera/thin_lens.metal.h"
 #include "metal/film/accumulate.metal.h"
 #include "metal/integrator/path.metal.h"
+#include "metal/sampler/sampler.metal.h"
 #include "metal/scene/scene_block.metal.h"
 
 using namespace metal;
@@ -36,19 +35,16 @@ kernel void path_trace(constant serenity::contracts::FrameConstants& frame [[buf
     if (inside) {
         // The scene, through its block, and as this frame places and lights
         // it (metal/scene/scene_block.metal.h).
-        path::Scene scene;
-        scene.structure = structure;
-        scene.block = &block;
-        scene.transforms = transforms;
-        scene.glows = sphere_glows;
+        const path::Scene scene{structure, &block, transforms, sphere_glows};
 
         PathNumbers numbers = path_numbers(pixel, frame.frame_index);
         const float2 within = next_numbers2(numbers);  // the point in the pixel
         // The point on the lens, drawn only through one, so a pinhole's
-        // paths draw what they drew before lenses.
-        const float2 lens = camera.lens_radius > 0.0f ? next_numbers2(numbers) : float2(0.5f);
-        const CameraRay ray = camera_ray(camera, float2(pixel) + within, lens, frame.width, frame.height);
-        const float3 sample = path::radiance(scene, ray.origin, ray.direction, numbers);
+        // paths draw what they drew before lenses; a pinhole reads none.
+        const float2 lens = has_lens(camera) ? next_numbers2(numbers) : float2(0.0f);
+        const CameraRay ray =
+            camera_ray(camera, float2(pixel) + within, lens, uint2(frame.width, frame.height));
+        const float3 sample = path::radiance(scene, ray, numbers);
 
         failed = !finite(sample);
         const float4 held = accumulate(accumulated.read(pixel), sample, frame.accumulated_frames == 0u);

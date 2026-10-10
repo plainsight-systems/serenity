@@ -8,41 +8,44 @@
 // whatever the direction's length (contracts/transform.h). A ray that starts
 // inside the box hits it on the way out.
 
+#include <metal_raytracing>
 #include <metal_stdlib>
 
 #include "core/shapes/box.h"
 #include "metal/device/layout.metal.h"
+#include "metal/shapes/crossing.metal.h"
 
 namespace serenity {
 namespace shaders {
 
-// `origin` and `direction` in object space, `direction` of any length. On a
-// hit, `t` is its parameter, the world's too (contracts/transform.h).
-inline bool intersect_box(serenity::shapes::BoxData box, float3 origin, float3 direction, float t_min, float t_max,
-                          thread float& t) {
-    // A component of exactly zero would divide to infinity, which Metal's
-    // default (fast) math does not promise to carry; a tiny one gives the
-    // same slabs.
-    const float3 safe = metal::select(direction, float3(1e-20f), metal::abs(direction) < 1e-20f);
+// The smallest direction component the slabs divide by. A component of
+// exactly zero would divide to infinity, which Metal's default (fast) math
+// does not promise to carry; one this small gives the same slabs, its
+// planes' t beyond any scene.
+constant constexpr float least_component = 1e-20f;
+
+// `r` in object space, its direction of any length. A crossing's t is the
+// world's too (contracts/transform.h).
+inline Crossing intersect_box(serenity::shapes::BoxData box, metal::raytracing::ray r) {
+    const float3 safe =
+        metal::select(r.direction, float3(least_component), metal::abs(r.direction) < least_component);
     const float3 inverse = 1.0f / safe;
-    const float3 a = (to_float3(box.min) - origin) * inverse;
-    const float3 b = (to_float3(box.max) - origin) * inverse;
+    const float3 a = (to_float3(box.min) - r.origin) * inverse;
+    const float3 b = (to_float3(box.max) - r.origin) * inverse;
     const float3 lower = metal::min(a, b);
     const float3 upper = metal::max(a, b);
     const float enter = metal::max(metal::max(lower.x, lower.y), lower.z);
     const float leave = metal::min(metal::min(upper.x, upper.y), upper.z);
     if (enter > leave) {
-        return false;
+        return no_crossing();
     }
-    if (enter > t_min && enter < t_max) {
-        t = enter;
-        return true;
+    if (enter > r.min_distance && enter < r.max_distance) {
+        return Crossing{true, enter};
     }
-    if (leave > t_min && leave < t_max) {
-        t = leave;
-        return true;
+    if (leave > r.min_distance && leave < r.max_distance) {
+        return Crossing{true, leave};
     }
-    return false;
+    return no_crossing();
 }
 
 // The outward normal, in object space, of the face whose plane `point` is

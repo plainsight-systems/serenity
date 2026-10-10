@@ -8,7 +8,7 @@
 // a kind added to MaterialKind and not here fails to compile (-Werror).
 //
 //   rough       lambert: color from its texture or constant
-//   conductor   conductor: f0, alpha = roughness^2, at least 1e-3 (a GGX
+//   conductor   conductor: f0, alpha = roughness^2, no less than least_alpha (a GGX
 //               with alpha 0 has no density to sample)
 //   dielectric  dielectric: ior
 //   coated      coated: color from its texture or constant, the coat's
@@ -35,6 +35,10 @@
 namespace serenity {
 namespace shaders {
 
+// The least GGX alpha a conductor resolves to: a GGX with alpha 0 has no
+// density to sample.
+constant constexpr float least_alpha = 1e-3f;
+
 // Every material, as a shader reads it: the records and one array per kind.
 struct Materials {
     constant serenity::materials::MaterialRecord* records;
@@ -47,13 +51,12 @@ struct Materials {
 inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures textures,
                                               serenity::contracts::SurfaceInteraction surface) {
     const serenity::materials::MaterialRecord record = materials.records[surface.material];
-    serenity::contracts::Bsdf bsdf;
+    // Every field set before the switch (ES.20): a record whose kind is no
+    // enumerator resolves to none, which scatters nothing.
+    serenity::contracts::Bsdf bsdf{};
     bsdf.normal = surface.shading_normal;
+    bsdf.kind = serenity::contracts::BsdfKind::none;
     bsdf.color = to_packed(float3(1.0f));
-    bsdf.alpha = 0.0f;
-    bsdf.ior = 0.0f;
-    bsdf.escape = 0.0f;
-    bsdf.padding[0] = bsdf.padding[1] = 0u;
     const float3 world = to_float3(surface.position);
     const float3 object = to_float3(surface.object_position);
     switch (record.kind) {
@@ -65,7 +68,7 @@ inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures text
         const serenity::materials::ConductorData conductor = materials.conductors[record.index];
         bsdf.kind = serenity::contracts::BsdfKind::conductor;
         bsdf.color = conductor.f0;
-        bsdf.alpha = metal::max(conductor.roughness * conductor.roughness, 1e-3f);
+        bsdf.alpha = metal::max(conductor.roughness * conductor.roughness, least_alpha);
         break;
     }
     case serenity::materials::MaterialKind::dielectric:
@@ -78,7 +81,7 @@ inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures text
     case serenity::materials::MaterialKind::coated: {
         const serenity::materials::CoatedData coat = materials.coated[record.index];
         bsdf.kind = serenity::contracts::BsdfKind::coated;
-        serenity::materials::RoughData base;
+        serenity::materials::RoughData base{};
         base.color = coat.color;
         base.texture = coat.texture;
         bsdf.color = to_packed(rough_color(base, textures, world, object));

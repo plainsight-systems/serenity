@@ -11,8 +11,17 @@
 namespace serenity {
 namespace shaders {
 
+// IEC 61966-2-1's constants: below the cutoff the curve is linear, with
+// that slope; above it, a power of 1 / gamma, scaled and offset.
+constant constexpr float srgb_cutoff = 0.0031308f;
+constant constexpr float srgb_linear_slope = 12.92f;
+constant constexpr float srgb_gamma = 2.4f;
+constant constexpr float srgb_scale = 1.055f;
+constant constexpr float srgb_offset = 0.055f;
+
 inline float3 transfer_srgb(float3 c) {
-    return metal::select(1.055f * metal::pow(c, 1.0f / 2.4f) - 0.055f, 12.92f * c, c <= 0.0031308f);
+    return metal::select(srgb_scale * metal::pow(c, 1.0f / srgb_gamma) - srgb_offset, srgb_linear_slope * c,
+                         c <= srgb_cutoff);
 }
 
 }  // namespace shaders

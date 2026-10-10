@@ -16,30 +16,31 @@
 // still.
 //
 // A path's numbers (the path tracer's, which averages frames) are drawn
-// another way: independent, from a hash of the pixel, the frame's index and
-// the dimension, the count of numbers the path drew before. Each frame's are
-// independent of every other's, so their mean converges, and each is a
-// function of where and when it is used, so any frame can be drawn again,
-// alone (principle 2). The counter is the path's own, in a register, not
-// state any other thread or frame shares.
-//
-// The hash is PCG's output permutation (Jarzynski and Olano, "Hash Functions
-// for GPU Rendering", 2020).
+// another way: independent, each the first word of pcg3d (math/
+// hash.metal.h) of three, the pixel's key, the frame's index and the
+// dimension, the count of numbers the path drew before. Counter-based, as
+// GDSA.3 asks: the stream is (pixel, frame), 64 bits, and pcg3d is a
+// bijection of its three words, so no two pixels or frames share a stream;
+// two numbers agree only as two independent 32-bit words do, by chance.
+// (A 32-bit hash of pixel and frame as the key, as before, gave some 6.9e3
+// pairs of pixels per frame at 3456 x 2234 the same key, and so the same
+// numbers all the way down their paths.) The pixel's key is x + 2^16 y,
+// distinct for every pixel of an image up to 65536 wide, past Metal's
+// largest texture. Each frame's numbers are independent of every other's,
+// so their mean converges, and each is a function of where and when it is
+// used, so any frame can be drawn again, alone (principle 2). The counter is
+// the path's own, in a register, not state any other thread or frame shares.
 
 #include <metal_stdlib>
+
+#include "metal/math/hash.metal.h"
 
 namespace serenity {
 namespace shaders {
 
-inline uint pcg_hash(uint v) {
-    const uint state = v * 747796405u + 2891336453u;
-    const uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    return (word >> 22u) ^ word;
-}
-
-inline float unit_float(uint bits) {
-    return float(bits >> 8) * (1.0f / 16777216.0f);
-}
+// R2's step: 1 / p and 1 / p^2, p the plastic constant, to a float's
+// precision.
+constant constexpr float2 r2_step = float2(0.754877666f, 0.569840291f);
 
 // The offset of `pixel`'s samples for `purpose`.
 inline float2 sample_offset(uint2 pixel, uint purpose) {
@@ -49,23 +50,23 @@ inline float2 sample_offset(uint2 pixel, uint purpose) {
 
 // Sample `index` of a pixel's set whose offset is `offset`.
 inline float2 sample_2d(float2 offset, uint index) {
-    const float2 step = float2(0.7548776662466927f, 0.5698402909980532f);  // 1/p, 1/p^2
-    return metal::fract(offset + float(index) * step);
+    return metal::fract(offset + float(index) * r2_step);
 }
 
-// A path's numbers: `key` from the pixel and the frame, `dimension` counting.
+// A path's numbers: its stream, `key`, the pixel's key and the frame's
+// index; `dimension` counting the numbers drawn.
 struct PathNumbers {
-    uint key;
+    uint2 key;
     uint dimension;
 };
 
 inline PathNumbers path_numbers(uint2 pixel, uint frame) {
-    return PathNumbers{pcg_hash(pixel.x ^ pcg_hash(pixel.y ^ pcg_hash(frame))), 0u};
+    return PathNumbers{uint2(pixel.x | (pixel.y << 16u), frame), 0u};
 }
 
 // The path's next number, in [0, 1).
 inline float next_number(thread PathNumbers& numbers) {
-    return unit_float(pcg_hash(numbers.key ^ pcg_hash(numbers.dimension++)));
+    return unit_float(pcg3d(uint3(numbers.key, numbers.dimension++)).x);
 }
 
 inline float2 next_numbers2(thread PathNumbers& numbers) {

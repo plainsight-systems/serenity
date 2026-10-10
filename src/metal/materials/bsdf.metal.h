@@ -10,6 +10,9 @@
 // Reflecting kinds are two-sided: they reflect on whichever side wo is, the
 // shading normal turned to face it. Glass decides entering from leaving by
 // the unturned normal.
+//
+// "No sample" is one value everywhere: BsdfSample{}, its pdf 0 (contract
+// 2), every other field 0.
 
 #include <metal_stdlib>
 
@@ -64,7 +67,7 @@ inline float bsdf_pdf(serenity::contracts::Bsdf bsdf, float3 wo, float3 wi) {
 inline serenity::contracts::BsdfSample bsdf_sample(serenity::contracts::Bsdf bsdf, float3 wo, float3 u) {
     switch (bsdf.kind) {
     case serenity::contracts::BsdfKind::none:
-        break;
+        return serenity::contracts::BsdfSample{};  // scatters nothing: no sample
     case serenity::contracts::BsdfKind::lambert:
         return lambert_sample(bsdf, facing(bsdf, wo), u.yz);
     case serenity::contracts::BsdfKind::conductor:
@@ -74,12 +77,26 @@ inline serenity::contracts::BsdfSample bsdf_sample(serenity::contracts::Bsdf bsd
     case serenity::contracts::BsdfKind::coated:
         return coated_sample(bsdf, facing(bsdf, wo), wo, u);
     }
-    serenity::contracts::BsdfSample none;
-    none.direction = to_packed(float3(0.0f));
-    none.pdf = 0.0f;
-    none.value = to_packed(float3(0.0f));
-    none.lobe = 0u;
-    return none;
+    return serenity::contracts::BsdfSample{};
+}
+
+// eta_t of a transmission sample drawn for wo: the index of refraction on
+// wi's side over wo's, by which the sample's value carries radiance's
+// 1 / eta_t^2 (dielectric.metal.h). 1 for a kind that does not transmit.
+// pbrt-v4's BSDFSample::eta, here a question of the Bsdf and wo because
+// contract 2's BsdfSample does not carry it; the path tracer's roulette
+// undoes it (integrator/path.metal.h, step 7).
+inline float bsdf_eta(serenity::contracts::Bsdf bsdf, float3 wo) {
+    switch (bsdf.kind) {
+    case serenity::contracts::BsdfKind::none:
+    case serenity::contracts::BsdfKind::lambert:
+    case serenity::contracts::BsdfKind::conductor:
+    case serenity::contracts::BsdfKind::coated:
+        return 1.0f;
+    case serenity::contracts::BsdfKind::dielectric:
+        return transmitted_eta(bsdf.ior, metal::dot(wo, to_float3(bsdf.normal)) > 0.0f);
+    }
+    return 1.0f;
 }
 
 inline uint bsdf_lobes(serenity::contracts::Bsdf bsdf) {

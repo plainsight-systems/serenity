@@ -20,7 +20,7 @@ namespace shaders {
 
 struct UniformLight {
     constant serenity::lights::LightRecord* records;
-    uint count;  // at least 1: an estimator in a scene with no light does not select
+    uint count;  // 0 in a scene with no light, which select_light() must not be asked of
 };
 
 struct SelectedLight {
@@ -28,7 +28,8 @@ struct SelectedLight {
     float probability;  // 1 / count
 };
 
-// The light `u`, a number in [0, 1), chooses.
+// The light `u`, a number in [0, 1), chooses. Precondition: count is at
+// least 1; the estimator tests it before asking (path.metal.h, step 5).
 inline SelectedLight select_light(UniformLight selection, float u) {
     const uint i = metal::min(uint(u * float(selection.count)), selection.count - 1u);
     return SelectedLight{selection.records[i], 1.0f / float(selection.count)};

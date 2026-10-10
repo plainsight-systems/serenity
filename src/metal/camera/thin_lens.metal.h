@@ -20,20 +20,27 @@ struct CameraRay {
     float3 direction;  // unit length
 };
 
-// `position` is in pixels from the image's top-left corner: pixel (x, y)'s
-// center is (x + 0.5, y + 0.5). `lens` is a point in the unit square, mapped
-// to the lens's disk (warp.metal.h, concentric_disk); unread for a pinhole,
-// whose ray is the pinhole's exactly.
+// Whether the camera has a lens, rather than a pinhole: the one test every
+// caller makes (the path pass draws a lens point only through one).
+inline bool has_lens(constant serenity::contracts::CameraData& camera) {
+    return camera.lens_radius > 0.0f;
+}
+
+// `position` is in pixels from the top-left corner of an image of `size`
+// pixels: pixel (x, y)'s center is (x + 0.5, y + 0.5). `lens` is a point in
+// the unit square, mapped to the lens's disk (warp.metal.h,
+// concentric_disk); unread for a pinhole, whose ray is the pinhole's
+// exactly.
 inline CameraRay camera_ray(constant serenity::contracts::CameraData& camera, float2 position, float2 lens,
-                            uint width, uint height) {
-    const float sx = 2.0f * position.x / float(width) - 1.0f;
-    const float sy = 1.0f - 2.0f * position.y / float(height);
+                            uint2 size) {
+    const float sx = 2.0f * position.x / float(size.x) - 1.0f;
+    const float sy = 1.0f - 2.0f * position.y / float(size.y);
     const float3 forward = to_float3(camera.forward);
     const float3 right = to_float3(camera.right);
     const float3 up = to_float3(camera.up);
     const float3 d = forward + sx * right + sy * up;
     const float3 origin = to_float3(camera.origin);
-    if (camera.lens_radius == 0.0f) {
+    if (!has_lens(camera)) {
         return CameraRay{origin, metal::normalize(d)};
     }
     const float3 focus = origin + (camera.focus_distance / metal::dot(d, forward)) * d;
