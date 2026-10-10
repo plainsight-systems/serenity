@@ -1,0 +1,14 @@
+# What UndefinedBehaviorSanitizer leaves unchecked in the native-sanitize
+# preset (CMakePresets.json), and why. Each entry is a third-party idiom,
+# named as narrowly as the sanitizer allows; nothing of this project's.
+#
+# metal-cpp's NS::SharedPtr releases the object it held when it is assigned,
+# and retains what it copies, by calling release() and retain() through a
+# pointer that is null when it held nothing: Objective-C's message to nil,
+# which does nothing, and which metal-cpp relies on (it marks the
+# assignments that make these calls no_sanitize("undefined") itself, but
+# not the two members they call). Only those two members: a call this
+# project makes on a null Metal object is still reported.
+[undefined]
+fun:_ZN2NS11Referencing*7releaseEv
+fun:_ZN2NS11Referencing*6retainEv

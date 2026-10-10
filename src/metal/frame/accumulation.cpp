@@ -19,7 +19,7 @@ std::uint32_t Accumulation::prepare(const frame::FrameInputs& inputs, frame::Ext
         try {
             return next.join(inputs, size, scene_changes);
         } catch (const frame::HistoryError& refused) {
-            throw Error(refused.what());
+            throw MetalError(refused.what());
         }
     }();
     if (!joined.remade) {

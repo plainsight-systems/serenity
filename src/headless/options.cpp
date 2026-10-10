@@ -14,7 +14,8 @@ namespace {
 
 constexpr std::string_view usage =
     "usage: serenity-headless --graph FILE [--scene FILE] --out DIRECTORY [--frames N] [--first I] "
-    "[--step SECONDS | --time SECONDS] [--size WIDTHxHEIGHT] [--write all|last|doubling] [--samples N]";
+    "[--step SECONDS | --time SECONDS] [--size WIDTHxHEIGHT] [--write all|last|doubling] [--samples N]; "
+    "DIRECTORY must be new or empty";
 
 // The whole of `text` as a T, or none: std::from_chars reads no locale and
 // sets no errno (E.28), and takes no sign or space before the number.

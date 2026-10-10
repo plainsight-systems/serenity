@@ -1,5 +1,5 @@
 // metal::Library: a compiled-in library loads, its kernel runs and writes
-// what it should, and every failure throws metal::Error naming its cause.
+// what it should, and every failure throws metal::MetalError naming its cause.
 //
 // Its own dispatch, through a plain Metal command queue rather than the
 // probe runner (support/probe_runner.h): the library is what it tests, so
@@ -19,7 +19,7 @@
 #include "serenity/metallib/probes.h"
 
 using serenity::metal::Device;
-using serenity::metal::Error;
+using serenity::metal::MetalError;
 using serenity::metal::Library;
 
 TEST_CASE("a compiled-in kernel runs and writes what it should") {
@@ -60,18 +60,19 @@ TEST_CASE("a compiled-in kernel runs and writes what it should") {
 TEST_CASE("a function the library lacks is an error that names it") {
     Device device;
     Library library(device, serenity::metallib::probes);
-    CHECK_THROWS_WITH_AS((void)library.compute_pipeline("no_such_kernel"), doctest::Contains("no_such_kernel"), Error);
+    CHECK_THROWS_WITH_AS((void)library.compute_pipeline("no_such_kernel"), doctest::Contains("no_such_kernel"),
+                         MetalError);
 }
 
 TEST_CASE("a null function name is an error") {
     Device device;
     Library library(device, serenity::metallib::probes);
-    CHECK_THROWS_AS((void)library.compute_pipeline(nullptr), Error);
+    CHECK_THROWS_AS((void)library.compute_pipeline(nullptr), MetalError);
 }
 
 TEST_CASE("bytes that are not a library are an error") {
     Device device;
     const std::vector<std::byte> garbage(4096, std::byte{0x5a});
-    CHECK_THROWS_AS(Library(device, garbage), Error);
-    CHECK_THROWS_AS(Library(device, std::span<const std::byte>()), Error);
+    CHECK_THROWS_AS(Library(device, garbage), MetalError);
+    CHECK_THROWS_AS(Library(device, std::span<const std::byte>()), MetalError);
 }

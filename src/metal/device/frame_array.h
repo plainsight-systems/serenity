@@ -38,8 +38,8 @@ namespace serenity::metal {
 // memory visible to the GPU at commit. With one copy, every slot names it,
 // and it is written only before the first frame.
 //
-// Throws Error if `initial` is empty or the device cannot make the buffer;
-// and bytes(), view() and address() throw Error for a slot that is not one
+// Throws MetalError if `initial` is empty or the device cannot make the buffer;
+// and bytes(), view() and address() throw MetalError for a slot that is not one
 // (with one copy too, so a wrong slot is caught however the array is made).
 //
 // Cost: the array's size times the copies, once; nothing per frame but what
@@ -79,7 +79,7 @@ public:
     MTL::GPUAddress address(std::uint32_t slot) const;
 
 private:
-    // Where slot `slot`'s copy starts; throws Error for a slot that is not
+    // Where slot `slot`'s copy starts; throws MetalError for a slot that is not
     // one (I.6).
     std::size_t offset(std::uint32_t slot) const;
 

@@ -40,13 +40,13 @@ kernel void scene_block_probe(device uint* out [[buffer(0)]],
         case 3u: word = word_of(block.woods, q.element, q.word); break;
         case 4u: word = word_of(block.swirls, q.element, q.word); break;
         case 5u: word = word_of(block.materials, q.element, q.word); break;
-        case 6u: word = word_of(block.rough, q.element, q.word); break;
+        case 6u: word = word_of(block.roughs, q.element, q.word); break;
         case 7u: word = word_of(block.dielectrics, q.element, q.word); break;
         case 8u: word = word_of(block.conductors, q.element, q.word); break;
         case 9u: word = word_of(block.emissives, q.element, q.word); break;
-        case 10u: word = word_of(block.coated, q.element, q.word); break;
+        case 10u: word = word_of(block.coateds, q.element, q.word); break;
         case 11u: word = word_of(block.media, q.element, q.word); break;
-        case 12u: word = word_of(block.absorbing, q.element, q.word); break;
+        case 12u: word = word_of(block.absorbings, q.element, q.word); break;
         case 13u: word = word_of(block.shapes, q.element, q.word); break;
         case 14u: word = word_of(block.boxes, q.element, q.word); break;
         case 15u: word = word_of(block.light_records, q.element, q.word); break;

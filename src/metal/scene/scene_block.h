@@ -76,13 +76,13 @@ struct SceneBlock {
     Array<textures::WoodData> woods;
     Array<textures::SwirlData> swirls;
     Array<materials::MaterialRecord> materials;
-    Array<materials::RoughData> rough;
+    Array<materials::RoughData> roughs;
     Array<materials::DielectricData> dielectrics;
     Array<materials::ConductorData> conductors;
     Array<materials::EmissiveData> emissives;
-    Array<materials::CoatedData> coated;
+    Array<materials::CoatedData> coateds;
     Array<media::MediumRecord> media;
-    Array<media::AbsorbingData> absorbing;
+    Array<media::AbsorbingData> absorbings;
     Array<shapes::ShapeRecord> shapes;
     Array<shapes::BoxData> boxes;
     Array<lights::LightRecord> light_records;

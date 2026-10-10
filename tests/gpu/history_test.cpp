@@ -91,7 +91,7 @@ TEST_CASE("a moving scene's image holds one instant; a still scene's, any") {
         (void)moving.render(1, 0, 1.5);
         // A frame of another instant is refused, not averaged in.
         CHECK_THROWS_WITH_AS(moving.render(2, 0, 1.6), doctest::Contains("an image holds one instant"),
-                             metal::Error);
+                             metal::MetalError);
         // Starting over at the new instant is fine.
         CHECK(moving.settle(moving.render(2, 2, 1.6)) == 0);
     }

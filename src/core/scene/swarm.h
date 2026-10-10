@@ -79,7 +79,7 @@ inline constexpr int start_attempts = 64;
 std::uint64_t firefly_seed(std::uint64_t swarm_seed, std::uint32_t i);
 
 // Step 2: firefly i's start, clear of `obstacles`. Throws an
-// animation::Refusal (core/animation/refusal.h) naming the firefly if its
+// animation::MotionError (core/animation/motion_error.h) naming the firefly if its
 // volume has no room for a drift or none of its draws is clear.
 contracts::Float3 firefly_start(const Swarm& swarm, std::uint32_t i, const contracts::Obstacles& obstacles);
 

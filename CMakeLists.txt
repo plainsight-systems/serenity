@@ -56,6 +56,13 @@ include(FetchContent)
 # Warnings fail the build in this project's code. Third-party headers are
 # included as SYSTEM, so their warnings are theirs.
 set(SERENITY_WARNINGS -Wall -Wextra -Wpedantic -Werror)
+# And in src/, beyond them: a conversion that can lose a value or change its
+# sign must be written as a named cast (ES.46, ES.48, ES.49), not happen
+# silently; a name may not hide another in an enclosing scope (ES.12); and a
+# C-style cast, which can do any of static_cast, const_cast and
+# reinterpret_cast without saying which, is refused (ES.49).
+set(SERENITY_SOURCE_WARNINGS ${SERENITY_WARNINGS}
+    -Wconversion -Wsign-conversion -Wshadow -Wold-style-cast)
 
 # ---------------------------------------------------------------------------
 # metal-cpp: Apple's C++ interface to Metal, header-only. Pinned by commit to
@@ -139,7 +146,7 @@ add_library(serenity_core STATIC
 )
 target_include_directories(serenity_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(serenity_core PRIVATE tomlplusplus::tomlplusplus stb_image_write)
-target_compile_options(serenity_core PRIVATE ${SERENITY_WARNINGS})
+target_compile_options(serenity_core PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
 # ---------------------------------------------------------------------------
 # Metal backend: the only code that uses Metal's host API. Its shaders are
@@ -170,7 +177,7 @@ add_library(serenity_metal STATIC
     src/metal/passes/tone_map/tone_map.cpp
 )
 target_link_libraries(serenity_metal PUBLIC serenity_core metal_cpp)
-target_compile_options(serenity_metal PRIVATE ${SERENITY_WARNINGS})
+target_compile_options(serenity_metal PRIVATE ${SERENITY_SOURCE_WARNINGS})
 serenity_add_metallib(
     TARGET serenity_metal NAME shaders
     SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/test_pattern/test_pattern.metal"
@@ -187,19 +194,19 @@ serenity_add_metallib(
 # ---------------------------------------------------------------------------
 add_library(serenity_app_options STATIC src/app/options.cpp src/app/clock.cpp)
 target_link_libraries(serenity_app_options PUBLIC serenity_core)
-target_compile_options(serenity_app_options PRIVATE ${SERENITY_WARNINGS})
+target_compile_options(serenity_app_options PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
 add_executable(serenity src/app/main.cpp src/app/window.cpp)
 target_link_libraries(serenity PRIVATE serenity_app_options serenity_metal SDL3::SDL3-static)
-target_compile_options(serenity PRIVATE ${SERENITY_WARNINGS})
+target_compile_options(serenity PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
 add_library(serenity_headless_options STATIC src/headless/options.cpp)
 target_link_libraries(serenity_headless_options PUBLIC serenity_core)
-target_compile_options(serenity_headless_options PRIVATE ${SERENITY_WARNINGS})
+target_compile_options(serenity_headless_options PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
 add_executable(serenity-headless src/headless/main.cpp)
 target_link_libraries(serenity-headless PRIVATE serenity_headless_options serenity_metal)
-target_compile_options(serenity-headless PRIVATE ${SERENITY_WARNINGS})
+target_compile_options(serenity-headless PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
 enable_testing()
 add_subdirectory(tests)

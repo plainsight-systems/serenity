@@ -179,7 +179,7 @@ TEST_CASE("a flight's flashes: in order, within its loop, a second apart, one on
 TEST_CASE("a flight that cannot be made clear is refused, naming its line") {
     // The firefly's motion is on line 31.
     const auto error_of = [](const std::string& text) {
-        return tests::error_of<scene::Error>([&] { return scene::parse(text, "s.toml"); });
+        return tests::error_of<scene::SceneError>([&] { return scene::parse(text, "s.toml"); });
     };
     // A start inside the ball.
     const std::string inside = tests::replaced(flying(), "center = [1.2, 1.0, 0.8]", "center = [0.1, 0.5, 0.0]");

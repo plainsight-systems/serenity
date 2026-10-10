@@ -27,7 +27,7 @@ namespace serenity::metal {
 // that of a zeroed block at the buffer's start, shared by every empty array,
 // because Metal refuses a null address for a buffer a shader declares.
 //
-// Throws Error if the device cannot make the buffer.
+// Throws MetalError if the device cannot make the buffer.
 //
 // Not performance-sensitive: one copy, at start-up.
 class StaticArrays {
@@ -43,7 +43,7 @@ public:
     ~StaticArrays() = default;
 
     // The address of array `i`, in the order given; the shared zeroed block
-    // if it was empty. Throws Error if there is no array `i`.
+    // if it was empty. Throws MetalError if there is no array `i`.
     MTL::GPUAddress address(std::size_t i) const;
 
 private:

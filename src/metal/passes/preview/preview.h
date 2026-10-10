@@ -83,7 +83,7 @@ class PreviewPass {
 public:
     explicit PreviewPass(const Library& library);
 
-    // Records the pass. Throws Error if `resources` has no scene, no camera
+    // Records the pass. Throws MetalError if `resources` has no scene, no camera
     // or no radiance image.
     void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
 

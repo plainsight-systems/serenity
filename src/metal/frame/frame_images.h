@@ -19,11 +19,14 @@ namespace serenity::metal {
 // schedule says they do (core/frame/schedule.h):
 //
 //   - the radiance image: the frame's linear radiance, RGBA32Float at the
-//     frame's size, written by the pass that computes light (preview,
-//     path) and read by the pass that presents it (display, tone_map).
-//     32-bit, not 16: the display pass must show exactly what the light
-//     pass computed, as the passes did when they encoded the target
-//     themselves, and a firefly's radiance of hundreds keeps its digits;
+//     frame's size, written by the pass that computes light (preview) and
+//     read by the pass that presents it (display, tone_map). 32-bit, not
+//     16: the display pass must show exactly what the light pass computed,
+//     as the passes did when they encoded the target themselves, and a
+//     firefly's radiance of hundreds keeps its digits. A light pass that
+//     accumulates (path) has none here: its accumulated image, the same
+//     format at the same size, is the frame's radiance (accumulation.h,
+//     passes/path/path.h), so the mean is written once (GDSA.6);
 //   - the bloom pyramid, for the tone-map pass alone: passes::bloom_levels
 //     levels (core/passes/tone_map.h), each max(1, ceil(previous / 2)) on
 //     each axis from the frame's size, so any frame has every level;
@@ -61,26 +64,31 @@ namespace serenity::metal {
 // (passes/display/display.h), at the cost derived below; it has not been
 // measured on its own (docs/research/2026-10-09-pass-costs.md).
 //
-// Cost: at 3456 x 2234 (P = 7.7 M pixels), the radiance image is 123 MB
-// and the pyramid 21 MB. Per frame, the light pass writes the radiance
-// image once, P texels; the display pass reads it once, P texels, 247 MB of
-// traffic in all, some 0.6 ms of the M3 Max's 400 GB/s. The tone-map pass
-// reads it twice, in two dispatches ten apart, too far for one read to
-// leave it cached for the other: 13 filtered samples for each of B_0's P / 4
-// texels, then P exact reads (passes/tone_map/tone_map.h); what that costs
-// in memory traffic is the pass's measured time, not a count here.
+// Cost: at 3456 x 2234 (P = 7.7 M pixels), the radiance image is 123 MB,
+// when the light pass does not accumulate, and the pyramid 21 MB. Per
+// frame, the light pass writes the radiance image once, P texels; the
+// display pass reads it once, P texels, 247 MB of traffic in all, some
+// 0.6 ms of the M3 Max's 400 GB/s. The tone-map pass reads it twice, in two
+// dispatches ten apart, too far for one read to leave it cached for the
+// other: 13 filtered samples for each of B_0's P / 4 texels, then P exact
+// reads (passes/tone_map/tone_map.h); what that costs in memory traffic is
+// the pass's measured time, not a count here.
 //
-// Throws Error if the frame's size is not one Metal makes an image of
+// Throws MetalError if the frame's size is not one Metal makes an image of
 // (metal/device/device.h, max_texture_side), or the device cannot make one.
 class FrameImages {
 public:
+    // Whether the frame's radiance is an image of its own, or the light
+    // pass's accumulated image (accumulation.h), which this then does not
+    // make. Types, not bools, so the call says which (I.4).
+    enum class Radiance { image, accumulated };
+
     // Whether the schedule has the tone-map pass, which needs the pyramid.
-    // A type, not a bool, so the call says which (I.4).
     enum class Bloom { none, pyramid };
 
-    // The radiance image always (a schedule with no light pass makes no
-    // FrameImages), and the pyramid as `bloom` says.
-    FrameImages(const Device& device, Submission& submission, Bloom bloom);
+    // The radiance image as `radiance` says, and the pyramid as `bloom`
+    // says (a schedule with no light pass makes no FrameImages).
+    FrameImages(const Device& device, Submission& submission, Radiance radiance, Bloom bloom);
 
     FrameImages(const FrameImages&) = delete;
     FrameImages& operator=(const FrameImages&) = delete;
@@ -92,13 +100,14 @@ public:
     void prepare(frame::Extent size);
 
     // Null when the schedule does not use it, or before the first prepare().
-    // bloom() throws Error for a level past passes::bloom_levels.
+    // bloom() throws MetalError for a level past passes::bloom_levels.
     MTL::Texture* radiance() const noexcept { return radiance_.texture.get(); }
     MTL::Texture* bloom(std::uint32_t level) const;
 
 private:
     NS::SharedPtr<MTL::Device> device_;
     Submission& submission_;
+    Radiance radiance_kind_;
     Bloom bloom_;
     frame::Extent size_;
     // Each image with its residency, released after the GPU is done with it

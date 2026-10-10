@@ -4,7 +4,7 @@
 #include <cstdint>
 
 #include "core/animation/extent.h"
-#include "core/animation/refusal.h"
+#include "core/animation/motion_error.h"
 #include "core/contracts/float3.h"
 #include "core/contracts/obstacles.h"
 #include "core/frame/frame_inputs.h"
@@ -61,7 +61,7 @@ namespace serenity::animation {
 // axis. make_wander() checks that the body, wherever in it (the extent grown
 // by the body's radius, rounded outward), touches no still shape
 // (contracts::Obstacles::touches, contract 11), and refuses otherwise, by a
-// Refusal (refusal.h).
+// MotionError (motion_error.h).
 //
 // Not performance-sensitive per wander: make_wander() runs once, at load;
 // position() is 9 sines in double, once per moving shape per frame.
@@ -88,7 +88,7 @@ struct Wander {
 // `speed` finite and greater than 0, `body` finite and 0 or more, and every
 // point the body can reach a float: |anchor| + reach + body no greater than
 // FLT_MAX on each axis, in double, so no position rounds to an infinity.
-// Throws std::invalid_argument for numbers that are not, and a Refusal for a
+// Throws std::invalid_argument for numbers that are not, and a MotionError for a
 // reach whose body could touch a still shape.
 Wander make_wander(const WanderParams& params, float body, const contracts::Obstacles& obstacles);
 

@@ -56,7 +56,7 @@ std::string swarm_of(int count, int seed = 4, const std::string& extra = "") {
 }
 
 std::string error_of(const std::string& text) {
-    return tests::error_of<scene::Error>([&] { return scene::parse(text, "s.toml"); });
+    return tests::error_of<scene::SceneError>([&] { return scene::parse(text, "s.toml"); });
 }
 
 // The shapes before a swarm's: the floor and the ball.
@@ -155,7 +155,8 @@ namespace {
 
 // A flight job about the ball, in the swarm's volume, from `start`.
 animation::FlightJob job(std::uint64_t seed, contracts::Float3 start) {
-    return {.params = {.volume = {{-volume_reach, volume_low, -volume_reach}, {volume_reach, volume_high, volume_reach}},
+    return {.params = {.volume = {{-volume_reach, volume_low, -volume_reach},
+                                  {volume_reach, volume_high, volume_reach}},
                        .targets = {{{0.0f, 0.5f, 0.0f}, 0.5f}},
                        .speed = 0.4f,
                        .clearance = swarm_clearance,
@@ -262,14 +263,14 @@ TEST_CASE("a flight too fast or too long to sample is refused, its count never c
     const tests::BallAndFloor obstacles(s);
     animation::FlightJob fast = job(3, clear_start);
     fast.params.speed = 1e30f;  // within float's range, as the reader accepts
-    CHECK_THROWS_AS(animation::make_flight(fast.params, fast.start, fast.body, obstacles), animation::Refusal);
+    CHECK_THROWS_AS(animation::make_flight(fast.params, fast.start, fast.body, obstacles), animation::MotionError);
     // The bound is the params': a small one refuses the first drift, the
     // default makes the flight.
     animation::FlightJob bounded = job(3, clear_start);
     CHECK_NOTHROW((void)animation::make_flight(bounded.params, bounded.start, bounded.body, obstacles));
     bounded.params.most_steps = 2;
     CHECK_THROWS_WITH_AS(animation::make_flight(bounded.params, bounded.start, bounded.body, obstacles),
-                         doctest::Contains("is not clear"), animation::Refusal);
+                         doctest::Contains("is not clear"), animation::MotionError);
 }
 
 namespace {
@@ -300,7 +301,7 @@ TEST_CASE("a refusal carries its job and its reason; another std::invalid_argume
     try {
         (void)animation::make_flights({job(1, clear_start)}, arguing);
         FAIL("expected an error");
-    } catch (const animation::Refusal&) {
+    } catch (const animation::MotionError&) {
         FAIL("an Obstacles' own exception was taken for a refusal");
     } catch (const std::invalid_argument& error) {
         CHECK(std::string(error.what()) == "the obstacles argued");

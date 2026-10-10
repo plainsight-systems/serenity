@@ -49,13 +49,13 @@ constexpr auto entries = std::to_array<Entry>({
     {&Block::woods, [](const Scene& s) { return bytes(s.woods); }},
     {&Block::swirls, [](const Scene& s) { return bytes(s.swirls); }},
     {&Block::materials, [](const Scene& s) { return bytes(s.materials); }},
-    {&Block::rough, [](const Scene& s) { return bytes(s.rough); }},
+    {&Block::roughs, [](const Scene& s) { return bytes(s.roughs); }},
     {&Block::dielectrics, [](const Scene& s) { return bytes(s.dielectrics); }},
     {&Block::conductors, [](const Scene& s) { return bytes(s.conductors); }},
     {&Block::emissives, [](const Scene& s) { return bytes(s.emissives); }},
-    {&Block::coated, [](const Scene& s) { return bytes(s.coated); }},
+    {&Block::coateds, [](const Scene& s) { return bytes(s.coateds); }},
     {&Block::media, [](const Scene& s) { return bytes(s.media); }},
-    {&Block::absorbing, [](const Scene& s) { return bytes(s.absorbing); }},
+    {&Block::absorbings, [](const Scene& s) { return bytes(s.absorbings); }},
     {&Block::shapes, [](const Scene& s) { return bytes(s.shapes.records); }},
     {&Block::boxes, [](const Scene& s) { return bytes(s.shapes.boxes); }},
     {&Block::light_records, [](const Scene& s) { return bytes(s.lights); }},
@@ -102,7 +102,7 @@ SceneBuffers::SceneBuffers(const Device& device, Submission& submission, const s
     // Apple silicon's unified memory lets the GPU read where the CPU wrote.
     block_buffer_ = NS::TransferPtr(device.handle()->newBuffer(sizeof(block_), MTL::ResourceStorageModeShared));
     if (!block_buffer_) {
-        throw Error("SceneBuffers: the device made no buffer for the scene's block");
+        throw MetalError("SceneBuffers: the device made no buffer for the scene's block");
     }
     std::memcpy(block_buffer_->contents(), &block_, sizeof(block_));
     resident_ = submission.keep_resident(block_buffer_.get());

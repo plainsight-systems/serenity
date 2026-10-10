@@ -66,27 +66,27 @@ std::uint64_t LiveHistory::since(std::uint64_t index, bool view_changed) {
     return since_;
 }
 
-Sample HeadlessPlan::sample(std::uint64_t frame, std::uint64_t s) const {
-    if (!(s < samples)) {
-        throw std::invalid_argument("HeadlessPlan::sample: sample " + std::to_string(s) + " of a frame of " +
+Sample HeadlessPlan::sample(SampleOf of) const {
+    const std::uint64_t frame = of.frame;
+    if (!(of.sample < samples)) {
+        throw std::invalid_argument("HeadlessPlan::sample: sample " + std::to_string(of.sample) + " of a frame of " +
                                     std::to_string(samples));
     }
-    // frame * samples + s, and the start's * samples, checked before they
-    // are taken, so an index, which seeds every random number, never wraps
-    // to one used before (ES.103). s < samples, so frame * samples + s
-    // fits whenever (frame + 1) * samples does.
+    // frame * samples + of.sample, and the start's * samples, checked before
+    // they are taken, so an index, which seeds every random number, never
+    // wraps to one used before (ES.103). of.sample < samples, so frame *
+    // samples + of.sample fits whenever (frame + 1) * samples does.
     constexpr std::uint64_t most = std::numeric_limits<std::uint64_t>::max();
     const std::uint64_t start = instants ? frame : first;
     if (frame >= most / samples || start > most / samples) {
         throw std::overflow_error("HeadlessPlan::sample: frame " + std::to_string(frame) +
                                   "'s samples pass the largest frame index");
     }
-    return Sample{frame * samples + s, start * samples};
+    return Sample{frame * samples + of.sample, start * samples};
 }
 
-HeadlessPlan plan_headless(std::uint64_t first, std::uint64_t samples, bool accumulates, bool scene_changes,
-                           bool time_frozen) {
-    return HeadlessPlan{first, accumulates ? samples : 1u, scene_changes && !time_frozen};
+HeadlessPlan plan_headless(const HeadlessRun& run) {
+    return HeadlessPlan{run.first, run.accumulates ? run.samples : 1u, run.scene_changes && !run.time_frozen};
 }
 
 }  // namespace serenity::frame

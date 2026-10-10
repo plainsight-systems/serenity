@@ -34,14 +34,14 @@ namespace serenity::app {
 // development machine's display one point is two pixels, and the drawable
 // must match the pixels.
 //
-// Failure throws Error with SDL's description (E.2, E.5, E.14): a window
+// Failure throws WindowError with SDL's description (E.2, E.5, E.14): a window
 // opened off the main thread, which SDL requires, a size SDL cannot take,
 // or SDL unable to start its video subsystem, make the window, or make the
 // view.
 //
 // Not performance-sensitive: poll() drains the events once a frame.
 
-class Error : public std::runtime_error {
+class WindowError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
 };
@@ -55,7 +55,7 @@ struct Points {
 class Window {
 public:
     // Opens a resizable, high-density window titled `title`, `size` across,
-    // on the main display. Must be called on the main thread; throws Error
+    // on the main display. Must be called on the main thread; throws WindowError
     // if it is not.
     Window(const char* title, Points size);
 

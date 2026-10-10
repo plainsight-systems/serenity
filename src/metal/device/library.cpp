@@ -28,7 +28,7 @@ NS::SharedPtr<MTL::Library> load(MTL::Device* device, std::span<const std::byte>
     NS::Error* error = nullptr;
     auto library = NS::TransferPtr(device->newLibrary(data.get(), &error));
     if (!library) {
-        throw Error("Metal rejected the library (" + std::to_string(metallib.size()) + " bytes): " +
+        throw MetalError("Metal rejected the library (" + std::to_string(metallib.size()) + " bytes): " +
                     describe(error));
     }
     return library;
@@ -41,20 +41,20 @@ Library::Library(const Device& device, std::span<const std::byte> metallib)
 
 NS::SharedPtr<MTL::ComputePipelineState> Library::compute_pipeline(const char* function) const {
     if (function == nullptr) {
-        throw Error("compute_pipeline: the function name is null");
+        throw MetalError("compute_pipeline: the function name is null");
     }
     const auto pool = scoped_pool();
 
     auto name = NS::TransferPtr(NS::String::alloc()->init(function, NS::UTF8StringEncoding));
     auto fn = NS::TransferPtr(library_->newFunction(name.get()));
     if (!fn) {
-        throw Error(std::string{"no function '"} + function + "' in the library");
+        throw MetalError(std::string{"no function '"} + function + "' in the library");
     }
 
     NS::Error* error = nullptr;
     auto pipeline = NS::TransferPtr(device_->newComputePipelineState(fn.get(), &error));
     if (!pipeline) {
-        throw Error(std::string{"no compute pipeline for '"} + function + "': " + describe(error));
+        throw MetalError(std::string{"no compute pipeline for '"} + function + "': " + describe(error));
     }
     return pipeline;
 }

@@ -284,7 +284,7 @@ TEST_CASE("metal: a near-mirror of f0 = 1 reflects a uniform sky as it is") {
 TEST_CASE("a graph that reads a scene refuses to run without one, and a frame without a camera") {
     metal::Device device;
     metal::Submission submission(device);
-    CHECK_THROWS_AS(metal::Renderer(device, submission, tests::preview_graph(), nullptr), metal::Error);
+    CHECK_THROWS_AS(metal::Renderer(device, submission, tests::preview_graph(), nullptr), metal::MetalError);
 
     const scene::SceneDescription description = scene::parse(
         camera_text("[0, 0, 3]", "[0, 0, 0]", 30) + sky("[0, 0, 0]", "[0, 0, 0]") +
@@ -294,7 +294,7 @@ TEST_CASE("a graph that reads a scene refuses to run without one, and a frame wi
     metal::Offscreen target(device, submission, {8, 8});
     metal::Renderer renderer(device, submission, tests::preview_graph(), &description);
     CHECK_THROWS_AS(metal::render_to_offscreen(submission, target, renderer, tests::frame_at(0, 0, 0.0, std::nullopt)),
-                    metal::Error);
+                    metal::MetalError);
 }
 
 TEST_CASE("start-up work is settled before the first frame, so it is never measured as one") {

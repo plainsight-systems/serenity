@@ -43,7 +43,7 @@ enum Buffer : unsigned {
     transforms = 5,
     non_finite = 6,  // the frame's count of samples not finite (metal/film/non_finite.h)
 };
-enum Texture : unsigned { accumulated = 0, radiance = 1 };
+enum Texture : unsigned { accumulated = 0 };  // also the frame's radiance (path/path.h)
 }  // namespace path
 
 namespace display {

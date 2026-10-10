@@ -52,7 +52,7 @@ static_assert(bindings::tone_map::target < max_textures);
 void check_time(const frame::FrameInputs& inputs) {
     const double seconds = inputs.time.count();
     if (!std::isfinite(seconds) || std::abs(seconds) > std::numeric_limits<float>::max()) {
-        throw Error("frame " + std::to_string(inputs.index) + ": its time, " + std::to_string(seconds) +
+        throw MetalError("frame " + std::to_string(inputs.index) + ": its time, " + std::to_string(seconds) +
                     " s, is past what the shaders' float holds");
     }
 }
@@ -65,7 +65,7 @@ NS::SharedPtr<MTL4::ArgumentTable> make_argument_table(MTL::Device* device) {
     NS::Error* error = nullptr;
     auto table = NS::TransferPtr(device->newArgumentTable(descriptor.get(), &error));
     if (!table) {
-        throw Error("Renderer: the device made no argument table: " + describe(error));
+        throw MetalError("Renderer: the device made no argument table: " + describe(error));
     }
     return table;
 }
@@ -80,14 +80,14 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
       arguments_(make_argument_table(device.handle())) {
     // The core decides which schedules can be carried out (principle 10).
     if (const std::optional<std::string> reason = frame::invalid(schedule)) {
-        throw Error("Renderer: " + *reason);
+        throw MetalError("Renderer: " + *reason);
     }
     const auto any = [&](bool (*has)(frame::PassKind)) { return std::ranges::any_of(schedule.passes, has); };
     needs_scene_ = any(frame::needs_scene);
     const bool accumulates = any(frame::accumulates);
     const bool radiance = any(frame::writes_radiance);
     if (needs_scene_ && scene == nullptr) {
-        throw Error("Renderer: the frame graph's passes read a scene, and none was given (--scene)");
+        throw MetalError("Renderer: the frame graph's passes read a scene, and none was given (--scene)");
     }
     const auto pool = scoped_pool();
 
@@ -122,9 +122,14 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
             break;
         }
     }
-    if (radiance) {
-        images_ = std::make_unique<FrameImages>(
-            device, submission, schedule.tone_map ? FrameImages::Bloom::pyramid : FrameImages::Bloom::none);
+    // The pass that accumulates is the one that writes radiance (the core
+    // allows one of each, and path is both), and its accumulated image is
+    // the frame's radiance (passes/path/path.h): no image of its own then.
+    const FrameImages::Radiance own =
+        accumulates ? FrameImages::Radiance::accumulated : FrameImages::Radiance::image;
+    const FrameImages::Bloom bloom = schedule.tone_map ? FrameImages::Bloom::pyramid : FrameImages::Bloom::none;
+    if (radiance && (own == FrameImages::Radiance::image || bloom == FrameImages::Bloom::pyramid)) {
+        images_ = std::make_unique<FrameImages>(device, submission, own, bloom);
     }
     if (accumulates) {
         accumulation_ = std::make_unique<Accumulation>(device, submission);
@@ -142,7 +147,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         // scene can fail once a frame's submission has begun (renderer.h).
         for (const animation::Glower& glower : animation_.glowers) {
             if (glower.target >= scene->light_counts.spheres) {
-                throw Error("Renderer: a glowing light's target, " + std::to_string(glower.target) +
+                throw MetalError("Renderer: a glowing light's target, " + std::to_string(glower.target) +
                             ", is not one of the scene's " + std::to_string(scene->light_counts.spheres) +
                             " sphere lights");
             }
@@ -169,7 +174,7 @@ Renderer::~Renderer() {
 void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
     check_time(inputs);
     if (needs_scene_ && !inputs.camera) {
-        throw Error("Renderer: frame " + std::to_string(inputs.index) +
+        throw MetalError("Renderer: frame " + std::to_string(inputs.index) +
                     ": the frame graph reads a scene, and the frame has no camera");
     }
     if (!accumulation_ && !images_) {
@@ -192,13 +197,13 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
                       frame::Extent size) {
     if (begun.commands == nullptr || begun.slot >= frames_in_flight || target == nullptr || size.width == 0 ||
         size.height == 0) {
-        throw Error("Renderer::record: no command buffer, no frame slot, no target, or an empty image");
+        throw MetalError("Renderer::record: no command buffer, no frame slot, no target, or an empty image");
     }
     check_time(inputs);
     std::uint32_t accumulated_frames = 0;
     if (accumulation_ || images_) {
         if (!prepared_ || prepared_->index != inputs.index || !(prepared_->size == size)) {
-            throw Error("Renderer::record: frame " + std::to_string(inputs.index) +
+            throw MetalError("Renderer::record: frame " + std::to_string(inputs.index) +
                         " was not prepared at this size (Renderer::prepare)");
         }
         accumulated_frames = prepared_->accumulated_frames;
@@ -206,7 +211,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
     }
 
     if (needs_scene_ && !inputs.camera) {
-        throw Error("Renderer::record: the frame graph reads a scene, and the frame has no camera");
+        throw MetalError("Renderer::record: the frame graph reads a scene, and the frame has no camera");
     }
 
     const contracts::FrameConstants constants{
@@ -245,6 +250,8 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         }
     }
     if (accumulation_) {
+        // The accumulated image is the frame's radiance (frame_images.h).
+        resources.radiance = accumulation_->texture();
         resources.accumulation = accumulation_->texture();
         resources.accumulated_frames = accumulated_frames;
         non_finite_->begin_frame(begun.slot, begun.sequence);
@@ -253,7 +260,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
 
     MTL4::ComputeCommandEncoder* encoder = begun.commands->computeCommandEncoder();
     if (encoder == nullptr) {
-        throw Error("Renderer::record: the command buffer made no compute encoder");
+        throw MetalError("Renderer::record: the command buffer made no compute encoder");
     }
     // Animate: every moving shape placed and every glowing light lit at the
     // frame's time, by the core, in the slot's transforms and glows; and,
@@ -300,7 +307,7 @@ std::optional<WindowFrame> render_to_window(Submission& submission, Presenter& p
     const frame::Extent size = presenter.size();
     MTL::Texture* texture = drawable->texture();
     if (texture == nullptr || texture->width() != size.width || texture->height() != size.height) {
-        throw Error("render_to_window: the drawable is not the " + std::to_string(size.width) + " x " +
+        throw MetalError("render_to_window: the drawable is not the " + std::to_string(size.width) + " x " +
                     std::to_string(size.height) + " the layer was given");
     }
     renderer.prepare(inputs, size);

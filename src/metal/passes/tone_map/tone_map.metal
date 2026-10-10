@@ -67,7 +67,8 @@ float3 tent(texture2d<float, access::sample> level, float2 uv) {
 // Step 5: Khronos' PBR Neutral.
 float3 neutral(float3 color) {
     const float x = min(color.r, min(color.g, color.b));
-    color -= x < 0.08f ? x - 6.25f * x * x : 0.04f;
+    color -= x < serenity::passes::neutral_toe ? x - serenity::passes::neutral_toe_curve * x * x
+                                               : serenity::passes::neutral_f90;
     const float peak = max(color.r, max(color.g, color.b));
     if (peak < serenity::passes::neutral_start) {
         return color;

@@ -16,7 +16,8 @@ namespace serenity::frame {
 // history for the same inputs, and the window and the headless renderer only
 // run the frames the plans give them (logical-overview.md, principle 10).
 // A backend keeps the image itself, on its GPU, and asks History whether a
-// frame may join it (metal/frame/accumulation.h).
+// frame may join it (the Metal backend asks in metal/frame/accumulation.h;
+// the limit itself is the core's, max_accumulated_frames, frame_inputs.h).
 //
 // The rule. An image holds the frames accumulated_since .. index - 1 of one
 // size, and a frame joins it, holding the count of frames before it, when:
@@ -110,22 +111,35 @@ struct Sample {
     std::uint64_t accumulated_since = 0;
 };
 
-// How the headless renderer renders: `samples` asked for per frame, from
-// frame `first`, for a graph that accumulates or not, a scene that changes or
-// not, time frozen or not.
+// What the headless renderer is asked to run, each by name, so two counts
+// and three flags cannot be passed in each other's places (I.24).
+struct HeadlessRun {
+    std::uint64_t first = 0;     // the first frame's index
+    std::uint64_t samples = 1;   // asked for per frame
+    bool accumulates = false;    // the graph accumulates (frame::accumulates)
+    bool scene_changes = false;  // anything in the scene moves or glows
+    bool time_frozen = false;    // every frame at one time
+};
+
+// Which sample of which frame, by name (I.24).
+struct SampleOf {
+    std::uint64_t frame = 0;
+    std::uint64_t sample = 0;
+};
+
+// How the headless renderer renders a run.
 struct HeadlessPlan {
     std::uint64_t first = 0;
     std::uint64_t samples = 1;  // rendered per frame: 1 for a graph that accumulates nothing
     bool instants = false;      // each frame's image its own: the scene changes and time advances
 
-    // Sample `s` of frame `frame`. Preconditions, checked (I.5, E.2): s <
-    // samples, else std::invalid_argument; and the frame's indices within
-    // 64 bits, else std::overflow_error rather than a wrapped index, which
-    // would seed a sample with numbers another already used.
-    Sample sample(std::uint64_t frame, std::uint64_t s) const;
+    // Sample `of.sample` of frame `of.frame`. Preconditions, checked (I.5,
+    // E.2): of.sample < samples, else std::invalid_argument; and the frame's
+    // indices within 64 bits, else std::overflow_error rather than a wrapped
+    // index, which would seed a sample with numbers another already used.
+    Sample sample(SampleOf of) const;
 };
 
-HeadlessPlan plan_headless(std::uint64_t first, std::uint64_t samples, bool accumulates, bool scene_changes,
-                           bool time_frozen);
+HeadlessPlan plan_headless(const HeadlessRun& run);
 
 }  // namespace serenity::frame

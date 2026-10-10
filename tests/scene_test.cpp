@@ -64,7 +64,7 @@ material = "floor"
 // The error scene::parse() throws for `text`, read as s.toml, or "" if it
 // throws none.
 std::string error_of(const std::string& text) {
-    return tests::error_of<scene::Error>([&] { return scene::parse(text, "s.toml"); });
+    return tests::error_of<scene::SceneError>([&] { return scene::parse(text, "s.toml"); });
 }
 
 // `example` with its first `from` replaced by `to`.
@@ -90,8 +90,8 @@ TEST_CASE("the example reads into one array per kind, names resolved to indices"
     REQUIRE(s.materials.size() == 2);
     CHECK(s.materials[0].kind == materials::MaterialKind::rough);
     CHECK(s.materials[1].kind == materials::MaterialKind::dielectric);
-    REQUIRE(s.rough.size() == 1);
-    CHECK(s.rough[0].texture.index == 0);
+    REQUIRE(s.roughs.size() == 1);
+    CHECK(s.roughs[0].texture.index == 0);
     REQUIRE(s.dielectrics.size() == 1);
     CHECK(s.dielectrics[0].ior == 1.5f);
 
@@ -124,8 +124,8 @@ TEST_CASE("the example reads into one array per kind, names resolved to indices"
 
 TEST_CASE("up defaults to +y, and a rough material may have a color instead of a texture") {
     const scene::SceneDescription s = scene::parse(with("texture = \"floor_checks\"", "color = [0.5, 0.25, 1]"), "s");
-    CHECK(s.rough[0].texture.index == contracts::no_texture);
-    CHECK(s.rough[0].color.y == 0.25f);
+    CHECK(s.roughs[0].texture.index == contracts::no_texture);
+    CHECK(s.roughs[0].color.y == 0.25f);
 
     const scene::SceneDescription no_up = scene::parse(with("up = [0, 1, 0]\n", ""), "s");
     CHECK(no_up.camera.up.y == 1.0f);
@@ -416,7 +416,7 @@ TEST_CASE("names, and glows: what they read into, and every mistake refused") {
 }
 
 TEST_CASE("a missing file is refused by name") {
-    CHECK_THROWS_WITH_AS(scene::load("no/such/scene.toml"), doctest::Contains("no/such/scene.toml"), scene::Error);
+    CHECK_THROWS_WITH_AS(scene::load("no/such/scene.toml"), doctest::Contains("no/such/scene.toml"), scene::SceneError);
 }
 
 TEST_CASE("a wood texture reads as the table's planks, every value checked") {
@@ -434,7 +434,7 @@ TEST_CASE("a wood texture reads as the table's planks, every value checked") {
     REQUIRE(s.textures.size() == 2);  // floor_checks, walnut: name order
     CHECK(s.textures[1].kind == textures::TextureKind::wood);
     CHECK(s.textures[1].index == 0);
-    CHECK(s.rough[0].texture.index == 1);
+    CHECK(s.roughs[0].texture.index == 1);
     CHECK(s.woods[0].light.y == doctest::Approx(0.065f).scale(0).epsilon(1e-6));
     CHECK(s.woods[0].dark.z == doctest::Approx(0.008f).scale(0).epsilon(1e-6));
     CHECK(s.woods[0].ring == 0.004f);
@@ -472,9 +472,9 @@ TEST_CASE("the marbles' scene reads: a walnut table, thirty-six marbles, 616 fir
     const scene::SceneDescription s = scene::load(tests::scenes_dir / "marbles.toml");
     CHECK(s.woods.size() == 1);
     CHECK(s.swirls.size() == 5);
-    CHECK(s.coated.size() == 7);
+    CHECK(s.coateds.size() == 7);
     CHECK(s.media.size() == 6);
-    CHECK(s.absorbing.size() == 6);
+    CHECK(s.absorbings.size() == 6);
     // The table's top, legs and the ground; thirty-six marbles, nine cores,
     // and the fireflies.
     CHECK(s.shapes.records.size() == 6 + 36 + 9 + fireflies);
@@ -540,17 +540,17 @@ tint_distance = 0.01
         return replaced(text, "material = \"glass\"", "material = \"glass\"" + std::string(shape_extra));
     };
     const scene::SceneDescription s = scene::parse(scene_with("", "", "\ninterior = \"blue_tint\""), "s");
-    REQUIRE(s.coated.size() == 1);
-    CHECK(s.coated[0].ior == 1.5f);
-    CHECK(s.coated[0].escape ==
+    REQUIRE(s.coateds.size() == 1);
+    CHECK(s.coateds[0].ior == 1.5f);
+    CHECK(s.coateds[0].escape ==
           doctest::Approx(static_cast<float>(materials::internal_escape(1.5))).scale(0).epsilon(1e-6));
     REQUIRE(s.swirls.size() == 1);
     CHECK(s.swirls[0].vanes == 3u);
     CHECK(s.swirls[0].twist == 0.5f);
-    REQUIRE(s.absorbing.size() == 1);
+    REQUIRE(s.absorbings.size() == 1);
     // absorption = -ln(tint) / tint_distance.
-    CHECK(s.absorbing[0].absorption.x == doctest::Approx(-std::log(0.25) / 0.01).scale(0).epsilon(1e-6));
-    CHECK(s.absorbing[0].absorption.z == doctest::Approx(-std::log(0.95) / 0.01).scale(0).epsilon(1e-6));
+    CHECK(s.absorbings[0].absorption.x == doctest::Approx(-std::log(0.25) / 0.01).scale(0).epsilon(1e-6));
+    CHECK(s.absorbings[0].absorption.z == doctest::Approx(-std::log(0.95) / 0.01).scale(0).epsilon(1e-6));
     CHECK(s.shapes.records[0].interior == 0u);                     // the glass sphere, filled
     CHECK(s.shapes.records[1].interior == contracts::no_medium);  // the floor
     // Without an interior, air.
@@ -593,5 +593,5 @@ tint_distance = 0.01
 TEST_CASE("a scene file that cannot be read whole is refused, never read as an empty scene") {
     // A directory opens, and reads nothing: once parsed as an empty scene and
     // reported as one with no camera; now refused as unreadable.
-    CHECK_THROWS_WITH_AS(scene::load("scenes"), doctest::Contains("cannot read scene file scenes"), scene::Error);
+    CHECK_THROWS_WITH_AS(scene::load("scenes"), doctest::Contains("cannot read scene file scenes"), scene::SceneError);
 }

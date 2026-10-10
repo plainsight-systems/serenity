@@ -23,7 +23,7 @@ Offscreen::Offscreen(const Device& device, Submission& submission, frame::Extent
     descriptor->setUsage(MTL::TextureUsageShaderWrite | MTL::TextureUsageShaderRead);
     texture_ = NS::TransferPtr(device.handle()->newTexture(descriptor));
     if (!texture_) {
-        throw Error("Offscreen: the device made no " + std::to_string(size.width) + " x " +
+        throw MetalError("Offscreen: the device made no " + std::to_string(size.width) + " x " +
                     std::to_string(size.height) + " texture");
     }
     resident_ = submission.keep_resident(texture_.get());
@@ -37,7 +37,7 @@ void Offscreen::read_rgba(std::span<std::uint8_t> out) const {
     const std::size_t row_bytes = std::size_t{size_.width} * bytes_per_pixel;
     const std::size_t expected = rgba_size();
     if (out.size() != expected) {
-        throw Error("read_rgba: " + std::to_string(out.size()) + " bytes given for an image of " +
+        throw MetalError("read_rgba: " + std::to_string(out.size()) + " bytes given for an image of " +
                     std::to_string(expected));
     }
     texture_->getBytes(out.data(), row_bytes, MTL::Region{0, 0, size_.width, size_.height}, 0);

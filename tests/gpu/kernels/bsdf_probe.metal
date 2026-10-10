@@ -70,7 +70,7 @@ kernel void bsdf_resolve(device Bsdf* out [[buffer(0)]],
     if (i >= count) {
         return;
     }
-    out[i] = resolve_bsdf(Materials{block.materials, block.rough, block.dielectrics, block.conductors, block.coated},
+    out[i] = resolve_bsdf(Materials{block.materials, block.roughs, block.dielectrics, block.conductors, block.coateds},
                           Textures{block.textures, block.checkers, block.woods, block.swirls}, surfaces[i]);
 }
 

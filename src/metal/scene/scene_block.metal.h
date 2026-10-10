@@ -44,7 +44,7 @@ struct SceneView {
     Shapes shapes() const { return Shapes{block->shapes, transforms, block->boxes}; }
 
     Materials materials() const {
-        return Materials{block->materials, block->rough, block->dielectrics, block->conductors, block->coated};
+        return Materials{block->materials, block->roughs, block->dielectrics, block->conductors, block->coateds};
     }
 
     Textures textures() const { return Textures{block->textures, block->checkers, block->woods, block->swirls}; }
@@ -53,7 +53,7 @@ struct SceneView {
         return Lights{block->light_records, block->shape_lights, block->sphere_lights, transforms, glows};
     }
 
-    Media media() const { return Media{block->media, block->absorbing}; }
+    Media media() const { return Media{block->media, block->absorbings}; }
 
     serenity::lights::GradientSkyData sky() const { return *block->environment; }
 

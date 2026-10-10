@@ -70,8 +70,10 @@ Decided 2026-10-08, at the repository's creation:
 - **The toolchain is pinned by version and checked when the build is
   configured.** Metal cannot run in a container, so it cannot be pinned by
   an image as Charlotte pinned emsdk. `cmake/toolchain.json` records Xcode,
-  the SDK, the Metal compiler and Apple clang; configuring fails on any
-  mismatch. Moving the pin is a commit of its own, with the tests rerun.
+  the macOS SDK the build compiles against (the presets name it,
+  `CMAKE_OSX_SYSROOT`), the Metal compiler, Apple clang as each of the C,
+  C++ and Objective-C compilers CMake resolved, and CMake itself;
+  configuring fails on any mismatch. Moving the pin is a commit of its own, with the tests rerun.
 - **Shaders are compiled at build time with pinned flags and compiled into
   the executable** (`cmake/MetalLibrary.cmake`). Never compiled from source
   at run time, never loaded from a path.

@@ -45,7 +45,7 @@ struct LayerHandle {
 class Presenter {
 public:
     // Configures the layer for `device` at `size`, and adds its residency set
-    // to `submission`'s queue. Throws Error if the handle is null, or `size`
+    // to `submission`'s queue. Throws MetalError if the handle is null, or `size`
     // is not one Metal makes an image of (device.h, check_texture_size).
     Presenter(const Device& device, Submission& submission, LayerHandle layer, frame::Extent size);
 

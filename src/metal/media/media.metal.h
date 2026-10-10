@@ -20,7 +20,7 @@ namespace shaders {
 
 struct Media {
     constant serenity::media::MediumRecord* records;
-    constant serenity::media::AbsorbingData* absorbing;
+    constant serenity::media::AbsorbingData* absorbings;
 };
 
 // The share of light, per channel, kept over a stretch `t` long inside
@@ -32,7 +32,7 @@ inline float3 transmittance(Media media, uint which, float t) {
     const serenity::media::MediumRecord record = media.records[which];
     switch (record.kind) {
     case serenity::media::MediumKind::absorbing:
-        return absorbing_transmittance(media.absorbing[record.index], t);
+        return absorbing_transmittance(media.absorbings[record.index], t);
     }
     return float3(1.0f);
 }

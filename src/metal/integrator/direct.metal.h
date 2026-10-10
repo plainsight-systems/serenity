@@ -74,8 +74,8 @@ constant constexpr float last_below_one = 0x1.fffffep-1f;
 constant constexpr float2 any_direction = float2(0.5f);
 
 // u for a reflected ray's one shadow ray per light (shade_reflected): (0,
-// 0), which the sphere light maps to its middle (sphere_light.metal.h,
-// direction_to_light). Contract 3 does not say what u means for a kind.
+// 0), which draws the light's middle as seen from the point, for every kind
+// (contract 3, core/contracts/emitter.h: sample_light's u = (0, 0)).
 constant constexpr float2 light_middle = float2(0.0f);
 
 // What a sample is for: each purpose draws its own numbers (sampler.metal.h).

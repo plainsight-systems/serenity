@@ -81,10 +81,12 @@
 //           it: bloom moves light and makes none.
 //   Step 5  Roll-off: Khronos' PBR Neutral tone mapper (KhronosGroup/
 //           ToneMapping, PBR_Neutral, 2024), from its published equations:
-//           x the smallest channel of C, C -= (x < 0.08 ? x - 6.25 x^2 :
-//           0.04); p its largest channel; if p >= neutral_start (0.8 - F90,
-//           F90 = 0.04), with d = 1 - neutral_start, p_n = 1 - d^2 / (p + d -
-//           neutral_start), C *= p_n / p, and C mixed toward (p_n, p_n, p_n)
+//           x the smallest channel of C, C -= (x < neutral_toe ? x -
+//           neutral_toe_curve x^2 : neutral_f90), the Fresnel offset F90 =
+//           0.04 taken off, eased in below 2 F90 = 0.08 by a parabola whose
+//           curve is 1 / (4 F90) = 6.25; p its largest channel; if p >=
+//           neutral_start (0.8 - F90), with d = 1 - neutral_start, p_n = 1 -
+//           d^2 / (p + d - neutral_start), C *= p_n / p, and C mixed toward (p_n, p_n, p_n)
 //           by 1 - 1 / (neutral_desaturation (p - p_n) + 1). Below the start
 //           colors pass as they are; above, they roll off toward 1 and toward
 //           white, so a firefly's core goes white-hot while its glare keeps
@@ -103,7 +105,10 @@ SERENITY_CONSTANT unsigned int bloom_levels = 6;
 SERENITY_CONSTANT float bloom_ceiling = 65504.0f;  // the largest half float (step 1)
 SERENITY_CONSTANT float down_middle = 0.5f;        // step 2's weights: the middle box,
 SERENITY_CONSTANT float down_corner = 0.125f;      // and each corner box
-SERENITY_CONSTANT float neutral_start = 0.76f;     // step 5: 0.8 - F90, F90 = 0.04
+SERENITY_CONSTANT float neutral_f90 = 0.04f;       // step 5: F90, the offset taken off
+SERENITY_CONSTANT float neutral_toe = 0.08f;       // step 5: 2 F90, below which the offset eases in
+SERENITY_CONSTANT float neutral_toe_curve = 6.25f; // step 5: 1 / (4 F90), the easing's curve
+SERENITY_CONSTANT float neutral_start = 0.76f;     // step 5: 0.8 - F90
 SERENITY_CONSTANT float neutral_desaturation = 0.15f;
 SERENITY_CONSTANT float max_exposure = 10.0f;      // stops, either way
 

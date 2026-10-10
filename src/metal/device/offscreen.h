@@ -34,7 +34,7 @@ namespace serenity::metal {
 //
 // read_rgba() copies the image out as R, G, B, A, rows from the top, the
 // order output/png.h takes. `out` must hold exactly width x height x 4
-// bytes; any other size throws Error. Construction throws Error for a size
+// bytes; any other size throws MetalError. Construction throws MetalError for a size
 // Metal makes no image of (device.h, max_texture_side), or if the device
 // cannot make the texture.
 //

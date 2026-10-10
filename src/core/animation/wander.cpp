@@ -77,7 +77,7 @@ Wander make_wander(const WanderParams& params, float body, const contracts::Obst
     // Wherever it wanders, its body touches no still shape: the reach grown
     // by the body, rounded outward, against every still shape.
     if (obstacles.touches(outward(params.anchor, static_cast<double>(reach) + static_cast<double>(body)))) {
-        throw Refusal("its wander could carry it into a still shape");
+        throw MotionError("its wander could carry it into a still shape");
     }
 
     Wander wander{.anchor = params.anchor, .reach = reach};

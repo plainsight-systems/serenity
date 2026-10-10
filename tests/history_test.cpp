@@ -90,27 +90,32 @@ TEST_CASE("the window starts over when its view changes, every frame while the s
 TEST_CASE("headless: samples of one instant, the run converging only while the scene looks the same") {
     // A still scene: frames 3 and 4, four samples each, one image from frame
     // 3's first sample on.
-    const frame::HeadlessPlan still = frame::plan_headless(3, 4, true, false, false);
+    const frame::HeadlessPlan still = frame::plan_headless(
+        {.first = 3, .samples = 4, .accumulates = true, .scene_changes = false, .time_frozen = false});
     CHECK(still.samples == 4);
-    CHECK(still.sample(3, 0).index == 12);
-    CHECK(still.sample(3, 3).index == 15);
-    CHECK(still.sample(4, 0).index == 16);
-    CHECK(still.sample(4, 2).accumulated_since == 12);
+    CHECK(still.sample({.frame = 3, .sample = 0}).index == 12);
+    CHECK(still.sample({.frame = 3, .sample = 3}).index == 15);
+    CHECK(still.sample({.frame = 4, .sample = 0}).index == 16);
+    CHECK(still.sample({.frame = 4, .sample = 2}).accumulated_since == 12);
 
     // A moving scene, time advancing: each frame its own image.
-    const frame::HeadlessPlan moving = frame::plan_headless(3, 4, true, true, false);
-    CHECK(moving.sample(4, 0).accumulated_since == 16);
-    CHECK(moving.sample(4, 3).accumulated_since == 16);
-    CHECK(moving.sample(4, 3).index == 19);
+    const frame::HeadlessPlan moving = frame::plan_headless(
+        {.first = 3, .samples = 4, .accumulates = true, .scene_changes = true, .time_frozen = false});
+    CHECK(moving.sample({.frame = 4, .sample = 0}).accumulated_since == 16);
+    CHECK(moving.sample({.frame = 4, .sample = 3}).accumulated_since == 16);
+    CHECK(moving.sample({.frame = 4, .sample = 3}).index == 19);
 
     // Time frozen: the moving scene looks the same at every frame.
-    CHECK(frame::plan_headless(3, 4, true, true, true).sample(4, 0).accumulated_since == 12);
+    const frame::HeadlessPlan frozen = frame::plan_headless(
+        {.first = 3, .samples = 4, .accumulates = true, .scene_changes = true, .time_frozen = true});
+    CHECK(frozen.sample({.frame = 4, .sample = 0}).accumulated_since == 12);
 
     // A graph that accumulates nothing: one sample a frame, whatever was asked.
-    const frame::HeadlessPlan once = frame::plan_headless(3, 64, false, true, false);
+    const frame::HeadlessPlan once = frame::plan_headless(
+        {.first = 3, .samples = 64, .accumulates = false, .scene_changes = true, .time_frozen = false});
     CHECK(once.samples == 1);
-    CHECK(once.sample(4, 0).index == 4);
-    CHECK(once.sample(4, 0).accumulated_since == 4);
+    CHECK(once.sample({.frame = 4, .sample = 0}).index == 4);
+    CHECK(once.sample({.frame = 4, .sample = 0}).accumulated_since == 4);
 }
 
 TEST_CASE("the plans refuse what would wrap an index: frames out of order, a sample past the frame's, too many") {
@@ -118,12 +123,14 @@ TEST_CASE("the plans refuse what would wrap an index: frames out of order, a sam
     CHECK(live.since(10, true) == 10);
     CHECK_THROWS_AS(live.since(9, false), HistoryError);  // before the image's first: index - since would wrap
 
-    const frame::HeadlessPlan plan = frame::plan_headless(0, 4, true, false, false);
-    CHECK_THROWS_AS(plan.sample(3, 4), std::invalid_argument);
-    CHECK(plan.sample(3, 3).index == 15);
+    const frame::HeadlessPlan plan = frame::plan_headless(
+        {.first = 0, .samples = 4, .accumulates = true, .scene_changes = false, .time_frozen = false});
+    CHECK_THROWS_AS(plan.sample({.frame = 3, .sample = 4}), std::invalid_argument);
+    CHECK(plan.sample({.frame = 3, .sample = 3}).index == 15);
     const std::uint64_t most = std::numeric_limits<std::uint64_t>::max();
-    CHECK_THROWS_AS(plan.sample(most / 4, 0), std::overflow_error);
-    CHECK(plan.sample(most / 4 - 1, 3).index == most / 4 * 4 - 1);
-    const frame::HeadlessPlan none = frame::plan_headless(0, 0, true, false, false);
-    CHECK_THROWS_AS(none.sample(0, 0), std::invalid_argument);
+    CHECK_THROWS_AS(plan.sample({.frame = most / 4, .sample = 0}), std::overflow_error);
+    CHECK(plan.sample({.frame = most / 4 - 1, .sample = 3}).index == most / 4 * 4 - 1);
+    const frame::HeadlessPlan none = frame::plan_headless(
+        {.first = 0, .samples = 0, .accumulates = true, .scene_changes = false, .time_frozen = false});
+    CHECK_THROWS_AS(none.sample({.frame = 0, .sample = 0}), std::invalid_argument);
 }

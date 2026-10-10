@@ -29,7 +29,7 @@ constexpr NS::UInteger residency_capacity = 16;
 NS::SharedPtr<MTL4::CommandQueue> make_queue(MTL::Device* device) {
     auto queue = NS::TransferPtr(device->newMTL4CommandQueue());
     if (!queue) {
-        throw Error("the device made no Metal 4 command queue");
+        throw MetalError("the device made no Metal 4 command queue");
     }
     return queue;
 }
@@ -41,7 +41,7 @@ NS::SharedPtr<MTL::ResidencySet> make_residency_set(MTL::Device* device) {
     NS::Error* error = nullptr;
     auto set = NS::TransferPtr(device->newResidencySet(descriptor.get(), &error));
     if (!set) {
-        throw Error("the device made no residency set: " + describe(error));
+        throw MetalError("the device made no residency set: " + describe(error));
     }
     return set;
 }
@@ -49,7 +49,7 @@ NS::SharedPtr<MTL::ResidencySet> make_residency_set(MTL::Device* device) {
 NS::SharedPtr<MTL::SharedEvent> make_event(MTL::Device* device) {
     auto event = NS::TransferPtr(device->newSharedEvent());
     if (!event) {
-        throw Error("the device made no shared event");
+        throw MetalError("the device made no shared event");
     }
     event->setSignaledValue(0);
     return event;
@@ -68,7 +68,7 @@ Submission::Submission(const Device& device)
         slot.allocator = NS::TransferPtr(device_->newCommandAllocator());
         slot.commands = NS::TransferPtr(device_->newCommandBuffer());
         if (!slot.allocator || !slot.commands) {
-            throw Error("the device made no command allocator or command buffer");
+            throw MetalError("the device made no command allocator or command buffer");
         }
     }
 }
@@ -94,7 +94,7 @@ std::optional<Completed> Submission::settle(std::uint64_t sequence) {
         return std::nullopt;
     }
     if (!completed_->waitUntilSignaledValue(sequence + 1, timeout.count())) {
-        throw Error("submission " + std::to_string(sequence) + " did not complete within " +
+        throw MetalError("submission " + std::to_string(sequence) + " did not complete within " +
                     std::to_string(timeout.count()) + " ms: the GPU has stopped");
     }
     // The event says the GPU is done; the feedback, which carries any error,
@@ -103,13 +103,13 @@ std::optional<Completed> Submission::settle(std::uint64_t sequence) {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (feedback.arrived.load(std::memory_order_acquire) < sequence + 1) {
         if (std::chrono::steady_clock::now() > deadline) {
-            throw Error("no feedback for submission " + std::to_string(sequence) + " within " +
+            throw MetalError("no feedback for submission " + std::to_string(sequence) + " within " +
                         std::to_string(timeout.count()) + " ms");
         }
         std::this_thread::sleep_for(feedback_poll);
     }
     if (feedback.failed.load(std::memory_order_acquire)) {
-        throw Error(feedback.failure);
+        throw MetalError(feedback.failure);
     }
     slot.settled_through = sequence + 1;
     return Completed{sequence, feedback.gpu_start, feedback.gpu_end};
@@ -117,10 +117,10 @@ std::optional<Completed> Submission::settle(std::uint64_t sequence) {
 
 FrameSlot Submission::begin() {
     if (finished_) {
-        throw Error("begin() after finish()");
+        throw MetalError("begin() after finish()");
     }
     if (open_) {
-        throw Error("begin() while submission " + std::to_string(next_ - 1) + " is still open");
+        throw MetalError("begin() while submission " + std::to_string(next_ - 1) + " is still open");
     }
     const std::uint64_t sequence = next_;
     const std::uint32_t index = static_cast<std::uint32_t>(sequence % frames_in_flight);
@@ -142,10 +142,10 @@ FrameSlot Submission::begin() {
 
 void Submission::end_and_commit(const MTL::Drawable* drawable) {
     if (!open_) {
-        throw Error("commit with no submission begun");
+        throw MetalError("commit with no submission begun");
     }
     if (abandoned_) {
-        throw Error("submission " + std::to_string(next_ - 1) +
+        throw MetalError("submission " + std::to_string(next_ - 1) +
                     " cannot be committed: memory it may use was released while it was open");
     }
     const std::uint64_t sequence = next_ - 1;
@@ -192,7 +192,7 @@ void Submission::commit() {
 
 void Submission::present(CA::MetalDrawable* drawable) {
     if (drawable == nullptr) {
-        throw Error("present() with no drawable");
+        throw MetalError("present() with no drawable");
     }
     end_and_commit(drawable);
     drawable->present();
@@ -200,10 +200,10 @@ void Submission::present(CA::MetalDrawable* drawable) {
 
 std::optional<Completed> Submission::wait_until_complete(std::uint64_t sequence) {
     if (sequence >= next_ || (open_ && sequence == next_ - 1)) {
-        throw Error("wait_until_complete(" + std::to_string(sequence) + ") for a submission not committed");
+        throw MetalError("wait_until_complete(" + std::to_string(sequence) + ") for a submission not committed");
     }
     if (sequence + frames_in_flight < next_) {
-        throw Error("wait_until_complete(" + std::to_string(sequence) + "): its slot has been reused");
+        throw MetalError("wait_until_complete(" + std::to_string(sequence) + "): its slot has been reused");
     }
     return settle(sequence);
 }
@@ -216,7 +216,7 @@ std::vector<Completed> Submission::finish() {
 
 std::vector<Completed> Submission::drain() {
     if (open_) {
-        throw Error("drain() or finish() while submission " + std::to_string(next_ - 1) + " is still open");
+        throw MetalError("drain() or finish() while submission " + std::to_string(next_ - 1) + " is still open");
     }
     // The submissions that may be unsettled: the last frames_in_flight
     // committed. Every one before them was settled when its slot was reused.
@@ -236,7 +236,7 @@ bool Submission::has_completed(std::uint64_t sequence) const noexcept {
 
 void Submission::make_resident(MTL::Allocation* allocation) {
     if (allocation == nullptr) {
-        throw Error("make_resident() with no allocation");
+        throw MetalError("make_resident() with no allocation");
     }
     residency_->addAllocation(allocation);
     residency_->commit();
@@ -258,7 +258,7 @@ void Submission::retire(MTL::Allocation* allocation) noexcept {
 
 void Submission::add_residency_set(MTL::ResidencySet* set) {
     if (set == nullptr) {
-        throw Error("add_residency_set() with no set");
+        throw MetalError("add_residency_set() with no set");
     }
     queue_->addResidencySet(set);
 }

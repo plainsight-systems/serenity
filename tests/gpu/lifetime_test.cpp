@@ -71,7 +71,7 @@ TEST_CASE("memory released while a submission is open: that submission can no lo
     target.emplace(device, submission, frame::Extent{8, 8});
     (void)submission.begin();
     target.reset();  // its texture leaves the residency set
-    CHECK_THROWS_AS(submission.commit(), metal::Error);
+    CHECK_THROWS_AS(submission.commit(), metal::MetalError);
 }
 
 TEST_CASE("wait_idle() returns once every committed submission has completed") {

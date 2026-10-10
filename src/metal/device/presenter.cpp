@@ -12,7 +12,7 @@ constexpr NS::UInteger drawable_count = 3;
 
 NS::SharedPtr<CA::MetalLayer> retained(LayerHandle layer) {
     if (layer.ca_metal_layer == nullptr) {
-        throw Error("Presenter: the layer handle is null");
+        throw MetalError("Presenter: the layer handle is null");
     }
     return NS::RetainPtr(static_cast<CA::MetalLayer*>(layer.ca_metal_layer));
 }
@@ -33,7 +33,7 @@ Presenter::Presenter(const Device& device, Submission& submission, LayerHandle l
 
     MTL::ResidencySet* drawables = layer_->residencySet();
     if (drawables == nullptr) {
-        throw Error("Presenter: the layer has no residency set");
+        throw MetalError("Presenter: the layer has no residency set");
     }
     submission.add_residency_set(drawables);
     drawables_ = NS::RetainPtr(drawables);

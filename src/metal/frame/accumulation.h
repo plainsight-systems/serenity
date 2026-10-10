@@ -34,7 +34,7 @@ namespace serenity::metal {
 // frame joins, and returns the count of frames the image holds before it;
 // where the rule says the image is made anew (a first frame, or a start over
 // at another size) it makes it. A frame the rule refuses is refused here, by
-// Error with the rule's reason, and nothing changes; so is a size Metal
+// MetalError with the rule's reason, and nothing changes; so is a size Metal
 // cannot make an image of (metal/device/device.h, max_texture_side). The
 // rule is asked on a copy of the history, kept once the image exists, so
 // the history never claims an image that is not there (E.4).
@@ -60,7 +60,7 @@ public:
     ~Accumulation() = default;
 
     // The count of frames the image holds before frame `inputs`, at `size`,
-    // of a scene that changes or not; see above. Throws Error if the core's
+    // of a scene that changes or not; see above. Throws MetalError if the core's
     // rule refuses the frame, or the image cannot be made.
     std::uint32_t prepare(const frame::FrameInputs& inputs, frame::Extent size, bool scene_changes);
 

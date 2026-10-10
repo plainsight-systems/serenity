@@ -312,7 +312,8 @@ Toned tone_map(const Field& radiance, passes::ToneMap settings, Pyramid pyramid 
     }
     image->replaceRegion(MTL::Region(0, 0, size.width, size.height), 0, texels.data(), size.width * 4 * sizeof(float));
 
-    metal::FrameImages renderers(device, submission, metal::FrameImages::Bloom::pyramid);
+    metal::FrameImages renderers(device, submission, metal::FrameImages::Radiance::image,
+                                 metal::FrameImages::Bloom::pyramid);
     renderers.prepare(size);
     std::array<NS::SharedPtr<MTL::Texture>, passes::bloom_levels> readable;
     if (pyramid == Pyramid::readable) {

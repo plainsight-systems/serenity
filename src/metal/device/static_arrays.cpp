@@ -23,7 +23,7 @@ StaticArrays::StaticArrays(const Device& device, Submission& submission,
     const auto pool = scoped_pool();
     buffer_ = NS::TransferPtr(device.handle()->newBuffer(total, MTL::ResourceStorageModeShared));
     if (!buffer_) {
-        throw Error("the device made no buffer of " + std::to_string(total) + " bytes for static arrays");
+        throw MetalError("the device made no buffer of " + std::to_string(total) + " bytes for static arrays");
     }
     auto* bytes = static_cast<std::byte*>(buffer_->contents());
     std::memset(bytes, 0, buffer_alignment);
@@ -39,7 +39,7 @@ StaticArrays::StaticArrays(const Device& device, Submission& submission,
 
 MTL::GPUAddress StaticArrays::address(std::size_t i) const {
     if (i >= addresses_.size()) {
-        throw Error("StaticArrays: no array " + std::to_string(i) + " of " + std::to_string(addresses_.size()));
+        throw MetalError("StaticArrays: no array " + std::to_string(i) + " of " + std::to_string(addresses_.size()));
     }
     return addresses_[i];
 }
