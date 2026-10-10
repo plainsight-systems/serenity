@@ -27,6 +27,7 @@
 #include "metal/device/presenter.h"
 #include "metal/device/submission.h"
 #include "metal/frame/renderer.h"
+#include "test_paths.h"
 
 using namespace serenity;
 
@@ -34,24 +35,24 @@ namespace {
 
 constexpr frame::Extent size{512, 512};
 
-frame::FrameInputs inputs(const scene::SceneDescription& scene, std::uint64_t index) {
+frame::FrameInputs inputs(const scene::SceneDescription& description, std::uint64_t index) {
     return frame::FrameInputs{.time = frame::Seconds{0.0}, .index = index, .accumulated_since = 0,
-                              .camera = scene.camera};
+                              .camera = description.camera};
 }
 
 }  // namespace
 
 TEST_CASE("an exception with frames in flight: the renderer and its target wait for the GPU before releasing") {
-    const scene::SceneDescription scene = scene::load(SERENITY_SCENES_DIR "/marbles.toml");
-    const frame::Schedule schedule = frame::load_schedule(SERENITY_GRAPHS_DIR "/path.toml");
+    const scene::SceneDescription description = scene::load(tests::scenes_dir / "marbles.toml");
+    const frame::Schedule schedule = frame::load_schedule(tests::graphs_dir / "path.toml");
     metal::Device device;
     metal::Submission submission(device);
     std::uint64_t last = 0;
     const auto run = [&] {
         metal::Offscreen target(device, submission, size);
-        metal::Renderer renderer(device, submission, schedule, &scene);
+        metal::Renderer renderer(device, submission, schedule, &description);
         for (std::uint64_t index = 0; index < 2; ++index) {
-            last = metal::render_to_offscreen(submission, target, renderer, inputs(scene, index));
+            last = metal::render_to_offscreen(submission, target, renderer, inputs(description, index));
         }
         throw std::runtime_error("a failure mid-run, frames in flight");
     };
@@ -88,8 +89,8 @@ TEST_CASE("wait_idle() returns once every committed submission has completed") {
 }
 
 TEST_CASE("the window's presenter takes its layer's residency set off the queue only after the GPU is done") {
-    const scene::SceneDescription scene = scene::load(SERENITY_SCENES_DIR "/marbles.toml");
-    const frame::Schedule schedule = frame::load_schedule(SERENITY_GRAPHS_DIR "/path.toml");
+    const scene::SceneDescription description = scene::load(tests::scenes_dir / "marbles.toml");
+    const frame::Schedule schedule = frame::load_schedule(tests::graphs_dir / "path.toml");
     metal::Device device;
     metal::Submission submission(device);
     auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -99,9 +100,9 @@ TEST_CASE("the window's presenter takes its layer's residency set off the queue 
     std::optional<std::uint64_t> last;
     {
         metal::Presenter presenter(device, submission, metal::LayerHandle{layer}, size);
-        metal::Renderer renderer(device, submission, schedule, &scene);
-        if (const auto frame = metal::render_to_window(submission, presenter, renderer, inputs(scene, 0))) {
-            last = frame->sequence;
+        metal::Renderer renderer(device, submission, schedule, &description);
+        if (const auto shown = metal::render_to_window(submission, presenter, renderer, inputs(description, 0))) {
+            last = shown->sequence;
         }
     }
     REQUIRE(last.has_value());

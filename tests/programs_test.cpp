@@ -2,13 +2,14 @@
 // (options_test.cpp): the window's clock, its render scale, numbers read
 // whole, and the headless renderer's output directory.
 
-#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include <unistd.h>
 
 #include <doctest/doctest.h>
 
@@ -19,12 +20,14 @@
 namespace {
 
 // A directory of the test's own under the system's temporary directory,
-// removed when the test ends.
+// named by the process so two runs at once (both presets) never share one,
+// and removed when the test ends (R.1).
 struct ScratchDirectory {
     std::filesystem::path path;
 
     explicit ScratchDirectory(const std::string& name)
-        : path(std::filesystem::temp_directory_path() / ("serenity-programs-test-" + name)) {
+        : path(std::filesystem::temp_directory_path() /
+               ("serenity-programs-test-" + name + "-" + std::to_string(::getpid()))) {
         std::filesystem::remove_all(path);
     }
     ~ScratchDirectory() { std::filesystem::remove_all(path); }

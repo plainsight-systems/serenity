@@ -9,6 +9,20 @@ FetchContent_MakeAvailable(doctest)
 get_target_property(doctest_includes doctest::doctest INTERFACE_INCLUDE_DIRECTORIES)
 set_target_properties(doctest PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${doctest_includes}")
 
+# What every test executable shares: the tests' own helpers (tests/support,
+# included as "support/..."), where the repository's scenes and graphs are
+# (generated, support/test_paths.h.in), doctest, and the warnings. The tests
+# are held to more than the project's warnings: conversions that change a
+# value or its sign, names that hide others, and C-style casts fail their
+# build (P.12, ES.46, ES.49, ES.12).
+configure_file(support/test_paths.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/test_paths.h" @ONLY)
+add_library(serenity_test_support INTERFACE)
+target_include_directories(serenity_test_support INTERFACE
+    "${PROJECT_SOURCE_DIR}/tests" "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_link_libraries(serenity_test_support INTERFACE doctest::doctest)
+target_compile_options(serenity_test_support INTERFACE
+    ${SERENITY_WARNINGS} -Wconversion -Wsign-conversion -Wshadow -Wold-style-cast)
+
 # The tests that need no GPU: the core, and both command lines.
 add_executable(serenity_tests
     schedule_test.cpp
@@ -28,11 +42,10 @@ add_executable(serenity_tests
     main_test.cpp
 )
 target_link_libraries(serenity_tests PRIVATE
-    serenity_app_options serenity_headless_options doctest::doctest)
-target_compile_options(serenity_tests PRIVATE ${SERENITY_WARNINGS})
-target_compile_definitions(serenity_tests PRIVATE
-    SERENITY_GRAPHS_DIR="${PROJECT_SOURCE_DIR}/graphs"
-    SERENITY_SCENES_DIR="${PROJECT_SOURCE_DIR}/scenes")
+    serenity_app_options serenity_headless_options serenity_test_support)
+# stb_image, to decode what png_test writes; the same pinned stb as the
+# writer's (CMakeLists.txt), test-only.
+target_include_directories(serenity_tests SYSTEM PRIVATE "${stb_SOURCE_DIR}")
 add_test(NAME serenity_tests COMMAND serenity_tests)
 
 # The structural checks, so the default verification path (ctest, make test)
@@ -44,3 +57,12 @@ add_test(NAME boundaries COMMAND sh "${PROJECT_SOURCE_DIR}/tools/check_boundarie
 add_test(NAME boundaries_fire COMMAND sh "${PROJECT_SOURCE_DIR}/tests/test_check_boundaries.sh")
 add_test(NAME toolchain_fires COMMAND sh "${PROJECT_SOURCE_DIR}/tests/test_check_toolchain.sh")
 set_tests_properties(boundaries boundaries_fire PROPERTIES RESOURCE_LOCK source_tree)
+
+# The headless renderer as its user runs it: the frames it writes, their
+# names and sizes, what it prints, and its failures' status and messages.
+# On the GPU, under Metal's validation as the GPU tests are (tests/gpu).
+add_test(NAME headless
+    COMMAND sh "${PROJECT_SOURCE_DIR}/tests/test_headless.sh" $<TARGET_FILE:serenity-headless>
+            "${PROJECT_SOURCE_DIR}/graphs" "${CMAKE_CURRENT_BINARY_DIR}/headless_test")
+set_tests_properties(headless PROPERTIES
+    ENVIRONMENT "MTL_DEBUG_LAYER=1;MTL_SHADER_VALIDATION=1;MTL_DEBUG_LAYER_ERROR_MODE=assert")

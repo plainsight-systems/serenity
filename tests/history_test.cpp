@@ -2,9 +2,10 @@
 // join it, and the window's and the headless renderer's plans for when it
 // starts over. No GPU: the rule is the core's.
 
+#include <cstdint>
 #include <limits>
+#include <optional>
 #include <stdexcept>
-#include <string>
 
 #include <doctest/doctest.h>
 

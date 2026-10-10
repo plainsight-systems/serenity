@@ -2,19 +2,26 @@
 // line.
 
 #include <cmath>
+#include <cstddef>
 #include <string>
+#include <string_view>
 
 #include <doctest/doctest.h>
 
 #include "core/contracts/medium.h"
 #include "core/materials/coated.h"
 #include "core/scene/scene.h"
+#include "support/text.h"
+#include "test_paths.h"
 
 using namespace serenity;
+using tests::contains;
+using tests::replaced;
 
 namespace {
 
-// The example in core/scene/scene.h.
+// The example in core/scene/scene.h. Its lines, for the errors that name
+// them: the sphere's are 28 to 31, the box's 34 to 37.
 constexpr const char* example = R"(
 [camera]
 position = [0, 1.2, 4]
@@ -54,25 +61,15 @@ max = [6, 0, 6]
 material = "floor"
 )";
 
+// The error scene::parse() throws for `text`, read as s.toml, or "" if it
+// throws none.
 std::string error_of(const std::string& text) {
-    try {
-        (void)scene::parse(text, "s.toml");
-    } catch (const scene::Error& error) {
-        return error.what();
-    }
-    return "";
+    return tests::error_of<scene::Error>([&] { return scene::parse(text, "s.toml"); });
 }
 
-// `example` with the first occurrence of `from` replaced by `to`.
-std::string with(const std::string& from, const std::string& to) {
-    std::string text = example;
-    const std::size_t at = text.find(from);
-    REQUIRE(at != std::string::npos);
-    return text.replace(at, from.size(), to);
-}
-
-bool contains(const std::string& text, const std::string& part) {
-    return text.find(part) != std::string::npos;
+// `example` with its first `from` replaced by `to`.
+std::string with(std::string_view from, std::string_view to) {
+    return replaced(example, from, to);
 }
 
 }  // namespace
@@ -126,8 +123,7 @@ TEST_CASE("the example reads into one array per kind, names resolved to indices"
 }
 
 TEST_CASE("up defaults to +y, and a rough material may have a color instead of a texture") {
-    const scene::SceneDescription s =
-        scene::parse(with("texture = \"floor_checks\"", "color = [0.5, 0.25, 1]"), "s");
+    const scene::SceneDescription s = scene::parse(with("texture = \"floor_checks\"", "color = [0.5, 0.25, 1]"), "s");
     CHECK(s.rough[0].texture.index == contracts::no_texture);
     CHECK(s.rough[0].color.y == 0.25f);
 
@@ -137,7 +133,7 @@ TEST_CASE("up defaults to +y, and a rough material may have a color instead of a
 }
 
 TEST_CASE("the first scene reads, with its fireflies as lights") {
-    const scene::SceneDescription s = scene::load(SERENITY_SCENES_DIR "/brass_sphere.toml");
+    const scene::SceneDescription s = scene::load(tests::scenes_dir / "brass_sphere.toml");
     CHECK(s.shapes.records.size() == 4);
     CHECK(s.conductors.size() == 1);
     CHECK(s.sphere_lights.size() == 2);
@@ -202,31 +198,45 @@ material = "brass"
 
 TEST_CASE("every mistake is refused, naming the file and the line") {
     CHECK(contains(error_of(with("radius = 0.8", "radius = 0")), "s.toml:30: shape 1's radius must be greater than 0"));
-    CHECK(contains(error_of(with("ior = 1.5", "ior = 1")), "ior must be greater than 1"));
+    CHECK(contains(error_of(with("ior = 1.5", "ior = 1")), "s.toml:21: material 'glass''s ior must be greater than 1"));
+    CHECK(contains(error_of(with("size = 0.5", "size = -1")), "s.toml:15: "));
     CHECK(contains(error_of(with("size = 0.5", "size = -1")), "size must be greater than 0"));
+    CHECK(contains(error_of(with("max = [6, 0, 6]", "max = [6, -0.1, 6]")), "s.toml:"));
     CHECK(contains(error_of(with("max = [6, 0, 6]", "max = [6, -0.1, 6]")), "min must be below its max"));
+    CHECK(contains(error_of(with("look_at = [0, 0.8, 0]", "look_at = [0, 1.2, 4]")), "s.toml:2: "));
     CHECK(contains(error_of(with("look_at = [0, 0.8, 0]", "look_at = [0, 1.2, 4]")), "cannot be framed"));
+    CHECK(contains(error_of(with("vertical_fov_degrees = 40", "vertical_fov_degrees = 180")), "s.toml:2: "));
     CHECK(contains(error_of(with("vertical_fov_degrees = 40", "vertical_fov_degrees = 180")), "cannot be framed"));
-    CHECK(contains(error_of(with("kind = \"sphere\"", "kind = \"cone\"")), "unknown shape kind 'cone'"));
-    CHECK(contains(error_of(with("kind = \"dielectric\"", "kind = \"metal\"")), "unknown material kind 'metal'"));
+    CHECK(contains(error_of(with("kind = \"sphere\"", "kind = \"cone\"")), "s.toml:28: unknown shape kind 'cone'"));
+    CHECK(contains(error_of(with("kind = \"dielectric\"", "kind = \"metal\"")),
+                   "s.toml:20: unknown material kind 'metal'"));
     CHECK(contains(error_of(with("kind = \"checker\"", "kind = \"marble\"")),
-                   "unknown texture kind 'marble'; known kinds: checker, wood"));
-    CHECK(contains(error_of(with("kind = \"gradient\"", "kind = \"stars\"")), "unknown environment kind 'stars'"));
+                   "s.toml:14: unknown texture kind 'marble'; known kinds: checker, wood"));
+    CHECK(contains(error_of(with("kind = \"gradient\"", "kind = \"stars\"")),
+                   "s.toml:9: unknown environment kind 'stars'"));
     CHECK(contains(error_of(with("material = \"glass\"", "material = \"crystal\"")),
-                   "uses material 'crystal', which is not defined"));
+                   "s.toml:31: shape 1 uses material 'crystal', which is not defined"));
     CHECK(contains(error_of(with("texture = \"floor_checks\"", "texture = \"tiles\"")),
-                   "uses texture 'tiles', which is not defined"));
+                   "s.toml:25: material 'floor' uses texture 'tiles', which is not defined"));
     CHECK(contains(error_of(with("texture = \"floor_checks\"", "texture = \"floor_checks\"\ncolor = [1, 1, 1]")),
                    "exactly one of 'color' and 'texture'"));
-    CHECK(contains(error_of(with("radius = 0.8", "radius = 0.8\nshiny = true")), "unknown key 'shiny' in shape 1"));
-    CHECK(contains(error_of(with("[camera]", "[camera]\nzoom = 2")), "unknown key 'zoom' in [camera]"));
-    CHECK(contains(error_of(with("[environment]", "[lights]\n[environment]")), "unknown key 'lights' in the scene"));
+    CHECK(contains(error_of(with("radius = 0.8", "radius = 0.8\nshiny = true")),
+                   "s.toml:31: unknown key 'shiny' in shape 1"));
+    CHECK(contains(error_of(with("[camera]", "[camera]\nzoom = 2")), "s.toml:3: unknown key 'zoom' in [camera]"));
+    CHECK(contains(error_of(with("[environment]", "[lights]\n[environment]")),
+                   "s.toml:8: unknown key 'lights' in the scene"));
+    CHECK(contains(error_of(with("radius = 0.8", "radius = \"big\"")), "s.toml:30: "));
     CHECK(contains(error_of(with("radius = 0.8", "radius = \"big\"")), "must be a number"));
     // Finite as a double, beyond float's range: refused, not narrowed to infinity.
+    CHECK(contains(error_of(with("radius = 0.8", "radius = 1e300")), "s.toml:30: "));
     CHECK(contains(error_of(with("radius = 0.8", "radius = 1e300")), "within float's range"));
+    CHECK(contains(error_of(with("ior = 1.5", "ior = 1e39")), "s.toml:21: "));
     CHECK(contains(error_of(with("ior = 1.5", "ior = 1e39")), "within float's range"));
+    CHECK(contains(error_of(with("center = [0, 0.8, 0]", "center = [0, -1e300, 0]")), "s.toml:29: "));
     CHECK(contains(error_of(with("center = [0, 0.8, 0]", "center = [0, -1e300, 0]")), "within float's range"));
+    CHECK(contains(error_of(with("center = [0, 0.8, 0]", "center = [0, 0.8]")), "s.toml:29: "));
     CHECK(contains(error_of(with("center = [0, 0.8, 0]", "center = [0, 0.8]")), "array of three numbers"));
+    CHECK(contains(error_of(with("radius = 0.8\n", "")), "s.toml:27: "));
     CHECK(contains(error_of(with("radius = 0.8\n", "")), "shape 1 has no 'radius'"));
     CHECK(contains(error_of("[camera]\nposition = [0, 0, 1]\nlook_at = [0, 0, 0]\nvertical_fov_degrees = 40\n"
                             "[environment]\nkind = \"gradient\"\nzenith = [0, 0, 0]\nhorizon = [0, 0, 0]\n"),
@@ -234,24 +244,30 @@ TEST_CASE("every mistake is refused, naming the file and the line") {
     CHECK(contains(error_of("[camera\n"), "s.toml:1:"));
 
     const std::string brass = "[materials.brass]\nkind = \"conductor\"\n";
+    // [materials.brass] lands on line 27, its f0 on 29, its roughness on 30.
+    CHECK(contains(error_of(with("[[shapes]]", brass + "f0 = [1.2, 0.8, 0.4]\nroughness = 0.3\n[[shapes]]")),
+                   "s.toml:29: "));
     CHECK(contains(error_of(with("[[shapes]]", brass + "f0 = [1.2, 0.8, 0.4]\nroughness = 0.3\n[[shapes]]")),
                    "f0 must be within [0, 1]"));
     CHECK(contains(error_of(with("[[shapes]]", brass + "f0 = [0.9, 0.8, 0.4]\nroughness = 0\n[[shapes]]")),
+                   "s.toml:30: "));
+    CHECK(contains(error_of(with("[[shapes]]", brass + "f0 = [0.9, 0.8, 0.4]\nroughness = 0\n[[shapes]]")),
                    "roughness must be in (0, 1]"));
     const std::string glow = "[materials.glow]\nkind = \"emissive\"\n";
+    CHECK(contains(error_of(with("[[shapes]]", glow + "radiance = [1, -1, 1]\n[[shapes]]")), "s.toml:29: "));
     CHECK(contains(error_of(with("[[shapes]]", glow + "radiance = [1, -1, 1]\n[[shapes]]")),
                    "radiance must not be negative"));
     std::string glowing_box = with("[[shapes]]", glow + "radiance = [1, 1, 1]\n[[shapes]]");
-    const std::size_t floor = glowing_box.rfind("material = \"floor\"");
-    glowing_box.replace(floor, std::string("material = \"floor\"").size(), "material = \"glow\"");
+    const std::string floor_material = "material = \"floor\"";
+    glowing_box.replace(glowing_box.rfind(floor_material), floor_material.size(), "material = \"glow\"");
     CHECK(contains(error_of(glowing_box), "only a sphere may be emissive"));
 }
 
 namespace {
 
 // The example with a third sphere, which wanders, clear of the others.
-std::string moving(const std::string& center = "[3, 1.5, 0]", const std::string& motion =
-                       "{ kind = \"wander\", reach = 0.25, speed = 0.3, seed = 7 }",
+std::string moving(const std::string& center = "[3, 1.5, 0]",
+                   const std::string& motion = "{ kind = \"wander\", reach = 0.25, speed = 0.3, seed = 7 }",
                    const std::string& radius = "0.05") {
     return std::string(example) + "\n[[shapes]]\nkind = \"sphere\"\ncenter = " + center + "\nradius = " + radius +
            "\nmaterial = \"glass\"\nmotion = " + motion + "\n";
@@ -263,11 +279,11 @@ TEST_CASE("a box keeps the file's corners exactly, where a center and a half ext
     // 999999.9375 to 1000000, adjacent floats at the world's edge: their
     // middle, 999999.96875, is not a float, and a center and half extent
     // would round it and give back other corners.
-    const std::string text = with("min = [-6, -0.1, -6]\nmax = [6, 0, 6]",
-                                  "min = [999999.9375, -0.1, -6]\nmax = [1000000, 0, 6]");
+    const std::string text =
+        with("min = [-6, -0.1, -6]\nmax = [6, 0, 6]", "min = [999999.9375, -0.1, -6]\nmax = [1000000, 0, 6]");
     const scene::SceneDescription far = scene::parse(text, "s");
-    const shapes::Bounds placed = shapes::world_bounds(shapes::object_bounds(far.shapes, far.shapes.records[1]),
-                                                       far.shapes.transforms[1]);
+    const shapes::Bounds placed =
+        shapes::world_bounds(shapes::object_bounds(far.shapes, far.shapes.records[1]), far.shapes.transforms[1]);
     CHECK(placed.min.x == 999999.9375f);
     CHECK(placed.max.x == 1000000.0f);
 }
@@ -289,7 +305,7 @@ TEST_CASE("a sphere's motion: a mover for its shape, its wander about its center
 }
 
 TEST_CASE("the wandering brass sphere scene reads, both fireflies moving") {
-    const scene::SceneDescription s = scene::load(SERENITY_SCENES_DIR "/brass_sphere_wander.toml");
+    const scene::SceneDescription s = scene::load(tests::scenes_dir / "brass_sphere_wander.toml");
     REQUIRE(s.animation.movers.size() == 2);
     CHECK(s.animation.movers[0].target == 2);
     CHECK(s.animation.movers[1].target == 3);
@@ -297,19 +313,26 @@ TEST_CASE("the wandering brass sphere scene reads, both fireflies moving") {
 }
 
 TEST_CASE("every mistake in a motion is refused, naming the file and the line") {
+    // The third sphere's motion is on line 44.
     const auto motion = [](const std::string& m) { return error_of(moving("[3, 1.5, 0]", m)); };
-    CHECK(contains(motion("{ kind = \"orbit\", reach = 0.25, speed = 0.3, seed = 7 }"), "unknown motion kind 'orbit'"));
-    CHECK(contains(motion("{ kind = \"wander\", reach = 0, speed = 0.3, seed = 7 }"), "reach must be greater than 0"));
-    CHECK(contains(motion("{ kind = \"wander\", reach = 0.25, speed = -1, seed = 7 }"), "speed must be greater than 0"));
-    CHECK(contains(motion("{ kind = \"wander\", reach = 0.25, speed = 0.3, seed = -1 }"), "seed must be an integer, 0 or more"));
-    CHECK(contains(motion("{ kind = \"wander\", reach = 0.25, speed = 0.3, seed = 1.5 }"), "seed must be an integer, 0 or more"));
+    CHECK(contains(motion("{ kind = \"orbit\", reach = 0.25, speed = 0.3, seed = 7 }"),
+                   "s.toml:44: unknown motion kind 'orbit'"));
+    CHECK(contains(motion("{ kind = \"wander\", reach = 0, speed = 0.3, seed = 7 }"),
+                   "s.toml:44: shape 3's motion's reach must be greater than 0"));
+    CHECK(contains(motion("{ kind = \"wander\", reach = 0.25, speed = -1, seed = 7 }"),
+                   "speed must be greater than 0"));
+    CHECK(contains(motion("{ kind = \"wander\", reach = 0.25, speed = 0.3, seed = -1 }"),
+                   "seed must be an integer, 0 or more"));
+    CHECK(contains(motion("{ kind = \"wander\", reach = 0.25, speed = 0.3, seed = 1.5 }"),
+                   "seed must be an integer, 0 or more"));
+    CHECK(contains(motion("{ kind = \"wander\", reach = 0.25, speed = 0.3 }"), "s.toml:44: "));
     CHECK(contains(motion("{ kind = \"wander\", reach = 0.25, speed = 0.3 }"), "has no 'seed'"));
     CHECK(contains(motion("{ kind = \"wander\", reach = 0.25, speed = 0.3, seed = 7, size = 1 }"),
-                   "unknown key 'size' in shape 3's motion"));
-    CHECK(contains(motion("\"wander\""), "shape 3's motion must be a table"));
+                   "s.toml:44: unknown key 'size' in shape 3's motion"));
+    CHECK(contains(motion("\"wander\""), "s.toml:44: shape 3's motion must be a table"));
     // Only a sphere moves.
     CHECK(contains(error_of(with("material = \"floor\"", "material = \"floor\"\nmotion = { kind = \"wander\" }")),
-                   "unknown key 'motion' in shape 2"));
+                   "s.toml:38: unknown key 'motion' in shape 2"));
     // Wherever it wanders, grown by its radius, it may touch no still shape:
     // the glass sphere (0.6 from its center, radius 0.8), or the floor.
     const std::string near_glass = error_of(moving("[0.9, 0.8, 0]"));
@@ -327,22 +350,23 @@ TEST_CASE("every mistake in a motion is refused, naming the file and the line") 
 }
 
 TEST_CASE("moving shapes are not checked against each other") {
-    const std::string both = moving() + "\n[[shapes]]\nkind = \"sphere\"\ncenter = [3.1, 1.5, 0]\nradius = 0.05\n"
-                                        "material = \"glass\"\nmotion = { kind = \"wander\", reach = 0.25, speed = 0.3, "
-                                        "seed = 8 }\n";
+    const std::string both = moving() +
+                             "\n[[shapes]]\nkind = \"sphere\"\ncenter = [3.1, 1.5, 0]\nradius = 0.05\n"
+                             "material = \"glass\"\nmotion = { kind = \"wander\", reach = 0.25, speed = 0.3, "
+                             "seed = 8 }\n";
     const scene::SceneDescription s = scene::parse(both, "s");
     CHECK(s.animation.movers.size() == 2);
 }
 
 TEST_CASE("the flying brass sphere scene reads: six flights, each with its flight's flashes") {
-    const scene::SceneDescription s = scene::load(SERENITY_SCENES_DIR "/brass_sphere_flight.toml");
-    CHECK(s.animation.motions.flights.size() == 6);
-    REQUIRE(s.animation.glowers.size() == 6);
-    for (std::size_t i = 0; i < 6; ++i) {
+    constexpr std::size_t flights = 6;
+    const scene::SceneDescription s = scene::load(tests::scenes_dir / "brass_sphere_flight.toml");
+    CHECK(s.animation.motions.flights.size() == flights);
+    REQUIRE(s.animation.glowers.size() == flights);
+    for (std::size_t i = 0; i < flights; ++i) {
         CHECK(s.animation.glowers[i].target == i);  // sphere light i
         CHECK(s.animation.glowers[i].glow.kind == animation::GlowKind::schedule);
-        CHECK(s.animation.glows.schedules[i].schedule.starts ==
-              s.animation.motions.flights[i].flashes.starts);
+        CHECK(s.animation.glows.schedules[i].schedule.starts == s.animation.motions.flights[i].flashes.starts);
     }
     CHECK(scene::changes(s));
 }
@@ -351,7 +375,8 @@ TEST_CASE("names, and glows: what they read into, and every mistake refused") {
     const std::string glow = "[materials.light]\nkind = \"emissive\"\nradiance = [5, 5, 5]\n";
     const auto lamp = [&](const std::string& extra) {
         return with("[[shapes]]", glow + "[[shapes]]\nkind = \"sphere\"\ncenter = [3, 1, 0]\nradius = 0.05\n"
-                                         "material = \"light\"\n" + extra + "\n[[shapes]]");
+                                         "material = \"light\"\n" +
+                                      extra + "\n[[shapes]]");
     };
     // A still light that blinks in a rhythm: a glower for sphere light 0.
     const scene::SceneDescription s =
@@ -362,23 +387,31 @@ TEST_CASE("names, and glows: what they read into, and every mistake refused") {
     CHECK(scene::changes(s));
     CHECK_FALSE(animation::moves(s.animation));
 
+    // The lamp's glow is on line 35.
+    CHECK(contains(error_of(lamp("glow = { kind = \"rhythm\", period = 5, flash = 3, dim = 0.1, seed = 2 }")),
+                   "s.toml:35: "));
     CHECK(contains(error_of(lamp("glow = { kind = \"rhythm\", period = 5, flash = 3, dim = 0.1, seed = 2 }")),
                    "at most half its period"));
     CHECK(contains(error_of(lamp("glow = { kind = \"rhythm\", period = 5, flash = 0.4, dim = 1, seed = 2 }")),
                    "dim must be in [0, 1)"));
     CHECK(contains(error_of(lamp("glow = { kind = \"flight\", flash = 0.4, dim = 0.1 }")), "does not fly"));
-    CHECK(contains(error_of(lamp("glow = { kind = \"candle\" }")), "unknown glow kind 'candle'"));
+    CHECK(contains(error_of(lamp("glow = { kind = \"candle\" }")), "s.toml:35: unknown glow kind 'candle'"));
     // A period too short to count flashes in exactly for any t (glow.h).
-    CHECK(contains(error_of(lamp("glow = { kind = \"rhythm\", period = 0.0001, flash = 0.00004, dim = 0.1, seed = 2 }")),
-                   "period must be at least 0.001 s"));
+    CHECK(contains(
+        error_of(lamp("glow = { kind = \"rhythm\", period = 0.0001, flash = 0.00004, dim = 0.1, seed = 2 }")),
+        "period must be at least 0.001 s"));
     CHECK_NOTHROW((void)scene::parse(
         lamp("glow = { kind = \"rhythm\", period = 0.001, flash = 0.0004, dim = 0.1, seed = 2 }"), "s"));
     CHECK(contains(error_of(with("radius = 0.8", "radius = 0.8\nglow = { kind = \"rhythm\", period = 5, "
                                                  "flash = 0.4, dim = 0.1, seed = 2 }")),
+                   "s.toml:31: "));
+    CHECK(contains(error_of(with("radius = 0.8", "radius = 0.8\nglow = { kind = \"rhythm\", period = 5, "
+                                                 "flash = 0.4, dim = 0.1, seed = 2 }")),
                    "has a glow, and is not a light"));
     // Names: unique, and only on shapes.
-    std::string twice = with("radius = 0.8", "radius = 0.8\nname = \"a\"");
-    twice.replace(twice.find("material = \"floor\""), 0, "name = \"a\"\n");
+    const std::string twice =
+        replaced(with("radius = 0.8", "radius = 0.8\nname = \"a\""), "material = \"floor\"",
+                 "name = \"a\"\nmaterial = \"floor\"");
     CHECK(contains(error_of(twice), "the name 'a' is used twice"));
 }
 
@@ -389,14 +422,12 @@ TEST_CASE("a missing file is refused by name") {
 TEST_CASE("a wood texture reads as the table's planks, every value checked") {
     const std::string wood = "[textures.walnut]\nkind = \"wood\"\nlight = [0.13, 0.065, 0.03]\n"
                              "dark = [0.045, 0.02, 0.008]\nring = 0.004\nboard = 0.16\nseed = 3\n";
-    const auto with_wood = [&](const std::string& from, const std::string& to) {
-        std::string text = wood;
-        if (!from.empty()) {
-            text.replace(text.find(from), from.size(), to);
-        }
-        std::string scene = with("[materials.glass]", text + "[materials.glass]");
-        scene.replace(scene.find("texture = \"floor_checks\""), 24, "texture = \"walnut\"");
-        return scene;
+    // The example with the walnut before the glass, on lines 19 to 25, and
+    // the floor made of it.
+    const auto with_wood = [&](std::string_view from, std::string_view to) {
+        const std::string text = from.empty() ? wood : replaced(wood, from, to);
+        return replaced(with("[materials.glass]", text + "[materials.glass]"), "texture = \"floor_checks\"",
+                        "texture = \"walnut\"");
     };
     const scene::SceneDescription s = scene::parse(with_wood("", ""), "s");
     REQUIRE(s.woods.size() == 1);
@@ -410,18 +441,22 @@ TEST_CASE("a wood texture reads as the table's planks, every value checked") {
     CHECK(s.woods[0].board == 0.16f);
     CHECK(s.woods[0].seed == 3u);
 
-    const auto error = [&](const std::string& from, const std::string& to) { return error_of(with_wood(from, to)); };
+    const auto error = [&](std::string_view from, std::string_view to) { return error_of(with_wood(from, to)); };
     CHECK(contains(error("light = [0.13, 0.065, 0.03]", "light = [1.2, 0.065, 0.03]"),
-                   "texture 'walnut''s light must be within [0, 1]"));
-    CHECK(contains(error("dark = [0.045, 0.02, 0.008]", "dark = [0.045, -0.1, 0.008]"), "dark must be within [0, 1]"));
-    CHECK(contains(error("ring = 0.004", "ring = 0.00005"), "ring must be at least 0.0001 m"));
+                   "s.toml:21: texture 'walnut''s light must be within [0, 1]"));
+    CHECK(contains(error("dark = [0.045, 0.02, 0.008]", "dark = [0.045, -0.1, 0.008]"),
+                   "s.toml:22: texture 'walnut''s dark must be within [0, 1]"));
+    CHECK(contains(error("ring = 0.004", "ring = 0.00005"),
+                   "s.toml:23: texture 'walnut''s ring must be at least 0.0001 m"));
     CHECK(contains(error("ring = 0.004", "ring = 1e-45"), "ring must be at least 0.0001 m"));
-    CHECK(contains(error("board = 0.16", "board = 0.0005"), "board must be from 0.001 to 10 m"));
+    CHECK(contains(error("board = 0.16", "board = 0.0005"),
+                   "s.toml:24: texture 'walnut''s board must be from 0.001 to 10 m"));
     CHECK(contains(error("board = 0.16", "board = 11"), "board must be from 0.001 to 10 m"));
-    CHECK(contains(error("seed = 3", "seed = 4294967296"), "seed must be at most 4294967295"));
+    CHECK(contains(error("seed = 3", "seed = 4294967296"),
+                   "s.toml:25: texture 'walnut''s seed must be at most 4294967295"));
     CHECK(contains(error("seed = 3", "seed = -1"), "seed must be an integer, 0 or more"));
-    CHECK(contains(error("seed = 3", "seed = 3\ngrain = 1"), "unknown key 'grain' in texture 'walnut'"));
-    CHECK(contains(error("ring = 0.004\n", ""), "texture 'walnut' has no 'ring'"));
+    CHECK(contains(error("seed = 3", "seed = 3\ngrain = 1"), "s.toml:26: unknown key 'grain' in texture 'walnut'"));
+    CHECK(contains(error("ring = 0.004\n", ""), "s.toml:19: texture 'walnut' has no 'ring'"));
 }
 
 TEST_CASE("every shape lies within the world") {
@@ -433,24 +468,25 @@ TEST_CASE("every shape lies within the world") {
 }
 
 TEST_CASE("the marbles' scene reads: a walnut table, thirty-six marbles, 616 fireflies") {
-    const scene::SceneDescription s = scene::load(SERENITY_SCENES_DIR "/marbles.toml");
+    constexpr std::size_t fireflies = 480 + 136;  // two swarms'
+    const scene::SceneDescription s = scene::load(tests::scenes_dir / "marbles.toml");
     CHECK(s.woods.size() == 1);
     CHECK(s.swirls.size() == 5);
     CHECK(s.coated.size() == 7);
     CHECK(s.media.size() == 6);
     CHECK(s.absorbing.size() == 6);
     // The table's top, legs and the ground; thirty-six marbles, nine cores,
-    // and two swarms' fireflies.
-    CHECK(s.shapes.records.size() == 6 + 36 + 9 + 480 + 136);
+    // and the fireflies.
+    CHECK(s.shapes.records.size() == 6 + 36 + 9 + fireflies);
     std::size_t filled = 0;
     for (const shapes::ShapeRecord& record : s.shapes.records) {
-        filled += record.interior != contracts::no_medium;
+        filled += record.interior != contracts::no_medium ? 1u : 0u;
     }
     CHECK(filled == 9);
-    CHECK(s.sphere_lights.size() == 616);
-    CHECK(s.animation.movers.size() == 616);
-    CHECK(s.animation.glowers.size() == 616);
-    CHECK(s.animation.motions.flights.size() == 616);
+    CHECK(s.sphere_lights.size() == fireflies);
+    CHECK(s.animation.movers.size() == fireflies);
+    CHECK(s.animation.glowers.size() == fireflies);
+    CHECK(s.animation.motions.flights.size() == fireflies);
 }
 
 TEST_CASE("a camera's lens reads, and a camera without one is a pinhole") {
@@ -460,17 +496,21 @@ TEST_CASE("a camera's lens reads, and a camera without one is a pinhole") {
     const scene::SceneDescription lensed = scene::parse(with("vertical_fov_degrees = 40", with_lens), "s");
     CHECK(lensed.camera.lens_radius == 0.012f);
     CHECK(lensed.camera.focus_distance == 4.0f);
+    // The lens is on line 7.
     const auto lens = [](const std::string& value) {
         return error_of(with("vertical_fov_degrees = 40", "vertical_fov_degrees = 40\nlens = " + value));
     };
     CHECK(contains(lens("{ radius = -0.01, focus = 4 }"), "s.toml:7: the camera's lens's radius must be 0 or more"));
-    CHECK(contains(lens("{ radius = 0.01, focus = 0 }"), "the camera's lens's focus must be greater than 0"));
-    CHECK(contains(lens("{ radius = 0.01 }"), "the camera's lens has no 'focus'"));
-    CHECK(contains(lens("{ radius = 0.01, focus = 4, blades = 6 }"), "unknown key 'blades' in the camera's lens"));
-    CHECK(contains(lens("0.01"), "the camera's lens must be a table"));
+    CHECK(contains(lens("{ radius = 0.01, focus = 0 }"), "s.toml:7: the camera's lens's focus must be greater than 0"));
+    CHECK(contains(lens("{ radius = 0.01 }"), "s.toml:7: the camera's lens has no 'focus'"));
+    CHECK(contains(lens("{ radius = 0.01, focus = 4, blades = 6 }"),
+                   "s.toml:7: unknown key 'blades' in the camera's lens"));
+    CHECK(contains(lens("0.01"), "s.toml:7: the camera's lens must be a table"));
 }
 
 TEST_CASE("coated, swirl and media read, each mistake refused at its line") {
+    // Before the example's first shape, from line 27: the swirl on 28 to 34,
+    // the porcelain on 35 to 38, the core on 39 to 41, the tint on 42 to 45.
     const std::string extra = R"(
 [textures.cats_eye]
 kind = "swirl"
@@ -491,21 +531,19 @@ kind = "absorbing"
 tint = [0.25, 0.5, 0.95]
 tint_distance = 0.01
 )";
-    const auto scene_with = [&](const std::string& from, const std::string& to, const std::string& shape_extra) {
+    const auto scene_with = [&](std::string_view from, std::string_view to, std::string_view shape_extra) {
         std::string text = with("[[shapes]]", extra + "[[shapes]]");
         if (!from.empty()) {
-            const std::size_t at = text.find(from);
-            REQUIRE(at != std::string::npos);
-            text.replace(at, from.size(), to);
+            text = replaced(text, from, to);
         }
         // The glass sphere, filled.
-        text.replace(text.find("material = \"glass\""), 18, "material = \"glass\"" + shape_extra);
-        return text;
+        return replaced(text, "material = \"glass\"", "material = \"glass\"" + std::string(shape_extra));
     };
     const scene::SceneDescription s = scene::parse(scene_with("", "", "\ninterior = \"blue_tint\""), "s");
     REQUIRE(s.coated.size() == 1);
     CHECK(s.coated[0].ior == 1.5f);
-    CHECK(s.coated[0].escape == doctest::Approx(float(materials::internal_escape(1.5))).scale(0).epsilon(1e-6));
+    CHECK(s.coated[0].escape ==
+          doctest::Approx(static_cast<float>(materials::internal_escape(1.5))).scale(0).epsilon(1e-6));
     REQUIRE(s.swirls.size() == 1);
     CHECK(s.swirls[0].vanes == 3u);
     CHECK(s.swirls[0].twist == 0.5f);
@@ -518,33 +556,37 @@ tint_distance = 0.01
     // Without an interior, air.
     CHECK(scene::parse(scene_with("", "", ""), "s").shapes.records[0].interior == contracts::no_medium);
 
-    const auto error = [&](const std::string& from, const std::string& to, const std::string& shape_extra = "") {
+    const auto error = [&](std::string_view from, std::string_view to, std::string_view shape_extra = "") {
         return error_of(scene_with(from, to, shape_extra));
     };
     CHECK(contains(error("color = [0.6, 0.05, 0.04]", "color = [1.2, 0.05, 0.04]"),
-                   "material 'porcelain''s color must be within [0, 1]"));
+                   "s.toml:37: material 'porcelain''s color must be within [0, 1]"));
     CHECK(contains(error("ior = 1.5\n[materials.core]", "ior = 1\n[materials.core]"),
-                   "material 'porcelain''s ior must be greater than 1"));
-    CHECK(contains(error("vanes = 3", "vanes = 0"), "vanes must be an integer from 1 to 16"));
+                   "s.toml:38: material 'porcelain''s ior must be greater than 1"));
+    CHECK(contains(error("vanes = 3", "vanes = 0"),
+                   "s.toml:32: texture 'cats_eye''s vanes must be an integer from 1 to 16"));
     CHECK(contains(error("vanes = 3", "vanes = 17"), "vanes must be an integer from 1 to 16"));
-    CHECK(contains(error("a = [0.9, 0.35, 0.05]", "a = [0.9, 1.35, 0.05]"), "'cats_eye''s a must be within [0, 1]"));
+    CHECK(contains(error("a = [0.9, 0.35, 0.05]", "a = [0.9, 1.35, 0.05]"),
+                   "s.toml:30: texture 'cats_eye''s a must be within [0, 1]"));
+    CHECK(contains(error("tint = [0.25, 0.5, 0.95]", "tint = [0, 0.5, 0.95]"), "s.toml:44: "));
     CHECK(contains(error("tint = [0.25, 0.5, 0.95]", "tint = [0, 0.5, 0.95]"), "tint must be within (0, 1]"));
     CHECK(contains(error("tint = [0.25, 0.5, 0.95]", "tint = [0.25, 1.5, 0.95]"), "tint must be within (0, 1]"));
+    CHECK(contains(error("tint_distance = 0.01", "tint_distance = 0"), "s.toml:45: "));
     CHECK(contains(error("tint_distance = 0.01", "tint_distance = 0"), "tint_distance must be greater than 0"));
     CHECK(contains(error("tint = [0.25, 0.5, 0.95]\ntint_distance = 0.01",
                          "tint = [1e-30, 0.5, 0.95]\ntint_distance = 1e-38"),
                    "absorbs past what a float holds"));
-    CHECK(contains(error("kind = \"absorbing\"", "kind = \"smoky\""), "unknown medium kind 'smoky'"));
+    CHECK(contains(error("kind = \"absorbing\"", "kind = \"smoky\""), "s.toml:43: unknown medium kind 'smoky'"));
     CHECK(contains(error("", "", "\ninterior = \"red_tint\""), "interior is medium 'red_tint', which is not defined"));
     // A medium fills only what light passes into: not the floor.
-    std::string floor_filled = scene_with("", "", "");
-    floor_filled.replace(floor_filled.find("material = \"floor\""), 18,
-                         "material = \"floor\"\ninterior = \"blue_tint\"");
+    const std::string floor_filled =
+        replaced(scene_with("", "", ""), "material = \"floor\"", "material = \"floor\"\ninterior = \"blue_tint\"");
     CHECK(contains(error_of(floor_filled), "shape 2 has an interior, and light cannot pass into it"));
     // A coated surface's checker must stay within [0, 1] as its color would.
-    std::string bright_checks = with(
-        "[[shapes]]", extra + "[materials.tiled]\nkind = \"coated\"\ntexture = \"floor_checks\"\nior = 1.5\n[[shapes]]");
-    bright_checks.replace(bright_checks.find("a = [0.9, 0.9, 0.9]"), 19, "a = [1.9, 0.9, 0.9]");
+    const std::string bright_checks = replaced(
+        with("[[shapes]]",
+             extra + "[materials.tiled]\nkind = \"coated\"\ntexture = \"floor_checks\"\nior = 1.5\n[[shapes]]"),
+        "a = [0.9, 0.9, 0.9]", "a = [1.9, 0.9, 0.9]");
     CHECK(contains(error_of(bright_checks), "material 'tiled''s texture's colors must be within [0, 1]"));
 }
 

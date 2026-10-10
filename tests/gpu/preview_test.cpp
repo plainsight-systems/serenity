@@ -7,8 +7,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -17,97 +19,58 @@
 #include "core/camera/thin_lens.h"
 #include "core/frame/graph_file.h"
 #include "core/scene/scene.h"
+#include "gpu/support/rendering.h"
 #include "metal/device/device.h"
 #include "metal/device/error.h"
 #include "metal/device/offscreen.h"
 #include "metal/device/submission.h"
 #include "metal/frame/renderer.h"
+#include "support/references.h"
+#include "support/scene_text.h"
+#include "support/vector.h"
+#include "test_paths.h"
 
 using namespace serenity;
+using tests::camera_text;
+using tests::sky;
+using tests::Vec3;
 
 namespace {
 
-struct Vec {
-    double x, y, z;
-};
+using Rgb8 = std::array<int, 3>;
 
-Vec operator+(Vec a, Vec b) {
-    return {a.x + b.x, a.y + b.y, a.z + b.z};
-}
-Vec operator-(Vec a, Vec b) {
-    return {a.x - b.x, a.y - b.y, a.z - b.z};
-}
-Vec operator*(double s, Vec a) {
-    return {s * a.x, s * a.y, s * a.z};
-}
-double dot(Vec a, Vec b) {
-    return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-Vec normalized(Vec a) {
-    return (1.0 / std::sqrt(dot(a, a))) * a;
-}
-Vec vec(contracts::Float3 f) {
-    return {f.x, f.y, f.z};
-}
-
-// The display transform in preview.h, to 8 bits.
-std::array<int, 3> displayed(Vec linear) {
+// The display transform in preview.h, to 8 bits: a color brighter than
+// the display scaled to its largest channel, its hue kept.
+Rgb8 displayed(Vec3 linear) {
     const double largest = std::max({linear.x, linear.y, linear.z});
-    const Vec c = largest > 1.0 ? (1.0 / largest) * linear : linear;
-    const auto encode = [](double v) {
-        v = std::clamp(v, 0.0, 1.0);
-        const double e = v <= 0.0031308 ? 12.92 * v : 1.055 * std::pow(v, 1.0 / 2.4) - 0.055;
-        return static_cast<int>(std::lround(e * 255.0));
-    };
-    return {encode(c.x), encode(c.y), encode(c.z)};
-}
-
-// The display's 8 bits back to linear.
-double linear_of(int displayed_value) {
-    const double c = displayed_value / 255.0;
-    return c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+    const Vec3 c = largest > 1.0 ? (1.0 / largest) * linear : linear;
+    return {tests::srgb8(c.x), tests::srgb8(c.y), tests::srgb8(c.z)};
 }
 
 // The rotated grid of positions within a pixel (preview.metal).
-constexpr double positions[4][2] = {{0.375, 0.125}, {0.875, 0.375}, {0.625, 0.875}, {0.125, 0.625}};
-
-// The camera ray through `position`, in pixels, of an image of `size`
-// (contracts/camera.h).
-Vec ray_direction(const contracts::CameraData& c, double px, double py, frame::Extent size) {
-    const double sx = 2.0 * px / size.width - 1.0;
-    const double sy = 1.0 - 2.0 * py / size.height;
-    return normalized(vec(c.forward) + sx * vec(c.right) + sy * vec(c.up));
-}
+constexpr std::array<std::array<double, 2>, 4> positions{
+    {{0.375, 0.125}, {0.875, 0.375}, {0.625, 0.875}, {0.125, 0.625}}};
 
 struct Image {
     frame::Extent size;
     std::vector<std::uint8_t> rgba;
 
-    std::array<int, 3> at(std::uint32_t x, std::uint32_t y) const {
+    Rgb8 at(std::uint32_t x, std::uint32_t y) const {
         const std::size_t i = (std::size_t{y} * size.width + x) * 4;
         return {rgba[i], rgba[i + 1], rgba[i + 2]};
     }
 };
 
 Image render(const std::string& scene_text, frame::Extent size) {
-    const scene::SceneDescription scene = scene::parse(scene_text, "test scene");
-    metal::Device device;
-    metal::Submission submission(device);
-    metal::Offscreen target(device, submission, size);
-    metal::Renderer renderer(device, submission,
-                             frame::parse_schedule("passes = [\"preview\", \"display\"]\n", "test"), &scene);
-    const frame::FrameInputs inputs{.time = frame::Seconds(0.0), .index = 0, .camera = scene.camera};
-    const auto sequence = metal::render_to_offscreen(submission, target, renderer, inputs);
-    (void)submission.wait_until_complete(sequence);
-    Image image{size, std::vector<std::uint8_t>(std::size_t{size.width} * size.height * 4)};
-    target.read_rgba(image.rgba);
-    return image;
+    const scene::SceneDescription description = scene::parse(scene_text, "test scene");
+    return {size, tests::render_once(description, tests::preview_graph(), size,
+                                     tests::frame_at(0, 0, 0.0, description.camera))};
 }
 
-void check_near(std::array<int, 3> actual, std::array<int, 3> expected, int tolerance) {
+void check_near(Rgb8 actual, Rgb8 expected, int tolerance) {
     INFO("actual " << actual[0] << ", " << actual[1] << ", " << actual[2] << "; expected " << expected[0] << ", "
                    << expected[1] << ", " << expected[2]);
-    for (int c = 0; c < 3; ++c) {
+    for (std::size_t c = 0; c < 3; ++c) {
         CHECK(std::abs(actual[c] - expected[c]) <= tolerance);
     }
 }
@@ -117,31 +80,31 @@ void check_near(std::array<int, 3> actual, std::array<int, 3> expected, int tole
 // albedo L sin^2 cos (lights/sphere_light.h). The light is where its shape's
 // transform places the unit sphere: center its translation, radius its
 // scale.
-Vec lit_floor(const contracts::CameraData& framed, frame::Extent size, std::uint32_t x, std::uint32_t y,
-              const lights::SphereLightData& light, const contracts::Transform& placed, Vec albedo) {
-    const Vec center = vec(contracts::translation(placed));
+Vec3 lit_floor(const contracts::CameraData& framed, frame::Extent size, tests::Pixel pixel,
+               const lights::SphereLightData& light, const contracts::Transform& placed, Vec3 albedo) {
+    const Vec3 center = tests::vec(contracts::translation(placed));
     const double radius = placed.m[0][0];
-    Vec sum{0, 0, 0};
+    Vec3 sum{};
     for (const auto& p : positions) {
-        const Vec d = ray_direction(framed, x + p[0], y + p[1], size);
-        const Vec hit = vec(framed.origin) + (-framed.origin.y / d.y) * d;
-        const Vec to_light = center - hit;
+        const Vec3 d = tests::camera_direction(framed, pixel.x + p[0], pixel.y + p[1], size);
+        const Vec3 hit = tests::vec(framed.origin) + (-framed.origin.y / d.y) * d;
+        const Vec3 to_light = center - hit;
         const double distance2 = dot(to_light, to_light);
         const double sin2 = radius * radius / distance2;
         const double cos_t = to_light.y / std::sqrt(distance2);
         const double e = light.radiance.x * sin2 * cos_t;
-        sum = sum + Vec{albedo.x * e, albedo.y * e, albedo.z * e};
+        sum = sum + Vec3{albedo.x * e, albedo.y * e, albedo.z * e};
     }
-    return 0.25 * sum;
+    return (1.0 / positions.size()) * sum;
 }
 
-std::string camera_text(const char* position, const char* look_at, int fov) {
-    return std::string("[camera]\nposition = ") + position + "\nlook_at = " + look_at +
-           "\nvertical_fov_degrees = " + std::to_string(fov) + "\n";
-}
+// The glass sphere's middle, under a sky of L every way: F0 of L reflected
+// where the ray enters, and (1 - F0)^2 tau of L through both surfaces, tau
+// the medium's transmittance along the way. F0 = ((1.5 - 1) / (1.5 + 1))^2.
+constexpr double glass_f0 = 0.04;
 
-std::string sky(const char* zenith, const char* horizon) {
-    return std::string("[environment]\nkind = \"gradient\"\nzenith = ") + zenith + "\nhorizon = " + horizon + "\n";
+double through_glass(double sky_radiance, double tau) {
+    return sky_radiance * (glass_f0 + (1.0 - glass_f0) * (1.0 - glass_f0) * tau);
 }
 
 }  // namespace
@@ -152,23 +115,23 @@ TEST_CASE("a ray that leaves the scene shows the sky in its direction") {
     const std::string text = camera_text("[0, 0, 0]", "[0, 1, -1]", 60) + sky("[0.1, 0.3, 0.9]", "[0.8, 0.5, 0.1]") +
                              "[materials.grey]\nkind = \"rough\"\ncolor = [0.5, 0.5, 0.5]\n"
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 5]\nradius = 1\nmaterial = \"grey\"\n";
-    const frame::Extent size{48, 32};
+    constexpr frame::Extent size{48, 32};
     const Image image = render(text, size);
-    const scene::SceneDescription scene = scene::parse(text, "test scene");
-    const contracts::CameraData framed = camera::shader_form(scene.camera, size);
+    const scene::SceneDescription description = scene::parse(text, "test scene");
+    const contracts::CameraData framed = camera::shader_form(description.camera, size);
 
-    for (auto [x, y] : {std::pair{0u, 0u}, {24u, 3u}, {47u, 10u}}) {
-        Vec sum{0, 0, 0};
+    for (const tests::Pixel pixel : {tests::Pixel{0, 0}, tests::Pixel{24, 3}, tests::Pixel{47, 10}}) {
+        Vec3 sum{};
         for (const auto& p : positions) {
-            const Vec d = ray_direction(framed, x + p[0], y + p[1], size);
+            const Vec3 d = tests::camera_direction(framed, pixel.x + p[0], pixel.y + p[1], size);
             const double t = std::clamp(d.y, 0.0, 1.0);
             const double s = t * t * (3.0 - 2.0 * t);
-            const Vec zenith = vec(scene.environment.zenith);
-            const Vec horizon = vec(scene.environment.horizon);
+            const Vec3 zenith = tests::vec(description.environment.zenith);
+            const Vec3 horizon = tests::vec(description.environment.horizon);
             sum = sum + (horizon + s * (zenith - horizon));
         }
-        INFO("pixel " << x << ", " << y);
-        check_near(image.at(x, y), displayed(0.25 * sum), 1);
+        INFO("pixel " << pixel.x << ", " << pixel.y);
+        check_near(image.at(pixel.x, pixel.y), displayed((1.0 / positions.size()) * sum), 1);
     }
 }
 
@@ -176,8 +139,9 @@ TEST_CASE("a glowing sphere shows its radiance, its hue kept when brighter than 
     const std::string text = camera_text("[0, 0, 3]", "[0, 0, 0]", 30) + sky("[0, 0, 0]", "[0, 0, 0]") +
                              "[materials.glow]\nkind = \"emissive\"\nradiance = [8, 4, 2]\n"
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.5\nmaterial = \"glow\"\n";
-    const Image image = render(text, {33, 33});
-    check_near(image.at(16, 16), displayed({1.0, 0.5, 0.25}), 0);
+    constexpr frame::Extent size{33, 33};
+    const Image image = render(text, size);
+    check_near(image.at(size.width / 2, size.height / 2), displayed({1.0, 0.5, 0.25}), 0);
     check_near(image.at(0, 0), {0, 0, 0}, 0);  // the black sky beside it
 }
 
@@ -185,6 +149,7 @@ TEST_CASE("a rough surface under an unhidden light: albedo times L sin^2 cos") {
     // A floor, a small light high above it, a black sky and nothing else to
     // hide the light: every shadow ray reaches it, so the fraction visible is
     // exactly 1 and the floor is the formula in lights/sphere_light.h.
+    const Vec3 albedo{0.8, 0.6, 0.4};
     const std::string text = camera_text("[0, 2, 3]", "[0, 0, 0]", 50) + sky("[0, 0, 0]", "[0, 0, 0]") +
                              "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.6, 0.4]\n"
                              "[materials.glow]\nkind = \"emissive\"\nradiance = [200, 200, 200]\n"
@@ -192,16 +157,16 @@ TEST_CASE("a rough surface under an unhidden light: albedo times L sin^2 cos") {
                              "material = \"floor\"\n"
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0.3, 2.5, -0.5]\nradius = 0.05\n"
                              "material = \"glow\"\n";
-    const frame::Extent size{64, 48};
+    constexpr frame::Extent size{64, 48};
     const Image image = render(text, size);
-    const scene::SceneDescription scene = scene::parse(text, "test scene");
-    const contracts::CameraData framed = camera::shader_form(scene.camera, size);
-    const lights::SphereLightData light = scene.sphere_lights.at(0);
-    const contracts::Transform& placed = scene.shapes.transforms.at(light.shape);
+    const scene::SceneDescription description = scene::parse(text, "test scene");
+    const contracts::CameraData framed = camera::shader_form(description.camera, size);
+    const lights::SphereLightData light = description.sphere_lights.at(0);
+    const contracts::Transform& placed = description.shapes.transforms.at(light.shape);
 
-    for (auto [x, y] : {std::pair{32u, 30u}, {10u, 40u}, {50u, 26u}}) {
-        INFO("pixel " << x << ", " << y);
-        check_near(image.at(x, y), displayed(lit_floor(framed, size, x, y, light, placed, {0.8, 0.6, 0.4})), 1);
+    for (const tests::Pixel pixel : {tests::Pixel{32, 30}, tests::Pixel{10, 40}, tests::Pixel{50, 26}}) {
+        INFO("pixel " << pixel.x << ", " << pixel.y);
+        check_near(image.at(pixel.x, pixel.y), displayed(lit_floor(framed, size, pixel, light, placed, albedo)), 1);
     }
 }
 
@@ -217,30 +182,20 @@ TEST_CASE("a point that a sphere hides wholly from the light is in shadow") {
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 1.2, 0]\nradius = 0.4\n"
                              "material = \"floor\"\n"
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 3, 0]\nradius = 0.02\nmaterial = \"glow\"\n";
-    const frame::Extent size{96, 72};
+    constexpr frame::Extent size{96, 72};
     const Image image = render(text, size);
-    const scene::SceneDescription scene = scene::parse(text, "test scene");
-    const contracts::CameraData framed = camera::shader_form(scene.camera, size);
+    const scene::SceneDescription description = scene::parse(text, "test scene");
+    const contracts::CameraData framed = camera::shader_form(description.camera, size);
 
-    // Find the pixel whose center sees the floor at the origin, under the
-    // sphere, and one that sees it 1.5 to the side, outside the shadow.
-    const auto pixel_of = [&](Vec point) {
-        const Vec d = normalized(point - vec(framed.origin));
-        const Vec f = vec(framed.forward);
-        const Vec on_plane = (1.0 / dot(d, f)) * d;
-        const double sx = dot(on_plane, vec(framed.right)) / dot(vec(framed.right), vec(framed.right));
-        const double sy = dot(on_plane, vec(framed.up)) / dot(vec(framed.up), vec(framed.up));
-        return std::pair{static_cast<std::uint32_t>((sx + 1.0) * 0.5 * size.width),
-                         static_cast<std::uint32_t>((1.0 - sy) * 0.5 * size.height)};
-    };
     // Just in front of the sphere's contact with the floor, where the camera
-    // sees the floor, not the sphere.
-    const auto [sx, sy] = pixel_of({0.0, 0.0, 0.25});
-    check_near(image.at(sx, sy), {0, 0, 0}, 0);
-    const auto [lx, ly] = pixel_of({1.5, 0.0, 0.0});
-    const lights::SphereLightData& light = scene.sphere_lights.at(0);
-    check_near(image.at(lx, ly),
-               displayed(lit_floor(framed, size, lx, ly, light, scene.shapes.transforms.at(light.shape),
+    // sees the floor, not the sphere: in shadow.
+    const tests::Pixel shadowed = tests::pixel_of(framed, {0.0, 0.0, 0.25}, size);
+    check_near(image.at(shadowed.x, shadowed.y), {0, 0, 0}, 0);
+    // 1.5 to the side, outside the shadow: lit.
+    const tests::Pixel lit = tests::pixel_of(framed, {1.5, 0.0, 0.0}, size);
+    const lights::SphereLightData& light = description.sphere_lights.at(0);
+    check_near(image.at(lit.x, lit.y),
+               displayed(lit_floor(framed, size, lit, light, description.shapes.transforms.at(light.shape),
                                    {0.8, 0.8, 0.8})),
                1);
 }
@@ -248,71 +203,41 @@ TEST_CASE("a point that a sphere hides wholly from the light is in shadow") {
 TEST_CASE("glass: the Fresnel term splits a ray, and what is refracted goes on") {
     // A glass sphere in a sky of one color L, seen through its middle: the
     // ray reflects F0 of L where it enters and passes (1 - F0)^2 of L
-    // through the two surfaces. F0 = ((1.5 - 1) / (1.5 + 1))^2 = 0.04.
-    // At 40 degrees the sphere (14.5 degrees across its radius) leaves the
-    // corners to the sky.
+    // through the two surfaces. At 40 degrees the sphere (14.5 degrees
+    // across its radius) leaves the corners to the sky.
     const std::string text = camera_text("[0, 0, 4]", "[0, 0, 0]", 40) + sky("[0.5, 0.5, 0.5]", "[0.5, 0.5, 0.5]") +
                              "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"glass\"\n";
-    const Image image = render(text, {33, 33});
-    const double f0 = 0.04;
-    const double l = 0.5 * (f0 + (1.0 - f0) * (1.0 - f0));
-    check_near(image.at(16, 16), displayed({l, l, l}), 1);
+    constexpr frame::Extent size{33, 33};
+    const Image image = render(text, size);
+    const double l = through_glass(0.5, 1.0);
+    check_near(image.at(size.width / 2, size.height / 2), displayed({l, l, l}), 1);
     check_near(image.at(0, 0), displayed({0.5, 0.5, 0.5}), 1);
 }
 
-
-// Glass of radius 1 filled with a medium keeping half its red over 1 m;
-// inside it an opaque white core of radius 0.3, and a light of radius 0.05
-// at (0, 0.45, 0.45), which nothing hides from the core's front. The sky is
-// black, so the middle of the image is the core, lit by that light, seen
-// through the glass. Red is dimmed over the camera's stretch to the core,
-// 0.7, and over the light's to the core, |(0, 0.45, 0.15)| - 0.05 = 0.424;
-// green over neither.
-std::string core_lit_inside_glass() {
-    return camera_text("[0, 0, 4]", "[0, 0, 0]", 30) + sky("[0, 0, 0]", "[0, 0, 0]") +
-           "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
-           "[materials.white]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
-           "[materials.glow]\nkind = \"emissive\"\nradiance = [40, 40, 40]\n"
-           "[media.red_out]\nkind = \"absorbing\"\ntint = [0.5, 1, 1]\ntint_distance = 1\n"
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"glass\"\n"
-           "interior = \"red_out\"\n"
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.3\nmaterial = \"white\"\n"
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.45, 0.45]\nradius = 0.05\nmaterial = \"glow\"\n";
-}
-
-// A bead of radius 1 mm, filled with a medium keeping exp(-0.7) of its red
-// over 1 mm: 700 per meter. At this scale the 0.1 mm a ray starts off a
-// surface is 7% of a crossing's light; the stretch must be measured from the
-// surface itself.
-std::string tinted_bead() {
-    return camera_text("[0, 0, 0.004]", "[0, 0, 0]", 30) + sky("[0.5, 0.5, 0.5]", "[0.5, 0.5, 0.5]") +
-           "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
-           "[media.red_out]\nkind = \"absorbing\"\ntint = [0.4965853, 1, 1]\ntint_distance = 0.001\n"
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.001\nmaterial = \"glass\"\n"
-           "interior = \"red_out\"\n";
-}
-
 TEST_CASE("an absorbing medium at a bead's scale: its stretch measured from the surface, not the ray's start") {
-    const Image image = render(tinted_bead(), {33, 33});
-    const double f0 = 0.04, tau = std::exp(-1.4);
-    const double clear = 0.5 * (f0 + (1.0 - f0) * (1.0 - f0));
-    const double red = 0.5 * (f0 + (1.0 - f0) * (1.0 - f0) * tau);
-    check_near(image.at(16, 16), displayed({red, clear, clear}), 1);
+    constexpr frame::Extent size{33, 33};
+    const Image image = render(tests::tinted_bead(), size);
+    const double clear = through_glass(0.5, 1.0);
+    const double red = through_glass(0.5, std::exp(-1.4));  // 2 mm of 700 per meter
+    check_near(image.at(size.width / 2, size.height / 2), displayed({red, clear, clear}), 1);
 }
 
 TEST_CASE("a light inside the same medium as the surface it lights: its light dimmed over the shadow ray") {
-    const Image image = render(core_lit_inside_glass(), {65, 65});
-    double red = 0.0, green = 0.0;
-    for (std::uint32_t y = 31; y <= 33; ++y) {
-        for (std::uint32_t x = 31; x <= 33; ++x) {
-            red += linear_of(image.at(x, y)[0]);
-            green += linear_of(image.at(x, y)[1]);
+    constexpr frame::Extent size{65, 65};
+    const Image image = render(tests::core_lit_inside_glass(), size);
+    double red = 0.0;
+    double green = 0.0;
+    for (std::uint32_t y = size.height / 2 - 1; y <= size.height / 2 + 1; ++y) {
+        for (std::uint32_t x = size.width / 2 - 1; x <= size.width / 2 + 1; ++x) {
+            red += tests::linear_of(image.at(x, y)[0]);
+            green += tests::linear_of(image.at(x, y)[1]);
         }
     }
     const double sigma = std::log(2.0);
     INFO("red over green " << red / green);
-    CHECK(red / green == doctest::Approx(std::exp(-sigma * 0.7) * std::exp(-sigma * 0.424)).scale(0).epsilon(0.05));
+    const double kept = std::exp(-sigma * tests::camera_to_core) * std::exp(-sigma * tests::light_to_core);
+    CHECK(red / green == doctest::Approx(kept).scale(0).epsilon(0.05));
 }
 
 TEST_CASE("a coated sphere of black base shows its coat's mirror: F0 of the sky at its middle") {
@@ -321,8 +246,9 @@ TEST_CASE("a coated sphere of black base shows its coat's mirror: F0 of the sky 
     const std::string text = camera_text("[0, 0, 4]", "[0, 0, 0]", 40) + sky("[1, 1, 1]", "[1, 1, 1]") +
                              "[materials.black]\nkind = \"coated\"\ncolor = [0, 0, 0]\nior = 1.5\n"
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"black\"\n";
-    const Image image = render(text, {33, 33});
-    check_near(image.at(16, 16), displayed({0.04, 0.04, 0.04}), 1);
+    constexpr frame::Extent size{33, 33};
+    const Image image = render(text, size);
+    check_near(image.at(size.width / 2, size.height / 2), displayed({glass_f0, glass_f0, glass_f0}), 1);
 }
 
 TEST_CASE("glass filled with an absorbing medium: the stretch inside keeps what Beer and Lambert say") {
@@ -335,11 +261,11 @@ TEST_CASE("glass filled with an absorbing medium: the stretch inside keeps what 
                              "[media.red_out]\nkind = \"absorbing\"\ntint = [0.5, 1, 1]\ntint_distance = 1\n"
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"glass\"\n"
                              "interior = \"red_out\"\n";
-    const Image image = render(text, {33, 33});
-    const double f0 = 0.04;
-    const double clear = 0.5 * (f0 + (1.0 - f0) * (1.0 - f0));
-    const double red = 0.5 * (f0 + (1.0 - f0) * (1.0 - f0) * 0.25);
-    check_near(image.at(16, 16), displayed({red, clear, clear}), 1);
+    constexpr frame::Extent size{33, 33};
+    const Image image = render(text, size);
+    const double clear = through_glass(0.5, 1.0);
+    const double red = through_glass(0.5, 0.25);
+    check_near(image.at(size.width / 2, size.height / 2), displayed({red, clear, clear}), 1);
 }
 
 TEST_CASE("metal: a near-mirror of f0 = 1 reflects a uniform sky as it is") {
@@ -349,58 +275,56 @@ TEST_CASE("metal: a near-mirror of f0 = 1 reflects a uniform sky as it is") {
                              "[materials.mirror]\nkind = \"conductor\"\nf0 = [1, 1, 1]\nroughness = 0.05\n"
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"mirror\"\n";
     const Image image = render(text, {33, 33});
-    for (auto [x, y] : {std::pair{16u, 16u}, {12u, 18u}, {20u, 13u}}) {
-        INFO("pixel " << x << ", " << y);
-        check_near(image.at(x, y), displayed({0.4, 0.4, 0.4}), 1);
+    for (const tests::Pixel pixel : {tests::Pixel{16, 16}, tests::Pixel{12, 18}, tests::Pixel{20, 13}}) {
+        INFO("pixel " << pixel.x << ", " << pixel.y);
+        check_near(image.at(pixel.x, pixel.y), displayed({0.4, 0.4, 0.4}), 1);
     }
 }
 
 TEST_CASE("a graph that reads a scene refuses to run without one, and a frame without a camera") {
     metal::Device device;
     metal::Submission submission(device);
-    const frame::Schedule preview = frame::parse_schedule("passes = [\"preview\", \"display\"]\n", "test");
-    CHECK_THROWS_AS(metal::Renderer(device, submission, preview, nullptr), metal::Error);
+    CHECK_THROWS_AS(metal::Renderer(device, submission, tests::preview_graph(), nullptr), metal::Error);
 
-    const scene::SceneDescription scene = scene::parse(
+    const scene::SceneDescription description = scene::parse(
         camera_text("[0, 0, 3]", "[0, 0, 0]", 30) + sky("[0, 0, 0]", "[0, 0, 0]") +
             "[materials.grey]\nkind = \"rough\"\ncolor = [0.5, 0.5, 0.5]\n"
             "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.5\nmaterial = \"grey\"\n",
         "test scene");
     metal::Offscreen target(device, submission, {8, 8});
-    metal::Renderer renderer(device, submission, preview, &scene);
-    CHECK_THROWS_AS(metal::render_to_offscreen(submission, target, renderer,
-                                               frame::FrameInputs{.time = frame::Seconds(0.0), .index = 0}),
+    metal::Renderer renderer(device, submission, tests::preview_graph(), &description);
+    CHECK_THROWS_AS(metal::render_to_offscreen(submission, target, renderer, tests::frame_at(0, 0, 0.0, std::nullopt)),
                     metal::Error);
 }
 
 TEST_CASE("start-up work is settled before the first frame, so it is never measured as one") {
-    const scene::SceneDescription scene = scene::load(SERENITY_SCENES_DIR "/brass_sphere.toml");
+    constexpr std::uint64_t frames = 5;
+    const scene::SceneDescription description = scene::load(tests::scenes_dir / "brass_sphere.toml");
     metal::Device device;
     metal::Submission submission(device);
     metal::Offscreen target(device, submission, {16, 16});
-    metal::Renderer renderer(device, submission,
-                             frame::parse_schedule("passes = [\"preview\", \"display\"]\n", "test"), &scene);
+    metal::Renderer renderer(device, submission, tests::preview_graph(), &description);
     const std::uint64_t first_frame = submission.next_sequence();
     CHECK(first_frame > 0);  // the acceleration structure's build came first
 
     std::vector<std::uint64_t> settled;
-    for (std::uint64_t i = 0; i < 5; ++i) {
-        const frame::FrameInputs inputs{.time = frame::Seconds(0.0), .index = i, .camera = scene.camera};
+    for (std::uint64_t i = 0; i < frames; ++i) {
+        const frame::FrameInputs inputs = tests::frame_at(i, i, 0.0, description.camera);
         renderer.prepare(inputs, target.size());
-        const metal::FrameSlot frame = submission.begin();
-        if (frame.settled) {
-            settled.push_back(frame.settled->sequence);
-            CHECK(frame.settled->gpu_end >= frame.settled->gpu_start);
+        const metal::FrameSlot slot = submission.begin();
+        if (slot.settled) {
+            settled.push_back(slot.settled->sequence);
+            CHECK(slot.settled->gpu_end >= slot.settled->gpu_start);
         }
-        renderer.record(frame, inputs, target.texture(), target.size());
+        renderer.record(slot, inputs, target.texture(), target.size());
         submission.commit();
     }
     for (const metal::Completed& done : submission.finish()) {
         settled.push_back(done.sequence);
     }
     // Every frame once, in order, and nothing else.
-    REQUIRE(settled.size() == 5);
-    for (std::uint64_t i = 0; i < 5; ++i) {
+    REQUIRE(settled.size() == frames);
+    for (std::uint64_t i = 0; i < frames; ++i) {
         CHECK(settled[i] == first_frame + i);
     }
 }

@@ -7,84 +7,85 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <doctest/doctest.h>
 
 #include "core/animation/glow.h"
 #include "core/scene/scene.h"
+#include "support/ball_on_floor.h"
+#include "support/text.h"
 
 using namespace serenity;
 using frame::Seconds;
+using tests::contains;
 
 namespace {
 
-// A sphere to circle over a floor, and one firefly flying among them.
-std::string flying(const std::string& motion) {
-    return std::string(R"(
-[camera]
-position = [0, 1.5, 4]
-look_at = [0, 0.5, 0]
-vertical_fov_degrees = 40
-[environment]
-kind = "gradient"
-zenith = [0, 0, 0]
-horizon = [0, 0, 0]
-[materials.matte]
-kind = "rough"
-color = [0.5, 0.5, 0.5]
-[materials.glow]
-kind = "emissive"
-radiance = [10, 10, 10]
-[[shapes]]
-kind = "box"
-min = [-10, -0.1, -10]
-max = [10, 0, 10]
-material = "matte"
-[[shapes]]
-kind = "sphere"
-name = "ball"
-center = [0, 0.5, 0]
-radius = 0.5
-material = "matte"
-[[shapes]]
-kind = "sphere"
-center = [1.2, 1.0, 0.8]
-radius = 0.03
-material = "glow"
-motion = )") + motion + "\n";
+// A flight's numbers as a scene file writes them.
+struct FlightText {
+    std::string min = "[-2, 0.05, -2]";
+    std::string max = "[2, 2, 2]";
+    std::string targets = "[\"ball\"]";
+    std::string circle = "3";
+    std::string swoop = "1";
+    std::string drift = "1";
+    std::string seed = "5";
+};
+
+// The firefly's body and clearance, and its volume's bounds, as written
+// below.
+constexpr double body = 0.03;
+constexpr double clearance = 0.06;
+constexpr float volume_low = 0.05f;   // the volume's floor
+constexpr float volume_reach = 2.0f;  // its other bounds, either way
+
+std::string motion(const FlightText& f) {
+    return "{ kind = \"flight\", min = " + f.min + ", max = " + f.max + ", targets = " + f.targets +
+           ", speed = 0.45, clearance = 0.06, circle = " + f.circle + ", swoop = " + f.swoop +
+           ", drift = " + f.drift + ", seed = " + f.seed + " }";
 }
 
-const std::string normal = "{ kind = \"flight\", min = [-2, 0.05, -2], max = [2, 2, 2], targets = [\"ball\"], "
-                           "speed = 0.45, clearance = 0.06, circle = 3, swoop = 1, drift = 1, seed = 5 }";
+// The ball on its floor, and one firefly flying among them.
+std::string flying(const FlightText& f = {}) {
+    return tests::ball_on_floor("[10, 10, 10]") +
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [1.2, 1.0, 0.8]\nradius = 0.03\nmaterial = \"glow\"\nmotion = " +
+           motion(f) + "\n";
+}
 
-double distance_to_still(const scene::SceneDescription& s, contracts::Float3 p) {
-    return std::min(shapes::distance(s.shapes, 0, p), shapes::distance(s.shapes, 1, p));
+const animation::Flight& the_flight(const scene::SceneDescription& s) {
+    REQUIRE(s.animation.motions.flights.size() == 1);
+    return s.animation.motions.flights[0];
 }
 
 }  // namespace
 
 TEST_CASE("a flight keeps its clearance and its volume for all time, smooth through every join") {
-    const scene::SceneDescription s = scene::parse(flying(normal), "flight");
-    REQUIRE(s.animation.motions.flights.size() == 1);
-    const animation::Flight& f = s.animation.motions.flights[0];
+    const scene::SceneDescription s = scene::parse(flying(), "flight");
+    const animation::Flight& f = the_flight(s);
     CHECK(f.loop > 60.0);
 
     // Every millisecond of the loop, and across its end into the next.
-    const double body = 0.03, clearance = 0.06;
     double nearest = std::numeric_limits<double>::infinity();
     double widest_step = 0.0;
     int outside = 0;
     contracts::Float3 last = animation::position(f, Seconds(0.0));
     const auto steps = static_cast<long>(std::ceil((f.loop + 1.0) / 0.001));
     for (long i = 1; i <= steps; ++i) {
-        const contracts::Float3 p = animation::position(f, Seconds(i * 0.001));
-        nearest = std::min(nearest, distance_to_still(s, p) - body);
-        outside += p.x - body < -2.0f || p.x + body > 2.0f || p.y - body < 0.05f || p.y + body > 2.0f ||
-                   p.z - body < -2.0f || p.z + body > 2.0f;
-        const double dx = p.x - last.x, dy = p.y - last.y, dz = p.z - last.z;
+        const contracts::Float3 p = animation::position(f, Seconds(static_cast<double>(i) * 0.001));
+        nearest = std::min(nearest, tests::distance_to_still(s, p) - body);
+        const auto beyond = [](float v, float low, float high) { return v - body < low || v + body > high; };
+        outside += beyond(p.x, -volume_reach, volume_reach) || beyond(p.y, volume_low, volume_reach) ||
+                           beyond(p.z, -volume_reach, volume_reach)
+                       ? 1
+                       : 0;
+        const double dx = p.x - last.x;
+        const double dy = p.y - last.y;
+        const double dz = p.z - last.z;
         widest_step = std::max(widest_step, std::sqrt(dx * dx + dy * dy + dz * dz));
         last = p;
     }
@@ -97,13 +98,15 @@ TEST_CASE("a flight keeps its clearance and its volume for all time, smooth thro
 }
 
 TEST_CASE("a flight circles its target, swoops and drifts, and repeats its loop exactly") {
-    const scene::SceneDescription s = scene::parse(flying(normal), "flight");
-    const animation::Flight& f = s.animation.motions.flights[0];
-    int circles = 0, swoops = 0, drifts = 0;
+    const scene::SceneDescription s = scene::parse(flying(), "flight");
+    const animation::Flight& f = the_flight(s);
+    int circles = 0;
+    int swoops = 0;
+    int drifts = 0;
     for (const animation::Segment& seg : f.segments) {
-        circles += seg.behaviour == animation::Behaviour::circle;
-        swoops += seg.behaviour == animation::Behaviour::swoop;
-        drifts += seg.behaviour == animation::Behaviour::drift;
+        circles += seg.behaviour == animation::Behaviour::circle ? 1 : 0;
+        swoops += seg.behaviour == animation::Behaviour::swoop ? 1 : 0;
+        drifts += seg.behaviour == animation::Behaviour::drift ? 1 : 0;
         if (seg.behaviour == animation::Behaviour::circle) {
             // About the ball: its center within the ball's radius above the
             // ball's center, on the ball's axis.
@@ -114,7 +117,7 @@ TEST_CASE("a flight circles its target, swoops and drifts, and repeats its loop 
     CHECK(circles > 0);
     CHECK(swoops > 0);
     CHECK(drifts > 0);
-    for (double t : {0.0, 3.3, 41.7}) {
+    for (const double t : {0.0, 3.3, 41.7}) {
         const contracts::Float3 a = animation::position(f, Seconds(t));
         const contracts::Float3 b = animation::position(f, Seconds(t + f.loop));
         // Positions in meters, within 1e-5 (1 + |x|) m: a coordinate near 0
@@ -130,116 +133,122 @@ TEST_CASE("a flight circles its target, swoops and drifts, and repeats its loop 
 }
 
 TEST_CASE("a flight is a function of its seed") {
-    const scene::SceneDescription a = scene::parse(flying(normal), "a");
-    const scene::SceneDescription b = scene::parse(flying(normal), "b");
-    std::string other = normal;
-    other.replace(other.find("seed = 5"), 8, "seed = 6");
-    const scene::SceneDescription c = scene::parse(flying(other), "c");
-    const animation::Flight& fa = a.animation.motions.flights[0];
-    CHECK(fa.loop == b.animation.motions.flights[0].loop);
-    const contracts::Float3 pa = animation::position(fa, Seconds(20.0));
-    const contracts::Float3 pb = animation::position(b.animation.motions.flights[0], Seconds(20.0));
-    const contracts::Float3 pc = animation::position(c.animation.motions.flights[0], Seconds(20.0));
+    const scene::SceneDescription a = scene::parse(flying(), "a");
+    const scene::SceneDescription b = scene::parse(flying(), "b");
+    FlightText reseeded;
+    reseeded.seed = "6";
+    const scene::SceneDescription c = scene::parse(flying(reseeded), "c");
+    CHECK(the_flight(a).loop == the_flight(b).loop);
+    const contracts::Float3 pa = animation::position(the_flight(a), Seconds(20.0));
+    const contracts::Float3 pb = animation::position(the_flight(b), Seconds(20.0));
+    const contracts::Float3 pc = animation::position(the_flight(c), Seconds(20.0));
     CHECK(pa.x == pb.x);
+    CHECK(pa.y == pb.y);
     CHECK(pa.z == pb.z);
     CHECK(pa.x != pc.x);
 }
 
 TEST_CASE("a flight's flashes: in order, within its loop, a second apart, one on each swoop's climb") {
-    const scene::SceneDescription s = scene::parse(flying(normal), "flight");
-    const animation::Flight& f = s.animation.motions.flights[0];
+    // Where on a swoop its flash is, a fraction of its duration: on its
+    // climb (flight.h). The number is flight.cpp's own, swoop_flash_at,
+    // which flight.h does not name.
+    constexpr double swoop_flash_at = 0.55;
+    const scene::SceneDescription s = scene::parse(flying(), "flight");
+    const animation::Flight& f = the_flight(s);
     const std::vector<double>& starts = f.flashes.starts;
     REQUIRE(starts.size() > 2);
     CHECK(f.flashes.loop == f.loop);
-    for (std::size_t i = 0; i < starts.size(); ++i) {
-        CHECK(starts[i] >= 0.0);
-        CHECK(starts[i] < f.loop);
-        if (i > 0) {
-            CHECK(starts[i] - starts[i - 1] >= 1.0);
-        }
-    }
+    CHECK(std::ranges::all_of(starts, [&](double t) { return t >= 0.0 && t < f.loop; }));
+    CHECK(std::ranges::adjacent_find(starts, [](double a, double b) { return b - a < 1.0; }) == starts.end());
     CHECK(starts.front() + f.loop - starts.back() >= 1.0);
     // Every swoop's climb flashes, unless a flash a second before it took
     // its place.
-    int swoops = 0, flashed = 0;
+    int swoops = 0;
+    int flashed = 0;
     for (const animation::Segment& seg : f.segments) {
         if (seg.behaviour != animation::Behaviour::swoop) {
             continue;
         }
         ++swoops;
-        const double climb = seg.start + 0.55 * seg.duration;
-        flashed += std::any_of(starts.begin(), starts.end(), [&](double t) { return std::abs(t - climb) < 1.0; });
+        const double climb = seg.start + swoop_flash_at * seg.duration;
+        flashed += std::ranges::any_of(starts, [&](double t) { return std::abs(t - climb) < 1.0; }) ? 1 : 0;
     }
     CHECK(flashed == swoops);
 }
 
 TEST_CASE("a flight that cannot be made clear is refused, naming its line") {
+    // The firefly's motion is on line 31.
     const auto error_of = [](const std::string& text) {
-        try {
-            (void)scene::parse(text, "s.toml");
-        } catch (const scene::Error& e) {
-            return std::string(e.what());
-        }
-        return std::string();
+        return tests::error_of<scene::Error>([&] { return scene::parse(text, "s.toml"); });
     };
     // A start inside the ball.
-    std::string inside = flying(normal);
-    inside.replace(inside.find("center = [1.2, 1.0, 0.8]"), 24, "center = [0.1, 0.5, 0.0]");
-    CHECK(error_of(inside).find("is not clear") != std::string::npos);
+    const std::string inside = tests::replaced(flying(), "center = [1.2, 1.0, 0.8]", "center = [0.1, 0.5, 0.0]");
+    CHECK(contains(error_of(inside), "s.toml:"));
+    CHECK(contains(error_of(inside), "is not clear"));
     // A volume too tight to circle the ball in.
-    CHECK(error_of(flying("{ kind = \"flight\", min = [-0.7, 0.05, -0.7], max = [1.4, 1.3, 1.0], targets = [\"ball\"], "
-                          "speed = 0.45, clearance = 0.06, circle = 1, swoop = 0, drift = 0, seed = 5 }"))
-              .find("could not be drawn clear") != std::string::npos);
+    CHECK(contains(error_of(flying({.min = "[-0.7, 0.05, -0.7]",
+                                    .max = "[1.4, 1.3, 1.0]",
+                                    .circle = "1",
+                                    .swoop = "0",
+                                    .drift = "0"})),
+                   "could not be drawn clear"));
     // A target that is not a still sphere, or not defined.
-    CHECK(error_of(flying("{ kind = \"flight\", min = [-2, 0.05, -2], max = [2, 2, 2], targets = [\"wall\"], "
-                          "speed = 0.45, clearance = 0.06, circle = 1, swoop = 1, drift = 1, seed = 5 }"))
-              .find("circles 'wall', which is not defined") != std::string::npos);
-    CHECK(error_of(flying("{ kind = \"flight\", min = [-2, 0.05, -2], max = [2, 2, 2], targets = [], "
-                          "speed = 0.45, clearance = 0.06, circle = 1, swoop = 1, drift = 1, seed = 5 }"))
-              .find("circles, and names no targets") != std::string::npos);
-    CHECK(error_of(flying("{ kind = \"flight\", min = [-2, 0.05, -2], max = [2, 2, 2], targets = [\"ball\"], "
-                          "speed = 0.45, clearance = 0.06, circle = 0, swoop = 0, drift = 0, seed = 5 }"))
-              .find("all 0") != std::string::npos);
-    CHECK(error_of(flying("{ kind = \"flight\", min = [2, 0.05, -2], max = [-2, 2, 2], targets = [\"ball\"], "
-                          "speed = 0.45, clearance = 0.06, circle = 1, swoop = 1, drift = 1, seed = 5 }"))
-              .find("min must be below its max") != std::string::npos);
+    CHECK(contains(error_of(flying({.targets = "[\"wall\"]", .circle = "1"})),
+                   "s.toml:31: shape 3's motion circles 'wall', which is not defined"));
+    CHECK(contains(error_of(flying({.targets = "[]", .circle = "1"})), "circles, and names no targets"));
+    CHECK(contains(error_of(flying({.circle = "0", .swoop = "0", .drift = "0"})), "all 0"));
+    CHECK(contains(error_of(flying({.min = "[2, 0.05, -2]", .max = "[-2, 2, 2]", .circle = "1"})),
+                   "min must be below its max"));
 }
 
+namespace {
+
+// Over `periods` periods of `period` seconds, the brightness at each
+// millisecond of a glow.
+std::vector<float> every_millisecond(const animation::Glows& glows, animation::GlowRecord r, double seconds) {
+    const auto steps = static_cast<std::size_t>(seconds * 1000.0);
+    std::vector<float> g;
+    g.reserve(steps);
+    for (std::size_t i = 0; i < steps; ++i) {
+        g.push_back(animation::glow(glows, r, Seconds(static_cast<double>(i) * 0.001)));
+    }
+    return g;
+}
+
+}  // namespace
+
 TEST_CASE("a rhythm's flashes: dim between, 1 at each peak, one a period") {
+    constexpr double period = 5.0;
+    constexpr double flash = 0.4;
+    constexpr float dim = 0.1f;
+    constexpr int periods = 200;
     animation::Glows glows;
-    glows.rhythms.push_back({5.0, 0.4, 0.1f, 9});
+    glows.rhythms.push_back({period, flash, dim, 9});
     const animation::GlowRecord r{animation::GlowKind::rhythm, 0};
     // Over 200 periods, the brightness at each millisecond: it reaches 1
     // once a period, and is dim most of the time.
+    const std::vector<float> g = every_millisecond(glows, r, periods * period);
     int peaks = 0;
-    int lit = 0;
-    float lowest = 1.0f;
-    float previous = animation::glow(glows, r, Seconds(0.0));
-    bool rising = false;
-    for (int i = 1; i < 1000000; ++i) {
-        const float g = animation::glow(glows, r, Seconds(i * 0.001));
-        lowest = std::min(lowest, g);
-        lit += g > 0.1f;
-        if (g < previous && rising && previous > 0.99f) {
-            ++peaks;
-        }
-        rising = g > previous;
-        previous = g;
+    for (std::size_t i = 2; i < g.size(); ++i) {
+        // A peak: risen to it, falling after it, at 1.
+        peaks += g[i - 1] > g[i - 2] && g[i] < g[i - 1] && g[i - 1] > 0.99f ? 1 : 0;
     }
-    CHECK(lowest == doctest::Approx(0.1f).scale(0).epsilon(1e-6));
-    CHECK(peaks >= 199);
-    CHECK(peaks <= 201);
+    CHECK(*std::ranges::min_element(g) == doctest::Approx(dim).scale(0).epsilon(1e-6));
+    CHECK(peaks >= periods - 1);
+    CHECK(peaks <= periods + 1);
     // Lit for a flash's length, 0.4 s, of every 5: 8% of the time.
-    CHECK(lit / 1000000.0 == doctest::Approx(0.08).scale(0).epsilon(0.01));
+    const auto lit = std::ranges::count_if(g, [](float v) { return v > dim; });
+    CHECK(static_cast<double>(lit) / static_cast<double>(g.size()) ==
+          doctest::Approx(flash / period).scale(0).epsilon(0.01));
 }
 
 TEST_CASE("a schedule's flashes: lit at each start, across the loop's end too") {
     animation::Glows glows;
-    animation::ScheduleGlow glow;
-    glow.schedule = {10.0, {1.0, 6.0, 9.8}};
-    glow.flash = 0.5;
-    glow.dim = 0.0f;
-    glows.schedules.push_back(glow);
+    animation::ScheduleGlow schedule;
+    schedule.schedule = {10.0, {1.0, 6.0, 9.8}};
+    schedule.flash = 0.5;
+    schedule.dim = 0.0f;
+    glows.schedules.push_back(schedule);
     const animation::GlowRecord r{animation::GlowKind::schedule, 0};
     CHECK(animation::glow(glows, r, Seconds(1.25)) == doctest::Approx(1.0f).scale(0).epsilon(1e-6));
     CHECK(animation::glow(glows, r, Seconds(3.0)) == 0.0f);
@@ -254,6 +263,8 @@ TEST_CASE("a flight circles a marble on a table: its orbit raised so its bob cle
     // A marble 1.6 cm across on a table top at 0.75 m, the volume's floor
     // just above it: an orbit at the marble's height would bob through the
     // table, so every circle would fail without the raise.
+    constexpr double firefly_radius = 0.003;
+    constexpr double volume_floor = 0.76;
     const std::string text = R"(
 [camera]
 position = [0, 0.8, 0.5]
@@ -288,7 +299,8 @@ kind = "sphere"
 center = [0.3, 1.0, 0.2]
 radius = 0.003
 material = "glow"
-motion = { kind = "flight", min = [-0.9, 0.76, -0.9], max = [0.9, 2.0, 0.9], targets = ["marble"], speed = 0.35, clearance = 0.01, circle = 1, swoop = 0, drift = 0, seed = 3 }
+motion = { kind = "flight", min = [-0.9, 0.76, -0.9], max = [0.9, 2.0, 0.9], targets = ["marble"],)"
+                             R"( speed = 0.35, clearance = 0.01, circle = 1, swoop = 0, drift = 0, seed = 3 }
 )";
     const scene::SceneDescription s = scene::parse(text, "marble");
     const animation::Flight& f = s.animation.motions.flights.at(0);
@@ -299,20 +311,22 @@ motion = { kind = "flight", min = [-0.9, 0.76, -0.9], max = [0.9, 2.0, 0.9], tar
             continue;
         }
         ++circles;
-        for (double tau = 0.0; tau <= seg.duration; tau += 0.005) {
-            lowest = std::min(lowest, double(animation::position(f, Seconds(seg.start + tau)).y));
+        const auto samples = static_cast<int>(seg.duration / 0.005);
+        for (int k = 0; k <= samples; ++k) {
+            const double tau = k * 0.005;
+            lowest = std::min(lowest, static_cast<double>(animation::position(f, Seconds(seg.start + tau)).y));
         }
     }
     CHECK(circles > 10);
     // Its body inside the volume: above the floor by the body and delta.
-    CHECK(lowest - 0.003 >= 0.76);
+    CHECK(lowest - firefly_radius >= volume_floor);
 }
 
 TEST_CASE("one seed's loop, pinned: the level of determinism flight.h states") {
     // On the development machine's toolchain, libm and flags (flight.h,
     // GDSA.2): a change of any of them that moves the loop fails here.
-    const scene::SceneDescription s = scene::parse(flying(normal), "flight");
-    const animation::Flight& f = s.animation.motions.flights[0];
+    const scene::SceneDescription s = scene::parse(flying(), "flight");
+    const animation::Flight& f = the_flight(s);
     CHECK(f.loop == 0x1.016e3730c1826p+9);
     CHECK(f.segments.size() == 138);
     CHECK(f.flashes.starts.size() == 63);
@@ -328,8 +342,8 @@ TEST_CASE("one seed's loop, pinned: the level of determinism flight.h states") {
 
 TEST_CASE("a flight make_flight did not make is refused, as is a segment of no behaviour") {
     CHECK_THROWS_AS(animation::position(animation::Flight{}, Seconds(1.0)), std::invalid_argument);
-    const scene::SceneDescription s = scene::parse(flying(normal), "flight");
-    animation::Flight corrupt = s.animation.motions.flights[0];
+    const scene::SceneDescription s = scene::parse(flying(), "flight");
+    animation::Flight corrupt = the_flight(s);
     corrupt.segments[0].behaviour = static_cast<animation::Behaviour>(9);
     CHECK_THROWS_AS(animation::position(corrupt, Seconds(0.0)), std::logic_error);
 }

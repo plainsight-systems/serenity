@@ -1,39 +1,49 @@
-// Settles, on this machine, what Apple's documentation leaves unsaid
-// (metal/frame/renderer.h): when one Metal 4 argument table is rebound between
-// two dispatches in one encoder, each dispatch sees the binding it was
-// encoded with. If the GPU read the table when the work ran, both dispatches
-// would write the second buffer and the first would stay untouched.
+// Shows on this machine what Metal 4's header states and the renderer relies
+// on (metal/frame/renderer.h): the encoder "takes a snapshot of the
+// resources in the argument table when you make dispatch or execute calls"
+// (MTL4ComputeCommandEncoder.h, setArgumentTable), so when one argument
+// table is rebound between two dispatches in one encoder, each dispatch sees
+// the binding it was encoded with. If the GPU read the table when the work
+// ran, both dispatches would write the second buffer and the first would
+// stay untouched.
+//
+// Its own dispatch, not the probe runner's (support/probe_runner.h): the
+// rebinding between two dispatches of one encoder is what it tests.
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 #include <doctest/doctest.h>
 
+#include "gpu/support/probe_runner.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/device/submission.h"
-#include "serenity/metallib/smoke.h"
+#include "serenity/metallib/probes.h"
 
 using namespace serenity;
 
 TEST_CASE("rebinding an argument table between dispatches gives each dispatch its own binding") {
     metal::Device device;
     metal::Submission submission(device);
-    metal::Library library(device, metallib::smoke);
-    auto pipeline = library.compute_pipeline("smoke");
+    metal::Library library(device, metallib::probes);
+    const auto pipeline = library.compute_pipeline("smoke");
 
     constexpr std::uint32_t count = 256;
-    auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+    constexpr std::size_t bytes = count * sizeof(std::uint32_t);
+    const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
     MTL::Device* mtl = device.handle();
-    auto first = NS::TransferPtr(mtl->newBuffer(count * 4, MTL::ResourceStorageModeShared));
-    auto second = NS::TransferPtr(mtl->newBuffer(count * 4, MTL::ResourceStorageModeShared));
-    auto counts = NS::TransferPtr(mtl->newBuffer(4, MTL::ResourceStorageModeShared));
+    auto first = NS::TransferPtr(mtl->newBuffer(bytes, MTL::ResourceStorageModeShared));
     REQUIRE(first);
+    auto second = NS::TransferPtr(mtl->newBuffer(bytes, MTL::ResourceStorageModeShared));
     REQUIRE(second);
+    auto counts = NS::TransferPtr(mtl->newBuffer(sizeof count, MTL::ResourceStorageModeShared));
     REQUIRE(counts);
-    std::memset(first->contents(), 0, count * 4);
-    std::memset(second->contents(), 0, count * 4);
-    std::memcpy(counts->contents(), &count, 4);
+    std::memset(first->contents(), 0, bytes);
+    std::memset(second->contents(), 0, bytes);
+    std::memcpy(counts->contents(), &count, sizeof count);
     for (MTL::Buffer* buffer : {first.get(), second.get(), counts.get()}) {
         submission.make_resident(buffer);
     }
@@ -42,10 +52,13 @@ TEST_CASE("rebinding an argument table between dispatches gives each dispatch it
     descriptor->setMaxBufferBindCount(2);
     NS::Error* error = nullptr;
     auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
+    INFO("argument table: " << tests::reason(error));
     REQUIRE(table);
 
-    const auto frame = submission.begin();
-    MTL4::ComputeCommandEncoder* encoder = frame.commands->computeCommandEncoder();
+    // smoke's bindings (kernels/smoke.metal): out at 0, count at 1.
+    const metal::FrameSlot slot = submission.begin();
+    MTL4::ComputeCommandEncoder* encoder = slot.commands->computeCommandEncoder();
+    REQUIRE(encoder != nullptr);
     encoder->setArgumentTable(table.get());
     encoder->setComputePipelineState(pipeline.get());
     table->setAddress(counts->gpuAddress(), 1);
@@ -55,16 +68,17 @@ TEST_CASE("rebinding an argument table between dispatches gives each dispatch it
     encoder->dispatchThreads(MTL::Size(count, 1, 1), MTL::Size(pipeline->threadExecutionWidth(), 1, 1));
     encoder->endEncoding();
     submission.commit();
-    submission.wait_until_complete(frame.sequence);
+    (void)submission.wait_until_complete(slot.sequence);
 
-    const auto* a = static_cast<const std::uint32_t*>(first->contents());
-    const auto* b = static_cast<const std::uint32_t*>(second->contents());
-    std::uint32_t wrong_first = 0;
-    std::uint32_t wrong_second = 0;
-    for (std::uint32_t i = 0; i < count; ++i) {
-        wrong_first += a[i] != 3 * i + 1;
-        wrong_second += b[i] != 3 * i + 1;
-    }
-    CHECK(wrong_first == 0);
-    CHECK(wrong_second == 0);
+    const auto written = [&](MTL::Buffer* buffer) {
+        std::vector<std::uint32_t> values(count);
+        std::memcpy(values.data(), buffer->contents(), bytes);
+        std::uint32_t wrong = 0;
+        for (std::uint32_t i = 0; i < count; ++i) {
+            wrong += values[i] != 3 * i + 1 ? 1u : 0u;
+        }
+        return wrong;
+    };
+    CHECK(written(first.get()) == 0);
+    CHECK(written(second.get()) == 0);
 }

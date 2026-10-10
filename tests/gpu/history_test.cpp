@@ -10,6 +10,7 @@
 
 #include "core/frame/graph_file.h"
 #include "core/scene/scene.h"
+#include "gpu/support/rendering.h"
 #include "metal/device/device.h"
 #include "metal/device/error.h"
 #include "metal/device/offscreen.h"
@@ -50,44 +51,55 @@ material = "glow"
 )") + (moves ? "motion = { kind = \"wander\", reach = 0.25, speed = 0.3, seed = 3 }\n" : "");
 }
 
-frame::FrameInputs at(const scene::SceneDescription& s, std::uint64_t index, std::uint64_t since, double time) {
-    return frame::FrameInputs{.time = frame::Seconds(time), .index = index, .accumulated_since = since,
-                              .camera = s.camera};
-}
+constexpr frame::Extent size{32, 24};
+
+// The path tracer over a scene, one frame at a time.
+class Rig {
+public:
+    explicit Rig(bool moves) : description_(scene::parse(scene_text(moves), "test scene")) {}
+
+    // Frame `index`, accumulated since `since`, at `time`; its sequence.
+    std::uint64_t render(std::uint64_t index, std::uint64_t since, double time) {
+        return metal::render_to_offscreen(submission_, target_, renderer_,
+                                          tests::frame_at(index, since, time, description_.camera));
+    }
+
+    // Waits for submission `sequence`; the samples left out so far.
+    std::uint64_t settle(std::uint64_t sequence) {
+        (void)submission_.wait_until_complete(sequence);
+        return renderer_.non_finite_samples();
+    }
+
+    bool changes() const { return scene::changes(description_); }
+
+private:
+    scene::SceneDescription description_;
+    metal::Device device_;
+    metal::Submission submission_{device_};
+    metal::Renderer renderer_{device_, submission_, tests::path_graph(), &description_};
+    metal::Offscreen target_{device_, submission_, size};
+};
 
 }  // namespace
 
 TEST_CASE("a moving scene's image holds one instant; a still scene's, any") {
-    const frame::Schedule path = frame::parse_schedule("passes = [\"path\", \"display\"]\n", "test");
-    const frame::Extent size{32, 24};
     {
-        const scene::SceneDescription moving = scene::parse(scene_text(true), "moving");
-        REQUIRE(scene::changes(moving));
-        metal::Device device;
-        metal::Submission submission(device);
-        metal::Renderer renderer(device, submission, path, &moving);
-        metal::Offscreen target(device, submission, size);
-        (void)metal::render_to_offscreen(submission, target, renderer, at(moving, 0, 0, 1.5));
+        Rig moving(true);
+        REQUIRE(moving.changes());
+        (void)moving.render(0, 0, 1.5);
         // Another sample of the same instant joins it.
-        (void)metal::render_to_offscreen(submission, target, renderer, at(moving, 1, 0, 1.5));
+        (void)moving.render(1, 0, 1.5);
         // A frame of another instant is refused, not averaged in.
-        CHECK_THROWS_WITH_AS(metal::render_to_offscreen(submission, target, renderer, at(moving, 2, 0, 1.6)),
-                             doctest::Contains("an image holds one instant"), metal::Error);
+        CHECK_THROWS_WITH_AS(moving.render(2, 0, 1.6), doctest::Contains("an image holds one instant"),
+                             metal::Error);
         // Starting over at the new instant is fine.
-        const std::uint64_t sequence = metal::render_to_offscreen(submission, target, renderer, at(moving, 2, 2, 1.6));
-        (void)submission.wait_until_complete(sequence);
-        CHECK(renderer.non_finite_samples() == 0);
+        CHECK(moving.settle(moving.render(2, 2, 1.6)) == 0);
     }
     {
-        const scene::SceneDescription still = scene::parse(scene_text(false), "still");
-        REQUIRE_FALSE(scene::changes(still));
-        metal::Device device;
-        metal::Submission submission(device);
-        metal::Renderer renderer(device, submission, path, &still);
-        metal::Offscreen target(device, submission, size);
-        (void)metal::render_to_offscreen(submission, target, renderer, at(still, 0, 0, 1.5));
-        const std::uint64_t sequence = metal::render_to_offscreen(submission, target, renderer, at(still, 1, 0, 9.0));
-        (void)submission.wait_until_complete(sequence);
-        CHECK(renderer.non_finite_samples() == 0);
+        Rig still(false);
+        REQUIRE_FALSE(still.changes());
+        (void)still.render(0, 0, 1.5);
+        // Another time joins it: a still scene looks the same at any.
+        CHECK(still.settle(still.render(1, 0, 9.0)) == 0);
     }
 }

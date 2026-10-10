@@ -1,0 +1,14 @@
+#pragma once
+
+// Where the repository's scenes and frame graphs are, for the tests that
+// load them: written by tests/CMakeLists.txt (configure_file) from the
+// source tree's location, as named constants rather than macros (ES.31).
+
+#include <filesystem>
+
+namespace serenity::tests {
+
+inline const std::filesystem::path scenes_dir{"@PROJECT_SOURCE_DIR@/scenes"};
+inline const std::filesystem::path graphs_dir{"@PROJECT_SOURCE_DIR@/graphs"};
+
+}  // namespace serenity::tests

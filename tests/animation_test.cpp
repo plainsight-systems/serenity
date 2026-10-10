@@ -1,9 +1,13 @@
 // The wander, and Animate: a closed form in time, drawn from a seed, placing
 // only what moves.
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <limits>
+#include <numbers>
 #include <stdexcept>
 #include <vector>
 
@@ -12,14 +16,22 @@
 #include "core/animation/animate.h"
 #include "core/animation/refusal.h"
 #include "core/animation/wander.h"
+#include "support/text.h"
 
 using namespace serenity;
 using animation::Wander;
+using animation::WanderParams;
 using frame::Seconds;
 
 namespace {
 
 constexpr contracts::Float3 anchor{1.0f, 2.0f, -3.0f};
+constexpr float reach = 0.25f;
+constexpr float speed = 0.3f;
+constexpr std::uint64_t seed = 7;
+
+// The wander the tests share: about `anchor`, its reach and speed, seed 7.
+constexpr WanderParams wandering{.anchor = anchor, .reach = reach, .speed = speed, .seed = seed};
 
 // A scene with no still shapes, as contract 11 asks of one: nothing to keep
 // clear of. A stand-in for the scene's own answer (core/scene/scene.cpp),
@@ -31,73 +43,78 @@ public:
 };
 const Nothing nothing;
 
-double axis(contracts::Float3 v, int a) {
-    return a == 0 ? v.x : (a == 1 ? v.y : v.z);
-}
+// Everywhere is a still shape.
+class Everything final : public contracts::Obstacles {
+public:
+    double distance(contracts::Float3) const override { return -1.0; }
+    bool touches(const contracts::Box&) const override { return true; }
+};
 
 }  // namespace
 
 TEST_CASE("step 2: each axis's amplitudes sum to the reach") {
-    const Wander w = animation::make_wander({anchor, 0.25f, 0.3f, 7}, 0.0f, nothing);
-    for (int a = 0; a < 3; ++a) {
+    const Wander w = animation::make_wander(wandering, 0.0f, nothing);
+    for (const auto& axis : w.amplitude) {
         double sum = 0.0;
-        for (int k = 0; k < 3; ++k) {
-            CHECK(w.amplitude[a][k] > 0.0);
-            sum += w.amplitude[a][k];
+        for (const double a : axis) {
+            CHECK(a > 0.0);
+            sum += a;
         }
-        CHECK(sum == doctest::Approx(0.25).scale(0).epsilon(1e-12));
+        CHECK(sum == doctest::Approx(reach).scale(0).epsilon(1e-12));
     }
 }
 
 TEST_CASE("the path never leaves its extent, anchor +/- reach") {
-    const Wander w = animation::make_wander({anchor, 0.25f, 0.3f, 7}, 0.0f, nothing);
+    const Wander w = animation::make_wander(wandering, 0.0f, nothing);
     const animation::Extent e = animation::extent(w);
-    CHECK(e.min.x <= 0.75f);
-    CHECK(e.max.y >= 2.25f);
+    CHECK(e.min.x <= anchor.x - reach);
+    CHECK(e.max.y >= anchor.y + reach);
     double reached = 0.0;  // the farthest it strays, along any axis
     int outside = 0;
     for (int i = 0; i < 200000; ++i) {
         const contracts::Float3 p = animation::position(w, Seconds(i * 0.01));
         for (int a = 0; a < 3; ++a) {
-            outside += axis(p, a) < axis(e.min, a) || axis(p, a) > axis(e.max, a);
-            reached = std::max(reached, std::abs(axis(p, a) - axis(anchor, a)));
+            const float v = contracts::component(p, a);
+            outside += v < contracts::component(e.min, a) || v > contracts::component(e.max, a) ? 1 : 0;
+            reached = std::max(reached, static_cast<double>(std::abs(v - contracts::component(anchor, a))));
         }
     }
     CHECK(outside == 0);
     // It uses its room: over 2000 s it strays most of the way to the reach.
-    CHECK(reached > 0.6 * 0.25);
+    CHECK(reached > 0.6 * reach);
 }
 
 TEST_CASE("step 3: its root-mean-square speed is the speed") {
-    const float speed = 0.3f;
-    const Wander w = animation::make_wander({anchor, 0.25f, speed, 7}, 0.0f, nothing);
+    const Wander w = animation::make_wander(wandering, 0.0f, nothing);
     // The mean of |velocity|^2 over a long time, the velocity by central
     // differences of the exact path.
-    const double h = 1e-3;
+    constexpr double h = 1e-3;
+    constexpr int samples = 400000;
+    const auto along = [&](std::size_t a, double t) {
+        double x = contracts::component(anchor, static_cast<int>(a));
+        for (std::size_t k = 0; k < 3; ++k) {
+            x += w.amplitude[a][k] * std::sin(2.0 * std::numbers::pi * w.frequency[a][k] * t + w.phase[a][k]);
+        }
+        return x;
+    };
     double total = 0.0;
-    const int samples = 400000;
     for (int i = 0; i < samples; ++i) {
         const double t = i * 0.05;
-        double v2 = 0.0;
-        for (int a = 0; a < 3; ++a) {
-            double ahead = axis(anchor, a), behind = axis(anchor, a);
-            for (int k = 0; k < 3; ++k) {
-                ahead += w.amplitude[a][k] * std::sin(2.0 * M_PI * w.frequency[a][k] * (t + h) + w.phase[a][k]);
-                behind += w.amplitude[a][k] * std::sin(2.0 * M_PI * w.frequency[a][k] * (t - h) + w.phase[a][k]);
-            }
-            const double v = (ahead - behind) / (2.0 * h);
-            v2 += v * v;
+        for (std::size_t a = 0; a < 3; ++a) {
+            const double v = (along(a, t + h) - along(a, t - h)) / (2.0 * h);
+            total += v * v;
         }
-        total += v2;
     }
     CHECK(std::sqrt(total / samples) == doctest::Approx(speed).scale(0).epsilon(0.02));
 }
 
 TEST_CASE("a function of the seed alone: the same seed the same path, another seed another") {
-    const Wander a = animation::make_wander({anchor, 0.25f, 0.3f, 7}, 0.0f, nothing);
-    const Wander b = animation::make_wander({anchor, 0.25f, 0.3f, 7}, 0.0f, nothing);
-    const Wander c = animation::make_wander({anchor, 0.25f, 0.3f, 8}, 0.0f, nothing);
-    for (double t : {0.0, 1.5, 3600.0}) {
+    const Wander a = animation::make_wander(wandering, 0.0f, nothing);
+    const Wander b = animation::make_wander(wandering, 0.0f, nothing);
+    WanderParams reseeded = wandering;
+    reseeded.seed = seed + 1;
+    const Wander c = animation::make_wander(reseeded, 0.0f, nothing);
+    for (const double t : {0.0, 1.5, 3600.0}) {
         const contracts::Float3 pa = animation::position(a, Seconds(t));
         const contracts::Float3 pb = animation::position(b, Seconds(t));
         const contracts::Float3 pc = animation::position(c, Seconds(t));
@@ -114,14 +131,18 @@ TEST_CASE("a function of the seed alone: the same seed the same path, another se
 }
 
 TEST_CASE("numbers it cannot make a path of are refused") {
-    CHECK_THROWS_AS(animation::make_wander({anchor, 0.0f, 0.3f, 7}, 0.0f, nothing), std::invalid_argument);
-    CHECK_THROWS_AS(animation::make_wander({anchor, 0.25f, std::numeric_limits<float>::infinity(), 7}, 0.0f, nothing),
+    WanderParams no_reach = wandering;
+    no_reach.reach = 0.0f;
+    CHECK_THROWS_AS(animation::make_wander(no_reach, 0.0f, nothing), std::invalid_argument);
+    WanderParams endless = wandering;
+    endless.speed = std::numeric_limits<float>::infinity();
+    CHECK_THROWS_AS(animation::make_wander(endless, 0.0f, nothing), std::invalid_argument);
+    CHECK_THROWS_AS(animation::make_wander({{3e38f, 0.0f, 0.0f}, 1e38f, speed, seed}, 0.0f, nothing),
                     std::invalid_argument);
-    CHECK_THROWS_AS(animation::make_wander({{3e38f, 0.0f, 0.0f}, 1e38f, 0.3f, 7}, 0.0f, nothing), std::invalid_argument);
 }
 
 TEST_CASE("the extent is rounded outward, so it holds every point the path reaches") {
-    const Wander w = animation::make_wander({{0.1f, 0.1f, 0.1f}, 0.2f, 0.3f, 7}, 0.0f, nothing);
+    const Wander w = animation::make_wander({{0.1f, 0.1f, 0.1f}, 0.2f, speed, seed}, 0.0f, nothing);
     const animation::Extent e = animation::extent(w);
     CHECK(static_cast<double>(e.max.x) >= static_cast<double>(0.1f) + static_cast<double>(0.2f));
     CHECK(static_cast<double>(e.min.x) <= static_cast<double>(0.1f) - static_cast<double>(0.2f));
@@ -129,7 +150,7 @@ TEST_CASE("the extent is rounded outward, so it holds every point the path reach
 
 TEST_CASE("Animate places only the movers: the translation replaced, the scale kept") {
     animation::Animation anim;
-    anim.motions.wanders.push_back(animation::make_wander({anchor, 0.25f, 0.3f, 7}, 0.0f, nothing));
+    anim.motions.wanders.push_back(animation::make_wander(wandering, 0.0f, nothing));
     anim.movers.push_back({1, {animation::MotionKind::wander, 0}});
     CHECK(animation::moves(anim));
 
@@ -157,35 +178,25 @@ TEST_CASE("nothing to move, nothing moves") {
     CHECK_FALSE(animation::moves(animation::Animation{}));
 }
 
-namespace {
-
-// Everywhere is a still shape.
-class Everything final : public contracts::Obstacles {
-public:
-    double distance(contracts::Float3) const override { return -1.0; }
-    bool touches(const contracts::Box&) const override { return true; }
-};
-
-}  // namespace
-
 TEST_CASE("a wander's refusals: its numbers say which is wrong, a still shape in reach is a Refusal") {
-    const Nothing nothing;
-    const contracts::Float3 anchor{1.0f, 1.5f, -0.5f};
+    const WanderParams near_floor{.anchor = {1.0f, 1.5f, -0.5f}, .reach = reach, .speed = speed, .seed = seed};
+    // A negative body: an invalid_argument naming it, not a Refusal (which
+    // is one too, so it is caught first).
     try {
-        (void)animation::make_wander({anchor, 0.25f, 0.3f, 7}, -1.0f, nothing);
+        (void)animation::make_wander(near_floor, -1.0f, nothing);
         FAIL("expected an error");
     } catch (const animation::Refusal&) {
         FAIL("numbers out of range are not a refusal");
     } catch (const std::invalid_argument& error) {
-        CHECK(std::string(error.what()).find("body") != std::string::npos);
+        CHECK(tests::contains(error.what(), "body"));
     }
     const Everything everything;
-    CHECK_THROWS_AS(animation::make_wander({anchor, 0.25f, 0.3f, 7}, 0.0f, everything), animation::Refusal);
+    CHECK_THROWS_AS(animation::make_wander(near_floor, 0.0f, everything), animation::Refusal);
 }
 
 TEST_CASE("a motion or glow record whose kind no enumerator names is refused, never placed") {
     animation::Animation anim;
-    anim.motions.wanders.push_back(animation::make_wander({{0.0f, 1.0f, 0.0f}, 0.25f, 0.3f, 7}, 0.0f, Nothing{}));
+    anim.motions.wanders.push_back(animation::make_wander({{0.0f, 1.0f, 0.0f}, reach, speed, seed}, 0.0f, nothing));
     const animation::MotionRecord stray{static_cast<animation::MotionKind>(5), 0};
     CHECK_THROWS_AS(animation::position(anim.motions, stray, Seconds(1.0)), std::logic_error);
     CHECK_THROWS_AS(animation::extent(anim.motions, stray), std::logic_error);

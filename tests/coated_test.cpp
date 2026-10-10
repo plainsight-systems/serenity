@@ -11,6 +11,7 @@
 #include <doctest/doctest.h>
 
 #include "core/materials/coated.h"
+#include "support/references.h"
 
 namespace {
 
@@ -18,16 +19,12 @@ namespace {
 // `ior`, by the midpoint rule.
 double external_reflectance(double ior) {
     constexpr int steps = 1 << 16;
-    const double h = (std::numbers::pi / 2.0) / steps;
+    constexpr double h = (std::numbers::pi / 2.0) / steps;
     double sum = 0.0;
     for (int i = 0; i < steps; ++i) {
         const double theta = (i + 0.5) * h;
         const double c = std::cos(theta);
-        const double eta = 1.0 / ior;
-        const double cos_t = std::sqrt(1.0 - eta * eta * (1.0 - c * c));
-        const double r_s = (eta * c - cos_t) / (eta * c + cos_t);
-        const double r_p = (c - eta * cos_t) / (c + eta * cos_t);
-        sum += 0.5 * (r_s * r_s + r_p * r_p) * 2.0 * c * std::sin(theta) * h;
+        sum += serenity::tests::fresnel_from_air(c, ior) * 2.0 * c * std::sin(theta) * h;
     }
     return sum;
 }
@@ -57,11 +54,12 @@ TEST_CASE("the escape stays above 0 as a float where the reflectance rounds to 1
     CHECK(static_cast<float>(internal_reflectance(1000.0)) == 1.0f);
     CHECK(static_cast<float>(internal_escape(1000.0)) > 0.0f);
     // And reciprocity holds there too: 1 - F_out = ior^2 (1 - F_in).
-    CHECK(1.0 - external_reflectance(1000.0) == doctest::Approx(1000.0 * 1000.0 * internal_escape(1000.0)).scale(0).epsilon(1e-4));
+    CHECK(1.0 - external_reflectance(1000.0) ==
+          doctest::Approx(1000.0 * 1000.0 * internal_escape(1000.0)).scale(0).epsilon(1e-4));
 }
 
 TEST_CASE("a coat with no critical angle is refused, not integrated to a NaN") {
-    for (double ior : {1.0, 0.5, -2.0, std::nan(""), std::numeric_limits<double>::infinity()}) {
+    for (const double ior : {1.0, 0.5, -2.0, std::nan(""), std::numeric_limits<double>::infinity()}) {
         CHECK_THROWS_AS(serenity::materials::internal_escape(ior), std::invalid_argument);
     }
 }

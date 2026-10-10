@@ -2,30 +2,26 @@
 // error naming the file and the line, never a default.
 
 #include <string>
+#include <string_view>
 
 #include <doctest/doctest.h>
 
 #include "core/frame/graph_file.h"
+#include "support/text.h"
+#include "test_paths.h"
 
 using serenity::frame::GraphFileError;
 using serenity::frame::load_schedule;
 using serenity::frame::parse_schedule;
 using serenity::frame::PassKind;
+using serenity::tests::contains;
+using serenity::tests::graphs_dir;
 
 namespace {
 
 // The error parse_schedule() throws for `text`, or "" if it throws none.
-std::string error_for(const char* text) {
-    try {
-        (void)parse_schedule(text, "graph.toml");
-    } catch (const GraphFileError& error) {
-        return error.what();
-    }
-    return "";
-}
-
-bool contains(const std::string& text, const char* part) {
-    return text.find(part) != std::string::npos;
+std::string error_for(const std::string& text) {
+    return serenity::tests::error_of<GraphFileError>([&] { return parse_schedule(text, "graph.toml"); });
 }
 
 }  // namespace
@@ -67,18 +63,13 @@ TEST_CASE("malformed TOML is an error with its line") {
 }
 
 TEST_CASE("the test pattern graph in graphs/ reads") {
-    const auto schedule = load_schedule(SERENITY_GRAPHS_DIR "/test_pattern.toml");
+    const auto schedule = load_schedule(graphs_dir / "test_pattern.toml");
     REQUIRE(schedule.passes.size() == 1);
     CHECK(schedule.passes[0] == PassKind::test_pattern);
 }
 
 TEST_CASE("a missing file is an error that names it") {
-    try {
-        (void)load_schedule("no/such/graph.toml");
-        FAIL("expected an error");
-    } catch (const GraphFileError& error) {
-        CHECK(contains(error.what(), "no/such/graph.toml"));
-    }
+    CHECK_THROWS_WITH_AS(load_schedule("no/such/graph.toml"), doctest::Contains("no/such/graph.toml"), GraphFileError);
 }
 
 TEST_CASE("a graph with two passes that accumulate is refused, at the core, naming them") {
@@ -105,8 +96,8 @@ TEST_CASE("the tone map's settings are read with its pass") {
 }
 
 TEST_CASE("every mistake in the tone map's settings is an error at its line") {
-    const char* passes = "passes = [\"path\", \"tone_map\"]\n";
-    const auto with = [&](const char* rest) { return error_for((std::string(passes) + rest).c_str()); };
+    constexpr std::string_view passes = "passes = [\"path\", \"tone_map\"]\n";
+    const auto with = [&](std::string_view rest) { return error_for(std::string(passes) + std::string(rest)); };
     CHECK(contains(with(""), "graph.toml:1: the frame graph has a tone_map pass and no tone-map settings"));
     CHECK(contains(with("[tone_map]\nexposure = 0.0\n"), "graph.toml:2: [tone_map] has no 'bloom'"));
     CHECK(contains(with("[tone_map]\nexposure = \"0\"\nbloom = 0.0\n"), "graph.toml:3: 'exposure' must be a number"));
@@ -124,19 +115,20 @@ TEST_CASE("every mistake in the tone map's settings is an error at its line") {
 }
 
 TEST_CASE("the path tracer's graph in graphs/ reads") {
-    const auto schedule = serenity::frame::load_schedule(SERENITY_GRAPHS_DIR "/path.toml");
+    const auto schedule = load_schedule(graphs_dir / "path.toml");
     REQUIRE(schedule.passes.size() == 2);
-    CHECK(schedule.passes[0] == serenity::frame::PassKind::path);
-    CHECK(schedule.passes[1] == serenity::frame::PassKind::tone_map);
+    CHECK(schedule.passes[0] == PassKind::path);
+    CHECK(schedule.passes[1] == PassKind::tone_map);
     REQUIRE(schedule.tone_map.has_value());
     CHECK(schedule.tone_map->exposure == 0.0f);
     CHECK(schedule.tone_map->bloom == 0.04f);
 }
 
 TEST_CASE("the preview's graph in graphs/ reads") {
-    const auto schedule = serenity::frame::load_schedule(SERENITY_GRAPHS_DIR "/preview.toml");
+    const auto schedule = load_schedule(graphs_dir / "preview.toml");
     REQUIRE(schedule.passes.size() == 2);
-    CHECK(schedule.passes[1] == serenity::frame::PassKind::display);
+    CHECK(schedule.passes[0] == PassKind::preview);
+    CHECK(schedule.passes[1] == PassKind::display);
 }
 
 TEST_CASE("a graph file that cannot be read whole is refused, never read as an empty graph") {

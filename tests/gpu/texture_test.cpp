@@ -3,13 +3,15 @@
 // every lattice point, within its bound, continuous, centered on 0, and a
 // function of the point and the seed; the wood (core/textures/wood.h) within
 // its bounds and finite across the world, the same at every height, dark at
-// the seams, and different from board to board and seed to seed.
+// the seams, and different from board to board and seed to seed; the swirl
+// (core/textures/swirl.h) between its colors, the same at any distance from
+// its axis, and turning with its twist.
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <numbers>
 #include <vector>
 
@@ -19,269 +21,261 @@
 #include "core/textures/noise.h"
 #include "core/textures/swirl.h"
 #include "core/textures/wood.h"
-#include "metal/device/device.h"
-#include "metal/device/library.h"
-#include "metal/device/submission.h"
-#include "serenity/metallib/smoke.h"
+#include "gpu/kernels/probes.h"
+#include "gpu/support/probe_runner.h"
 
 using namespace serenity;
+using tests::Binding;
+using tests::TexturePoint;
 
 namespace {
-
-using Probe = std::array<float, 4>;
-
-// Runs `kernel` over `points`, with `extra` bound at buffer 3 if given, and
-// returns `stride` floats per point.
-std::vector<float> run(const char* kernel, const std::vector<Probe>& points, std::size_t stride,
-                       const void* extra = nullptr, std::size_t extra_bytes = 0) {
-    metal::Device device;
-    metal::Submission submission(device);
-    metal::Library library(device, metallib::smoke);
-    auto pipeline = library.compute_pipeline(kernel);
-    auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
-    MTL::Device* mtl = device.handle();
-    const auto count = static_cast<std::uint32_t>(points.size());
-    const auto buffer = [&](const void* data, std::size_t bytes) {
-        auto b = NS::TransferPtr(mtl->newBuffer(std::max<std::size_t>(bytes, 16), MTL::ResourceStorageModeShared));
-        REQUIRE(b);
-        if (data != nullptr) {
-            std::memcpy(b->contents(), data, bytes);
-        }
-        submission.make_resident(b.get());
-        return b;
-    };
-    auto out = buffer(nullptr, points.size() * stride * sizeof(float));
-    auto in = buffer(points.data(), points.size() * sizeof(Probe));
-    auto n = buffer(&count, 4);
-    auto more = buffer(extra, extra_bytes);
-    auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-    descriptor->setMaxBufferBindCount(4);
-    NS::Error* error = nullptr;
-    auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
-    REQUIRE(table);
-    MTL::Buffer* bound[] = {out.get(), in.get(), n.get(), more.get()};
-    for (std::size_t i = 0; i < 4; ++i) {
-        table->setAddress(bound[i]->gpuAddress(), i);
-    }
-    const auto frame = submission.begin();
-    MTL4::ComputeCommandEncoder* encoder = frame.commands->computeCommandEncoder();
-    encoder->setArgumentTable(table.get());
-    encoder->setComputePipelineState(pipeline.get());
-    encoder->dispatchThreads(MTL::Size(count, 1, 1), MTL::Size(pipeline->threadExecutionWidth(), 1, 1));
-    encoder->endEncoding();
-    submission.commit();
-    (void)submission.wait_until_complete(frame.sequence);
-    std::vector<float> result(points.size() * stride);
-    std::memcpy(result.data(), out->contents(), result.size() * sizeof(float));
-    return result;
-}
-
-float seed_bits(std::uint32_t seed) {
-    float f;
-    std::memcpy(&f, &seed, 4);
-    return f;
-}
 
 double uniform(std::uint64_t i, std::uint64_t which) {
     return animation::draw(0x5EEDu, i, which);
 }
 
-std::vector<float> noise(const std::vector<Probe>& points) {
-    return run("noise_probe", points, 1);
+TexturePoint at(double x, double y, double z, std::uint32_t seed = 0) {
+    return {{static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)}, seed};
 }
 
-constexpr textures::WoodData walnut{{0.13f, 0.065f, 0.03f}, 0.004f, {0.045f, 0.02f, 0.008f}, 0.16f, 3u, {0, 0, 0}};
+std::vector<float> noise(tests::ProbeRunner& gpu, const std::vector<TexturePoint>& points) {
+    const auto count = static_cast<std::uint32_t>(points.size());
+    return gpu.run<float>("noise_probe", points.size(), {Binding::of(points), Binding::of(count)});
+}
 
-std::vector<std::array<float, 3>> wood(const std::vector<Probe>& points, const textures::WoodData& data = walnut) {
-    const std::vector<float> raw = run("wood_probe", points, 4, &data, sizeof(data));
-    std::vector<std::array<float, 3>> colors(points.size());
-    for (std::size_t i = 0; i < points.size(); ++i) {
-        colors[i] = {raw[4 * i], raw[4 * i + 1], raw[4 * i + 2]};
+// The colors a texture of `data` gives at `points`, by `kernel`.
+template <typename Data>
+std::vector<contracts::Float3> colors(tests::ProbeRunner& gpu, const char* kernel,
+                                      const std::vector<TexturePoint>& points, const Data& data) {
+    const auto count = static_cast<std::uint32_t>(points.size());
+    return gpu.run<contracts::Float3>(kernel, points.size(),
+                                      {Binding::of(points), Binding::of(count), Binding::of(data)});
+}
+
+bool same(contracts::Float3 a, contracts::Float3 b) {
+    return a.x == b.x && a.y == b.y && a.z == b.z;
+}
+
+// How many of two lists' values differ.
+template <typename T, typename Same>
+std::size_t differing(const std::vector<T>& a, const std::vector<T>& b, Same equal) {
+    REQUIRE(a.size() == b.size());
+    std::size_t differ = 0;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        differ += equal(a[i], b[i]) ? 0u : 1u;
     }
-    return colors;
+    return differ;
 }
+
+constexpr textures::WoodData walnut{.light = {0.13f, 0.065f, 0.03f},
+                                    .ring = 0.004f,
+                                    .dark = {0.045f, 0.02f, 0.008f},
+                                    .board = 0.16f,
+                                    .seed = 3u,
+                                    .padding = {0, 0, 0}};
 
 }  // namespace
 
 TEST_CASE("noise is 0 at every lattice point, whatever the seed") {
-    std::vector<Probe> points;
-    for (std::uint64_t i = 0; i < 4096; ++i) {
+    tests::ProbeRunner gpu;
+    std::vector<TexturePoint> points;
+    for (std::uint32_t i = 0; i < 4096; ++i) {
         const auto lattice = [&](std::uint64_t which) { return std::floor(-1000.0 + 2000.0 * uniform(i, which)); };
-        points.push_back({float(lattice(0)), float(lattice(1)), float(lattice(2)), seed_bits(std::uint32_t(i))});
+        points.push_back(at(lattice(0), lattice(1), lattice(2), i));
     }
-    for (float v : noise(points)) {
-        CHECK(v == 0.0f);
-    }
+    const std::vector<float> values = noise(gpu, points);
+    CHECK(std::ranges::count_if(values, [](float v) { return v != 0.0f; }) == 0);
 }
 
 TEST_CASE("noise stays within its bound, centered on 0, and uses its range") {
-    std::vector<Probe> points;
-    for (std::uint64_t i = 0; i < 1 << 20; ++i) {
-        points.push_back({float(-50.0 + 100.0 * uniform(i, 0)), float(-50.0 + 100.0 * uniform(i, 1)),
-                          float(-50.0 + 100.0 * uniform(i, 2)), seed_bits(7u)});
+    constexpr std::uint64_t count = std::uint64_t{1} << 20;
+    tests::ProbeRunner gpu;
+    std::vector<TexturePoint> points;
+    points.reserve(count);
+    for (std::uint64_t i = 0; i < count; ++i) {
+        points.push_back(
+            at(-50.0 + 100.0 * uniform(i, 0), -50.0 + 100.0 * uniform(i, 1), -50.0 + 100.0 * uniform(i, 2), 7u));
     }
-    const std::vector<float> values = noise(points);
-    double sum = 0.0, largest = 0.0;
-    for (float v : values) {
+    const std::vector<float> values = noise(gpu, points);
+    double sum = 0.0;
+    double largest = 0.0;
+    for (const float v : values) {
         REQUIRE(std::isfinite(v));
         sum += v;
-        largest = std::max(largest, double(std::abs(v)));
+        largest = std::max(largest, static_cast<double>(std::abs(v)));
     }
-    INFO("largest " << largest << ", mean " << sum / values.size());
+    const double mean = sum / static_cast<double>(values.size());
+    INFO("largest " << largest << ", mean " << mean);
     CHECK(largest <= textures::noise_bound);
     CHECK(largest > 0.6);
-    CHECK(std::abs(sum / values.size()) < 0.01);
+    CHECK(std::abs(mean) < 0.01);
 }
 
 TEST_CASE("noise is continuous across cells, and a function of the point and the seed") {
     // Pairs a micron apart, many straddling a cell's face.
-    std::vector<Probe> points;
-    for (std::uint64_t i = 0; i < 65536; ++i) {
-        const float x = float(std::floor(-20.0 + 40.0 * uniform(i, 0)) + (i % 2 == 0 ? 0.0 : uniform(i, 3)));
-        const float y = float(-20.0 + 40.0 * uniform(i, 1)), z = float(-20.0 + 40.0 * uniform(i, 2));
-        points.push_back({x - 1e-4f, y, z, seed_bits(11u)});
-        points.push_back({x + 1e-4f, y, z, seed_bits(11u)});
+    constexpr std::uint64_t pairs = 65536;
+    tests::ProbeRunner gpu;
+    std::vector<TexturePoint> points;
+    points.reserve(2 * pairs);
+    for (std::uint64_t i = 0; i < pairs; ++i) {
+        const double x = std::floor(-20.0 + 40.0 * uniform(i, 0)) + (i % 2 == 0 ? 0.0 : uniform(i, 3));
+        const double y = -20.0 + 40.0 * uniform(i, 1);
+        const double z = -20.0 + 40.0 * uniform(i, 2);
+        points.push_back(at(x - 1e-4, y, z, 11u));
+        points.push_back(at(x + 1e-4, y, z, 11u));
     }
-    const std::vector<float> values = noise(points);
+    const std::vector<float> values = noise(gpu, points);
     double widest = 0.0;
     for (std::size_t i = 0; i < values.size(); i += 2) {
-        widest = std::max(widest, double(std::abs(values[i] - values[i + 1])));
+        widest = std::max(widest, static_cast<double>(std::abs(values[i] - values[i + 1])));
     }
     INFO("widest step over 0.2 mm of noise space: " << widest);
     CHECK(widest < 2e-3);
 
     // The same points again, the same values; another seed, others.
-    CHECK(noise(points) == values);
-    std::vector<Probe> reseeded = points;
-    for (Probe& p : reseeded) {
-        p[3] = seed_bits(12u);
+    CHECK(noise(gpu, points) == values);
+    std::vector<TexturePoint> reseeded = points;
+    for (TexturePoint& p : reseeded) {
+        p.seed = 12u;
     }
-    const std::vector<float> other = noise(reseeded);
-    std::size_t differ = 0;
-    for (std::size_t i = 0; i < values.size(); ++i) {
-        differ += other[i] != values[i];
-    }
-    CHECK(differ > values.size() * 9 / 10);
+    const auto equal = [](float a, float b) { return a == b; };
+    CHECK(differing(noise(gpu, reseeded), values, equal) > values.size() * 9 / 10);
 }
 
 TEST_CASE("wood stays within its bounds and finite, everywhere in the world") {
+    constexpr std::uint64_t count = std::uint64_t{1} << 18;
     const float lo = textures::wood_seam_shade * (1.0f - textures::wood_pores) * (1.0f - textures::wood_board_shade);
     const float hi = 1.0f + textures::wood_board_shade;
-    std::vector<Probe> points;
-    for (std::uint64_t i = 0; i < 1 << 18; ++i) {
+    tests::ProbeRunner gpu;
+    std::vector<TexturePoint> points;
+    points.reserve(count);
+    for (std::uint64_t i = 0; i < count; ++i) {
         // Over the table, and anywhere within a million meters.
         const double reach = i % 2 == 0 ? 2.0 : 1.0e6;
-        points.push_back({float(reach * (2.0 * uniform(i, 0) - 1.0)), float(reach * (2.0 * uniform(i, 1) - 1.0)),
-                          float(reach * (2.0 * uniform(i, 2) - 1.0)), 0.0f});
+        points.push_back(at(reach * (2.0 * uniform(i, 0) - 1.0), reach * (2.0 * uniform(i, 1) - 1.0),
+                            reach * (2.0 * uniform(i, 2) - 1.0)));
     }
-    const auto colors = wood(points);
-    const float light[3] = {walnut.light.x, walnut.light.y, walnut.light.z};
-    const float dark[3] = {walnut.dark.x, walnut.dark.y, walnut.dark.z};
-    for (const auto& c : colors) {
+    std::size_t outside = 0;
+    for (const contracts::Float3 c : colors(gpu, "wood_probe", points, walnut)) {
         for (int k = 0; k < 3; ++k) {
-            REQUIRE(std::isfinite(c[k]));
-            CHECK(c[k] >= lo * std::min(light[k], dark[k]) * (1.0f - 1e-5f));
-            CHECK(c[k] <= hi * std::max(light[k], dark[k]) * (1.0f + 1e-5f));
+            const float v = contracts::component(c, k);
+            const float light = contracts::component(walnut.light, k);
+            const float dark = contracts::component(walnut.dark, k);
+            REQUIRE(std::isfinite(v));
+            const bool within = v >= lo * std::min(light, dark) * (1.0f - 1e-5f) &&
+                                v <= hi * std::max(light, dark) * (1.0f + 1e-5f);
+            outside += within ? 0u : 1u;
         }
     }
+    CHECK(outside == 0);
 }
 
 TEST_CASE("wood is the same at every height, dark at the seams, and differs board to board and seed to seed") {
-    std::vector<Probe> points;
+    tests::ProbeRunner gpu;
+    std::vector<TexturePoint> points;
     for (std::uint64_t i = 0; i < 4096; ++i) {
-        const float x = float(-1.4 + 2.8 * uniform(i, 0)), z = float(-0.9 + 2.6 * uniform(i, 1));
-        points.push_back({x, 0.75f, z, 0.0f});
-        points.push_back({x, float(-3.0 + 6.0 * uniform(i, 2)), z, 0.0f});
+        const double x = -1.4 + 2.8 * uniform(i, 0);
+        const double z = -0.9 + 2.6 * uniform(i, 1);
+        points.push_back(at(x, 0.75, z));
+        points.push_back(at(x, -3.0 + 6.0 * uniform(i, 2), z));
     }
-    const auto colors = wood(points);
-    for (std::size_t i = 0; i < colors.size(); i += 2) {
-        CHECK(colors[i] == colors[i + 1]);
+    const std::vector<contracts::Float3> grain = colors(gpu, "wood_probe", points, walnut);
+    std::size_t by_height = 0;
+    for (std::size_t i = 0; i < grain.size(); i += 2) {
+        by_height += same(grain[i], grain[i + 1]) ? 0u : 1u;
     }
+    CHECK(by_height == 0);
 
-    // Across board 2's seam with board 3, at 0.48 m: a millimetre either
+    // Across board 2's seam with board 3, at 3 boards: a millimetre either
     // side is seam, 3 mm is not.
-    std::vector<Probe> seam;
+    const double seam_at = 3.0 * walnut.board;
+    std::vector<TexturePoint> seam;
     for (std::uint64_t i = 0; i < 512; ++i) {
-        const float x = float(-1.4 + 2.8 * uniform(i, 3));
-        for (float dz : {-0.003f, -0.001f, 0.001f, 0.003f}) {
-            seam.push_back({x, 0.75f, 0.48f + dz, 0.0f});
+        const double x = -1.4 + 2.8 * uniform(i, 3);
+        for (const double dz : {-0.003, -0.001, 0.001, 0.003}) {
+            seam.push_back(at(x, 0.75, seam_at + dz));
         }
     }
-    const auto across = wood(seam);
-    double in_seam = 0.0, beside = 0.0;
+    const std::vector<contracts::Float3> across = colors(gpu, "wood_probe", seam, walnut);
+    double in_seam = 0.0;
+    double beside = 0.0;
     for (std::size_t i = 0; i < across.size(); i += 4) {
-        in_seam += across[i + 1][0] + across[i + 2][0];
-        beside += across[i][0] + across[i + 3][0];
+        in_seam += across[i + 1].x + across[i + 2].x;
+        beside += across[i].x + across[i + 3].x;
     }
     CHECK(in_seam < 0.4 * beside);
 
     // Each board's mean differs from its neighbor's: each from its own log.
-    std::vector<Probe> boards;
-    for (int b = 0; b < 8; ++b) {
-        for (std::uint64_t i = 0; i < 2048; ++i) {
-            boards.push_back({float(-1.4 + 2.8 * uniform(i, 4)), 0.75f,
-                              float(0.16 * (b + 0.05 + 0.9 * uniform(i, 5))), 0.0f});
+    constexpr std::size_t boards = 8;
+    constexpr std::size_t per_board = 2048;
+    std::vector<TexturePoint> planks_at;
+    planks_at.reserve(boards * per_board);
+    for (std::size_t b = 0; b < boards; ++b) {
+        for (std::uint64_t i = 0; i < per_board; ++i) {
+            planks_at.push_back(at(-1.4 + 2.8 * uniform(i, 4), 0.75,
+                                   walnut.board * (static_cast<double>(b) + 0.05 + 0.9 * uniform(i, 5))));
         }
     }
-    const auto planks = wood(boards);
-    std::array<double, 8> means{};
-    for (int b = 0; b < 8; ++b) {
-        for (std::size_t i = 0; i < 2048; ++i) {
-            means[b] += planks[b * 2048 + i][0] / 2048.0;
+    const std::vector<contracts::Float3> planks = colors(gpu, "wood_probe", planks_at, walnut);
+    std::array<double, boards> means{};
+    for (std::size_t b = 0; b < boards; ++b) {
+        for (std::size_t i = 0; i < per_board; ++i) {
+            means[b] += planks[b * per_board + i].x / static_cast<double>(per_board);
         }
     }
-    for (int b = 1; b < 8; ++b) {
+    for (std::size_t b = 1; b < boards; ++b) {
         INFO("boards " << b - 1 << " and " << b << ": " << means[b - 1] << ", " << means[b]);
         CHECK(std::abs(means[b] - means[b - 1]) > 1e-4);
     }
 
     textures::WoodData other = walnut;
     other.seed = 4u;
-    const auto reseeded = wood(points, other);
-    std::size_t differ = 0;
-    for (std::size_t i = 0; i < colors.size(); ++i) {
-        differ += reseeded[i] != colors[i];
-    }
-    CHECK(differ > colors.size() * 9 / 10);
+    CHECK(differing(colors(gpu, "wood_probe", points, other), grain, same) > grain.size() * 9 / 10);
 }
 
 namespace {
 
-std::vector<std::array<float, 3>> swirl_at(const std::vector<Probe>& points, const textures::SwirlData& data) {
-    const std::vector<float> raw = run("swirl_probe", points, 4, &data, sizeof(data));
-    std::vector<std::array<float, 3>> colors(points.size());
-    for (std::size_t i = 0; i < points.size(); ++i) {
-        colors[i] = {raw[4 * i], raw[4 * i + 1], raw[4 * i + 2]};
-    }
-    return colors;
-}
-
 // a red, b blue: the red channel is how far toward a a point's color is.
 constexpr textures::SwirlData red_and_blue(std::uint32_t vanes, float twist) {
-    return textures::SwirlData{{1.0f, 0.0f, 0.0f}, vanes, {0.0f, 0.0f, 1.0f}, twist, 5u, {0, 0, 0}};
+    return textures::SwirlData{.a = {1.0f, 0.0f, 0.0f},
+                               .vanes = vanes,
+                               .b = {0.0f, 0.0f, 1.0f},
+                               .twist = twist,
+                               .seed = 5u,
+                               .padding = {0, 0, 0}};
 }
 
 }  // namespace
 
 TEST_CASE("a swirl stays between its colors, and is the same at any distance from its axis") {
-    const textures::SwirlData data{{0.9f, 0.3f, 0.03f}, 3u, {0.92f, 0.88f, 0.78f}, 0.6f, 1u, {0, 0, 0}};
-    std::vector<Probe> points;
+    const textures::SwirlData data{.a = {0.9f, 0.3f, 0.03f},
+                                   .vanes = 3u,
+                                   .b = {0.92f, 0.88f, 0.78f},
+                                   .twist = 0.6f,
+                                   .seed = 1u,
+                                   .padding = {0, 0, 0}};
+    tests::ProbeRunner gpu;
+    std::vector<TexturePoint> points;
     for (std::uint64_t i = 0; i < 8192; ++i) {
-        const double phi = 2.0 * std::numbers::pi * uniform(i, 0), y = 2.0 * uniform(i, 1) - 1.0;
+        const double phi = 2.0 * std::numbers::pi * uniform(i, 0);
+        const double y = 2.0 * uniform(i, 1) - 1.0;
         const double r = 0.05 + 0.95 * uniform(i, 2);
-        points.push_back({float(r * std::cos(phi)), float(y), float(r * std::sin(phi)), 0.0f});
-        points.push_back({float(0.5 * r * std::cos(phi)), float(y), float(0.5 * r * std::sin(phi)), 0.0f});
+        points.push_back(at(r * std::cos(phi), y, r * std::sin(phi)));
+        points.push_back(at(0.5 * r * std::cos(phi), y, 0.5 * r * std::sin(phi)));
     }
-    const auto colors = swirl_at(points, data);
-    const float a[3] = {data.a.x, data.a.y, data.a.z}, b[3] = {data.b.x, data.b.y, data.b.z};
+    const std::vector<contracts::Float3> swirled = colors(gpu, "swirl_probe", points, data);
+    std::size_t outside = 0;
     std::size_t differ = 0;
-    for (std::size_t i = 0; i < colors.size(); i += 2) {
+    for (std::size_t i = 0; i < swirled.size(); i += 2) {
         for (int c = 0; c < 3; ++c) {
-            CHECK(colors[i][c] >= std::min(a[c], b[c]) - 1e-6f);
-            CHECK(colors[i][c] <= std::max(a[c], b[c]) + 1e-6f);
-            differ += std::abs(colors[i][c] - colors[i + 1][c]) > 1e-5f;
+            const float v = contracts::component(swirled[i], c);
+            const float a = contracts::component(data.a, c);
+            const float b = contracts::component(data.b, c);
+            outside += v >= std::min(a, b) - 1e-6f && v <= std::max(a, b) + 1e-6f ? 0u : 1u;
+            differ += std::abs(v - contracts::component(swirled[i + 1], c)) > 1e-5f ? 1u : 0u;
         }
     }
+    CHECK(outside == 0);
     CHECK(differ == 0);
 }
 
@@ -289,26 +283,33 @@ TEST_CASE("a swirl's bands turn twist times round per unit of height, whatever t
     // Each band's middle at phi = 2 pi (k / vanes - twist y): a point
     // turned back by 2 pi twist dy and raised dy sits in the same band,
     // edges wavering aside; turned the other way, it does not.
+    constexpr std::uint64_t count = 8192;
+    tests::ProbeRunner gpu;
     for (const std::uint32_t vanes : {1u, 4u}) {
-        const float twist = 0.4f, dy = 0.2f;
-        std::vector<Probe> points;
-        for (std::uint64_t i = 0; i < 8192; ++i) {
-            const double phi = 2.0 * std::numbers::pi * uniform(i, 3), y = -0.5 + uniform(i, 4) * 0.6;
+        const float twist = 0.4f;
+        const double dy = 0.2;
+        std::vector<TexturePoint> points;
+        points.reserve(3 * count);
+        for (std::uint64_t i = 0; i < count; ++i) {
+            const double phi = 2.0 * std::numbers::pi * uniform(i, 3);
+            const double y = -0.5 + uniform(i, 4) * 0.6;
             const double along = phi - 2.0 * std::numbers::pi * twist * dy;
             const double against = phi + 2.0 * std::numbers::pi * twist * dy;
-            points.push_back({float(std::cos(phi)), float(y), float(std::sin(phi)), 0.0f});
-            points.push_back({float(std::cos(along)), float(y + dy), float(std::sin(along)), 0.0f});
-            points.push_back({float(std::cos(against)), float(y + dy), float(std::sin(against)), 0.0f});
+            points.push_back(at(std::cos(phi), y, std::sin(phi)));
+            points.push_back(at(std::cos(along), y + dy, std::sin(along)));
+            points.push_back(at(std::cos(against), y + dy, std::sin(against)));
         }
-        const auto colors = swirl_at(points, red_and_blue(vanes, twist));
-        double same_band = 0.0, other_way = 0.0;
-        for (std::size_t i = 0; i < colors.size(); i += 3) {
-            same_band += std::abs(colors[i][0] - colors[i + 1][0]);
-            other_way += std::abs(colors[i][0] - colors[i + 2][0]);
+        const std::vector<contracts::Float3> bands = colors(gpu, "swirl_probe", points, red_and_blue(vanes, twist));
+        double same_band = 0.0;
+        double other_way = 0.0;
+        for (std::size_t i = 0; i < bands.size(); i += 3) {
+            same_band += std::abs(bands[i].x - bands[i + 1].x);
+            other_way += std::abs(bands[i].x - bands[i + 2].x);
         }
-        INFO(vanes << " vanes: mean difference following the twist " << same_band / 8192 << ", against it "
-                   << other_way / 8192);
-        CHECK(same_band / 8192 < 0.2);
-        CHECK(other_way / 8192 > 2.0 * same_band / 8192);
+        same_band /= static_cast<double>(count);
+        other_way /= static_cast<double>(count);
+        INFO(vanes << " vanes: mean difference following the twist " << same_band << ", against it " << other_way);
+        CHECK(same_band < 0.2);
+        CHECK(other_way > 2.0 * same_band);
     }
 }
