@@ -47,8 +47,9 @@ namespace serenity::metal {
 // runs the one before; what the barrier gives up is only the GPU starting a
 // frame's first dispatch before the last frame's final one ends. A copy per
 // frame in flight would keep that sliver of overlap at twice the memory,
-// 290 MB at the display's size; the barrier's cost is measured at
-// implementation.
+// 290 MB at the display's size, and the overlap is no gain: two frames'
+// passes running at once take longer than one after the other (measured,
+// docs/research/2026-10-09-pass-costs.md).
 //
 // Made outside the frame loop, at a size, and kept until the size changes
 // (GPU.9); nothing else lives only within a frame for them to share memory
@@ -56,8 +57,9 @@ namespace serenity::metal {
 // back, which GDSA.16 says to stream through on-chip memory instead: the
 // tone map cannot, since its bloom reads every pixel's neighbourhood as far
 // as B_5's 64 pixels; the display pass could fold back into the light pass,
-// as it was, and is kept apart so a graph has one presenting pass, at a
-// measured 0.6 ms (passes/display/display.h).
+// as it was, and is kept apart so a graph has one presenting pass
+// (passes/display/display.h), at the cost derived below; it has not been
+// measured on its own (docs/research/2026-10-09-pass-costs.md).
 //
 // Cost: at 3456 x 2234 (P = 7.7 M pixels), the radiance image is 123 MB
 // and the pyramid 21 MB. Per frame, the light pass writes the radiance
@@ -68,11 +70,17 @@ namespace serenity::metal {
 // texels, then P exact reads (passes/tone_map/tone_map.h); what that costs
 // in memory traffic is the pass's measured time, not a count here.
 //
-// Throws Error if the device cannot make an image.
+// Throws Error if the frame's size is not one Metal makes an image of
+// (metal/device/device.h, max_texture_side), or the device cannot make one.
 class FrameImages {
 public:
-    // `radiance` and `pyramid`: which the schedule uses.
-    FrameImages(const Device& device, Submission& submission, bool radiance, bool pyramid);
+    // Whether the schedule has the tone-map pass, which needs the pyramid.
+    // A type, not a bool, so the call says which (I.4).
+    enum class Bloom { none, pyramid };
+
+    // The radiance image always (a schedule with no light pass makes no
+    // FrameImages), and the pyramid as `bloom` says.
+    FrameImages(const Device& device, Submission& submission, Bloom bloom);
 
     FrameImages(const FrameImages&) = delete;
     FrameImages& operator=(const FrameImages&) = delete;
@@ -84,17 +92,23 @@ public:
     void prepare(frame::Extent size);
 
     // Null when the schedule does not use it, or before the first prepare().
-    MTL::Texture* radiance() const { return radiance_.get(); }
-    MTL::Texture* bloom(std::uint32_t level) const { return pyramid_.at(level).get(); }
+    // bloom() throws Error for a level past passes::bloom_levels.
+    MTL::Texture* radiance() const noexcept { return radiance_.texture.get(); }
+    MTL::Texture* bloom(std::uint32_t level) const;
 
 private:
     NS::SharedPtr<MTL::Device> device_;
     Submission& submission_;
-    bool wants_radiance_;
-    bool wants_pyramid_;
+    Bloom bloom_;
     frame::Extent size_;
-    NS::SharedPtr<MTL::Texture> radiance_;
-    std::array<NS::SharedPtr<MTL::Texture>, passes::bloom_levels> pyramid_;
+    // Each image with its residency, released after the GPU is done with it
+    // (submission.h, Lifetime).
+    struct Image {
+        NS::SharedPtr<MTL::Texture> texture;
+        Resident resident;
+    };
+    Image radiance_;
+    std::array<Image, passes::bloom_levels> pyramid_;
 };
 
 }  // namespace serenity::metal

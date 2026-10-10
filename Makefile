@@ -10,7 +10,8 @@
 # option list) are hidden; warnings and errors still show. VERBOSE=1 shows all.
 CONFIGURE_QUIET := $(if $(VERBOSE),,--log-level=NOTICE)
 
-## Every test, debug build: the core's tests and the GPU tests.
+## Every test, debug build: the core's tests, the GPU tests, and the
+## boundary and toolchain checks with the proofs that they fire.
 test:
 	cmake --preset native-debug $(CONFIGURE_QUIET)
 	cmake --build --preset native-debug
@@ -37,12 +38,15 @@ run:
 	./build/native-release/serenity --graph $(GRAPH) $(SCENE_ARG) $(SCALE_ARG)
 
 ## Headless frames of GRAPH, over SCENE if given, release build, as PNGs in
-## OUT. FRAMES frames from frame 0, a sixtieth of a second apart.
+## OUT. FRAMES frames from frame 0, a sixtieth of a second apart. The frames
+## of an earlier run in OUT are removed first; the renderer refuses an OUT
+## that still holds anything else (headless/options.h).
 OUT ?= frames
 FRAMES ?= 60
 headless:
 	cmake --preset native-release $(CONFIGURE_QUIET)
 	cmake --build --preset native-release --target serenity-headless
+	rm -f $(OUT)/frame-*.png
 	./build/native-release/serenity-headless --graph $(GRAPH) $(SCENE_ARG) --out $(OUT) --frames $(FRAMES)
 
 ## A movie of GRAPH over SCENE, for sharing: SECONDS seconds at FPS frames a
@@ -63,7 +67,7 @@ movie:
 	cmake --build --preset native-release --target serenity-headless
 	rm -rf $(MOVIE_FRAMES) && mkdir -p media
 	./build/native-release/serenity-headless --graph $(GRAPH) $(SCENE_ARG) --out $(MOVIE_FRAMES) \
-		--frames $$(( $(SECONDS) * $(FPS) )) --step $$(awk 'BEGIN { print 1 / $(FPS) }') --size $(SIZE) \
+		--frames $$(( $(SECONDS) * $(FPS) )) --step $$(awk 'BEGIN { printf "%.17g", 1 / $(FPS) }') --size $(SIZE) \
 		--samples $(SAMPLES) >/dev/null
 	ffmpeg -hide_banner -loglevel error -y -framerate $(FPS) -i $(MOVIE_FRAMES)/frame-%06d.png \
 		-vf "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p" \

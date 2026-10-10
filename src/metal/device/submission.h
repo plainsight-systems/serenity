@@ -67,7 +67,7 @@ namespace serenity::metal {
 //
 // The feedback handlers run on Metal's queue, possibly after this object is
 // gone, so what they write is not in this object: each slot's feedback state
-// is shared, and every handler holds its own reference (R.20, CP.3). A late
+// is shared, and every handler holds its own reference (R.20, CP.32). A late
 // handler writes into state it keeps alive, never into freed memory.
 //
 // Settling. A submission is settled once its event and its feedback have
@@ -83,15 +83,43 @@ namespace serenity::metal {
 // caller's to know, by their sequences.
 //
 // Residency. Metal 4 runs only on resources a residency set has made
-// resident. make_resident() adds an allocation to the set this queue uses;
-// resources are added once, at start-up, never per frame.
+// resident. keep_resident() adds an allocation to the set this queue uses
+// and returns a Resident, which takes it out again when it is destroyed;
+// resources are added at start-up and when a resize remakes an image, never
+// per frame. The set retains what it holds (shown on this machine: an
+// allocation's retain count rises when it is added and falls when it is
+// removed), and a frame binds buffers by GPU address, which nothing retains.
+//
+// Lifetime: nothing is freed while the GPU may still use it (C.31, GPU.9:
+// memory is reused "only after ... the old resource has no future users").
+// Every object that owns GPU memory a frame uses is built after this
+// Submission and destroyed before it, so on an error path it dies while
+// frames may still be in flight. So a Resident, when destroyed, first waits
+// for every committed submission to complete (wait_idle(), bounded, never
+// throwing), then takes its allocation out of the set, then lets it go; and
+// the objects that own GPU objects outside the set (the renderer's pipelines
+// and argument table, the window's layer) wait the same way in their
+// destructors before anything of theirs is released. After the normal end of
+// a run (finish()) the wait returns at once. A submission still open when an
+// allocation leaves the set may have recorded a use of it, so it can no
+// longer be committed: commit() and present() then throw Error.
 //
 // Cost of a frame, from the CPU: one event wait (it returns at once unless
-// the GPU is two frames behind), one allocator reset, one command buffer
-// begun and ended, one commit, one event signal. Nothing of ours is allocated
-// per frame (MEM.9). Metal 4 takes the feedback handler through commit
-// options, an object made per commit: one small allocation a frame that is
-// the API's shape, not ours, and is kept.
+// the GPU is two frames behind); a poll for that submission's feedback,
+// which Metal delivers just after the event; one allocator reset, one
+// command buffer begun and ended, one commit, one event signal. The poll
+// usually sleeps once or twice, a few tens of microseconds while the GPU
+// runs the frame between. A blocking wait on a second event, set by the
+// feedback handler, would wake once instead (CONC.4); it is kept a poll,
+// since a frame's time is the GPU's and the poll was measured to cost it
+// nothing (Per.6; docs/research/2026-10-09-pass-costs.md). Nothing of ours
+// is allocated per frame (MEM.9). Metal 4 takes the feedback handler through commit
+// options, an object made per commit, and metal-cpp hands the handler on as
+// a block that Metal copies to the heap with what it captures: a few small
+// allocations a frame, by the API's shape. Kept: an options object cannot
+// shed a handler once added, so it cannot be reused for the next commit
+// with a new one, and a few allocations against a frame of milliseconds are
+// not worth a design of their own (Per.1, Per.6: no measured cost).
 inline constexpr std::uint32_t frames_in_flight = 2;
 
 // A submission settled (see Settling, above).
@@ -110,6 +138,33 @@ struct FrameSlot {
     std::uint32_t slot = 0;
     std::uint64_t sequence = 0;
     std::optional<Completed> settled;
+};
+
+class Submission;
+
+// An allocation resident through a Submission for as long as this object
+// lives (R.1, C.31; see Residency and Lifetime, above). Move-only. Holds its
+// own reference to the allocation, so the memory outlives the wait however
+// the owner orders its members. The Submission must outlive it.
+class Resident {
+public:
+    Resident() = default;
+    Resident(const Resident&) = delete;
+    Resident& operator=(const Resident&) = delete;
+    Resident(Resident&& other) noexcept;
+    Resident& operator=(Resident&& other) noexcept;
+    ~Resident();
+
+    // Takes the allocation out of the set now, after waiting for the GPU,
+    // as destruction does; nothing is held after.
+    void reset() noexcept;
+
+private:
+    friend class Submission;
+    Resident(Submission& submission, MTL::Allocation* allocation);
+
+    Submission* submission_ = nullptr;
+    NS::SharedPtr<MTL::Allocation> allocation_;
 };
 
 class Submission {
@@ -155,24 +210,40 @@ public:
     // Whether submission `sequence` has completed on the GPU, without
     // waiting: its event has been signalled, so what it wrote to shared
     // memory may be read. Says nothing of failure, which settling reports.
-    bool has_completed(std::uint64_t sequence) const;
+    bool has_completed(std::uint64_t sequence) const noexcept;
 
     // The sequence the next begin() hands out: every submission from here on
     // has this sequence or a later one.
-    std::uint64_t next_sequence() const { return next_; }
+    std::uint64_t next_sequence() const noexcept { return next_; }
 
-    // Makes `allocation` resident for every frame from now on.
+    // Blocks until every committed submission has completed, or the timeout
+    // passes; returns whether they all completed. Never throws, and reports
+    // no failure (settling does): for destructors, which must not free what
+    // the GPU still uses (see Lifetime, above).
+    bool wait_idle() noexcept;
+
+    // Makes `allocation` resident for every frame from now on, until the
+    // returned Resident is destroyed. Throws Error if it is null.
+    [[nodiscard]] Resident keep_resident(MTL::Allocation* allocation);
+
+    // Makes `allocation` resident for as long as this Submission lives: for
+    // memory that lives as long (a test's probe buffers). Throws Error if it
+    // is null.
     void make_resident(MTL::Allocation* allocation);
 
-    // Takes `allocation` out of the residency set, so it can be released.
-    // No committed submission may still use it: drain() first. Throws Error
-    // while a submission is open.
-    void release_resident(MTL::Allocation* allocation);
-
-    // The queue, for adding a residency set another object owns (a layer's).
-    MTL4::CommandQueue* queue() const { return queue_.get(); }
+    // Adds a residency set another object owns (a layer's) to the queue, and
+    // takes it out again: remove_residency_set() first waits as wait_idle()
+    // does, for the owner's destructor. Throws Error if `set` is null.
+    void add_residency_set(MTL::ResidencySet* set);
+    void remove_residency_set(MTL::ResidencySet* set) noexcept;
 
 private:
+    friend class Resident;
+
+    // Waits as wait_idle() does, then takes `allocation` out of the set; see
+    // Lifetime, above.
+    void retire(MTL::Allocation* allocation) noexcept;
+
     // What a slot's feedback handlers write, on Metal's feedback queue, and
     // this object reads. `arrived` is the sequence + 1 of the last submission
     // whose feedback has arrived. `failure` is written before `failed` is
@@ -182,8 +253,8 @@ private:
         std::atomic<std::uint64_t> arrived{0};
         std::atomic<bool> failed{false};
         std::string failure;
-        double gpu_start = 0.0;  // host seconds; written before `arrived` is released
-        double gpu_end = 0.0;
+        frame::Seconds gpu_start{0.0};  // host time; written before `arrived` is released
+        frame::Seconds gpu_end{0.0};
     };
 
     struct Slot {
@@ -192,7 +263,7 @@ private:
         std::shared_ptr<Feedback> feedback = std::make_shared<Feedback>();
         // The sequence + 1 of the last submission in this slot settled; read
         // and written only on the caller's thread.
-        std::uint64_t settled = 0;
+        std::uint64_t settled_through = 0;
     };
 
     // Waits for submission `sequence`'s event, then its feedback, and throws
@@ -209,6 +280,7 @@ private:
     std::uint64_t next_ = 0;   // the sequence begin() hands out next
     bool open_ = false;        // a submission is begun and not yet committed
     bool finished_ = false;    // finish() has run; nothing may be begun after
+    bool abandoned_ = false;   // an allocation left the set while open_: never commit it
 };
 
 }  // namespace serenity::metal

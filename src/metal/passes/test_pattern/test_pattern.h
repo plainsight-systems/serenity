@@ -3,7 +3,6 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
-#include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/frame/frame_resources.h"
 
@@ -32,13 +31,13 @@ namespace serenity::metal {
 // Cost: one thread per pixel, each writing 4 bytes, in threadgroups of the
 // pipeline's execution width by as many rows as the threadgroup limit allows.
 // Adjacent threads write adjacent pixels of a row (GPU.2). At 3456 x 2234 it
-// writes 30.9 MB a frame and reads nothing but the frame's 16 bytes of
+// writes 30.9 MB a frame and reads nothing but the frame's 32 bytes of
 // constants.
 class TestPatternPass {
 public:
     // Builds the pipeline for test_pattern from `library`. Throws Error if it
     // cannot.
-    TestPatternPass(const Device& device, const Library& library);
+    explicit TestPatternPass(const Library& library);
 
     // Records the pass into `encoder`: binds the frame's constants and its
     // target through the resources' argument table, and dispatches one thread

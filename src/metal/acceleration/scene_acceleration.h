@@ -41,22 +41,18 @@ namespace serenity::metal {
 // cost that grows with the shape count as Unreal's grows with the instances.
 // What it leaves out is the instance level each ray would otherwise cross,
 // which on this hardware, for boxes whose hits the shader decides, costs more
-// than everything it saves. Measured on the M3 Max, the path tracer on the
-// still brass scene at 3456 x 2234 (docs/research/
-// 2026-10-09-acceleration-structure.md):
-//
-//   one level, exact spheres, world-space tests (main before)  7.8 ms
-//   this: one level, exact spheres, transforms, object space    8.2 ms
-//   instances of triangle spheres, 5,120 to 81,920 each    11.5 - 12.5 ms
-//   instances of exact spheres, one per shape                  18.1 ms
+// than everything it saves: measured, with the variants tried and the
+// triangle spheres' look, in docs/research/2026-10-09-acceleration-structure.md.
 //
 // When a shape arrives that is a mesh (a table of triangles), it is a
 // structure of its own, built once, under an instance: a second level for
 // that, measured again then.
 //
-// A still scene (no shape moves) has one structure, built at construction,
-// in a submission of its own that is waited for, so it is complete before
-// any frame traces it (CDSA.29). A scene where shapes move has one per frame
+// A still scene (no shape moves) has one structure, built once, at
+// construction (CDSA.29: a structure with no mutations pays for its build
+// once), in a submission of its own that is waited for, so it is complete
+// before any frame traces it (GPU.8); its build's scratch is then let go
+// (GPU.9). A scene where shapes move has one per frame
 // in flight, each with its own boxes and scratch; the boxes are a FrameArray
 // (metal/device/frame_array.h), whose rule says when the CPU may write a
 // slot's. Which shapes move it is told as their indices, nothing more of the
@@ -83,10 +79,9 @@ namespace serenity::metal {
 // Optimization: every per-frame buffer, structure and build descriptor is
 // made at construction, so a frame allocates nothing (MEM.9); per frame, one
 // 24-byte box per moving shape on the CPU, and one build and one barrier on
-// the GPU, whose cost grows with the shape count. Measured on the M3 Max: the
-// wandering brass scene's frame takes 8.28 ms against the still scene's
-// 8.17, the placing and the build together 0.11 ms; a build alone, in a
-// command buffer of its own, 68 us over 4 shapes and 340 us over 4096.
+// the GPU, whose cost grows with the shape count. What the placing and the
+// build cost a frame, and a build alone by shape count, is measured in the
+// same note.
 //
 // Throws Error if there are no shapes, if the device cannot make a
 // structure, its scratch memory or a buffer, or if the start-up build fails
@@ -112,7 +107,7 @@ public:
     // Submission::begin() returning the slot and the frame's commit; throws
     // Error when nothing moves, or if `transforms` is not the shape count.
     void update(MTL4::ComputeCommandEncoder* encoder, std::uint32_t slot,
-                std::span<const contracts::Transform> transforms) const;
+                std::span<const contracts::Transform> transforms);
 
     // The structure frame slot `slot` traces, as a shader binds it.
     MTL::ResourceID resource(std::uint32_t slot) const;
@@ -122,6 +117,8 @@ private:
         NS::SharedPtr<MTL::Buffer> scratch;
         NS::SharedPtr<MTL4::PrimitiveAccelerationStructureDescriptor> descriptor;  // over the slot's boxes
         NS::SharedPtr<MTL::AccelerationStructure> structure;
+        Resident structure_resident;
+        Resident scratch_resident;  // when shapes move: each frame's build writes the scratch
     };
 
     std::vector<std::uint32_t> moving_;          // the shapes that move, whose boxes update() writes

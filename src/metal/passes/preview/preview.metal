@@ -10,6 +10,7 @@
 #include "core/contracts/transform.h"
 #include "metal/camera/thin_lens.metal.h"
 #include "metal/integrator/direct.metal.h"
+#include "metal/passes/bindings.h"
 #include "metal/scene/scene_block.metal.h"
 
 using namespace metal;
@@ -30,13 +31,15 @@ constant constexpr uint lens_shift = 2u;
 
 }  // namespace
 
-kernel void preview(constant serenity::contracts::FrameConstants& frame [[buffer(0)]],
-                    constant serenity::contracts::CameraData& camera [[buffer(1)]],
-                    primitive_acceleration_structure structure [[buffer(2)]],
-                    constant serenity::gpu::SceneBlock& block [[buffer(3)]],
-                    constant float* sphere_glows [[buffer(4)]],
-                    constant serenity::contracts::Transform* transforms [[buffer(5)]],
-                    texture2d<float, access::write> radiance [[texture(0)]],
+kernel void preview(constant serenity::contracts::FrameConstants& frame
+                    [[buffer(serenity::bindings::preview::constants)]],
+                    constant serenity::contracts::CameraData& camera [[buffer(serenity::bindings::preview::camera)]],
+                    primitive_acceleration_structure structure [[buffer(serenity::bindings::preview::structure)]],
+                    constant serenity::gpu::SceneBlock& block [[buffer(serenity::bindings::preview::scene)]],
+                    constant float* sphere_glows [[buffer(serenity::bindings::preview::glows)]],
+                    constant serenity::contracts::Transform* transforms
+                    [[buffer(serenity::bindings::preview::transforms)]],
+                    texture2d<float, access::write> radiance [[texture(serenity::bindings::preview::radiance)]],
                     uint2 pixel [[thread_position_in_grid]]) {
     if (pixel.x >= frame.width || pixel.y >= frame.height) {
         return;

@@ -4,15 +4,30 @@
 
 namespace serenity::metal {
 
-Presenter::Presenter(const Device& device, Submission& submission, LayerHandle layer, frame::Extent size) {
+namespace {
+
+// Drawables the layer may have out at once (presenter.h): one on screen,
+// one waiting to be, and one being rendered.
+constexpr NS::UInteger drawable_count = 3;
+
+NS::SharedPtr<CA::MetalLayer> retained(LayerHandle layer) {
     if (layer.ca_metal_layer == nullptr) {
         throw Error("Presenter: the layer handle is null");
     }
-    layer_ = NS::RetainPtr(static_cast<CA::MetalLayer*>(layer.ca_metal_layer));
+    return NS::RetainPtr(static_cast<CA::MetalLayer*>(layer.ca_metal_layer));
+}
+
+}  // namespace
+
+Presenter::Presenter(const Device& device, Submission& submission, LayerHandle layer, frame::Extent size)
+    : submission_(submission), layer_(retained(layer)) {
+    // A size to render at from the first frame (C.41); resize() keeps the
+    // last one for a window minimized later.
+    check_texture_size(size, "Presenter");
     layer_->setDevice(device.handle());
     layer_->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
     layer_->setFramebufferOnly(false);
-    layer_->setMaximumDrawableCount(3);
+    layer_->setMaximumDrawableCount(drawable_count);
     layer_->setDisplaySyncEnabled(true);
     resize(size);
 
@@ -20,7 +35,14 @@ Presenter::Presenter(const Device& device, Submission& submission, LayerHandle l
     if (drawables == nullptr) {
         throw Error("Presenter: the layer has no residency set");
     }
-    submission.queue()->addResidencySet(drawables);
+    submission.add_residency_set(drawables);
+    drawables_ = NS::RetainPtr(drawables);
+}
+
+Presenter::~Presenter() {
+    if (drawables_) {
+        submission_.remove_residency_set(drawables_.get());
+    }
 }
 
 void Presenter::resize(frame::Extent size) {

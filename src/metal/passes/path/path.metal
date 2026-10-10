@@ -11,6 +11,7 @@
 #include "metal/camera/thin_lens.metal.h"
 #include "metal/film/accumulate.metal.h"
 #include "metal/integrator/path.metal.h"
+#include "metal/passes/bindings.h"
 #include "metal/sampler/sampler.metal.h"
 #include "metal/scene/scene_block.metal.h"
 
@@ -18,15 +19,18 @@ using namespace metal;
 using namespace metal::raytracing;
 using namespace serenity::shaders;
 
-kernel void path_trace(constant serenity::contracts::FrameConstants& frame [[buffer(0)]],
-                       constant serenity::contracts::CameraData& camera [[buffer(1)]],
-                       primitive_acceleration_structure structure [[buffer(2)]],
-                       constant serenity::gpu::SceneBlock& block [[buffer(3)]],
-                       constant float* sphere_glows [[buffer(4)]],
-                       constant serenity::contracts::Transform* transforms [[buffer(5)]],
-                       device atomic_uint* non_finite [[buffer(6)]],
-                       texture2d<float, access::read_write> accumulated [[texture(0)]],
-                       texture2d<float, access::write> radiance [[texture(1)]],
+kernel void path_trace(constant serenity::contracts::FrameConstants& frame
+                       [[buffer(serenity::bindings::path::constants)]],
+                       constant serenity::contracts::CameraData& camera [[buffer(serenity::bindings::path::camera)]],
+                       primitive_acceleration_structure structure [[buffer(serenity::bindings::path::structure)]],
+                       constant serenity::gpu::SceneBlock& block [[buffer(serenity::bindings::path::scene)]],
+                       constant float* sphere_glows [[buffer(serenity::bindings::path::glows)]],
+                       constant serenity::contracts::Transform* transforms
+                       [[buffer(serenity::bindings::path::transforms)]],
+                       device atomic_uint* non_finite [[buffer(serenity::bindings::path::non_finite)]],
+                       texture2d<float, access::read_write> accumulated
+                       [[texture(serenity::bindings::path::accumulated)]],
+                       texture2d<float, access::write> radiance [[texture(serenity::bindings::path::radiance)]],
                        uint2 pixel [[thread_position_in_grid]]) {
     // Every thread reaches count_non_finite() below, which sums over its
     // SIMD group: none returns early.

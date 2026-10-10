@@ -3,20 +3,20 @@
 #include <cstring>
 #include <optional>
 #include <string>
+#include <type_traits>
 
 #include "core/frame/schedule.h"
 #include "metal/device/error.h"
+#include "metal/device/support.h"
+#include "metal/passes/bindings.h"
 
 namespace serenity::metal {
 
 namespace {
 
-// One thread per texel of `size`, in rows of the execution width (GPU.2).
-void dispatch(MTL4::ComputeCommandEncoder* encoder, const MTL::ComputePipelineState* pipeline,
-              NS::UInteger width, NS::UInteger height) {
-    const NS::UInteger simd = pipeline->threadExecutionWidth();
-    const NS::UInteger rows = pipeline->maxTotalThreadsPerThreadgroup() / simd;
-    encoder->dispatchThreads(MTL::Size(width, height, 1), MTL::Size(simd, rows, 1));
+// A texture's size, as the dispatch over it takes it.
+frame::Extent extent(const MTL::Texture* texture) {
+    return {static_cast<std::uint32_t>(texture->width()), static_cast<std::uint32_t>(texture->height())};
 }
 
 // Each dispatch reads what the one before wrote (tone_map.h).
@@ -42,54 +42,59 @@ ToneMapPass::ToneMapPass(const Device& device, const Library& library, Submissio
     if (!settings_) {
         throw Error("ToneMapPass: the device made no buffer for the settings");
     }
+    static_assert(std::is_trivially_copyable_v<passes::ToneMap>, "the settings are copied as their bytes");
     std::memcpy(settings_->contents(), &settings, sizeof(settings));
-    submission.make_resident(settings_.get());
+    resident_ = submission.keep_resident(settings_.get());
 }
 
 void ToneMapPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
     if (resources.radiance == nullptr) {
         throw Error("ToneMapPass: the frame has no radiance image");
     }
-    for (MTL::Texture* level : resources.bloom) {
+    for (const MTL::Texture* level : resources.bloom) {
         if (level == nullptr) {
             throw Error("ToneMapPass: the frame has no bloom pyramid");
         }
     }
+    // Bindings: passes/bindings.h, as tone_map.metal declares them.
+    namespace binding = bindings::tone_map;
     MTL4::ArgumentTable* arguments = resources.arguments;
     const auto& bloom = resources.bloom;
 
-    // Steps 1 and 2 for B_0. Bindings match tone_map.metal.
-    arguments->setAddress(settings_->gpuAddress(), 0);
-    arguments->setTexture(resources.radiance->gpuResourceID(), 0);
-    arguments->setTexture(bloom[0]->gpuResourceID(), 1);
+    // Steps 1 and 2 for B_0.
+    arguments->setAddress(settings_->gpuAddress(), binding::settings);
+    arguments->setTexture(resources.radiance->gpuResourceID(), binding::input);
+    arguments->setTexture(bloom[0]->gpuResourceID(), binding::level);
     encoder->setComputePipelineState(down_first_.get());
-    dispatch(encoder, down_first_.get(), bloom[0]->width(), bloom[0]->height());
+    dispatch_per_pixel(encoder, down_first_.get(), extent(bloom[0]));
 
-    // Step 2 for B_1 .. B_5.
+    // Step 2 for B_1 .. B_5, each from the level before.
     encoder->setComputePipelineState(down_.get());
     for (std::size_t k = 1; k < bloom.size(); ++k) {
         barrier(encoder);
-        arguments->setTexture(bloom[k - 1]->gpuResourceID(), 0);
-        arguments->setTexture(bloom[k]->gpuResourceID(), 1);
-        dispatch(encoder, down_.get(), bloom[k]->width(), bloom[k]->height());
+        arguments->setTexture(bloom[k - 1]->gpuResourceID(), binding::input);
+        arguments->setTexture(bloom[k]->gpuResourceID(), binding::level);
+        dispatch_per_pixel(encoder, down_.get(), extent(bloom[k]));
     }
 
-    // Step 3 for B_4 .. B_0.
+    // Step 3 for B_4 .. B_0, each from the level below it: `below` counts
+    // down from the last level to B_1.
     encoder->setComputePipelineState(up_.get());
-    for (std::size_t k = bloom.size() - 1; k-- > 0;) {
+    for (std::size_t below = bloom.size() - 1; below > 0; --below) {
+        const std::size_t k = below - 1;
         barrier(encoder);
-        arguments->setTexture(bloom[k + 1]->gpuResourceID(), 0);
-        arguments->setTexture(bloom[k]->gpuResourceID(), 1);
-        dispatch(encoder, up_.get(), bloom[k]->width(), bloom[k]->height());
+        arguments->setTexture(bloom[below]->gpuResourceID(), binding::input);
+        arguments->setTexture(bloom[k]->gpuResourceID(), binding::level);
+        dispatch_per_pixel(encoder, up_.get(), extent(bloom[k]));
     }
 
     // Steps 1 and 4 to 6, into the target.
     barrier(encoder);
-    arguments->setTexture(resources.radiance->gpuResourceID(), 0);
-    arguments->setTexture(bloom[0]->gpuResourceID(), 1);
-    arguments->setTexture(resources.target->gpuResourceID(), 2);
+    arguments->setTexture(resources.radiance->gpuResourceID(), binding::input);
+    arguments->setTexture(bloom[0]->gpuResourceID(), binding::bloom);
+    arguments->setTexture(resources.target->gpuResourceID(), binding::target);
     encoder->setComputePipelineState(finish_.get());
-    dispatch(encoder, finish_.get(), resources.size.width, resources.size.height);
+    dispatch_per_pixel(encoder, finish_.get(), resources.size);
 }
 
 }  // namespace serenity::metal

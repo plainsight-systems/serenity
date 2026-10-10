@@ -6,6 +6,8 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
+#include "core/frame/extent.h"
+
 namespace serenity::metal {
 
 // Axis: the Metal API surface.
@@ -22,6 +24,17 @@ struct DeviceInfo {
     bool unified_memory = false;
     std::uint64_t recommended_max_working_set_size = 0;  // bytes
 };
+
+// The longest side of a 2D texture Metal makes on every Apple GPU family this
+// renderer runs on (Apple7 and later): 16,384 pixels (Apple's Metal feature
+// set tables). Past it, Metal does not return a null texture but stops the
+// program on a failed assertion (seen on this machine), so every image is
+// checked against it first (check_texture_size).
+inline constexpr std::uint32_t max_texture_side = 16384;
+
+// Throws Error, naming `what`, if `size` has a zero side or one longer than
+// max_texture_side.
+void check_texture_size(frame::Extent size, const char* what);
 
 // The system's default Metal device, required to support ray tracing.
 //
@@ -47,9 +60,9 @@ public:
 
     // Valid for the Device's lifetime. Not retained for the caller: retain
     // it (NS::RetainPtr) to keep it longer.
-    MTL::Device* handle() const { return device_.get(); }
+    MTL::Device* handle() const noexcept { return device_.get(); }
 
-    const DeviceInfo& info() const { return info_; }
+    const DeviceInfo& info() const noexcept { return info_; }
 
 private:
     NS::SharedPtr<MTL::Device> device_;

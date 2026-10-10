@@ -53,17 +53,19 @@ public:
     // Before frame `sequence` is recorded into `slot`; see above.
     void begin_frame(std::uint32_t slot, std::uint64_t sequence);
 
-    // Slot `slot`'s counter, as a shader binds it.
+    // Slot `slot`'s counter, as a shader binds it. Throws Error for a slot
+    // that is not one, as begin_frame() does.
     MTL::GPUAddress address(std::uint32_t slot) const;
 
     // The samples left out over every completed frame; see above.
-    std::uint64_t count() const;
+    std::uint64_t count() const noexcept;
 
 private:
-    std::uint32_t* counter(std::uint32_t slot) const;
+    std::uint32_t* counter(std::uint32_t slot) const noexcept;
 
     const Submission& submission_;
     NS::SharedPtr<MTL::Buffer> counters_;  // one uint per slot
+    Resident resident_;
     std::array<std::uint64_t, frames_in_flight> counting_{};  // sequence + 1 each slot counts for; 0 for none
     std::uint64_t total_ = 0;
 };

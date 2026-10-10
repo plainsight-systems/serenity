@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <span>
 
 #include <Foundation/Foundation.hpp>
@@ -36,7 +37,7 @@ class Library {
 public:
     // Loads the library in `metallib`, on `device`. The bytes are copied, so
     // the span need not outlive the call.
-    Library(const Device& device, std::span<const unsigned char> metallib);
+    Library(const Device& device, std::span<const std::byte> metallib);
 
     Library(const Library&) = delete;
     Library& operator=(const Library&) = delete;

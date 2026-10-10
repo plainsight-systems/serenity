@@ -14,15 +14,14 @@ std::vector<float> ones(std::uint32_t lights) {
 
 }  // namespace
 
-LightGlows::LightGlows(const Device& device, Submission& submission, std::uint32_t lights, bool glows)
+LightGlows::LightGlows(const Device& device, Submission& submission, std::uint32_t lights, bool glowing)
     : lights_(lights), array_(device, submission, std::as_bytes(std::span<const float>(ones(lights))),
-                              glows ? frames_in_flight : 1u) {}
+                              glowing ? FrameArray::Copies::per_frame : FrameArray::Copies::one) {}
 
-std::span<float> LightGlows::glows(std::uint32_t slot) const {
-    const std::span<std::byte> bytes = array_.bytes(slot);
-    // The bytes were made from floats (the constructor), in a buffer whose
-    // copies start 256-byte aligned: they are floats.
-    return {reinterpret_cast<float*>(bytes.data()), lights_};
+std::span<float> LightGlows::glows(std::uint32_t slot) {
+    // The bytes were made from floats (the constructor), at least one: a
+    // scene with no sphere lights has one, unread, and is given none.
+    return array_.view<float>(slot).first(lights_);
 }
 
 }  // namespace serenity::metal

@@ -1,31 +1,22 @@
 #include "metal/acceleration/scene_acceleration.h"
 
+#include <array>
+#include <cstddef>
 #include <string>
+#include <type_traits>
 
 #include "metal/device/error.h"
+#include "metal/device/support.h"
 
 namespace serenity::metal {
 
 // The core's bounds are Metal's bounding boxes, byte for byte, so they are
-// written as they are.
+// written as they are: the same size, each corner at the same offset, and
+// bytes that are their value (SL.con.4).
 static_assert(sizeof(shapes::Bounds) == sizeof(MTL::AxisAlignedBoundingBox));
-
-namespace {
-
-std::string describe(const NS::Error* error) {
-    if (error == nullptr || error->localizedDescription() == nullptr) {
-        return "Metal gave no description";
-    }
-    return error->localizedDescription()->utf8String();
-}
-
-std::span<shapes::Bounds> as_boxes(std::span<std::byte> bytes) {
-    // The bytes were made from boxes (the constructor), in a buffer whose
-    // copies start 256-byte aligned: they are boxes.
-    return {reinterpret_cast<shapes::Bounds*>(bytes.data()), bytes.size() / sizeof(shapes::Bounds)};
-}
-
-}  // namespace
+static_assert(offsetof(shapes::Bounds, min) == offsetof(MTL::AxisAlignedBoundingBox, min));
+static_assert(offsetof(shapes::Bounds, max) == offsetof(MTL::AxisAlignedBoundingBox, max));
+static_assert(std::is_trivially_copyable_v<shapes::Bounds>);
 
 SceneAcceleration::SceneAcceleration(const Device& device, Submission& submission, const shapes::Shapes& shapes,
                                      std::span<const std::uint32_t> moving) {
@@ -50,17 +41,21 @@ SceneAcceleration::SceneAcceleration(const Device& device, Submission& submissio
         at_rest[i] = shapes::world_bounds(shapes::object_bounds(shapes, shapes.records[i]), shapes.transforms[i]);
     }
     boxes_ = std::make_unique<FrameArray>(device, submission, std::as_bytes(std::span(at_rest)),
-                                          moves ? frames_in_flight : 1u);
+                                          moves ? FrameArray::Copies::per_frame : FrameArray::Copies::one);
 
-    auto drained = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
-    MTL::Device* mtl = device.handle();
-    auto set_descriptor = NS::TransferPtr(MTL::ResidencySetDescriptor::alloc()->init());
-    NS::Error* error = nullptr;
+    const auto pool = scoped_pool();
+    MTL::Device* metal_device = device.handle();
     // What only the start-up build reads, resident for its command buffer
-    // alone: a still scene's scratch.
-    auto build_only = NS::TransferPtr(mtl->newResidencySet(set_descriptor.get(), &error));
-    if (!build_only) {
-        throw Error("SceneAcceleration: the device made no residency set: " + describe(error));
+    // alone: a still scene's scratch. A moving scene builds every frame, and
+    // its scratch is resident for good; it has no start-up build.
+    NS::SharedPtr<MTL::ResidencySet> build_only;
+    if (!moves) {
+        auto set_descriptor = NS::TransferPtr(MTL::ResidencySetDescriptor::alloc()->init());
+        NS::Error* error = nullptr;
+        build_only = NS::TransferPtr(metal_device->newResidencySet(set_descriptor.get(), &error));
+        if (!build_only) {
+            throw Error("SceneAcceleration: the device made no residency set: " + describe(error));
+        }
     }
 
     const std::uint32_t structures = moves ? frames_in_flight : 1u;
@@ -72,50 +67,61 @@ SceneAcceleration::SceneAcceleration(const Device& device, Submission& submissio
         geometry->setBoundingBoxStride(sizeof(shapes::Bounds));
         geometry->setOpaque(true);
         built.descriptor = NS::TransferPtr(MTL4::PrimitiveAccelerationStructureDescriptor::alloc()->init());
-        const NS::Object* list[] = {geometry.get()};
-        built.descriptor->setGeometryDescriptors(NS::Array::array(list, 1));
+        const std::array<const NS::Object*, 1> geometries{geometry.get()};
+        built.descriptor->setGeometryDescriptors(NS::Array::array(geometries.data(), geometries.size()));
 
-        const MTL::AccelerationStructureSizes sizes = mtl->accelerationStructureSizes(built.descriptor.get());
-        built.structure = NS::TransferPtr(mtl->newAccelerationStructure(sizes.accelerationStructureSize));
+        const MTL::AccelerationStructureSizes sizes = metal_device->accelerationStructureSizes(built.descriptor.get());
+        built.structure = NS::TransferPtr(metal_device->newAccelerationStructure(sizes.accelerationStructureSize));
         built.scratch =
-            NS::TransferPtr(mtl->newBuffer(sizes.buildScratchBufferSize, MTL::ResourceStorageModePrivate));
+            NS::TransferPtr(metal_device->newBuffer(sizes.buildScratchBufferSize, MTL::ResourceStorageModePrivate));
         if (!built.structure || !built.scratch) {
             throw Error("SceneAcceleration: the device made no acceleration structure or scratch buffer");
         }
-        // Traced every frame: resident for good.
-        submission.make_resident(built.structure.get());
+        // Traced every frame: resident until this object is destroyed.
+        built.structure_resident = submission.keep_resident(built.structure.get());
         if (moves) {
-            submission.make_resident(built.scratch.get());  // each frame's build writes it
+            built.scratch_resident = submission.keep_resident(built.scratch.get());  // each frame's build writes it
         } else {
             build_only->addAllocation(built.scratch.get());
         }
     }
-    build_only->commit();
     if (moves) {
         return;  // each slot's structure is built by its first frame's update()
     }
+    build_only->commit();
 
     // A still scene's one structure, built now.
     const FrameSlot build = submission.begin();
     build.commands->useResidencySet(build_only.get());
     MTL4::ComputeCommandEncoder* encoder = build.commands->computeCommandEncoder();
-    const Built& built = structures_[0];
+    if (encoder == nullptr) {
+        throw Error("SceneAcceleration: the command buffer made no compute encoder");
+    }
+    Built& built = structures_[0];
     encoder->buildAccelerationStructure(built.structure.get(), built.descriptor.get(),
                                         MTL4::BufferRange(built.scratch->gpuAddress(), built.scratch->length()));
     encoder->endEncoding();
     submission.commit();
     // Start-up work, not a frame: waited for here, so the structure is whole
-    // before any frame traces it, and settled here, so it is never measured
-    // as a frame (submission.h).
-    (void)submission.wait_until_complete(build.sequence);
+    // before any frame traces it (GPU.8: the build's writes are complete
+    // before any read), and settled here, so it is never measured as a frame
+    // (submission.h).
+    submission.wait_until_complete(build.sequence);
+    // The scratch was the build's alone, and the build is done: let it go
+    // rather than hold it for the run (GPU.9). The set that made it resident
+    // is released with it, at the end of this scope.
+    built.scratch.reset();
 }
 
 void SceneAcceleration::update(MTL4::ComputeCommandEncoder* encoder, std::uint32_t slot,
-                               std::span<const contracts::Transform> transforms) const {
+                               std::span<const contracts::Transform> transforms) {
     if (moving_.empty()) {
         throw Error("SceneAcceleration::update: nothing in the scene moves");
     }
-    const std::span<shapes::Bounds> boxes = as_boxes(boxes_->bytes(slot));
+    if (encoder == nullptr || slot >= frames_in_flight) {
+        throw Error("SceneAcceleration::update: no encoder, or no frame slot " + std::to_string(slot));
+    }
+    const std::span<shapes::Bounds> boxes = boxes_->view<shapes::Bounds>(slot);  // made from boxes
     if (transforms.size() != boxes.size()) {
         throw Error("SceneAcceleration::update: not one transform per shape");
     }
@@ -125,7 +131,7 @@ void SceneAcceleration::update(MTL4::ComputeCommandEncoder* encoder, std::uint32
         boxes[shape] = shapes::world_bounds(moving_bounds_[i], transforms[shape]);
     }
     // Step 2: the slot's structure, over every box.
-    const Built& built = structures_[slot % frames_in_flight];
+    const Built& built = structures_[slot];
     encoder->buildAccelerationStructure(built.structure.get(), built.descriptor.get(),
                                         MTL4::BufferRange(built.scratch->gpuAddress(), built.scratch->length()));
     // Step 3: every pass after it traces the finished structure.
@@ -134,7 +140,10 @@ void SceneAcceleration::update(MTL4::ComputeCommandEncoder* encoder, std::uint32
 }
 
 MTL::ResourceID SceneAcceleration::resource(std::uint32_t slot) const {
-    const Built& built = moving_.empty() ? structures_[0] : structures_[slot % frames_in_flight];
+    if (slot >= frames_in_flight) {
+        throw Error("SceneAcceleration::resource: no frame slot " + std::to_string(slot));
+    }
+    const Built& built = moving_.empty() ? structures_[0] : structures_[slot];
     return built.structure->gpuResourceID();
 }
 

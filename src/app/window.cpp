@@ -1,5 +1,8 @@
 #include "app/window.h"
 
+#include <climits>
+#include <cstdint>
+
 #include <SDL3/SDL.h>
 
 namespace serenity::app {
@@ -7,53 +10,65 @@ namespace serenity::app {
 namespace {
 
 [[noreturn]] void fail(const char* what) {
-    throw Error(std::string(what) + ": " + SDL_GetError());
+    throw Error(std::string{what} + ": " + SDL_GetError());
+}
+
+// SDL takes a window's size as int.
+int points(std::uint32_t side) {
+    if (side == 0 || side > INT_MAX) {
+        throw Error("a window side of " + std::to_string(side) + " points is not one SDL takes");
+    }
+    return static_cast<int>(side);
+}
+
+SDL_Window* open(const char* title, Points size) {
+    SDL_Window* window = SDL_CreateWindow(title, points(size.width), points(size.height),
+                                          SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_METAL);
+    if (!window) {
+        fail("SDL_CreateWindow");
+    }
+    return window;
+}
+
+void* make_view(SDL_Window* window) {
+    SDL_MetalView view = SDL_Metal_CreateView(window);
+    if (!view) {
+        fail("SDL_Metal_CreateView");
+    }
+    return view;
 }
 
 }  // namespace
 
-struct Window::SdlVideo {
-    SdlVideo() {
-        if (!SDL_Init(SDL_INIT_VIDEO)) {
-            fail("SDL_Init");
-        }
+Window::SdlVideo::SdlVideo() {
+    // SDL's video is the main thread's alone (window.h).
+    if (!SDL_IsMainThread()) {
+        throw Error("a window must be opened on the main thread");
     }
-    ~SdlVideo() { SDL_Quit(); }
-    SdlVideo(const SdlVideo&) = delete;
-    SdlVideo& operator=(const SdlVideo&) = delete;
-};
-
-struct Window::MetalView {
-    explicit MetalView(SDL_Window* window) : view(SDL_Metal_CreateView(window)) {
-        if (view == nullptr) {
-            fail("SDL_Metal_CreateView");
-        }
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        fail("SDL_Init");
     }
-    ~MetalView() { SDL_Metal_DestroyView(view); }
-    MetalView(const MetalView&) = delete;
-    MetalView& operator=(const MetalView&) = delete;
+}
 
-    SDL_MetalView view;
-};
+Window::SdlVideo::~SdlVideo() {
+    SDL_Quit();
+}
 
 void Window::DestroyWindow::operator()(SDL_Window* window) const {
     SDL_DestroyWindow(window);
 }
 
-Window::Window(const char* title, frame::Extent size) : video_(std::make_unique<SdlVideo>()) {
-    window_.reset(SDL_CreateWindow(title, static_cast<int>(size.width), static_cast<int>(size.height),
-                                   SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_METAL));
-    if (!window_) {
-        fail("SDL_CreateWindow");
-    }
-    view_ = std::make_unique<MetalView>(window_.get());
+void Window::DestroyView::operator()(void* view) const {
+    SDL_Metal_DestroyView(view);
 }
+
+Window::Window(const char* title, Points size) : window_(open(title, size)), view_(make_view(window_.get())) {}
 
 Window::~Window() = default;
 
 Window::Events Window::poll() {
     Events events;
-    SDL_Event event;
+    SDL_Event event{};
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
         case SDL_EVENT_QUIT:
@@ -81,7 +96,9 @@ frame::Extent Window::size_in_pixels() const {
     if (!SDL_GetWindowSizeInPixels(window_.get(), &width, &height)) {
         fail("SDL_GetWindowSizeInPixels");
     }
-    return frame::Extent{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)};
+    // A minimized window may report nothing: 0, never negative.
+    return frame::Extent{static_cast<std::uint32_t>(width > 0 ? width : 0),
+                         static_cast<std::uint32_t>(height > 0 ? height : 0)};
 }
 
 void Window::set_title(const std::string& title) {
@@ -91,7 +108,7 @@ void Window::set_title(const std::string& title) {
 }
 
 void* Window::metal_layer() const {
-    return SDL_Metal_GetLayer(view_->view);
+    return SDL_Metal_GetLayer(view_.get());
 }
 
 }  // namespace serenity::app

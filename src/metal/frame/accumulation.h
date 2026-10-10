@@ -34,7 +34,10 @@ namespace serenity::metal {
 // frame joins, and returns the count of frames the image holds before it;
 // where the rule says the image is made anew (a first frame, or a start over
 // at another size) it makes it. A frame the rule refuses is refused here, by
-// Error with the rule's reason, and nothing changes.
+// Error with the rule's reason, and nothing changes; so is a size Metal
+// cannot make an image of (metal/device/device.h, max_texture_side). The
+// rule is asked on a copy of the history, kept once the image exists, so
+// the history never claims an image that is not there (E.4).
 //
 // The image is the GPU's alone, in private storage, made resident through
 // the submission. Remaking it for a new size first drains the submission,
@@ -62,13 +65,13 @@ public:
     std::uint32_t prepare(const frame::FrameInputs& inputs, frame::Extent size, bool scene_changes);
 
     // The image, valid until the next prepare(); null before the first.
-    MTL::Texture* texture() const { return texture_.get(); }
-
+    MTL::Texture* texture() const noexcept { return texture_.get(); }
 
 private:
     NS::SharedPtr<MTL::Device> device_;
     Submission& submission_;
     NS::SharedPtr<MTL::Texture> texture_;
+    Resident resident_;  // released after the GPU is done with it (submission.h)
     frame::History history_;  // the core's rule, and what the image holds
 };
 

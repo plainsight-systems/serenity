@@ -42,8 +42,8 @@ namespace serenity::headless {
 //   - a scene whose shapes move (core/animation/animate.h), time
 //     advancing: the mean of frame i's own N samples, started over at each
 //     frame, since frames at two instants are two scenes
-//     (metal/frame/accumulation.h). This is how a movie of moving, blinking fireflies
-//     is made clean: N samples of each instant.
+//     (core/frame/history.h). This is how a movie of moving, blinking
+//     fireflies is made clean: N samples of each instant.
 //
 // A graph that converges over nothing renders each frame once, whatever N:
 // its samples would be the same image again (core/frame/history.h).
@@ -62,10 +62,12 @@ namespace serenity::headless {
 // counted in frames, not samples. A frame not written is not read back
 // either, so `last` costs little more than the GPU's time.
 //
-// parse() checks everything before anything renders and throws Error naming
-// the argument (E.2, E.14): an unknown option, a missing or malformed value (a
-// --write other than all, last or doubling), zero frames, zero samples or
-// more than an image holds (2^24 - 1, metal/frame/accumulation.h), a size
+// parse() checks everything before anything renders and throws OptionsError
+// naming the argument (E.2, E.14): an unknown option, a missing or malformed
+// value (a --write other than all, last or doubling; a number with a sign,
+// a space or anything after it, read by std::from_chars, E.28), zero
+// frames, zero samples or more than an image holds (2^24 - 1,
+// frame::max_accumulated_frames, core/frame/frame_inputs.h), a size
 // with a zero side, a step that is not positive and finite, a time that is
 // not finite or is negative, --time with --step, a range whose last sample's
 // index, (first + frames) x N - 1, is past the last there can be, a missing
@@ -73,10 +75,17 @@ namespace serenity::headless {
 // than an image holds is refused by the renderer at the first sample past
 // it: whether it accumulates across frames depends on the scene, which
 // parse() does not read. It does not touch the file system: the graph is
-// read, and the directory created, after parsing succeeds.
-class Error : public std::runtime_error {
+// read, and the directory made ready (prepare_output), after parsing
+// succeeds.
+//
+// The directory holds this run's frames and nothing else: prepare_output()
+// creates it, or takes it if it is empty, and refuses by OptionsError one
+// that holds anything, so no frame of an earlier run sits beside this run's
+// looking like one of them (principle 1: the same command writes the same
+// files). The Makefile's targets clear their own directories first.
+class OptionsError : public std::runtime_error {
 public:
-    explicit Error(const std::string& what) : std::runtime_error(what) {}
+    using std::runtime_error::runtime_error;
 };
 
 enum class Write {
@@ -85,6 +94,8 @@ enum class Write {
     doubling,
 };
 
+// What parse() read: plain values, which parse() alone makes and checks
+// (C.2: a struct, since nothing here keeps an invariant after it).
 struct Options {
     std::uint64_t frames = 1;
     std::uint64_t first = 0;
@@ -98,10 +109,24 @@ struct Options {
     std::uint64_t samples = 1;  // rendered per frame, at its instant
 };
 
-// Whether the frame `n` frames after the first, of `frames`, is written.
-bool written(Write write, std::uint64_t n, std::uint64_t frames);
+// Which of a run's frames: the one `after_first` frames after its first, of
+// `frames` in all. A struct, so the two counts are named where they are
+// given (I.24).
+struct RunFrame {
+    std::uint64_t after_first = 0;
+    std::uint64_t frames = 0;
+};
+
+// Whether `frame` is written. Throws std::logic_error for a Write with no
+// rule, rather than writing (P.6).
+bool written(Write write, RunFrame frame);
 
 // `args` are the arguments after the program's name.
 Options parse(std::span<const char* const> args);
+
+// Makes `out` ready for a run's frames: creates it if it does not exist;
+// throws OptionsError if it is not an empty directory (see above), or
+// std::filesystem::filesystem_error if it cannot be created or read.
+void prepare_output(const std::filesystem::path& out);
 
 }  // namespace serenity::headless

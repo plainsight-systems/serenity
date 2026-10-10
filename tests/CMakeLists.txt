@@ -24,6 +24,7 @@ add_executable(serenity_tests
     frame_times_test.cpp
     png_test.cpp
     options_test.cpp
+    programs_test.cpp
     main_test.cpp
 )
 target_link_libraries(serenity_tests PRIVATE
@@ -33,3 +34,13 @@ target_compile_definitions(serenity_tests PRIVATE
     SERENITY_GRAPHS_DIR="${PROJECT_SOURCE_DIR}/graphs"
     SERENITY_SCENES_DIR="${PROJECT_SOURCE_DIR}/scenes")
 add_test(NAME serenity_tests COMMAND serenity_tests)
+
+# The structural checks, so the default verification path (ctest, make test)
+# runs them, not make check alone: the boundary the core keeps
+# (tools/check_boundaries.sh), and the proofs that each of its rules and the
+# toolchain check's fire. The probe tests write files into src/ for a moment,
+# so none runs beside another that reads the tree.
+add_test(NAME boundaries COMMAND sh "${PROJECT_SOURCE_DIR}/tools/check_boundaries.sh")
+add_test(NAME boundaries_fire COMMAND sh "${PROJECT_SOURCE_DIR}/tests/test_check_boundaries.sh")
+add_test(NAME toolchain_fires COMMAND sh "${PROJECT_SOURCE_DIR}/tests/test_check_toolchain.sh")
+set_tests_properties(boundaries boundaries_fire PROPERTIES RESOURCE_LOCK source_tree)

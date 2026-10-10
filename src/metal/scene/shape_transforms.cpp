@@ -6,7 +6,7 @@ namespace serenity::metal {
 
 namespace {
 
-std::span<const contracts::Transform> some(std::span<const contracts::Transform> at_rest) {
+std::span<const contracts::Transform> nonempty(std::span<const contracts::Transform> at_rest) {
     if (at_rest.empty()) {
         throw Error("ShapeTransforms: the scene has no shapes");
     }
@@ -17,13 +17,12 @@ std::span<const contracts::Transform> some(std::span<const contracts::Transform>
 
 ShapeTransforms::ShapeTransforms(const Device& device, Submission& submission,
                                  std::span<const contracts::Transform> at_rest, bool moves)
-    : array_(device, submission, std::as_bytes(some(at_rest)), moves ? frames_in_flight : 1u) {}
+    : array_(device, submission, std::as_bytes(nonempty(at_rest)),
+             moves ? FrameArray::Copies::per_frame : FrameArray::Copies::one) {}
 
-std::span<contracts::Transform> ShapeTransforms::transforms(std::uint32_t slot) const {
-    const std::span<std::byte> bytes = array_.bytes(slot);
-    // The bytes were made from transforms (the constructor), in a buffer
-    // whose copies start 256-byte aligned: they are transforms.
-    return {reinterpret_cast<contracts::Transform*>(bytes.data()), bytes.size() / sizeof(contracts::Transform)};
+std::span<contracts::Transform> ShapeTransforms::transforms(std::uint32_t slot) {
+    // The bytes were made from transforms (the constructor).
+    return array_.view<contracts::Transform>(slot);
 }
 
 }  // namespace serenity::metal

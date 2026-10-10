@@ -8,7 +8,6 @@
 
 #include "core/frame/extent.h"
 #include "core/passes/tone_map.h"
-#include "metal/scene/scene_buffers.h"
 
 namespace serenity::metal {
 
@@ -45,12 +44,13 @@ struct FrameResources {
 
     // The scene's block, the address of each still array
     // (metal/scene/scene_block.h); the shapes' transforms as this frame places
-    // them (metal/scene/shape_transforms.h); and the structure this frame
-    // traces (metal/acceleration/scene_acceleration.h). Null, 0 and no
-    // structure when the frame has no scene.
-    MTL::GPUAddress scene = 0;  // the scene's block (scene_block.h)
+    // them (metal/scene/shape_transforms.h); the sphere lights' glows as it
+    // lights them (metal/scene/light_glows.h); and the structure this frame
+    // traces (metal/acceleration/scene_acceleration.h). 0 and no structure
+    // when the frame has no scene.
+    MTL::GPUAddress scene = 0;
     MTL::GPUAddress transforms = 0;
-    MTL::GPUAddress glows = 0;  // the sphere lights' glows this frame (metal/scene/light_glows.h)
+    MTL::GPUAddress glows = 0;
     MTL::ResourceID acceleration{};
 };
 

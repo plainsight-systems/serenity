@@ -24,7 +24,8 @@ namespace serenity::metal {
 // from a kernel, so it is not framebuffer-only; its pixel format is
 // BGRA8Unorm, the format the passes write; three drawables, display sync
 // on. Its residency set is added to the queue once, at construction, so every
-// drawable it hands out is resident.
+// drawable it hands out is resident, and taken off at destruction, once the
+// GPU is done with the frames in flight (submission.h, Lifetime).
 //
 // Pacing comes from here. acquire() blocks until the display frees a
 // drawable, which holds the loop to the display's refresh without a timer.
@@ -44,24 +45,29 @@ struct LayerHandle {
 class Presenter {
 public:
     // Configures the layer for `device` at `size`, and adds its residency set
-    // to `submission`'s queue. Throws Error if the handle is null.
+    // to `submission`'s queue. Throws Error if the handle is null, or `size`
+    // is not one Metal makes an image of (device.h, check_texture_size).
     Presenter(const Device& device, Submission& submission, LayerHandle layer, frame::Extent size);
 
     Presenter(const Presenter&) = delete;
     Presenter& operator=(const Presenter&) = delete;
     Presenter(Presenter&&) = delete;
     Presenter& operator=(Presenter&&) = delete;
-    ~Presenter() = default;
+    // Waits for the GPU, then takes the layer's residency set off the queue
+    // (submission.h, Lifetime).
+    ~Presenter();
 
     void resize(frame::Extent size);
-    frame::Extent size() const { return size_; }
+    frame::Extent size() const noexcept { return size_; }
 
     // The next drawable, or null if Core Animation had none to give. Owned
     // by Core Animation; valid until it is presented (Submission::present).
     CA::MetalDrawable* acquire();
 
 private:
+    Submission& submission_;
     NS::SharedPtr<CA::MetalLayer> layer_;
+    NS::SharedPtr<MTL::ResidencySet> drawables_;  // the layer's, on the queue
     frame::Extent size_;
 };
 

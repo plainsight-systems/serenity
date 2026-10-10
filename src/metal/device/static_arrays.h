@@ -43,11 +43,12 @@ public:
     ~StaticArrays() = default;
 
     // The address of array `i`, in the order given; the shared zeroed block
-    // if it was empty.
-    MTL::GPUAddress address(std::size_t i) const { return addresses_.at(i); }
+    // if it was empty. Throws Error if there is no array `i`.
+    MTL::GPUAddress address(std::size_t i) const;
 
 private:
     NS::SharedPtr<MTL::Buffer> buffer_;
+    Resident resident_;  // released after the GPU is done with it (submission.h)
     std::vector<MTL::GPUAddress> addresses_;
 };
 

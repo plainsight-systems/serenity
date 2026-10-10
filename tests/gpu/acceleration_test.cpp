@@ -38,8 +38,8 @@ struct ProbeHit {
 // Traces `rays` through `acceleration`'s structure for `slot`, with the scene's
 // shapes as `transforms` places them, in one command buffer; if `moving`,
 // first rewrites the slot's transforms and records the structure's update.
-std::vector<ProbeHit> probe(metal::Device& device, metal::Submission& submission, const metal::SceneBuffers& buffers, const metal::ShapeTransforms& transforms,
-                            const metal::SceneAcceleration& acceleration, const std::vector<ProbeRay>& rays,
+std::vector<ProbeHit> probe(metal::Device& device, metal::Submission& submission, const metal::SceneBuffers& buffers, metal::ShapeTransforms& transforms,
+                            metal::SceneAcceleration& acceleration, const std::vector<ProbeRay>& rays,
                             const std::vector<contracts::Transform>* moved) {
     metal::Library library(device, metallib::smoke);
     auto pipeline = library.compute_pipeline("trace_probe");

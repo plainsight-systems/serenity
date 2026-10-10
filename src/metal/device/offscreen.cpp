@@ -1,14 +1,22 @@
 #include "metal/device/offscreen.h"
 
+#include <cstddef>
+#include <string>
+
 #include "metal/device/error.h"
+#include "metal/device/support.h"
 
 namespace serenity::metal {
 
+namespace {
+
+constexpr std::size_t bytes_per_pixel = 4;  // RGBA8Unorm
+
+}  // namespace
+
 Offscreen::Offscreen(const Device& device, Submission& submission, frame::Extent size) : size_(size) {
-    if (size.width == 0 || size.height == 0) {
-        throw Error("Offscreen: an image needs a width and a height");
-    }
-    auto drained = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+    check_texture_size(size, "Offscreen");
+    const auto pool = scoped_pool();
     MTL::TextureDescriptor* descriptor =
         MTL::TextureDescriptor::texture2DDescriptor(MTL::PixelFormatRGBA8Unorm, size.width, size.height, false);
     descriptor->setStorageMode(MTL::StorageModeShared);
@@ -18,17 +26,21 @@ Offscreen::Offscreen(const Device& device, Submission& submission, frame::Extent
         throw Error("Offscreen: the device made no " + std::to_string(size.width) + " x " +
                     std::to_string(size.height) + " texture");
     }
-    submission.make_resident(texture_.get());
+    resident_ = submission.keep_resident(texture_.get());
+}
+
+std::size_t Offscreen::rgba_size() const {
+    return std::size_t{size_.width} * size_.height * bytes_per_pixel;
 }
 
 void Offscreen::read_rgba(std::span<std::uint8_t> out) const {
-    const std::size_t row_bytes = std::size_t{size_.width} * 4;
-    const std::size_t expected = row_bytes * size_.height;
+    const std::size_t row_bytes = std::size_t{size_.width} * bytes_per_pixel;
+    const std::size_t expected = rgba_size();
     if (out.size() != expected) {
         throw Error("read_rgba: " + std::to_string(out.size()) + " bytes given for an image of " +
                     std::to_string(expected));
     }
-    texture_->getBytes(out.data(), row_bytes, MTL::Region(0, 0, size_.width, size_.height), 0);
+    texture_->getBytes(out.data(), row_bytes, MTL::Region{0, 0, size_.width, size_.height}, 0);
 }
 
 }  // namespace serenity::metal

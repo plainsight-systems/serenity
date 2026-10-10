@@ -1,23 +1,25 @@
 #include "metal/film/non_finite.h"
 
 #include <cstring>
+#include <string>
 
 #include "metal/device/error.h"
+#include "metal/device/support.h"
 
 namespace serenity::metal {
 
 NonFinite::NonFinite(const Device& device, Submission& submission) : submission_(submission) {
-    auto drained = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+    const auto pool = scoped_pool();
     counters_ = NS::TransferPtr(
         device.handle()->newBuffer(sizeof(std::uint32_t) * frames_in_flight, MTL::ResourceStorageModeShared));
     if (!counters_) {
         throw Error("the device made no buffer for the counts of samples not finite");
     }
     std::memset(counters_->contents(), 0, sizeof(std::uint32_t) * frames_in_flight);
-    submission.make_resident(counters_.get());
+    resident_ = submission.keep_resident(counters_.get());
 }
 
-std::uint32_t* NonFinite::counter(std::uint32_t slot) const {
+std::uint32_t* NonFinite::counter(std::uint32_t slot) const noexcept {
     return static_cast<std::uint32_t*>(counters_->contents()) + slot;
 }
 
@@ -34,17 +36,20 @@ void NonFinite::begin_frame(std::uint32_t slot, std::uint64_t sequence) {
 }
 
 MTL::GPUAddress NonFinite::address(std::uint32_t slot) const {
+    if (slot >= frames_in_flight) {
+        throw Error("NonFinite::address: no slot " + std::to_string(slot));
+    }
     return counters_->gpuAddress() + sizeof(std::uint32_t) * slot;
 }
 
-std::uint64_t NonFinite::count() const {
-    std::uint64_t count = total_;
+std::uint64_t NonFinite::count() const noexcept {
+    std::uint64_t total = total_;
     for (std::uint32_t slot = 0; slot < frames_in_flight; ++slot) {
         if (counting_[slot] != 0 && submission_.has_completed(counting_[slot] - 1)) {
-            count += *counter(slot);
+            total += *counter(slot);
         }
     }
-    return count;
+    return total;
 }
 
 }  // namespace serenity::metal

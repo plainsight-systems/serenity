@@ -3,7 +3,6 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
-#include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/frame/frame_resources.h"
 
@@ -39,12 +38,12 @@ namespace serenity::metal {
 //
 // Cost: one thread per pixel, in rows of the execution width (GPU.2); per
 // pixel, the integrator's path (about twice its length in rays, a handful
-// of surfaces in practice; integrator/path.metal.h), and 36 bytes of
+// of surfaces in practice; integrator/path.metal.h), and 48 bytes of
 // images: the accumulated pixel's 16 read and 16 written, and the radiance
 // image's 16 written.
 class PathPass {
 public:
-    PathPass(const Device& device, const Library& library);
+    explicit PathPass(const Library& library);
 
     // Records the pass. Throws Error if `resources` has no scene, no camera,
     // no accumulated image or no radiance image.

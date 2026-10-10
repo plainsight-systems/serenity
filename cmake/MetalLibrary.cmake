@@ -7,10 +7,10 @@
 #       SOURCES      <.metal files>...
 #       INCLUDE_DIRS <directories the shaders include from>...)
 #
-# Each source is compiled to AIR with SERENITY_METAL_FLAGS, the AIR is linked
+# Each source is compiled to AIR with the flags below, the AIR is linked
 # into one .metallib, and its bytes become
 #
-#   serenity::metallib::<NAME>   (inline constexpr unsigned char[])
+#   serenity::metallib::<NAME>   (std::span<const std::byte> over a constexpr std::array)
 #
 # in ${CMAKE_BINARY_DIR}/generated/serenity/metallib/<NAME>.h, which TARGET
 # can include as "serenity/metallib/<NAME>.h" and hand to metal::Library.
@@ -23,12 +23,20 @@
 #                                  the compiler's default
 #   -mmacosx-version-min           the deployment target the C++ builds for
 #   -Werror                        a shader warning fails the build
+#   -fmetal-math-mode=fast         Metal's default math (docs/process/MEMORY.md),
+#   -O2                            and its default optimization, each named
+#                                  rather than left to the compiler's
+#                                  defaults; the pinned compiler builds the
+#                                  same bytes with them as without
+#                                  (checked 2026-10-10; -O3 differs)
 #
-# Math is Metal's default (fast). Dependencies on included headers are
+# Dependencies on included headers are
 # tracked through the compiler's depfile, so changing a header a shader
 # includes rebuilds every library that includes it.
 
 set(SERENITY_METAL_STD "-std=metal4.0")
+set(SERENITY_METAL_MATH "-fmetal-math-mode=fast")
+set(SERENITY_METAL_OPTIMIZATION "-O2")
 
 function(serenity_add_metallib)
     cmake_parse_arguments(ARG "" "TARGET;NAME" "SOURCES;INCLUDE_DIRS" ${ARGN})
@@ -54,7 +62,7 @@ function(serenity_add_metallib)
         add_custom_command(
             OUTPUT "${air}"
             COMMAND xcrun -sdk macosx metal
-                    ${SERENITY_METAL_STD}
+                    ${SERENITY_METAL_STD} ${SERENITY_METAL_MATH} ${SERENITY_METAL_OPTIMIZATION}
                     -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}
                     -Werror ${includes}
                     -MMD -MF "${dep}"

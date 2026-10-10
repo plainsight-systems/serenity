@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 
@@ -23,7 +24,8 @@ namespace serenity::metal {
 //
 // The texture is in shared storage, which Apple silicon's unified memory
 // allows, so reading it back is a copy out of memory the CPU can already see,
-// with no staging buffer. It is made resident once, at construction.
+// with no staging buffer. It is made resident once, at construction, until
+// it is destroyed, which waits for the GPU first (submission.h, Lifetime).
 //
 // Readback is the one place the CPU waits for a frame to finish (GPU.1): the
 // caller waits with Submission::wait_until_complete(i) and then calls
@@ -32,7 +34,9 @@ namespace serenity::metal {
 //
 // read_rgba() copies the image out as R, G, B, A, rows from the top, the
 // order output/png.h takes. `out` must hold exactly width x height x 4
-// bytes; any other size throws Error.
+// bytes; any other size throws Error. Construction throws Error for a size
+// Metal makes no image of (device.h, max_texture_side), or if the device
+// cannot make the texture.
 //
 // Cost of a readback: width x height x 4 bytes, copied once. At 3456 x 2234
 // that is 30.9 MB. Not on any budgeted path.
@@ -46,13 +50,18 @@ public:
     Offscreen& operator=(Offscreen&&) = delete;
     ~Offscreen() = default;
 
-    MTL::Texture* texture() const { return texture_.get(); }
-    frame::Extent size() const { return size_; }
+    MTL::Texture* texture() const noexcept { return texture_.get(); }
+    frame::Extent size() const noexcept { return size_; }
+
+    // The bytes read_rgba() fills: width x height x 4. The one place that
+    // size is computed (ES.3).
+    std::size_t rgba_size() const;
 
     void read_rgba(std::span<std::uint8_t> out) const;
 
 private:
     NS::SharedPtr<MTL::Texture> texture_;
+    Resident resident_;  // the texture's residency, released after the GPU is done with it
     frame::Extent size_;
 };
 

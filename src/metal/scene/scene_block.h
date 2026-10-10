@@ -28,7 +28,8 @@
 // small, fixed once loaded, and read by every thread at every bounce, the
 // reuse that address space is for (WWDC16 606); each starts 256-byte
 // aligned (static_arrays.h), as a constant buffer's offset must. Read as
-// device memory, the block cost frames what bound arrays did not. The
+// device memory instead, the block made frames slower than binding each
+// array on its own; read as constant, nearly as fast. The
 // measurements, and how Falcor and Unreal bind their scenes:
 // docs/research/2026-10-10-scene-block.md.
 
@@ -36,6 +37,7 @@
 #include <metal_stdlib>
 #else
 #include <cstdint>
+#include <stdint.h>  // uint32_t in the global namespace, where the shading language has it
 #endif
 
 #include "core/lights/gradient_sky.h"

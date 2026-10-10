@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -17,33 +18,46 @@ namespace serenity::app {
 // builds the Metal-backed view itself, so no Objective-C is written here.
 //
 // A Window owns SDL's video subsystem, the window, and the Metal view inside
-// it, each released by its own handle in reverse order (R.1, R.20); copying
-// and moving are deleted, since SDL's video subsystem is one per process.
+// it, each released by its own handle in reverse order (R.1, R.20). Copying
+// and moving are deleted: SDL's video subsystem is one per process, started
+// and stopped by the one Window, which a program opens once and keeps for
+// its life, so a moved-from Window, owning nothing, would serve nothing.
 //
 // The window's surface reaches the renderer as metal_layer(): the view's
 // CAMetalLayer, as SDL returns it, an opaque pointer. The app wraps it in
 // metal::LayerHandle; this file names no Metal type (file-mapping.md: the
 // app depends on the backend, and only the backend uses Metal).
 //
-// Sizes are in pixels, not points: on the development machine's display one
-// point is two pixels, and the drawable must match the pixels.
+// Two units of size, kept apart by type (I.4): the window is opened at a
+// size in points, the unit window systems lay windows out in (Points), and
+// everything rendered is in pixels (frame::Extent, size_in_pixels()): on the
+// development machine's display one point is two pixels, and the drawable
+// must match the pixels.
 //
-// Failure throws Error with SDL's description (E.2, E.5, E.14): SDL cannot
-// start its video subsystem, make the window, or make the view.
+// Failure throws Error with SDL's description (E.2, E.5, E.14): a window
+// opened off the main thread, which SDL requires, a size SDL cannot take,
+// or SDL unable to start its video subsystem, make the window, or make the
+// view.
 //
-// Not performance-sensitive: poll() drains events once a frame, which costs
-// nothing measurable against a frame.
+// Not performance-sensitive: poll() drains the events once a frame.
 
 class Error : public std::runtime_error {
 public:
-    explicit Error(const std::string& what) : std::runtime_error(what) {}
+    using std::runtime_error::runtime_error;
+};
+
+// A window's size in points.
+struct Points {
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
 };
 
 class Window {
 public:
-    // Opens a resizable, high-density window titled `title`, `size` points
-    // across, on the main display. Must be called on the main thread.
-    Window(const char* title, frame::Extent size);
+    // Opens a resizable, high-density window titled `title`, `size` across,
+    // on the main display. Must be called on the main thread; throws Error
+    // if it is not.
+    Window(const char* title, Points size);
 
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
@@ -67,16 +81,30 @@ public:
     void* metal_layer() const;
 
 private:
-    struct SdlVideo;   // SDL_Init and SDL_Quit for the video subsystem
-    struct MetalView;  // SDL_Metal_CreateView and SDL_Metal_DestroyView
+    // SDL_Init(SDL_INIT_VIDEO), and at the end SDL_Quit, which shuts down
+    // every subsystem: the program starts no other. Held by value (R.5); it
+    // is a call and its undoing, with nothing to hand on.
+    struct SdlVideo {
+        SdlVideo();
+        ~SdlVideo();
+        SdlVideo(const SdlVideo&) = delete;
+        SdlVideo& operator=(const SdlVideo&) = delete;
+        SdlVideo(SdlVideo&&) = delete;
+        SdlVideo& operator=(SdlVideo&&) = delete;
+    };
     struct DestroyWindow {
         void operator()(SDL_Window* window) const;
     };
+    // SDL_Metal_DestroyView, for the view SDL_Metal_CreateView made (an
+    // SDL_MetalView, which is a void*).
+    struct DestroyView {
+        void operator()(void* view) const;
+    };
 
     // Declaration order is the reverse of release order.
-    std::unique_ptr<SdlVideo> video_;
+    SdlVideo video_;
     std::unique_ptr<SDL_Window, DestroyWindow> window_;
-    std::unique_ptr<MetalView> view_;
+    std::unique_ptr<void, DestroyView> view_;
 };
 
 }  // namespace serenity::app
