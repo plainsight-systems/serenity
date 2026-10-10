@@ -130,7 +130,7 @@ namespace serenity::animation {
 // fireflies among eleven still shapes (five spheres): 1.3 s one flight after
 // another, and loaded whole in 104 ms with its flights made in parallel
 // (make_flights) on the M3 Max's 16 cores. Its fourteen marbles, among 23
-// still shapes, are measured when they are implemented. A thousand fireflies among fifty marbles would want
+// still shapes, load whole in 128 ms. A thousand fireflies among fifty marbles would want
 // a spatial index behind the obstacles as well, made when such a scene is.
 // Memory: some 140 segments of 22 doubles, some 25 KB per firefly. Per frame:
 // one binary search over 128 starts and one closed form of a few sines or a

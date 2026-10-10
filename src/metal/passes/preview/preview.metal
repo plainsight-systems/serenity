@@ -35,6 +35,10 @@ kernel void preview(constant serenity::contracts::FrameConstants& frame [[buffer
                     device const serenity::textures::TextureRecord* texture_records [[buffer(4)]],
                     device const serenity::textures::CheckerData* checkers [[buffer(5)]],
                     device const serenity::textures::WoodData* woods [[buffer(19)]],
+                    device const serenity::textures::SwirlData* swirls [[buffer(20)]],
+                    device const serenity::materials::CoatedData* coated [[buffer(21)]],
+                    device const serenity::media::MediumRecord* medium_records [[buffer(22)]],
+                    device const serenity::media::AbsorbingData* absorbing [[buffer(23)]],
                     device const serenity::materials::MaterialRecord* materials [[buffer(6)]],
                     device const serenity::materials::RoughData* rough [[buffer(7)]],
                     device const serenity::materials::DielectricData* dielectrics [[buffer(8)]],
@@ -55,10 +59,11 @@ kernel void preview(constant serenity::contracts::FrameConstants& frame [[buffer
     direct::Scene scene;
     scene.structure = structure;
     scene.shapes = Shapes{shape_records, transforms, boxes};
-    scene.textures = Textures{texture_records, checkers, woods};
-    scene.materials = Materials{materials, rough, dielectrics, conductors};
+    scene.textures = Textures{texture_records, checkers, woods, swirls};
+    scene.materials = Materials{materials, rough, dielectrics, conductors, coated};
     scene.selection = EveryLight{light_records, light_counts.lights};
     scene.lights = Lights{light_records, shape_lights, sphere_lights, transforms, sphere_glows};
+    scene.media = Media{medium_records, absorbing};
     scene.sky = sky;
 
     float3 color = float3(0.0f);

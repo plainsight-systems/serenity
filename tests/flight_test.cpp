@@ -245,3 +245,61 @@ TEST_CASE("a schedule's flashes: lit at each start, across the loop's end too") 
     CHECK(animation::glow(glows, r, Seconds(0.05)) > 0.9f);
     CHECK(animation::glow(glows, r, Seconds(0.4)) == 0.0f);
 }
+
+TEST_CASE("a flight circles a marble on a table: its orbit raised so its bob clears the floor") {
+    // A marble 1.6 cm across on a table top at 0.75 m, the volume's floor
+    // just above it: an orbit at the marble's height would bob through the
+    // table, so every circle would fail without the raise.
+    const std::string text = R"(
+[camera]
+position = [0, 0.8, 0.5]
+look_at = [0, 0.76, 0]
+vertical_fov_degrees = 30
+[environment]
+kind = "gradient"
+zenith = [0, 0, 0]
+horizon = [0, 0, 0]
+[materials.wood]
+kind = "rough"
+color = [0.1, 0.05, 0.02]
+[materials.glass]
+kind = "dielectric"
+ior = 1.5
+[materials.glow]
+kind = "emissive"
+radiance = [10, 10, 10]
+[[shapes]]
+kind = "box"
+min = [-1, 0.72, -1]
+max = [1, 0.75, 1]
+material = "wood"
+[[shapes]]
+kind = "sphere"
+name = "marble"
+center = [0, 0.758, 0]
+radius = 0.008
+material = "glass"
+[[shapes]]
+kind = "sphere"
+center = [0.3, 1.0, 0.2]
+radius = 0.003
+material = "glow"
+motion = { kind = "flight", min = [-0.9, 0.76, -0.9], max = [0.9, 2.0, 0.9], targets = ["marble"], speed = 0.35, clearance = 0.01, circle = 1, swoop = 0, drift = 0, seed = 3 }
+)";
+    const scene::SceneDescription s = scene::parse(text, "marble");
+    const animation::Flight& f = s.animation.motions.flights.at(0);
+    int circles = 0;
+    double lowest = std::numeric_limits<double>::infinity();
+    for (const animation::Segment& seg : f.segments) {
+        if (seg.behaviour != animation::Behaviour::circle) {
+            continue;
+        }
+        ++circles;
+        for (double tau = 0.0; tau <= seg.duration; tau += 0.005) {
+            lowest = std::min(lowest, double(animation::position(f, Seconds(seg.start + tau)).y));
+        }
+    }
+    CHECK(circles > 10);
+    // Its body inside the volume: above the floor by the body and delta.
+    CHECK(lowest - 0.003 >= 0.76);
+}

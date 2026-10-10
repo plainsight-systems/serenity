@@ -65,12 +65,15 @@ kernel void bsdf_resolve(device Bsdf* out [[buffer(0)]],
                          device const serenity::textures::TextureRecord* texture_records [[buffer(6)]],
                          device const serenity::textures::CheckerData* checkers [[buffer(7)]],
                          constant uint& count [[buffer(8)]],
+                         device const serenity::materials::CoatedData* coated [[buffer(9)]],
+                         device const serenity::textures::WoodData* woods [[buffer(10)]],
+                         device const serenity::textures::SwirlData* swirls [[buffer(11)]],
                          uint i [[thread_position_in_grid]]) {
     if (i >= count) {
         return;
     }
-    out[i] = resolve_bsdf(Materials{records, rough, dielectrics, conductors}, Textures{texture_records, checkers},
-                          surfaces[i]);
+    out[i] = resolve_bsdf(Materials{records, rough, dielectrics, conductors, coated},
+                          Textures{texture_records, checkers, woods, swirls}, surfaces[i]);
 }
 
 // lobes() of each of `count` Bsdfs.

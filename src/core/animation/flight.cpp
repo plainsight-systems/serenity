@@ -22,6 +22,13 @@ constexpr int attempts = 16;         // draws of an episode in a round (step 3)
 constexpr int rounds = 4;            // rounds of draws an episode may have (step 4)
 constexpr int most_backtracks = 64;  // redraws of earlier episodes, in all (step 4)
 constexpr double delta = flight_delta;  // the sampling bound, meters (step 3)
+
+// A circle's numbers (flight.h, circle), named (ES.45).
+constexpr double orbit_gap = 0.04;            // meters past the clearance to the nearest orbit
+constexpr double orbit_widest = 0.6;          // meters wider than the nearest the orbit may be
+constexpr double tilt_most = 25.0 * std::numbers::pi / 180.0;
+constexpr double breathe_most = 0.1;          // of the radius
+constexpr double bob_most = 0.05;             // meters
 constexpr double pi = std::numbers::pi;
 
 struct V {
@@ -240,16 +247,20 @@ Segment circle_about(const Context& c, const Draws& d) {
     const FlightParams& params = c.params;
     const auto pick = static_cast<std::size_t>(d(target) * static_cast<double>(params.targets.size()));
     const Target& t = params.targets[std::min(pick, params.targets.size() - 1)];
-    const double inner = t.radius + static_cast<double>(params.clearance) + c.body + delta + 0.04;
-    const double r0 = d.between(radius, inner, inner + 0.6);
-    const double raised = d.between(lift, 0.0, static_cast<double>(t.radius));
-    // The orbit's plane: level tilted by up to 25 degrees about a level
-    // axis, or less where the volume's floor is near: as far as keeps the
-    // orbit's lowest point, its radius breathed out by 10% and bobbed down
-    // 5 cm, above the floor by the body and delta.
-    const double room = static_cast<double>(t.center.y) + raised - 0.05 -
-                        (static_cast<double>(params.volume.min.y) + c.body + delta);
-    const double steepest = std::min(25.0 * pi / 180.0, std::asin(std::clamp(room / (1.1 * r0), 0.0, 1.0)));
+    const double inner = t.radius + static_cast<double>(params.clearance) + c.body + delta + orbit_gap;
+    const double r0 = d.between(radius, inner, inner + orbit_widest);
+    // The orbit's center: a drawn lift above the target's, and higher where
+    // that leaves the bob no room above the volume's floor (a marble on the
+    // table): the floor by the body and delta, and the bob's depth, below it.
+    const double floor = static_cast<double>(params.volume.min.y) + c.body + delta;
+    const double height =
+        std::max(static_cast<double>(t.center.y) + d.between(lift, 0.0, static_cast<double>(t.radius)),
+                 floor + bob_most);
+    // The orbit's plane: level tilted by up to tilt_most about a level axis,
+    // or less where the floor is near: as far as keeps the orbit's lowest
+    // point, its radius breathed out and bobbed down, above the floor.
+    const double room = height - bob_most - floor;
+    const double steepest = std::min(tilt_most, std::asin(std::clamp(room / ((1.0 + breathe_most) * r0), 0.0, 1.0)));
     const double alpha = d.between(tilt, 0.0, steepest);
     const double beta = d.between(azimuth, 0.0, 2.0 * pi);
     const V axis{std::cos(beta), 0.0, std::sin(beta)};
@@ -258,17 +269,17 @@ Segment circle_about(const Context& c, const Draws& d) {
     const V v = cross(w, u);
     Segment s;
     s.behaviour = Behaviour::circle;
-    put3(s, 0, of(t.center) + raised * up);
+    put3(s, 0, V{static_cast<double>(t.center.x), height, static_cast<double>(t.center.z)});
     put3(s, 3, u);
     put3(s, 6, v);
     s.numbers[9] = r0;
     s.numbers[10] = d.between(turn, 0.0, 2.0 * pi);
     const double omega = static_cast<double>(params.speed) / r0;
     s.numbers[11] = d(direction) < 0.5 ? omega : -omega;
-    s.numbers[12] = d.between(breathe, 0.0, 0.1);
+    s.numbers[12] = d.between(breathe, 0.0, breathe_most);
     s.numbers[13] = d.between(breathe_rate, 0.1, 0.4);
     s.numbers[14] = d.between(breathe_phase, 0.0, 2.0 * pi);
-    s.numbers[15] = d.between(bob, 0.0, 0.05);
+    s.numbers[15] = d.between(bob, 0.0, bob_most);
     s.numbers[16] = d.between(bob_rate, 0.3, 0.8);
     s.numbers[17] = d.between(bob_phase, 0.0, 2.0 * pi);
     // Four to nine seconds: a wide orbit makes part of a loop, a tight one

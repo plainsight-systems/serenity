@@ -37,6 +37,23 @@
 namespace serenity {
 namespace shaders {
 
+// The Fresnel reflectance F for unpolarized light at a smooth boundary,
+// cos_i the cosine of the angle of incidence, in [0, 1], and eta = n_from /
+// n_to; and, through `cos_t`, the cosine of the refracted angle. 1 under
+// total internal reflection, cos_t then 0. The one Fresnel every smooth
+// boundary here uses: the glass's (below) and the coat's (coated.metal.h).
+inline float fresnel_reflectance(float cos_i, float eta, thread float& cos_t) {
+    const float sin2_t = eta * eta * (1.0f - cos_i * cos_i);
+    if (sin2_t > 1.0f) {
+        cos_t = 0.0f;
+        return 1.0f;
+    }
+    cos_t = metal::sqrt(1.0f - sin2_t);
+    const float r_s = (eta * cos_i - cos_t) / (eta * cos_i + cos_t);
+    const float r_p = (cos_i - eta * cos_t) / (cos_i + eta * cos_t);
+    return 0.5f * (r_s * r_s + r_p * r_p);
+}
+
 struct Boundary {
     bool entering;         // arriving from outside, against the outward normal
     bool total_internal;   // no refracted direction; reflectance is 1
@@ -56,18 +73,11 @@ inline Boundary dielectric_boundary(serenity::materials::DielectricData glass, f
     const float eta = b.entering ? 1.0f / glass.ior : glass.ior;
 
     b.reflected = direction + 2.0f * cos_i * b.facing;
-    const float sin2_t = eta * eta * (1.0f - cos_i * cos_i);
-    b.total_internal = sin2_t > 1.0f;
-    if (b.total_internal) {
-        b.reflectance = 1.0f;
-        b.refracted = float3(0.0f);
-        return b;
-    }
-    const float cos_t = metal::sqrt(1.0f - sin2_t);
-    const float r_s = (eta * cos_i - cos_t) / (eta * cos_i + cos_t);
-    const float r_p = (cos_i - eta * cos_t) / (cos_i + eta * cos_t);
-    b.reflectance = 0.5f * (r_s * r_s + r_p * r_p);
-    b.refracted = metal::normalize(eta * direction + (eta * cos_i - cos_t) * b.facing);
+    float cos_t;
+    b.reflectance = fresnel_reflectance(cos_i, eta, cos_t);
+    b.total_internal = eta * eta * (1.0f - cos_i * cos_i) > 1.0f;
+    b.refracted = b.total_internal ? float3(0.0f)
+                                   : metal::normalize(eta * direction + (eta * cos_i - cos_t) * b.facing);
     return b;
 }
 

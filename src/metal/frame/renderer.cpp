@@ -26,9 +26,10 @@ static_assert(constants_offset + sizeof(contracts::FrameConstants) <= camera_off
 static_assert(camera_offset + sizeof(contracts::CameraData) <= slot_stride);
 
 // Every pass binds at most this many buffers and textures through the table:
-// the preview binds the constants, the camera, the structure, the scene's
-// thirteen still arrays and the frame's transforms (preview.metal), seventeen
-// in all; the path pass a few more for its image's counter.
+// the path pass binds buffers 0 to 23 (path.metal): the constants, the
+// camera, the structure, the scene's arrays, the frame's transforms and
+// glows, and its image's counter. All 24: a pass that binds more raises
+// this.
 constexpr NS::UInteger max_buffers = 24;
 constexpr NS::UInteger max_textures = 4;
 

@@ -10,12 +10,14 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <numbers>
 #include <vector>
 
 #include <doctest/doctest.h>
 
 #include "core/animation/draw.h"
 #include "core/textures/noise.h"
+#include "core/textures/swirl.h"
 #include "core/textures/wood.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
@@ -241,4 +243,72 @@ TEST_CASE("wood is the same at every height, dark at the seams, and differs boar
         differ += reseeded[i] != colors[i];
     }
     CHECK(differ > colors.size() * 9 / 10);
+}
+
+namespace {
+
+std::vector<std::array<float, 3>> swirl_at(const std::vector<Probe>& points, const textures::SwirlData& data) {
+    const std::vector<float> raw = run("swirl_probe", points, 4, &data, sizeof(data));
+    std::vector<std::array<float, 3>> colors(points.size());
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        colors[i] = {raw[4 * i], raw[4 * i + 1], raw[4 * i + 2]};
+    }
+    return colors;
+}
+
+// a red, b blue: the red channel is how far toward a a point's color is.
+constexpr textures::SwirlData red_and_blue(std::uint32_t vanes, float twist) {
+    return textures::SwirlData{{1.0f, 0.0f, 0.0f}, vanes, {0.0f, 0.0f, 1.0f}, twist, 5u, {0, 0, 0}};
+}
+
+}  // namespace
+
+TEST_CASE("a swirl stays between its colors, and is the same at any distance from its axis") {
+    const textures::SwirlData data{{0.9f, 0.3f, 0.03f}, 3u, {0.92f, 0.88f, 0.78f}, 0.6f, 1u, {0, 0, 0}};
+    std::vector<Probe> points;
+    for (std::uint64_t i = 0; i < 8192; ++i) {
+        const double phi = 2.0 * std::numbers::pi * uniform(i, 0), y = 2.0 * uniform(i, 1) - 1.0;
+        const double r = 0.05 + 0.95 * uniform(i, 2);
+        points.push_back({float(r * std::cos(phi)), float(y), float(r * std::sin(phi)), 0.0f});
+        points.push_back({float(0.5 * r * std::cos(phi)), float(y), float(0.5 * r * std::sin(phi)), 0.0f});
+    }
+    const auto colors = swirl_at(points, data);
+    const float a[3] = {data.a.x, data.a.y, data.a.z}, b[3] = {data.b.x, data.b.y, data.b.z};
+    std::size_t differ = 0;
+    for (std::size_t i = 0; i < colors.size(); i += 2) {
+        for (int c = 0; c < 3; ++c) {
+            CHECK(colors[i][c] >= std::min(a[c], b[c]) - 1e-6f);
+            CHECK(colors[i][c] <= std::max(a[c], b[c]) + 1e-6f);
+            differ += std::abs(colors[i][c] - colors[i + 1][c]) > 1e-5f;
+        }
+    }
+    CHECK(differ == 0);
+}
+
+TEST_CASE("a swirl's bands turn twist times round per unit of height, whatever the vanes") {
+    // Each band's middle at phi = 2 pi (k / vanes - twist y): a point
+    // turned back by 2 pi twist dy and raised dy sits in the same band,
+    // edges wavering aside; turned the other way, it does not.
+    for (const std::uint32_t vanes : {1u, 4u}) {
+        const float twist = 0.4f, dy = 0.2f;
+        std::vector<Probe> points;
+        for (std::uint64_t i = 0; i < 8192; ++i) {
+            const double phi = 2.0 * std::numbers::pi * uniform(i, 3), y = -0.5 + uniform(i, 4) * 0.6;
+            const double along = phi - 2.0 * std::numbers::pi * twist * dy;
+            const double against = phi + 2.0 * std::numbers::pi * twist * dy;
+            points.push_back({float(std::cos(phi)), float(y), float(std::sin(phi)), 0.0f});
+            points.push_back({float(std::cos(along)), float(y + dy), float(std::sin(along)), 0.0f});
+            points.push_back({float(std::cos(against)), float(y + dy), float(std::sin(against)), 0.0f});
+        }
+        const auto colors = swirl_at(points, red_and_blue(vanes, twist));
+        double same_band = 0.0, other_way = 0.0;
+        for (std::size_t i = 0; i < colors.size(); i += 3) {
+            same_band += std::abs(colors[i][0] - colors[i + 1][0]);
+            other_way += std::abs(colors[i][0] - colors[i + 2][0]);
+        }
+        INFO(vanes << " vanes: mean difference following the twist " << same_band / 8192 << ", against it "
+                   << other_way / 8192);
+        CHECK(same_band / 8192 < 0.2);
+        CHECK(other_way / 8192 > 2.0 * same_band / 8192);
+    }
 }

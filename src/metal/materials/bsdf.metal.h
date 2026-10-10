@@ -15,6 +15,7 @@
 
 #include "core/contracts/bsdf.h"
 #include "metal/device/layout.metal.h"
+#include "metal/materials/coated.metal.h"
 #include "metal/materials/conductor.metal.h"
 #include "metal/materials/dielectric.metal.h"
 #include "metal/materials/rough.metal.h"
@@ -37,6 +38,8 @@ inline float3 bsdf_evaluate(serenity::contracts::Bsdf bsdf, float3 wo, float3 wi
         return conductor_evaluate(bsdf, facing(bsdf, wo), wo, wi);
     case serenity::contracts::BsdfKind::dielectric:
         return float3(0.0f);  // delta lobes only
+    case serenity::contracts::BsdfKind::coated:
+        return coated_evaluate(bsdf, facing(bsdf, wo), wo, wi);
     }
     return float3(0.0f);
 }
@@ -51,6 +54,8 @@ inline float bsdf_pdf(serenity::contracts::Bsdf bsdf, float3 wo, float3 wi) {
         return conductor_pdf(bsdf, facing(bsdf, wo), wo, wi);
     case serenity::contracts::BsdfKind::dielectric:
         return 0.0f;  // delta lobes only
+    case serenity::contracts::BsdfKind::coated:
+        return coated_pdf(bsdf, facing(bsdf, wo), wo, wi);
     }
     return 0.0f;
 }
@@ -66,6 +71,8 @@ inline serenity::contracts::BsdfSample bsdf_sample(serenity::contracts::Bsdf bsd
         return conductor_sample(bsdf, facing(bsdf, wo), wo, u.yz);
     case serenity::contracts::BsdfKind::dielectric:
         return dielectric_sample(bsdf, to_float3(bsdf.normal), wo, u.x);
+    case serenity::contracts::BsdfKind::coated:
+        return coated_sample(bsdf, facing(bsdf, wo), wo, u);
     }
     serenity::contracts::BsdfSample none;
     none.direction = to_packed(float3(0.0f));
@@ -85,6 +92,9 @@ inline uint bsdf_lobes(serenity::contracts::Bsdf bsdf) {
         return serenity::contracts::lobe_reflection | serenity::contracts::lobe_glossy;
     case serenity::contracts::BsdfKind::dielectric:
         return serenity::contracts::lobe_reflection | serenity::contracts::lobe_transmission |
+               serenity::contracts::lobe_delta;
+    case serenity::contracts::BsdfKind::coated:
+        return serenity::contracts::lobe_reflection | serenity::contracts::lobe_diffuse |
                serenity::contracts::lobe_delta;
     }
     return 0u;

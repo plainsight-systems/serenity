@@ -54,7 +54,11 @@
 //           marble's medium, so the stretches between glass and core are
 //           dimmed as the glass's. A path in air asks no medium anything;
 //           lanes diverge only where a SIMD group straddles glass and air,
-//           a marble's few pixels (GPU.4).
+//           a marble's few pixels (GPU.4). Measured on the M3 Max at 3456 x
+//           2234, in a scene with no medium (the five-sphere marbles of
+//           a987908), carrying the medium costs 0.58 ms of a 14.8 ms frame:
+//           the state the loop keeps, not the branch, since guarding the
+//           call or marking air likely each saved under 0.07 ms (GPU.10).
 //   Step 7  Russian roulette, from the 4th surface: survive with
 //           q = min(the largest channel of beta, 0.95), else stop;
 //           beta /= q, so the mean is unchanged. This, not a depth limit,
@@ -102,6 +106,7 @@
 #include "metal/lights/gradient_sky.metal.h"
 #include "metal/materials/bsdf.metal.h"
 #include "metal/materials/resolve.metal.h"
+#include "metal/media/media.metal.h"
 #include "metal/sampler/sampler.metal.h"
 #include "metal/shapes/shapes.metal.h"
 #include "metal/textures/textures.metal.h"
@@ -125,6 +130,7 @@ struct Scene {
     Textures textures;
     UniformLight selection;
     Lights lights;
+    Media media;
     serenity::lights::GradientSkyData sky;
 };
 
@@ -139,10 +145,12 @@ inline float3 leave(float3 point, float3 n, float3 direction) {
 inline float3 radiance(Scene scene, float3 origin, float3 direction, thread PathNumbers& numbers) {
     float3 L = float3(0.0f);
     float3 beta = float3(1.0f);
-    bool counts_emission = true;  // the camera's own ray
+    bool counts_emission = true;                       // the camera's own ray
+    uint medium = serenity::contracts::no_medium;      // air, at the camera
 
     for (uint surface = 0; surface < safety_stop; ++surface) {
-        // Step 1: Trace: the nearest surface along the ray.
+        // Step 1: Trace: the nearest surface along the ray, and what the
+        // medium the ray crossed kept of it (contract 12).
         const Hit hit = trace(scene.structure, scene.shapes, origin, direction, 0.0f, INFINITY);
 
         // Step 2: Escape: the sky, the one way it is counted.
@@ -150,6 +158,7 @@ inline float3 radiance(Scene scene, float3 origin, float3 direction, thread Path
             L += beta * gradient_sky(scene.sky, direction);
             break;
         }
+        beta *= transmittance(scene.media, medium, hit.t);
         const float3 point = origin + hit.t * direction;
         const serenity::contracts::SurfaceInteraction surface_at =
             surface_interaction(scene.shapes, hit.primitive, point, direction);
@@ -195,6 +204,12 @@ inline float3 radiance(Scene scene, float3 origin, float3 direction, thread Path
         const float3 wi = to_float3(next.direction);
         beta *= to_float3(next.value) * metal::abs(metal::dot(wi, shading)) / next.pdf;
         counts_emission = (next.lobe & serenity::contracts::lobe_delta) != 0u;
+        // Through the surface: into its shape's interior, or out into air.
+        if ((next.lobe & serenity::contracts::lobe_transmission) != 0u) {
+            medium = (surface_at.flags & serenity::contracts::arrived_from_outside) != 0u
+                         ? surface_at.interior
+                         : serenity::contracts::no_medium;
+        }
 
         // Step 7: Russian roulette, from the 4th surface.
         if (surface >= roulette_from) {

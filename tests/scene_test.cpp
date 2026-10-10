@@ -1,10 +1,13 @@
 // Scene files: what they read into, and every mistake refused by file and
 // line.
 
+#include <cmath>
 #include <string>
 
 #include <doctest/doctest.h>
 
+#include "core/contracts/medium.h"
+#include "core/materials/coated.h"
 #include "core/scene/scene.h"
 
 using namespace serenity;
@@ -424,10 +427,20 @@ TEST_CASE("every shape lies within the world") {
     CHECK_NOTHROW((void)scene::parse(with("max = [6, 0, 6]", "max = [6, 0, 1000000]"), "s"));
 }
 
-TEST_CASE("the marbles' scene reads: a walnut table, five spheres, 512 fireflies") {
+TEST_CASE("the marbles' scene reads: a walnut table, fourteen marbles, 512 fireflies") {
     const scene::SceneDescription s = scene::load(SERENITY_SCENES_DIR "/marbles.toml");
     CHECK(s.woods.size() == 1);
-    CHECK(s.shapes.records.size() == 11 + 512);
+    CHECK(s.swirls.size() == 3);
+    CHECK(s.coated.size() == 3);
+    CHECK(s.media.size() == 3);
+    CHECK(s.absorbing.size() == 3);
+    // The table's top, legs and the ground; fourteen marbles and three cores.
+    CHECK(s.shapes.records.size() == 6 + 14 + 3 + 512);
+    std::size_t filled = 0;
+    for (const shapes::ShapeRecord& record : s.shapes.records) {
+        filled += record.interior != contracts::no_medium;
+    }
+    CHECK(filled == 3);
     CHECK(s.sphere_lights.size() == 512);
     CHECK(s.animation.movers.size() == 512);
     CHECK(s.animation.glowers.size() == 512);
@@ -449,4 +462,82 @@ TEST_CASE("a camera's lens reads, and a camera without one is a pinhole") {
     CHECK(contains(lens("{ radius = 0.01 }"), "the camera's lens has no 'focus'"));
     CHECK(contains(lens("{ radius = 0.01, focus = 4, blades = 6 }"), "unknown key 'blades' in the camera's lens"));
     CHECK(contains(lens("0.01"), "the camera's lens must be a table"));
+}
+
+TEST_CASE("coated, swirl and media read, each mistake refused at its line") {
+    const std::string extra = R"(
+[textures.cats_eye]
+kind = "swirl"
+a = [0.9, 0.35, 0.05]
+b = [0.95, 0.9, 0.8]
+vanes = 3
+twist = 0.5
+seed = 2
+[materials.porcelain]
+kind = "coated"
+color = [0.6, 0.05, 0.04]
+ior = 1.5
+[materials.core]
+kind = "rough"
+texture = "cats_eye"
+[media.blue_tint]
+kind = "absorbing"
+tint = [0.25, 0.5, 0.95]
+tint_distance = 0.01
+)";
+    const auto scene_with = [&](const std::string& from, const std::string& to, const std::string& shape_extra) {
+        std::string text = with("[[shapes]]", extra + "[[shapes]]");
+        if (!from.empty()) {
+            const std::size_t at = text.find(from);
+            REQUIRE(at != std::string::npos);
+            text.replace(at, from.size(), to);
+        }
+        // The glass sphere, filled.
+        text.replace(text.find("material = \"glass\""), 18, "material = \"glass\"" + shape_extra);
+        return text;
+    };
+    const scene::SceneDescription s = scene::parse(scene_with("", "", "\ninterior = \"blue_tint\""), "s");
+    REQUIRE(s.coated.size() == 1);
+    CHECK(s.coated[0].ior == 1.5f);
+    CHECK(s.coated[0].internal == doctest::Approx(float(materials::internal_reflectance(1.5))));
+    REQUIRE(s.swirls.size() == 1);
+    CHECK(s.swirls[0].vanes == 3u);
+    CHECK(s.swirls[0].twist == 0.5f);
+    REQUIRE(s.absorbing.size() == 1);
+    // absorption = -ln(tint) / tint_distance.
+    CHECK(s.absorbing[0].absorption.x == doctest::Approx(-std::log(0.25) / 0.01));
+    CHECK(s.absorbing[0].absorption.z == doctest::Approx(-std::log(0.95) / 0.01));
+    CHECK(s.shapes.records[0].interior == 0u);                     // the glass sphere, filled
+    CHECK(s.shapes.records[1].interior == contracts::no_medium);  // the floor
+    // Without an interior, air.
+    CHECK(scene::parse(scene_with("", "", ""), "s").shapes.records[0].interior == contracts::no_medium);
+
+    const auto error = [&](const std::string& from, const std::string& to, const std::string& shape_extra = "") {
+        return error_of(scene_with(from, to, shape_extra));
+    };
+    CHECK(contains(error("color = [0.6, 0.05, 0.04]", "color = [1.2, 0.05, 0.04]"),
+                   "material 'porcelain''s color must be within [0, 1]"));
+    CHECK(contains(error("ior = 1.5\n[materials.core]", "ior = 1\n[materials.core]"),
+                   "material 'porcelain''s ior must be greater than 1"));
+    CHECK(contains(error("vanes = 3", "vanes = 0"), "vanes must be an integer from 1 to 16"));
+    CHECK(contains(error("vanes = 3", "vanes = 17"), "vanes must be an integer from 1 to 16"));
+    CHECK(contains(error("a = [0.9, 0.35, 0.05]", "a = [0.9, 1.35, 0.05]"), "'cats_eye''s a must be within [0, 1]"));
+    CHECK(contains(error("tint = [0.25, 0.5, 0.95]", "tint = [0, 0.5, 0.95]"), "tint must be within (0, 1]"));
+    CHECK(contains(error("tint = [0.25, 0.5, 0.95]", "tint = [0.25, 1.5, 0.95]"), "tint must be within (0, 1]"));
+    CHECK(contains(error("tint_distance = 0.01", "tint_distance = 0"), "tint_distance must be greater than 0"));
+    CHECK(contains(error("tint = [0.25, 0.5, 0.95]\ntint_distance = 0.01",
+                         "tint = [1e-30, 0.5, 0.95]\ntint_distance = 1e-38"),
+                   "absorbs past what a float holds"));
+    CHECK(contains(error("kind = \"absorbing\"", "kind = \"smoky\""), "unknown medium kind 'smoky'"));
+    CHECK(contains(error("", "", "\ninterior = \"red_tint\""), "interior is medium 'red_tint', which is not defined"));
+    // A medium fills only what light passes into: not the floor.
+    std::string floor_filled = scene_with("", "", "");
+    floor_filled.replace(floor_filled.find("material = \"floor\""), 18,
+                         "material = \"floor\"\ninterior = \"blue_tint\"");
+    CHECK(contains(error_of(floor_filled), "shape 2 has an interior, and light cannot pass into it"));
+    // A coated surface's checker must stay within [0, 1] as its color would.
+    std::string bright_checks = with(
+        "[[shapes]]", extra + "[materials.tiled]\nkind = \"coated\"\ntexture = \"floor_checks\"\nior = 1.5\n[[shapes]]");
+    bright_checks.replace(bright_checks.find("a = [0.9, 0.9, 0.9]"), 19, "a = [1.9, 0.9, 0.9]");
+    CHECK(contains(error_of(bright_checks), "material 'tiled''s texture's colors must be within [0, 1]"));
 }

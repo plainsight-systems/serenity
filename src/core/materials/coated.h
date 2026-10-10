@@ -42,8 +42,9 @@
 //
 //   Step 1  evaluate(wo, wi): the base's f where wo and wi are both above
 //           the surface; 0 otherwise. The coat's is delta: 0.
-//   Step 2  sample(wo, u): wo below the surface, no sample (pdf 0).
-//           Otherwise with probability F(cos theta_o), when u.x falls
+//   Step 2  sample(wo, u): two-sided, as every reflecting kind here, the
+//           normal turned to wo's side (metal/materials/bsdf.metal.h). With
+//           probability F(cos theta_o), when u.x falls
 //           below it, the coat: wi the mirror of wo, pdf F(cos theta_o),
 //           value F(cos theta_o) / cos theta_i, so the weight is 1: the
 //           coat's share was spent choosing it. Else the base: wi drawn
@@ -61,9 +62,11 @@
 //
 // internal_reflectance(ior), F_in: the integral over the hemisphere inside
 // the coat of F_inside(cos theta) 2 cos theta sin theta d theta, F_inside
-// the Fresnel reflectance from the coat's side, 1 past the critical angle.
-// By Simpson's rule over 4096 intervals of theta, in double: some 0.596 for
-// ior 1.5. A pure function of the ior (F.8), computed once a material, at
+// the Fresnel reflectance from the coat's side, 1 past the critical angle
+// theta_c, whose part is 1 - 1 / ior^2 exactly. Below theta_c, by Simpson's
+// rule over 4096 intervals of s, theta = theta_c - s^2, which smooths the
+// reflectance's infinite slope at theta_c, in double: some 0.596 for ior
+// 1.5. A pure function of the ior (F.8), computed once a material, at
 // load, rather than at every hit that resolves it; the shaders read the
 // result. CPU only.
 

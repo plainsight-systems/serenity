@@ -255,6 +255,33 @@ TEST_CASE("glass: the Fresnel term splits a ray, and what is refracted goes on")
     check_near(image.at(0, 0), displayed({0.5, 0.5, 0.5}), 1);
 }
 
+TEST_CASE("a coated sphere of black base shows its coat's mirror: F0 of the sky at its middle") {
+    // Its base takes nothing, so all it shows is the coat's reflection,
+    // which the preview takes beside the base (direct.metal.h).
+    const std::string text = camera_text("[0, 0, 4]", "[0, 0, 0]", 40) + sky("[1, 1, 1]", "[1, 1, 1]") +
+                             "[materials.black]\nkind = \"coated\"\ncolor = [0, 0, 0]\nior = 1.5\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"black\"\n";
+    const Image image = render(text, {33, 33});
+    check_near(image.at(16, 16), displayed({0.04, 0.04, 0.04}), 1);
+}
+
+TEST_CASE("glass filled with an absorbing medium: the stretch inside keeps what Beer and Lambert say") {
+    // As the clear sphere above, filled with a medium keeping half its red
+    // light over 1 m: through the middle the ray crosses 2 m of it, tau =
+    // 0.25 of red, and red is L (F0 + (1 - F0)^2 tau); green and blue as
+    // clear glass.
+    const std::string text = camera_text("[0, 0, 4]", "[0, 0, 0]", 40) + sky("[0.5, 0.5, 0.5]", "[0.5, 0.5, 0.5]") +
+                             "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
+                             "[media.red_out]\nkind = \"absorbing\"\ntint = [0.5, 1, 1]\ntint_distance = 1\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"glass\"\n"
+                             "interior = \"red_out\"\n";
+    const Image image = render(text, {33, 33});
+    const double f0 = 0.04;
+    const double clear = 0.5 * (f0 + (1.0 - f0) * (1.0 - f0));
+    const double red = 0.5 * (f0 + (1.0 - f0) * (1.0 - f0) * 0.25);
+    check_near(image.at(16, 16), displayed({red, clear, clear}), 1);
+}
+
 TEST_CASE("metal: a near-mirror of f0 = 1 reflects a uniform sky as it is") {
     // Every reflected ray sees the sky's one color; with F = 1 and a
     // roughness this low, the masking term is 1 to within the tolerance.

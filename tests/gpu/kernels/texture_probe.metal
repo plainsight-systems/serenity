@@ -7,6 +7,7 @@
 #include <metal_stdlib>
 
 #include "metal/textures/noise.metal.h"
+#include "metal/textures/swirl.metal.h"
 #include "metal/textures/wood.metal.h"
 
 using namespace serenity::shaders;
@@ -27,5 +28,17 @@ kernel void wood_probe(device float4* out [[buffer(0)]],
                        uint i [[thread_position_in_grid]]) {
     if (i < count) {
         out[i] = float4(wood(wood_data, points[i].xyz), 1.0f);
+    }
+}
+
+// The swirl (metal/textures/swirl.metal.h) at points[i].xyz, a point in its
+// shape's own coordinates.
+kernel void swirl_probe(device float4* out [[buffer(0)]],
+                        device const float4* points [[buffer(1)]],
+                        constant uint& count [[buffer(2)]],
+                        constant serenity::textures::SwirlData& swirl_data [[buffer(3)]],
+                        uint i [[thread_position_in_grid]]) {
+    if (i < count) {
+        out[i] = float4(swirl(swirl_data, points[i].xyz), 1.0f);
     }
 }

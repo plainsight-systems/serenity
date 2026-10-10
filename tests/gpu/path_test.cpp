@@ -155,6 +155,60 @@ namespace {
 // A floor under the given fireflies, in a black sky: the floor's only light
 // is straight from them (a bounce off the floor reaches only the black sky
 // or a firefly, which adds nothing, principle 7).
+// The mean linear radiance of `channel` over a square of pixels.
+double mean_channel(const std::vector<std::uint8_t>& rgba, frame::Extent size, std::uint32_t cx, std::uint32_t cy,
+                    std::uint32_t half, int channel) {
+    double sum = 0.0;
+    std::uint32_t count = 0;
+    for (std::uint32_t y = cy - half; y <= cy + half; ++y) {
+        for (std::uint32_t x = cx - half; x <= cx + half; ++x) {
+            sum += linear(rgba[(std::size_t{y} * size.width + x) * 4 + std::size_t(channel)]);
+            ++count;
+        }
+    }
+    return sum / count;
+}
+
+TEST_CASE("furnace: a white coated sphere under a uniform sky converges to the sky") {
+    // A white base under a clear coat reflects all it receives, the coat's
+    // share and the base's (materials/coated.h).
+    const std::string text = camera_text("[0, 0, 4]", "[0, 0, 0]", 30) + sky("[0.5, 0.5, 0.5]", "[0.5, 0.5, 0.5]") +
+                             "[materials.white]\nkind = \"coated\"\ncolor = [1, 1, 1]\nior = 1.5\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"white\"\n";
+    Rig rig(text, {64, 64});
+    const auto image = rig.render(1024);
+    CHECK(mean_over(image, rig.size, 32, 32, 6) == doctest::Approx(0.5).epsilon(0.02));
+}
+
+TEST_CASE("a coated sphere of black base shows its coat alone: F0 of the sky at its middle") {
+    const std::string text = camera_text("[0, 0, 4]", "[0, 0, 0]", 30) + sky("[1, 1, 1]", "[1, 1, 1]") +
+                             "[materials.black]\nkind = \"coated\"\ncolor = [0, 0, 0]\nior = 1.5\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"black\"\n";
+    Rig rig(text, {64, 64});
+    const auto image = rig.render(1024);
+    CHECK(mean_channel(image, rig.size, 32, 32, 1, 0) == doctest::Approx(0.04).epsilon(0.05));
+}
+
+TEST_CASE("an absorbing medium in glass: through its middle, what Beer and Lambert and Fresnel leave") {
+    // A glass sphere of radius 1 filled with a medium that keeps half its red
+    // light over 1 m, under a sky of L every way. Along the middle every
+    // crossing is 2 m, keeping tau = 0.25 of red, and every exit, front or
+    // back, sees L: L (F + (1 - F)^2 tau / (1 - F tau)), F = 0.04 at normal
+    // incidence. Green and blue it keeps whole: the sky.
+    const std::string text = camera_text("[0, 0, 4]", "[0, 0, 0]", 30) + sky("[0.5, 0.5, 0.5]", "[0.5, 0.5, 0.5]") +
+                             "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
+                             "[media.red_out]\nkind = \"absorbing\"\ntint = [0.5, 1, 1]\ntint_distance = 1\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"glass\"\n"
+                             "interior = \"red_out\"\n";
+    Rig rig(text, {64, 64});
+    const auto image = rig.render(2048);
+    const double f = 0.04, tau = 0.25;
+    const double expected = 0.5 * (f + (1.0 - f) * (1.0 - f) * tau / (1.0 - f * tau));
+    INFO("expected red " << expected);
+    CHECK(mean_channel(image, rig.size, 32, 32, 1, 0) == doctest::Approx(expected).epsilon(0.03));
+    CHECK(mean_channel(image, rig.size, 32, 32, 1, 1) == doctest::Approx(0.5).epsilon(0.02));
+}
+
 std::string lit_floor(const std::string& fireflies) {
     return camera_text("[0, 2, 3]", "[0, 0, 0]", 50) + sky("[0, 0, 0]", "[0, 0, 0]") +
            "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"

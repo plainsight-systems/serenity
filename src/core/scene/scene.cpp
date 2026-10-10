@@ -13,6 +13,7 @@
 #include "core/animation/flight.h"
 #include "core/animation/glow.h"
 #include "core/animation/wander.h"
+#include "core/contracts/medium.h"
 #include "core/contracts/obstacles.h"
 #include "core/camera/thin_lens.h"
 #include "core/scene/swarm.h"
@@ -243,11 +244,77 @@ std::map<std::string, std::uint32_t, std::less<>> read_textures(const Reader& r,
             wood.seed = static_cast<std::uint32_t>(seed);
             scene.textures.push_back({textures::TextureKind::wood, static_cast<std::uint32_t>(scene.woods.size())});
             scene.woods.push_back(wood);
+        } else if (kind == "swirl") {
+            r.only(t, {"kind", "a", "b", "vanes", "twist", "seed"}, what);
+            textures::SwirlData swirl{};
+            swirl.a = r.triple(t, "a", what);
+            swirl.b = r.triple(t, "b", what);
+            for (const char* key : {"a", "b"}) {
+                if (!within(r.triple(t, key, what), 0.0f, 1.0f)) {
+                    r.fail(r.required(t, key, what), what + "'s " + key + " must be within [0, 1] in every channel");
+                }
+            }
+            const toml::node& vanes = r.required(t, "vanes", what);
+            const std::optional<std::int64_t> count = vanes.is_integer() ? vanes.value<std::int64_t>() : std::nullopt;
+            if (!count || *count < 1 || *count > 16) {
+                r.fail(vanes, what + "'s vanes must be an integer from 1 to 16");
+            }
+            swirl.vanes = static_cast<std::uint32_t>(*count);
+            swirl.twist = r.number(t, "twist", what);
+            const std::uint64_t seed = read_seed(r, t, what);
+            if (seed > 0xFFFFFFFFull) {
+                r.fail(r.required(t, "seed", what), what + "'s seed must be at most 4294967295");
+            }
+            swirl.seed = static_cast<std::uint32_t>(seed);
+            scene.textures.push_back({textures::TextureKind::swirl, static_cast<std::uint32_t>(scene.swirls.size())});
+            scene.swirls.push_back(swirl);
         } else {
             r.fail(r.required(t, "kind", what),
-                   "unknown texture kind '" + std::string(kind) + "'; known kinds: checker, wood");
+                   "unknown texture kind '" + std::string(kind) + "'; known kinds: checker, wood, swirl");
         }
         index.emplace(name, static_cast<std::uint32_t>(scene.textures.size() - 1));
+    }
+    return index;
+}
+
+// Media, in name order (contract 12); returns each name's index into the
+// records.
+std::map<std::string, std::uint32_t, std::less<>> read_media(const Reader& r, const toml::table& all,
+                                                             SceneDescription& scene) {
+    std::map<std::string, std::uint32_t, std::less<>> index;
+    for (const auto& [key, node] : all) {
+        const std::string name(key.str());
+        const std::string what = "medium '" + name + "'";
+        const toml::table& t = r.table(node, what);
+        const std::string_view kind = r.text(t, "kind", what);
+        if (kind == "absorbing") {
+            r.only(t, {"kind", "tint", "tint_distance"}, what);
+            const contracts::Float3 tint = r.triple(t, "tint", what);
+            if (!(tint.x > 0.0f && tint.x <= 1.0f && tint.y > 0.0f && tint.y <= 1.0f && tint.z > 0.0f &&
+                  tint.z <= 1.0f)) {
+                r.fail(r.required(t, "tint", what), what + "'s tint must be within (0, 1] in every channel");
+            }
+            const float distance = read_positive(r, t, "tint_distance", what);
+            // absorption = -ln(tint) / tint_distance (media/absorbing.h), in
+            // double, 0 or more for any tint in (0, 1], and checked within
+            // float's range before it is narrowed (ES.46).
+            const auto absorption = [&](float channel) {
+                const double a = -std::log(static_cast<double>(channel)) / static_cast<double>(distance);
+                if (!(a <= static_cast<double>(std::numeric_limits<float>::max()))) {
+                    r.fail(r.required(t, "tint_distance", what),
+                           what + "'s tint over its tint_distance absorbs past what a float holds");
+                }
+                return static_cast<float>(a);
+            };
+            media::AbsorbingData absorbing{};
+            absorbing.absorption = {absorption(tint.x), absorption(tint.y), absorption(tint.z)};
+            scene.media.push_back({media::MediumKind::absorbing, static_cast<std::uint32_t>(scene.absorbing.size())});
+            scene.absorbing.push_back(absorbing);
+        } else {
+            r.fail(r.required(t, "kind", what),
+                   "unknown medium kind '" + std::string(kind) + "'; known kinds: absorbing");
+        }
+        index.emplace(name, static_cast<std::uint32_t>(scene.media.size() - 1));
     }
     return index;
 }
@@ -262,28 +329,61 @@ std::map<std::string, std::uint32_t, std::less<>> read_materials(
         const std::string what = "material '" + name + "'";
         const toml::table& t = r.table(node, what);
         const std::string_view kind = r.text(t, "kind", what);
-        if (kind == "rough") {
-            r.only(t, {"kind", "color", "texture"}, what);
+        // A color, or a texture by name: exactly one, as a rough and a
+        // coated surface's base both take it.
+        const auto albedo = [&](contracts::Float3& color, contracts::TextureReference& texture) {
             const bool has_color = t.contains("color");
             const bool has_texture = t.contains("texture");
             if (has_color == has_texture) {
                 r.fail(t, what + " needs exactly one of 'color' and 'texture'");
             }
-            materials::RoughData rough{};
-            rough.texture.index = contracts::no_texture;
+            texture.index = contracts::no_texture;
             if (has_color) {
-                rough.color = r.triple(t, "color", what);
-            } else {
-                const std::string_view texture = r.text(t, "texture", what);
-                const auto found = texture_index.find(texture);
-                if (found == texture_index.end()) {
-                    r.fail(r.required(t, "texture", what), what + " uses texture '" + std::string(texture) +
-                                                               "', which is not defined");
-                }
-                rough.texture.index = found->second;
+                color = r.triple(t, "color", what);
+                return;
             }
+            const std::string_view name = r.text(t, "texture", what);
+            const auto found = texture_index.find(name);
+            if (found == texture_index.end()) {
+                r.fail(r.required(t, "texture", what),
+                       what + " uses texture '" + std::string(name) + "', which is not defined");
+            }
+            texture.index = found->second;
+        };
+        if (kind == "rough") {
+            r.only(t, {"kind", "color", "texture"}, what);
+            materials::RoughData rough{};
+            albedo(rough.color, rough.texture);
             scene.materials.push_back({materials::MaterialKind::rough, static_cast<std::uint32_t>(scene.rough.size())});
             scene.rough.push_back(rough);
+        } else if (kind == "coated") {
+            r.only(t, {"kind", "color", "texture", "ior"}, what);
+            materials::CoatedData coated{};
+            albedo(coated.color, coated.texture);
+            // Within [0, 1]: the base's bounces under the coat sum to
+            // rho / (1 - rho F_in), finite only below 1 / F_in (coated.h).
+            if (coated.texture.index == contracts::no_texture && !within(coated.color, 0.0f, 1.0f)) {
+                r.fail(r.required(t, "color", what), what + "'s color must be within [0, 1]");
+            }
+            // A texture's colors too: wood's and swirl's are read within it;
+            // a checker's are not otherwise checked.
+            if (coated.texture.index != contracts::no_texture) {
+                const textures::TextureRecord base = scene.textures[coated.texture.index];
+                if (base.kind == textures::TextureKind::checker &&
+                    (!within(scene.checkers[base.index].a, 0.0f, 1.0f) ||
+                     !within(scene.checkers[base.index].b, 0.0f, 1.0f))) {
+                    r.fail(r.required(t, "texture", what), what + "'s texture's colors must be within [0, 1]");
+                }
+            }
+            coated.ior = r.number(t, "ior", what);
+            if (!(coated.ior > 1.0f)) {
+                r.fail(r.required(t, "ior", what), what + "'s ior must be greater than 1");
+            }
+            // Once a material, at load (F.8): the shaders read it.
+            coated.internal = static_cast<float>(materials::internal_reflectance(coated.ior));
+            scene.materials.push_back(
+                {materials::MaterialKind::coated, static_cast<std::uint32_t>(scene.coated.size())});
+            scene.coated.push_back(coated);
         } else if (kind == "dielectric") {
             r.only(t, {"kind", "ior"}, what);
             materials::DielectricData dielectric{};
@@ -320,7 +420,7 @@ std::map<std::string, std::uint32_t, std::less<>> read_materials(
             scene.emissives.push_back(emissive);
         } else {
             r.fail(r.required(t, "kind", what), "unknown material kind '" + std::string(kind) +
-                                                    "'; known kinds: rough, dielectric, conductor, emissive");
+                                                    "'; known kinds: rough, coated, dielectric, conductor, emissive");
         }
         index.emplace(name, static_cast<std::uint32_t>(scene.materials.size() - 1));
     }
@@ -362,7 +462,7 @@ std::uint32_t add_sphere(SceneDescription& scene, contracts::Float3 center, floa
         scene.lights.push_back({lights::LightKind::sphere, static_cast<std::uint32_t>(scene.sphere_lights.size())});
         scene.sphere_lights.push_back({scene.emissives[worn.index].radiance, index});
     }
-    scene.shapes.records.push_back({shapes::ShapeKind::sphere, 0u, worn_index, 0u});
+    scene.shapes.records.push_back({shapes::ShapeKind::sphere, 0u, worn_index, contracts::no_medium});
     scene.shapes.transforms.push_back(contracts::placed(center, radius));
     return index;
 }
@@ -673,7 +773,8 @@ void read_swarms(const Reader& r, const toml::array& all,
 }
 
 void read_shapes(const Reader& r, const toml::array& all,
-                 const std::map<std::string, std::uint32_t, std::less<>>& material_index, SceneDescription& scene,
+                 const std::map<std::string, std::uint32_t, std::less<>>& material_index,
+                 const std::map<std::string, std::uint32_t, std::less<>>& medium_index, SceneDescription& scene,
                  std::vector<Pending>& pending, std::map<std::string, std::uint32_t, std::less<>>& names) {
     shapes::Shapes& shapes = scene.shapes;
     std::size_t number = 0;
@@ -699,8 +800,28 @@ void read_shapes(const Reader& r, const toml::array& all,
             return found->second;
         };
 
+        // The medium inside the shape (contract 12), named by `interior`, or
+        // air without one: only a shape light passes into, one wearing a
+        // dielectric, may be filled.
+        const auto interior = [&](std::uint32_t worn) {
+            const toml::node* node = t.get("interior");
+            if (node == nullptr) {
+                return contracts::no_medium;
+            }
+            const std::string_view name = r.text(*node, what + "'s interior");
+            const auto found = medium_index.find(name);
+            if (found == medium_index.end()) {
+                r.fail(*node, what + "'s interior is medium '" + std::string(name) + "', which is not defined");
+            }
+            if (scene.materials[worn].kind != materials::MaterialKind::dielectric) {
+                r.fail(*node, what + " has an interior, and light cannot pass into it: its material is not a "
+                                     "dielectric");
+            }
+            return found->second;
+        };
+
         if (kind == "sphere") {
-            r.only(t, {"kind", "name", "center", "radius", "material", "motion", "glow"}, what);
+            r.only(t, {"kind", "name", "center", "radius", "material", "interior", "motion", "glow"}, what);
             const contracts::Float3 center = r.triple(t, "center", what);
             const float radius = r.number(t, "radius", what);
             if (!(radius > 0.0f)) {
@@ -709,12 +830,14 @@ void read_shapes(const Reader& r, const toml::array& all,
             if (!inside_world(center, center, radius)) {
                 r.fail(t, what + " must lie " + world_words);
             }
-            (void)add_sphere(scene, center, radius, material());
+            const std::uint32_t worn = material();
+            (void)add_sphere(scene, center, radius, worn);
+            shapes.records.back().interior = interior(worn);
             if (t.contains("motion") || t.contains("glow")) {
                 pending.push_back({index, what, t.get("motion"), t.get("glow")});
             }
         } else if (kind == "box") {
-            r.only(t, {"kind", "name", "min", "max", "material"}, what);
+            r.only(t, {"kind", "name", "min", "max", "material", "interior"}, what);
             const contracts::Float3 min = r.triple(t, "min", what);
             const contracts::Float3 max = r.triple(t, "max", what);
             if (!below(min, max)) {
@@ -732,7 +855,7 @@ void read_shapes(const Reader& r, const toml::array& all,
             const shapes::BoxData box{min, 0u, max, 0u};
             scene.shape_lights.push_back(lights::no_light);
             shapes.records.push_back(
-                {shapes::ShapeKind::box, static_cast<std::uint32_t>(shapes.boxes.size()), worn, 0u});
+                {shapes::ShapeKind::box, static_cast<std::uint32_t>(shapes.boxes.size()), worn, interior(worn)});
             shapes.transforms.push_back(contracts::placed({0.0f, 0.0f, 0.0f}, 1.0f));
             shapes.boxes.push_back(box);
         } else {
@@ -745,7 +868,7 @@ void read_shapes(const Reader& r, const toml::array& all,
 }
 
 SceneDescription read_scene(const Reader& r, const toml::table& root) {
-    r.only(root, {"camera", "environment", "textures", "materials", "shapes", "swarms"}, "the scene");
+    r.only(root, {"camera", "environment", "textures", "materials", "media", "shapes", "swarms"}, "the scene");
     SceneDescription scene{};
 
     scene.camera = read_camera(r, r.table(r.required(root, "camera", "the scene"), "[camera]"));
@@ -755,8 +878,10 @@ SceneDescription read_scene(const Reader& r, const toml::table& root) {
     const toml::table& textures = root.contains("textures") ? r.table(*root.get("textures"), "[textures]") : no_entries;
     const toml::table& materials =
         root.contains("materials") ? r.table(*root.get("materials"), "[materials]") : no_entries;
+    const toml::table& media = root.contains("media") ? r.table(*root.get("media"), "[media]") : no_entries;
     const auto texture_index = read_textures(r, textures, scene);
     const auto material_index = read_materials(r, materials, texture_index, scene);
+    const auto medium_index = read_media(r, media, scene);
 
     const toml::node& shapes = r.required(root, "shapes", "the scene");
     const toml::array* list = shapes.as_array();
@@ -765,7 +890,7 @@ SceneDescription read_scene(const Reader& r, const toml::table& root) {
     }
     std::vector<Pending> pending;
     std::map<std::string, std::uint32_t, std::less<>> names;
-    read_shapes(r, *list, material_index, scene, pending, names);
+    read_shapes(r, *list, material_index, medium_index, scene, pending, names);
 
     // The still shapes are the written ones that do not move; every swarm's
     // fireflies move, so none is added to them.

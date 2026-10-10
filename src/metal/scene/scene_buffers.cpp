@@ -27,7 +27,7 @@ struct Entry {
 };
 
 using A = SceneBuffers::Addresses;
-constexpr std::size_t array_count = 15;
+constexpr std::size_t array_count = 19;
 static_assert(sizeof(A) == array_count * sizeof(MTL::GPUAddress),
               "every field of SceneBuffers::Addresses needs its entry in entries_of()");
 
@@ -37,11 +37,15 @@ std::array<Entry, array_count> entries_of(const scene::SceneDescription& scene) 
         {&A::textures, bytes(scene.textures)},
         {&A::checkers, bytes(scene.checkers)},
         {&A::woods, bytes(scene.woods)},
+        {&A::swirls, bytes(scene.swirls)},
         {&A::materials, bytes(scene.materials)},
         {&A::rough, bytes(scene.rough)},
         {&A::dielectrics, bytes(scene.dielectrics)},
         {&A::conductors, bytes(scene.conductors)},
         {&A::emissives, bytes(scene.emissives)},
+        {&A::coated, bytes(scene.coated)},
+        {&A::media, bytes(scene.media)},
+        {&A::absorbing, bytes(scene.absorbing)},
         {&A::shapes, bytes(scene.shapes.records)},
         {&A::boxes, bytes(scene.shapes.boxes)},
         {&A::light_records, bytes(scene.lights)},

@@ -111,6 +111,7 @@ add_library(serenity_core STATIC
     src/core/animation/motion.cpp
     src/core/animation/wander.cpp
     src/core/camera/thin_lens.cpp
+    src/core/materials/coated.cpp
     src/core/frame/graph_file.cpp
     src/core/frame/history.cpp
     src/core/frame/schedule.cpp

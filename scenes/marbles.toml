@@ -28,14 +28,18 @@
 # Scale: meters, real ones. The table top is at 0.75 m; each marble rests on
 # it, its center its radius above. The firefly radiance is set against a
 # converged still at exposure 0 (graphs/path.toml).
+#
+# Loads in 128 ms (its flights made in parallel); a frame at 3456 x 2234,
+# path traced and tone mapped, is 11.1 ms of the M3 Max's GPU.
 
 [camera]
-position = [0.0, 0.785, 0.42]
-look_at = [0.0, 0.765, 0.0]
-vertical_fov_degrees = 32
-# A lens of 5 mm radius focused on the marbles 38 cm away: a macro view,
-# the marbles sharp, the fireflies beyond them and before them soft discs.
-lens = { radius = 0.005, focus = 0.38 }
+position = [0.0, 0.78, 0.3]
+look_at = [0.0, 0.762, -0.06]
+vertical_fov_degrees = 28
+# A lens of 3.5 mm radius focused on the marbles' middle 36 cm away: a macro
+# view, the marbles near it sharp, the nearest and farthest soft, and the
+# fireflies beyond them discs.
+lens = { radius = 0.0035, focus = 0.36 }
 
 [environment]
 kind = "gradient"
@@ -143,7 +147,7 @@ roughness = 0.03
 
 [materials.firefly]
 kind = "emissive"
-radiance = [390.0, 570.0, 85.0]   # yellow-green
+radiance = [130.0, 190.0, 28.0]   # yellow-green
 
 # The table: a top 2.8 m by 2.6 m, 3 cm thick, on four legs.
 [[shapes]]
@@ -310,13 +314,13 @@ material = "steel"
 
 # The fireflies: over the marbles and about them, from just above the table
 # to 1.25 m over it, room for most swoops; none closer to the camera than
-# 12 cm.
+# 10 cm.
 [[swarms]]
 count = 512
 radius = 0.003
 material = "firefly"
 min = [-0.9, 0.76, -1.2]
-max = [0.9, 2.0, 0.3]
+max = [0.9, 2.0, 0.2]
 targets = ["clear_shooter", "clear_right", "clear_left", "blue", "green", "amber", "cats_eye_orange",
            "cats_eye_blue", "cats_eye_red", "porcelain_red", "porcelain_white", "porcelain_blue", "brass",
            "steel"]

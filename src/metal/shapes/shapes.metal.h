@@ -53,12 +53,11 @@ inline bool intersect_shape(Shapes shapes, uint shape, float3 origin, float3 dir
     return false;
 }
 
-// The outward normal of shape `shape` at world `point`, in the world: found
-// in object space, turned by the transform's rotation.
-inline float3 shape_normal(Shapes shapes, uint shape, float3 point) {
+// The outward normal, in the world, of shape `shape` at `at`, a point on it
+// in its own coordinates: found there by its kind, turned by the
+// transform's rotation.
+inline float3 normal_at(Shapes shapes, uint shape, float3 at) {
     const serenity::shapes::ShapeRecord record = shapes.records[shape];
-    const serenity::contracts::Transform placed = shapes.transforms[shape];
-    const float3 at = transform_to_object(placed, point);
     float3 normal = float3(0.0f, 1.0f, 0.0f);
     switch (record.kind) {
     case serenity::shapes::ShapeKind::sphere:
@@ -68,22 +67,33 @@ inline float3 shape_normal(Shapes shapes, uint shape, float3 point) {
         normal = box_normal(shapes.boxes[record.geometry], at);
         break;
     }
-    return metal::normalize(transform_direction(placed, normal));
+    return metal::normalize(transform_direction(shapes.transforms[shape], normal));
+}
+
+// The outward normal of shape `shape` at world `point`, in the world.
+inline float3 shape_normal(Shapes shapes, uint shape, float3 point) {
+    return normal_at(shapes, shape, transform_to_object(shapes.transforms[shape], point));
 }
 
 // Contract 1: where a ray along `direction` met shape `shape` at world
 // `point`, filled by the shape (contracts/surface_interaction.h). The
-// shading normal is the geometric one for every kind so far.
+// shading normal is the geometric one for every kind so far. The point in
+// the shape's own coordinates is found once, for the normal and for the
+// textures laid on the shape.
 inline serenity::contracts::SurfaceInteraction surface_interaction(Shapes shapes, uint shape, float3 point,
                                                                     float3 direction) {
-    const float3 normal = shape_normal(shapes, shape, point);
+    const serenity::shapes::ShapeRecord record = shapes.records[shape];
+    const float3 at = transform_to_object(shapes.transforms[shape], point);
+    const float3 normal = normal_at(shapes, shape, at);
     serenity::contracts::SurfaceInteraction s;
     s.position = to_packed(point);
-    s.material = shapes.records[shape].material;
+    s.material = record.material;
     s.geometric_normal = to_packed(normal);
     s.primitive = shape;
     s.shading_normal = to_packed(normal);
     s.flags = metal::dot(direction, normal) < 0.0f ? serenity::contracts::arrived_from_outside : 0u;
+    s.object_position = to_packed(at);
+    s.interior = record.interior;
     return s;
 }
 

@@ -23,6 +23,7 @@
 
 #include "core/contracts/bsdf.h"
 #include "core/contracts/surface_interaction.h"
+#include "core/materials/coated.h"
 #include "core/materials/conductor.h"
 #include "core/materials/dielectric.h"
 #include "core/materials/material.h"
@@ -40,6 +41,7 @@ struct Materials {
     device const serenity::materials::RoughData* rough;
     device const serenity::materials::DielectricData* dielectrics;
     device const serenity::materials::ConductorData* conductors;
+    device const serenity::materials::CoatedData* coated;
 };
 
 inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures textures,
@@ -50,11 +52,14 @@ inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures text
     bsdf.color = to_packed(float3(1.0f));
     bsdf.alpha = 0.0f;
     bsdf.ior = 0.0f;
-    bsdf.padding[0] = bsdf.padding[1] = bsdf.padding[2] = 0u;
+    bsdf.internal = 0.0f;
+    bsdf.padding[0] = bsdf.padding[1] = 0u;
+    const float3 world = to_float3(surface.position);
+    const float3 object = to_float3(surface.object_position);
     switch (record.kind) {
     case serenity::materials::MaterialKind::rough:
         bsdf.kind = serenity::contracts::BsdfKind::lambert;
-        bsdf.color = to_packed(rough_color(materials.rough[record.index], textures, to_float3(surface.position)));
+        bsdf.color = to_packed(rough_color(materials.rough[record.index], textures, world, object));
         break;
     case serenity::materials::MaterialKind::conductor: {
         const serenity::materials::ConductorData conductor = materials.conductors[record.index];
@@ -70,6 +75,17 @@ inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures text
     case serenity::materials::MaterialKind::emissive:
         bsdf.kind = serenity::contracts::BsdfKind::none;
         break;
+    case serenity::materials::MaterialKind::coated: {
+        const serenity::materials::CoatedData coat = materials.coated[record.index];
+        bsdf.kind = serenity::contracts::BsdfKind::coated;
+        serenity::materials::RoughData base;
+        base.color = coat.color;
+        base.texture = coat.texture;
+        bsdf.color = to_packed(rough_color(base, textures, world, object));
+        bsdf.ior = coat.ior;
+        bsdf.internal = coat.internal;
+        break;
+    }
     }
     return bsdf;
 }

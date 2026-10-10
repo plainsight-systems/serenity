@@ -29,6 +29,7 @@
 
 #include "core/contracts/bsdf.h"
 #include "core/contracts/surface_interaction.h"
+#include "core/materials/coated.h"
 #include "core/scene/scene.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
@@ -148,8 +149,18 @@ std::size_t coarse_cell(contracts::Float3 d, std::uint32_t coarse) {
 
 // The checks every non-delta kind passes: consistency, the pdf's integral,
 // and the histogram of samples against it.
-void check_sampling_follows_pdf(Gpu& gpu, const Bsdf& bsdf, V3 wo, std::uint32_t lobe) {
-    const auto drawn = samples(gpu, bsdf, wo);
+// With `beside_delta`, the surface also has a delta lobe, whose samples are
+// left out: the pdf is the other lobe's alone (contract 2), and integrates
+// to the share of samples that lobe takes.
+void check_sampling_follows_pdf(Gpu& gpu, const Bsdf& bsdf, V3 wo, std::uint32_t lobe, bool beside_delta = false) {
+    auto drawn = samples(gpu, bsdf, wo);
+    if (beside_delta) {
+        for (Probe& p : drawn) {
+            if ((p.lobe & contracts::lobe_delta) != 0u) {
+                p.pdf = 0.0f;
+            }
+        }
+    }
     const auto cells = density(gpu, bsdf, wo);
     const double cell_solid_angle = 4.0 * std::numbers::pi / (double(grid) * grid);
 
@@ -326,6 +337,86 @@ TEST_CASE("dielectric: Fresnel chooses reflection, the weights are 1 and 1 / eta
     }
 }
 
+namespace {
+
+// The unpolarized Fresnel reflectance from air into `ior`, in double: the
+// coat's (materials/coated.h).
+double fresnel_from_air(double cos_i, double ior) {
+    const double eta = 1.0 / ior;
+    const double cos_t = std::sqrt(1.0 - eta * eta * (1.0 - cos_i * cos_i));
+    const double r_s = (eta * cos_i - cos_t) / (eta * cos_i + cos_t);
+    const double r_p = (cos_i - eta * cos_t) / (cos_i + eta * cos_t);
+    return 0.5 * (r_s * r_s + r_p * r_p);
+}
+
+Bsdf coated(V3 n, std::array<float, 3> color, float ior) {
+    Bsdf b = make(BsdfKind::coated, n, color, 0.0f, ior);
+    b.internal = float(materials::internal_reflectance(ior));
+    return b;
+}
+
+}  // namespace
+
+TEST_CASE("coated: the base follows its pdf, the coat is chosen by its Fresnel reflectance, weight 1") {
+    Gpu gpu;
+    const V3 n = unit(0.2, -0.1, 0.95);
+    const Bsdf bsdf = coated(n, {0.6f, 0.3f, 0.1f}, 1.5f);
+    for (const V3 wo : {unit(-0.4, 0.1, 0.8), unit(0.9, 0.0, 0.25)}) {
+        const double cos_o = dot(wo, n);
+        const double f_o = fresnel_from_air(cos_o, 1.5);
+        INFO("cos theta_o " << cos_o << ", F " << f_o);
+        check_sampling_follows_pdf(gpu, bsdf, wo, contracts::lobe_reflection | contracts::lobe_diffuse, true);
+        std::uint32_t coats = 0, wrong = 0;
+        for (const Probe& p : samples(gpu, bsdf, wo)) {
+            if ((p.lobe & contracts::lobe_delta) == 0u) {
+                continue;
+            }
+            ++coats;
+            const V3 wi{p.direction.x, p.direction.y, p.direction.z};
+            // The mirror of wo, 2 cos n - wo, chosen with probability F,
+            // weight 1.
+            const double off = std::abs(wi.x - (2.0 * cos_o * n.x - wo.x)) +
+                               std::abs(wi.y - (2.0 * cos_o * n.y - wo.y)) +
+                               std::abs(wi.z - (2.0 * cos_o * n.z - wo.z));
+            const double weight = p.value.x * dot(wi, n) / p.pdf;
+            wrong += (off < 1e-4 && std::abs(p.pdf - f_o) < 1e-4 && std::abs(weight - 1.0) < 1e-4) ? 0u : 1u;
+        }
+        CHECK(wrong == 0);
+        CHECK(double(coats) / sample_count == doctest::Approx(f_o).epsilon(0.02));
+    }
+}
+
+TEST_CASE("coated: a white base reflects all the light that arrives, at every angle; a colored one less") {
+    Gpu gpu;
+    const V3 n = unit(0.0, 0.0, 1.0);
+    for (const float ior : {1.3f, 1.5f, 1.8f}) {
+        for (const double cos_o : {1.0, 0.7, 0.3, 0.08}) {
+            const V3 wo = unit(std::sqrt(1.0 - cos_o * cos_o), 0.0, cos_o);
+            // The white furnace: the mean of every sample's weight, the
+            // directional albedo, is 1.
+            double white = 0.0;
+            for (const Probe& p : samples(gpu, coated(n, {1.0f, 1.0f, 1.0f}, ior), wo)) {
+                white += p.pdf > 0.0f ? p.value.x * dot({p.direction.x, p.direction.y, p.direction.z}, n) / p.pdf
+                                      : 0.0;
+            }
+            INFO("ior " << ior << ", cos theta_o " << cos_o);
+            CHECK(white / sample_count == doctest::Approx(1.0).epsilon(0.003));
+            // A base of half: the coat's F, and the base's share of the rest.
+            double half = 0.0;
+            for (const Probe& p : samples(gpu, coated(n, {0.5f, 0.5f, 0.5f}, ior), wo)) {
+                half += p.pdf > 0.0f ? p.value.x * dot({p.direction.x, p.direction.y, p.direction.z}, n) / p.pdf
+                                     : 0.0;
+            }
+            const double f_o = fresnel_from_air(cos_o, ior);
+            const double f_in = materials::internal_reflectance(ior);
+            // (1 - F_o)(1 - F_out) rho / (ior^2 (1 - rho F_in)), 1 - F_out =
+            // ior^2 (1 - F_in) (coated.h).
+            const double expected = f_o + (1.0 - f_o) * 0.5 * (1.0 - f_in) / (1.0 - 0.5 * f_in);
+            CHECK(half / sample_count == doctest::Approx(expected).epsilon(0.003));
+        }
+    }
+}
+
 TEST_CASE("lobes: each kind's, from the shader, and an estimator aims at lights only where one is not delta") {
     using namespace contracts;
     const V3 n = unit(0.0, 0.0, 1.0);
@@ -334,6 +425,7 @@ TEST_CASE("lobes: each kind's, from the shader, and an estimator aims at lights 
         make(BsdfKind::lambert, n, {0.5f, 0.5f, 0.5f}, 0.0f, 0.0f),
         make(BsdfKind::conductor, n, {1, 1, 1}, 0.25f, 0.0f),
         make(BsdfKind::dielectric, n, {1, 1, 1}, 0.0f, 1.5f),
+        make(BsdfKind::coated, n, {0.5f, 0.5f, 0.5f}, 0.0f, 1.5f),
     };
     const std::uint32_t count = std::uint32_t(bsdfs.size());
     Gpu gpu;
@@ -342,6 +434,8 @@ TEST_CASE("lobes: each kind's, from the shader, and an estimator aims at lights 
     CHECK(lobes[1] == (lobe_reflection | lobe_diffuse));
     CHECK(lobes[2] == (lobe_reflection | lobe_glossy));
     CHECK(lobes[3] == (lobe_reflection | lobe_transmission | lobe_delta));
+    CHECK(lobes[4] == (lobe_reflection | lobe_diffuse | lobe_delta));
+    CHECK(aims_at_lights(lobes[4]));  // its color, beside its coat's mirror
 
     CHECK_FALSE(aims_at_lights(lobes[0]));
     CHECK(aims_at_lights(lobes[1]));
@@ -378,6 +472,20 @@ ior = 1.5
 [materials.d_glow]
 kind = "emissive"
 radiance = [5, 5, 5]
+[textures.swirled]
+kind = "swirl"
+a = [1, 0, 0]
+b = [0, 0, 1]
+vanes = 2
+twist = 0
+seed = 4
+[materials.e_core]
+kind = "rough"
+texture = "swirled"
+[materials.f_porcelain]
+kind = "coated"
+color = [0.6, 0.05, 0.04]
+ior = 1.5
 [[shapes]]
 kind = "sphere"
 center = [0, 0, 0]
@@ -394,16 +502,25 @@ material = "a_checks"
         s.flags = contracts::arrived_from_outside;
         return s;
     };
-    // Materials in name order: a_checks 0, b_brass 1, c_glass 2, d_glow 3.
-    const std::vector<contracts::SurfaceInteraction> surfaces = {at(0.5f, 0.5f, 0), at(1.5f, 0.5f, 0),
-                                                                 at(0.0f, 0.0f, 1), at(0.0f, 0.0f, 2),
-                                                                 at(0.0f, 0.0f, 3)};
+    // A core's surface, in the world at `world` and on its shape at `own`.
+    const auto core = [&](float world, contracts::Float3 own) {
+        contracts::SurfaceInteraction s = at(world, 0.0f, 4);
+        s.object_position = own;
+        return s;
+    };
+    // Materials in name order: a_checks 0, b_brass 1, c_glass 2, d_glow 3,
+    // e_core 4, f_porcelain 5.
+    const std::vector<contracts::SurfaceInteraction> surfaces = {
+        at(0.5f, 0.5f, 0), at(1.5f, 0.5f, 0), at(0.0f, 0.0f, 1), at(0.0f, 0.0f, 2), at(0.0f, 0.0f, 3),
+        core(0.0f, {1.0f, 0.0f, 0.0f}), core(7.0f, {1.0f, 0.0f, 0.0f}), core(0.0f, {0.0f, 0.0f, 1.0f}),
+        at(0.0f, 0.0f, 5)};
     const std::uint32_t count = std::uint32_t(surfaces.size());
     Gpu gpu;
     const auto resolved = gpu.run<Bsdf>(
         "bsdf_resolve", count,
         {bytes(surfaces), bytes(scene.materials), bytes(scene.rough), bytes(scene.dielectrics),
-         bytes(scene.conductors), bytes(scene.textures), bytes(scene.checkers), bytes(count)});
+         bytes(scene.conductors), bytes(scene.textures), bytes(scene.checkers), bytes(count), bytes(scene.coated),
+         bytes(scene.woods), bytes(scene.swirls)});
 
     CHECK(resolved[0].kind == BsdfKind::lambert);
     CHECK(resolved[0].color.x == doctest::Approx(0.9f));  // floor(0.5) + floor(0.5) = 0: even, a
@@ -415,4 +532,16 @@ material = "a_checks"
     CHECK(resolved[3].kind == BsdfKind::dielectric);
     CHECK(resolved[3].ior == doctest::Approx(1.5f));
     CHECK(resolved[4].kind == BsdfKind::none);
+    // The swirl reads the point on its shape, not in the world: the same
+    // point on the core at two places in the world, one color; a quarter
+    // turn round the core, two vanes over, the other band.
+    CHECK(resolved[5].kind == BsdfKind::lambert);
+    CHECK(resolved[5].color.x == resolved[6].color.x);
+    CHECK(resolved[5].color.z == resolved[6].color.z);
+    CHECK(std::abs(resolved[5].color.x - resolved[7].color.x) > 0.5f);
+    // Coated: its color, its coat's ior, and F_in computed at load.
+    CHECK(resolved[8].kind == BsdfKind::coated);
+    CHECK(resolved[8].color.x == doctest::Approx(0.6f));
+    CHECK(resolved[8].ior == doctest::Approx(1.5f));
+    CHECK(resolved[8].internal == doctest::Approx(float(materials::internal_reflectance(1.5))));
 }
