@@ -89,7 +89,7 @@ TEST_CASE("a placed geometry's world box: the tight box of the transformed box, 
     const float c = std::sqrt(0.5f);
     contracts::Transform diagonal{{{c, -c, 0.0f, 0.0f}, {c, c, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f}}};
     const Bounds turned_box = world_bounds(Bounds{{-2.0f, -1.0f, -1.0f}, {2.0f, 1.0f, 1.0f}}, diagonal);
-    CHECK(turned_box.max.x == doctest::Approx(3.0 * std::sqrt(0.5)).epsilon(1e-6));
+    CHECK(turned_box.max.x == doctest::Approx(3.0 * std::sqrt(0.5)).scale(0).epsilon(1e-6));
     CHECK(double(turned_box.max.x) >= 3.0 * double(c));
 }
 

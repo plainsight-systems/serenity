@@ -117,8 +117,11 @@ TEST_CASE("a flight circles its target, swoops and drifts, and repeats its loop 
     for (double t : {0.0, 3.3, 41.7}) {
         const contracts::Float3 a = animation::position(f, Seconds(t));
         const contracts::Float3 b = animation::position(f, Seconds(t + f.loop));
-        CHECK(a.x == doctest::Approx(b.x).epsilon(1e-5));
-        CHECK(a.y == doctest::Approx(b.y).epsilon(1e-5));
+        // Positions in meters, within 1e-5 (1 + |x|) m: a coordinate near 0
+        // is held to 10 um, not to a part in 10^5 of itself (scale 1).
+        CHECK(a.x == doctest::Approx(b.x).scale(1.0).epsilon(1e-5));
+        CHECK(a.y == doctest::Approx(b.y).scale(1.0).epsilon(1e-5));
+        CHECK(a.z == doctest::Approx(b.z).scale(1.0).epsilon(1e-5));
     }
     // Its start: the shape's center in the file, where its first drift is.
     const contracts::Float3 start = animation::position(f, Seconds(0.0));
@@ -223,11 +226,11 @@ TEST_CASE("a rhythm's flashes: dim between, 1 at each peak, one a period") {
         rising = g > previous;
         previous = g;
     }
-    CHECK(lowest == doctest::Approx(0.1f));
+    CHECK(lowest == doctest::Approx(0.1f).scale(0).epsilon(1e-6));
     CHECK(peaks >= 199);
     CHECK(peaks <= 201);
     // Lit for a flash's length, 0.4 s, of every 5: 8% of the time.
-    CHECK(lit / 1000000.0 == doctest::Approx(0.08).epsilon(0.05));
+    CHECK(lit / 1000000.0 == doctest::Approx(0.08).scale(0).epsilon(0.01));
 }
 
 TEST_CASE("a schedule's flashes: lit at each start, across the loop's end too") {
@@ -238,11 +241,11 @@ TEST_CASE("a schedule's flashes: lit at each start, across the loop's end too") 
     glow.dim = 0.0f;
     glows.schedules.push_back(glow);
     const animation::GlowRecord r{animation::GlowKind::schedule, 0};
-    CHECK(animation::glow(glows, r, Seconds(1.25)) == doctest::Approx(1.0f));
+    CHECK(animation::glow(glows, r, Seconds(1.25)) == doctest::Approx(1.0f).scale(0).epsilon(1e-6));
     CHECK(animation::glow(glows, r, Seconds(3.0)) == 0.0f);
-    CHECK(animation::glow(glows, r, Seconds(16.25)) == doctest::Approx(1.0f));
+    CHECK(animation::glow(glows, r, Seconds(16.25)) == doctest::Approx(1.0f).scale(0).epsilon(1e-6));
     // The flash at 9.8 runs on past the loop's end, into the next loop's 0.3.
-    CHECK(animation::glow(glows, r, Seconds(10.05)) == doctest::Approx(1.0f));
+    CHECK(animation::glow(glows, r, Seconds(10.05)) == doctest::Approx(1.0f).scale(0).epsilon(1e-6));
     CHECK(animation::glow(glows, r, Seconds(0.05)) > 0.9f);
     CHECK(animation::glow(glows, r, Seconds(0.4)) == 0.0f);
 }

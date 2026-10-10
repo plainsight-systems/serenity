@@ -80,9 +80,9 @@ bool contains(const std::string& text, const std::string& part) {
 TEST_CASE("the example reads into one array per kind, names resolved to indices") {
     const scene::SceneDescription s = scene::parse(example, "example");
 
-    CHECK(s.camera.position.y == doctest::Approx(1.2f));
+    CHECK(s.camera.position.y == doctest::Approx(1.2f).scale(0).epsilon(1e-6));
     CHECK(s.camera.vertical_fov_degrees == 40.0f);
-    CHECK(s.environment.zenith.z == doctest::Approx(0.08f));
+    CHECK(s.environment.zenith.z == doctest::Approx(0.08f).scale(0).epsilon(1e-6));
 
     REQUIRE(s.textures.size() == 1);
     CHECK(s.textures[0].kind == textures::TextureKind::checker);
@@ -109,9 +109,9 @@ TEST_CASE("the example reads into one array per kind, names resolved to indices"
     // the unit sphere, scaled by its radius and moved to its center; the
     // box its corners as the file gives them, placed by the identity.
     REQUIRE(s.shapes.transforms.size() == 2);
-    CHECK(s.shapes.transforms[0].m[0][0] == doctest::Approx(0.8f));
-    CHECK(s.shapes.transforms[0].m[2][2] == doctest::Approx(0.8f));
-    CHECK(s.shapes.transforms[0].m[1][3] == doctest::Approx(0.8f));
+    CHECK(s.shapes.transforms[0].m[0][0] == doctest::Approx(0.8f).scale(0).epsilon(1e-6));
+    CHECK(s.shapes.transforms[0].m[2][2] == doctest::Approx(0.8f).scale(0).epsilon(1e-6));
+    CHECK(s.shapes.transforms[0].m[1][3] == doctest::Approx(0.8f).scale(0).epsilon(1e-6));
     CHECK(s.shapes.records[1].geometry == 0);
     REQUIRE(s.shapes.boxes.size() == 1);
     CHECK(s.shapes.boxes[0].min.x == -6.0f);
@@ -173,8 +173,8 @@ material = "brass"
     CHECK(s.materials[0].kind == materials::MaterialKind::conductor);
     CHECK(s.materials[3].kind == materials::MaterialKind::emissive);
     REQUIRE(s.conductors.size() == 1);
-    CHECK(s.conductors[0].f0.y == doctest::Approx(0.78f));
-    CHECK(s.conductors[0].roughness == doctest::Approx(0.35f));
+    CHECK(s.conductors[0].f0.y == doctest::Approx(0.78f).scale(0).epsilon(1e-6));
+    CHECK(s.conductors[0].roughness == doctest::Approx(0.35f).scale(0).epsilon(1e-6));
     REQUIRE(s.emissives.size() == 1);
     CHECK(s.emissives[0].radiance.x == 40.0f);
 
@@ -196,7 +196,7 @@ material = "brass"
     // The light is its shape: where it is and how big are the shape's.
     CHECK(s.sphere_lights[0].shape == 0);
     CHECK(s.shapes.transforms[0].m[2][3] == 3.0f);
-    CHECK(s.shapes.transforms[0].m[0][0] == doctest::Approx(0.05f));
+    CHECK(s.shapes.transforms[0].m[0][0] == doctest::Approx(0.05f).scale(0).epsilon(1e-6));
     CHECK(s.sphere_lights[0].radiance.y == 36.0f);
 }
 
@@ -404,8 +404,8 @@ TEST_CASE("a wood texture reads as the table's planks, every value checked") {
     CHECK(s.textures[1].kind == textures::TextureKind::wood);
     CHECK(s.textures[1].index == 0);
     CHECK(s.rough[0].texture.index == 1);
-    CHECK(s.woods[0].light.y == doctest::Approx(0.065f));
-    CHECK(s.woods[0].dark.z == doctest::Approx(0.008f));
+    CHECK(s.woods[0].light.y == doctest::Approx(0.065f).scale(0).epsilon(1e-6));
+    CHECK(s.woods[0].dark.z == doctest::Approx(0.008f).scale(0).epsilon(1e-6));
     CHECK(s.woods[0].ring == 0.004f);
     CHECK(s.woods[0].board == 0.16f);
     CHECK(s.woods[0].seed == 3u);
@@ -505,14 +505,14 @@ tint_distance = 0.01
     const scene::SceneDescription s = scene::parse(scene_with("", "", "\ninterior = \"blue_tint\""), "s");
     REQUIRE(s.coated.size() == 1);
     CHECK(s.coated[0].ior == 1.5f);
-    CHECK(s.coated[0].escape == doctest::Approx(float(materials::internal_escape(1.5))));
+    CHECK(s.coated[0].escape == doctest::Approx(float(materials::internal_escape(1.5))).scale(0).epsilon(1e-6));
     REQUIRE(s.swirls.size() == 1);
     CHECK(s.swirls[0].vanes == 3u);
     CHECK(s.swirls[0].twist == 0.5f);
     REQUIRE(s.absorbing.size() == 1);
     // absorption = -ln(tint) / tint_distance.
-    CHECK(s.absorbing[0].absorption.x == doctest::Approx(-std::log(0.25) / 0.01));
-    CHECK(s.absorbing[0].absorption.z == doctest::Approx(-std::log(0.95) / 0.01));
+    CHECK(s.absorbing[0].absorption.x == doctest::Approx(-std::log(0.25) / 0.01).scale(0).epsilon(1e-6));
+    CHECK(s.absorbing[0].absorption.z == doctest::Approx(-std::log(0.95) / 0.01).scale(0).epsilon(1e-6));
     CHECK(s.shapes.records[0].interior == 0u);                     // the glass sphere, filled
     CHECK(s.shapes.records[1].interior == contracts::no_medium);  // the floor
     // Without an interior, air.

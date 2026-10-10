@@ -159,10 +159,11 @@ TEST_CASE("without a lens, the ray is the pinhole's, whatever lens point is give
                                 data.forward.z + sx * data.right.z + sy * data.up.z};
         const double n = std::hypot(d[0], d[1], d[2]);
         CHECK(traced[i].origin[0] == data.origin.x);
-        CHECK(traced[i].origin[1] == doctest::Approx(data.origin.y).epsilon(1e-7));
+        CHECK(traced[i].origin[1] == doctest::Approx(data.origin.y).scale(0).epsilon(1e-7));
         CHECK(traced[i].origin[2] == data.origin.z);
         for (int k = 0; k < 3; ++k) {
-            CHECK(traced[i].direction[k] == doctest::Approx(d[k] / n).epsilon(1e-5));
+            // A unit vector's component, to 1e-5 of the vector's length.
+            CHECK(traced[i].direction[k] == doctest::Approx(d[k] / n).scale(1.0).epsilon(1e-5));
         }
     }
 }

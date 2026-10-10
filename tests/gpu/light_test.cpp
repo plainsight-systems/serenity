@@ -136,8 +136,8 @@ TEST_CASE("a small light far off keeps its solid angle: no cancellation to zero"
     const double solid_angle = 2.0 * std::numbers::pi * sin2 / (1.0 + std::sqrt(1.0 - sin2));
     INFO("pdf " << result[0] << ", expected " << 1.0 / solid_angle);
     CHECK(std::isfinite(result[0]));
-    CHECK(result[0] == doctest::Approx(1.0 / solid_angle).epsilon(1e-4));
-    CHECK(result[1] == doctest::Approx(1.0 / solid_angle).epsilon(1e-4));  // its middle, inside
+    CHECK(result[0] == doctest::Approx(1.0 / solid_angle).scale(0).epsilon(1e-4));
+    CHECK(result[1] == doctest::Approx(1.0 / solid_angle).scale(0).epsilon(1e-4));  // its middle, inside
     CHECK(result[2] == 0.0f);                                              // well aside, outside
-    CHECK(result[3] == doctest::Approx(999.9).epsilon(1e-5));              // to its surface
+    CHECK(result[3] == doctest::Approx(999.9).scale(0).epsilon(1e-5));              // to its surface
 }

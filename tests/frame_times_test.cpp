@@ -21,9 +21,9 @@ TEST_CASE("a summary covers the frames of one period, then starts the next") {
     const auto summary = times.take(Seconds(1.0));
     REQUIRE(summary.has_value());
     CHECK(summary->frames == 3);
-    CHECK(summary->mean.count() == doctest::Approx(0.004));
-    CHECK(summary->shortest.count() == doctest::Approx(0.002));
-    CHECK(summary->longest.count() == doctest::Approx(0.006));
+    CHECK(summary->mean.count() == doctest::Approx(0.004).scale(0).epsilon(1e-6));
+    CHECK(summary->shortest.count() == doctest::Approx(0.002).scale(0).epsilon(1e-6));
+    CHECK(summary->longest.count() == doctest::Approx(0.006).scale(0).epsilon(1e-6));
 
     // The next period starts empty.
     CHECK_FALSE(times.take(Seconds(2.5)).has_value());
@@ -31,7 +31,7 @@ TEST_CASE("a summary covers the frames of one period, then starts the next") {
     const auto next = times.take(Seconds(2.6));
     REQUIRE(next.has_value());
     CHECK(next->frames == 1);
-    CHECK(next->mean.count() == doctest::Approx(0.001));
+    CHECK(next->mean.count() == doctest::Approx(0.001).scale(0).epsilon(1e-6));
 }
 
 TEST_CASE("a frame that ends before it begins is refused, and nothing is added") {

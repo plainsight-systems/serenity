@@ -92,9 +92,9 @@ TEST_CASE("a pixel folds a sample into its running mean and counts it") {
     const auto r = fold({{0.5f, 1.0f, 2.0f, 3.0f}, {9.0f, 9.0f, 9.0f, 7.0f}},  // mean 0.5,1,2 of 3; old contents
                         {{1.5f, 1.0f, 0.0f, 0.0f}, {4.0f, 5.0f, 6.0f, 0.0f}}, {0u, 1u});
     // (0.5 x 3 + 1.5) / 4 = 0.75, (1 x 3 + 1) / 4 = 1, (2 x 3 + 0) / 4 = 1.5.
-    CHECK(r.pixels[0][0] == doctest::Approx(0.75f));
-    CHECK(r.pixels[0][1] == doctest::Approx(1.0f));
-    CHECK(r.pixels[0][2] == doctest::Approx(1.5f));
+    CHECK(r.pixels[0][0] == doctest::Approx(0.75f).scale(0).epsilon(1e-6));
+    CHECK(r.pixels[0][1] == doctest::Approx(1.0f).scale(0).epsilon(1e-6));
+    CHECK(r.pixels[0][2] == doctest::Approx(1.5f).scale(0).epsilon(1e-6));
     CHECK(r.pixels[0][3] == 4.0f);
     // Starting over: the old contents are not a mean of anything.
     CHECK(r.pixels[1][0] == 4.0f);
@@ -115,12 +115,12 @@ TEST_CASE("a sample not finite is left out of its pixel, counted, and the pixel'
     CHECK(first.pixels[1][0] == 2.0f);
     CHECK(first.pixels[1][3] == 1.0f);
     // The good one beside them folds in as usual.
-    CHECK(first.pixels[2][0] == doctest::Approx(5.0f / 3.0f));
+    CHECK(first.pixels[2][0] == doctest::Approx(5.0f / 3.0f).scale(0).epsilon(1e-6));
     CHECK(first.pixels[2][3] == 3.0f);
 
     // Frame 0 not finite, frame 1 radiance L: the pixel shows L, not L / 2.
     const auto second = fold({first.pixels[0]}, {{0.8f, 0.8f, 0.8f, 0.0f}}, {0u});
-    CHECK(second.pixels[0][0] == doctest::Approx(0.8f));
+    CHECK(second.pixels[0][0] == doctest::Approx(0.8f).scale(0).epsilon(1e-6));
     CHECK(second.pixels[0][3] == 1.0f);
 }
 

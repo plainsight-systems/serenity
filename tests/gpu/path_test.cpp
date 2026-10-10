@@ -56,7 +56,11 @@ struct Rig {
 
     Rig(const std::string& text, frame::Extent image) : scene(scene::parse(text, "test scene")), size(image) {}
 
-    // Renders `frames` more frames and returns the last, as displayed.
+    // Renders `frames` more frames and returns the last, as displayed. Every
+    // sample of them finite: Film leaves a sample that is not out of its
+    // pixel's mean (metal/film/non_finite.h), so a path that turned to NaN
+    // would bias the mean by the survivors and still converge near the
+    // expected value; it is counted, and checked here instead.
     std::vector<std::uint8_t> render(std::uint64_t frames) {
         std::uint64_t sequence = 0;
         for (std::uint64_t i = 0; i < frames; ++i, ++next) {
@@ -66,6 +70,7 @@ struct Rig {
                                    .camera = scene.camera});
         }
         (void)submission.wait_until_complete(sequence);
+        CHECK(renderer.non_finite_samples() == 0);
         std::vector<std::uint8_t> rgba(std::size_t{size.width} * size.height * 4);
         target.read_rgba(rgba);
         return rgba;

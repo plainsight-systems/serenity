@@ -145,14 +145,14 @@ TEST_CASE("a hit, tested in a shape's own space, is at the world's distance, and
     };
     const std::vector<ProbeHit> hits = probe(device, submission, buffers, transforms, acceleration, rays,
                                              nullptr);
-    CHECK(hits[0].t == doctest::Approx(4.97).epsilon(1e-6));
+    CHECK(hits[0].t == doctest::Approx(4.97).scale(0).epsilon(1e-6));
     CHECK(hits[0].shape == 0.0f);
-    CHECK(hits[1].t == doctest::Approx(12.5).epsilon(1e-6));
+    CHECK(hits[1].t == doctest::Approx(12.5).scale(0).epsilon(1e-6));
     CHECK(hits[1].shape == 1.0f);
-    CHECK(hits[2].t == doctest::Approx(9.0).epsilon(1e-6));
+    CHECK(hits[2].t == doctest::Approx(9.0).scale(0).epsilon(1e-6));
     CHECK(hits[2].shape == 2.0f);
     CHECK(hits[3].t == -1.0f);
-    CHECK(hits[4].t == doctest::Approx(5.0 - std::sqrt(0.03 * 0.03 - 0.02 * 0.02)).epsilon(1e-5));
+    CHECK(hits[4].t == doctest::Approx(5.0 - std::sqrt(0.03 * 0.03 - 0.02 * 0.02)).scale(0).epsilon(1e-5));
 }
 
 TEST_CASE("a moved shape is hit where it moved to, and not where it was") {
@@ -176,7 +176,7 @@ TEST_CASE("a moved shape is hit where it moved to, and not where it was") {
         const std::vector<ProbeHit> hits = probe(device, submission, buffers, transforms, acceleration, rays,
                                                  &moved);
         INFO("frame " << frame);
-        CHECK(hits[0].t == doctest::Approx(4.97).epsilon(1e-6));
+        CHECK(hits[0].t == doctest::Approx(4.97).scale(0).epsilon(1e-6));
         CHECK(hits[0].shape == 0.0f);
         CHECK(hits[1].t == -1.0f);
     }

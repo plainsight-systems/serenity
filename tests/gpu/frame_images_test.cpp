@@ -4,7 +4,6 @@
 // size changes; and the path tracer's graph in graphs/, ending in the tone
 // map, running.
 
-#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -33,8 +32,8 @@ TEST_CASE("frames in flight share the images between passes, and a resize remake
         return frame::FrameInputs{
             .time = frame::Seconds(0.1 * i), .index = i, .accumulated_since = i, .camera = scene.camera};
     };
-    const auto read = [&](metal::Offscreen& target) {
-        std::vector<std::uint8_t> rgba(std::size_t{size.width} * size.height * 4);
+    const auto read = [](const metal::Offscreen& target) {
+        std::vector<std::uint8_t> rgba(target.rgba_size());
         target.read_rgba(rgba);
         return rgba;
     };
@@ -64,12 +63,20 @@ TEST_CASE("frames in flight share the images between passes, and a resize remake
         CHECK(read(*targets[i]) == alone[i]);
     }
 
-    // A resize remakes the images, and the next frame is whole.
-    metal::Offscreen small(device, submission, {97, 61});
+    // A resize remakes the images, and the next frame is whole: byte for
+    // byte the frame a renderer that never saw the larger size renders.
+    const frame::Extent resized{97, 61};
+    metal::Offscreen small(device, submission, resized);
     (void)submission.wait_until_complete(metal::render_to_offscreen(submission, small, renderer, inputs(0)));
-    std::vector<std::uint8_t> rgba(97 * 61 * 4);
-    small.read_rgba(rgba);
-    CHECK(std::any_of(rgba.begin(), rgba.end(), [](std::uint8_t b) { return b > 0; }));
+    {
+        metal::Device fresh_device;
+        metal::Submission fresh_submission(fresh_device);
+        metal::Offscreen fresh_target(fresh_device, fresh_submission, resized);
+        metal::Renderer fresh(fresh_device, fresh_submission, graph, &scene);
+        (void)fresh_submission.wait_until_complete(
+            metal::render_to_offscreen(fresh_submission, fresh_target, fresh, inputs(0)));
+        CHECK(read(small) == read(fresh_target));
+    }
 
     // And the path tracer's own graph, in graphs/, runs.
     const frame::Schedule path = frame::load_schedule(SERENITY_GRAPHS_DIR "/path.toml");

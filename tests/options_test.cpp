@@ -33,7 +33,7 @@ TEST_CASE("headless: defaults, and every option read") {
     const auto defaults = headless({"--graph", "s.toml", "--out", "o"});
     CHECK(defaults.frames == 1);
     CHECK(defaults.first == 0);
-    CHECK(defaults.step.count() == doctest::Approx(1.0 / 60.0));
+    CHECK(defaults.step.count() == doctest::Approx(1.0 / 60.0).scale(0).epsilon(1e-6));
     CHECK(defaults.size == serenity::frame::Extent{1920, 1080});
     CHECK(defaults.graph == "s.toml");
     CHECK(defaults.out == "o");

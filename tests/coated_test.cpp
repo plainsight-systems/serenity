@@ -37,12 +37,12 @@ double external_reflectance(double ior) {
 TEST_CASE("the coat's internal reflectance: glass's published value, and reciprocity with the outside's") {
     using serenity::materials::internal_reflectance;
     // Glass, ior 1.5: some 0.596 inside, 0.092 outside.
-    CHECK(internal_reflectance(1.5) == doctest::Approx(0.596).epsilon(0.002));
-    CHECK(external_reflectance(1.5) == doctest::Approx(0.092).epsilon(0.01));
+    CHECK(internal_reflectance(1.5) == doctest::Approx(0.596).scale(0).epsilon(0.002));
+    CHECK(external_reflectance(1.5) == doctest::Approx(0.092).scale(0).epsilon(0.005));
     for (const double ior : {1.05, 1.3, 1.5, 1.8, 2.4}) {
         INFO("ior " << ior);
         CHECK(1.0 - external_reflectance(ior) ==
-              doctest::Approx(ior * ior * (1.0 - internal_reflectance(ior))).epsilon(1e-5));
+              doctest::Approx(ior * ior * (1.0 - internal_reflectance(ior))).scale(0).epsilon(1e-5));
         CHECK(internal_reflectance(ior) > 0.0);
         CHECK(internal_reflectance(ior) < 1.0);
     }
@@ -57,7 +57,7 @@ TEST_CASE("the escape stays above 0 as a float where the reflectance rounds to 1
     CHECK(static_cast<float>(internal_reflectance(1000.0)) == 1.0f);
     CHECK(static_cast<float>(internal_escape(1000.0)) > 0.0f);
     // And reciprocity holds there too: 1 - F_out = ior^2 (1 - F_in).
-    CHECK(1.0 - external_reflectance(1000.0) == doctest::Approx(1000.0 * 1000.0 * internal_escape(1000.0)).epsilon(1e-4));
+    CHECK(1.0 - external_reflectance(1000.0) == doctest::Approx(1000.0 * 1000.0 * internal_escape(1000.0)).scale(0).epsilon(1e-4));
 }
 
 TEST_CASE("a coat with no critical angle is refused, not integrated to a NaN") {

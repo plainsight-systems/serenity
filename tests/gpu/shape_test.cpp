@@ -114,13 +114,13 @@ material = "matte"
     // the world's.
     const std::vector<Query> queries = {{1.3f, 2.0f, 3.4f, 0.0f}, {-1.5f, 0.0f, -0.5f, 1.0f}};
     const auto out = interactions(scene, queries);
-    CHECK(out[0].object_position.x == doctest::Approx(0.6f).epsilon(1e-5));
+    CHECK(out[0].object_position.x == doctest::Approx(0.6f).scale(0).epsilon(1e-5));
     CHECK(out[0].object_position.y == doctest::Approx(0.0f).epsilon(1e-5));
-    CHECK(out[0].object_position.z == doctest::Approx(0.8f).epsilon(1e-5));
+    CHECK(out[0].object_position.z == doctest::Approx(0.8f).scale(0).epsilon(1e-5));
     CHECK(out[0].interior == 0u);
-    CHECK(out[0].geometric_normal.x == doctest::Approx(0.6f).epsilon(1e-5));
-    CHECK(out[1].object_position.x == doctest::Approx(-1.5f));
-    CHECK(out[1].object_position.y == doctest::Approx(0.0f));
-    CHECK(out[1].object_position.z == doctest::Approx(-0.5f));
+    CHECK(out[0].geometric_normal.x == doctest::Approx(0.6f).scale(0).epsilon(1e-5));
+    CHECK(out[1].object_position.x == doctest::Approx(-1.5f).scale(0).epsilon(1e-6));
+    CHECK(out[1].object_position.y == doctest::Approx(0.0f).epsilon(1e-6));
+    CHECK(out[1].object_position.z == doctest::Approx(-0.5f).scale(0).epsilon(1e-6));
     CHECK(out[1].interior == contracts::no_medium);
 }

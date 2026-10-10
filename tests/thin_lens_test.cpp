@@ -73,10 +73,10 @@ TEST_CASE("framing: the basis spans the field of view, with square pixels") {
     CHECK(data.origin.x == 0.0f);
     CHECK(data.origin.y == 1.0f);
     CHECK(data.origin.z == 5.0f);
-    CHECK(data.forward.z == doctest::Approx(-1.0f));
-    CHECK(length(data.forward) == doctest::Approx(1.0f));
-    CHECK(length(data.up) == doctest::Approx(half_height));
-    CHECK(length(data.right) == doctest::Approx(half_height * 1600.0f / 900.0f));
+    CHECK(data.forward.z == doctest::Approx(-1.0f).scale(0).epsilon(1e-6));
+    CHECK(length(data.forward) == doctest::Approx(1.0f).scale(0).epsilon(1e-6));
+    CHECK(length(data.up) == doctest::Approx(half_height).scale(0).epsilon(1e-6));
+    CHECK(length(data.right) == doctest::Approx(half_height * 1600.0f / 900.0f).scale(0).epsilon(1e-6));
     CHECK(dot(data.forward, data.up) == doctest::Approx(0.0f).epsilon(1e-6));
     CHECK(dot(data.forward, data.right) == doctest::Approx(0.0f).epsilon(1e-6));
     CHECK(dot(data.up, data.right) == doctest::Approx(0.0f).epsilon(1e-6));
@@ -128,7 +128,7 @@ TEST_CASE("a camera far from the origin is judged, and framed, without overflowi
     CHECK(finite(data.forward));
     CHECK(finite(data.right));
     CHECK(finite(data.up));
-    CHECK(data.forward.x == doctest::Approx(-1.0f));
+    CHECK(data.forward.x == doctest::Approx(-1.0f).scale(0).epsilon(1e-6));
 
     // Squared in float, 1e20 overflows, and up was once called parallel to
     // the view; it is not.

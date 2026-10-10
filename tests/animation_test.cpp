@@ -45,7 +45,7 @@ TEST_CASE("step 2: each axis's amplitudes sum to the reach") {
             CHECK(w.amplitude[a][k] > 0.0);
             sum += w.amplitude[a][k];
         }
-        CHECK(sum == doctest::Approx(0.25).epsilon(1e-12));
+        CHECK(sum == doctest::Approx(0.25).scale(0).epsilon(1e-12));
     }
 }
 
@@ -90,7 +90,7 @@ TEST_CASE("step 3: its root-mean-square speed is the speed") {
         }
         total += v2;
     }
-    CHECK(std::sqrt(total / samples) == doctest::Approx(speed).epsilon(0.02));
+    CHECK(std::sqrt(total / samples) == doctest::Approx(speed).scale(0).epsilon(0.02));
 }
 
 TEST_CASE("a function of the seed alone: the same seed the same path, another seed another") {

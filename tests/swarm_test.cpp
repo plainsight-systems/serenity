@@ -94,10 +94,10 @@ TEST_CASE("a swarm becomes its count of fireflies, each a moving, flashing spher
         CHECK(s.shape_lights[2 + i] == i);
         CHECK(s.animation.glowers[i].target == i);
         const animation::ScheduleGlow& glow = s.animation.glows.schedules[s.animation.glowers[i].glow.index];
-        CHECK(glow.flash == doctest::Approx(0.35));
-        CHECK(glow.dim == doctest::Approx(0.25f));
+        CHECK(glow.flash == doctest::Approx(0.35).scale(0).epsilon(1e-6));
+        CHECK(glow.dim == doctest::Approx(0.25f).scale(0).epsilon(1e-6));
         CHECK(glow.schedule.starts == s.animation.motions.flights[i].flashes.starts);
-        CHECK(s.shapes.transforms[2 + i].m[0][0] == doctest::Approx(0.02f));
+        CHECK(s.shapes.transforms[2 + i].m[0][0] == doctest::Approx(0.02f).scale(0).epsilon(1e-6));
     }
 }
 
