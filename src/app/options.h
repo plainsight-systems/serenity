@@ -24,19 +24,22 @@ namespace serenity::app {
 // window's pixels, in (0, 1]; 1 by default. Below 1 the window's layer
 // stretches each frame to fill the window, with its own linear filtering:
 // fewer pixels to render, for interactivity, and nothing else. It is not
-// upscaling in the frame graph's sense: no pass runs, no history is kept,
-// and nothing measured goes through it (measurement is headless, at the
-// size asked for).
+// upscaling in the frame graph's sense: no pass runs and no history is
+// kept. The GPU time the title shows is the frame's, at the size rendered;
+// the stretch is the layer's, outside it.
 //
 // parse() throws OptionsError naming the argument for an unknown option, a
 // missing or malformed value, a scale outside (0, 1], or a missing --graph
-// (E.2, E.14). It reads neither file; they are loaded
-// after parsing succeeds (core/frame/graph_file.h, core/scene/scene.h).
+// (E.2, E.14). Numbers are read whole, by std::from_chars: no sign, space
+// or locale (E.28). It reads neither file; they are loaded after parsing
+// succeeds (core/frame/graph_file.h, core/scene/scene.h).
 class OptionsError : public std::runtime_error {
 public:
-    explicit OptionsError(const std::string& what) : std::runtime_error(what) {}
+    using std::runtime_error::runtime_error;
 };
 
+// What parse() read: plain values, which parse() alone makes and checks
+// (C.2: a struct, since nothing here keeps an invariant after it).
 struct Options {
     std::filesystem::path graph;
     std::filesystem::path scene;  // empty when none was given
@@ -45,6 +48,8 @@ struct Options {
 
 // The size frames are rendered at for a window of `window` pixels at
 // `scale`: each side scaled and rounded to the nearest pixel, and at least 1.
+// Throws OptionsError for a scale outside (0, 1], as parse() refuses it
+// (I.5, I.6).
 frame::Extent render_size(frame::Extent window, double scale);
 
 // `args` are the arguments after the program's name.

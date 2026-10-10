@@ -1,8 +1,17 @@
 #include "metal/device/offscreen.h"
 
+#include <cstddef>
+#include <string>
+
 #include "metal/device/error.h"
 
 namespace serenity::metal {
+
+namespace {
+
+constexpr std::size_t bytes_per_pixel = 4;  // RGBA8Unorm
+
+}  // namespace
 
 Offscreen::Offscreen(const Device& device, Submission& submission, frame::Extent size) : size_(size) {
     check_texture_size(size, "Offscreen");
@@ -19,9 +28,13 @@ Offscreen::Offscreen(const Device& device, Submission& submission, frame::Extent
     resident_ = submission.keep_resident(texture_.get());
 }
 
+std::size_t Offscreen::rgba_size() const {
+    return std::size_t{size_.width} * size_.height * bytes_per_pixel;
+}
+
 void Offscreen::read_rgba(std::span<std::uint8_t> out) const {
-    const std::size_t row_bytes = std::size_t{size_.width} * 4;
-    const std::size_t expected = row_bytes * size_.height;
+    const std::size_t row_bytes = std::size_t{size_.width} * bytes_per_pixel;
+    const std::size_t expected = rgba_size();
     if (out.size() != expected) {
         throw Error("read_rgba: " + std::to_string(out.size()) + " bytes given for an image of " +
                     std::to_string(expected));

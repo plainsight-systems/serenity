@@ -37,12 +37,15 @@ run:
 	./build/native-release/serenity --graph $(GRAPH) $(SCENE_ARG) $(SCALE_ARG)
 
 ## Headless frames of GRAPH, over SCENE if given, release build, as PNGs in
-## OUT. FRAMES frames from frame 0, a sixtieth of a second apart.
+## OUT. FRAMES frames from frame 0, a sixtieth of a second apart. The frames
+## of an earlier run in OUT are removed first; the renderer refuses an OUT
+## that still holds anything else (headless/options.h).
 OUT ?= frames
 FRAMES ?= 60
 headless:
 	cmake --preset native-release $(CONFIGURE_QUIET)
 	cmake --build --preset native-release --target serenity-headless
+	rm -f $(OUT)/frame-*.png
 	./build/native-release/serenity-headless --graph $(GRAPH) $(SCENE_ARG) --out $(OUT) --frames $(FRAMES)
 
 ## A movie of GRAPH over SCENE, for sharing: SECONDS seconds at FPS frames a

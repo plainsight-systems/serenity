@@ -165,13 +165,14 @@ serenity_add_metallib(
 
 # ---------------------------------------------------------------------------
 # The two ways to run a frame. Each parses its command line in a library of
-# its own, so the tests can reach it without a window or a GPU.
+# its own, so the tests can reach it without a window or a GPU; the window's
+# clock, which needs neither, is in its library too.
 # ---------------------------------------------------------------------------
-add_library(serenity_app_options STATIC src/app/options.cpp)
-target_include_directories(serenity_app_options PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+add_library(serenity_app_options STATIC src/app/options.cpp src/app/clock.cpp)
+target_link_libraries(serenity_app_options PUBLIC serenity_core)
 target_compile_options(serenity_app_options PRIVATE ${SERENITY_WARNINGS})
 
-add_executable(serenity src/app/main.cpp src/app/window.cpp src/app/clock.cpp)
+add_executable(serenity src/app/main.cpp src/app/window.cpp)
 target_link_libraries(serenity PRIVATE serenity_app_options serenity_metal SDL3::SDL3-static)
 target_compile_options(serenity PRIVATE ${SERENITY_WARNINGS})
 

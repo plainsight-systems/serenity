@@ -1,14 +1,11 @@
 #include "app/clock.h"
 
-#include <SDL3/SDL_timer.h>
-
 namespace serenity::app {
 
-Clock::Clock() : start_ns_(SDL_GetTicksNS()) {}
+Clock::Clock() : start_(std::chrono::steady_clock::now()) {}
 
 frame::Seconds Clock::elapsed() const {
-    const std::uint64_t now = SDL_GetTicksNS();
-    return frame::Seconds(static_cast<double>(now - start_ns_) * 1e-9);
+    return std::chrono::steady_clock::now() - start_;
 }
 
 }  // namespace serenity::app

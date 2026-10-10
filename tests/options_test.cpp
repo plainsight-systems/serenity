@@ -17,7 +17,7 @@ serenity::headless::Options headless(std::vector<const char*> args) {
 std::string headless_error(std::vector<const char*> args) {
     try {
         (void)serenity::headless::parse(args);
-    } catch (const serenity::headless::Error& error) {
+    } catch (const serenity::headless::OptionsError& error) {
         return error.what();
     }
     return "";
@@ -133,9 +133,9 @@ TEST_CASE("headless: which frames are written, and frozen time") {
     // Of 10 frames: all; the last; the 1st, 2nd, 4th, 8th and the last.
     std::vector<std::uint64_t> all, last, doubling;
     for (std::uint64_t n = 0; n < 10; ++n) {
-        if (written(Write::all, n, 10)) all.push_back(n);
-        if (written(Write::last, n, 10)) last.push_back(n);
-        if (written(Write::doubling, n, 10)) doubling.push_back(n);
+        if (written(Write::all, {.after_first = n, .frames = 10})) all.push_back(n);
+        if (written(Write::last, {.after_first = n, .frames = 10})) last.push_back(n);
+        if (written(Write::doubling, {.after_first = n, .frames = 10})) doubling.push_back(n);
     }
     CHECK(all.size() == 10);
     CHECK(last == std::vector<std::uint64_t>{9});

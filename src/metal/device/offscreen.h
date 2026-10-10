@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 
@@ -51,6 +52,10 @@ public:
 
     MTL::Texture* texture() const { return texture_.get(); }
     frame::Extent size() const { return size_; }
+
+    // The bytes read_rgba() fills: width x height x 4. The one place that
+    // size is computed (ES.3).
+    std::size_t rgba_size() const;
 
     void read_rgba(std::span<std::uint8_t> out) const;
 

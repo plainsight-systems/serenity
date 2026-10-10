@@ -24,6 +24,7 @@ add_executable(serenity_tests
     frame_times_test.cpp
     png_test.cpp
     options_test.cpp
+    programs_test.cpp
     main_test.cpp
 )
 target_link_libraries(serenity_tests PRIVATE
