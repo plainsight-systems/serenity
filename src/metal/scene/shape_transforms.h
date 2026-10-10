@@ -38,10 +38,9 @@ namespace serenity::metal {
 // Throws MetalError if there are no shapes or the backend cannot make the array.
 class ShapeTransforms {
 public:
-    // One copy of `at_rest` when `moves` is false; one per frame in flight
-    // when it is true.
+    // One copy of `at_rest`, or one per frame in flight when the shapes move.
     ShapeTransforms(const Device& device, Submission& submission, std::span<const contracts::Transform> at_rest,
-                    bool moves);
+                    FrameArray::Copies copies);
 
     ShapeTransforms(const ShapeTransforms&) = delete;
     ShapeTransforms& operator=(const ShapeTransforms&) = delete;

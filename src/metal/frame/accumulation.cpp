@@ -10,14 +10,15 @@ namespace serenity::metal {
 Accumulation::Accumulation(const Device& device, Submission& submission)
     : device_(NS::RetainPtr(device.handle())), submission_(submission) {}
 
-std::uint32_t Accumulation::prepare(const frame::FrameInputs& inputs, frame::Extent size, bool scene_changes) {
+std::uint32_t Accumulation::prepare(const frame::FrameInputs& inputs, frame::Extent size,
+                                    frame::SceneMotion motion) {
     // The rule is asked on a copy, kept only once the image it describes
     // exists, so a failure leaves the history saying what the image holds
     // (E.4).
     frame::History next = history_;
     const frame::Joined joined = [&] {
         try {
-            return next.join(inputs, size, scene_changes);
+            return next.join(inputs, size, motion);
         } catch (const frame::HistoryError& refused) {
             throw MetalError(refused.what());
         }

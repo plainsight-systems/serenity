@@ -69,6 +69,13 @@ public:
     explicit HistoryError(const std::string& what) : std::runtime_error(what) {}
 };
 
+// Whether the scene changes from one instant to another (anything moves or
+// glows): two named values, not a bool, so a call says which it means (I.4).
+enum class SceneMotion { still, changing };
+
+// Whether what a window shows changed since its last frame (its size).
+enum class View { same, changed };
+
 // What a frame joining the image is told.
 struct Joined {
     std::uint32_t held = 0;  // frames the image holds before this one
@@ -79,7 +86,7 @@ class History {
 public:
     // Frame `inputs`, at `size`, of a scene that changes or not, joins the
     // image; see above. Throws HistoryError, changing nothing, if it may not.
-    Joined join(const FrameInputs& inputs, Extent size, bool scene_changes);
+    Joined join(const FrameInputs& inputs, Extent size, SceneMotion motion);
 
 private:
     bool made_ = false;  // whether the image has a size yet
@@ -92,13 +99,13 @@ private:
 // A running window's accumulated_since, frame by frame.
 class LiveHistory {
 public:
-    explicit LiveHistory(bool scene_changes) : changes_(scene_changes) {}
+    explicit LiveHistory(SceneMotion motion) : changes_(motion == SceneMotion::changing) {}
 
     // accumulated_since for frame `index`, the frames asked for in order;
-    // `view_changed` when what the window shows changed since the last
-    // frame (its size). Throws HistoryError for an index before the one the
+    // `view`, whether what the window shows changed since the last frame
+    // (its size). Throws HistoryError for an index before the one the
     // image started at: frames out of order (I.5).
-    std::uint64_t since(std::uint64_t index, bool view_changed);
+    std::uint64_t since(std::uint64_t index, View view);
 
 private:
     bool changes_;

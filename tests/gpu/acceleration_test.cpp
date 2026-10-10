@@ -155,7 +155,8 @@ TEST_CASE("a hit, tested in a shape's own space, is at the world's distance, and
     metal::Submission submission(device);
     const metal::SceneBuffers buffers(device, submission, description);
     // Still: the shapes where the file puts them.
-    metal::ShapeTransforms transforms(device, submission, description.shapes.transforms, false);
+    metal::ShapeTransforms transforms(device, submission, description.shapes.transforms,
+                                      metal::FrameArray::Copies::one);
     metal::SceneAcceleration acceleration(device, submission, description.shapes, {});
 
     const std::vector<TraceRay> rays = {
@@ -189,7 +190,8 @@ TEST_CASE("a moved shape is hit where it moved to, and not where it was") {
     metal::Device device;
     metal::Submission submission(device);
     const metal::SceneBuffers buffers(device, submission, description);
-    metal::ShapeTransforms transforms(device, submission, description.shapes.transforms, true);
+    metal::ShapeTransforms transforms(device, submission, description.shapes.transforms,
+                                      metal::FrameArray::Copies::per_frame);
     const std::vector<std::uint32_t> moving = {0};
     metal::SceneAcceleration acceleration(device, submission, description.shapes, moving);
 

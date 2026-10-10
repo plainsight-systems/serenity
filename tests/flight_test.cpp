@@ -149,10 +149,8 @@ TEST_CASE("a flight is a function of its seed") {
 }
 
 TEST_CASE("a flight's flashes: in order, within its loop, a second apart, one on each swoop's climb") {
-    // Where on a swoop its flash is, a fraction of its duration: on its
-    // climb (flight.h). The number is flight.cpp's own, swoop_flash_at,
-    // which flight.h does not name.
-    constexpr double swoop_flash_at = 0.55;
+    // Where on a swoop its flash is: flight.h's swoop_flash_at.
+    using animation::swoop_flash_at;
     const scene::SceneDescription s = scene::parse(flying(), "flight");
     const animation::Flight& f = the_flight(s);
     const std::vector<double>& starts = f.flashes.starts;

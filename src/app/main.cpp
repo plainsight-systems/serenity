@@ -108,7 +108,8 @@ int main(int argc, char** argv) {
         measurement::FrameTimes frame_times(title_period);
         std::uint64_t index = 0;
         // When the image starts over is the core's plan (core/frame/history.h).
-        frame::LiveHistory history(loaded && scene::changes(*loaded));
+        frame::LiveHistory history(loaded && scene::changes(*loaded) ? frame::SceneMotion::changing
+                                                                   : frame::SceneMotion::still);
         for (app::Window::Events events = window.poll(); !events.quit; events = window.poll()) {
             if (events.resized) {
                 presenter.resize(app::render_size(window.size_in_pixels(), options.scale));
@@ -116,7 +117,7 @@ int main(int argc, char** argv) {
             const frame::FrameInputs inputs{
                 .time = app_clock.elapsed(),
                 .index = index,
-                .accumulated_since = history.since(index, events.resized),
+                .accumulated_since = history.since(index, events.resized ? frame::View::changed : frame::View::same),
                 .camera = loaded ? std::optional{loaded->camera} : std::nullopt,
             };
             if (const auto rendered = metal::render_to_window(submission, presenter, renderer, inputs)) {

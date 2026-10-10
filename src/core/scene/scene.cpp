@@ -968,7 +968,7 @@ void ShapeReading::make_animation(const contracts::Obstacles& obstacles) {
 
     std::vector<animation::Flight> flights;
     try {
-        flights = animation::make_flights(jobs, obstacles);
+        flights = animation::make_flights(jobs, obstacles, animation::flight_workers());
     } catch (const animation::FlightsError& refused) {
         report(refused, job_of);
     }

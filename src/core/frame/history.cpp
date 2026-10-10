@@ -14,7 +14,7 @@ std::string at(Extent size) {
 
 }  // namespace
 
-Joined History::join(const FrameInputs& inputs, Extent size, bool scene_changes) {
+Joined History::join(const FrameInputs& inputs, Extent size, SceneMotion motion) {
     if (inputs.accumulated_since > inputs.index) {
         throw HistoryError("frame " + std::to_string(inputs.index) + " accumulates since frame " +
                            std::to_string(inputs.accumulated_since) + ", after itself");
@@ -45,7 +45,7 @@ Joined History::join(const FrameInputs& inputs, Extent size, bool scene_changes)
                            ", which is not what the image holds (" + holds +
                            "); a frame skipped, or a change without starting over");
     }
-    if (scene_changes && inputs.time != time_) {
+    if (motion == SceneMotion::changing && inputs.time != time_) {
         throw HistoryError("frame " + std::to_string(inputs.index) + ", at " + std::to_string(inputs.time.count()) +
                            " s, would join frames at " + std::to_string(time_.count()) +
                            " s; the scene changes, so an image holds one instant (start over at each new time)");
@@ -54,13 +54,13 @@ Joined History::join(const FrameInputs& inputs, Extent size, bool scene_changes)
     return Joined{static_cast<std::uint32_t>(held), false};
 }
 
-std::uint64_t LiveHistory::since(std::uint64_t index, bool view_changed) {
+std::uint64_t LiveHistory::since(std::uint64_t index, View view) {
     // Checked before index - since_ is taken, which would wrap (ES.104).
     if (index < since_) {
         throw HistoryError("frame " + std::to_string(index) + " asked after frame " + std::to_string(since_) +
                            "; a running window's frames are asked for in order");
     }
-    if (view_changed || changes_ || index - since_ > max_accumulated_frames) {
+    if (view == View::changed || changes_ || index - since_ > max_accumulated_frames) {
         since_ = index;
     }
     return since_;

@@ -29,6 +29,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <span>
 #include <limits>
 #include <optional>
 #include <string>
@@ -75,6 +77,14 @@ public:
         CHECK(renderer_.non_finite_samples() == 0);
         return tests::read_back(target_);
     }
+
+    // The accumulated image of the frames rendered so far, in floats.
+    std::vector<float> accumulated() {
+        std::vector<float> floats(std::size_t{size_.width} * size_.height * 4);
+        renderer_.read_accumulated(floats);
+        return floats;
+    }
+    void accumulated_into(std::span<float> out) { renderer_.read_accumulated(out); }
 
     const scene::SceneDescription& description() const noexcept { return description_; }
     frame::Extent size() const noexcept { return size_; }
@@ -320,16 +330,34 @@ TEST_CASE("next event estimation: under two fireflies, chosen one at a time, the
 }
 
 TEST_CASE("the same inputs give the same image") {
-    // Compared as displayed, 8 bits a channel: the renderer gives the
-    // accumulated float image to no reader but its passes, so a difference
-    // below 1/255 that rounds the same is not seen (needs a readback of the
-    // accumulated image, a src change). Every pixel's sample differs from
-    // its neighbour's, so a difference anywhere in the frame is unlikely to
-    // round the same in all of them.
+    // Compared in the accumulated floats, bit for bit, not as displayed: a
+    // difference below what 8 bits a channel can show still fails.
     const std::string text = lit_floor(one_firefly);
     Rig first(text, {32, 24});
     Rig second(text, {32, 24});
-    CHECK(tests::differing(first.render(8), second.render(8)) == 0);
+    (void)first.render(8);
+    (void)second.render(8);
+    const std::vector<float> a = first.accumulated();
+    const std::vector<float> b = second.accumulated();
+    REQUIRE(a.size() == b.size());
+    CHECK(std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
+    // And the comparison can fail: one frame more is another image.
+    (void)second.render(1);
+    CHECK(std::memcmp(a.data(), second.accumulated().data(), a.size() * sizeof(float)) != 0);
+}
+
+TEST_CASE("the accumulated image reads back only whole, and only when there is one") {
+    Rig rig(lit_floor(one_firefly), {8, 6});
+    std::vector<float> wrong(8 * 6 * 4 - 1);
+    // Before any frame there is no image to read.
+    CHECK_THROWS_WITH_AS(rig.accumulated_into(wrong), doctest::Contains("no frame has made"), metal::MetalError);
+    (void)rig.render(1);
+    CHECK_THROWS_WITH_AS(rig.accumulated_into(wrong), doctest::Contains("floats given"), metal::MetalError);
+    metal::Device device;
+    metal::Submission submission(device);
+    metal::Renderer preview(device, submission, tests::preview_graph(), &rig.description());
+    std::vector<float> any(4);
+    CHECK_THROWS_WITH_AS(preview.read_accumulated(any), doctest::Contains("accumulates nothing"), metal::MetalError);
 }
 
 TEST_CASE("frame k rendered alone is frame k rendered after others (principle 2)") {
@@ -352,14 +380,19 @@ TEST_CASE("frame k rendered alone is frame k rendered after others (principle 2)
         }
         (void)submission.wait_until_complete(sequence);
         CHECK(renderer.non_finite_samples() == 0);
-        return tests::read_back(target);
+        std::vector<float> floats(std::size_t{size.width} * size.height * 4);
+        renderer.read_accumulated(floats);
+        return floats;
     };
-    // Each of frames 0 to 4 starting over; 5 to 7 accumulated from 5.
-    const std::vector<std::uint8_t> after_others = run(0, 7, 5);
-    const std::vector<std::uint8_t> alone = run(5, 7, 5);
-    CHECK(tests::differing(after_others, alone) == 0);
+    // Each of frames 0 to 4 starting over; 5 to 7 accumulated from 5:
+    // compared bit for bit in the accumulated floats.
+    const std::vector<float> after_others = run(0, 7, 5);
+    const std::vector<float> alone = run(5, 7, 5);
+    REQUIRE(after_others.size() == alone.size());
+    CHECK(std::memcmp(after_others.data(), alone.data(), alone.size() * sizeof(float)) == 0);
     // And they are not every frame alike: frame 5 alone differs from 6 alone.
-    CHECK(tests::differing(run(5, 5, 5), run(6, 6, 6)) > 0);
+    const std::vector<float> five = run(5, 5, 5);
+    CHECK(std::memcmp(five.data(), run(6, 6, 6).data(), five.size() * sizeof(float)) != 0);
 }
 
 TEST_CASE("the accumulated image holds what the inputs claim, or the frame is refused") {

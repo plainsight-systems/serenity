@@ -154,6 +154,10 @@ inline constexpr double flight_delta = 0.01;
 // (core/scene/swarm.h draws its starts so).
 inline constexpr double first_drift_reach = 0.1;
 
+// Where on a swoop its flash starts, a fraction of the swoop's duration: on
+// its climb (step 7).
+inline constexpr double swoop_flash_at = 0.55;
+
 // The most samples step 3 checks one segment in, by default: a bound on the
 // work one segment can ask for, each sample one distance over every still
 // shape, not a tuning number. A firefly's segment needs some 10^2 to 10^3
@@ -214,9 +218,11 @@ Flight make_flight(const FlightParams& params, contracts::Float3 start, float bo
 // Many flights, each as make_flight() makes it, made in parallel: flight k
 // of the result is make_flight(jobs[k]...), whatever the number of threads,
 // since each is a function of its own numbers alone and `obstacles` answers
-// the same from any thread (contract 11). As many threads as the machine
-// has cores (std::thread::hardware_concurrency, at least one), each taking
-// the next unmade flight. If any cannot be made, throws, once every thread
+// the same from any thread (contract 11). `workers` threads (at least one,
+// and no more than there are jobs), each taking the next unmade flight: an
+// input, not read from the machine here (I.1), so a test can show the
+// result is the same for any count; the scene reader passes
+// flight_workers(). If any cannot be made, throws, once every thread
 // has finished, the failure of the lowest k that failed: tasks, not
 // threads (CP.4), the threads made once a load (CP.41) and joined however
 // the call ends (CP.25). Each failure is caught in the worker that met it,
@@ -239,7 +245,12 @@ struct FlightJob {
     contracts::Float3 start{};
     float body = 0.0f;
 };
-std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles);
+std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles,
+                                 std::size_t workers);
+
+// As many workers as the machine has cores (std::thread::hardware_concurrency),
+// at least one: the one place the machine is asked.
+std::size_t flight_workers();
 
 // Where it is at `t`, by steps E1 to E3.
 contracts::Float3 position(const Flight& flight, frame::Seconds t);

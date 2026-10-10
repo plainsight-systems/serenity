@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <variant>
 #include <vector>
 
@@ -210,6 +211,15 @@ public:
     // every completed frame; 0 for a graph that accumulates nothing. Reads
     // no counter a frame in flight may be writing.
     std::uint64_t non_finite_samples() const noexcept;
+
+    // The accumulated image's floats into `out`, RGBA a pixel, rows top to
+    // bottom: what the passes read, at full precision, for a test or tool
+    // that compares images below what 8 bits a channel can show. A readback
+    // (GPU.1), not for a frame loop: it waits for its copy. The frames it
+    // reads must have completed (Submission::wait_until_complete). Throws
+    // MetalError if the graph has no accumulated image, no frame has made it
+    // yet, or `out` is not its size.
+    void read_accumulated(std::span<float> out);
 
 private:
     using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass>;

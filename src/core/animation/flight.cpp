@@ -76,7 +76,6 @@ constexpr double episode_start_reach = 1.0;   // meters
 constexpr double pull_to_middle = 1.0 / 3.0;
 
 // step 7
-constexpr double swoop_flash_at = 0.55;       // of the swoop's duration: on its climb
 constexpr double circling_rate_least = 0.1;   // flashes a second
 constexpr double circling_rate_most = 0.25;
 constexpr double drifting_rate_least = 0.02;
@@ -729,7 +728,12 @@ contracts::Float3 position(const Flight& flight, frame::Seconds t) {
     return {static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z)};
 }
 
-std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles) {
+std::size_t flight_workers() {
+    return std::max(1u, std::thread::hardware_concurrency());
+}
+
+std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles,
+                                 std::size_t workers) {
     std::vector<Flight> flights(jobs.size());
     // Each job's failure, whatever it threw, kept to be rethrown here, where
     // it can be reported: catching it in the worker keeps any exception from
@@ -756,13 +760,13 @@ std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contr
     // The threads are made once a load (CP.41) and joined as this block
     // ends, however it ends (CP.25).
     {
-        const std::size_t threads = std::min<std::size_t>(std::max(1u, std::thread::hardware_concurrency()),
+        const std::size_t threads = std::min<std::size_t>(std::max<std::size_t>(workers, 1),
                                                           std::max<std::size_t>(jobs.size(), 1));
-        std::vector<std::jthread> workers;
-        workers.reserve(threads - 1);
+        std::vector<std::jthread> pool;
+        pool.reserve(threads - 1);
         for (std::size_t t = 1; t < threads; ++t) {
             try {
-                workers.emplace_back(work);
+                pool.emplace_back(work);
             } catch (const std::system_error&) {
                 break;  // fewer threads: the same flights, made more slowly
             }

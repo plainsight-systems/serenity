@@ -1,13 +1,8 @@
 // Swarms (core/scene/swarm.h): many fireflies from one entry, each what a
 // written firefly is, its seed and start a function of the swarm's seed and
 // its number; and flights made in parallel (core/animation/flight.h,
-// make_flights), the same flights and the same error as made one by one.
-//
-// Not tested here: that make_flights() gives the same flights whatever the
-// number of threads. It takes its count from the machine
-// (std::thread::hardware_concurrency()), not from its caller, so a test
-// cannot vary it (I.1); the parallel results are compared with the serial
-// ones on this machine's count only.
+// make_flights), the same flights and the same error as made one by one,
+// whatever the number of threads.
 
 #include <algorithm>
 #include <cmath>
@@ -180,19 +175,24 @@ TEST_CASE("flights made in parallel are the flights made one by one, in order") 
     for (std::uint64_t k = 0; k < count; ++k) {
         jobs.push_back(job(100 + k, {clear_start.x, clear_start.y + 0.01f * static_cast<float>(k), clear_start.z}));
     }
-    const std::vector<animation::Flight> together = animation::make_flights(jobs, obstacles);
-    REQUIRE(together.size() == jobs.size());
-    for (std::size_t k = 0; k < jobs.size(); ++k) {
-        const animation::Flight alone = animation::make_flight(jobs[k].params, jobs[k].start, jobs[k].body, obstacles);
-        CHECK(together[k].loop == alone.loop);
-        REQUIRE(together[k].segments.size() == alone.segments.size());
-        const contracts::Float3 a = animation::position(together[k], Seconds(17.5));
-        const contracts::Float3 b = animation::position(alone, Seconds(17.5));
-        CHECK(a.x == b.x);
-        CHECK(a.y == b.y);
-        CHECK(a.z == b.z);
+    // One worker, a few, more than the jobs: the same flights every time.
+    for (const std::size_t workers : {std::size_t{1}, std::size_t{2}, std::size_t{7}, std::size_t{64}}) {
+        CAPTURE(workers);
+        const std::vector<animation::Flight> together = animation::make_flights(jobs, obstacles, workers);
+        REQUIRE(together.size() == jobs.size());
+        for (std::size_t k = 0; k < jobs.size(); ++k) {
+            const animation::Flight alone =
+                animation::make_flight(jobs[k].params, jobs[k].start, jobs[k].body, obstacles);
+            CHECK(together[k].loop == alone.loop);
+            REQUIRE(together[k].segments.size() == alone.segments.size());
+            const contracts::Float3 a = animation::position(together[k], Seconds(17.5));
+            const contracts::Float3 b = animation::position(alone, Seconds(17.5));
+            CHECK(a.x == b.x);
+            CHECK(a.y == b.y);
+            CHECK(a.z == b.z);
+        }
+        CHECK(animation::make_flights({}, obstacles, workers).empty());
     }
-    CHECK(animation::make_flights({}, obstacles).empty());
 }
 
 TEST_CASE("of flights made in parallel, the lowest that fails is the one reported") {
@@ -205,11 +205,12 @@ TEST_CASE("of flights made in parallel, the lowest that fails is the one reporte
     // Starts inside the ball: 7 and 19 cannot be made.
     jobs[19].start = inside_ball;
     jobs[7].start = {0.1f, 0.5f, 0.0f};
-    // Run again and again: which thread reaches which job first varies from
-    // run to run, the job reported must not.
-    for (int run = 0; run < 5; ++run) {
+    // Which worker reaches which job first varies with their number; the job
+    // reported must not.
+    for (const std::size_t workers : {std::size_t{1}, std::size_t{2}, std::size_t{7}, std::size_t{64}}) {
+        CAPTURE(workers);
         try {
-            (void)animation::make_flights(jobs, obstacles);
+            (void)animation::make_flights(jobs, obstacles, workers);
             FAIL("expected an error");
         } catch (const animation::FlightsError& error) {
             CHECK(error.job == 7);
@@ -249,7 +250,7 @@ TEST_CASE("of flights made in parallel, any exception reaches the caller, the lo
     jobs[5].start = {1.2f, 1.0f, 1.8f};  // breaks
     jobs[9].start = inside_ball;          // refused
     try {
-        (void)animation::make_flights(jobs, obstacles);
+        (void)animation::make_flights(jobs, obstacles, animation::flight_workers());
         FAIL("expected an error");
     } catch (const animation::FlightsError&) {
         FAIL("the refusal at 9 was reported, not the failure at 5");
@@ -290,7 +291,7 @@ TEST_CASE("a refusal carries its job and its reason; another std::invalid_argume
     const tests::BallAndFloor obstacles(s);
     const std::vector<animation::FlightJob> jobs = {job(1, clear_start), job(2, inside_ball)};
     try {
-        (void)animation::make_flights(jobs, obstacles);
+        (void)animation::make_flights(jobs, obstacles, animation::flight_workers());
         FAIL("expected an error");
     } catch (const animation::FlightsError& error) {
         CHECK(error.job == 1);
@@ -299,7 +300,7 @@ TEST_CASE("a refusal carries its job and its reason; another std::invalid_argume
     }
     const Arguing arguing;
     try {
-        (void)animation::make_flights({job(1, clear_start)}, arguing);
+        (void)animation::make_flights({job(1, clear_start)}, arguing, animation::flight_workers());
         FAIL("expected an error");
     } catch (const animation::MotionError&) {
         FAIL("an Obstacles' own exception was taken for a refusal");

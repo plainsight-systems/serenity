@@ -142,7 +142,9 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         scene_ = std::make_unique<SceneBuffers>(device, submission, *scene);
         animation_ = scene->animation;
         const bool moves = animation::moves(animation_);
-        transforms_ = std::make_unique<ShapeTransforms>(device, submission, scene->shapes.transforms, moves);
+        transforms_ = std::make_unique<ShapeTransforms>(
+            device, submission, scene->shapes.transforms,
+            moves ? FrameArray::Copies::per_frame : FrameArray::Copies::one);
         // Checked here, not by animate() in a frame, so nothing about the
         // scene can fail once a frame's submission has begun (renderer.h).
         for (const animation::Glower& glower : animation_.glowers) {
@@ -185,12 +187,46 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
         images_->prepare(size);
     }
     const std::uint32_t held =
-        accumulation_ ? accumulation_->prepare(inputs, size, animation::changes(animation_)) : 0u;
+        accumulation_ ? accumulation_->prepare(inputs, size,
+                                       animation::changes(animation_) ? frame::SceneMotion::changing
+                                                                      : frame::SceneMotion::still) : 0u;
     prepared_ = Prepared{inputs.index, size, held};
 }
 
 std::uint64_t Renderer::non_finite_samples() const noexcept {
     return non_finite_ ? non_finite_->count() : 0u;
+}
+
+void Renderer::read_accumulated(std::span<float> out) {
+    MTL::Texture* const image = accumulation_ ? accumulation_->texture() : nullptr;
+    if (image == nullptr) {
+        throw MetalError("read_accumulated: the frame graph accumulates nothing, or no frame has made its image");
+    }
+    constexpr std::size_t channels = 4;  // RGBA32Float
+    const std::size_t row_bytes = std::size_t{image->width()} * channels * sizeof(float);
+    const std::size_t floats = std::size_t{image->width()} * image->height() * channels;
+    if (out.size() != floats) {
+        throw MetalError("read_accumulated: " + std::to_string(out.size()) + " floats given for an image of " +
+                         std::to_string(floats));
+    }
+    const auto pool = scoped_pool();
+    auto buffer = NS::TransferPtr(image->device()->newBuffer(row_bytes * image->height(),
+                                                             MTL::ResourceStorageModeShared));
+    if (!buffer) {
+        throw MetalError("read_accumulated: the device made no buffer to read into");
+    }
+    const Resident resident = submission_.keep_resident(buffer.get());
+    const FrameSlot begun = submission_.begin();
+    MTL4::ComputeCommandEncoder* const encoder = begun.commands->computeCommandEncoder();
+    if (encoder == nullptr) {
+        throw MetalError("read_accumulated: the command buffer made no encoder");
+    }
+    encoder->copyFromTexture(image, 0, 0, MTL::Origin{0, 0, 0}, MTL::Size{image->width(), image->height(), 1},
+                             buffer.get(), 0, row_bytes, row_bytes * image->height());
+    encoder->endEncoding();
+    submission_.commit();
+    (void)submission_.wait_until_complete(begun.sequence);
+    std::memcpy(out.data(), buffer->contents(), floats * sizeof(float));
 }
 
 void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, MTL::Texture* target,

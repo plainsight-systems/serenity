@@ -86,16 +86,18 @@ TEST_CASE("the accumulated image refused at a size it cannot have keeps what it 
     metal::Device device;
     metal::Submission submission(device);
     metal::Accumulation accumulation(device, submission);
-    CHECK(accumulation.prepare(tests::frame_at(0, 0, 0.0, description.camera), {16, 16}, false) == 0);
+    CHECK(accumulation.prepare(tests::frame_at(0, 0, 0.0, description.camera), {16, 16},
+                               frame::SceneMotion::still) == 0);
     MTL::Texture* image = accumulation.texture();
     REQUIRE(image != nullptr);
     // Starting over at a size Metal makes no image of: refused...
     CHECK_THROWS_AS(accumulation.prepare(tests::frame_at(1, 1, 0.0, description.camera),
-                                         {metal::max_texture_side + 1, 16}, false),
+                                         {metal::max_texture_side + 1, 16}, frame::SceneMotion::still),
                     metal::MetalError);
     // ...and nothing changed: the image and what it holds are still frame 0's.
     CHECK(accumulation.texture() == image);
-    CHECK(accumulation.prepare(tests::frame_at(1, 0, 0.0, description.camera), {16, 16}, false) == 1);
+    CHECK(accumulation.prepare(tests::frame_at(1, 0, 0.0, description.camera), {16, 16},
+                               frame::SceneMotion::still) == 1);
     CHECK(accumulation.texture() == image);
 }
 

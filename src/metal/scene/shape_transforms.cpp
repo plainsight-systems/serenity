@@ -16,9 +16,9 @@ std::span<const contracts::Transform> nonempty(std::span<const contracts::Transf
 }  // namespace
 
 ShapeTransforms::ShapeTransforms(const Device& device, Submission& submission,
-                                 std::span<const contracts::Transform> at_rest, bool moves)
+                                 std::span<const contracts::Transform> at_rest, FrameArray::Copies copies)
     : array_(device, submission, std::as_bytes(nonempty(at_rest)),
-             moves ? FrameArray::Copies::per_frame : FrameArray::Copies::one) {}
+             copies) {}
 
 std::span<contracts::Transform> ShapeTransforms::transforms(std::uint32_t slot) {
     // The bytes were made from transforms (the constructor).
