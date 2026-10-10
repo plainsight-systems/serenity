@@ -20,8 +20,6 @@
 
 #include <metal_stdlib>
 
-#include "core/shapes/sphere.h"
-
 namespace serenity {
 namespace shaders {
 

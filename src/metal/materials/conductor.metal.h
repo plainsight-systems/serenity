@@ -16,7 +16,6 @@
 #include <metal_stdlib>
 
 #include "core/contracts/bsdf.h"
-#include "core/materials/conductor.h"
 #include "metal/device/layout.metal.h"
 #include "metal/math/warp.metal.h"
 
@@ -44,22 +43,6 @@ inline float smith_g2(float n_l, float n_v, float alpha) {
 inline float3 schlick(float3 f0, float cos_theta) {
     const float m = metal::pow(1.0f - metal::saturate(cos_theta), 5.0f);
     return f0 + (1.0f - f0) * m;
-}
-
-// The BRDF times the cosine to `l`: what multiplies the radiance arriving
-// along `l` per unit solid angle.
-inline float3 conductor_reflectance(serenity::materials::ConductorData conductor, float alpha, float3 n, float3 v,
-                                    float3 l) {
-    const float n_l = metal::dot(n, l);
-    const float n_v = metal::dot(n, v);
-    if (n_l <= 0.0f || n_v <= 0.0f) {
-        return float3(0.0f);
-    }
-    const float3 h = metal::normalize(v + l);
-    const float d = ggx_d(metal::saturate(metal::dot(n, h)), alpha);
-    const float g = smith_g2(n_l, n_v, alpha);
-    const float3 f = schlick(to_float3(conductor.f0), metal::dot(v, h));
-    return f * (d * g / (4.0f * n_v));
 }
 
 // A microfacet normal visible from `v`, in world space, from a point `u` in

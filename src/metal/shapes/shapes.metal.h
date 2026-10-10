@@ -70,11 +70,6 @@ inline float3 normal_at(Shapes shapes, uint shape, float3 at) {
     return metal::normalize(transform_direction(shapes.transforms[shape], normal));
 }
 
-// The outward normal of shape `shape` at world `point`, in the world.
-inline float3 shape_normal(Shapes shapes, uint shape, float3 point) {
-    return normal_at(shapes, shape, transform_to_object(shapes.transforms[shape], point));
-}
-
 // Contract 1: where a ray along `direction` met shape `shape` at world
 // `point`, filled by the shape (contracts/surface_interaction.h). The
 // shading normal is the geometric one for every kind so far. The point in

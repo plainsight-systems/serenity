@@ -108,9 +108,9 @@
 
 #include "core/contracts/bsdf.h"
 #include "core/contracts/emitter.h"
+#include "core/contracts/medium.h"
 #include "core/contracts/surface_interaction.h"
-#include "core/lights/gradient_sky.h"
-#include "core/materials/material.h"
+#include "core/lights/light.h"
 #include "metal/acceleration/trace.metal.h"
 #include "metal/device/layout.metal.h"
 #include "metal/light_selection/uniform_light.metal.h"

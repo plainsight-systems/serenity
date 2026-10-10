@@ -7,12 +7,11 @@
 
 #include "core/contracts/camera.h"
 #include "core/contracts/frame_constants.h"
-#include "core/lights/gradient_sky.h"
-#include "core/lights/light.h"
-#include "core/lights/sphere_light.h"
+#include "core/contracts/transform.h"
 #include "metal/camera/thin_lens.metal.h"
 #include "metal/film/accumulate.metal.h"
 #include "metal/integrator/path.metal.h"
+#include "metal/sampler/sampler.metal.h"
 #include "metal/scene/scene_block.metal.h"
 
 using namespace metal;
