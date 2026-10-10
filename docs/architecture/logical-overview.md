@@ -211,6 +211,19 @@ whose GPU traces rays in hardware, through Metal 4. The second backend
 targets an AMD Strix Halo through Vulkan's ray tracing. Neither is assumed to
 behave like the other; each is measured on its own.
 
+**Little is kept alive across a ray query.** On the M3 Max the naive path
+tracer's one kernel holds every path's state, and its ray queries' scratch,
+across each query. That state fills the L1 cache, the GPU's occupancy
+manager runs a quarter of the threads it could, and the ray tracing unit,
+active 88% of the time, waits on too few threads to hide its latency
+(`docs/research/2026-10-10-path-kernel-counters.md`). So every kernel after
+it traces with little alive: one ray query at a time, and what a later step
+needs passed between kernels rather than held across the query. ReSTIR DI's
+passes are built this way from the start. The naive path tracer stays one
+kernel: it is the baseline for time as well as for noise, and its counters
+are what the later kernels are measured against. On the Strix Halo this is
+measured again, not assumed.
+
 **No rendering dependencies.** No engine, no ReSTIR library, no denoising
 library inside the renderer. Open Image Denoise and MetalFX's denoiser are
 baselines the renderer's own denoiser is compared with, not parts of it.
