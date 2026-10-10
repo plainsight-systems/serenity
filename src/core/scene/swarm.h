@@ -137,7 +137,7 @@ struct AboveStart {
 struct PerchStart {
     contracts::Box box{};       // where perches are found; min below max
     double linger_least = 0.0;  // seconds it stays after waking; 0 or more
-    double linger_most = 0.0;   // at least linger_least
+    double linger_most = 0.0;   // at least linger_least; with the wake's to, at most most_wait (flight.h)
 };
 
 using SwarmStart = std::variant<AirStart, AboveStart, PerchStart>;
@@ -145,7 +145,7 @@ using SwarmStart = std::variant<AirStart, AboveStart, PerchStart>;
 // When a swarm's fireflies wake (above, step 3).
 struct SwarmWake {
     double from = 0.0;   // seconds; finite, 0 or more
-    double to = 0.0;     // seconds; finite, at least from
+    double to = 0.0;     // seconds; at least from, at most most_wait (flight.h)
     double power = 1.0;  // finite, > 0
     double ramp = 0.0;   // seconds; finite, 0 or more
 };

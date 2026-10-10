@@ -59,9 +59,12 @@ seed's loop, which this change must leave unmoved.
 
 ## Cost, to be measured
 
-- Per frame: one comparison in position() and in glow(), a search of at
-  most two segments for a firefly in its opening, a polynomial during a
-  ramp. `animate()` took 43 µs a frame for the marbles; it is measured
+- Per frame: one comparison in position(), and a search of at most two
+  segments for a firefly in its opening; in glow(), a test that a wake
+  exists and two comparisons, and during a ramp a subtraction, a division,
+  the smoothstep and a product (glow.h counts them). The first count here
+  said one comparison for the wake; the design review (50bf979) showed it
+  short. `animate()` took 43 µs a frame for the marbles; it is measured
   before and after.
 - At load: a perch's sphere trace and checks, and its rise's advancement,
   some tens to hundreds of distances per perched firefly, beside the
@@ -70,6 +73,24 @@ seed's loop, which this change must leave unmoved.
   2026-10-10-corpus-sweep.md) is of the marbles as they were; the scene
   this change makes is re-measured at the same frames, and the baseline
   recorded again if it moves.
+
+## Review
+
+Codex reviewed the design (50bf979, both focuses). Its four findings were
+all taken, in the headers:
+
+- The rise's clearance was proved of the double curve, while the points
+  asked about and rendered are floats: at 8192 m a float's spacing passes
+  perch_gap. Every threshold, the loop's step 3 too, now carries a
+  rounding allowance rho of its box, and a perch too far out for its gap
+  is refused.
+- The rise left the perch at the cruising speed from a standstill: it now
+  leaves from rest. The hold's end, still to the drift's speed, is the one
+  join that is not smooth, and the header says so.
+- The wake's cost was undercounted (above).
+- A wait of any length made an opening of as many flashes: a billion
+  seconds, twenty million of them. A wait is now at most most_wait, an
+  hour, some 300 flashes.
 
 ## Open
 

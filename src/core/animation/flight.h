@@ -108,8 +108,11 @@ namespace serenity::animation {
 //           volume shrunk by body radius + delta on every side. Every point
 //           of the path is within delta of a sample, so the whole path, not
 //           only the samples, keeps the clearance and keeps its body inside
-//           the volume. If any sample is not, draw again (step 2), up to 16
-//           times. A segment that would take more than the params'
+//           the volume. Each threshold also carries the rounding allowance
+//           rho, below, for the volume, so the guarantee holds of the float
+//           points that are asked about and rendered, not only of the
+//           double curve. If any sample is not, draw again (step 2), up to
+//           16 times. A segment that would take more than the params'
 //           most_steps samples is not clear either: its count is compared
 //           as a double, before it is made an integer (ES.46), so no number
 //           the scene reader accepts, a speed near FLT_MAX included, can
@@ -138,7 +141,9 @@ namespace serenity::animation {
 //           preludes, from the same keys, so a flight's loop flashes the
 //           same with any prelude. Over the opening, once each: while it
 //           waits (hold or perch), at its drifting rate, as seldom as a
-//           drifting firefly; none on the rise. Those are drawn from keys of
+//           drifting firefly, at most some 300 over a wait of most_wait
+//           (step P1), counted as a double before it is made an integer
+//           (ES.46); none on the rise. Those are drawn from keys of
 //           their own, and an opening flash within flash_spacing of the one
 //           before, or of the loop's first, is left out. A held firefly is
 //           dark while it waits, as the scene gives it (its glow's wake,
@@ -149,23 +154,30 @@ namespace serenity::animation {
 // Then the prelude, by these steps, made after the loop, since it ends where
 // the loop starts:
 //
-//   Step P1  Check the prelude's numbers: `until` finite and 0 or more; a
-//            perch's distance to the still surfaces (contract 11) at least
-//            body + 3 perch_gap / 4, so the rise starts with room (P2). A
-//            perch nearer is refused, as an episode is.
+//   Step P1  Check the prelude's numbers: `until` finite, 0 or more and at
+//            most most_wait, so an opening's flashes are bounded (step 7);
+//            a perch's distance to the still surfaces (contract 11) at least
+//            body + 3 perch_gap / 4 + rho, so the rise starts with room
+//            (P2), rho the rounding allowance of the rise's hull; and that
+//            rho under perch_gap / 8, so float can place a body at its
+//            perch's scale there at all (it can within 512 m of the
+//            origin, where float's spacing is at most 3 x 10^-5 m). A perch nearer, or too far out for
+//            its gap, is refused, as an episode is.
 //   Step P2  The opening's segments: for hold, a still segment at the
 //            loop's first point lasting `until`; for perch, a still segment
 //            at the perch lasting `until`, then the rise, a transit from the
-//            perch, leaving straight up at the cruising speed, to the loop's
-//            first point, arriving at the loop's own velocity there, so the
-//            path is smooth into the loop; its duration a transit's (from
-//            its chord at the cruising speed). A still segment of no length
+//            perch, leaving from rest, its velocity 0 as the perch's is, to
+//            the loop's first point, arriving at the loop's own velocity
+//            there, so the path is smooth through both of its joins; its
+//            duration a transit's (from its chord at the cruising speed). A
+//            cubic from rest to a point above sets off toward that point:
+//            up, for a loop start straight above the perch. A still segment of no length
 //            is left out. The rise is checked by conservative advancement
 //            (Mirtich 1996; Hart 1996, sphere tracing): from u = 0, at the
 //            point p(u) the distance d to the still surfaces is exact for
 //            the kinds there are (contract 11), so no surface lies within
 //            d - r of any point within r of p; the slack s = d - body -
-//            perch_gap / 2 is how far the path may go before it could come
+//            perch_gap / 2 - rho is how far the path may go before it could come
 //            too near, and the next sample is at u + s / V, V bounding the
 //            curve's speed in u (its derivative's Bezier hull, as step 3's
 //            bound). A slack under perch_gap / 4 refuses the rise, which
@@ -173,11 +185,26 @@ namespace serenity::animation {
 //            most 4 V / perch_gap: compared with most_steps as a double
 //            before the walk (ES.46). The rise must also keep within the
 //            world, which its hull, below, shows the reader.
+//
+//            The one join that is not smooth is a hold's end: the firefly
+//            holds still, then its loop starts at the drift's own speed, a
+//            third of the cruising speed. It is the moment it wakes, dark or
+//            barely lit (scene.h: a swarm holds until its wake), and is
+//            stated here rather than smoothed.
 //            A rise that is not clear is refused (a MotionError): a perch
 //            under an overhang, or with something between it and the loop.
 //   Step P3  Lay the opening out from 0; the loop begins at its end,
 //            `begin`. No prelude, or a hold of no length: no opening, begin
 //            0.
+//
+// The rounding allowance, rho, of a box: sqrt 3 times float's spacing (one
+// ulp) at the largest |coordinate| in it. A point of the double curve is
+// rounded to float when its distance is asked (contract 11 takes a Float3)
+// and when it is placed (position() returns a Float3): each moves it at
+// most half an ulp an axis, so the two together at most rho. At the
+// marbles' meter scale rho is some 2 x 10^-7 m; at the world's edge, 10^6
+// m, some 0.1 m, which no gap of a millimeter survives, and which P1
+// refuses for a perch.
 //
 // If an episode cannot be drawn clear within those redraws, make_flight throws
 // a MotionError (motion_error.h) naming it: a target with no room to circle it, a
@@ -241,6 +268,11 @@ inline constexpr double swoop_flash_at = 0.55;
 // reach it (ES.45, CDSA.21).
 inline constexpr std::int64_t flight_most_steps = 1'000'000;
 
+// The longest a prelude may wait, in seconds: an hour, past any opening a
+// scene shows, and a bound on its flashes (step 7) and their memory, some
+// 300 of them, 2.4 KB, at the fastest drifting rate.
+inline constexpr double most_wait = 3600.0;
+
 // How far a perched firefly's body sits from the surface it rests on, in
 // meters: half a millimeter, a firefly's legs (step P1). Its perch and rise
 // keep at least half of it from every still surface (step P2).
@@ -278,12 +310,12 @@ enum class Behaviour {
 struct NoPrelude {};
 
 struct Hold {
-    double until = 0.0;  // seconds it waits; finite, 0 or more
+    double until = 0.0;  // seconds it waits; 0 to most_wait
 };
 
 struct Perch {
     contracts::Float3 at{};  // where its center rests (step P1)
-    double until = 0.0;      // seconds it rests; finite, 0 or more
+    double until = 0.0;      // seconds it rests; 0 to most_wait
 };
 
 using Prelude = std::variant<NoPrelude, Hold, Perch>;

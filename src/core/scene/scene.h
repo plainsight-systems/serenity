@@ -253,9 +253,11 @@ namespace serenity::scene {
 // outside [0, 1), a sky color below 0, a wake whose at is not finite or
 // whose ramp is below 0, a swarm wake whose from is below 0, whose to is
 // below its from, or whose power is not above 0, a prelude or start of an
-// unknown kind or missing what its kind needs (an until below 0, a depth not
-// above 0, a perch box whose min is not below its max or outside the world,
-// a linger whose least is below 0 or above its most), a wood, swirl
+// unknown kind or missing what its kind needs (an until below 0 or past
+// most_wait, an hour, core/animation/flight.h; a depth not above 0; a perch
+// box whose min is not below its max or outside the world; a linger whose
+// least is below 0 or above its most; a swarm wake's to plus its linger's
+// most past most_wait), a wood, swirl
 // or coated color outside [0, 1], a ring under wood_least_ring or a board
 // outside wood_least_board to wood_most_board (core/textures/wood.h), a wood's
 // or swirl's seed past 2^32 - 1, a swirl's vanes outside 1 to 16, a medium's

@@ -67,8 +67,12 @@ namespace serenity::animation {
 // light_glows.h); the radiance in the scene is the peak.
 //
 // Not performance-sensitive per light: a few comparisons and one sine, once
-// per glowing light per frame; a wake adds a comparison, and a polynomial
-// for the length of its ramp.
+// per glowing light per frame. A wake adds, per glowing light per frame: a
+// test that it has one; then t >= at + ramp first, which answers 1 for a
+// woken light, and a ramp of 0 at t = at, with no division; then t < at,
+// which answers 0; and only during the ramp a subtraction, a division, the
+// smoothstep's three multiplications and a subtraction, and the product
+// with the kind's glow.
 
 // Seconds: the shortest period a rhythm may have, a thousand flashes a
 // second, past any firefly's.
