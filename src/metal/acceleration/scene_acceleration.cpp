@@ -1,14 +1,20 @@
 #include "metal/acceleration/scene_acceleration.h"
 
+#include <cstddef>
 #include <string>
+#include <type_traits>
 
 #include "metal/device/error.h"
 
 namespace serenity::metal {
 
 // The core's bounds are Metal's bounding boxes, byte for byte, so they are
-// written as they are.
+// written as they are: the same size, each corner at the same offset, and
+// bytes that are their value (SL.con.4).
 static_assert(sizeof(shapes::Bounds) == sizeof(MTL::AxisAlignedBoundingBox));
+static_assert(offsetof(shapes::Bounds, min) == offsetof(MTL::AxisAlignedBoundingBox, min));
+static_assert(offsetof(shapes::Bounds, max) == offsetof(MTL::AxisAlignedBoundingBox, max));
+static_assert(std::is_trivially_copyable_v<shapes::Bounds>);
 
 namespace {
 
@@ -17,12 +23,6 @@ std::string describe(const NS::Error* error) {
         return "Metal gave no description";
     }
     return error->localizedDescription()->utf8String();
-}
-
-std::span<shapes::Bounds> as_boxes(std::span<std::byte> bytes) {
-    // The bytes were made from boxes (the constructor), in a buffer whose
-    // copies start 256-byte aligned: they are boxes.
-    return {reinterpret_cast<shapes::Bounds*>(bytes.data()), bytes.size() / sizeof(shapes::Bounds)};
 }
 
 }  // namespace
@@ -130,7 +130,7 @@ void SceneAcceleration::update(MTL4::ComputeCommandEncoder* encoder, std::uint32
     if (encoder == nullptr || slot >= frames_in_flight) {
         throw Error("SceneAcceleration::update: no encoder, or no frame slot " + std::to_string(slot));
     }
-    const std::span<shapes::Bounds> boxes = as_boxes(boxes_->bytes(slot));
+    const std::span<shapes::Bounds> boxes = boxes_->view<shapes::Bounds>(slot);  // made from boxes
     if (transforms.size() != boxes.size()) {
         throw Error("SceneAcceleration::update: not one transform per shape");
     }

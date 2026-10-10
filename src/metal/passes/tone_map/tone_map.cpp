@@ -3,6 +3,7 @@
 #include <cstring>
 #include <optional>
 #include <string>
+#include <type_traits>
 
 #include "core/frame/schedule.h"
 #include "metal/device/error.h"
@@ -42,6 +43,7 @@ ToneMapPass::ToneMapPass(const Device& device, const Library& library, Submissio
     if (!settings_) {
         throw Error("ToneMapPass: the device made no buffer for the settings");
     }
+    static_assert(std::is_trivially_copyable_v<passes::ToneMap>, "the settings are copied as their bytes");
     std::memcpy(settings_->contents(), &settings, sizeof(settings));
     resident_ = submission.keep_resident(settings_.get());
 }

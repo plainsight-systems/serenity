@@ -20,10 +20,8 @@ ShapeTransforms::ShapeTransforms(const Device& device, Submission& submission,
     : array_(device, submission, std::as_bytes(some(at_rest)), moves ? frames_in_flight : 1u) {}
 
 std::span<contracts::Transform> ShapeTransforms::transforms(std::uint32_t slot) const {
-    const std::span<std::byte> bytes = array_.bytes(slot);
-    // The bytes were made from transforms (the constructor), in a buffer
-    // whose copies start 256-byte aligned: they are transforms.
-    return {reinterpret_cast<contracts::Transform*>(bytes.data()), bytes.size() / sizeof(contracts::Transform)};
+    // The bytes were made from transforms (the constructor).
+    return array_.view<contracts::Transform>(slot);
 }
 
 }  // namespace serenity::metal

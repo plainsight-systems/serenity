@@ -19,10 +19,9 @@ LightGlows::LightGlows(const Device& device, Submission& submission, std::uint32
                               glows ? frames_in_flight : 1u) {}
 
 std::span<float> LightGlows::glows(std::uint32_t slot) const {
-    const std::span<std::byte> bytes = array_.bytes(slot);
-    // The bytes were made from floats (the constructor), in a buffer whose
-    // copies start 256-byte aligned: they are floats.
-    return {reinterpret_cast<float*>(bytes.data()), lights_};
+    // The bytes were made from floats (the constructor), at least one: a
+    // scene with no sphere lights has one, unread, and is given none.
+    return array_.view<float>(slot).first(lights_);
 }
 
 }  // namespace serenity::metal

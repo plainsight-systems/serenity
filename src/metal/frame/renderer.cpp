@@ -5,6 +5,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <type_traits>
 
 #include "core/camera/thin_lens.h"
 #include "core/contracts/camera.h"
@@ -24,6 +25,9 @@ constexpr std::size_t constants_offset = 0;
 constexpr std::size_t camera_offset = 128;
 static_assert(constants_offset + sizeof(contracts::FrameConstants) <= camera_offset);
 static_assert(camera_offset + sizeof(contracts::CameraData) <= slot_stride);
+// Both are written into the ring as their bytes (SL.con.4, COPY.6).
+static_assert(std::is_trivially_copyable_v<contracts::FrameConstants>);
+static_assert(std::is_trivially_copyable_v<contracts::CameraData>);
 
 // Every pass binds at most this many buffers and textures through the table:
 // the path pass binds buffers 0 to 6 (path.metal): the constants, the

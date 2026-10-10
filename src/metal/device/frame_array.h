@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <type_traits>
 
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
@@ -55,6 +56,18 @@ public:
 
     // Frame slot `slot`'s copy, for the CPU to write; see above.
     std::span<std::byte> bytes(std::uint32_t slot) const;
+
+    // The same copy as the array of T it was made from: the one place its
+    // bytes are reinterpreted. T must be a type whose bytes are its value
+    // (SL.con.4, COPY.6: the copy was made by memcpy), and the copy whole
+    // T's; each copy starts 256-byte aligned, more than any T here needs.
+    template <typename T>
+    std::span<T> view(std::uint32_t slot) const {
+        static_assert(std::is_trivially_copyable_v<T>, "a FrameArray holds bytes copied from Ts");
+        static_assert(alignof(T) <= 256);
+        const std::span<std::byte> copy = bytes(slot);
+        return {reinterpret_cast<T*>(copy.data()), copy.size() / sizeof(T)};
+    }
 
     // Frame slot `slot`'s copy, as a shader binds it.
     MTL::GPUAddress address(std::uint32_t slot) const;
