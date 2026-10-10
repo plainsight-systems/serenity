@@ -18,8 +18,8 @@ constexpr frame::Extent half(frame::Extent size) noexcept {
 
 }  // namespace
 
-FrameImages::FrameImages(const Device& device, Submission& submission, Bloom bloom)
-    : device_(NS::RetainPtr(device.handle())), submission_(submission), bloom_(bloom) {}
+FrameImages::FrameImages(const Device& device, Submission& submission, Radiance radiance, Bloom bloom)
+    : device_(NS::RetainPtr(device.handle())), submission_(submission), radiance_kind_(radiance), bloom_(bloom) {}
 
 MTL::Texture* FrameImages::bloom(std::uint32_t level) const {
     if (level >= pyramid_.size()) {
@@ -59,7 +59,9 @@ void FrameImages::prepare(frame::Extent size) {
         image.texture = make_private_texture(device_.get(), format, at, what);
         image.resident = submission_.keep_resident(image.texture.get());
     };
-    make(radiance_, MTL::PixelFormatRGBA32Float, size, "radiance image");
+    if (radiance_kind_ == Radiance::image) {
+        make(radiance_, MTL::PixelFormatRGBA32Float, size, "radiance image");
+    }
     if (bloom_ == Bloom::pyramid) {
         frame::Extent level = size;
         for (auto& image : pyramid_) {

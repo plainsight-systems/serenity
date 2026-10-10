@@ -114,7 +114,9 @@ namespace serenity::metal {
 // The images between passes (frame_images.h): the radiance image, which a
 // light pass writes and a presenting pass reads, and the tone-map pass's
 // bloom pyramid, made by prepare() at the frame's size when the schedule
-// uses them (core/frame/schedule.h: writes_radiance, tone_map).
+// uses them (core/frame/schedule.h: writes_radiance, tone_map). When the
+// light pass accumulates, the accumulated image is the radiance image, and
+// the passes after it are given that (passes/path/path.h).
 //
 // Metal 4 does not track hazards between passes. When a pass reads what an
 // earlier pass in the frame wrote, the renderer records the barrier between
@@ -235,7 +237,7 @@ private:
     std::unique_ptr<ShapeTransforms> transforms_;
     std::unique_ptr<LightGlows> glows_;
     animation::Animation animation_;  // empty unless the scene changes
-    std::unique_ptr<FrameImages> images_;         // when a pass writes radiance
+    std::unique_ptr<FrameImages> images_;         // when a pass writes radiance, unless into the accumulated image
     std::unique_ptr<Accumulation> accumulation_;  // when a pass accumulates
     std::unique_ptr<NonFinite> non_finite_;       // with it
     std::optional<Prepared> prepared_;

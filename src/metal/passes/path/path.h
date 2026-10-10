@@ -25,10 +25,15 @@ namespace serenity::metal {
 //   - the integrator returns the radiance along it;
 //   - the accumulated image's mean for the pixel takes it in, n being the
 //     frames the image held (contracts/frame_constants.h,
-//     accumulated_frames), and is written back;
-//   - the mean, linear, is written to the frame's radiance image
-//     (metal/frame/frame_images.h), for the presenting pass that follows
-//     (core/frame/schedule.h) to show.
+//     accumulated_frames), and is written back.
+//
+// The accumulated image is the frame's radiance image: its rgb, the mean,
+// linear, is what the presenting pass that follows (core/frame/schedule.h)
+// reads, and its a, the count, no presenting pass reads (metal/frame/
+// renderer.h binds it so). Written once, not copied to an image of its own
+// as well (GDSA.6: the copy cost 16 bytes a pixel of traffic and an image
+// of the frame's size, and no frame time the measurement could tell apart
+// from noise; docs/research/2026-10-10-path-radiance-write.md).
 //
 // Ordering: the pass reads the image the previous frame wrote. Metal 4 does
 // not track hazards; the renderer records the barrier that waits for the
@@ -38,15 +43,14 @@ namespace serenity::metal {
 //
 // Cost: one thread per pixel, in rows of the execution width (GPU.2); per
 // pixel, the integrator's path (about twice its length in rays, a handful
-// of surfaces in practice; integrator/path.metal.h), and 48 bytes of
-// images: the accumulated pixel's 16 read and 16 written, and the radiance
-// image's 16 written.
+// of surfaces in practice; integrator/path.metal.h), and 32 bytes of
+// image: the accumulated pixel's 16 read and 16 written.
 class PathPass {
 public:
     explicit PathPass(const Library& library);
 
-    // Records the pass. Throws MetalError if `resources` has no scene, no camera,
-    // no accumulated image or no radiance image.
+    // Records the pass. Throws MetalError if `resources` has no scene, no
+    // camera, no accumulated image or no counter of samples not finite.
     void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
 
 private:

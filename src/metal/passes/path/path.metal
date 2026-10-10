@@ -1,6 +1,6 @@
 // The path pass (path.h): one path per pixel per frame, through a point in
 // the pixel drawn anew each frame, folded into the accumulated image, whose
-// mean is the frame's radiance.
+// mean is the frame's radiance: the passes after it read the image itself.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -30,7 +30,6 @@ kernel void path_trace(constant serenity::contracts::FrameConstants& frame
                        device atomic_uint* non_finite [[buffer(serenity::bindings::path::non_finite)]],
                        texture2d<float, access::read_write> accumulated
                        [[texture(serenity::bindings::path::accumulated)]],
-                       texture2d<float, access::write> radiance [[texture(serenity::bindings::path::radiance)]],
                        uint2 pixel [[thread_position_in_grid]]) {
     // Every thread reaches count_non_finite() below, which sums over its
     // SIMD group: none returns early.
@@ -53,7 +52,6 @@ kernel void path_trace(constant serenity::contracts::FrameConstants& frame
         failed = !finite(sample);
         const float4 held = accumulate(accumulated.read(pixel), sample, frame.accumulated_frames == 0u);
         accumulated.write(held, pixel);
-        radiance.write(float4(held.rgb, 1.0f), pixel);
     }
     count_non_finite(failed, non_finite);
 }

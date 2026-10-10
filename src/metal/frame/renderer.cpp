@@ -122,9 +122,14 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
             break;
         }
     }
-    if (radiance) {
-        images_ = std::make_unique<FrameImages>(
-            device, submission, schedule.tone_map ? FrameImages::Bloom::pyramid : FrameImages::Bloom::none);
+    // The pass that accumulates is the one that writes radiance (the core
+    // allows one of each, and path is both), and its accumulated image is
+    // the frame's radiance (passes/path/path.h): no image of its own then.
+    const FrameImages::Radiance own =
+        accumulates ? FrameImages::Radiance::accumulated : FrameImages::Radiance::image;
+    const FrameImages::Bloom bloom = schedule.tone_map ? FrameImages::Bloom::pyramid : FrameImages::Bloom::none;
+    if (radiance && (own == FrameImages::Radiance::image || bloom == FrameImages::Bloom::pyramid)) {
+        images_ = std::make_unique<FrameImages>(device, submission, own, bloom);
     }
     if (accumulates) {
         accumulation_ = std::make_unique<Accumulation>(device, submission);
@@ -245,6 +250,8 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         }
     }
     if (accumulation_) {
+        // The accumulated image is the frame's radiance (frame_images.h).
+        resources.radiance = accumulation_->texture();
         resources.accumulation = accumulation_->texture();
         resources.accumulated_frames = accumulated_frames;
         non_finite_->begin_frame(begun.slot, begun.sequence);
