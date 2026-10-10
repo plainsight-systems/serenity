@@ -337,6 +337,43 @@ TEST_CASE("dielectric: Fresnel chooses reflection, the weights are 1 and 1 / eta
     }
 }
 
+TEST_CASE("eta: what a transmission scales radiance by, which the path tracer's roulette undoes") {
+    // bsdf_eta() is eta_t, the index of wi's side over wo's, for a
+    // transmission sample drawn for wo; every refraction's weight is
+    // 1 / eta_t^2 (dielectric.metal.h), so weight x eta_t^2 is 1. 1 for a
+    // kind that does not transmit.
+    Gpu gpu;
+    const V3 n = unit(0.0, 0.0, 1.0);
+    const auto eta_of = [&](const Bsdf& bsdf, V3 wo) {
+        const float wo_count[4] = {float(wo.x), float(wo.y), float(wo.z), 1.0f};
+        return gpu.run<float>("bsdf_eta_of", 1, {bytes(bsdf), bytes(wo_count)})[0];
+    };
+    const Bsdf glass = make(BsdfKind::dielectric, n, {1.0f, 1.0f, 1.0f}, 0.0f, 1.5f);
+    const V3 outside = unit(0.3, 0.0, 1.0);
+    const V3 inside = unit(0.3, 0.0, -1.0);  // within the critical angle: some of it leaves
+    CHECK(eta_of(glass, outside) == doctest::Approx(1.5));
+    CHECK(eta_of(glass, inside) == doctest::Approx(1.0 / 1.5));
+    for (const V3 wo : {outside, inside}) {
+        const double eta = eta_of(glass, wo);
+        std::uint32_t transmitted = 0;
+        std::uint32_t wrong = 0;
+        for (const Probe& p : samples(gpu, glass, wo)) {
+            if ((p.lobe & contracts::lobe_transmission) == 0u) {
+                continue;
+            }
+            ++transmitted;
+            const double weight = p.value.x * std::abs(p.direction.z) / p.pdf;
+            wrong += std::abs(weight * eta * eta - 1.0) < 1e-4 ? 0u : 1u;
+        }
+        CHECK(transmitted > sample_count / 2);
+        CHECK(wrong == 0);
+    }
+    for (const BsdfKind kind : {BsdfKind::none, BsdfKind::lambert, BsdfKind::conductor, BsdfKind::coated}) {
+        INFO("kind " << int(kind));
+        CHECK(eta_of(make(kind, n, {0.5f, 0.5f, 0.5f}, 0.3f, 1.5f), outside) == 1.0f);
+    }
+}
+
 TEST_CASE("a wo in the surface's plane: glass and a coat have no sample there, and no kind's is ever infinite") {
     // |cos wo| = 0 exactly: the delta lobes' value F / |cos| would divide by
     // 0. The sample is refused instead (pdf 0); whatever arrived along it is

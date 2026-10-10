@@ -67,6 +67,13 @@ inline Boundary dielectric_boundary(serenity::materials::DielectricData glass, f
     return b;
 }
 
+// eta_t of a refraction through glass of index `ior`: the index of wi's
+// side over wo's, wi's side being the one refracted into, inside when wo
+// is outside (`entering`).
+inline float transmitted_eta(float ior, bool entering) {
+    return entering ? ior : 1.0f / ior;
+}
+
 // `n` is the outward normal; wo points away from the surface, toward where
 // the light goes, so the light arrives along -wo's mirror image or through.
 inline serenity::contracts::BsdfSample dielectric_sample(serenity::contracts::Bsdf bsdf, float3 n, float3 wo,
@@ -89,8 +96,7 @@ inline serenity::contracts::BsdfSample dielectric_sample(serenity::contracts::Bs
         return s;
     }
     const float cos_t = metal::abs(metal::dot(b.refracted, n));
-    // wi's side is the side refracted into: inside when wo is outside.
-    const float eta_t = b.entering ? bsdf.ior : 1.0f / bsdf.ior;
+    const float eta_t = transmitted_eta(bsdf.ior, b.entering);
     s.direction = to_packed(b.refracted);
     s.pdf = 1.0f - b.reflectance;
     s.value = to_packed(float3(s.pdf / cos_t / (eta_t * eta_t)));

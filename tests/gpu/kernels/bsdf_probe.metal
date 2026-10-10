@@ -85,3 +85,13 @@ kernel void bsdf_lobe_bits(device uint* out [[buffer(0)]],
         out[i] = bsdf_lobes(bsdfs[i]);
     }
 }
+
+// bsdf_eta() of the Bsdf for wo_count.xyz, in out[0].
+kernel void bsdf_eta_of(device float* out [[buffer(0)]],
+                        constant Bsdf& bsdf [[buffer(1)]],
+                        constant float4& wo_count [[buffer(2)]],
+                        uint i [[thread_position_in_grid]]) {
+    if (i == 0) {
+        out[0] = bsdf_eta(bsdf, wo_count.xyz);
+    }
+}

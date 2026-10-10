@@ -82,6 +82,25 @@ inline serenity::contracts::BsdfSample bsdf_sample(serenity::contracts::Bsdf bsd
     return none;
 }
 
+// eta_t of a transmission sample drawn for wo: the index of refraction on
+// wi's side over wo's, by which the sample's value carries radiance's
+// 1 / eta_t^2 (dielectric.metal.h). 1 for a kind that does not transmit.
+// pbrt-v4's BSDFSample::eta, here a question of the Bsdf and wo because
+// contract 2's BsdfSample does not carry it; the path tracer's roulette
+// undoes it (integrator/path.metal.h, step 7).
+inline float bsdf_eta(serenity::contracts::Bsdf bsdf, float3 wo) {
+    switch (bsdf.kind) {
+    case serenity::contracts::BsdfKind::none:
+    case serenity::contracts::BsdfKind::lambert:
+    case serenity::contracts::BsdfKind::conductor:
+    case serenity::contracts::BsdfKind::coated:
+        return 1.0f;
+    case serenity::contracts::BsdfKind::dielectric:
+        return transmitted_eta(bsdf.ior, metal::dot(wo, to_float3(bsdf.normal)) > 0.0f);
+    }
+    return 1.0f;
+}
+
 inline uint bsdf_lobes(serenity::contracts::Bsdf bsdf) {
     switch (bsdf.kind) {
     case serenity::contracts::BsdfKind::none:

@@ -62,11 +62,20 @@
 //           lanes diverge only where a SIMD group straddles glass and air,
 //           a marble's few pixels (GPU.4). What a scene with no medium
 //           pays for it: docs/research/2026-10-09-medium-cost.md.
+//           A transmission also multiplies eta_scale, 1 at the camera, by
+//           eta_t^2 (bsdf_eta), undoing the 1 / eta_t^2 its value scaled
+//           radiance by (dielectric.metal.h): beta x eta_scale is the
+//           throughput as energy sees it, which no boundary changes.
 //   Step 7  Russian roulette, from the 4th surface: survive with
-//           q = min(the largest channel of beta, 0.95), else stop;
-//           beta /= q, so the mean is unchanged. This, not a depth limit,
-//           ends paths: every path length keeps a chance, so the mean
-//           converges to the full light transport (Veach 1997, 2.4).
+//           q = min(the largest channel of beta x eta_scale, 0.95), else
+//           stop; beta /= q, so the mean is unchanged. This, not a depth
+//           limit, ends paths: every path length keeps a chance, so the
+//           mean converges to the full light transport (Veach 1997, 2.4).
+//           By beta x eta_scale, not beta, as pbrt-v4's PathIntegrator
+//           (etaScale): inside glass of ior 1.5, beta alone is 1 / 2.25 of
+//           the energy the path carries, and roulette would end the paths
+//           inside a marble twice as often as their light warrants. The
+//           mean is the same either way; the noise inside glass is not.
 //   Step 8  Continue: the ray leaves the surface along wi.
 //
 // What the camera ray starts from, and what is done with L, are the pass's:
@@ -142,7 +151,8 @@ inline float3 leave(float3 point, float3 n, float3 direction) {
 inline float3 radiance(Scene scene, float3 origin, float3 direction, thread PathNumbers& numbers) {
     float3 L = float3(0.0f);
     float3 beta = float3(1.0f);
-    bool counts_emission = true;                       // the camera's own ray
+    float eta_scale = 1.0f;                            // step 6: what transmissions scaled beta by, undone
+    bool counts_emission = true;                     // the camera's own ray
     uint medium = serenity::contracts::no_medium;      // air, at the camera
     // Where the ray truly left from: the camera, then each surface's point.
     // The ray itself starts `offset` off that surface, so its hit distance
@@ -212,11 +222,14 @@ inline float3 radiance(Scene scene, float3 origin, float3 direction, thread Path
             medium = (surface_at.flags & serenity::contracts::arrived_from_outside) != 0u
                          ? surface_at.interior
                          : serenity::contracts::no_medium;
+            const float eta = bsdf_eta(bsdf, wo);
+            eta_scale *= eta * eta;
         }
 
         // Step 7: Russian roulette, from the 4th surface.
         if (surface >= roulette_from) {
-            const float q = metal::min(metal::max(metal::max(beta.r, beta.g), beta.b), max_survival);
+            const float energy = metal::max(metal::max(beta.r, beta.g), beta.b) * eta_scale;
+            const float q = metal::min(energy, max_survival);
             if (next_number(numbers) >= q) {
                 break;
             }
