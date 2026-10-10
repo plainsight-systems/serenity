@@ -24,12 +24,12 @@ struct Media {
 };
 
 // The share of light, per channel, kept over a stretch `t` long inside
-// `medium`, an index into the records or no_medium (air: 1).
-inline float3 transmittance(Media media, uint medium, float t) {
-    if (medium == serenity::contracts::no_medium) {
+// medium `which`, an index into the records or no_medium (air: 1).
+inline float3 transmittance(Media media, uint which, float t) {
+    if (which == serenity::contracts::no_medium) {
         return float3(1.0f);
     }
-    const serenity::media::MediumRecord record = media.records[medium];
+    const serenity::media::MediumRecord record = media.records[which];
     switch (record.kind) {
     case serenity::media::MediumKind::absorbing:
         return absorbing_transmittance(media.absorbing[record.index], t);
