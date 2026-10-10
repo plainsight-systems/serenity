@@ -20,7 +20,7 @@ namespace serenity::headless {
 //                     [--frames N] [--first I]
 //                     [--step SECONDS | --time SECONDS]
 //                     [--size WIDTHxHEIGHT] [--write all|last|doubling]
-//                     [--samples N]
+//                     [--samples N] [--format png|pfm]
 //
 // DIRECTORY must be new or empty (prepare_output, below). It renders the
 // frame graph in FILE (core/frame/graph_file.h), over the scene in
@@ -63,9 +63,22 @@ namespace serenity::headless {
 // counted in frames, not samples. A frame not written is not read back
 // either, so `last` costs little more than the GPU's time.
 //
+// What a written frame is, --format:
+//   png  the frame as displayed, 8 bits a channel, tone mapped: for
+//        looking at, and the default (core/output/png.h);
+//   pfm  the graph's accumulated image, linear radiance in floats before
+//        tone mapping, its pixels' counts left out: for measuring
+//        (core/output/pfm.h, core/film/linear_image.h), to frame-NNNNNN.pfm.
+//        What a reference is made of, and what is judged against one
+//        (core/measurement/). Only a graph that accumulates has that image
+//        (core/frame/history.h, accumulates): asked of one that does not,
+//        the run is refused before it renders, by OptionsError naming the
+//        graph, rather than at the first frame written.
+//
 // parse() checks everything before anything renders and throws OptionsError
 // naming the argument (E.2, E.14): an unknown option, a missing or malformed
-// value (a --write other than all, last or doubling; a number with a sign,
+// value (a --write other than all, last or doubling, a --format other than
+// png or pfm; a number with a sign,
 // a space or anything after it, read by std::from_chars, E.28), zero
 // frames, zero samples or more than an image holds (2^24 - 1,
 // frame::max_accumulated_frames, core/frame/frame_inputs.h), a size
@@ -95,6 +108,11 @@ enum class Write {
     doubling,
 };
 
+enum class Format {
+    png,
+    pfm,
+};
+
 // What parse() read: plain values, which parse() alone makes and checks
 // (C.2: a struct, since nothing here keeps an invariant after it).
 struct Options {
@@ -108,6 +126,7 @@ struct Options {
     std::filesystem::path out;
     Write write = Write::all;
     std::uint64_t samples = 1;  // rendered per frame, at its instant
+    Format format = Format::png;
 };
 
 // Which of a run's frames: the one `after_first` frames after its first, of
