@@ -44,3 +44,24 @@ does not mean a lower-fidelity preview to be hardened later.
 
 - Narrow the slice rather than lowering the quality inside it.
 - A contract relaxation must be defensible without using the word "demo."
+
+## Guideline deviations
+
+Project-wide departures from the C++ Core Guidelines, each decided once, here,
+so a review does not raise them file by file:
+
+- **SF.8, `#pragma once` instead of include guards.** Every header is
+  compiled by Apple clang and many by the Metal compiler as well; both support
+  it, and one form is used everywhere.
+- **SF.12, quoted includes resolved through `-I src`.** One include root,
+  `"core/..."`, `"metal/..."`, for C++ and Metal alike; angle brackets are kept
+  for third-party and system headers.
+- **ES.23, ES.49 and ES.64 in the Metal Shading Language.** `float3(x)` and
+  `uint(x)` are MSL's conversion syntax, and `as_type` is its named cast.
+- **ES.27 and SL.con.1 for arrays inside shared GPU layouts.** `padding[]`,
+  `Transform::m` and the noise tables stay C arrays: MSL has no `std::array`
+  in `constant` layouts shared with the host.
+- **Enum.7 and Enum.8 on enums shared with Metal.** Their fixed underlying
+  type and values are the layout the shaders read.
+- **ES.100, ES.102 and ES.107: `uint` loop indices in shaders,** the GPU
+  idiom.
