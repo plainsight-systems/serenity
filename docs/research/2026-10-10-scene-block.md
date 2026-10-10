@@ -35,11 +35,34 @@ Mode off, so no counters attribute the costs further (GPU.10).
 | Falcor | `ParameterBlock<Scene> gScene` holds the scene's buffers; its hottest, `worldMatrices`, `inverseTransposeWorldMatrices` and `geometryInstances`, are `[root]`: bound as D3D12 root descriptors, outside the block's descriptor table. | `Scene/Scene.slang`; `Core/Program/ProgramReflection.h` (`isRootDescriptor`) |
 | Unreal on Metal | Shaders are written once in HLSL for D3D12 and cross-compiled: HLSL to SPIR-V to MSL through ShaderConductor and SPIRV-Cross, and, experimentally since UE 5.4, DXIL to Metal IR through Apple's Metal Shader Converter. Under the converter every resource is reached indirectly through one top-level argument buffer per pipeline, laid out from the D3D12 root signature: root constants and raw-buffer addresses inline, descriptor tables as further tables of entries. SPIRV-Cross puts argument buffers in the `constant` address space unless told otherwise (`--msl-device-argument-buffer`, for buffers over 64 KB). Scene data itself is GPUScene: flat primitive and instance buffers indexed by ID. Hardware ray tracing (Lumen, the path tracer) is not supported on macOS. | Epic, "Bringing Unreal Engine on macOS up to feature parity" (2025); Epic's `FShaderConductorContext` API page; Apple WWDC23 10124; the `spirv-cross` manual; Epic's hardware specifications page |
 
-Not verified: Unreal's own Metal binding code. Its source is in Epic's
-private GitHub repository, and the Metal Shader Converter manual, which
-gives the converter's address spaces, is a developer download. Whether
-Unreal enables SPIRV-Cross's argument buffers on Metal, and in which
-address space the converter reads a structured buffer, are open.
+What Unreal's shaders become under the converter, from its manual (Metal
+Shader Converter 4.0 beta 2, "Binding model" and "Performance Tips"):
+
+- Every global resource is reached through a top-level argument buffer
+  bound to the pipeline. With a root signature (the explicit layout, the
+  one bindless needs) it holds root constants inline, root arguments as
+  64-bit GPU addresses, and descriptor tables: top-level buffer to table
+  to resource, each table entry three 64-bit words (address or texture
+  ID, and metadata: a buffer's length, a texture's LOD clamp). Without
+  one, a linear layout of such entries, one indirection.
+- "Favor using a linear resource binding model for shaders that don't
+  require the flexibility of root signatures. This binding model provides
+  a top-level Argument Buffer layout that references resources through a
+  single indirection, improving resource access times."
+- "Using Argument Buffers to access resources may result in higher
+  register pressure, reducing theoretical shader occupancy when compared
+  to directly binding resources to pipeline slots." This is the cost the
+  block showed before views were built at their use, named by Apple.
+
+Serenity's block is the converter's root-argument form: one buffer of
+64-bit addresses, one indirection to each array, no descriptor tables,
+no metadata words.
+
+Not verified: Unreal's own Metal binding code (its source is in Epic's
+private GitHub repository), so whether Unreal uses root signatures or the
+linear layout on Metal, and whether it enables SPIRV-Cross's argument
+buffers, are open. The converter's manual does not say in which address
+space converted shaders read a buffer.
 
 So all three put the scene behind one block of addresses, as serenity
 does; Unreal on Metal goes further, reaching every resource indirectly.
@@ -72,6 +95,8 @@ the per-slot bindings did before it, in chaining lookups per candidate hit.
 - Views carried through the path held their pointers in registers for its
   whole length; built at each use, they are reloaded from the block. That
   saved 0.6 ms, the register cost Apple names in WWDC22 10105.
+- One indirection, as the converter's manual recommends, and nothing
+  more: no descriptor table between the block and the arrays.
 - Binding the hottest arrays directly saved nothing: on Metal a pointer read
   from a `constant` block costs as a bound one does. Falcor's `[root]` saves
   a D3D12 descriptor-table fetch, which Metal does not have.
@@ -103,7 +128,7 @@ Open:
 - Apple, WWDC22 10105, [Maximize your Metal ray tracing performance](https://developer.apple.com/videos/play/wwdc2022/10105/)
 - Apple, WWDC16 606, [Advanced Metal Shader Optimization](https://developer.apple.com/videos/play/wwdc2016/606/)
 - Apple, WWDC23 10124, [Bring your game to Mac, Part 2: Compile your shaders](https://developer.apple.com/videos/play/wwdc2023/10124/)
-- Apple, [Metal shader converter](https://developer.apple.com/metal/shader-converter/)
+- Apple, [Metal shader converter](https://developer.apple.com/metal/shader-converter/), and its manual, *Metal Shader Converter 4.0 beta 2* (PDF, Apple Developer downloads, 2026-07-29)
 - NVIDIA, Falcor, [Scene.slang](https://github.com/NVIDIAGameWorks/Falcor/blob/master/Source/Falcor/Scene/Scene.slang) and [ProgramReflection.h](https://github.com/NVIDIAGameWorks/Falcor/blob/master/Source/Falcor/Core/Program/ProgramReflection.h)
 - Epic, [Bringing Unreal Engine on macOS up to feature parity with Windows](https://www.unrealengine.com/tech-blog/bringing-unreal-engine-on-macos-up-to-feature-parity-with-windowsprogress-report) (2025)
 - Epic, [FShaderConductorContext](https://dev.epicgames.com/documentation/unreal-engine/API/Developer/ShaderCompilerCommon/FShaderConductorContext)
