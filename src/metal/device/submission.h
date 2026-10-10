@@ -67,7 +67,7 @@ namespace serenity::metal {
 //
 // The feedback handlers run on Metal's queue, possibly after this object is
 // gone, so what they write is not in this object: each slot's feedback state
-// is shared, and every handler holds its own reference (R.20, CP.3). A late
+// is shared, and every handler holds its own reference (R.20, CP.32). A late
 // handler writes into state it keeps alive, never into freed memory.
 //
 // Settling. A submission is settled once its event and its feedback have
@@ -108,8 +108,12 @@ namespace serenity::metal {
 // the GPU is two frames behind), one allocator reset, one command buffer
 // begun and ended, one commit, one event signal. Nothing of ours is allocated
 // per frame (MEM.9). Metal 4 takes the feedback handler through commit
-// options, an object made per commit: one small allocation a frame that is
-// the API's shape, not ours, and is kept.
+// options, an object made per commit, and metal-cpp hands the handler on as
+// a block that Metal copies to the heap with what it captures: a few small
+// allocations a frame, by the API's shape. Kept: an options object cannot
+// shed a handler once added, so it cannot be reused for the next commit
+// with a new one, and a few allocations against a frame of milliseconds are
+// not worth a design of their own (Per.1, Per.6: no measured cost).
 inline constexpr std::uint32_t frames_in_flight = 2;
 
 // A submission settled (see Settling, above).

@@ -146,9 +146,12 @@ void Submission::end_and_commit(const MTL::Drawable* drawable) {
 
     // Metal 4 reports a submission's GPU error here, on its own queue. The
     // handler holds its own reference to what it writes (submission.h). The
-    // options object is made per commit: the API's shape.
+    // options object is made per commit: the API's shape. noexcept: the
+    // handler runs inside an Objective-C block on Metal's queue, which an
+    // exception must not unwind through, so one (a failed allocation while
+    // building the message) ends the program at once instead (E.12).
     auto options = NS::TransferPtr(MTL4::CommitOptions::alloc()->init());
-    options->addFeedbackHandler([state = slot.feedback, sequence](MTL4::CommitFeedback* feedback) {
+    options->addFeedbackHandler([state = slot.feedback, sequence](MTL4::CommitFeedback* feedback) noexcept {
         if (feedback != nullptr && feedback->error() != nullptr && !state->failed.load(std::memory_order_relaxed)) {
             state->failure = "submission " + std::to_string(sequence) + " failed on the GPU: " +
                              describe(feedback->error());

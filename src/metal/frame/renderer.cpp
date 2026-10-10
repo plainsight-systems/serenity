@@ -89,12 +89,10 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
     descriptor->setMaxBufferBindCount(max_buffers);
     descriptor->setMaxTextureBindCount(max_textures);
-    for (auto& table : arguments_) {
-        NS::Error* error = nullptr;
-        table = NS::TransferPtr(device.handle()->newArgumentTable(descriptor.get(), &error));
-        if (!table) {
-            throw Error("Renderer: the device made no argument table: " + describe(error));
-        }
+    NS::Error* error = nullptr;
+    arguments_ = NS::TransferPtr(device.handle()->newArgumentTable(descriptor.get(), &error));
+    if (!arguments_) {
+        throw Error("Renderer: the device made no argument table: " + describe(error));
     }
 
     kinds_ = schedule.passes;
@@ -227,7 +225,7 @@ void Renderer::record(const FrameSlot& frame, const frame::FrameInputs& inputs, 
     std::memcpy(ring + slot + constants_offset, &constants, sizeof(constants));
 
     FrameResources resources;
-    resources.arguments = arguments_[frame.slot].get();
+    resources.arguments = arguments_.get();
     resources.constants = constants_->gpuAddress() + slot + constants_offset;
     resources.target = target;
     resources.size = size;

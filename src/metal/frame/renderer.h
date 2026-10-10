@@ -139,13 +139,14 @@ namespace serenity::metal {
 // writes the next frame's values while the GPU may still read the last one's
 // (GPU.7). Slots are 256 bytes apart; in each, the frame constants are at 0
 // and the camera at 128, so each contract is bound at its own address and
-// either can grow without moving the other. The argument tables the passes
-// bind through are ringed the same way, one per slot: Apple's documentation
-// does not say whether an encoder copies a table's bindings at each dispatch,
-// so no frame in flight shares a table with the next. Within a frame, passes
-// rebind the slot's table between dispatches, which
-// tests/gpu/argument_table_test.cpp shows Metal 4 honours on this machine. The
-// ring and the tables are made once, at construction (MEM.9).
+// either can grow without moving the other. The passes bind through one
+// argument table, which every frame shares: Metal "takes a snapshot of the
+// resources in the argument table when you make dispatch or execute calls"
+// (MTL4ComputeCommandEncoder.h, setArgumentTable), so rebinding it, between
+// one pass's dispatches or for the next frame while the last still runs,
+// never changes what an earlier dispatch reads
+// (tests/gpu/argument_table_test.cpp shows it on this machine). The ring and
+// the table are made once, at construction (MEM.9).
 //
 // Cost of recording a frame, on the CPU: 96 bytes written to the ring (32 of
 // frame constants and, with a camera, 64 of camera), one framing of the camera
@@ -225,7 +226,7 @@ private:
     std::optional<Prepared> prepared_;  // the frame prepare() readied, until recorded
     NS::SharedPtr<MTL::Buffer> constants_;
     Resident constants_resident_;
-    std::array<NS::SharedPtr<MTL4::ArgumentTable>, frames_in_flight> arguments_;
+    NS::SharedPtr<MTL4::ArgumentTable> arguments_;  // every frame's: Metal snapshots it at each dispatch
     std::vector<frame::PassKind> kinds_;  // the schedule's
     std::vector<Pass> passes_;            // in schedule order, one per kind
     static constexpr std::size_t no_pass = static_cast<std::size_t>(-1);

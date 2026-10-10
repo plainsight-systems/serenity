@@ -39,7 +39,7 @@ namespace serenity::metal {
 //
 // Cost: one thread per pixel, in rows of the execution width (GPU.2); per
 // pixel, the integrator's path (about twice its length in rays, a handful
-// of surfaces in practice; integrator/path.metal.h), and 36 bytes of
+// of surfaces in practice; integrator/path.metal.h), and 48 bytes of
 // images: the accumulated pixel's 16 read and 16 written, and the radiance
 // image's 16 written.
 class PathPass {

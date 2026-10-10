@@ -54,9 +54,11 @@ namespace serenity::metal {
 // structure of its own, built once, under an instance: a second level for
 // that, measured again then.
 //
-// A still scene (no shape moves) has one structure, built at construction,
-// in a submission of its own that is waited for, so it is complete before
-// any frame traces it (CDSA.29). A scene where shapes move has one per frame
+// A still scene (no shape moves) has one structure, built once, at
+// construction (CDSA.29: a structure with no mutations pays for its build
+// once), in a submission of its own that is waited for, so it is complete
+// before any frame traces it (GPU.8); its build's scratch is then let go
+// (GPU.9). A scene where shapes move has one per frame
 // in flight, each with its own boxes and scratch; the boxes are a FrameArray
 // (metal/device/frame_array.h), whose rule says when the CPU may write a
 // slot's. Which shapes move it is told as their indices, nothing more of the
