@@ -25,6 +25,7 @@
 // pixel's mean, so a bug that made some paths NaN would still converge near
 // the expected value, biased by the survivors.
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -495,4 +496,32 @@ TEST_CASE("a frame time past what the shaders' float holds is refused before it 
     const auto fine =
         metal::render_to_offscreen(submission, target, renderer, tests::frame_at(0, 0, 3.0e38, description.camera));
     (void)submission.wait_until_complete(fine);
+}
+
+TEST_CASE("before any light wakes, under a black sky, the image is black: the opening's first frames") {
+    // Two fireflies over a floor, under no sky, neither awake before 10 s
+    // (core/animation/glow.h, Wake): every accumulated value exactly 0, the
+    // camera's view of the dark lights and every surface they would light
+    // alike. A light's next event adds nothing while it sleeps, its shadow
+    // ray not traced (path.metal.h, step 5).
+    const auto sleeping = [](const char* center, double at) {
+        return firefly(center) + "glow = { kind = \"rhythm\", period = 5.5, flash = 0.35, dim = 0.5, seed = 3, " +
+               "wake = { at = " + std::to_string(at) + ", ramp = 1 } }\n";
+    };
+    Rig dark(lit_floor(sleeping("[0.3, 2.5, -0.5]", 10.0) + sleeping("[-0.2, 0.8, 0.1]", 10.0)), {48, 36});
+    (void)dark.render(8);
+    // Each pixel's red, green and blue; its fourth number is its count of
+    // samples, not light.
+    const auto light_in = [](const std::vector<float>& rgba) {
+        std::size_t lit = 0;
+        for (std::size_t i = 0; i < rgba.size(); i += 4) {
+            lit += (rgba[i] != 0.0f || rgba[i + 1] != 0.0f || rgba[i + 2] != 0.0f) ? 1 : 0;
+        }
+        return lit;
+    };
+    CHECK(light_in(dark.accumulated()) == 0);
+    // And the check can fail: one of them awake at 0 lights the floor.
+    Rig waking(lit_floor(sleeping("[0.3, 2.5, -0.5]", 10.0) + sleeping("[-0.2, 0.8, 0.1]", -1.0)), {48, 36});
+    (void)waking.render(8);
+    CHECK(light_in(waking.accumulated()) > 0);
 }

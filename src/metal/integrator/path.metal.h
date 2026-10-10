@@ -41,8 +41,12 @@
 //   Step 5  Next event estimation, where the BSDF has a lobe that is not
 //           delta (aims_at_lights): choose one light uniformly, P = 1 / N
 //           (light_selection/uniform_light.metal.h); draw a direction toward
-//           it, pdf p (contract 3); trace one shadow ray, to the light's
-//           surface, the light itself ignored; if nothing blocks it,
+//           it, pdf p (contract 3); if it gives no light (L_e = 0, a
+//           firefly not yet awake, core/animation/glow.h), stop there, as
+//           pbrt-v4's SimplePathIntegrator does (its test of ls->L): the
+//           term is 0 whatever the shadow ray finds, so the ray is not
+//           traced; else trace one shadow ray, to the light's surface, the
+//           light itself ignored; if nothing blocks it,
 //             L += beta x f(wo, wi) |cos(wi)| x L_e x T / (P x p),
 //           T the transmittance of the medium the path is in over the
 //           shadow ray's length: 1 in air; a light inside the same glass as
@@ -145,8 +149,8 @@ inline float3 next_event(Scene scene, Shading here, thread PathNumbers& numbers)
     const SelectedLight chosen = select_light(scene.selection(), next_number(numbers));
     const serenity::contracts::LightSample sample =
         sample_light(scene.lights(), chosen.light, to_float3(here.surface.position), next_numbers2(numbers));
-    if (sample.pdf <= 0.0f) {
-        return float3(0.0f);
+    if (sample.pdf <= 0.0f || !metal::any(to_float3(sample.radiance) > 0.0f)) {
+        return float3(0.0f);  // no light from it: no shadow ray (step 5)
     }
     const float3 wi = to_float3(sample.direction);
     const float3 f = bsdf_evaluate(here.bsdf, here.wo, wi);

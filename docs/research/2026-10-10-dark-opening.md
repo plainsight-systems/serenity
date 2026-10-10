@@ -25,10 +25,12 @@ how is it kept a closed form of t, checked at load, as everything else is?
   start is at y 0.97 or higher, above the camera. A firefly reaches the
   frame only when its loop brings it down, so the frame at t = 0 is empty,
   and fills at the loops' pace.
-- The naive path tracer traces a shadow ray to the light it chooses
-  whatever its glow (metal/integrator/direct.metal.h, from_lights: no test
-  of the radiance before `occluded`). A dark firefly costs a frame what a
-  lit one does: the opening changes the image, not the frame's time.
+- The naive path tracer traced a shadow ray to the light it chose
+  whatever its glow (metal/integrator/path.metal.h, next_event, and the
+  preview's direct.metal.h: no test of the radiance before `occluded`),
+  where pbrt-v4's SimplePathIntegrator, which it follows, tests `ls->L`
+  first. A dark firefly cost a frame what a lit one does. The test is now
+  made (below, "A sleeping light's shadow ray").
 - It does change the image's noise. The path tracer chooses one light of
   616 uniformly; with a few awake, almost every choice is dark. The opening
   is the naive estimator's worst case, which is the case ReSTIR DI is for.
@@ -100,6 +102,38 @@ pass over both corpora is
 [2026-10-10-dark-opening/core-guidelines-pass.md](2026-10-10-dark-opening/core-guidelines-pass.md).
 The load and frame measurements above are still to be made, with the
 scene's art.
+
+## A sleeping light's shadow ray
+
+The design review of the implementation (55f968a, performance focus)
+found the missing test above: next event estimation drew a direction
+toward a light whose radiance was 0, then evaluated the BSDF and traced
+the shadow ray for a term that is 0 whatever the ray finds. The test of
+the sample's radiance now comes first, as pbrt-v4's does (its
+SimplePathIntegrator: `if (ls && ls->L && ls->pdf > 0)`), in the path
+kernel and in the preview's two loops. The random numbers a path draws
+are the same either way, and the image the same: a sleeping light's term
+was 0, and is not computed.
+
+Measured: the path graph at 3456 x 2234 on the M3 Max, 200 frames, each
+waited for, the median GPU time of frames 21 to 199; the two builds
+alternated three times, each run started after the GPU had been under 5%
+busy for six seconds. The scene is the marbles with their opening
+(scripts/make_marbles.py's), at three times:
+
+| Time | Lights awake | Without the test | With it |
+|---|---|---|---|
+| 0.5 s | none | 32.35 ms (32.33–32.37) | 19.16 ms (19.14–19.19) |
+| 8 s | a few of the perched swarm | 32.45 ms (32.45–32.45) | 24.34 ms (24.31–24.36) |
+| 120 s | all | 29.89 ms (29.88–29.90) | 29.77 ms (29.76–29.78) |
+
+The marbles without an opening, every light lit, at t = 628: 29.78 ms
+without the test, 29.67 ms with it (round medians 29.48 / 29.39, 29.93 /
+29.81, 29.94 / 29.82). With every light lit the test saves nothing to
+trace; its 0.1 ms in every round is the compiled kernel's, not fewer
+rays, and is not claimed. These frames were each waited for, so their
+times are not the corpus sweep's 28.44 ms baseline, which kept two frames
+in flight; that baseline is re-measured with the scene's art.
 
 ## Open
 

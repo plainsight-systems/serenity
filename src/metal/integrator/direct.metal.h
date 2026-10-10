@@ -125,7 +125,9 @@ inline bool is_delta(serenity::contracts::BsdfSample s) {
 // the light lies before it (glass among them: the light glass would focus is
 // a caustic, which this estimator leaves out), averaged, and divided by the
 // light's selection probability; each dimmed by here's medium over the
-// shadow ray's length (contract 12).
+// shadow ray's length (contract 12). A direction whose light gives nothing
+// (a firefly not yet awake, core/animation/glow.h) adds 0 whatever lies
+// before it, so its shadow ray is not traced, as pbrt-v4 tests ls->L.
 inline float3 from_lights(Scene scene, Shading here, PixelSamples px, uint count) {
     const float3 point = to_float3(here.surface.position);
     const float3 shading = to_float3(here.bsdf.normal);
@@ -137,8 +139,8 @@ inline float3 from_lights(Scene scene, Shading here, PixelSamples px, uint count
         for (uint i = 0; i < count; ++i) {
             const serenity::contracts::LightSample sample =
                 sample_light(scene.lights(), light, point, sample_2d(offset_2d, px.position * count + i));
-            if (sample.pdf <= 0.0f) {
-                continue;
+            if (sample.pdf <= 0.0f || !metal::any(to_float3(sample.radiance) > 0.0f)) {
+                continue;  // no light from it (a light not yet awake): no shadow ray
             }
             const float3 wi = to_float3(sample.direction);
             const float3 f = bsdf_evaluate(here.bsdf, here.wo, wi);
@@ -189,8 +191,8 @@ inline float3 shade_reflected(Scene scene, Shading from, float3 direction, bool 
     for (uint j = 0; j < selected_count(scene.selection()); ++j) {
         const serenity::lights::LightRecord light = selected(scene.selection(), j);
         const serenity::contracts::LightSample sample = sample_light(scene.lights(), light, point, light_middle);
-        if (sample.pdf <= 0.0f) {
-            continue;
+        if (sample.pdf <= 0.0f || !metal::any(to_float3(sample.radiance) > 0.0f)) {
+            continue;  // no light from it (a light not yet awake): no shadow ray
         }
         const float3 wi = to_float3(sample.direction);
         const float3 f = bsdf_evaluate(bsdf, wo, wi);
