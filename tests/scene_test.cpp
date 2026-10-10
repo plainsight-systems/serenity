@@ -437,9 +437,8 @@ TEST_CASE("the marbles' scene reads: a walnut table, five spheres, 512 fireflies
 TEST_CASE("a camera's lens reads, and a camera without one is a pinhole") {
     const scene::SceneDescription pinhole = scene::parse(example, "s");
     CHECK(pinhole.camera.lens_radius == 0.0f);
-    const scene::SceneDescription lensed =
-        scene::parse(with("vertical_fov_degrees = 40", "vertical_fov_degrees = 40\nlens = { radius = 0.012, focus = 4 }"),
-                     "s");
+    const std::string with_lens = "vertical_fov_degrees = 40\nlens = { radius = 0.012, focus = 4 }";
+    const scene::SceneDescription lensed = scene::parse(with("vertical_fov_degrees = 40", with_lens), "s");
     CHECK(lensed.camera.lens_radius == 0.012f);
     CHECK(lensed.camera.focus_distance == 4.0f);
     const auto lens = [](const std::string& value) {
