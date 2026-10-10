@@ -17,6 +17,8 @@
 #include "core/materials/emissive.h"
 #include "core/materials/material.h"
 #include "core/materials/rough.h"
+#include "core/media/absorbing.h"
+#include "core/media/medium.h"
 #include "core/shapes/shapes.h"
 #include "core/textures/checker.h"
 #include "core/textures/swirl.h"
@@ -83,12 +85,10 @@ namespace serenity::scene {
 //   kind = "dielectric"
 //   ior = 1.5
 //
-//   [materials.blue_glass]
-//   kind = "dielectric"
-//   ior = 1.5
-//   tint = [0.25, 0.5, 0.95]        # optional, with tint_distance: the color
-//   tint_distance = 0.01            # white light keeps through so many meters
-//                                   # of it (core/materials/dielectric.h)
+//   [media.blue_tint]               # a name, used by shapes' interiors
+//   kind = "absorbing"              # (core/media/absorbing.h)
+//   tint = [0.25, 0.5, 0.95]        # the color white light keeps through
+//   tint_distance = 0.01            # so many meters of it
 //
 //   [materials.porcelain]
 //   kind = "coated"                 # opaque glossy (core/materials/coated.h)
@@ -126,6 +126,8 @@ namespace serenity::scene {
 //   center = [2, 0.4, 0]
 //   radius = 0.4
 //   material = "glass"
+//   interior = "blue_tint"          # optional: the medium inside it
+//                                   # (contract 12); without one, air
 //
 //   [[shapes]]
 //   kind = "sphere"
@@ -221,22 +223,23 @@ namespace serenity::scene {
 // targets, a period or flash out of range, a dim outside [0, 1), a wood, swirl
 // or coated color outside [0, 1], a ring under wood_least_ring or a board
 // outside wood_least_board to wood_most_board (core/textures/wood.h), a wood's
-// or swirl's seed past 2^32 - 1, a swirl's vanes outside 1 to 16, a tint
-// outside (0, 1] or a tint_distance not greater than 0, or one of the two
-// without the other, a swarm's count outside 1 to 4096), an unknown kind, a
-// name used twice, a name used and never defined, a target that is not a still
-// sphere, an emissive material or a motion on anything but a sphere, a swarm
-// whose material is not emissive, a glow on anything but a light, a flight
+// or swirl's seed past 2^32 - 1, a swirl's vanes outside 1 to 16, a medium's
+// tint outside (0, 1] or tint_distance not greater than 0, a swarm's count
+// outside 1 to 4096), an unknown kind, a name used twice, a name used and
+// never defined, a target that is not a still sphere, an emissive material or
+// a motion on anything but a sphere, a swarm whose material is not emissive,
+// an interior on a shape whose material is not a dielectric (a medium fills
+// only what light can pass into), a glow on anything but a light, a flight
 // glow on a light that does not fly, a motion that cannot be made clear of the
 // still shapes, a swarm whose fireflies cannot start clear of them, or no
 // shapes at all is an Error naming the file and the line (E.2, E.14). Nothing
 // has a silent default except `up`, and the absences that mean something: no
-// lens is a pinhole, no tint is clear glass, no motion is still.
+// lens is a pinhole, no interior is air, no motion is still.
 //
 // Read once, at start-up. Every flight in the scene, written or a swarm's,
 // is made once every shape is read, all together, in parallel
 // (core/animation/flight.h, make_flights): for the marbles' 512 fireflies
-// the load's largest cost; the scene loads in 104 ms on the M3 Max.
+// the load's largest cost (flight.h gives its measure).
 
 // How far the world reaches from the origin on every axis, in meters (above).
 inline constexpr double world_extent = 1.0e6;
@@ -264,6 +267,12 @@ struct SceneDescription {
     std::vector<materials::ConductorData> conductors;
     std::vector<materials::EmissiveData> emissives;
     std::vector<materials::CoatedData> coated;
+
+    // The media shapes are filled with (contract 12): one record per
+    // medium, one array per kind, as for materials. A shape names one by
+    // its record's index in ShapeRecord::interior.
+    std::vector<media::MediumRecord> media;
+    std::vector<media::AbsorbingData> absorbing;
 
     // In file order, the [[shapes]] and then each swarm's fireflies
     // (swarm.h): shape i is shapes.records[i] and shapes.transforms[i],

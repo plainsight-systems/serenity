@@ -40,6 +40,18 @@
 //                                   the direction. pdf 0 means no sample
 //                                   (wo below a reflector's horizon); the
 //                                   caller ends the path.
+//
+//                                   u.x chooses by cutting [0, 1) into one
+//                                   interval per lobe, each as long as that
+//                                   lobe's probability of being chosen, in
+//                                   an order fixed for the kind. So a
+//                                   surface of two lobes yields one at u.x
+//                                   = 0 and the other just below 1, each
+//                                   where its probability is not 0: an
+//                                   estimator that takes every lobe of such
+//                                   a surface (the preview) samples both
+//                                   ends and tells the two apart by their
+//                                   lobe bits, never by the kind.
 //   float pdf(Bsdf, wo, wi)         the density with which sample() draws wi,
 //                                   per unit solid angle. 0 for a delta lobe.
 //   uint lobes(Bsdf)                every lobe the surface has, as the union
@@ -121,12 +133,11 @@ struct Bsdf {
     float alpha;     // conductor: GGX alpha = roughness^2; otherwise 0
     float ior;       // dielectric: index of refraction inside; coated: the coat's; against 1 outside;
                      // otherwise 0
-    Float3 absorption;  // dielectric: per meter inside, per channel (materials/dielectric.h); otherwise 0
-    float internal;     // coated: the coat's internal reflectance, F_in (materials/coated.h); otherwise 0
-    uint32_t padding[3];
+    float internal;  // coated: the coat's internal reflectance, F_in (materials/coated.h); otherwise 0
+    uint32_t padding[2];
 };
 
-static_assert(sizeof(Bsdf) == 64, "Bsdf must be the same 64 bytes on the host and in shaders");
+static_assert(sizeof(Bsdf) == 48, "Bsdf must be the same 48 bytes on the host and in shaders");
 
 // What sample() returns.
 struct BsdfSample {

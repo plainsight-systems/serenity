@@ -4,8 +4,9 @@
 // Texture, the Integrator and, later, Sample reuse.
 //
 // Where a ray met a surface, as everything after the hit sees it: the
-// point, the surface's normals, which side the ray arrived from, and what
-// the surface is made of. A shape kind's intersection fills it
+// point, in the world and in the shape's own coordinates, the surface's
+// normals, which side the ray arrived from, what the surface is made of,
+// and what fills the shape behind it. A shape kind's intersection fills it
 // (metal/shapes/), the material resolves its BSDF from it
 // (contracts/bsdf.h), and ReSTIR keeps one per pixel to reuse samples
 // between surfaces, which is why it is a shared layout and not only a
@@ -25,8 +26,18 @@
 //                     (a normal map) does so when it resolves its BSDF, into
 //                     Bsdf::normal (contracts/bsdf.h), which it owns.
 //
-// Surface coordinates (u, v) join this contract with the first texture that
-// needs them; every texture so far is a function of position.
+// The point in the shape's own coordinates, object_position, is where the
+// hit is on the shape's geometry before its transform places it (contract
+// 10): on the unit sphere for a sphere, at the box's own corners' scale for
+// a box. The shape's intersection, which tests the ray in those coordinates
+// already, fills it; a texture laid on its shape reads it (textures/
+// texture.h), so a marble core's swirl turns and moves with the core. It is
+// the first surface coordinate a texture needed; (u, v) join with the first
+// that needs them.
+//
+// interior is the medium inside the shape (contract 12), from its record
+// (shapes/primitive.h), or contracts::no_medium: what a path that passes
+// through this surface into the shape enters.
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
@@ -55,10 +66,12 @@ struct SurfaceInteraction {
     uint32_t primitive;  // the shape, as primitive i is shape i (shapes/primitive.h)
     Float3 shading_normal;    // unit, outward
     uint32_t flags;      // arrived_from_outside, or 0
+    Float3 object_position;   // the point in the shape's own coordinates (contract 10)
+    uint32_t interior;   // the medium inside the shape (contract 12), or no_medium
 };
 
-static_assert(sizeof(SurfaceInteraction) == 48,
-              "SurfaceInteraction must be the same 48 bytes on the host and in shaders");
+static_assert(sizeof(SurfaceInteraction) == 64,
+              "SurfaceInteraction must be the same 64 bytes on the host and in shaders");
 
 }  // namespace contracts
 }  // namespace serenity

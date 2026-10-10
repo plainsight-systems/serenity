@@ -43,7 +43,8 @@ struct ShapeRecord {
     ShapeKind kind;
     uint32_t geometry;  // into that kind's geometry array
     uint32_t material;  // index into the material records
-    uint32_t padding;
+    uint32_t interior;  // the medium inside it (contract 12): an index into the medium records
+                        // (media/medium.h), or contracts::no_medium for air
 };
 
 static_assert(sizeof(ShapeRecord) == 16, "ShapeRecord must be the same 16 bytes on the host and in shaders");

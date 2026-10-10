@@ -18,11 +18,13 @@
 //
 //   Step 1  Where q is about the axis, y: its angle phi = atan2(q.z, q.x),
 //           in (-pi, pi], and its height q.y.
-//   Step 2  Its phase among the vanes: s = vanes phi / (2 pi) + twist q.y +
-//           swirl_waver fbm(swirl_scale (cos phi, q.y, sin phi), 2, seed)
-//           (noise.h): vanes bands around, each turning twist times round
-//           per unit of height, its edges wavering; the noise read on the
-//           unit cylinder at q's angle and height.
+//   Step 2  Its phase among the vanes: s = vanes (phi / (2 pi) + twist q.y)
+//           + swirl_waver fbm(swirl_scale (cos phi, q.y, sin phi), 2, seed)
+//           (noise.h): vanes bands around, a band's middle, where s is
+//           constant, at phi = 2 pi (k / vanes - twist q.y), so each turns
+//           twist times round per unit of height, whatever the vanes, its
+//           edges wavering; the noise read on the unit cylinder at q's angle
+//           and height.
 //   Step 3  Its color: v = |2 fract(s) - 1|, 0 at a band of a's middle and 1
 //           at one of b's, and the color a (1 - w) + b w, w =
 //           smoothstep(0.5 - swirl_edge, 0.5 + swirl_edge, v): bands of each

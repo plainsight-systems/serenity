@@ -62,6 +62,7 @@ data or adds a kind; it does not change a family that already exists.
 | `src/core/materials/` | Material | each material kind's parameters |
 | `src/core/textures/` | Texture | each texture kind's parameters |
 | `src/core/lights/` | Light | each light kind's parameters |
+| `src/core/media/` | Medium | each medium kind's parameters |
 | `src/core/film/` | Film | what a pixel accumulates and outputs |
 | `src/core/frame/` | Frame graph | the passes, their order, the images between them, and the history kept across frames; reading frame graph files |
 | `src/core/output/` | Output | each file format's writer |
@@ -73,6 +74,7 @@ data or adds a kind; it does not change a family that already exists.
 | `src/metal/materials/` | Material | each material kind's BSDF |
 | `src/metal/textures/` | Texture | each texture kind's evaluation |
 | `src/metal/lights/` | Light | each light kind's emission and sampling |
+| `src/metal/media/` | Medium | each medium kind's transmittance |
 | `src/metal/camera/` | Camera | each camera kind's ray generation |
 | `src/metal/math/` | shared shader math | orthonormal frames, and warps from the unit square to the disk and the hemisphere: mappings every family uses, owned by none |
 | `src/metal/film/` | Film | what a pixel accumulates: folding a frame into the mean |
@@ -100,7 +102,7 @@ depend on contracts, not on each other.
 
 | # | Contract | Owned by | Read by |
 |---|---|---|---|
-| 1 | **Surface interaction**: position, normals, the side arrived from, material; surface coordinates with the first texture that needs them | Shape | Material, Texture, Integrator, Sample reuse |
+| 1 | **Surface interaction**: position, in the world and the shape's own coordinates, normals, the side arrived from, material, the medium inside; (u, v) with the first texture that needs them | Shape | Material, Texture, Integrator, Sample reuse |
 | 2 | **BSDF**: a material resolved at a surface, and evaluate, sample, pdf and lobes on it | Material | Integrator, Sample reuse |
 | 3 | **Emitter**: a direction toward the light drawn from numbers, the radiance along it, the distance to it, the pdf; the radiance it emits; which light, if any, a shape is | Light | Light selection, Integrator, Sample reuse |
 | 4 | **Light sample**: which light and which point on it, in its own coordinates | Light | Sample reuse, Integrator |
@@ -111,6 +113,7 @@ depend on contracts, not on each other.
 | 9 | **Texture reference**: which texture a parameter takes its value from, or none | Texture | Material |
 | 10 | **Transform**: where an instance of a geometry is, from its own coordinates to the world's | Shape | Animation, Light, Acceleration |
 | 11 | **Obstacles**: what a motion must keep clear of, as distances and touches against the still shapes | Animation | Scene content (answers) |
+| 12 | **Medium**: what fills a shape's inside, and the share of light a stretch through it keeps | Medium | Integrator; named by Shape |
 
 Each is designed on its own, header first, before the code that uses it.
 Contract 7 was the first written: `src/core/contracts/frame_constants.h`.

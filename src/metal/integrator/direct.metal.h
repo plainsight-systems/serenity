@@ -18,15 +18,16 @@
 //
 // A surface with a delta lobe beside a diffuse or glossy one (a coated
 // marble's clear coat over its color) is shaded for its diffuse and glossy
-// lobes as any other, and its delta reflection is taken once more, as
-// glass's is: the BSDF sampled at u.x = 0, where a coat's mirror is chosen,
-// its value |cos| the coat's share, shaded as a reflection.
+// lobes as any other, and its delta lobe is taken too, as glass's are: the
+// BSDF sampled at both ends of u.x, which reach both lobes of a two-lobe
+// surface (contract 2), the one whose lobe bits say delta taken, its value
+// |cos| its share, shaded as a reflection.
 //
-// Inside glass, every stretch the camera ray crosses is dimmed by the
-// glass's absorption (materials/dielectric.h), sigma, set on entering it
-// through a transmission and cleared on leaving, as the path tracer's is
-// (path.metal.h, steps 1 and 6). Shadow rays never cross glass (it blocks
-// them), so they need none.
+// Every stretch the camera ray crosses is dimmed by the medium it is in
+// (contract 12), entered through a transmission into a shape and left
+// through one out of it, as the path tracer's is (path.metal.h, steps 1 and
+// 6). Shadow rays never cross glass (it blocks them), so they cross air
+// alone.
 
 #include <metal_raytracing>
 #include <metal_stdlib>

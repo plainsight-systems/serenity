@@ -178,11 +178,13 @@ asking the sphere. Which light to sample is light selection's business;
 where on it is the shape's. A new selection strategy never touches sphere
 sampling.
 
-**The first medium will touch the integrator too.** A path through a medium
+**The first medium touches the integrator too.** A path through a medium
 is a different light transport, so the first medium changes the integrator
 once, to step through media. After that, a new medium is a kind like any
-other. Medium has no implementation yet; the axis exists because the reason
-to change exists.
+other. The first is the absorbing medium inside tinted glass (contract 12,
+`src/core/contracts/medium.h`): the integrator now carries the medium a path
+is in and dims each stretch by it. The first medium that scatters will
+change it once more, to sample where along a stretch light scatters.
 
 **Scene content and animation are two files, not one.** Both describe how the
 fireflies move, which makes merging them tempting. But animation changes when

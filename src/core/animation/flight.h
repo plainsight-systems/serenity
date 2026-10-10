@@ -41,11 +41,15 @@ namespace serenity::animation {
 //   circle   loops about a target, a still sphere the scene names: an orbit
 //            of radius r0 in a plane tilted up to 25 degrees from level, or
 //            less where the volume's floor leaves no room for that tilt (a
-//            marble on a table, its orbit skimming the top), raised up to
-//            the target's radius above its center, and higher where that
-//            would leave its bob no room above the volume's floor (a marble
-//            a centimeter across, sitting on the table), either way
-//            round, at the cruising speed; its radius breathes by up to 10%
+//            marble on a table, its orbit skimming the top), its center
+//            raised a drawn lift of 0 to the target's radius above the
+//            target's, and higher where that leaves its bob no room above
+//            the volume's floor: at height max(center.y + lift, min.y + body
+//            + delta + 0.05), the bob's 5 cm, so a level orbit about a
+//            marble a centimeter across, on the table, keeps its body inside
+//            the volume at the bob's lowest; the tilt's room is then
+//            measured from that height. It flies either way round, at the
+//            cruising speed; its radius breathes by up to 10%
 //            and it bobs by up to 5 cm, each at a frequency of its own. Four
 //            to nine seconds: part of a loop about a wide orbit, more than
 //            one about a tight one.
@@ -121,10 +125,11 @@ namespace serenity::animation {
 // still shape: some 10^4 to 10^5 distance tests per firefly per still
 // shape. Measured on the M3 Max, release: scenes/brass_sphere_flight.toml,
 // six fireflies among two still shapes, loads in 12.4 ms, 2 ms a firefly
-// (837 segments in all). The marbles' scene (scenes/marbles.toml), 512
-// fireflies among eleven still shapes: 1.3 s one flight after another, and
-// loaded whole in 104 ms with its flights made in parallel (make_flights) on
-// the M3 Max's 16 cores. A thousand fireflies among fifty marbles would want
+// (837 segments in all). The marbles' scene as it was at a987908, 512
+// fireflies among eleven still shapes (five spheres): 1.3 s one flight after
+// another, and loaded whole in 104 ms with its flights made in parallel
+// (make_flights) on the M3 Max's 16 cores. Its fourteen marbles, among 23
+// still shapes, are measured when they are implemented. A thousand fireflies among fifty marbles would want
 // a spatial index behind the obstacles as well, made when such a scene is.
 // Memory: some 140 segments of 22 doubles, some 25 KB per firefly. Per frame:
 // one binary search over 128 starts and one closed form of a few sines or a

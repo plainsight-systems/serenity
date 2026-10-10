@@ -53,6 +53,8 @@ public:
         MTL::GPUAddress conductors = 0;
         MTL::GPUAddress emissives = 0;
         MTL::GPUAddress coated = 0;
+        MTL::GPUAddress media = 0;      // the medium records
+        MTL::GPUAddress absorbing = 0;
         MTL::GPUAddress shapes = 0;  // the shape records
         MTL::GPUAddress boxes = 0;   // the box geometries
         MTL::GPUAddress light_records = 0;

@@ -8,9 +8,10 @@
 // contracts/texture_reference.h, an index into these records.
 //
 // The point it is evaluated at is given twice: in the world, and in the
-// shape's own coordinates, the world point taken back through the shape's
-// transform at the frame (contract 10, contracts/transform.h), which the
-// material's resolving computes (metal/materials/resolve.metal.h). A kind
+// shape's own coordinates, as the surface interaction carries both
+// (contract 1, object_position, which the shape's intersection fills); the
+// material's resolving passes both on (metal/materials/resolve.metal.h). A
+// kind
 // laid on the world reads the first: the checker and the wood, a floor's
 // squares and a table's planks, which do not move with what wears them. A
 // kind laid on its shape reads the second: the swirl, a marble core's vanes,

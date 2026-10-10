@@ -8,8 +8,9 @@
 #
 #   clear glass   refracts the night upside down, and focuses the fireflies'
 #                 light on the table (caustics);
-#   tinted glass  the same, in blue, green and amber, deeper where thicker
-#                 (core/materials/dielectric.h);
+#   tinted glass  the same, in blue, green and amber, deeper where thicker:
+#                 glass filled with an absorbing medium (core/media/
+#                 absorbing.h);
 #   cat's-eyes    a clear shell round an opaque swirled core
 #                 (core/textures/swirl.h), lit only through the glass;
 #   porcelain     opaque glossy color under a clear coat
@@ -87,21 +88,19 @@ color = [0.015, 0.02, 0.012]
 kind = "dielectric"
 ior = 1.5
 
-[materials.blue_glass]
-kind = "dielectric"
-ior = 1.5
+# What fills the tinted marbles (contract 12): the glass's color.
+[media.blue_tint]
+kind = "absorbing"
 tint = [0.25, 0.5, 0.95]
 tint_distance = 0.01
 
-[materials.green_glass]
-kind = "dielectric"
-ior = 1.5
+[media.green_tint]
+kind = "absorbing"
 tint = [0.35, 0.85, 0.4]
 tint_distance = 0.01
 
-[materials.amber_glass]
-kind = "dielectric"
-ior = 1.5
+[media.amber_tint]
+kind = "absorbing"
 tint = [0.95, 0.55, 0.12]
 tint_distance = 0.01
 
@@ -212,21 +211,24 @@ kind = "sphere"
 name = "blue"
 center = [0.04, 0.76, 0.06]
 radius = 0.01
-material = "blue_glass"
+material = "glass"
+interior = "blue_tint"
 
 [[shapes]]
 kind = "sphere"
 name = "green"
 center = [-0.13, 0.759, -0.03]
 radius = 0.009
-material = "green_glass"
+material = "glass"
+interior = "green_tint"
 
 [[shapes]]
 kind = "sphere"
 name = "amber"
 center = [0.19, 0.761, 0.0]
 radius = 0.011
-material = "amber_glass"
+material = "glass"
+interior = "amber_tint"
 
 # Cat's-eyes: a clear shell, and inside it an opaque swirled core at 60% of
 # its radius.
