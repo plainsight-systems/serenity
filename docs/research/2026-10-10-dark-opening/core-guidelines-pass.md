@@ -392,3 +392,27 @@ Rules that bear on the diff, checked and clean:
   shown bit for bit; the result is the same for any worker count, shown
   against step 5 done one firefly at a time).
 - **GPU, LIFE, EMB, SIMD, TLM, WASM** not applicable to this diff.
+
+### The review of 2d26685
+
+Codex reviewed 2d26685 (performance: approved with notes; architecture:
+changes requested). Its three findings, each checked against both corpora
+and fixed in the next commit; every category of both walked again over
+that diff (flight.h's and scene.h's comments, tests/flight_test.cpp,
+tests/swarm_test.cpp, the new tests/support/ball_jobs.h).
+
+| Finding | Rule | Verdict and what changed |
+|---|---|---|
+| flight.h, an Animation header, stated the swarm's retry policy: how many calls of make_flights a load makes for step 5's rounds (P2) | CP.41 (the cost a call makes); docs/architecture/change-axes.md, one reason to change: a change of the swarm's policy must not edit an Animation header | **Fixed.** flight.h states its own cost per call, the threads made once a call, no more than there are jobs (CP.41). The aggregate, a load's batches, at most firefly_draws and more than one only when a swarm's firefly is refused, is in scene.h's "Read once" paragraph, beside the rounds it already stated; said once. Both comment blocks reflowed to the file's width |
+| tests/swarm_test.cpp held the flight family's batch tests beside the swarm's, two reasons to change in one file (P2) | change-axes.md; ES.3 for the helpers both files need | **Fixed.** The seven batch tests, make_flights' five and try_flights' two, moved to tests/flight_test.cpp with their helpers (`Breaking`, `Arguing`, `BreaksFarOut`, `far_out_job`, `some_workers`). `job`, `clear_start` and `inside_ball`, which both files use, are in tests/support/ball_jobs.h, once (ES.3; SF.2: inline and constexpr definitions only); swarm_test.cpp's swarm numbers are defined from them. The moved tests check what they checked: their bodies are the same lines but for the scene they parse for its ball and floor, `tests::ball_on_floor` alone in place of that scene with a swarm, whose still shapes are the same two, and far_out_job's volume written from the shared numbers. The suite's counts are the same, 159 test cases and 8077 assertions, before the move and after |
+| The test "a written flight that is refused refuses the scene at once: no redraw" claimed more than it detects: an implementation that asked again before reporting the same error would pass (P3) | I.7 (a test's name is its claim), P.1 | **Fixed** by narrowing: renamed "a written flight that is refused is reported at its motion's line, with no count of draws", its comment saying what it shows and what it cannot; its check now names the line, s.toml:47. No seam was added to production code to count attempts: none falls out of the reader without a path only a test would use |
+
+Rules checked over this diff and clean: SF.10 (flight_test.cpp includes
+`<cstdint>`, `<variant>` and core/animation/flight.h, which the moved tests
+use), SF.11 (ball_jobs.h includes what it names), SF.6 (`using
+tests::job` and the like in .cpp files only), I.22 (the shared numbers
+`inline constexpr`), NL.3 (the comments reflowed, none longer than the
+blocks around them), ES.3 (no helper defined twice). C, Enum, R, Per, CP,
+E, Con, T, SL and the performance categories: nothing in this diff bears on
+them beyond the comment above (CP.41), which is about the code's existing
+behavior, unchanged.

@@ -285,9 +285,12 @@ namespace serenity::scene {
 // it). Then, round by round, only the swarms' fireflies whose flights were
 // refused, each drawn again and made again with the others of its round,
 // in parallel, at most firefly_draws - 1 rounds (swarm.h, step 5); a
-// written flight refused refuses the scene from the first batch. load() reads the file whole, sized from the file system, and a read
-// that fails or ends early, a directory's included, is a SceneError, never a
-// shorter scene.
+// written flight refused refuses the scene from the first batch. Each
+// batch is one try_flights call, which makes its own threads, no more than
+// its jobs (CP.41): a load makes them at most firefly_draws times, and
+// more than once only when a swarm's firefly is refused. load() reads the
+// file whole, sized from the file system, and a read that fails or ends
+// early, a directory's included, is a SceneError, never a shorter scene.
 
 // How far the world reaches from the origin on every axis, in meters (above).
 inline constexpr double world_extent = 1.0e6;

@@ -383,21 +383,18 @@ Flight make_flight(const FlightJob& job, const contracts::Obstacles& obstacles);
 // threads, since each is a function of its own numbers alone and
 // `obstacles` answers the same from any thread (contract 11). `workers`
 // threads (at least one, and no more than there are jobs), each taking the
-// next unmade flight: an
-// input, not read from the machine here (I.1), so a test can show the
-// result is the same for any count; the scene reader passes
-// flight_workers(). If any cannot be made, throws, once every thread
-// has finished, the failure of the lowest k that failed: tasks, not
-// threads (CP.4), the threads made once a call (CP.41: once a load, and
-// once more for each of a swarm's later rounds, swarm.h step 5, at most
-// firefly_draws - 1 of them, each with no more threads than refused jobs)
-// and joined however the call ends (CP.25). Each failure is caught in the worker that met it,
-// kept as a std::exception_ptr and rethrown here, in the caller, which can
-// report it: an exception that left a worker's function would end the
-// program. A refusal, make_flight's MotionError, is rethrown as a FlightsError
-// that carries k and the refusal's reason, its message "flight k: " and the
-// reason; anything else as itself. So the error does not depend on the
-// threads either.
+// next unmade flight: an input, not read from the machine here (I.1), so a
+// test can show the result is the same for any count; the scene reader
+// passes flight_workers(). If any cannot be made, throws, once every
+// thread has finished, the failure of the lowest k that failed: tasks, not
+// threads (CP.4), the threads made once a call, no more than there are
+// jobs (CP.41), and joined however the call ends (CP.25). Each failure is
+// caught in the worker that met it, kept as a std::exception_ptr and
+// rethrown here, in the caller, which can report it: an exception that
+// left a worker's function would end the program. A refusal, make_flight's
+// MotionError, is rethrown as a FlightsError that carries k and the
+// refusal's reason, its message "flight k: " and the reason; anything else
+// as itself. So the error does not depend on the threads either.
 class FlightsError : public MotionError {
 public:
     FlightsError(std::size_t job, const std::string& reason)

@@ -1,9 +1,8 @@
 // Swarms (core/scene/swarm.h): many fireflies from one entry, each what a
-// written firefly is, its seed and start a function of the swarm's seed and
-// its number and its draw; flights made in parallel (core/animation/flight.h,
-// make_flights and try_flights), the same flights, outcomes and error as
-// made one by one, whatever the number of threads; and a refused firefly
-// drawn again (swarm.h, step 5).
+// written firefly is, its seed and start a function of the swarm's seed,
+// its number and its draw; its fireflies' flights, openings and all; and a
+// refused firefly drawn again (swarm.h, step 5). How many flights are made
+// at once, and what they throw, is the flight's (tests/flight_test.cpp).
 
 #include <algorithm>
 #include <array>
@@ -24,12 +23,15 @@
 #include "core/scene/scene.h"
 #include "core/scene/swarm.h"
 #include "core/shapes/shapes.h"
+#include "support/ball_jobs.h"
 #include "support/ball_on_floor.h"
 #include "support/text.h"
 
 using namespace serenity;
 using frame::Seconds;
+using tests::clear_start;
 using tests::contains;
+using tests::job;
 using tests::replaced;
 
 namespace {
@@ -40,12 +42,13 @@ constexpr scene::FireflyDraw first(std::uint32_t i) {
     return {.index = i, .draw = 0};
 }
 
-// A swarm's numbers, as written below.
-constexpr float firefly_radius = 0.02f;
-constexpr float swarm_clearance = 0.05f;
-constexpr float volume_low = 0.05f;
-constexpr float volume_high = 2.2f;
-constexpr float volume_reach = 2.0f;  // the volume's x and z bounds, either way
+// A swarm's numbers, as swarm_of() writes them: the shared job's
+// (support/ball_jobs.h), whose flights its fireflies fly.
+constexpr float firefly_radius = tests::job_body;
+constexpr float swarm_clearance = tests::job_clearance;
+constexpr float volume_low = tests::job_volume.min.y;
+constexpr float volume_high = tests::job_volume.max.y;
+constexpr float volume_reach = tests::job_volume.max.x;  // the volume's x and z bounds, either way
 
 // The ball on its floor, and a swarm about it: the [[swarms]] entry on line
 // 26, its count on 27.
@@ -155,169 +158,6 @@ TEST_CASE("every mistake in a swarm is refused, naming the file and the line") {
     CHECK(contains(no_room, "s.toml:26: swarm 1: firefly 0: no start clear of the still shapes in 64 draws"));
     CHECK(contains(error_of(swarmed("count = 4\n[[swarms]]\n" + swarm_of(4))), "s.toml:26: swarm 1 has no 'radius'"));
     CHECK(contains(error_of(swarmed(swarm_of(4)) + "\n[[swarms]]\nfoo = 1\n"), "unknown key 'foo' in swarm 2"));
-}
-
-namespace {
-
-// A flight job about the ball, in the swarm's volume, from `start`.
-animation::FlightJob job(std::uint64_t seed, contracts::Float3 start) {
-    return {.params = {.volume = {{-volume_reach, volume_low, -volume_reach},
-                                  {volume_reach, volume_high, volume_reach}},
-                       .targets = {{{0.0f, 0.5f, 0.0f}, 0.5f}},
-                       .speed = 0.4f,
-                       .clearance = swarm_clearance,
-                       .weights = {2.0f, 1.0f, 2.0f},
-                       .seed = seed},
-            .start = start,
-            .body = firefly_radius};
-}
-
-constexpr contracts::Float3 clear_start{1.2f, 1.0f, 0.8f};
-constexpr contracts::Float3 inside_ball{0.0f, 0.5f, 0.0f};
-
-}  // namespace
-
-TEST_CASE("flights made in parallel are the flights made one by one, in order") {
-    constexpr std::uint64_t count = 40;
-    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
-    const tests::BallAndFloor obstacles(s);
-    std::vector<animation::FlightJob> jobs;
-    jobs.reserve(count);
-    for (std::uint64_t k = 0; k < count; ++k) {
-        jobs.push_back(job(100 + k, {clear_start.x, clear_start.y + 0.01f * static_cast<float>(k), clear_start.z}));
-    }
-    // One worker, a few, more than the jobs: the same flights every time.
-    for (const std::size_t workers : {std::size_t{1}, std::size_t{2}, std::size_t{7}, std::size_t{64}}) {
-        CAPTURE(workers);
-        const std::vector<animation::Flight> together = animation::make_flights(jobs, obstacles, workers);
-        REQUIRE(together.size() == jobs.size());
-        for (std::size_t k = 0; k < jobs.size(); ++k) {
-            const animation::Flight alone =
-                animation::make_flight(jobs[k], obstacles);
-            CHECK(together[k].loop == alone.loop);
-            REQUIRE(together[k].segments.size() == alone.segments.size());
-            const contracts::Float3 a = animation::position(together[k], Seconds(17.5));
-            const contracts::Float3 b = animation::position(alone, Seconds(17.5));
-            CHECK(a.x == b.x);
-            CHECK(a.y == b.y);
-            CHECK(a.z == b.z);
-        }
-        CHECK(animation::make_flights({}, obstacles, workers).empty());
-    }
-}
-
-TEST_CASE("of flights made in parallel, the lowest that fails is the one reported") {
-    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
-    const tests::BallAndFloor obstacles(s);
-    std::vector<animation::FlightJob> jobs;
-    for (std::uint64_t k = 0; k < 30; ++k) {
-        jobs.push_back(job(k, clear_start));
-    }
-    // Starts inside the ball: 7 and 19 cannot be made.
-    jobs[19].start = inside_ball;
-    jobs[7].start = {0.1f, 0.5f, 0.0f};
-    // Which worker reaches which job first varies with their number; the job
-    // reported must not.
-    for (const std::size_t workers : {std::size_t{1}, std::size_t{2}, std::size_t{7}, std::size_t{64}}) {
-        CAPTURE(workers);
-        try {
-            (void)animation::make_flights(jobs, obstacles, workers);
-            FAIL("expected an error");
-        } catch (const animation::FlightsError& error) {
-            CHECK(error.job == 7);
-            CHECK(std::string(error.what()).starts_with("flight 7: "));
-        }
-    }
-}
-
-namespace {
-
-// The ball and floor, but an answer near one start throws what no flight
-// expects: a failure that is not a refusal.
-class Breaking final : public contracts::Obstacles {
-public:
-    explicit Breaking(const scene::SceneDescription& s) : inner_(s) {}
-    double distance(contracts::Float3 p) const override {
-        if (p.z > 1.7f) {
-            throw std::runtime_error("the obstacles broke");
-        }
-        return inner_.distance(p);
-    }
-    bool touches(const contracts::Box& box) const override { return inner_.touches(box); }
-
-private:
-    tests::BallAndFloor inner_;
-};
-
-}  // namespace
-
-TEST_CASE("of flights made in parallel, any exception reaches the caller, the lowest job's") {
-    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
-    const Breaking obstacles(s);
-    std::vector<animation::FlightJob> jobs;
-    for (std::uint64_t k = 0; k < 24; ++k) {
-        jobs.push_back(job(k, clear_start));
-    }
-    jobs[5].start = {1.2f, 1.0f, 1.8f};  // breaks
-    jobs[9].start = inside_ball;          // refused
-    try {
-        (void)animation::make_flights(jobs, obstacles, animation::flight_workers());
-        FAIL("expected an error");
-    } catch (const animation::FlightsError&) {
-        FAIL("the refusal at 9 was reported, not the failure at 5");
-    } catch (const std::runtime_error& error) {
-        CHECK(std::string(error.what()) == "the obstacles broke");
-    }
-}
-
-TEST_CASE("a flight too fast or too long to sample is refused, its count never converted past int64") {
-    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
-    const tests::BallAndFloor obstacles(s);
-    animation::FlightJob fast = job(3, clear_start);
-    fast.params.speed = 1e30f;  // within float's range, as the reader accepts
-    CHECK_THROWS_AS(animation::make_flight(fast, obstacles), animation::MotionError);
-    // The bound is the params': a small one refuses the first drift, the
-    // default makes the flight.
-    animation::FlightJob bounded = job(3, clear_start);
-    CHECK_NOTHROW((void)animation::make_flight(bounded, obstacles));
-    bounded.params.most_steps = 2;
-    CHECK_THROWS_WITH_AS(animation::make_flight(bounded, obstacles),
-                         doctest::Contains("is not clear"), animation::MotionError);
-}
-
-namespace {
-
-// Contract 11 answered with an exception of the standard type a refusal
-// derives from: not a refusal of any flight.
-class Arguing final : public contracts::Obstacles {
-public:
-    double distance(contracts::Float3) const override { throw std::invalid_argument("the obstacles argued"); }
-    bool touches(const contracts::Box&) const override { return false; }
-};
-
-}  // namespace
-
-TEST_CASE("a refusal carries its job and its reason; another std::invalid_argument is not taken for one") {
-    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
-    const tests::BallAndFloor obstacles(s);
-    const std::vector<animation::FlightJob> jobs = {job(1, clear_start), job(2, inside_ball)};
-    try {
-        (void)animation::make_flights(jobs, obstacles, animation::flight_workers());
-        FAIL("expected an error");
-    } catch (const animation::FlightsError& error) {
-        CHECK(error.job == 1);
-        CHECK(error.reason.starts_with("the flight's start"));
-        CHECK(std::string(error.what()) == "flight 1: " + error.reason);
-    }
-    const Arguing arguing;
-    try {
-        (void)animation::make_flights({job(1, clear_start)}, arguing, animation::flight_workers());
-        FAIL("expected an error");
-    } catch (const animation::MotionError&) {
-        FAIL("an Obstacles' own exception was taken for a refusal");
-    } catch (const std::invalid_argument& error) {
-        CHECK(std::string(error.what()) == "the obstacles argued");
-    }
 }
 
 // Starts and wakes (swarm.h, steps 2, 2p and 3).
@@ -744,8 +584,7 @@ TEST_CASE("perched fireflies' flights made in parallel are the ones made one by 
     }
 }
 
-// Step 5's redraw (swarm.h), and the flights' outcomes it is made from
-// (flight.h, try_flights).
+// Step 5's redraw (swarm.h).
 
 namespace {
 
@@ -885,108 +724,6 @@ TEST_CASE("a firefly's seed for each draw: its first the one it had before redra
     CHECK_NOTHROW((void)scene::make_firefly(swarm, {.index = 7, .draw = scene::firefly_draws - 1}, obstacles));
 }
 
-namespace {
-
-// The ball and floor, and a contract-11 answer that throws what no flight
-// expects for any point past x = 5 m: a failure that is not a refusal, met
-// only by a job whose volume is there.
-class BreaksFarOut final : public contracts::Obstacles {
-public:
-    explicit BreaksFarOut(const scene::SceneDescription& s) : inner_(s) {}
-    double distance(contracts::Float3 p) const override {
-        if (p.x > 5.0f) {
-            throw std::runtime_error("the obstacles broke far out");
-        }
-        return inner_.distance(p);
-    }
-    bool touches(const contracts::Box& box) const override { return inner_.touches(box); }
-
-private:
-    tests::BallAndFloor inner_;
-};
-
-// A job whose flight meets BreaksFarOut's failure at its first sample.
-animation::FlightJob far_out_job() {
-    animation::FlightJob j = job(77, {10.0f, 1.0f, 0.0f});
-    j.params.volume = {{8.0f, volume_low, -volume_reach}, {12.0f, volume_high, volume_reach}};
-    j.params.targets.clear();
-    j.params.weights = {0.0f, 1.0f, 2.0f};
-    return j;
-}
-
-constexpr std::array<std::size_t, 3> some_workers = {1, 3, 8};
-
-}  // namespace
-
-TEST_CASE("try_flights keeps each job's outcome: its flight, or its refusal's reason") {
-    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
-    const tests::BallAndFloor obstacles(s);
-    std::vector<animation::FlightJob> jobs;
-    for (std::uint64_t k = 0; k < 12; ++k) {
-        jobs.push_back(job(200 + k, clear_start));
-    }
-    jobs[3].start = inside_ball;
-    jobs[7].start = {0.1f, 0.5f, 0.0f};
-    for (const std::size_t workers : some_workers) {
-        CAPTURE(workers);
-        const std::vector<animation::FlightOutcome> outcomes = animation::try_flights(jobs, obstacles, workers);
-        REQUIRE(outcomes.size() == jobs.size());
-        for (std::size_t k = 0; k < jobs.size(); ++k) {
-            CAPTURE(k);
-            const std::string refused =
-                tests::error_of<animation::MotionError>([&] { return animation::make_flight(jobs[k], obstacles); });
-            if (k == 3 || k == 7) {
-                REQUIRE(std::holds_alternative<animation::FlightRefusal>(outcomes[k]));
-                CHECK(std::get<animation::FlightRefusal>(outcomes[k]).reason == refused);
-                CHECK(refused.starts_with("the flight's start"));
-            } else {
-                REQUIRE(std::holds_alternative<animation::Flight>(outcomes[k]));
-                const animation::Flight& made = std::get<animation::Flight>(outcomes[k]);
-                const animation::Flight alone = animation::make_flight(jobs[k], obstacles);
-                CHECK(made.loop == alone.loop);
-                CHECK(made.flashes.starts == alone.flashes.starts);
-                const contracts::Float3 a = animation::position(made, Seconds(23.25));
-                const contracts::Float3 b = animation::position(alone, Seconds(23.25));
-                CHECK((a.x == b.x && a.y == b.y && a.z == b.z));
-            }
-        }
-    }
-}
-
-TEST_CASE("try_flights rethrows the lowest failure that is not a refusal; make_flights the lowest of any kind") {
-    const scene::SceneDescription s = scene::parse(swarmed(swarm_of(1)), "s");
-    const BreaksFarOut obstacles(s);
-    std::vector<animation::FlightJob> jobs;
-    for (std::uint64_t k = 0; k < 12; ++k) {
-        jobs.push_back(job(300 + k, clear_start));
-    }
-    // A refusal at 5, a failure of another kind at 9.
-    std::vector<animation::FlightJob> refusal_first = jobs;
-    refusal_first[5].start = inside_ball;
-    refusal_first[9] = far_out_job();
-    // The reverse.
-    std::vector<animation::FlightJob> failure_first = jobs;
-    failure_first[5] = far_out_job();
-    failure_first[9].start = inside_ball;
-    for (const std::size_t workers : some_workers) {
-        CAPTURE(workers);
-        CHECK(tests::error_of<std::runtime_error>([&] {
-                  return animation::try_flights(refusal_first, obstacles, workers);
-              }) == "the obstacles broke far out");
-        try {
-            (void)animation::make_flights(refusal_first, obstacles, workers);
-            FAIL("expected an error");
-        } catch (const animation::FlightsError& error) {
-            CHECK(error.job == 5);
-        }
-        CHECK(tests::error_of<std::runtime_error>([&] {
-                  return animation::try_flights(failure_first, obstacles, workers);
-              }) == "the obstacles broke far out");
-        CHECK(tests::error_of<std::runtime_error>([&] {
-                  return animation::make_flights(failure_first, obstacles, workers);
-              }) == "the obstacles broke far out");
-    }
-}
 
 TEST_CASE("a swarm with no refusals is the swarm it was before redraws, bit for bit") {
     constexpr std::uint32_t count = 24;
@@ -1130,9 +867,13 @@ TEST_CASE("a swarm no draw can fly is refused after firefly_draws draws, naming 
     CHECK(contains(refused, "could not be drawn clear"));
 }
 
-TEST_CASE("a written flight that is refused refuses the scene at once: no redraw") {
+TEST_CASE("a written flight that is refused is reported at its motion's line, with no count of draws") {
     // A swarm beside it that loads, and a written firefly circling in a
-    // volume too tight: the written refusal, at its motion's line.
+    // volume too tight: the error is the written flight's refusal, at its
+    // motion's line, as make_flight gave it, not a swarm's "refused at each
+    // of its draws". What this shows is the error's kind and place; how many
+    // times the flight was asked for is not observable from here, and
+    // scene.cpp's fly() is where the first batch refuses it.
     const std::string text = swarmed(swarm_of(4)) +
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [1.2, 1.0, 0.8]\nradius = 0.03\nmaterial = "
                              "\"glow\"\nmotion = { kind = \"flight\", min = [-0.7, 0.05, -0.7], max = [1.4, 1.3, 1.0], "
@@ -1140,7 +881,7 @@ TEST_CASE("a written flight that is refused refuses the scene at once: no redraw
                              "seed = 5 }\n";
     const std::string refused = error_of(text);
     INFO(refused);
-    CHECK(contains(refused, "shape 3's motion: flight episode"));
+    CHECK(contains(refused, "s.toml:47: shape 3's motion: flight episode"));
     CHECK(contains(refused, "could not be drawn clear"));
     CHECK_FALSE(contains(refused, "each of its"));
 }
