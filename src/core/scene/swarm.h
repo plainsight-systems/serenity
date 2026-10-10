@@ -52,12 +52,14 @@ namespace serenity::scene {
 // The fireflies of a swarm, by these steps, which the code carries by
 // number:
 //
-//   Step 1  Firefly i, from 0 to count - 1, has its own seed:
-//           splitmix64(splitmix64(seed) ^ i) (core/animation/draw.h), the
-//           swarm's seed and i alone, so adding a swarm, or fireflies at the
-//           end of one, moves no other firefly: numbers from (seed, stream,
-//           counter), never from a shared sequence (GDSA.3), and each step a
-//           pure function of them (F.8).
+//   Step 1  Firefly i, from 0 to count - 1, has its own seed for each of
+//           its draws d, from 0 (step 5 draws it again): for d = 0,
+//           splitmix64(splitmix64(seed) ^ i) (core/animation/draw.h), as
+//           before there were redraws; for d above 0, splitmix64 of that
+//           seed ^ splitmix64(d). The swarm's seed, i and d alone, so adding
+//           a swarm, or fireflies at the end of one, moves no other firefly:
+//           numbers from (seed, stream, counter), never from a shared
+//           sequence (GDSA.3), and each step a pure function of them (F.8).
 //   Step 2  Its start, where its flight's first drift hovers (flight.h,
 //           step 2), which may carry it first_drift_reach from the start on
 //           each axis: a point drawn uniformly within the swarm's volume
@@ -131,6 +133,21 @@ namespace serenity::scene {
 //           file's [[shapes]], swarm by swarm in file order, firefly by
 //           firefly: a firefly's index, and so its primitive and its light,
 //           is fixed by the file.
+//   Step 5  A firefly whose flight is refused is drawn again. A refusal is
+//           make_flight's MotionError (core/animation/flight.h): an episode
+//           it could not draw clear, a loop it could not close, a rise from
+//           its perch not clear. Each is chance in the draws, not a fault of
+//           the swarm's numbers, which the reader checks first, so the
+//           firefly is drawn whole again, steps 2 to 4, from its seed's next
+//           draw d. In rounds: every firefly refused in a round is drawn
+//           again and its flight made, in parallel with the others refused
+//           in that round (flight.h, try_flights); a firefly whose flight
+//           was made keeps it. At most firefly_draws draws a firefly;
+//           refused at the last, the swarm is refused, naming the firefly
+//           and its last refusal. A firefly whose first flight is made is
+//           the one it was before redraws, so a scene that loaded before
+//           loads the same. A written firefly's numbers are its author's,
+//           and its refusal refuses the scene at once (scene.h).
 //
 // A firefly's draws are keyed apart by purpose: step 2's by attempt, under
 // start_attempts; the others' first counters, perch_draws, wake_draws and
@@ -139,7 +156,8 @@ namespace serenity::scene {
 // wakes had kinds (GDSA.3).
 //
 // The flights themselves are made with every other flight in the scene,
-// in parallel (flight.h, make_flights).
+// in parallel (flight.h, try_flights), and step 5's redraws with each
+// other, round by round.
 //
 // Cost, at load: step 2 asks contract 11 for a distance a few times per
 // firefly; step 2p some tens, a trace of a few steps and its checks, per
@@ -206,10 +224,24 @@ inline constexpr std::uint64_t perch_draws = std::uint64_t{1} << 32;
 inline constexpr std::uint64_t wake_draws = perch_draws + 1;
 inline constexpr std::uint64_t linger_draws = perch_draws + 2;
 
-// Step 1: firefly i's seed.
-std::uint64_t firefly_seed(std::uint64_t swarm_seed, std::uint32_t i);
+// The most draws of one firefly, step 5's: a perched firefly's flight is
+// refused by chance in some 0.3% of draws on the marbles
+// (docs/research/2026-10-10-dark-opening.md), so eight in a row, some
+// 10^-20, is a swarm whose numbers leave its fireflies no room, not chance.
+inline constexpr std::uint32_t firefly_draws = 8;
 
-// Steps 2 to 3: firefly i, clear of `obstacles`. Throws an
+// Which firefly, and which of its draws (step 1): named fields, not two
+// adjacent integers a caller could swap (I.24).
+struct FireflyDraw {
+    std::uint32_t index = 0;  // i, from 0 to count - 1
+    std::uint32_t draw = 0;   // d, from 0 to firefly_draws - 1
+};
+
+// Step 1: firefly i's seed for its draw d.
+std::uint64_t firefly_seed(std::uint64_t swarm_seed, FireflyDraw which);
+
+// Steps 2 to 3: firefly `which.index`, from its draw `which.draw`, clear of
+// `obstacles`. Throws an
 // animation::MotionError (core/animation/motion_error.h) naming the firefly
 // if its volume has no room for a drift, or none of its draws is clear or
 // finds a perch; and std::invalid_argument for a start's or a wake's
@@ -219,6 +251,6 @@ std::uint64_t firefly_seed(std::uint64_t swarm_seed, std::uint32_t i);
 // a wake's from 0 or more, its to from that to most_wait, its power above
 // 0, its ramp 0 or more; and a wake's to (0 with no wake) plus a linger's
 // most at most most_wait, compared without adding, so no sum overflows.
-Firefly make_firefly(const Swarm& swarm, std::uint32_t i, const contracts::Obstacles& obstacles);
+Firefly make_firefly(const Swarm& swarm, FireflyDraw which, const contracts::Obstacles& obstacles);
 
 }  // namespace serenity::scene

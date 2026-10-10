@@ -269,12 +269,14 @@ namespace serenity::scene {
 // only what light can pass into), a glow on anything but a light, a flight
 // glow on a light that does not fly, a motion that cannot be made clear of the
 // still shapes, a perch too near a surface or a rise not clear, a swarm whose
-// fireflies cannot start clear of them or find perches, a flight whose
-// prelude could carry it out of the world, or no shapes at all is a
-// SceneError naming the file and the line (E.2, E.14). Nothing has a silent
-// default except `up`, and the absences that mean something: no lens is a
-// pinhole, no interior is air, no motion is still, no prelude flies at once,
-// no swarm start is air, no wake is lit from the start.
+// fireflies cannot start clear of them or find perches, a swarm's firefly
+// whose flight is refused at each of its firefly_draws draws (swarm.h,
+// step 5), a flight whose prelude could carry it out of the world, or no
+// shapes at all is a SceneError naming the file and the line (E.2, E.14).
+// Nothing has a silent default except `up`, and the absences that mean
+// something: no lens is a pinhole, no interior is air, no motion is still,
+// no prelude flies at once, no swarm start is air, no wake is lit from the
+// start.
 //
 // Read once, at start-up. Every flight in the scene, written or a swarm's,
 // is made once every shape is read, all together, in parallel

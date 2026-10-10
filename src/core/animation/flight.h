@@ -381,8 +381,9 @@ Flight make_flight(const FlightJob& job, const contracts::Obstacles& obstacles);
 // Many flights, each as make_flight() makes it, made in parallel: flight k
 // of the result is make_flight(jobs[k], obstacles), whatever the number of
 // threads, since each is a function of its own numbers alone and
-// `obstacles` answers the same from any thread (contract 11). `workers` threads (at least one,
-// and no more than there are jobs), each taking the next unmade flight: an
+// `obstacles` answers the same from any thread (contract 11). `workers`
+// threads (at least one, and no more than there are jobs), each taking the
+// next unmade flight: an
 // input, not read from the machine here (I.1), so a test can show the
 // result is the same for any count; the scene reader passes
 // flight_workers(). If any cannot be made, throws, once every thread
@@ -405,6 +406,22 @@ public:
 
 std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles,
                                  std::size_t workers);
+
+// Many flights, made as make_flights() makes them, each job's outcome kept
+// rather than the first refusal thrown: outcome k is make_flight(jobs[k],
+// obstacles), or, where that refused with a MotionError, the refusal's
+// reason. For a caller that can draw a refused job again (a swarm's
+// firefly, core/scene/swarm.h, step 5). A std::variant, the library's
+// tagged union (C.181, C.182): a refused job holds no flight that looks
+// made. Anything thrown that is not a MotionError is rethrown, the lowest
+// k's, as make_flights() rethrows it. make_flights() is this, throwing a
+// FlightsError for the lowest k refused (ES.3: one way to make many).
+struct FlightRefusal {
+    std::string reason;  // as make_flight said it
+};
+using FlightOutcome = std::variant<Flight, FlightRefusal>;
+std::vector<FlightOutcome> try_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles,
+                                       std::size_t workers);
 
 // As many workers as the machine has cores (std::thread::hardware_concurrency),
 // at least one: the one place the machine is asked.

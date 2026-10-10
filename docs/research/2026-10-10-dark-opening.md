@@ -136,6 +136,31 @@ rays, and is not claimed. These frames were each waited for, so their
 times are not the corpus sweep's 28.44 ms baseline, which kept two frames
 in flight; that baseline is re-measured with the scene's art.
 
+## A swarm that a firefly's bad luck refused
+
+Loading the marbles with their opening and the perched swarm's seed
+changed, 3 to 32, refused 14 of the 30 seeds (at b4063fd). Two causes,
+one firefly each time:
+
+- a rise from its perch not clear (flight.h, P2): 8 seeds. Step 2p
+  places the perch and the loop's first point, but nothing redraws the
+  firefly when the rise between them meets a marble;
+- an episode not drawn clear, or the loop not closed: 6 seeds. Not new:
+  the marbles as they were before this work (082cb0f), the same 30 seeds of
+  their white swarm, refused the same 6. The marbles have loaded because
+  their seeds were ones that did.
+
+Some 0.3% of perched fireflies' draws, and 0.15% of flying ones', are
+refused by chance in the draws, not by the swarm's numbers: a swarm of 480
+fails for about half its seeds. A scene that loads for one seed and not
+for the next is not a scene a reader can edit. Kept: a refused swarm
+firefly is drawn again whole, from its seed's next draw, in rounds, up to
+eight draws (swarm.h, step 5); a firefly whose first flight is made is
+unchanged, so every scene that loaded loads the same. Set aside: more
+rounds or backtracks inside make_flight, which shift the failure rate
+without removing it and change loops that load today; checking the rise
+in step 2p, which covers one cause of two.
+
 ## Open
 
 The art itself: wake ranges, the perch box, the lingers and the ramp are
