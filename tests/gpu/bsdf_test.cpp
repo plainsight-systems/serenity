@@ -13,7 +13,8 @@
 //   - glass: reflection with Fresnel's probability, weights 1 and 1 / eta^2,
 //     total internal reflection past the critical angle, nothing for
 //     evaluate() and pdf();
-//   - resolve(): each material kind to its Bsdf, a texture read at the point.
+//   - resolve(): each material kind to its Bsdf, a texture read at the point;
+//   - the numbers a path draws: a stream per pixel and frame, none shared.
 
 #include <algorithm>
 #include <array>
@@ -334,6 +335,49 @@ TEST_CASE("dielectric: Fresnel chooses reflection, the weights are 1 and 1 / eta
         CHECK(std::uint32_t(p.lobe) == (contracts::lobe_reflection | contracts::lobe_delta));
         CHECK(p.value.x * std::abs(p.direction.z) / p.pdf == doctest::Approx(1.0));
         CHECK(p.direction.z < 0.0f);  // stays inside
+    }
+}
+
+namespace {
+
+// PCG's output permutation, as the shaders compute it (metal/math/
+// hash.metal.h): to show which pixels the sampler's old 32-bit key merged.
+std::uint32_t pcg_hash(std::uint32_t v) {
+    const std::uint32_t state = v * 747796405u + 2891336453u;
+    const std::uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+}  // namespace
+
+TEST_CASE("a path's numbers: a stream per pixel and frame, none shared, each drawn again exactly") {
+    // Pixels (2627, 65) and (0, 818) of frame 0: the old key, a 32-bit hash
+    // of pixel and frame, was the same for both, and so were their paths'
+    // numbers, all the way down (GDSA.3). The stream is now (pixel, frame)
+    // itself (metal/sampler/sampler.metal.h).
+    const auto old_key = [](std::uint32_t x, std::uint32_t y, std::uint32_t frame) {
+        return pcg_hash(x ^ pcg_hash(y ^ pcg_hash(frame)));
+    };
+    REQUIRE(old_key(2627, 65, 0) == old_key(0, 818, 0));
+
+    Gpu gpu;
+    const std::vector<std::array<std::uint32_t, 4>> queries = {
+        {2627, 65, 0, 0}, {0, 818, 0, 0}, {2627, 65, 0, 0}, {2627, 65, 1, 0}, {65, 2627, 0, 0}};
+    const auto count = std::uint32_t(queries.size());
+    const auto numbers = gpu.run<std::array<float, 8>>("path_numbers_probe", queries.size(), {bytes(queries), bytes(count)});
+    for (const auto& path : numbers) {
+        for (const float u : path) {
+            CHECK(u >= 0.0f);
+            CHECK(u < 1.0f);
+        }
+    }
+    CHECK(numbers[0] != numbers[1]);  // the pixels the old key merged
+    CHECK(numbers[0] == numbers[2]);  // the same pixel and frame, drawn again
+    CHECK(numbers[0] != numbers[3]);  // the next frame
+    CHECK(numbers[0] != numbers[4]);  // x and y swapped
+    // Within a path, no number repeats the one before.
+    for (std::size_t k = 1; k < 8; ++k) {
+        CHECK(numbers[0][k] != numbers[0][k - 1]);
     }
 }
 

@@ -8,6 +8,7 @@
 
 #include "core/textures/wood.h"
 #include "metal/device/layout.metal.h"
+#include "metal/math/hash.metal.h"
 #include "metal/textures/noise.metal.h"
 
 namespace serenity {
@@ -21,7 +22,7 @@ inline float3 wood(serenity::textures::WoodData data, float3 p) {
     const float u = across - b;
     // Step 2: the board's log.
     const uint3 h = pcg3d(uint3(as_type<uint>(int(b)), data.seed, tx::wood_salt));
-    const float3 unit = float3(h >> 8u) / 16777216.0f;
+    const float3 unit = unit_float3(h);  // the top 24 bits of each, over 2^24
     const float depth = (tx::wood_depth_least + unit.y * (tx::wood_depth_most - tx::wood_depth_least)) * data.board;
     const float shade = 1.0f + tx::wood_board_shade * (2.0f * unit.z - 1.0f);
     // Step 3: the ring radius.

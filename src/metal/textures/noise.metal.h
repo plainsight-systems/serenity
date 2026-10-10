@@ -7,27 +7,20 @@
 #include <metal_stdlib>
 
 #include "core/textures/noise.h"
+#include "metal/math/hash.metal.h"
 
 namespace serenity {
 namespace shaders {
 
-// noise.h, step 2's hash.
-inline uint3 pcg3d(uint3 v) {
-    v = v * 1664525u + 1013904223u;
-    v.x += v.y * v.z;
-    v.y += v.z * v.x;
-    v.z += v.x * v.y;
-    v ^= v >> 16u;
-    v.x += v.y * v.z;
-    v.y += v.z * v.x;
-    v.z += v.x * v.y;
-    return v;
-}
+// noise.h, step 3: as many gradients as its table holds.
+constant constexpr uint gradient_count =
+    sizeof(serenity::textures::noise_gradients) / sizeof(serenity::textures::noise_gradients[0]);
 
-// Step 3: corner c's gradient, dotted with the offset to the point.
+// Step 3: corner c's gradient, dotted with the offset to the point; step
+// 2's hash is pcg3d (math/hash.metal.h).
 inline float corner_value(int3 c, float3 offset, uint seed) {
     const uint3 h = pcg3d(as_type<uint3>(c) + uint3(seed));
-    const constant int* g = serenity::textures::noise_gradients[h.x % 12u];
+    const constant int* g = serenity::textures::noise_gradients[h.x % gradient_count];
     return float(g[0]) * offset.x + float(g[1]) * offset.y + float(g[2]) * offset.z;
 }
 

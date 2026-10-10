@@ -1,5 +1,6 @@
 // Runs the BSDF contract's shader side (metal/materials/bsdf.metal.h,
-// resolve.metal.h) for tests/gpu/bsdf_test.cpp.
+// resolve.metal.h), and the numbers the BSDF's paths draw (metal/sampler/
+// sampler.metal.h), for tests/gpu/bsdf_test.cpp.
 
 #include <metal_stdlib>
 
@@ -93,5 +94,21 @@ kernel void bsdf_eta_of(device float* out [[buffer(0)]],
                         uint i [[thread_position_in_grid]]) {
     if (i == 0) {
         out[0] = bsdf_eta(bsdf, wo_count.xyz);
+    }
+}
+
+// The first 8 numbers of the path through each of `count` pixels: pixel
+// queries[i].xy in frame queries[i].z, into out[8 i] .. out[8 i + 7]
+// (metal/sampler/sampler.metal.h).
+kernel void path_numbers_probe(device float* out [[buffer(0)]],
+                               device const uint4* queries [[buffer(1)]],
+                               constant uint& count [[buffer(2)]],
+                               uint i [[thread_position_in_grid]]) {
+    if (i >= count) {
+        return;
+    }
+    PathNumbers numbers = path_numbers(queries[i].xy, queries[i].z);
+    for (uint k = 0; k < 8u; ++k) {
+        out[8u * i + k] = next_number(numbers);
     }
 }
