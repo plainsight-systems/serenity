@@ -69,7 +69,12 @@ namespace serenity::scene {
 //           start_attempts times. So the whole first drift keeps the
 //           flight's clearance and stays in its volume, as the flight
 //           requires of its start. Failing all, the swarm is refused, naming
-//           the firefly: a volume the still shapes fill. For above, the
+//           the firefly: a volume the still shapes fill. The flight's
+//           rounding allowance (flight.h, some 2 x 10^-7 m at the marbles'
+//           scale) is not added here, so an air swarm draws the starts it
+//           drew before the allowance; a start within it of the threshold
+//           is refused by the flight, naming the firefly, never flown
+//           closer. For above, the
 //           height is drawn within the top `depth` of that shrunk range
 //           (all of it, if it is shallower than `depth`); the draws are
 //           otherwise air's, keyed alike.
@@ -193,7 +198,9 @@ std::uint64_t firefly_seed(std::uint64_t swarm_seed, std::uint32_t i);
 // Steps 2 to 3: firefly i, clear of `obstacles`. Throws an
 // animation::MotionError (core/animation/motion_error.h) naming the firefly
 // if its volume has no room for a drift, or none of its draws is clear or
-// finds a perch.
+// finds a perch; and std::invalid_argument for a start's or a wake's
+// numbers outside the ranges above, which the scene reader checks first
+// (I.5).
 Firefly make_firefly(const Swarm& swarm, std::uint32_t i, const contracts::Obstacles& obstacles);
 
 }  // namespace serenity::scene

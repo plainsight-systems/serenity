@@ -1,6 +1,7 @@
 #include "core/animation/flight.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <exception>
@@ -11,6 +12,8 @@
 #include <system_error>
 #include <thread>
 #include <utility>
+#include <variant>
+#include <vector>
 
 #include "core/animation/draw.h"
 
@@ -81,6 +84,31 @@ constexpr double circling_rate_most = 0.25;
 constexpr double drifting_rate_least = 0.02;
 constexpr double drifting_rate_most = 0.08;
 
+// The most flashes one still segment of an opening may draw: its drifting
+// rate at its fastest over the longest wait, and the one its draw may add
+// (step 7). Step P1 holds every wait to most_wait, so no count reaches it.
+constexpr double most_opening_flashes = drifting_rate_most * most_wait + 1.0;
+
+// Step 7's draws, each keyed by an episode number past every episode's (0
+// to episodes - 1), so none meets an episode's (GDSA.3): the loop's rates,
+// its flash counts and its flash times, as they were before preludes; then
+// the opening's counts and times, which no loop draw uses.
+constexpr std::uint64_t loop_rate_key = episodes;
+constexpr std::uint64_t loop_count_key = episodes + 1;
+constexpr std::uint64_t loop_time_key = episodes + 2;
+constexpr std::uint64_t opening_count_key = episodes + 3;
+constexpr std::uint64_t opening_time_key = episodes + 4;
+
+// Step P2's numbers: the least slack a sample of the rise may have, and
+// what its body keeps from every still surface, past the rounding allowance.
+constexpr double rise_least_slack = perch_gap / 4.0;
+constexpr double rise_keeps = perch_gap / 2.0;
+
+// Step P1: what a perch keeps from every still surface past its body and
+// the rounding allowance, and the largest allowance a perch's gap survives.
+constexpr double perch_keeps = rise_keeps + rise_least_slack;  // 3 perch_gap / 4
+constexpr double perch_most_rounding = perch_gap / 8.0;
+
 // The central difference's step, in seconds: small beside any segment's
 // time scale, large beside a double's rounding at a loop's times.
 constexpr double velocity_step = 1e-5;
@@ -136,6 +164,9 @@ struct DriftAt {  // per axis
     static constexpr std::size_t amplitude = 3;
     static constexpr std::size_t frequency = 6;
     static constexpr std::size_t phase = 9;
+};
+struct StillAt {  // the point it holds
+    static constexpr std::size_t at = 0;
 };
 
 constexpr Vec3 triple_at(const Segment& s, std::size_t i) noexcept {
@@ -193,12 +224,15 @@ Vec3 evaluate(const Segment& s, double tau) {
         return c + Vec3{a.x * std::sin(2.0 * pi * f.x * tau + p.x), a.y * std::sin(2.0 * pi * f.y * tau + p.y),
                         a.z * std::sin(2.0 * pi * f.z * tau + p.z)};
     }
+    case Behaviour::still:
+        return triple_at(s, StillAt::at);
     }
     no_case("evaluate");
 }
 
 // The velocity, by a central difference of the closed form, which is
-// defined, and smooth, past either end of the segment.
+// defined, and smooth, past either end of the segment; a still segment's
+// is exactly 0, its closed form a constant.
 Vec3 velocity(const Segment& s, double tau) {
     return (1.0 / (2.0 * velocity_step)) * (evaluate(s, tau + velocity_step) - evaluate(s, tau - velocity_step));
 }
@@ -233,20 +267,38 @@ double speed_bound(const Segment& s) {
         const Vec3 f = triple_at(s, DriftAt::frequency);
         return 2.0 * pi * length(Vec3{a.x * f.x, a.y * f.y, a.z * f.z});
     }
+    case Behaviour::still:
+        return 0.0;
     }
     no_case("speed_bound");
 }
 
-// What every step asks of one flight: its numbers, its body and the still
-// shapes. Read through references, so never copied (C.12).
+// The largest |coordinate| of a box, in double.
+double largest_coordinate(const Extent& box) noexcept {
+    double largest = 0.0;
+    for (int axis = 0; axis < 3; ++axis) {
+        largest = std::max({largest, std::abs(static_cast<double>(contracts::component(box.min, axis))),
+                            std::abs(static_cast<double>(contracts::component(box.max, axis)))});
+    }
+    return largest;
+}
+
+// What every step asks of one flight: its numbers, its body, the still
+// shapes, and its volume's rounding allowance (flight.h), worked out once.
+// Read through references, so never copied (C.12).
 struct Context {
-    Context(const FlightParams& p, double b, const contracts::Obstacles& o) : params(p), body(b), obstacles(o) {}
+    Context(const FlightParams& p, double b, const contracts::Obstacles& o)
+        : params(p), body(b), obstacles(o), rho(rounding_allowance(largest_coordinate(p.volume))) {}
     Context(const Context&) = delete;
     Context& operator=(const Context&) = delete;
+    Context(Context&&) = delete;
+    Context& operator=(Context&&) = delete;
+    ~Context() = default;
 
     const FlightParams& params;
     double body;
     const contracts::Obstacles& obstacles;
+    double rho;  // the volume's rounding allowance, which step 3's thresholds carry
 };
 
 // Step 3: whether every sample of the segment keeps the clearance and keeps
@@ -264,8 +316,10 @@ bool clear(const Context& c, const Segment& s) {
         return false;  // a path that long is not a firefly's
     }
     const auto steps = static_cast<std::int64_t>(spans) + 1;
-    const double margin = c.body + delta;
-    const double needed = static_cast<double>(c.params.clearance) + c.body + delta;
+    // Each threshold carries the volume's rounding allowance, so the
+    // guarantee holds of the float points asked about and rendered.
+    const double margin = c.body + delta + c.rho;
+    const double needed = static_cast<double>(c.params.clearance) + c.body + delta + c.rho;
     const Extent& box = c.params.volume;
     for (std::int64_t i = 0; i <= steps; ++i) {
         const Vec3 p = evaluate(s, s.duration * static_cast<double>(i) / static_cast<double>(steps));
@@ -630,18 +684,31 @@ void lay_out(Flight& flight, const Episodes& e, const std::vector<Segment>& clos
     flight.loop = t;
 }
 
-// Step 7: the flashes: each swoop's climb; while circling and drifting, at
-// the firefly's own rates; at least flash_spacing apart.
+// The firefly's own flashing rates, drawn once (step 7), in flashes a
+// second: while it circles, and while it drifts or waits.
+struct Rates {
+    double circling = 0.0;
+    double drifting = 0.0;
+};
+
+Rates rates_of(std::uint64_t seed) {
+    const Draws rates{seed, loop_rate_key, 0};
+    return {.circling = rates.between(Purpose::rate_circle, circling_rate_least, circling_rate_most),
+            .drifting = rates.between(Purpose::rate_drift, drifting_rate_least, drifting_rate_most)};
+}
+
+// Step 7: the loop's flashes: each swoop's climb; while circling and
+// drifting, at the firefly's own rates; at least flash_spacing apart. As
+// before preludes, from the same keys.
 FlashSchedule schedule_flashes(std::uint64_t seed, const std::vector<Segment>& segments, double loop) {
-    const Draws rates{seed, episodes, 0};
-    const double circling = rates.between(Purpose::rate_circle, circling_rate_least, circling_rate_most);
-    const double drifting = rates.between(Purpose::rate_drift, drifting_rate_least, drifting_rate_most);
+    const Rates rates = rates_of(seed);
     const auto rate_of = [&](Behaviour b) {
         switch (b) {
         case Behaviour::circle:
-            return circling;
+            return rates.circling;
         case Behaviour::drift:
-            return drifting;
+        case Behaviour::still:  // a wait flashes as seldom as a drift; the loop has none
+            return rates.drifting;
         case Behaviour::transit:
         case Behaviour::swoop:
             return 0.0;
@@ -655,10 +722,10 @@ FlashSchedule schedule_flashes(std::uint64_t seed, const std::vector<Segment>& s
             starts.push_back(s.start + swoop_flash_at * s.duration);
             continue;
         }
-        const Draws d{seed, episodes + 1, i};
+        const Draws d{seed, loop_count_key, i};
         const auto count = static_cast<int>(rate_of(s.behaviour) * s.duration + d(Purpose::flashes));
         for (int n = 0; n < count; ++n) {
-            starts.push_back(s.start + s.duration * draw(seed, episodes + 2, i, static_cast<std::uint64_t>(n)));
+            starts.push_back(s.start + s.duration * draw(seed, loop_time_key, i, static_cast<std::uint64_t>(n)));
         }
     }
     std::sort(starts.begin(), starts.end());
@@ -674,6 +741,240 @@ FlashSchedule schedule_flashes(std::uint64_t seed, const std::vector<Segment>& s
         flashes.starts.pop_back();
     }
     return flashes;
+}
+
+// Step 7, over the opening: while it waits, at its drifting rate, from keys
+// of their own; none on the rise. In order, flash_spacing apart, within
+// [0, begin), and the last flash_spacing before the loop's first.
+std::vector<double> opening_flashes(std::uint64_t seed, const std::vector<Segment>& opening, double begin,
+                                    const FlashSchedule& loop) {
+    const double drifting = rates_of(seed).drifting;
+    std::vector<double> starts;
+    // An index loop, not a range-for (ES.71): the index keys the draws.
+    for (std::size_t j = 0; j < opening.size(); ++j) {
+        const Segment& s = opening[j];
+        if (s.behaviour == Behaviour::still) {  // a wait: the rise has none
+            const double expected = drifting * s.duration + Draws{seed, opening_count_key, j}(Purpose::flashes);
+            // Counted as a double before it is made an integer (ES.46): step
+            // P1 holds the wait to most_wait, so this is never refused.
+            if (!(expected <= most_opening_flashes)) {
+                throw std::logic_error("make_flight: an opening's wait past most_wait, which step P1 refuses");
+            }
+            const auto count = static_cast<int>(expected);
+            for (int n = 0; n < count; ++n) {
+                starts.push_back(s.start +
+                                 s.duration * draw(seed, opening_time_key, j, static_cast<std::uint64_t>(n)));
+            }
+        }
+    }
+    std::sort(starts.begin(), starts.end());
+    std::vector<double> kept;
+    for (const double t : starts) {
+        // Within [0, begin): a start rounded up to the wait's end is left
+        // out, as one too near the one before is.
+        if (t < begin && (kept.empty() || t - kept.back() >= flash_spacing)) {
+            kept.push_back(t);
+        }
+    }
+    // The opening's last and the loop's first, as far apart.
+    while (!loop.starts.empty() && !kept.empty() && begin + loop.starts.front() - kept.back() < flash_spacing) {
+        kept.pop_back();
+    }
+    return kept;
+}
+
+// A wait of `duration` seconds at `at` (Behaviour::still).
+Segment still_at(Vec3 at, double duration) noexcept {
+    Segment s;
+    s.behaviour = Behaviour::still;
+    s.duration = duration;
+    put_triple(s, StillAt::at, at);
+    return s;
+}
+
+// A transit's Bezier control points: B1 = P0 + T0 / 3, B2 = P1 - T1 / 3, as
+// evaluate() places them.
+constexpr std::array<Vec3, 4> controls_of_transit(const Segment& s) noexcept {
+    const Vec3 p0 = triple_at(s, TransitAt::p0);
+    const Vec3 p1 = triple_at(s, TransitAt::p1);
+    return {p0, p0 + (1.0 / 3.0) * triple_at(s, TransitAt::t0), p1 - (1.0 / 3.0) * triple_at(s, TransitAt::t1), p1};
+}
+
+// A point as contract 11 asks about it and position() places it. Its
+// coordinates are within float's range: a flight's points lie in its reach,
+// which reach_of() holds there (ES.46).
+constexpr contracts::Float3 to_float(Vec3 p) noexcept {
+    return {static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z)};
+}
+
+// Step P2's check of the rise, by conservative advancement: at each sample
+// the distance to the still surfaces is exact (contract 11), so the path
+// may go on by the slack, at most V in u per unit, before it could come too
+// near; a slack under rise_least_slack refuses it. `rho` is the rise's
+// hull's rounding allowance.
+void check_rise(const Context& c, const Segment& rise, double rho) {
+    const std::array<Vec3, 4> b = controls_of_transit(rise);
+    // V: the derivative's Bezier hull bounds the curve's speed in u.
+    const double v = 3.0 * std::max({length(b[1] - b[0]), length(b[2] - b[1]), length(b[3] - b[2])});
+    // Every step is at least rise_least_slack / V, so the samples are at
+    // most V / rise_least_slack, and one more: compared with most_steps as
+    // a double, before the walk (ES.46).
+    if (!std::isfinite(v) || !(v / rise_least_slack + 1.0 < static_cast<double>(c.params.most_steps))) {
+        throw MotionError("the rise from the perch is not clear: it would take more than the most samples a "
+                          "segment may");
+    }
+    const double keep = c.body + rise_keeps + rho;
+    // No loop variable steps evenly here: each sample's slack sets the next
+    // (ES.73). Every step is at least rise_least_slack / V, so it ends.
+    double u = 0.0;
+    while (true) {
+        const double slack = c.obstacles.distance(to_float(bezier(b[0], b[1], b[2], b[3], u))) - keep;
+        if (!(slack >= rise_least_slack)) {
+            throw MotionError("the rise from the perch is not clear of the still shapes: something over the perch, "
+                              "or between it and the loop's start");
+        }
+        if (u >= 1.0) {
+            return;
+        }
+        u = v > 0.0 ? std::min(1.0, u + slack / v) : 1.0;
+    }
+}
+
+// Steps P1 and P2 for a perch: the rise from it to the loop's start, at the
+// loop's own velocity there, and the wait before it; refused unless the
+// perch has room and the rise is clear.
+std::vector<Segment> perch_opening(const Context& c, const Perch& perch, const End& loop_start) {
+    const Vec3 at = to_vec(perch.at);
+    // From rest: its velocity 0, as the perch's is.
+    const Segment rise = hermite(c.params, End{at, Vec3{}}, loop_start);
+    double largest = 0.0;
+    for (const Vec3& p : controls_of_transit(rise)) {
+        largest = std::max({largest, std::abs(p.x), std::abs(p.y), std::abs(p.z)});
+    }
+    const double rho = rounding_allowance(largest);
+    if (!(rho < perch_most_rounding)) {
+        throw MotionError("the perch is too far from the origin for its gap: float cannot place a body there to "
+                          "within an eighth of perch_gap");
+    }
+    if (!(c.obstacles.distance(perch.at) >= c.body + perch_keeps + rho)) {
+        throw MotionError("the perch is too near a still surface: its body must keep 3/4 of perch_gap from every "
+                          "one");
+    }
+    check_rise(c, rise, rho);
+    std::vector<Segment> opening;
+    if (perch.until > 0.0) {
+        opening.push_back(still_at(at, perch.until));  // a wait of no length is left out
+    }
+    opening.push_back(rise);
+    return opening;
+}
+
+// Step P2: the opening's segments, in order, before they are laid out. The
+// loop's start is its first segment's start, and its velocity there.
+std::vector<Segment> opening_of(const Context& c, const Prelude& prelude, const Segment& first) {
+    const End loop_start{evaluate(first, 0.0), velocity(first, 0.0)};
+    return std::visit(Visit{[](const NoPrelude&) { return std::vector<Segment>{}; },
+                            [&](const Hold& hold) {
+                                std::vector<Segment> opening;
+                                if (hold.until > 0.0) {
+                                    opening.push_back(still_at(loop_start.at, hold.until));
+                                }
+                                return opening;
+                            },
+                            [&](const Perch& perch) { return perch_opening(c, perch, loop_start); }},
+                      prelude);
+}
+
+// Step P3: the opening laid out from 0; its end, begin.
+double lay_out_opening(std::vector<Segment>& opening) noexcept {
+    double t = 0.0;
+    for (Segment& s : opening) {
+        s.start = t;
+        t += s.duration;
+    }
+    return t;
+}
+
+// Which way outward() rounds: named, not a bool (I.24).
+enum class Toward {
+    down,  // a box's min
+    up,    // its max
+};
+
+// `x` rounded to a float no greater (down), or no less (up), than it: a
+// box's corner rounded outward. Within float's range, which reach_of checks
+// before it asks (ES.46).
+float outward(double x, Toward way) noexcept {
+    float f = static_cast<float>(x);
+    if (way == Toward::up && static_cast<double>(f) < x) {
+        f = std::nextafter(f, std::numeric_limits<float>::infinity());
+    } else if (way == Toward::down && static_cast<double>(f) > x) {
+        f = std::nextafter(f, -std::numeric_limits<float>::infinity());
+    }
+    return f;
+}
+
+// The box its center never leaves (flight.h, extent()): the volume, grown
+// to hold the opening's points, a wait's and a rise's control points, whose
+// box holds its curve; rounded outward to float.
+Extent reach_of(const Extent& volume, const std::vector<Segment>& opening) {
+    std::array<double, 3> lo{};
+    std::array<double, 3> hi{};
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+        lo[axis] = contracts::component(volume.min, static_cast<int>(axis));
+        hi[axis] = contracts::component(volume.max, static_cast<int>(axis));
+    }
+    const auto hold = [&](Vec3 p) {
+        const std::array<double, 3> q = {p.x, p.y, p.z};
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            lo[axis] = std::min(lo[axis], q[axis]);
+            hi[axis] = std::max(hi[axis], q[axis]);
+        }
+    };
+    for (const Segment& s : opening) {
+        switch (s.behaviour) {
+        case Behaviour::still:
+            hold(triple_at(s, StillAt::at));
+            break;
+        case Behaviour::transit:
+            for (const Vec3& p : controls_of_transit(s)) {
+                hold(p);
+            }
+            break;
+        case Behaviour::circle:
+        case Behaviour::swoop:
+        case Behaviour::drift:
+            throw std::logic_error("reach_of: an opening holds only waits and a rise");
+        }
+    }
+    constexpr double float_max = std::numeric_limits<float>::max();
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+        if (!(std::abs(lo[axis]) <= float_max && std::abs(hi[axis]) <= float_max)) {
+            throw MotionError("the opening reaches past float's range");
+        }
+    }
+    return {{outward(lo[0], Toward::down), outward(lo[1], Toward::down), outward(lo[2], Toward::down)},
+            {outward(hi[0], Toward::up), outward(hi[1], Toward::up), outward(hi[2], Toward::up)}};
+}
+
+// The refusal below says "an hour": most_wait, which this ties it to (ES.45).
+static_assert(most_wait == 3600.0, "check_prelude's message says 'an hour'");
+
+// Step P1's numbers: a wait from 0 to most_wait, and a perch's point
+// finite. Checked before any loop is made.
+void check_prelude(const Prelude& prelude) {
+    const auto wait = [](double until) { return std::isfinite(until) && until >= 0.0 && until <= most_wait; };
+    const auto finite = [](contracts::Float3 p) {
+        return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z);
+    };
+    const bool in_range = std::visit(Visit{[](const NoPrelude&) { return true; },
+                                           [&](const Hold& hold) { return wait(hold.until); },
+                                           [&](const Perch& perch) { return wait(perch.until) && finite(perch.at); }},
+                                     prelude);
+    if (!in_range) {
+        throw std::invalid_argument("make_flight: a prelude whose until is not from 0 to most_wait, an hour, or a "
+                                    "perch that is not finite");
+    }
 }
 
 void check_numbers(const FlightParams& params, float body) {
@@ -696,16 +997,41 @@ void check_numbers(const FlightParams& params, float body) {
 
 }  // namespace
 
-Flight make_flight(const FlightParams& params, contracts::Float3 start, float body,
-                   const contracts::Obstacles& obstacles) {
-    check_numbers(params, body);
-    const Context c{params, static_cast<double>(body), obstacles};
-    Episodes e = draw_episodes(c, to_vec(start));  // steps 1 to 4
+double rounding_allowance(double largest) {
+    constexpr float infinity = std::numeric_limits<float>::infinity();
+    if (std::isnan(largest) || largest < 0.0) {
+        throw std::invalid_argument("rounding_allowance: a largest |coordinate| that is not 0 or more");
+    }
+    // Past float's range there is no float to round to: no allowance holds.
+    // Compared as a double before it is narrowed (ES.46).
+    if (!(largest <= static_cast<double>(std::numeric_limits<float>::max()))) {
+        return std::numeric_limits<double>::infinity();
+    }
+    // The float at or above `largest`, and the spacing above it: at least
+    // that of every float at or below it, a power of two's included.
+    float at = static_cast<float>(largest);
+    if (static_cast<double>(at) < largest) {
+        at = std::nextafter(at, infinity);
+    }
+    const double spacing = static_cast<double>(std::nextafter(at, infinity)) - static_cast<double>(at);
+    return std::numbers::sqrt3 * spacing;
+}
+
+Flight make_flight(const FlightJob& job, const contracts::Obstacles& obstacles) {
+    check_numbers(job.params, job.body);
+    check_prelude(job.prelude);  // step P1's numbers
+    const Context c{job.params, static_cast<double>(job.body), obstacles};
+    Episodes e = draw_episodes(c, to_vec(job.start));  // steps 1 to 4
     const std::vector<Segment> closing = close_loop(c, e);  // step 5
     Flight flight;
-    flight.volume = params.volume;
+    flight.volume = job.params.volume;
     lay_out(flight, e, closing);  // step 6
-    flight.flashes = schedule_flashes(params.seed, flight.segments, flight.loop);  // step 7
+    flight.opening = opening_of(c, job.prelude, flight.segments.front());  // steps P1 and P2
+    flight.begin = lay_out_opening(flight.opening);  // step P3
+    flight.reach = reach_of(flight.volume, flight.opening);
+    flight.flashes = schedule_flashes(job.params.seed, flight.segments, flight.loop);  // step 7, the loop
+    flight.flashes.begin = flight.begin;
+    flight.flashes.opening = opening_flashes(job.params.seed, flight.opening, flight.begin, flight.flashes);
     return flight;
 }
 
@@ -713,8 +1039,20 @@ contracts::Float3 position(const Flight& flight, frame::Seconds t) {
     if (flight.segments.empty() || !(flight.loop > 0.0)) {
         throw std::invalid_argument("position: a flight make_flight did not make, with no segments or no loop");
     }
-    // Step E1: t into the loop.
-    double tau = std::fmod(t.count(), flight.loop);
+    // Step E0: in the opening, the segment holding t, by binary search over
+    // at most two; before its first, where it is at 0. A flight without an
+    // opening has begin 0 and repeats its loop before 0, as before preludes.
+    const double time = t.count();
+    if (!flight.opening.empty() && time < flight.begin) {
+        const auto holding = std::upper_bound(flight.opening.begin(), flight.opening.end(), time,
+                                              [](double value, const Segment& s) { return value < s.start; });
+        const Vec3 p = holding == flight.opening.begin() ? evaluate(flight.opening.front(), 0.0)
+                                                         : evaluate(*(holding - 1), time - (holding - 1)->start);
+        return to_float(p);
+    }
+    // Step E1: t into the loop. time - 0.0 is time, so a flight without an
+    // opening places it bit for bit as before.
+    double tau = std::fmod(time - flight.begin, flight.loop);
     if (tau < 0.0) {
         tau += flight.loop;
     }
@@ -750,7 +1088,7 @@ std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contr
         for (std::size_t k = next.fetch_add(1, std::memory_order_relaxed); k < jobs.size();
              k = next.fetch_add(1, std::memory_order_relaxed)) {
             try {
-                flights[k] = make_flight(jobs[k].params, jobs[k].start, jobs[k].body, obstacles);
+                flights[k] = make_flight(jobs[k], obstacles);
             } catch (...) {
                 failures[k] = std::current_exception();
             }
@@ -786,7 +1124,7 @@ std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contr
 }
 
 Extent extent(const Flight& flight) {
-    return flight.volume;
+    return flight.reach;
 }
 
 }  // namespace serenity::animation

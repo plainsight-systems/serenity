@@ -68,11 +68,13 @@ namespace serenity::animation {
 //
 // Not performance-sensitive per light: a few comparisons and one sine, once
 // per glowing light per frame. A wake adds, per glowing light per frame: a
-// test that it has one; then t >= at + ramp first, which answers 1 for a
+// test that it has one, and the three checks of its at and ramp (I.5); then
+// t >= at + ramp first, which answers 1 for a
 // woken light, and a ramp of 0 at t = at, with no division; then t < at,
-// which answers 0; and only during the ramp a subtraction, a division, the
-// smoothstep's three multiplications and a subtraction, and the product
-// with the kind's glow.
+// which answers 0; and only during the ramp a subtraction, a division, a
+// min holding x to 1 (the division is rounded, and the smoothstep past 1
+// turns back down), the smoothstep's three multiplications and a
+// subtraction, and the product with the kind's glow.
 
 // Seconds: the shortest period a rhythm may have, a thousand flashes a
 // second, past any firefly's.

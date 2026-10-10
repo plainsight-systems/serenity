@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -182,8 +183,8 @@ namespace serenity::animation {
 //            curve's speed in u (its derivative's Bezier hull, as step 3's
 //            bound). A slack under perch_gap / 4 refuses the rise, which
 //            keeps every step at least perch_gap / (4 V) and the samples at
-//            most 4 V / perch_gap: compared with most_steps as a double
-//            before the walk (ES.46). The rise must also keep within the
+//            most 4 V / perch_gap and the last at u = 1: compared with
+//            most_steps as a double before the walk (ES.46). The rise must also keep within the
 //            world, which its hull, below, shows the reader.
 //
 //            The one join that is not smooth is a hold's end: the firefly
@@ -197,8 +198,8 @@ namespace serenity::animation {
 //            `begin`. No prelude, or a hold of no length: no opening, begin
 //            0.
 //
-// The rounding allowance, rho, of a box: sqrt 3 times float's spacing (one
-// ulp) at the largest |coordinate| in it. A point of the double curve is
+// The rounding allowance, rho, of a box (rounding_allowance(), below): sqrt
+// 3 times float's spacing (one ulp) at the largest |coordinate| in it. A point of the double curve is
 // rounded to float when its distance is asked (contract 11 takes a Float3)
 // and when it is placed (position() returns a Float3): each moves it at
 // most half an ulp an axis, so the two together at most rho. At the
@@ -320,6 +321,16 @@ struct Perch {
 
 using Prelude = std::variant<NoPrelude, Hold, Perch>;
 
+// The cases of a std::visit, one per kind of a variant, as one overload set:
+// a kind with no case fails the build. Written once (ES.3), for the Prelude
+// here and the swarm's start (core/scene/swarm.h). Each case a class, a
+// lambda's closure, which is all an overload set can inherit (T.10).
+template <typename... Cases>
+    requires(std::is_class_v<Cases> && ...)
+struct Visit : Cases... {
+    using Cases::operator()...;
+};
+
 // One stretch of the path: its behaviour, when it starts within the loop,
 // how long it lasts, and the numbers of its closed form, whose meaning is
 // its behaviour's: flight.cpp names where each number is, per behaviour
@@ -354,9 +365,10 @@ struct FlightJob {
 
 // The flight for `job`, of a body of radius job.body, kept clear of
 // `obstacles`, by steps 1 to 7 and P1 to P3. Throws std::invalid_argument
-// for numbers out of range (above, and a prelude's until), and a MotionError
-// for a start, a perch or a rise not clear, or an episode that cannot be
-// drawn clear.
+// for numbers out of range (above, and a prelude's until, or a perch not
+// finite), and a MotionError for a start, a perch or a rise not clear, a
+// perch too far out for its gap, an opening whose reach passes float's
+// range, or an episode that cannot be drawn clear.
 Flight make_flight(const FlightJob& job, const contracts::Obstacles& obstacles);
 
 // Many flights, each as make_flight() makes it, made in parallel: flight k
@@ -391,8 +403,16 @@ std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contr
 // at least one: the one place the machine is asked.
 std::size_t flight_workers();
 
-// Where it is at `t`, by steps E1 to E3.
+// Where it is at `t`, by steps E0 to E3.
 contracts::Float3 position(const Flight& flight, frame::Seconds t);
+
+// The rounding allowance rho (above) of a box whose largest |coordinate| is
+// `largest`: sqrt 3 times float's spacing just above the float at or above
+// `largest`, which is at least the spacing anywhere in the box. Infinite
+// past float's range, where no float holds a point: every threshold that
+// carries it then refuses. Throws std::invalid_argument for a `largest`
+// below 0 or not a number.
+double rounding_allowance(double largest);
 
 // The box its center never leaves: its reach, the volume grown to hold the
 // opening: the perch, and the rise's Bezier control points, whose box holds

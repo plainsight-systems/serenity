@@ -92,6 +92,15 @@ all taken, in the headers:
   seconds, twenty million of them. A wait is now at most most_wait, an
   hour, some 300 flashes.
 
+## Implementation
+
+The core is implemented as the headers say (branch `dark-opening-core`),
+with the header corrections listed in its commit message. Its rule-by-rule
+pass over both corpora is
+[2026-10-10-dark-opening/core-guidelines-pass.md](2026-10-10-dark-opening/core-guidelines-pass.md).
+The load and frame measurements above are still to be made, with the
+scene's art.
+
 ## Open
 
 The art itself: wake ranges, the perch box, the lingers and the ramp are

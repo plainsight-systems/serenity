@@ -15,6 +15,7 @@
 #include <string>
 #include <system_error>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <toml++/toml.hpp>
@@ -166,6 +167,9 @@ std::string words(float value) {
 // keeps its flashes apart by, which this ties them to.
 static_assert(animation::flash_spacing == 1.0, "a flash's messages say 'under a second'");
 
+// The wait messages say "an hour": most_wait, which this ties them to.
+static_assert(animation::most_wait == 3600.0, "a wait's messages say 'an hour'");
+
 // What the world's bound says in an error: "within 1000 km of the origin
 // on every axis", from world_extent (I.22: built when an error is, not at
 // static initialization).
@@ -220,9 +224,18 @@ lights::GradientSkyData read_environment(const Reader& r, const toml::table& t) 
                "unknown environment kind '" + std::string(kind) + "'; known kinds: gradient");
     }
     r.only(t, {"kind", "zenith", "horizon"}, "[environment]");
+    // A radiance, 0 or more in every channel: all 0 is a black sky.
+    const auto color = [&](std::string_view key) {
+        const contracts::Float3 c = r.triple(t, key, "[environment]");
+        if (!within(c, 0.0f, std::numeric_limits<float>::max())) {
+            r.fail(r.required(t, key, "[environment]"),
+                   "[environment]'s " + std::string(key) + " must be 0 or more in every channel");
+        }
+        return c;
+    };
     lights::GradientSkyData sky{};
-    sky.zenith = r.triple(t, "zenith", "[environment]");
-    sky.horizon = r.triple(t, "horizon", "[environment]");
+    sky.zenith = color("zenith");
+    sky.horizon = color("horizon");
     return sky;
 }
 
@@ -256,6 +269,121 @@ float read_at_least_zero(const Reader& r, const toml::table& t, std::string_view
         r.fail(r.required(t, key, what), what + "'s " + std::string(key) + " must be 0 or more");
     }
     return v;
+}
+
+// A wait in seconds at `key`: 0 or more, and at most most_wait
+// (core/animation/flight.h), which bounds an opening's flashes.
+double read_wait(const Reader& r, const toml::table& t, std::string_view key, const std::string& what) {
+    const float wait = read_at_least_zero(r, t, key, what);
+    if (!(static_cast<double>(wait) <= animation::most_wait)) {
+        r.fail(r.required(t, key, what), what + "'s " + std::string(key) + " must be at most " +
+                                             words(animation::most_wait) + " s, an hour");
+    }
+    return wait;
+}
+
+// A glow's wake (core/animation/glow.h), if it has one: `at` a finite
+// number, `ramp` 0 or more. None is lit from the start.
+std::optional<animation::Wake> read_wake(const Reader& r, const toml::table& t, const std::string& what) {
+    const toml::node* node = t.get("wake");
+    if (!node) {
+        return std::nullopt;
+    }
+    const std::string wake_what = what + "'s wake";
+    const toml::table& wake = r.table(*node, wake_what);
+    r.only(wake, {"at", "ramp"}, wake_what);
+    return animation::Wake{.at = r.number(wake, "at", wake_what),
+                           .ramp = read_at_least_zero(r, wake, "ramp", wake_what)};
+}
+
+// A written flight's prelude (core/animation/flight.h), if it has one: hold,
+// with `until`; perch, with `at` and `until`. None flies at once.
+animation::Prelude read_prelude(const Reader& r, const toml::table& t, const std::string& what) {
+    const toml::node* node = t.get("prelude");
+    if (!node) {
+        return animation::NoPrelude{};
+    }
+    const std::string prelude_what = what + "'s prelude";
+    const toml::table& prelude = r.table(*node, prelude_what);
+    const std::string_view kind = r.text(prelude, "kind", prelude_what);
+    if (kind == "hold") {
+        r.only(prelude, {"kind", "until"}, prelude_what);
+        return animation::Hold{.until = read_wait(r, prelude, "until", prelude_what)};
+    }
+    if (kind == "perch") {
+        r.only(prelude, {"kind", "at", "until"}, prelude_what);
+        return animation::Perch{.at = r.triple(prelude, "at", prelude_what),
+                                .until = read_wait(r, prelude, "until", prelude_what)};
+    }
+    r.fail(r.required(prelude, "kind", prelude_what),
+           "unknown prelude kind '" + std::string(kind) + "'; known kinds: hold, perch");
+}
+
+// A swarm's start (swarm.h), if it has one: air; above, with `depth`; perch,
+// with a box `min` to `max` inside the world and a `linger` of a least and
+// a most. None is air.
+SwarmStart read_start(const Reader& r, const toml::table& t, const std::string& what) {
+    const toml::node* node = t.get("start");
+    if (!node) {
+        return AirStart{};
+    }
+    const std::string start_what = what + "'s start";
+    const toml::table& start = r.table(*node, start_what);
+    const std::string_view kind = r.text(start, "kind", start_what);
+    if (kind == "air") {
+        r.only(start, {"kind"}, start_what);
+        return AirStart{};
+    }
+    if (kind == "above") {
+        r.only(start, {"kind", "depth"}, start_what);
+        return AboveStart{.depth = read_positive(r, start, "depth", start_what)};
+    }
+    if (kind == "perch") {
+        r.only(start, {"kind", "min", "max", "linger"}, start_what);
+        PerchStart perch;
+        perch.box = {r.triple(start, "min", start_what), r.triple(start, "max", start_what)};
+        if (!below(perch.box.min, perch.box.max)) {
+            r.fail(start, start_what + "'s min must be below its max on every axis");
+        }
+        if (!inside_world(perch.box.min, perch.box.max, 0.0)) {
+            r.fail(start, start_what + "'s box must lie " + world_words());
+        }
+        const toml::node& linger_node = r.required(start, "linger", start_what);
+        const toml::array* linger = linger_node.as_array();
+        if (!linger || linger->size() != 2) {
+            r.fail(linger_node, start_what + "'s linger must be an array of two numbers, a least and a most");
+        }
+        perch.linger_least = r.number((*linger)[0], start_what + "'s linger");
+        perch.linger_most = r.number((*linger)[1], start_what + "'s linger");
+        if (!(perch.linger_least >= 0.0 && perch.linger_most >= perch.linger_least)) {
+            r.fail(linger_node, start_what + "'s linger's least must be 0 or more, and its most at least its least");
+        }
+        return perch;
+    }
+    r.fail(r.required(start, "kind", start_what),
+           "unknown start kind '" + std::string(kind) + "'; known kinds: air, above, perch");
+}
+
+// A swarm's wake (swarm.h), if it has one: `from` 0 or more, `to` from it
+// to most_wait, `power` above 0, `ramp` 0 or more. None is lit from the
+// start.
+std::optional<SwarmWake> read_swarm_wake(const Reader& r, const toml::table& t, const std::string& what) {
+    const toml::node* node = t.get("wake");
+    if (!node) {
+        return std::nullopt;
+    }
+    const std::string wake_what = what + "'s wake";
+    const toml::table& wake = r.table(*node, wake_what);
+    r.only(wake, {"from", "to", "power", "ramp"}, wake_what);
+    SwarmWake w;
+    w.from = read_at_least_zero(r, wake, "from", wake_what);
+    w.to = read_wait(r, wake, "to", wake_what);
+    if (!(w.to >= w.from)) {
+        r.fail(r.required(wake, "to", wake_what), wake_what + "'s to must be at least its from");
+    }
+    w.power = read_positive(r, wake, "power", wake_what);
+    w.ramp = read_at_least_zero(r, wake, "ramp", wake_what);
+    return w;
 }
 
 // A color at `key`, within [0, 1] in every channel.
@@ -541,6 +669,8 @@ struct Pending {
     std::size_t swarm = no_swarm;        // a swarm's firefly: its swarm's index
     std::uint32_t firefly = 0;           // which of it
     contracts::Float3 start{};           // and where it starts (swarm.h, step 2)
+    animation::Prelude prelude;          // what it does before its loop (swarm.h, step 4)
+    std::optional<animation::Wake> wake;  // and when its glow wakes (step 3)
 };
 
 // The indices of the shapes that do not move.
@@ -612,6 +742,7 @@ private:
                                                        float body, const contracts::Obstacles& obstacles);
     animation::GlowRecord make_glow(const Pending& p, const animation::MotionRecord* motion);
     [[noreturn]] void report(const animation::FlightsError& refused, const std::vector<std::size_t>& job_of) const;
+    const toml::node& flight_node(const Pending& p) const;
 
     const Reader& r_;
     SceneDescription& description_;
@@ -790,7 +921,7 @@ void ShapeReading::read_swarms(const toml::array& all, const contracts::Obstacle
         const toml::table& t = r_.table(node, what);
         r_.only(t,
                 {"count", "radius", "material", "min", "max", "targets", "speed", "clearance", "circle", "swoop",
-                 "drift", "flash", "dim", "seed"},
+                 "drift", "flash", "dim", "seed", "start", "wake"},
                 what);
         SwarmEntry entry{.swarm = {}, .table = t, .what = what};
         entry.swarm.count = static_cast<std::uint32_t>(
@@ -813,24 +944,38 @@ void ShapeReading::read_swarms(const toml::array& all, const contracts::Obstacle
         if (!(entry.swarm.dim >= 0.0f && entry.swarm.dim < 1.0f)) {
             r_.fail(r_.required(t, "dim", what), what + "'s dim must be in [0, 1)");
         }
+        entry.swarm.start = read_start(r_, t, what);
+        entry.swarm.wake = read_swarm_wake(r_, t, what);
+        // A perched firefly waits its wake and its linger: at most most_wait
+        // in all (core/animation/flight.h, step P1).
+        if (const PerchStart* perch = std::get_if<PerchStart>(&entry.swarm.start)) {
+            const double latest = entry.swarm.wake ? entry.swarm.wake->to : 0.0;
+            if (!(latest + perch->linger_most <= animation::most_wait)) {
+                r_.fail(entry.swarm.wake ? *t.get("wake") : *t.get("start"),
+                        what + "'s wake's to plus its linger's most must be at most " + words(animation::most_wait) +
+                            " s, an hour");
+            }
+        }
         swarms_.push_back(std::move(entry));
         const std::size_t swarm_index = swarms_.size() - 1;
         const Swarm& swarm = swarms_.back().swarm;
         for (std::uint32_t i = 0; i < swarm.count; ++i) {
-            const contracts::Float3 start = [&] {
+            const Firefly firefly = [&] {
                 try {
-                    return firefly_start(swarm, i, obstacles);  // swarm.h, step 2
+                    return make_firefly(swarm, i, obstacles);  // swarm.h, steps 2 to 3
                 } catch (const animation::MotionError& refused) {
                     r_.fail(t, what + ": " + refused.what());
                 }
             }();
-            const std::uint32_t index = add_sphere(start, swarm.radius, worn);
+            const std::uint32_t index = add_sphere(firefly.start, swarm.radius, worn);
             moving_.push_back(true);
             pending_.push_back({.shape = index,
                                 .what = what + "'s firefly " + std::to_string(i),
                                 .swarm = swarm_index,
                                 .firefly = i,
-                                .start = start});
+                                .start = firefly.start,
+                                .prelude = firefly.prelude,
+                                .wake = firefly.wake});
         }
     }
 }
@@ -877,7 +1022,7 @@ animation::GlowRecord ShapeReading::make_glow(const Pending& p, const animation:
     };
     animation::Glows& glows = description_.animation.glows;
     if (kind == "rhythm") {
-        r_.only(t, {"kind", "period", "flash", "dim", "seed"}, what);
+        r_.only(t, {"kind", "period", "flash", "dim", "seed", "wake"}, what);
         animation::Rhythm rhythm;
         rhythm.period = read_positive(r_, t, "period", what);
         if (!(rhythm.period >= animation::least_period)) {
@@ -890,11 +1035,12 @@ animation::GlowRecord ShapeReading::make_glow(const Pending& p, const animation:
         }
         rhythm.dim = dim_of();
         rhythm.seed = read_seed(r_, t, what);
+        rhythm.wake = read_wake(r_, t, what);
         glows.rhythms.push_back(rhythm);
         return {animation::GlowKind::rhythm, static_cast<std::uint32_t>(glows.rhythms.size() - 1)};
     }
     if (kind == "flight") {
-        r_.only(t, {"kind", "flash", "dim"}, what);
+        r_.only(t, {"kind", "flash", "dim", "wake"}, what);
         if (!motion || motion->kind != animation::MotionKind::flight) {
             r_.fail(*p.glow, what + " follows its flight, and " + p.what + " does not fly");
         }
@@ -905,6 +1051,7 @@ animation::GlowRecord ShapeReading::make_glow(const Pending& p, const animation:
             r_.fail(r_.required(t, "flash", what), what + "'s flash must be under a second");
         }
         glow.dim = dim_of();
+        glow.wake = read_wake(r_, t, what);
         glows.schedules.push_back(std::move(glow));
         return {animation::GlowKind::schedule, static_cast<std::uint32_t>(glows.schedules.size() - 1)};
     }
@@ -917,13 +1064,20 @@ void ShapeReading::report(const animation::FlightsError& refused, const std::vec
     for (std::size_t i = 0; i < pending_.size(); ++i) {
         if (job_of[i] == refused.job) {
             const Pending& p = pending_[i];
-            if (p.swarm != no_swarm) {
-                r_.fail(swarms_[p.swarm].table.get(), p.what + "'s flight: " + refused.reason);
-            }
-            r_.fail(*p.motion, p.what + "'s motion: " + refused.reason);
+            r_.fail(flight_node(p), p.what + (p.swarm != no_swarm ? "'s flight: " : "'s motion: ") + refused.reason);
         }
     }
     throw std::logic_error("a flight was refused that no shape asked for");
+}
+
+// Where a flight's errors are reported: a swarm's firefly's at its swarm's
+// table, a written firefly's at its motion (ES.3: report() and the reach's
+// check both ask).
+const toml::node& ShapeReading::flight_node(const Pending& p) const {
+    if (p.swarm != no_swarm) {
+        return swarms_[p.swarm].table.get();
+    }
+    return *p.motion;
 }
 
 void ShapeReading::make_animation(const contracts::Obstacles& obstacles) {
@@ -940,7 +1094,7 @@ void ShapeReading::make_animation(const contracts::Obstacles& obstacles) {
             animation::FlightParams params = swarms_[p.swarm].swarm.flight;
             params.seed = firefly_seed(params.seed, p.firefly);  // swarm.h, step 1
             job_of[i] = jobs.size();
-            jobs.push_back({std::move(params), p.start, body});
+            jobs.push_back({.params = std::move(params), .start = p.start, .body = body, .prelude = p.prelude});
             continue;
         }
         if (!p.motion) {
@@ -952,14 +1106,19 @@ void ShapeReading::make_animation(const contracts::Obstacles& obstacles) {
         if (kind == "wander") {
             wander_of[i] = make_wander(p, t, what, body, obstacles);
         } else if (kind == "flight") {
-            r_.only(t, {"kind", "min", "max", "targets", "speed", "clearance", "circle", "swoop", "drift", "seed"},
+            r_.only(t,
+                    {"kind", "min", "max", "targets", "speed", "clearance", "circle", "swoop", "drift", "seed",
+                     "prelude"},
                     what);
             animation::FlightParams params = read_flight_params(t, what);
             if (!inside_world(params.volume.min, params.volume.max, body)) {
                 r_.fail(t, what + "'s volume, grown by the sphere's radius, must lie " + world_words());
             }
             job_of[i] = jobs.size();
-            jobs.push_back({std::move(params), contracts::translation(placed), body});
+            jobs.push_back({.params = std::move(params),
+                            .start = contracts::translation(placed),
+                            .body = body,
+                            .prelude = read_prelude(r_, t, what)});
         } else {
             r_.fail(r_.required(t, "kind", what),
                     "unknown motion kind '" + std::string(kind) + "'; known kinds: wander, flight");
@@ -977,6 +1136,13 @@ void ShapeReading::make_animation(const contracts::Obstacles& obstacles) {
         const Pending& p = pending_[i];
         std::optional<animation::MotionRecord> motion = wander_of[i];
         if (job_of[i] != no_job) {
+            // Its reach, the volume grown to hold its prelude, grown by its
+            // body, must lie in the world (scene.h).
+            const animation::Extent reach = animation::extent(flights[job_of[i]]);
+            if (!inside_world(reach.min, reach.max, jobs[job_of[i]].body)) {
+                r_.fail(flight_node(p),
+                        p.what + "'s flight could carry it out of the world: it must stay " + world_words());
+            }
             motions.flights.push_back(std::move(flights[job_of[i]]));
             motion = animation::MotionRecord{animation::MotionKind::flight,
                                              static_cast<std::uint32_t>(motions.flights.size() - 1)};
@@ -986,11 +1152,13 @@ void ShapeReading::make_animation(const contracts::Obstacles& obstacles) {
         }
         const std::uint32_t light = description_.shape_lights[p.shape];
         if (p.swarm != no_swarm) {
-            // A flight glow with the swarm's flash and dim (swarm.h, step 3).
+            // A flight glow with the swarm's flash and dim, and the
+            // firefly's wake (swarm.h, step 4).
             animation::ScheduleGlow glow;
             glow.schedule = motions.flights[motion->index].flashes;
             glow.flash = swarms_[p.swarm].swarm.flash;
             glow.dim = swarms_[p.swarm].swarm.dim;
+            glow.wake = p.wake;
             animation::Glows& glows = description_.animation.glows;
             glows.schedules.push_back(std::move(glow));
             const animation::GlowRecord record{animation::GlowKind::schedule,

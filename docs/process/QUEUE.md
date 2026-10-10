@@ -49,7 +49,11 @@ This file tracks active and accepted work.
    flash shows on the firefly. Designed, in the headers: the dark opening
    (a black sky; fireflies that wake one by one, one swarm perched on the
    table and the marbles that rises, the other held above that comes down;
-   docs/research/2026-10-10-dark-opening.md).
+   docs/research/2026-10-10-dark-opening.md). Its core is implemented and
+   tested (src/core: wakes, openings, preludes, starts, the reader's keys;
+   the guideline pass in docs/research/2026-10-10-dark-opening/); the
+   scene's art (scenes/marbles.toml) and the load and frame measurements
+   the note asks for are next.
 
 Then, each in its turn: ReSTIR DI; ReSTIR GI; caustics by manifold next
 event estimation; reservoir reuse as kernels; a denoiser of its own against

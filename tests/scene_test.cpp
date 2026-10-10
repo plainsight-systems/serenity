@@ -11,6 +11,7 @@
 #include "core/contracts/medium.h"
 #include "core/materials/coated.h"
 #include "core/scene/scene.h"
+#include "support/ball_on_floor.h"
 #include "support/text.h"
 #include "test_paths.h"
 
@@ -594,4 +595,219 @@ TEST_CASE("a scene file that cannot be read whole is refused, never read as an e
     // A directory opens, and reads nothing: once parsed as an empty scene and
     // reported as one with no camera; now refused as unreadable.
     CHECK_THROWS_WITH_AS(scene::load("scenes"), doctest::Contains("cannot read scene file scenes"), scene::SceneError);
+}
+
+// The dark opening's keys (scene.h): a sky's colors 0 or more, glows'
+// wakes, flights' preludes, swarms' starts and wakes.
+
+TEST_CASE("a sky's colors are 0 or more: all 0 is a black sky, below 0 is refused at its line") {
+    CHECK_NOTHROW((void)scene::parse(with("zenith = [0.02, 0.03, 0.08]\nhorizon = [0.15, 0.17, 0.25]",
+                                          "zenith = [0, 0, 0]\nhorizon = [0, 0, 0]"),
+                                     "s"));
+    CHECK(contains(error_of(with("zenith = [0.02, 0.03, 0.08]", "zenith = [0.02, -0.03, 0.08]")),
+                   "s.toml:10: [environment]'s zenith must be 0 or more in every channel"));
+    CHECK(contains(error_of(with("horizon = [0.15, 0.17, 0.25]", "horizon = [-1, 0.17, 0.25]")),
+                   "s.toml:11: [environment]'s horizon must be 0 or more in every channel"));
+}
+
+namespace {
+
+// The ball on its floor (25 lines) and one firefly above it: the sphere's
+// table on line 26, its motion on line 31, its glow on line 32. `prelude`
+// is added to its motion and `glow` is its glow.
+std::string firefly(const std::string& prelude, const std::string& glow,
+                    const std::string& center = "[0, 1.5, 0]") {
+    return tests::ball_on_floor("[10, 10, 10]") + "[[shapes]]\nkind = \"sphere\"\ncenter = " + center +
+           "\nradius = 0.03\nmaterial = \"glow\"\n"
+           "motion = { kind = \"flight\", min = [-2, 0.05, -2], max = [2, 2, 2], targets = [\"ball\"], speed = 0.45, "
+           "clearance = 0.06, circle = 3, swoop = 1, drift = 1, seed = 5" +
+           (prelude.empty() ? "" : ", prelude = " + prelude) + " }\nglow = " + glow + "\n";
+}
+
+constexpr const char* flight_glow = "{ kind = \"flight\", flash = 0.35, dim = 0.05 }";
+constexpr const char* woken_glow = "{ kind = \"flight\", flash = 0.35, dim = 0.05, wake = { at = 4, ramp = 1.5 } }";
+// The ball's top, a firefly of radius 0.03 a perch_gap above it.
+constexpr const char* ball_top = "[0, 1.0305, 0]";
+
+}  // namespace
+
+TEST_CASE("a written firefly may hold or perch, and wake, as a swarm's does") {
+    // A hold: still at its loop's start until 9 s.
+    const scene::SceneDescription held =
+        scene::parse(firefly("{ kind = \"hold\", until = 9 }", flight_glow), "s");
+    REQUIRE(held.animation.motions.flights.size() == 1);
+    CHECK(held.animation.motions.flights[0].begin == 9.0);
+    CHECK(held.animation.motions.flights[0].opening.size() == 1);
+    CHECK_FALSE(held.animation.glows.schedules[0].wake.has_value());
+
+    // A perch on the ball's top until 6 s, its glow dark until 4 s and up
+    // over 1.5 s.
+    const scene::SceneDescription perched =
+        scene::parse(firefly(std::string("{ kind = \"perch\", at = ") + ball_top + ", until = 6 }", woken_glow), "s");
+    const animation::Flight& f = perched.animation.motions.flights.at(0);
+    REQUIRE(f.opening.size() == 2);
+    CHECK(f.opening[0].duration == 6.0);
+    const contracts::Float3 rest = animation::position(f, frame::Seconds(3.0));
+    CHECK(rest.x == 0.0f);
+    CHECK(rest.y == 1.0305f);
+    CHECK(rest.z == 0.0f);
+    const animation::ScheduleGlow& glow = perched.animation.glows.schedules.at(0);
+    REQUIRE(glow.wake.has_value());
+    CHECK(glow.wake->at == 4.0);
+    CHECK(glow.wake->ramp == 1.5);
+    CHECK(glow.schedule.begin == f.begin);
+    CHECK(glow.schedule.opening == f.flashes.opening);
+    const animation::GlowRecord record = perched.animation.glowers.at(0).glow;
+    CHECK(animation::glow(perched.animation.glows, record, frame::Seconds(3.9)) == 0.0f);
+    CHECK(animation::glow(perched.animation.glows, record, frame::Seconds(5.5)) >= 0.05f);
+    // Its reach holds its perch.
+    const animation::Extent reach = animation::extent(f);
+    CHECK(reach.min.y <= 1.0305f);
+
+    // A rhythm may wake too.
+    const scene::SceneDescription rhythm = scene::parse(
+        firefly("", "{ kind = \"rhythm\", period = 5, flash = 0.4, dim = 0.1, seed = 2, "
+                    "wake = { at = -2, ramp = 0 } }"),
+        "s");
+    REQUIRE(rhythm.animation.glows.rhythms.at(0).wake.has_value());
+    CHECK(rhythm.animation.glows.rhythms[0].wake->at == -2.0);
+    CHECK(rhythm.animation.glows.rhythms[0].wake->ramp == 0.0);
+}
+
+TEST_CASE("every mistake in a wake or a prelude is refused, naming the file and the line") {
+    const auto glow_error = [](const std::string& glow) { return error_of(firefly("", glow)); };
+    CHECK(contains(glow_error("{ kind = \"flight\", flash = 0.35, dim = 0.05, wake = { at = \"dusk\", ramp = 1 } }"),
+                   "s.toml:32: shape 3's glow's wake's at must be a number"));
+    CHECK(contains(glow_error("{ kind = \"flight\", flash = 0.35, dim = 0.05, wake = { at = 4, ramp = -1 } }"),
+                   "s.toml:32: shape 3's glow's wake's ramp must be 0 or more"));
+    CHECK(contains(glow_error("{ kind = \"flight\", flash = 0.35, dim = 0.05, wake = { at = 4 } }"),
+                   "s.toml:32: shape 3's glow's wake has no 'ramp'"));
+    CHECK(contains(glow_error("{ kind = \"flight\", flash = 0.35, dim = 0.05, wake = { at = 4, ramp = 1, from = 2 } }"),
+                   "s.toml:32: unknown key 'from' in shape 3's glow's wake"));
+    CHECK(contains(glow_error("{ kind = \"rhythm\", period = 5, flash = 0.4, dim = 0.1, seed = 2, wake = 4 }"),
+                   "s.toml:32: shape 3's glow's wake must be a table"));
+    CHECK(contains(glow_error("{ kind = \"rhythm\", period = 5, flash = 0.4, dim = 0.1, seed = 2, "
+                              "wake = { at = 1e300, ramp = 1 } }"),
+                   "s.toml:32: shape 3's glow's wake's at must be a finite number within float's range"));
+
+    const auto prelude_error = [](const std::string& prelude) { return error_of(firefly(prelude, flight_glow)); };
+    CHECK(contains(prelude_error("{ kind = \"sit\", until = 1 }"), "s.toml:31: unknown prelude kind 'sit'"));
+    CHECK(contains(prelude_error("{ kind = \"hold\", until = -1 }"),
+                   "s.toml:31: shape 3's motion's prelude's until must be 0 or more"));
+    CHECK(contains(prelude_error("{ kind = \"hold\", until = 3601 }"),
+                   "s.toml:31: shape 3's motion's prelude's until must be at most 3600 s, an hour"));
+    CHECK_NOTHROW((void)scene::parse(firefly("{ kind = \"hold\", until = 3600 }", flight_glow), "s"));
+    CHECK(contains(prelude_error("{ kind = \"perch\", until = 1 }"),
+                   "s.toml:31: shape 3's motion's prelude has no 'at'"));
+    CHECK(contains(prelude_error("{ kind = \"hold\", until = 1, at = [0, 1, 0] }"),
+                   "s.toml:31: unknown key 'at' in shape 3's motion's prelude"));
+    CHECK(contains(prelude_error("\"perch\""), "s.toml:31: shape 3's motion's prelude must be a table"));
+    // A perch nearer the ball than 3/4 of perch_gap, and a rise the ball
+    // overhangs: the flight's refusals, at the motion's line.
+    CHECK(contains(prelude_error("{ kind = \"perch\", at = [0, 1.0302, 0], until = 1 }"),
+                   "s.toml:31: shape 3's motion: the perch is too near a still surface"));
+    CHECK(contains(error_of(firefly("{ kind = \"perch\", at = [0.3, 0.0305, 0], until = 1 }", flight_glow,
+                                    "[0.3, 1.5, 0]")),
+                   "s.toml:31: shape 3's motion: the rise from the perch is not clear of the still shapes"));
+}
+
+namespace {
+
+// The ball on its floor and a swarm about it: [[swarms]] on line 26, `extra`
+// from line 41.
+std::string swarm_text(const std::string& extra) {
+    return tests::ball_on_floor("[10, 10, 10]") +
+           "[[swarms]]\ncount = 8\nradius = 0.02\nmaterial = \"glow\"\nmin = [-2, 0.05, -2]\nmax = [2, 2.2, 2]\n"
+           "targets = [\"ball\"]\nspeed = 0.4\nclearance = 0.05\ncircle = 2\nswoop = 1\ndrift = 2\n"
+           "flash = 0.35\ndim = 0.25\nseed = 4\n" +
+           extra + "\n";
+}
+
+constexpr const char* perch_start = "start = { kind = \"perch\", min = [-0.2, 0.9, -0.2], max = [0.2, 1.2, 0.2], "
+                                "linger = [2, 8] }";
+constexpr const char* swarm_wake = "wake = { from = 2, to = 30, power = 2, ramp = 1.5 }";
+
+}  // namespace
+
+TEST_CASE("a swarm's start and wake: each firefly's prelude and its glow's wake") {
+    const scene::SceneDescription s = scene::parse(swarm_text(std::string(perch_start) + "\n" + swarm_wake), "s");
+    REQUIRE(s.animation.motions.flights.size() == 8);
+    for (std::size_t i = 0; i < 8; ++i) {
+        CAPTURE(i);
+        const animation::Flight& f = s.animation.motions.flights[i];
+        REQUIRE(f.opening.size() == 2);  // a wait and a rise: every linger is at least 2 s
+        const animation::ScheduleGlow& glow = s.animation.glows.schedules[s.animation.glowers[i].glow.index];
+        REQUIRE(glow.wake.has_value());
+        CHECK(glow.wake->ramp == 1.5);
+        CHECK(glow.wake->at >= 2.0);
+        CHECK(glow.wake->at <= 30.0);
+        // It rests until its wake and its linger, and is dark until it wakes.
+        CHECK(f.opening[0].duration - glow.wake->at >= 2.0);
+        CHECK(f.opening[0].duration - glow.wake->at <= 8.0);
+        CHECK(glow.schedule.begin == f.begin);
+        CHECK(animation::glow(s.animation.glows, s.animation.glowers[i].glow, frame::Seconds(1.9)) == 0.0f);
+    }
+    // Above, with no wake: held for no time, so no opening, and lit.
+    const scene::SceneDescription above = scene::parse(swarm_text("start = { kind = \"above\", depth = 0.3 }"), "s");
+    for (const animation::Flight& f : above.animation.motions.flights) {
+        CHECK(f.opening.empty());
+        CHECK(f.flashes.begin == 0.0);
+    }
+    CHECK_FALSE(above.animation.glows.schedules[0].wake.has_value());
+    // Air, written: as none written.
+    const scene::SceneDescription air = scene::parse(swarm_text("start = { kind = \"air\" }"), "s");
+    const scene::SceneDescription none = scene::parse(swarm_text(""), "s");
+    for (std::size_t i = 0; i < 8; ++i) {
+        CHECK(air.animation.motions.flights[i].loop == none.animation.motions.flights[i].loop);
+    }
+}
+
+TEST_CASE("every mistake in a swarm's start or wake is refused, naming the file and the line") {
+    const auto error = [](const std::string& extra) { return error_of(swarm_text(extra)); };
+    CHECK(contains(error("start = { kind = \"ground\" }"), "s.toml:41: unknown start kind 'ground'"));
+    CHECK(contains(error("start = { kind = \"above\", depth = 0 }"),
+                   "s.toml:41: swarm 1's start's depth must be greater than 0"));
+    CHECK(contains(error("start = { kind = \"above\" }"), "s.toml:41: swarm 1's start has no 'depth'"));
+    CHECK(contains(error("start = { kind = \"air\", depth = 1 }"),
+                   "s.toml:41: unknown key 'depth' in swarm 1's start"));
+    CHECK(contains(error("start = { kind = \"perch\", min = [0.2, 0.9, -0.2], max = [-0.2, 1.2, 0.2], "
+                         "linger = [2, 8] }"),
+                   "s.toml:41: swarm 1's start's min must be below its max on every axis"));
+    CHECK(contains(error("start = { kind = \"perch\", min = [-0.2, 0.9, -0.2], max = [0.2, 1.2, 2000000], "
+                         "linger = [2, 8] }"),
+                   "s.toml:41: swarm 1's start's box must lie within 1000 km of the origin on every axis"));
+    CHECK(contains(error("start = { kind = \"perch\", min = [-0.2, 0.9, -0.2], max = [0.2, 1.2, 0.2], linger = 2 }"),
+                   "s.toml:41: swarm 1's start's linger must be an array of two numbers"));
+    CHECK(contains(error("start = { kind = \"perch\", min = [-0.2, 0.9, -0.2], max = [0.2, 1.2, 0.2], "
+                         "linger = [-1, 8] }"),
+                   "s.toml:41: swarm 1's start's linger's least must be 0 or more, and its most at least its least"));
+    CHECK(contains(error("start = { kind = \"perch\", min = [-0.2, 0.9, -0.2], max = [0.2, 1.2, 0.2], "
+                         "linger = [8, 2] }"),
+                   "s.toml:41: swarm 1's start's linger's least must be 0 or more"));
+    // A box where no perch can be found: the swarm's refusal, at its table.
+    CHECK(contains(error("start = { kind = \"perch\", min = [1, 1, 1], max = [1.5, 1.2, 1.5], linger = [2, 8] }"),
+                   "s.toml:26: swarm 1: firefly 0: no perch found"));
+
+    CHECK(contains(error("wake = { from = -1, to = 30, power = 2, ramp = 1.5 }"),
+                   "s.toml:41: swarm 1's wake's from must be 0 or more"));
+    CHECK(contains(error("wake = { from = 20, to = 10, power = 2, ramp = 1.5 }"),
+                   "s.toml:41: swarm 1's wake's to must be at least its from"));
+    CHECK(contains(error("wake = { from = 2, to = 3601, power = 2, ramp = 1.5 }"),
+                   "s.toml:41: swarm 1's wake's to must be at most 3600 s, an hour"));
+    CHECK(contains(error("wake = { from = 2, to = 30, power = 0, ramp = 1.5 }"),
+                   "s.toml:41: swarm 1's wake's power must be greater than 0"));
+    CHECK(contains(error("wake = { from = 2, to = 30, power = 2, ramp = -1 }"),
+                   "s.toml:41: swarm 1's wake's ramp must be 0 or more"));
+    CHECK(contains(error("wake = { from = 2, to = 30, power = 2 }"), "s.toml:41: swarm 1's wake has no 'ramp'"));
+    CHECK(contains(error("wake = { from = 2, to = 30, power = 2, ramp = 1, at = 3 }"),
+                   "s.toml:41: unknown key 'at' in swarm 1's wake"));
+    // A wake's to and a linger's most past most_wait together: at the wake's
+    // line, or the start's with no wake.
+    CHECK(contains(error(std::string(perch_start) + "\nwake = { from = 2, to = 3595, power = 2, ramp = 1.5 }"),
+                   "s.toml:42: swarm 1's wake's to plus its linger's most must be at most 3600 s"));
+    CHECK(contains(error("start = { kind = \"perch\", min = [-0.2, 0.9, -0.2], max = [0.2, 1.2, 0.2], "
+                         "linger = [2, 3601] }"),
+                   "s.toml:41: swarm 1's wake's to plus its linger's most must be at most 3600 s"));
+    CHECK_NOTHROW((void)scene::parse(
+        swarm_text(std::string(perch_start) + "\nwake = { from = 2, to = 3592, power = 2, ramp = 1.5 }"), "s"));
 }
