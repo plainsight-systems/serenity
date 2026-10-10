@@ -161,6 +161,54 @@ rounds or backtracks inside make_flight, which shift the failure rate
 without removing it and change loops that load today; checking the rise
 in step 2p, which covers one cause of two.
 
+## The time baseline, again
+
+The corpus sweep's baseline (2026-10-10-corpus-sweep.md) was the naive path
+tracer on the marbles at d1a5702: 28.44 ms a frame at 3456 x 2234. Its
+harness was not kept, and the opening makes a frame's time depend on when
+it is: before the first wake it is a third shorter. So the baseline is
+measured again, the old code and scene beside the new, by one method,
+stated here so it can be repeated:
+
+- the path graph at 3456 x 2234, 201 frames from a named time t, each
+  1/60 s on, two in flight as the window keeps them (frame i submitted,
+  then frame i - 1 waited for); each frame's GPU time from its
+  submission's feedback (GPU end - GPU start, metal/device/submission.h);
+  the median of frames 21 to 199;
+- a test case appended to tests/gpu/frame_images_test.cpp for the run and
+  removed after, never committed; the release build;
+- every case alternated, three rounds, each run started after the GPU had
+  been under 5% busy for six seconds; no window open. M3 Max, macOS
+  26.6.2.
+
+Each figure is the mean of the three rounds' medians, the rounds' range
+beside it:
+
+| Code | Scene | t | Frame |
+|---|---|---|---|
+| d1a5702, the sweep's | the marbles before the opening | 0 | 28.60 ms (28.58–28.62) |
+| 1a617ab, this work's | the marbles before the opening | 0 | 28.47 ms (28.44–28.50) |
+| d1a5702 | the marbles before the opening | 120 | 29.99 ms (29.97–30.00) |
+| 1a617ab | the marbles before the opening | 120 | 29.86 ms (29.86–29.87) |
+| 1a617ab | the marbles with the opening | 0.5, none awake | 19.10 ms (19.08–19.15) |
+| 1a617ab | the marbles with the opening | 8, a few awake | 24.23 ms (24.11–24.37) |
+| 1a617ab | the marbles with the opening | 120, all awake | 29.90 ms (29.89–29.91) |
+
+- The method reproduces the sweep's figure: the sweep's code and scene at
+  t = 0, 28.60 ms against 28.44 ms, within 0.6%.
+- This work's code costs the old scene nothing: 0.13 ms less at both
+  times, in every round; not claimed as a gain (the shader change's own
+  measurement, above, puts it in the compiled kernel, not in fewer rays).
+- With every firefly awake, the new scene is the old one's cost: 29.90 ms
+  against 29.86 at t = 120. The fireflies' positions, not the opening's
+  code, set a lit frame's time.
+
+The time baseline the later estimators are measured against is therefore
+the naive path tracer at 1a617ab on the marbles with their opening, at t
+= 120, every firefly awake: **29.90 ms**, by the method above. The
+opening's frames, 19.1 ms with none awake and 24.2 ms with a few, are
+measured beside it: the case where ReSTIR's light choice matters most.
+
 ## Open
 
 The art itself: wake ranges, the perch box, the lingers and the ramp are

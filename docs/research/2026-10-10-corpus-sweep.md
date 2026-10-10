@@ -135,3 +135,9 @@ textbook kernel.
 
 Open: AddressSanitizer on a later macOS; a pinned clang-format before a
 `.clang-format` is adopted.
+
+Superseded: the marbles now open in the dark, and the time baseline is
+measured again at a named time, by a method kept with it, in
+2026-10-10-dark-opening.md ("The time baseline, again"): 29.90 ms at t =
+120, every firefly awake. That method gives this note's code and scene
+28.60 ms at t = 0, against the 28.44 ms above.
