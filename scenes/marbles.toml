@@ -324,11 +324,16 @@ max = [0.9, 2.0, 0.2]
 targets = ["clear_shooter", "clear_right", "clear_left", "blue", "green", "amber", "cats_eye_orange",
            "cats_eye_blue", "cats_eye_red", "porcelain_red", "porcelain_white", "porcelain_blue", "brass",
            "steel"]
-speed = 0.35
+# Calm: through a macro lens the frame at the marbles is some 32 cm wide,
+# so a firefly at 0.05 m/s takes six seconds to cross it. Drifting and
+# circling, no swoops: a swoop lasts at most 2.5 s whatever the speed
+# (core/animation/flight.h), so at this pace it would be the one fast thing
+# on screen. A slow, soft flash.
+speed = 0.05
 clearance = 0.01
 circle = 2
-swoop = 1
-drift = 2
-flash = 0.35
+swoop = 0
+drift = 3
+flash = 0.6
 dim = 0.25
 seed = 1
