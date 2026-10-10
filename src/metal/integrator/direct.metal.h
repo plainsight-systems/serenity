@@ -247,7 +247,9 @@ inline float3 shade_scattering(Scene scene, Shading here, PixelSamples px) {
         const float3 wi = to_float3(sample.direction);
         const float3 weight = to_float3(sample.value) * metal::abs(metal::dot(wi, shading)) / sample.pdf;
         if ((sample.lobe & serenity::contracts::lobe_diffuse) != 0u) {
-            if (!occluded(scene.structure, scene.shapes(), leave(here.surface, wi), serenity::contracts::no_primitive)) {
+            const bool open =
+                !occluded(scene.structure, scene.shapes(), leave(here.surface, wi), serenity::contracts::no_primitive);
+            if (open) {
                 bounced += weight * gradient_sky(scene.sky(), wi);
             }
         } else {

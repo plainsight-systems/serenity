@@ -17,27 +17,41 @@ using serenity::passes::ToneMap;
 
 namespace {
 
-namespace tm = serenity::passes;
-
 constexpr sampler bilinear(coord::normalized, address::clamp_to_edge, filter::linear);
+
+// Step 5's span above the roll-off's start: 1 - neutral_start.
+constant constexpr float neutral_span = 1.0f - serenity::passes::neutral_start;
 
 // Step 1: a read of L, exposed and clamped to the ceiling, per channel.
 float3 expose(float3 radiance, float scale) {
-    return min(radiance * scale, float3(tm::bloom_ceiling));
+    return min(radiance * scale, float3(serenity::passes::bloom_ceiling));
 }
 
 // Step 2's filter about `uv` in a source whose texels are `texel` apart:
-// five 2 x 2 boxes, from 13 bilinear reads of `read`.
+// five 2 x 2 boxes, from 13 bilinear reads of `read`: a 3 x 3 grid two
+// texels apart, named by compass point from the center, and four reads one
+// texel diagonally off it.
 template <typename Read>
 float3 down13(Read read, float2 uv, float2 texel) {
     const auto s = [&](float dx, float dy) { return read(uv + float2(dx, dy) * texel); };
-    const float3 a = s(-2, -2), b = s(0, -2), c = s(2, -2);
-    const float3 d = s(-2, 0), e = s(0, 0), f = s(2, 0);
-    const float3 g = s(-2, 2), h = s(0, 2), i = s(2, 2);
-    const float3 j = s(-1, -1), k = s(1, -1), l = s(-1, 1), m = s(1, 1);
-    const float3 middle = 0.25f * (j + k + l + m);
-    const float3 corners = 0.25f * ((a + b + d + e) + (b + c + e + f) + (d + e + g + h) + (e + f + h + i));
-    return tm::down_middle * middle + tm::down_corner * corners;
+    const float3 north_west = s(-2, -2);
+    const float3 north = s(0, -2);
+    const float3 north_east = s(2, -2);
+    const float3 west = s(-2, 0);
+    const float3 center = s(0, 0);
+    const float3 east = s(2, 0);
+    const float3 south_west = s(-2, 2);
+    const float3 south = s(0, 2);
+    const float3 south_east = s(2, 2);
+    const float3 inner_north_west = s(-1, -1);
+    const float3 inner_north_east = s(1, -1);
+    const float3 inner_south_west = s(-1, 1);
+    const float3 inner_south_east = s(1, 1);
+    const float3 middle = 0.25f * (inner_north_west + inner_north_east + inner_south_west + inner_south_east);
+    const float3 corners =
+        0.25f * ((north_west + north + west + center) + (north + north_east + center + east) +
+                 (west + center + south_west + south) + (center + east + south + south_east));
+    return serenity::passes::down_middle * middle + serenity::passes::down_corner * corners;
 }
 
 // Step 3's 3 x 3 tent of `level` about `uv`, a texel of `level` apart.
@@ -54,13 +68,13 @@ float3 neutral(float3 color) {
     const float x = min(color.r, min(color.g, color.b));
     color -= x < 0.08f ? x - 6.25f * x * x : 0.04f;
     const float peak = max(color.r, max(color.g, color.b));
-    if (peak < tm::neutral_start) {
+    if (peak < serenity::passes::neutral_start) {
         return color;
     }
-    const float d = 1.0f - tm::neutral_start;
-    const float rolled = 1.0f - d * d / (peak + d - tm::neutral_start);
+    const float rolled =
+        1.0f - neutral_span * neutral_span / (peak + neutral_span - serenity::passes::neutral_start);
     color *= rolled / peak;
-    const float g = 1.0f - 1.0f / (tm::neutral_desaturation * (peak - rolled) + 1.0f);
+    const float g = 1.0f - 1.0f / (serenity::passes::neutral_desaturation * (peak - rolled) + 1.0f);
     return mix(color, float3(rolled), g);
 }
 
@@ -84,7 +98,7 @@ kernel void tone_map_down_first(constant ToneMap& settings [[buffer(0)]],
     const float2 texel = 1.0f / float2(radiance.get_width(), radiance.get_height());
     const auto read = [&](float2 uv) { return expose(radiance.sample(bilinear, uv).rgb, scale); };
     const float3 filtered = down13(read, center(pixel, size), texel);
-    level.write(float4(filtered / float(tm::bloom_levels), 1.0f), pixel);
+    level.write(float4(filtered / float(serenity::passes::bloom_levels), 1.0f), pixel);
 }
 
 // Step 2 for B_1 .. B_5: the level before, filtered to this one's size.

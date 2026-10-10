@@ -8,7 +8,7 @@
 // a kind added to MaterialKind and not here fails to compile (-Werror).
 //
 //   rough       lambert: color from its texture or constant
-//   conductor   conductor: f0, alpha = roughness^2, at least 1e-3 (a GGX
+//   conductor   conductor: f0, alpha = roughness^2, no less than least_alpha (a GGX
 //               with alpha 0 has no density to sample)
 //   dielectric  dielectric: ior
 //   coated      coated: color from its texture or constant, the coat's
@@ -34,6 +34,10 @@
 
 namespace serenity {
 namespace shaders {
+
+// The least GGX alpha a conductor resolves to: a GGX with alpha 0 has no
+// density to sample.
+constant constexpr float least_alpha = 1e-3f;
 
 // Every material, as a shader reads it: the records and one array per kind.
 struct Materials {
@@ -64,7 +68,7 @@ inline serenity::contracts::Bsdf resolve_bsdf(Materials materials, Textures text
         const serenity::materials::ConductorData conductor = materials.conductors[record.index];
         bsdf.kind = serenity::contracts::BsdfKind::conductor;
         bsdf.color = conductor.f0;
-        bsdf.alpha = metal::max(conductor.roughness * conductor.roughness, 1e-3f);
+        bsdf.alpha = metal::max(conductor.roughness * conductor.roughness, least_alpha);
         break;
     }
     case serenity::materials::MaterialKind::dielectric:

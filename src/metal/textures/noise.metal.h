@@ -25,7 +25,10 @@ inline float corner_value(int3 c, float3 offset, uint seed) {
 }
 
 inline float gradient_noise(float3 p, uint seed) {
-    // Step 1.
+    // Step 1. The cell's corner as 32-bit integers: within their range for
+    // every point a texture is read at (ES.46), as each texture's own
+    // header bounds it (core/textures/wood.h: at most some 6.7e8; the
+    // swirl's, on the unit cylinder, at most a few).
     const float3 cell = metal::floor(p);
     const int3 i = int3(cell);
     const float3 f = p - cell;
@@ -40,8 +43,10 @@ inline float gradient_noise(float3 p, uint seed) {
     const float n111 = corner_value(i + int3(1, 1, 1), f - float3(1, 1, 1), seed);
     // Step 4: the quintic fade.
     const float3 u = f * f * f * (f * (f * 6.0f - 15.0f) + 10.0f);
-    const float x00 = metal::mix(n000, n100, u.x), x10 = metal::mix(n010, n110, u.x);
-    const float x01 = metal::mix(n001, n101, u.x), x11 = metal::mix(n011, n111, u.x);
+    const float x00 = metal::mix(n000, n100, u.x);
+    const float x10 = metal::mix(n010, n110, u.x);
+    const float x01 = metal::mix(n001, n101, u.x);
+    const float x11 = metal::mix(n011, n111, u.x);
     return metal::mix(metal::mix(x00, x10, u.y), metal::mix(x01, x11, u.y), u.z);
 }
 
