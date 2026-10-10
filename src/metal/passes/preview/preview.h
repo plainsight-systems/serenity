@@ -76,10 +76,10 @@ namespace serenity::metal {
 // Cost: one thread per pixel, in rows of the execution width (GPU.2). On a
 // rough surface, with L lights, 4 x (1 + 4L + 2) rays a pixel, growing by
 // 16 with each light: 44 for the first scene's two fireflies; more on
-// metal. Measured on the M3 Max, the
-// first scene takes 78 ms of GPU time at 3456 x 2234 and 20 ms at half that
-// in each direction. The window's frame budget is met by rendering below
-// the display's resolution and upscaling, which comes later.
+// metal. Far over the window's frame budget at the display's size
+// (measured: docs/research/2026-10-09-pass-costs.md); the budget is met by
+// rendering below the display's resolution and upscaling, which comes
+// later.
 class PreviewPass {
 public:
     PreviewPass(const Device& device, const Library& library);

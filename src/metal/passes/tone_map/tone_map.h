@@ -49,13 +49,10 @@ namespace serenity::metal {
 // 2 reads 13 texels per output pixel over P/4 + P/16 + ... (about P/3 pixels),
 // 4.3 P reads; step 3, 9 per pixel over levels 0 to 4, about 3 P; step 4, 1
 // full-size read and 9 of B_0, 10 P; 17 P reads in all, most of them of half
-// floats at reduced size, and 12 dispatches with 11 barriers. Measured on the
-// M3 Max at 3456 x 2234, frames in flight, nothing else on the GPU, under the
-// path tracer on the flight scene: a frame's GPU time is 12.24 ms ending in
-// this pass and 11.62 ending in the display pass, so it costs 0.6 ms more than
-// showing the radiance as it is (and 11.07 against 10.45 on the marbles).
-// Clamping the first level's texels before averaging them, four exact reads to
-// each bilinear one, cost 1.6 ms more (step 1).
+// floats at reduced size, and 12 dispatches with 11 barriers. What it costs
+// a frame against the display pass, and the clamping of step 1 done on
+// exact reads instead of filtered ones, which cost more and was not kept:
+// docs/research/2026-10-09-pass-costs.md.
 class ToneMapPass {
 public:
     // Throws Error if `settings` are out of range (core/passes/tone_map.h),

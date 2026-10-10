@@ -47,8 +47,9 @@ namespace serenity::metal {
 // runs the one before; what the barrier gives up is only the GPU starting a
 // frame's first dispatch before the last frame's final one ends. A copy per
 // frame in flight would keep that sliver of overlap at twice the memory,
-// 290 MB at the display's size; the barrier's cost is measured at
-// implementation.
+// 290 MB at the display's size, and the overlap is no gain: two frames'
+// passes running at once take longer than one after the other (measured,
+// docs/research/2026-10-09-pass-costs.md).
 //
 // Made outside the frame loop, at a size, and kept until the size changes
 // (GPU.9); nothing else lives only within a frame for them to share memory
@@ -56,8 +57,9 @@ namespace serenity::metal {
 // back, which GDSA.16 says to stream through on-chip memory instead: the
 // tone map cannot, since its bloom reads every pixel's neighbourhood as far
 // as B_5's 64 pixels; the display pass could fold back into the light pass,
-// as it was, and is kept apart so a graph has one presenting pass, at a
-// measured 0.6 ms (passes/display/display.h).
+// as it was, and is kept apart so a graph has one presenting pass
+// (passes/display/display.h), at the cost derived below; it has not been
+// measured on its own (docs/research/2026-10-09-pass-costs.md).
 //
 // Cost: at 3456 x 2234 (P = 7.7 M pixels), the radiance image is 123 MB
 // and the pyramid 21 MB. Per frame, the light pass writes the radiance
