@@ -75,7 +75,10 @@ transport the Integrator's, each candidate's light placed once, the packed
 Bsdf's range refused by name, the RIS graph 2.7% faster at t = 120,
 phase-a-guidelines-pass.md; MIS in the shared path tracer done
 2026-10-11 on branch path-mis, docs/research/2026-10-11-path-mis.md, the
-continuation's spikes gone; left: Phase B, the BSDF candidate (for the
+continuation's spikes gone; the review of 7751a65 answered 2026-10-11 on
+branch mis-review: both strategies drawn and weighed from the point rays
+leave from, the power heuristic without overflow, the probes' layouts one
+header per probe, that note's "Review of 7751a65"; left: Phase B, the BSDF candidate (for the
 first surface's spikes, 2026-10-11-restir-ris-results.md) and the
 temporal and spatial merges,
 docs/research/2026-10-10-restir-di-layout.md); ReSTIR GI; caustics by manifold next

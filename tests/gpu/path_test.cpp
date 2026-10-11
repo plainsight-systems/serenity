@@ -18,12 +18,17 @@
 //     weighted, counting it once between them) all at once;
 //   - multiple importance sampling (principle 7): the two strategies'
 //     weights for one direction sum to 1, from the densities the path
-//     tracer asks; a glossy floor's highlight of a firefly converges to the
-//     light's integral over the BSDF, worked out on the GPU from the BSDF
-//     itself, where each strategy carries a large share of it, so counting
-//     the bounce's share in full, or not at all, fails; and a firefly that
-//     a delta lobe, a black coated sphere's coat, mirrors is counted in
-//     full: F0 L;
+//     tracer asks, from the points it asks them from, at a firefly far off
+//     and one millimeters across and near; the power heuristic is finite
+//     and complementary at any densities, and a light 10^-10 m across,
+//     whose density's square no float holds, lights a floor finitely; a
+//     glossy floor's highlight of a firefly converges to the light's
+//     integral over the BSDF, worked out on the GPU from the BSDF itself,
+//     where each strategy carries a large share of it, so counting the
+//     bounce's share in full, or not at all, fails; a Lambert and a glossy
+//     floor under a firefly millimeters across converge to its light seen
+//     from where rays leave them; and a firefly that a delta lobe, a black
+//     coated sphere's coat, mirrors is counted in full: F0 L;
 //   - the accumulated image: what it holds, what it refuses, and starting
 //     over;
 //   - principle 2: the same inputs give the same image, and frame k rendered
@@ -305,11 +310,12 @@ const std::string one_firefly = firefly("[0.3, 2.5, -0.5]");
 
 // albedo x L sin^2 cos, summed over the lights, at the floor point the
 // image's point (x, y) sees, in pixels from the top left: pixel (i, j)'s
-// center is (i + 0.5, j + 0.5).
-double expected_floor(const scene::SceneDescription& description, frame::Extent size, double x, double y) {
+// center is (i + 0.5, j + 0.5); seen from `lift` over that point.
+double expected_floor(const scene::SceneDescription& description, frame::Extent size, double x, double y,
+                      double lift = 0.0) {
     const contracts::CameraData c = camera::shader_form(description.camera, size);
     const Vec3 d = tests::camera_direction(c, x, y, size);
-    const Vec3 p = tests::vec(c.origin) + (-c.origin.y / d.y) * d;
+    const Vec3 p = tests::vec(c.origin) + (-c.origin.y / d.y) * d + Vec3{0.0, lift, 0.0};
     double sum = 0.0;
     for (const lights::SphereLightData& light : description.sphere_lights) {
         // Where its shape is, and how big: the transform's translation and
@@ -345,18 +351,31 @@ TEST_CASE("next event estimation: under two fireflies, chosen one at a time, the
     check_floor(lit_floor(one_firefly + firefly("[-1.2, 1.5, 0.4]")), 1024);
 }
 
-TEST_CASE("MIS: a firefly millimeters across, just over a floor, converges to albedo L sin^2 cos there too") {
-    // A firefly of radius 3 mm, 2 cm over the floor: the 0.1 mm a bounced
-    // ray starts off the floor (ray_offset) is 3% of its radius. The cone
-    // the light fills seen from that start is shifted from the cone seen
-    // from the floor's point, by up to 3% of its width. Step 3 weighs a
-    // light the bounce strikes by the density from where the ray starts,
-    // which is where the ray saw it; weighed from the floor's point, the
-    // crescent of the light only the shifted cone holds had light_pdf() 0
-    // there, so w_b 1, beside next event estimation's whole cone: +2% over
-    // the floor (measured, docs/research/2026-10-11-path-mis.md), within
-    // the 3% the tests above allow. Each pixel's mean against the closed
-    // form averaged over 4 x 4 points of it, to 0.5%.
+namespace {
+
+// How far over its surface a ray leaves from: ray_offset
+// (metal/integrator/surface.metal.h), on the side it leaves toward. The
+// path tracer's light at a surface is the light seen from there
+// (path.metal.h, "One origin").
+constexpr double ray_offset = 1e-4;
+
+}  // namespace
+
+TEST_CASE("MIS: a firefly millimeters across, just over a floor, converges to albedo L sin^2 cos from where rays leave") {
+    // A firefly of radius 3 mm, 2 cm over the floor: the 0.1 mm a ray
+    // leaves the floor from (ray_offset) is 3% of its radius, and 0.5% of
+    // its height. Both strategies draw and weigh a direction from that
+    // point, the one its ray leaves from (path.metal.h, "One origin"), so
+    // the floor converges to the closed form seen from there: some 0.3 to
+    // 0.4% darker than from the floor's point at the four pixels to the
+    // firefly's side, 1% brighter at the one below it (32, 24), which tells
+    // the two apart. With step 5 drawn from the floor's point, as 7751a65
+    // drew it, which carries nearly all of a Lambert floor's light (its
+    // density is the far larger there), the floor converges near the floor
+    // point's closed form instead, 1% short of this one below the firefly;
+    // 7751a65's first version counted the crescent between the two cones
+    // in full, +1.4 to +5.6%. Each pixel's mean against the closed form
+    // averaged over 4 x 4 points of it, to 0.5%.
     const std::string text = camera_text("[0, 0.1, 0.1]", "[0, 0, 0]", 60) + sky("[0, 0, 0]", "[0, 0, 0]") +
                              "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
                              "[materials.glow]\nkind = \"emissive\"\nradiance = [30, 30, 30]\n"
@@ -368,20 +387,43 @@ TEST_CASE("MIS: a firefly millimeters across, just over a floor, converges to al
     const std::vector<float> image = rig.accumulated();
     constexpr std::uint32_t within = 4;  // points a side in each pixel
     for (const tests::Pixel pixel : {tests::Pixel{16, 24}, tests::Pixel{48, 30}, tests::Pixel{32, 40},
-                                     tests::Pixel{24, 12}}) {
+                                     tests::Pixel{24, 12}, tests::Pixel{32, 24}}) {
         double expected = 0.0;
+        double at_point = 0.0;
         for (std::uint32_t j = 0; j < within; ++j) {
             for (std::uint32_t i = 0; i < within; ++i) {
-                expected += expected_floor(rig.description(), size, pixel.x + (i + 0.5) / within,
-                                           pixel.y + (j + 0.5) / within);
+                const double x = pixel.x + (i + 0.5) / within;
+                const double y = pixel.y + (j + 0.5) / within;
+                expected += expected_floor(rig.description(), size, x, y, ray_offset);
+                at_point += expected_floor(rig.description(), size, x, y);
             }
         }
         expected /= within * within;
+        at_point /= within * within;
         const double rendered = image[(std::size_t{pixel.y} * size.width + pixel.x) * 4];
-        INFO("pixel " << pixel.x << ", " << pixel.y << ": rendered " << rendered << ", expected " << expected);
-        MESSAGE("pixel " << pixel.x << ", " << pixel.y << ": rendered " << rendered << ", expected " << expected);
+        INFO("pixel " << pixel.x << ", " << pixel.y << ": rendered " << rendered << ", expected " << expected
+                      << " (from the floor's point " << at_point << ")");
+        MESSAGE("pixel " << pixel.x << ", " << pixel.y << ": rendered " << rendered << ", expected " << expected
+                         << ", rendered / expected - 1 = " << (rendered / expected - 1.0) * 100.0
+                         << "%; from the floor's point " << at_point << ", rendered / it - 1 = "
+                         << (rendered / at_point - 1.0) * 100.0 << "%");
         CHECK(rendered == doctest::Approx(expected).scale(0).epsilon(0.005));
     }
+}
+
+TEST_CASE("MIS: a light 10^-10 m across, its density past what a float squares, lights a floor finitely") {
+    // A sphere light of radius 10^-10 m 2.5 m over the floor: its cone's
+    // solid angle is some 5 x 10^-21 sr, its density 2 x 10^20, whose
+    // square is past a float's largest. The scene accepts it (any finite
+    // radius above 0). Squared directly, the power heuristic made its every
+    // light sample's weight NaN, and the frame's samples not finite (Rig's
+    // render checks there are none); computed from the ratio of the
+    // densities (path.metal.h, power_heuristic()), the floor converges to
+    // its closed form. Its radiance, 10^20, makes that closed form some 0.1.
+    check_floor(lit_floor(std::string("[materials.pinpoint]\nkind = \"emissive\"\nradiance = [1e20, 1e20, 1e20]\n") +
+                          "[[shapes]]\nkind = \"sphere\"\ncenter = [0.3, 2.5, -0.5]\nradius = 1e-10\n"
+                          "material = \"pinpoint\"\n"),
+                512);
 }
 
 TEST_CASE("the same inputs give the same image") {
@@ -584,10 +626,14 @@ TEST_CASE("before any light wakes, under a black sky, the image is black: the op
 
 namespace {
 
-// A surface at the origin facing +y, and a firefly where a mirror there
-// would show it to wo: what the MIS probe asks about.
+// A surface at the origin facing +y, and fireflies where a mirror there
+// would show them to wo: what the MIS probe asks about. mis_light is 0.3
+// across at 1.6, near_light 3 mm across at 2 cm, where the 0.1 mm a ray
+// leaves the surface from (ray_offset) moves the cone the light fills by
+// percents.
 const contracts::Float3 mis_wo{0.0f, 0.5547002f, 0.8320503f};  // (0, 2, 3) normalized
 const tests::ProbeLight mis_light{{0.0f, 0.9f, -1.35f}, 0.3f, 10.0f};
+const tests::ProbeLight near_light{{0.0f, 0.011094004f, -0.016641006f}, 0.003f, 10.0f};  // 0.02 along (0, 2, -3)
 
 contracts::Bsdf floor_bsdf(contracts::BsdfKind kind, float alpha) {
     contracts::Bsdf bsdf{};
@@ -603,15 +649,23 @@ struct WeightSums {
     std::size_t both = 0;          // directions both strategies draw
     std::size_t by_bsdf_both = 0;  // of them, the BSDF's draws: bounces that strike the light
     double worst = 0.0;            // the largest |w_l + w_b - 1| among them
-    double worst_alone = 0.0;      // the largest |w_b - 1| where the BSDF's draw misses the light
+    double worst_alone = 0.0;      // the largest |w_b - 1| where only the BSDF draws the direction
+
+    double worst_either() const { return std::max(worst, worst_alone); }
 };
 
-WeightSums weight_sums(tests::ProbeRunner& gpu, const contracts::Bsdf& bsdf, std::uint32_t light_count,
-                       std::uint32_t struck_light_count) {
+// Where step 5 draws from, for the probe: as the path tracer draws, or from
+// the surface's point, as 7751a65 did.
+enum class LightFrom : std::uint32_t { path_tracer = 0, surface_point = 1 };
+
+WeightSums weight_sums(tests::ProbeRunner& gpu, const contracts::Bsdf& bsdf, const tests::ProbeLight& light,
+                       std::uint32_t light_count, std::uint32_t struck_light_count,
+                       LightFrom from = LightFrom::path_tracer) {
     constexpr std::uint32_t draws = 4096;
-    const tests::MisQuery query{{0.0f, 0.0f, 0.0f}, draws, mis_wo, light_count, struck_light_count, {0u, 0u, 0u}};
+    const tests::MisQuery query{{0.0f, 0.0f, 0.0f}, draws,   mis_wo, light_count, {0.0f, 1.0f, 0.0f},
+                                struck_light_count, static_cast<std::uint32_t>(from), {0u, 0u, 0u}};
     const std::vector<tests::MisDraw> results = tests::run_with_light<tests::MisDraw>(
-        gpu, "mis_weights", 2 * draws, mis_light, {tests::Binding::of(query), tests::Binding::of(bsdf)});
+        gpu, "mis_weights", 2 * draws, light, {tests::Binding::of(query), tests::Binding::of(bsdf)});
     WeightSums sums;
     for (const tests::MisDraw& d : results) {
         if (d.light_density > 0.0f && d.bsdf_density > 0.0f) {
@@ -628,44 +682,115 @@ WeightSums weight_sums(tests::ProbeRunner& gpu, const contracts::Bsdf& bsdf, std
 }  // namespace
 
 TEST_CASE("MIS: for a direction both strategies draw, the light sample's weight and the bounce's sum to 1") {
-    // From the densities each step asks (step 5: the selection's 1 / N, the
-    // light's own sample pdf and the BSDF's pdf(); step 3: the bounce's own
-    // pdf, the selection's 1 / N and light_pdf()), at a glossy conductor and
-    // a Lambert surface, over each strategy's draws. The sum is 1 only where
-    // the two steps ask the same densities of the same direction; to 10^-4,
-    // the rounding of a conductor's half vector, found from the drawn
+    // From the densities each step asks, from the point each asks them from
+    // (path.metal.h, "One origin"): step 5 the selection's 1 / N, the
+    // light's own sample pdf from next_event_origin() and the BSDF's pdf();
+    // step 3 the bounce's density as step 6 hands it on (handed_on()), the
+    // selection's 1 / N and light_pdf() from the point the bounce leaves
+    // from (leave()). At a glossy conductor and a Lambert surface, under a
+    // firefly 0.3 across at 1.6 and one 3 mm across at 2 cm, over each
+    // strategy's draws. The sum is 1 only where the two steps ask the same
+    // densities of the same direction from the same point; to 10^-4, the
+    // rounding of a conductor's half vector, found from the drawn
     // microfacet normal by sample() and from wo + wi by pdf(). A direction
-    // the BSDF draws that misses the light is the bounce's alone: w_b 1, to
-    // the rounding of fast math's division.
+    // only the BSDF draws, one that misses the light, is the bounce's
+    // alone: w_b 1, to the rounding of fast math's division.
     constexpr double tolerance = 1e-4;
     tests::ProbeRunner gpu;
     const std::array<std::pair<std::string, contracts::Bsdf>, 2> surfaces{
         {{"conductor, alpha 0.1", floor_bsdf(contracts::BsdfKind::conductor, 0.1f)},
          {"lambert", floor_bsdf(contracts::BsdfKind::lambert, 0.0f)}}};
-    for (const auto& [name, bsdf] : surfaces) {
-        const WeightSums sums = weight_sums(gpu, bsdf, 4, 4);
-        INFO(name << ": " << sums.both << " directions both draw (" << sums.by_bsdf_both
-                  << " of them the BSDF's), worst |w_l + w_b - 1| " << sums.worst << ", worst |w_b - 1| alone "
-                  << sums.worst_alone);
-        MESSAGE(name << ": " << sums.both << " directions both draw (" << sums.by_bsdf_both
-                     << " of them the BSDF's), worst |w_l + w_b - 1| " << sums.worst << ", worst |w_b - 1| alone "
-                     << sums.worst_alone);
-        // Not empty: every light sample is above the surface, and some
-        // bounces strike the light.
-        CHECK(sums.both > 4096);
-        CHECK(sums.by_bsdf_both > 0);
-        CHECK(sums.worst < tolerance);
-        CHECK(sums.worst_alone < 1e-6);
-        // And the check can fail: step 3 weighing the struck light as if it
-        // were the only one (P = 1) while step 5 chose among 4. Off by far
-        // more than the tolerance at either surface: by most of the weight
-        // at the conductor, where the strategies share it; less at the
-        // Lambert surface, where the light's density dominates both.
-        const WeightSums wrong = weight_sums(gpu, bsdf, 4, 1);
-        INFO("step 3's P of 1 against step 5's 1 / 4: worst " << wrong.worst);
-        MESSAGE(name << ", step 3's P of 1 against step 5's 1 / 4: worst |w_l + w_b - 1| " << wrong.worst);
-        CHECK(wrong.worst > 10.0 * tolerance);
+    const std::array<std::pair<std::string, tests::ProbeLight>, 2> lights{
+        {{"firefly 0.3 across at 1.6", mis_light}, {"firefly 3 mm across at 2 cm", near_light}}};
+    for (const auto& [light_name, light] : lights) {
+        for (const auto& [name, bsdf] : surfaces) {
+            const WeightSums sums = weight_sums(gpu, bsdf, light, 4, 4);
+            INFO(light_name << ", " << name << ": " << sums.both << " directions both draw (" << sums.by_bsdf_both
+                            << " of them the BSDF's), worst |w_l + w_b - 1| " << sums.worst
+                            << ", worst |w_b - 1| alone " << sums.worst_alone);
+            MESSAGE(light_name << ", " << name << ": " << sums.both << " directions both draw (" << sums.by_bsdf_both
+                               << " of them the BSDF's), worst |w_l + w_b - 1| " << sums.worst
+                               << ", worst |w_b - 1| alone " << sums.worst_alone);
+            // Not empty: every light sample is above the surface, and some
+            // bounces strike the light.
+            CHECK(sums.both > 4096);
+            CHECK(sums.by_bsdf_both > 0);
+            CHECK(sums.worst < tolerance);
+            CHECK(sums.worst_alone < 1e-6);
+            // And the check can fail: step 3 weighing the struck light as
+            // if it were the only one (P = 1) while step 5 chose among 4.
+            // Off by far more than the tolerance at either surface: by most
+            // of the weight at the conductor, where the strategies share
+            // it; less at the Lambert surface, where the light's density
+            // dominates both.
+            const WeightSums wrong = weight_sums(gpu, bsdf, light, 4, 1);
+            MESSAGE(light_name << ", " << name << ", step 3's P of 1 against step 5's 1 / 4: worst |w_l + w_b - 1| "
+                               << wrong.worst);
+            CHECK(wrong.worst > 10.0 * tolerance);
+        }
     }
+    // And it fails where step 5 draws from the surface's point, as 7751a65
+    // drew, while step 3 asks from the point the bounce leaves from: at the
+    // near firefly, whose cone the 0.1 mm between the two points moves by
+    // percents, the two densities of one direction differ, and in the
+    // crescent one point's cone holds and the other's does not, only one is
+    // 0. At the far firefly the two points' densities differ by some 10^-4,
+    // within the rounding: why the check above asks at the near one too.
+    for (const auto& [name, bsdf] : surfaces) {
+        const WeightSums wrong = weight_sums(gpu, bsdf, near_light, 4, 4, LightFrom::surface_point);
+        MESSAGE("firefly 3 mm across at 2 cm, " << name << ", step 5 from the surface's point: worst |w_l + w_b - 1| "
+                                                << wrong.worst << ", worst |w_b - 1| alone " << wrong.worst_alone);
+        CHECK(wrong.worst_either() > 10.0 * tolerance);
+    }
+}
+
+TEST_CASE("MIS: the power heuristic is finite and complementary at any densities a float holds") {
+    // Densities from 0 to infinity, the pairs the path tracer can meet: a
+    // light's P p_l past 1.8 x 10^19 (a sphere of 10^-10 m seen from a
+    // meter: 3.2 x 10^19), whose square a float does not hold; the largest
+    // float; an infinite density beside a finite one, and two infinite; a
+    // density beside 0; and ordinary ones. Each weight is checked against
+    // f^2 / (f^2 + g^2) worked out in doubles (its limit where a density is
+    // infinite, 1/2 for two), and the two ways round must sum to 1.
+    constexpr float inf = std::numeric_limits<float>::infinity();
+    constexpr float largest = std::numeric_limits<float>::max();
+    const std::vector<tests::HeuristicQuery> queries{
+        {2.0f, 1.0f},     {1.0f, 1.0f},    {0.3f, 0.0f},         {3.2e19f, 0.3f},  {0.3f, 3.2e19f},
+        {1e20f, 1e20f},   {1e30f, 3e29f},  {largest, 1e-3f},     {largest, largest}, {inf, 1.0f},
+        {1.0f, inf},      {inf, inf},      {1e-30f, 1e-20f},     {1e-20f, 0.0f}};
+    tests::ProbeRunner gpu;
+    const auto count = static_cast<std::uint32_t>(queries.size());
+    const std::vector<tests::HeuristicWeights> weights = gpu.run<tests::HeuristicWeights>(
+        "heuristic_weights", count, {tests::Binding::of(queries), tests::Binding::of(count)});
+    std::size_t squared_not_finite = 0;
+    for (std::size_t k = 0; k < queries.size(); ++k) {
+        const double f = queries[k].drawn;
+        const double g = queries[k].other;
+        double expected = 0.0;
+        if (std::isinf(f) && std::isinf(g)) {
+            expected = 0.5;
+        } else if (std::isinf(f)) {
+            expected = 1.0;
+        } else if (std::isinf(g)) {
+            expected = 0.0;
+        } else {
+            expected = f * f / (f * f + g * g);
+        }
+        const tests::HeuristicWeights& w = weights[k];
+        INFO("densities " << f << ", " << g << ": weight " << w.weight << " (expected " << expected << "), swapped "
+                          << w.swapped << ", squared directly " << w.squared);
+        CHECK(std::isfinite(w.weight));
+        CHECK(std::isfinite(w.swapped));
+        // Absolute: a weight in [0, 1] to 10^-6 (a float flushes a weight
+        // under 10^-38 to 0, as at 0.3 beside 3.2 x 10^19).
+        CHECK(w.weight == doctest::Approx(expected).epsilon(1e-6));
+        CHECK(static_cast<double>(w.weight) + w.swapped == doctest::Approx(1.0).scale(0).epsilon(1e-6));
+        squared_not_finite += std::isfinite(w.squared) ? 0 : 1;
+    }
+    // And the densities asked are ones that break the heuristic squared
+    // directly, as 7751a65 computed it: NaN at some of them.
+    MESSAGE(squared_not_finite << " of " << queries.size() << " pairs not finite when squared directly");
+    CHECK(squared_not_finite >= 5);
 }
 
 namespace {
@@ -716,7 +841,9 @@ TEST_CASE("MIS: a glossy floor's highlight of a firefly converges to the light's
                 queries.push_back({{static_cast<float>(p.x), 0.0f, static_cast<float>(p.z)},
                                    cone_grid,
                                    {static_cast<float>(-d.x), static_cast<float>(-d.y), static_cast<float>(-d.z)},
-                                   1u});
+                                   1u,
+                                   {0.0f, 1.0f, 0.0f},
+                                   0u});
             }
         }
     }
@@ -745,6 +872,99 @@ TEST_CASE("MIS: a glossy floor's highlight of a firefly converges to the light's
         CHECK(share > 1.0 / 3.0);
         CHECK(share < 2.0 / 3.0);
         CHECK(rendered == doctest::Approx(expected).scale(0).epsilon(0.015));
+    }
+}
+
+namespace {
+
+// A conductor floor, alpha 0.1, seen from (0, 0.1, 0.1) through a lens of
+// 10 degrees, and a firefly 3 mm across 2 cm along the direction the floor
+// at the camera's middle mirrors it to: the floor's highlight of it, some
+// twenty pixels across, the light close enough that the 0.1 mm a ray
+// leaves the floor from moves its cone by percents. near_highlight_light
+// is the scene's firefly, as the probe binds it.
+const tests::ProbeLight near_highlight_light{{0.0f, 0.014142136f, -0.014142136f}, 0.003f, 30.0f};
+
+std::string near_glossy_floor() {
+    return camera_text("[0, 0.1, 0.1]", "[0, 0, 0]", 10) + sky("[0, 0, 0]", "[0, 0, 0]") +
+           "[materials.floor]\nkind = \"conductor\"\nf0 = [0.8, 0.8, 0.8]\nroughness = 0.31622776\n"
+           "[materials.glow]\nkind = \"emissive\"\nradiance = [30, 30, 30]\n"
+           "[[shapes]]\nkind = \"box\"\nmin = [-50, -1, -50]\nmax = [50, 0, 50]\nmaterial = \"floor\"\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.014142136, -0.014142136]\nradius = 0.003\n"
+           "material = \"glow\"\n";
+}
+
+}  // namespace
+
+TEST_CASE("MIS: a glossy floor's highlight of a firefly millimeters across converges to its integral from where rays leave") {
+    // The review of 7751a65: a glossy lobe can show what a Lambert floor's
+    // weights cancel, since there each strategy carries a large share. The
+    // floor's radiance toward the camera is the light's integral of
+    // f |cos| L_e over its cone, seen from the point the path tracer's rays
+    // leave the floor from (path.metal.h, "One origin"), which the probe
+    // works out on the GPU by the midpoint rule over the cone at 4 x 4
+    // points in each pixel, and the share of it step 5's weighted light
+    // samples carry: 0.76 to 0.92 at these pixels, the bounce's the rest.
+    // The render must converge to it, to 1%. Seen from the floor's point the
+    // integral is 1.4 to 3.7% away from it at five of them, as a light 2 cm
+    // off moves for 0.1 mm (in the message). With step 5 drawn from the
+    // floor's point, as 7751a65 drew it, the weights do not sum to 1 and the
+    // render converges to neither integral: 1 to 2.4% off this one at four
+    // of the pixels.
+    constexpr frame::Extent size{64, 48};
+    Rig rig(near_glossy_floor(), size);
+    const contracts::CameraData c = camera::shader_form(rig.description().camera, size);
+    const contracts::Bsdf bsdf = floor_bsdf(contracts::BsdfKind::conductor, glossy_roughness * glossy_roughness);
+    constexpr std::uint32_t within = 4;  // points a side in each pixel
+    constexpr std::uint32_t cone_grid = 128;
+    const std::array<tests::Pixel, 6> pixels{{{32, 24}, {32, 20}, {32, 16}, {28, 20}, {32, 28}, {36, 28}}};
+    std::vector<tests::DirectQuery> queries;
+    for (const std::uint32_t at_point : {0u, 1u}) {
+        for (const tests::Pixel pixel : pixels) {
+            for (std::uint32_t j = 0; j < within; ++j) {
+                for (std::uint32_t i = 0; i < within; ++i) {
+                    const Vec3 d = tests::camera_direction(c, pixel.x + (i + 0.5) / within,
+                                                           pixel.y + (j + 0.5) / within, size);
+                    const Vec3 p = tests::vec(c.origin) + (-c.origin.y / d.y) * d;
+                    queries.push_back({{static_cast<float>(p.x), 0.0f, static_cast<float>(p.z)},
+                                       cone_grid,
+                                       {static_cast<float>(-d.x), static_cast<float>(-d.y), static_cast<float>(-d.z)},
+                                       1u,
+                                       {0.0f, 1.0f, 0.0f},
+                                       at_point});
+                }
+            }
+        }
+    }
+    tests::ProbeRunner gpu;
+    const auto count = static_cast<std::uint32_t>(queries.size());
+    const std::vector<tests::DirectIntegral> integrals = tests::run_with_light<tests::DirectIntegral>(
+        gpu, "light_integral", count, near_highlight_light,
+        {tests::Binding::of(queries), tests::Binding::of(count), tests::Binding::of(bsdf)});
+
+    (void)rig.render(65536);
+    const std::vector<float> image = rig.accumulated();
+    const std::size_t per_point = pixels.size() * within * within;
+    for (std::size_t k = 0; k < pixels.size(); ++k) {
+        double expected = 0.0;
+        double at_point = 0.0;
+        double light_part = 0.0;
+        for (std::size_t q = k * within * within; q < (k + 1) * within * within; ++q) {
+            expected += integrals[q].direct;
+            at_point += integrals[per_point + q].direct;
+            light_part += static_cast<double>(integrals[q].direct) * integrals[q].light_share;
+        }
+        const double share = light_part / expected;
+        expected /= within * within;
+        at_point /= within * within;
+        const double rendered = image[(std::size_t{pixels[k].y} * size.width + pixels[k].x) * 4];
+        INFO("pixel " << pixels[k].x << ", " << pixels[k].y << ": rendered " << rendered << ", expected " << expected
+                      << ", from the floor's point " << at_point << ", the light samples' share " << share);
+        MESSAGE("pixel " << pixels[k].x << ", " << pixels[k].y << ": rendered " << rendered << ", expected "
+                         << expected << ", rendered / expected - 1 = " << (rendered / expected - 1.0) * 100.0
+                         << "%; from the floor's point " << at_point << ", rendered / it - 1 = "
+                         << (rendered / at_point - 1.0) * 100.0 << "%; the light samples' share " << share);
+        CHECK(rendered == doctest::Approx(expected).scale(0).epsilon(0.01));
     }
 }
 

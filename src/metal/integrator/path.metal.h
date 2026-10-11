@@ -55,16 +55,20 @@
 //               along (glass blocks shadow rays): w_b = 1. Light that glass
 //               focuses onto a rough surface is counted so, the one way it
 //               can be, until manifold next event estimation takes it over.
+//               And for a ray a lobe that is not delta sent to wo's other
+//               side, which step 5 there does not draw (below, "One
+//               origin"): every such lobe reflects, so only a direction
+//               that rounding puts just past the horizon.
 //             - a density p_b > 0, for a ray that a lobe that is not delta
 //               drew with density p_b, from a surface whose step 5 aimed at
 //               lights: w_b = p_b^2 / (p_b^2 + (P p_l)^2), the power
 //               heuristic, P = 1 / N the light's chance of being chosen
 //               (light_selection/uniform_light.metal.h, light_probability)
 //               and p_l the density with which step 5 draws this direction
-//               toward this light, asked from the point the ray started at
-//               (contract 3's light_pdf(): the cone's 1 / its solid angle,
-//               and 0 outside it, where w_b is 1; below, "Where p_l is
-//               asked").
+//               toward this light, asked from the point the ray started at,
+//               which is where step 5 at that surface draws from (contract
+//               3's light_pdf(): the cone's 1 / its solid angle, and 0
+//               outside it, where w_b is 1; below, "One origin").
 //             - not_counted, ReSTIR's continuation only (below): nothing.
 //           A light's surface scatters what its BSDF scatters: a glowing
 //           sphere's nothing, so its path ends at step 6.
@@ -72,21 +76,26 @@
 //   Step 5  Next event estimation, where the BSDF has a lobe that is not
 //           delta (aims_at_lights): choose one light uniformly, P = 1 / N
 //           (light_selection/uniform_light.metal.h); draw a direction toward
-//           it, pdf p_l (contract 3); if it gives no light (L_e = 0, a
+//           it, pdf p_l (contract 3), from the point a ray leaving toward
+//           wo's side leaves from (next_event_origin(); below, "One
+//           origin"); if it gives no light (L_e = 0, a
 //           firefly not yet awake, core/animation/glow.h), stop there, as
 //           pbrt-v4's PathIntegrator does (its test of ls->L): the term is 0
-//           whatever the shadow ray finds, so the ray is not traced; else
-//           trace one shadow ray, to the light's surface, the light itself
-//           ignored; if nothing blocks it,
+//           whatever the shadow ray finds, so the ray is not traced; if the
+//           direction leaves on wo's other side, stop there too: it is not
+//           step 5's to draw (below); else trace one shadow ray, from that
+//           same point to the light's surface, the light itself ignored; if
+//           nothing blocks it,
 //             L += beta x f(wo, wi) |cos(wi)| x L_e x T / (P x p_l) x w_l,
 //           w_l = (P p_l)^2 / ((P p_l)^2 + p_b^2), p_b = pdf(wo, wi), the
 //           density with which step 6 here would draw wi (contract 2): the
-//           same two densities step 3 weighs a BSDF-drawn ray by, so for any
-//           direction both strategies can draw, w_l + w_b = 1, and the
-//           light is counted once in expectation. T is the transmittance of
-//           the medium the path is in over the shadow ray's length: 1 in
-//           air; a light inside the same glass as the surface, dimmed as the
-//           glass dims. The term is computed whole before the shadow ray is
+//           same two densities step 3 weighs a BSDF-drawn ray by, asked from
+//           the same point, so for any direction both strategies can draw,
+//           w_l + w_b = 1, and the light is counted once in expectation
+//           (below, "One origin"). T is the transmittance of the medium the
+//           path is in from the surface's point to the light's, as step 1
+//           measures a stretch: 1 in air; a light inside the same glass as
+//           the surface, dimmed as the glass dims. The term is computed whole before the shadow ray is
 //           traced, so across that query the step holds one float3 beside
 //           the walk's own state, not f, wi, L_e, T and the densities
 //           (GPU.3; ReSTIR's shade does the same,
@@ -94,8 +103,10 @@
 //           is the same for any number of lights (principle 9).
 //   Step 6  Sample the BSDF: wi, f and pdf (contract 2). If pdf is 0, stop.
 //           beta *= f |cos(wi)| / pdf. emission_pdf = counted_in_full if
-//           the lobe was delta, else pdf: what step 3 at the next surface
-//           weighs a light by. If the lobe was a
+//           the lobe was delta, or if wi leaves on wo's other side, where
+//           step 5 draws nothing (below, "One origin"), else pdf: what step
+//           3 at the next surface weighs a light by (handed_on()). If the
+//           lobe was a
 //           transmission, the path crossed the surface into or out of its
 //           shape: arriving from outside, it enters the shape's interior
 //           (SurfaceInteraction::interior, contract 1); from inside, it
@@ -120,8 +131,18 @@
 //           the energy the path carries, and roulette would end the paths
 //           inside a marble twice as often as their light warrants. The
 //           mean is the same either way; the noise inside glass is not.
-//           Roulette does not depend on the direction drawn, so it enters
-//           neither strategy's density.
+//           Roulette enters neither strategy's density, nor any MIS
+//           weight. Not because it is independent of the direction drawn:
+//           it is not, q being found from beta after step 6 multiplied it
+//           by f |cos| / pdf, which varies with wi at a conductor or a
+//           coated surface. Because it is conditionally unbiased: given the
+//           direction drawn and all before it, the path goes on with
+//           chance q and a survivor's beta is divided by q, so what the
+//           path goes on to gather has the expectation it had without
+//           roulette, whatever q is and whatever it depends on (Veach 1997,
+//           2.4). The weights at the next surface weigh the densities with
+//           which step 6 drew the direction, which roulette does not
+//           change; step 5 here is before it.
 //   Step 8  Continue: the ray leaves the surface along wi, and from is the
 //           surface's point.
 //
@@ -130,20 +151,70 @@
 // crosses a trace for it: step 3 finds p_l at the hit from the ray itself,
 // its origin and direction, and the light struck.
 //
-// Where p_l is asked: from the ray's own origin, ray_offset off the
-// surface's point, not from the point. Step 5 draws from the point, and the
-// bounced ray sees the light from its origin, 0.1 mm away; for a firefly a
-// few millimeters across that is a few percent of its width, so the two
-// cones differ by a crescent on either side. Asked from the point, a light
-// the ray struck in the crescent only its own cone holds had p_l 0 and w_b
-// 1, counted in full beside step 5's whole cone: the firefly's light over
-// a Lambert floor 2% too bright, 3% over the marbles' table (found by the
-// means against the reference, docs/research/2026-10-11-path-mis.md; held
-// by a test). Asked from the origin, the crescent the ray alone sees is
-// weighed as the one step 5 alone draws, on the cone's other side, and the
-// two cancel to the first order. What is left is the difference between
-// the light at the point and at 0.1 mm off it, below what the tests and
-// the references resolve.
+// One origin (decided 2026-10-11, by the review of 7751a65). Every ray
+// leaves a surface from leaving_point(), ray_offset off its point on the
+// side the ray leaves toward (integrator/surface.metal.h). Both strategies
+// draw, and weigh, a direction from the point its ray leaves from:
+//
+//   - step 5 draws its light sample from next_event_origin(), the point a
+//     ray toward wo's side leaves from, its density P p_l the cone's from
+//     there, and its shadow ray starts there; a direction it draws that
+//     leaves on wo's other side it does not take (density 0 there). Every
+//     lobe that is not delta is a reflection (contract 2: lambert,
+//     conductor, the coated base), so f is 0 there anyway, and step 5 loses
+//     nothing; were a kind to add a rough transmission, its directions
+//     would be the bounce's alone, counted, not lost;
+//   - step 6 hands on (handed_on()) the density p_b it drew a direction
+//     with, or counted_in_full where the direction leaves on wo's other
+//     side, which step 5 does not draw;
+//   - step 3 asks p_l of the light the bounce struck from the ray's own
+//     origin, the point the bounce left from.
+//
+// So for a direction wi that both can draw at a surface, wi leaves alike
+// with wo (leave_alike()), and the two points are leaving_point(surface,
+// wo) and leaving_point(surface, wi): the same expression on the same
+// position and normal, its one branch taken the same way, the same bits.
+// Step 5's P p_l is select_light()'s 1 / N times sample_light()'s pdf from
+// that point, and step 3's is light_probability()'s 1 / N times
+// light_pdf() from that point, each 1 over the cone's solid angle from
+// view_light() of the same light at the same point (lights/
+// sphere_light.metal.h): the same a. Step 5's p_b is pdf(wo, wi) and step
+// 3's is the pdf sample() drew wi with: the same b, to the rounding of a
+// conductor's half vector found two ways (contract 2). Then w_l =
+// a^2 / (a^2 + b^2) and w_b = b^2 / (b^2 + a^2), which sum to 1. A
+// direction only one strategy draws has the other's density 0: outside the
+// cone from that point light_pdf() is 0 and w_b = 1; on wo's other side
+// step 6 hands on counted_in_full and w_b = 1; step 5's directions all have
+// p_b > 0 at a lobe they can be lit through. Every direction is counted
+// once in expectation. tests/gpu/path_test.cpp holds the sum from these
+// very functions and points, at a firefly millimeters across where the
+// two points' cones differ by percents.
+//
+// What is estimated, then, is the light as seen from the point the rays
+// leave from, ray_offset off the surface, not from its point: the same
+// integrand for both strategies, as the bounce always saw it. For a light
+// at height h over a surface that is a relative 2 ray_offset / h more of
+// its light directly below it, and as much as ray_offset / h less to its
+// side, far from it: for the marbles' fireflies, which rest on the table
+// and the marbles with their middles 1.5 mm up, some 7% less of their light
+// on the table beside them. It is stated, not hidden, and ray_offset's own
+// (surface.metal.h): an offset scaled to the float error at the point, as
+// pbrt-v4's is, would make it negligible, a change to leave() for every
+// estimator (docs/research/2026-10-11-path-mis.md, "Review of 7751a65",
+// "Open"). pbrt-v4's PathIntegrator draws as this does (SampleLd() moves
+// its light sample's point to the ray origin offset toward wo for a
+// reflective BSDF), its offset the bound of the float error, so there the
+// difference is below the noise.
+// Considered and not taken: drawing and weighing both from the surface's
+// point, the offset only the traversal's. The bounce's ray then sees the
+// light from a point other than the one its density is asked of, and the
+// two cones differ by a crescent on either side, where one strategy's
+// density is 0 and the other's is not: each crescent counted in full
+// (7751a65's first version), or, with step 3 asked from the ray's origin
+// and step 5 from the point (7751a65), two densities of the same light that
+// differ, whose weights do not sum to 1 (the review of 7751a65). Only a
+// ray traced from the point itself would make the point's integrand the
+// bounce's, which is leave()'s to change, for every estimator.
 //
 // emission_pdf's two named values are values of its one purpose, how the
 // next surface counts a light (ES.26; ES.45): counted_in_full is 0 and
@@ -154,13 +225,19 @@
 // than before (GPU.3); that shape was not measured against this one.
 //
 // The power heuristic, for the strategy that drew a direction with density
-// f > 0 beside the other's g >= 0, is f^2 / (f^2 + g^2), in (0, 1]. Pure
-// (F.8). Precondition (I.5): both densities below 10^19, so that the sum of
-// their squares is a finite float. The BSDF's are at most some 10^8 (GGX at
-// least_alpha, toward grazing: metal/materials/resolve.metal.h), and P p_l
-// = 1 / (N x the cone's solid angle) reaches 10^19 only for a cone under
-// 10^-19 / N sr: a firefly a millimeter across seen from thousands of
-// kilometers. Stated here, not tested per sample.
+// f > 0 beside the other's g >= 0, is f^2 / (f^2 + g^2), in (0, 1].
+// Computed from r, the smaller density over the larger, in [0, 1]:
+// 1 / (1 + r^2) for the strategy of the larger, r^2 / (1 + r^2) for the
+// smaller's; no density is squared, so none a float holds overflows it
+// (ES.103). Squared directly, any density past 1.8 x 10^19 made the sum
+// infinite and the weight infinity over infinity, NaN; a light's P p_l
+// passes that for a cone under some 10^-19 / N sr, as a sphere of 10^-10 m
+// seen from a meter, which the scene accepts (review of 7751a65). Defined
+// at the edges, not left to a precondition (I.5): g = 0 gives 1 (r = 0); an
+// infinite density beside a finite one takes the whole weight (r = 0
+// again, a finite number over infinity being 0, under fast math as well,
+// as the test shows); equal densities, both infinite included, 1/2. Pure
+// (F.8).
 //
 // What the camera ray starts from, and what is done with L, are the pass's:
 // a point in the pixel drawn anew each frame, and the mean folded into the
@@ -171,7 +248,9 @@
 // (metal/sampler/sampler.metal.h): independent between frames, so their mean
 // converges, and any frame can be rendered again exactly, alone (principle 2).
 // MIS draws no number: each path draws the numbers it drew before MIS, in
-// the same order, and traces the same rays; only what it adds differs.
+// the same order. Its bounces are the rays they were; its shadow rays are
+// drawn from the point they leave from (above, "One origin"), 0.1 mm off
+// the point they were drawn from before, so they and what they add differ.
 //
 // A safety stop at 256 surfaces bounds one thread's work, against a path
 // that roulette keeps alive for long (each survival is at most 0.95 likely,
@@ -187,19 +266,33 @@
 //
 // Cost per path: one ray to the next surface and at most one shadow ray per
 // surface, so about twice the mean path length, a handful of surfaces in
-// practice; 512 rays at the safety stop. MIS adds no ray and no read of
-// device memory. Per step 5 that reaches its shadow ray it adds one BSDF
-// density (contract 2's pdf: a dot product for a Lambert surface; a half
-// vector, D and G1 for a conductor; a Fresnel term for a coated one) and
-// the heuristic (four multiplies, an add, a divide). Per light struck after
-// a lobe that is not delta it adds one light density (the cone from the
-// ray's origin: a length, a square root, a cross product, a divide), the light's
-// data, transform and glow, read from the constant address space as step
-// 3's L_e already reads them, the selection's 1 / N and the heuristic. And
-// step 3 reads which light a struck shape is (4 bytes, constant address
-// space) at every surface, where before MIS it read it only after a delta
-// lobe and on the camera's ray. Each is on the lanes that already take
-// step 5 or step 3 (GPU.4). Measured
+// practice; 512 rays at the safety stop. MIS adds no ray and draws no
+// number. What it adds, per frame of N pixels with H_nd surfaces reached
+// after a lobe that is not delta (the camera's ray and a delta lobe's
+// already read them before MIS), counted as logical loads (GDSA.6):
+//
+//   - at each such surface, step 3 reads which light the struck shape is,
+//     shape_lights[primitive], 4 bytes: 4 N H_nd bytes a frame, from a
+//     small array in the constant address space, so from its cache in the
+//     common case, not from DRAM;
+//   - at each light struck after such a lobe, its density: the light's
+//     record (8 bytes), sphere (16), transform (48) and glow (4), the same
+//     addresses step 3's L_e already reads for that light, so the same
+//     cache lines; and the cone from the ray's origin (a length, a square
+//     root, a cross product, a divide), the selection's 1 / N and the
+//     heuristic;
+//   - per step 5 that reaches its shadow ray, the BSDF's density (contract
+//     2's pdf: a dot product for a Lambert surface; a half vector, D and G1
+//     for a conductor; a Fresnel term for a coated one) and the heuristic
+//     (a min, a max, a compare, a divide, a few multiplies and an add);
+//     per step 5, the point it draws from and the side its direction
+//     leaves on (a dot product, a select and a multiply-add each), and the
+//     stretch from the surface's point to the light's for T, from the
+//     sample's distance and its cosine to the geometric normal (a dot
+//     product, two multiply-adds and a square root; next_event());
+//   - per step 6, the side its direction leaves on (a dot product).
+//
+// Each is on the lanes that already take step 5, 6 or 3 (GPU.4). Measured
 // against the build before it: docs/research/2026-10-11-path-mis.md.
 //
 // The split, for ReSTIR DI. The loop above is one function, walk_path(),
@@ -257,8 +350,11 @@
 // sample (a BSDF candidate, as RTXDI draws one, is ReSTIR's Phase B), so it
 // alone counts every firefly's direct light at q. continue_path() therefore
 // counts no light that the bounce from q strikes off a lobe that is not
-// delta: step 6 at q hands on not_counted in place of its pdf. A light the
-// coat's delta lobe reaches from q is counted in full, as everywhere. From
+// delta: step 6 at q hands on not_counted in place of what handed_on()
+// gives, decided by the lobe drawn, so a direction on wo's other side is
+// not counted at q either (the reservoir weighs every direction f is not 0
+// for, on either side). A light the coat's delta lobe reaches from q is
+// counted in full, as everywhere. From
 // the next surface on, the continuation is the path tracer's, MIS and all,
 // being the same loop. So nothing is counted twice and nothing left out:
 // at q each firefly once, by ReSTIR; after q, each light path as the path
@@ -314,15 +410,26 @@ using Scene = SceneView<UniformLight>;
 
 // emission_pdf's two named values (above): how the next surface counts a
 // light it is, where that is not by a density.
-constant constexpr float counted_in_full = 0.0f;  // the camera's ray, and a delta lobe's: w_b = 1
+constant constexpr float counted_in_full = 0.0f;  // the camera's ray, a delta lobe's, and one step 5 does not draw: w_b = 1
 constant constexpr float not_counted = -1.0f;     // ReSTIR's bounce from q off a lobe that is not delta
 
 // The power heuristic (above): the weight of a sample drawn with density
 // `drawn` > 0 beside a strategy of density `other` >= 0 for the same
-// direction. Precondition: both below 10^19.
+// direction, either of them possibly infinite. In [0, 1], never NaN for
+// such densities, and power_heuristic(f, g) + power_heuristic(g, f) is 1
+// to rounding (I.7).
 inline float power_heuristic(float drawn, float other) {
-    const float d2 = drawn * drawn;
-    return d2 / (d2 + other * other);
+    const float larger = metal::max(drawn, other);
+    const float smaller = metal::min(drawn, other);
+    if (smaller == larger) {
+        return 0.5f;  // equal densities, both infinite included: an even split
+    }
+    // larger > smaller >= 0, so r is in [0, 1): 0 where `smaller` is 0 or
+    // `larger` infinite.
+    const float r = smaller / larger;
+    const float r2 = r * r;
+    const float of_larger = 1.0f / (1.0f + r2);
+    return drawn == larger ? of_larger : r2 * of_larger;
 }
 
 // Step 5's w_l: for a light sample along `wi`, drawn with density
@@ -333,8 +440,8 @@ inline float next_event_weight(float light_density, serenity::contracts::Bsdf bs
 
 // Step 3's w_b: for `light`, struck by a ray from `origin` along unit
 // `direction` that its surface drew with emission_pdf `emission_pdf`, p_l
-// asked from the ray's origin (above, "Where p_l is asked").
-// Precondition: emission_pdf is not not_counted.
+// asked from the ray's origin, where step 5 at that surface draws from
+// (above, "One origin"). Precondition: emission_pdf is not not_counted.
 inline float emission_weight(UniformLight selection, Lights lights, serenity::lights::LightRecord light, float3 origin,
                              float3 direction, float emission_pdf) {
     if (emission_pdf == counted_in_full) {
@@ -344,29 +451,64 @@ inline float emission_weight(UniformLight selection, Lights lights, serenity::li
                            light_probability(selection, light) * light_pdf(lights, light, origin, direction));
 }
 
+// Where step 5 at `surface`, seen from `wo`, draws its light sample from and
+// its shadow ray leaves from: the point a ray toward wo's side leaves from
+// (above, "One origin").
+inline float3 next_event_origin(serenity::contracts::SurfaceInteraction surface, float3 wo) {
+    return leaving_point(surface, wo);
+}
+
+// Step 6's emission_pdf for the sample `next` drawn at `here`: how the next
+// surface's step 3 counts a light it strikes. counted_in_full for a delta
+// lobe's direction, and for one that leaves on wo's other side, which step
+// 5 does not draw; else the density it was drawn with (above, "One origin").
+inline float handed_on(serenity::contracts::BsdfSample next, Shading here) {
+    if ((next.lobe & serenity::contracts::lobe_delta) != 0u ||
+        !leave_alike(here.surface, to_float3(next.direction), here.wo)) {
+        return counted_in_full;
+    }
+    return next.pdf;
+}
+
 // Step 5 at `here`: what one light, chosen uniformly, sends toward wo along
 // one direction drawn toward it, f |cos| L_e T / (P p) x w_l, or 0 where the
-// shadow ray to its surface is blocked. T is over `here`'s medium, which the
-// shadow ray crosses. The term is whole before the shadow ray's query, so
+// shadow ray to its surface is blocked. Drawn, weighed and its shadow ray
+// traced from next_event_origin(). T is over `here`'s medium, which the
+// shadow ray crosses, from the surface's point to the light's, as step 1
+// measures a stretch. The term is whole before the shadow ray's query, so
 // it alone of the step is alive across it (above, step 5).
 inline float3 next_event(Scene scene, Shading here, thread PathNumbers& numbers) {
     const SelectedLight chosen = select_light(scene.selection(), next_number(numbers));
+    const float3 origin = next_event_origin(here.surface, here.wo);
     const serenity::contracts::LightSample sample =
-        sample_light(scene.lights(), chosen.light, to_float3(here.surface.position), next_numbers2(numbers));
+        sample_light(scene.lights(), chosen.light, origin, next_numbers2(numbers));
     if (sample.pdf <= 0.0f || !metal::any(to_float3(sample.radiance) > 0.0f)) {
         return float3(0.0f);  // no light from it: no shadow ray (step 5)
     }
     const float3 wi = to_float3(sample.direction);
+    if (!leave_alike(here.surface, wi, here.wo)) {
+        return float3(0.0f);  // on wo's other side: not step 5's to draw (above, "One origin")
+    }
+    // T's stretch, from the surface's point to the light's: |r n + d wi|,
+    // r = ray_offset, n the geometric normal turned to wi's side (the origin
+    // is r n off the point), so n . wi = |cos|, and the length is
+    // sqrt(d (d + 2 r |cos|) + r^2). Optimization: from the distance and the
+    // cosine, not as distance(point, origin + d wi), which held the point
+    // beside the origin through the step and measured slower (docs/research/
+    // 2026-10-11-path-mis.md, "Review of 7751a65").
+    const float cos_g = metal::abs(metal::dot(wi, to_float3(here.surface.geometric_normal)));
+    const float stretch = metal::sqrt(sample.distance * (sample.distance + 2.0f * ray_offset * cos_g) +
+                                      ray_offset * ray_offset);
     const float3 f = bsdf_evaluate(here.bsdf, here.wo, wi);
     if (!metal::any(f > 0.0f)) {
         return float3(0.0f);
     }
     const float light_density = chosen.probability * sample.pdf;
     const float3 unshadowed = f * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) *
-                              to_float3(sample.radiance) *
-                              transmittance(scene.media(), here.medium, sample.distance) / light_density *
-                              next_event_weight(light_density, here.bsdf, here.wo, wi);
-    if (occluded(scene.structure, scene.shapes(), leave(here.surface, wi, sample.distance), sample.primitive)) {
+                              to_float3(sample.radiance) * transmittance(scene.media(), here.medium, stretch) /
+                              light_density * next_event_weight(light_density, here.bsdf, here.wo, wi);
+    if (occluded(scene.structure, scene.shapes(), metal::raytracing::ray(origin, wi, 0.0f, sample.distance),
+                 sample.primitive)) {
         return float3(0.0f);
     }
     return unshadowed;
@@ -445,16 +587,17 @@ template <Start start, Stop stop>
     };
 
     // Steps 6 to 8 at `here`, the path's surface number `surface`: the walk
-    // sent on from it; false where the path ends there.
-    const auto scatter = [&](Shading here, uint surface) __attribute__((always_inline)) -> bool {
+    // sent on from it; the lobe step 6 drew there, or 0 where the path ends
+    // there (a sample's lobe has a bit of each pair, contract 2).
+    const auto scatter = [&](Shading here, uint surface) __attribute__((always_inline)) -> uint {
         // Step 6.
         const serenity::contracts::BsdfSample next = bsdf_sample(here.bsdf, here.wo, next_numbers3(numbers));
         if (next.pdf <= 0.0f) {
-            return false;
+            return 0u;
         }
         const float3 wi = to_float3(next.direction);
         beta *= to_float3(next.value) * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) / next.pdf;
-        emission_pdf = (next.lobe & serenity::contracts::lobe_delta) != 0u ? counted_in_full : next.pdf;
+        emission_pdf = handed_on(next, here);
         if ((next.lobe & serenity::contracts::lobe_transmission) != 0u) {
             medium = (here.surface.flags & serenity::contracts::arrived_from_outside) != 0u
                          ? here.surface.interior
@@ -468,7 +611,7 @@ template <Start start, Stop stop>
             const float energy = metal::max(metal::max(beta.r, beta.g), beta.b) * eta_scale;
             const float q = metal::min(energy, max_survival);
             if (next_number(numbers) >= q) {
-                return false;
+                return 0u;
             }
             beta /= q;
         }
@@ -476,16 +619,17 @@ template <Start start, Stop stop>
         // Step 8.
         from = to_float3(here.surface.position);
         along = leave(here.surface, wi);
-        return true;
+        return next.lobe;
     };
 
     if constexpr (start == Start::after_step_5) {
-        if (!scatter(at, first)) {
+        const uint lobe = scatter(at, first);
+        if (lobe == 0u) {
             return Stopped{false, Shading{}, 0u, carried()};
         }
-        // ReSTIR's q: its direct light the shade's alone (above, "ReSTIR's
-        // first surface").
-        if (emission_pdf != counted_in_full) {
+        // ReSTIR's q: its direct light the shade's alone, every lobe that is
+        // not delta's (above, "ReSTIR's first surface").
+        if ((lobe & serenity::contracts::lobe_delta) == 0u) {
             emission_pdf = not_counted;
         }
     }
@@ -529,7 +673,7 @@ template <Start start, Stop stop>
         }
 
         // Steps 6 to 8.
-        if (!scatter(here, surface)) {
+        if (scatter(here, surface) == 0u) {
             break;
         }
     }

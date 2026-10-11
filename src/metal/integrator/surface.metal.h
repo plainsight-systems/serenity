@@ -11,7 +11,12 @@
 //
 // A ray leaves a surface from a point `ray_offset` off it along its
 // geometric normal, on the side the ray leaves toward, so it does not hit
-// that surface again.
+// that surface again: leaving_point(), which leave() starts its ray at, so
+// an estimator that must know where a ray will leave from before it has the
+// ray (the path tracer's next event estimation, path.metal.h) asks the same
+// function (ES.3). Two directions on the same side of the geometric normal
+// (leave_alike()) leave from the same point, to the bit: the same
+// expression on the same inputs, its one branch taken the same way.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -35,13 +40,29 @@ struct Shading {
 // (a scene unit is about a meter), far above float rounding there.
 constant constexpr float ray_offset = 1e-4f;
 
+// Whether `direction` leaves `surface` on the side its geometric normal
+// points to (a direction in the tangent plane counts as that side).
+inline bool leaves_outward(serenity::contracts::SurfaceInteraction surface, float3 direction) {
+    return metal::dot(direction, to_float3(surface.geometric_normal)) >= 0.0f;
+}
+
+// Whether rays along `a` and `b` leave `surface` from the same point: both
+// on the same side of its geometric normal.
+inline bool leave_alike(serenity::contracts::SurfaceInteraction surface, float3 a, float3 b) {
+    return leaves_outward(surface, a) == leaves_outward(surface, b);
+}
+
+// The point a ray along `direction` leaves `surface` from (above).
+inline float3 leaving_point(serenity::contracts::SurfaceInteraction surface, float3 direction) {
+    const float3 n = to_float3(surface.geometric_normal);
+    return to_float3(surface.position) + ray_offset * (leaves_outward(surface, direction) ? n : -n);
+}
+
 // The ray leaving `surface` along unit `direction`, its hits up to `far`
 // from where it starts.
 inline metal::raytracing::ray leave(serenity::contracts::SurfaceInteraction surface, float3 direction,
                                     float far = unbounded) {
-    const float3 n = to_float3(surface.geometric_normal);
-    const float3 start = to_float3(surface.position) + ray_offset * (metal::dot(direction, n) >= 0.0f ? n : -n);
-    return metal::raytracing::ray(start, direction, 0.0f, far);
+    return metal::raytracing::ray(leaving_point(surface, direction), direction, 0.0f, far);
 }
 
 }  // namespace shaders
