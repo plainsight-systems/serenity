@@ -29,9 +29,10 @@
 //   float light_pdf(light, point, direction)
 //       the density with which sample_light() draws `direction` from
 //       `point`: what ReSTIR's resampling weights need of a candidate, and
-//       what any estimator that weighs two strategies against each other
-//       would. The naive path tracer weighs none (logical-overview.md,
-//       principle 7). 0 for a direction that misses the light.
+//       what the path tracer's MIS weighs a light by when a bounced ray
+//       strikes it, against the BSDF's density for that ray
+//       (logical-overview.md, principle 7; integrator/path.metal.h, step 3).
+//       0 for a direction that misses the light.
 //   float3 emitted(light, point on it, direction)
 //       the radiance the light sends from that point along that direction.
 //   bool light_at(primitive) -> light

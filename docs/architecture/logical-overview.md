@@ -46,7 +46,8 @@ and the camera.
   - **Direct** light from every firefly, by one of two estimators, chosen per
     frame:
     - **Naive**: for each sample, pick a light, pick a point on it, trace a
-      shadow ray.
+      shadow ray; weigh what it finds against the bounced ray, which counts
+      a firefly it strikes with the complementary weight (principle 7).
     - **ReSTIR DI** (Bitterli et al. 2020), configured as NVIDIA's RTXDI
       ships it: weigh M candidate lights by the light each would deliver,
       ignoring shadows, and keep one in a reservoir; trace one shadow ray
@@ -124,18 +125,33 @@ pixels or across frames.
    fireflies move between frames, so a position kept from last frame is
    wrong in this one.
 
-7. **Every light path is counted once.** A firefly's light reaches a rough
-   surface only by being sampled from it: in a straight line by the direct
-   estimator, or through glass and off metal by manifold next event
-   estimation. A bounced ray that strikes a firefly adds nothing, because
-   sampling has already counted that light. A firefly struck by the camera's
-   path before any rough surface is counted as emission. No path is found two
-   ways, so no two strategies need weighting against each other. Until
-   manifold next event estimation arrives, the naive path tracer counts the
-   light glass and metal focus onto a rough surface the one way it can: a
-   bounced ray that reaches a firefly through a delta lobe, which a shadow
-   ray, blocked by the glass, cannot. Manifold next event estimation then
-   takes those paths over, and the bounced ray stops counting them.
+7. **Direct light at a rough surface is found two ways and weighed; every
+   other light path is counted one way.** In the path tracer, a firefly's
+   light reaches a surface with a lobe that is not delta two ways: sampled
+   from it in a straight line by next event estimation, and found by the ray
+   the surface's BSDF sends on when that ray strikes the firefly. Each
+   strategy's sample is weighted by the power heuristic (Veach 1997, chapter
+   9): its density squared over the sum of both densities squared. The two
+   weights for any one direction sum to one, so the light is counted once
+   in expectation. This is how production path tracers light glossy
+   surfaces (pbrt-v4's PathIntegrator, Falcor). Light sampling alone spends
+   its samples where a near-mirror lobe gives nothing and, rarely, lands one
+   in the lobe, returning a spike that grows as 1 / alpha^2
+   (`docs/research/2026-10-11-restir-ris-results.md`); the BSDF's density
+   matches such a lobe. A firefly struck by the camera's own path, or after
+   a delta lobe, is counted in full, since no shadow ray could have reached
+   it that way. Until manifold next event estimation arrives, the path
+   tracer counts the light glass and metal focus onto a rough surface the
+   one way it can: a bounced ray that reaches a firefly through a delta
+   lobe, which a shadow ray, blocked by the glass, cannot. Manifold next
+   event estimation then takes those paths over, and the bounced ray stops
+   counting them. The sky is not aimed at, and is counted one way, by the
+   rays that escape to it. The exception is ReSTIR DI's first rough surface:
+   its direct light there is the reservoir's estimate alone, so the bounce
+   from it counts no firefly it strikes off a lobe that is not delta; from
+   the next surface on, its path is the path tracer's. Amended 2026-10-11 by
+   the user's direction, superseding "every light path is counted once, no
+   path found two ways" (`docs/process/MEMORY.md`).
 
 8. **The scene is data.** Positions, materials, firefly count, color,
    intensity and motion are numbers in the description. Changing the scene
@@ -163,7 +179,7 @@ What varies, and which principle handles it.
 | Firefly motion, color, intensity | per firefly | scene data, evaluated at *t* (1, 8) |
 | Geometry | spheres, the table | scene data (8) |
 | Material | rough, glass, polished metal | rough surfaces take light; glass and metal are passed through, by the camera's path and by caustic paths |
-| Light path | direct, bounced, through glass | one strategy each, never two (7) |
+| Light path | direct, bounced, through glass | direct light at a rough surface two ways, weighed by MIS; every other path one way (7) |
 | Camera | still or moving | a frame input (1) |
 | Time step | measured, or fixed | a frame input (1) |
 | Estimator | naive; ReSTIR temporal, spatial, both | interchangeable (4) |

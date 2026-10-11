@@ -69,7 +69,14 @@
 //                     plus its throughput times the direct light, then the
 //                     path continued from the record's surface as the
 //                     naive path tracer continues it (continue_path(),
-//                     step 5 there left out: principle 7).
+//                     step 5 there left out). The reservoir's estimate is
+//                     the direct light at q, weighed against no BSDF sample,
+//                     so the bounce from q counts no firefly it strikes off a
+//                     lobe that is not delta (path.metal.h, "ReSTIR's first
+//                     surface"); one its coat's delta lobe reaches is
+//                     counted in full; from the next surface on, the
+//                     continuation weighs light and BSDF sampling by MIS as
+//                     the path tracer does, being its loop (principle 7).
 //
 // Every function asks its questions of the surface unpacked from its record
 // (target.metal.h, unpack_record), so the surface the candidates are

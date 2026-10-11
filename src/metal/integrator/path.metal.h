@@ -2,20 +2,42 @@
 
 // Axis: Integrator (the naive path tracer).
 //
-// The radiance arriving along one camera ray, by the textbook path tracer
-// with next event estimation: pbrt-v4's SimplePathIntegrator (section 13.3),
-// which counts each light path one way and weighs no two strategies against
-// each other, as logical-overview.md's principle 7 requires of every
-// estimator here. Milestone 1's baseline, run once per pixel per frame by the
-// path pass (metal/passes/path/path.h); its mean over frames converges to
-// the scene's full light transport, so it is what every later estimator is
-// measured against.
+// The radiance arriving along one camera ray, by the path tracer with next
+// event estimation and multiple importance sampling (MIS): pbrt-v4's
+// PathIntegrator (section 13.4), its SampleLd() and its emission at a hit.
+// At every surface with a lobe that is not delta, a firefly's light is found
+// two ways, by a light sample (next event estimation) and by the ray the
+// BSDF sends on, striking the firefly, and each is weighted against the
+// other by the power heuristic (Veach 1997, chapter 9), as
+// logical-overview.md's principle 7 has said since 2026-10-11. Milestone 1's
+// baseline, run once per pixel per frame by the path pass
+// (metal/passes/path/path.h); its mean over frames converges to the scene's
+// full light transport, so it is what every later estimator is measured
+// against.
+//
+// Why two strategies, weighted (decided 2026-10-11, by the user's direction:
+// docs/research/2026-10-11-restir-ris-results.md, "Verdict"; measured in
+// docs/research/2026-10-11-path-mis.md). A light sample is drawn uniformly
+// over the light's cone, so at a near-mirror conductor (GGX alpha down to
+// 10^-3) one that lands in the lobe returns f cos L_e / (P p) with f up to
+// about 1 / (4 pi alpha^2): unbiased, its variance growing as 1 / alpha^2,
+// the rare samples of 10^5 that set the error over thousands of frames. The
+// BSDF's density matches such a lobe, and the light's matches a rough
+// surface; the power heuristic hands each direction to the strategy whose
+// density there is the higher, as production path tracers do (pbrt-v4's
+// PathIntegrator, Falcor's). Considered and not taken: the balance
+// heuristic (the power heuristic, exponent 2, has the lower variance where
+// one density dominates the other, as at a near mirror, Veach 9.2.4, and is
+// pbrt-v4's); clamping a sample's radiance (biased, and the reference must
+// not be).
 //
 // The algorithm, whose steps the code below carries by number:
 //
 //   L = 0, the radiance found; beta = 1, the path's throughput; the ray from
-//   the camera; "counts emission", true for the camera's own ray; and the
-//   medium the path is in (contract 12), no_medium, air, at the camera.
+//   the camera; emission_pdf = counted_in_full, how the next surface counts
+//   a light it is (step 3), for the camera's own ray; from, the point the
+//   ray truly left, the camera's; and the medium the path is in (contract
+//   12), no_medium, air, at the camera.
 //   For each surface, until Russian roulette ends the path (step 7):
 //
 //   Step 1  Trace: the nearest surface along the ray; beta *=
@@ -26,36 +48,53 @@
 //           that 0.1 mm is a percent of its light. 1 in air.
 //   Step 2  Escape: if there is none, L += beta x sky(direction), and stop.
 //           The sky is not aimed at, so this is the one way it is counted.
-//   Step 3  Emission: if the surface is a light (contract 3, light_at) and
-//           the path counts emission, L += beta x L_e, L_e the emitter's. A
-//           light's surface scatters what its BSDF scatters: a glowing
-//           sphere's nothing, so its path ends at step 6. The path counts
-//           emission on the camera's own ray and after a delta lobe, which
-//           no shadow ray could have reached the light through (glass
-//           blocks shadow rays). After any other bounce the light was
-//           counted at the surface before, by step 5, so it adds nothing
-//           here (principle 7). Light that glass focuses onto a rough surface
-//           is therefore counted here, the one way it can be, until manifold
-//           next event estimation takes it over.
+//   Step 3  Emission: if the surface is a light (contract 3, light_at),
+//           L += beta x L_e x w_b, L_e the emitter's, w_b by emission_pdf:
+//             - counted_in_full, for the camera's own ray and a ray a delta
+//               lobe sent, which no shadow ray could have reached the light
+//               along (glass blocks shadow rays): w_b = 1. Light that glass
+//               focuses onto a rough surface is counted so, the one way it
+//               can be, until manifold next event estimation takes it over.
+//             - a density p_b > 0, for a ray that a lobe that is not delta
+//               drew with density p_b, from a surface whose step 5 aimed at
+//               lights: w_b = p_b^2 / (p_b^2 + (P p_l)^2), the power
+//               heuristic, P = 1 / N the light's chance of being chosen
+//               (light_selection/uniform_light.metal.h, light_probability)
+//               and p_l the density with which step 5 at `from` draws this
+//               direction toward this light (contract 3's light_pdf(): the
+//               cone's 1 / its solid angle, and 0 outside it, where w_b is
+//               1, since no light sample could have found the light that way).
+//             - not_counted, ReSTIR's continuation only (below): nothing.
+//           A light's surface scatters what its BSDF scatters: a glowing
+//           sphere's nothing, so its path ends at step 6.
 //   Step 4  Resolve the surface's BSDF (contract 2).
 //   Step 5  Next event estimation, where the BSDF has a lobe that is not
 //           delta (aims_at_lights): choose one light uniformly, P = 1 / N
 //           (light_selection/uniform_light.metal.h); draw a direction toward
-//           it, pdf p (contract 3); if it gives no light (L_e = 0, a
+//           it, pdf p_l (contract 3); if it gives no light (L_e = 0, a
 //           firefly not yet awake, core/animation/glow.h), stop there, as
-//           pbrt-v4's SimplePathIntegrator does (its test of ls->L): the
-//           term is 0 whatever the shadow ray finds, so the ray is not
-//           traced; else trace one shadow ray, to the light's surface, the
-//           light itself ignored; if nothing blocks it,
-//             L += beta x f(wo, wi) |cos(wi)| x L_e x T / (P x p),
-//           T the transmittance of the medium the path is in over the
-//           shadow ray's length: 1 in air; a light inside the same glass as
-//           the surface, dimmed as the glass dims.
-//           The cost per surface is the same for any number of lights
-//           (principle 9).
+//           pbrt-v4's PathIntegrator does (its test of ls->L): the term is 0
+//           whatever the shadow ray finds, so the ray is not traced; else
+//           trace one shadow ray, to the light's surface, the light itself
+//           ignored; if nothing blocks it,
+//             L += beta x f(wo, wi) |cos(wi)| x L_e x T / (P x p_l) x w_l,
+//           w_l = (P p_l)^2 / ((P p_l)^2 + p_b^2), p_b = pdf(wo, wi), the
+//           density with which step 6 here would draw wi (contract 2): the
+//           same two densities step 3 weighs a BSDF-drawn ray by, so for any
+//           direction both strategies can draw, w_l + w_b = 1, and the
+//           light is counted once in expectation. T is the transmittance of
+//           the medium the path is in over the shadow ray's length: 1 in
+//           air; a light inside the same glass as the surface, dimmed as the
+//           glass dims. The term is computed whole before the shadow ray is
+//           traced, so across that query the step holds one float3 beside
+//           the walk's own state, not f, wi, L_e, T and the densities
+//           (GPU.3; ReSTIR's shade does the same,
+//           metal/passes/restir_di/restir_di.metal.h). The cost per surface
+//           is the same for any number of lights (principle 9).
 //   Step 6  Sample the BSDF: wi, f and pdf (contract 2). If pdf is 0, stop.
-//           beta *= f |cos(wi)| / pdf. The path counts emission at the next
-//           surface only if this lobe was delta. If the lobe was a
+//           beta *= f |cos(wi)| / pdf. emission_pdf = counted_in_full if
+//           the lobe was delta, else pdf: what step 3 at the next surface
+//           weighs a light by. If the lobe was a
 //           transmission, the path crossed the surface into or out of its
 //           shape: arriving from outside, it enters the shape's interior
 //           (SurfaceInteraction::interior, contract 1); from inside, it
@@ -80,7 +119,38 @@
 //           the energy the path carries, and roulette would end the paths
 //           inside a marble twice as often as their light warrants. The
 //           mean is the same either way; the noise inside glass is not.
-//   Step 8  Continue: the ray leaves the surface along wi.
+//           Roulette does not depend on the direction drawn, so it enters
+//           neither strategy's density.
+//   Step 8  Continue: the ray leaves the surface along wi, and from is the
+//           surface's point.
+//
+// What the loop carries between surfaces for MIS: `from`, carried already
+// for the medium's stretch, which is the point step 5 there drew its light
+// sample from; and emission_pdf, one float in place of the bool ("counts
+// emission") it replaces. Nothing else crosses a trace for it: step 3 finds
+// p_l at the hit, from `from`, the ray's direction and the light struck.
+// So step 5 and step 3 ask their densities of the same point and the same
+// direction. A ray starts ray_offset off that point, so near a light's rim
+// it can strike the light along a direction the cone from the point itself
+// just misses; light_pdf() is 0 there and w_b 1: a sliver of directions no
+// light sample draws, counted by the one strategy that does.
+//
+// emission_pdf's two named values are values of its one purpose, how the
+// next surface counts a light (ES.26; ES.45): counted_in_full is 0 and
+// not_counted -1, and every density step 6 hands on is above 0 (a sample of
+// pdf 0 ends the path), so no density is taken for either. One float and
+// two names, rather than a bool beside a float as pbrt-v4 keeps them
+// (specularBounce, bsdfPDF), so the loop carries no more across its traces
+// than before (GPU.3); that shape was not measured against this one.
+//
+// The power heuristic, for the strategy that drew a direction with density
+// f > 0 beside the other's g >= 0, is f^2 / (f^2 + g^2), in (0, 1]. Pure
+// (F.8). Precondition (I.5): both densities below 10^19, so that the sum of
+// their squares is a finite float. The BSDF's are at most some 10^8 (GGX at
+// least_alpha, toward grazing: metal/materials/resolve.metal.h), and P p_l
+// = 1 / (N x the cone's solid angle) reaches 10^19 only for a cone under
+// 10^-19 / N sr: a firefly a millimeter across seen from thousands of
+// kilometers. Stated here, not tested per sample.
 //
 // What the camera ray starts from, and what is done with L, are the pass's:
 // a point in the pixel drawn anew each frame, and the mean folded into the
@@ -90,6 +160,8 @@
 // and the dimension, the count of numbers the path drew before
 // (metal/sampler/sampler.metal.h): independent between frames, so their mean
 // converges, and any frame can be rendered again exactly, alone (principle 2).
+// MIS draws no number: each path draws the numbers it drew before MIS, in
+// the same order, and traces the same rays; only what it adds differs.
 //
 // A safety stop at 256 surfaces bounds one thread's work, against a path
 // that roulette keeps alive for long (each survival is at most 0.95 likely,
@@ -105,7 +177,17 @@
 //
 // Cost per path: one ray to the next surface and at most one shadow ray per
 // surface, so about twice the mean path length, a handful of surfaces in
-// practice; 512 rays at the safety stop.
+// practice; 512 rays at the safety stop. MIS adds no ray and no read of
+// device memory. Per step 5 that reaches its shadow ray it adds one BSDF
+// density (contract 2's pdf: a dot product for a Lambert surface; a half
+// vector, D and G1 for a conductor; a Fresnel term for a coated one) and
+// the heuristic (four multiplies, an add, a divide). Per light struck after
+// a lobe that is not delta it adds one light density (the cone from
+// `from`: a length, a square root, a cross product, a divide), the light's
+// data, transform and glow, read from the constant address space as step
+// 3's L_e already reads them, the selection's 1 / N and the heuristic. Each
+// is on the lanes that already take step 5 or step 3 (GPU.4). Measured
+// against the build before it: docs/research/2026-10-11-path-mis.md.
 //
 // The split, for ReSTIR DI. The loop above is one function, walk_path(),
 // whose start and stop are template parameters, so the reference and ReSTIR
@@ -124,6 +206,9 @@
 //                     caller holds. Or the path's end before any such surface
 //                     (it left the scene, reached a light, or roulette or the
 //                     safety stop ended it among glass and mirrors), with L.
+//                     Every lobe before that surface is delta, so the segment
+//                     counts every light it strikes in full, and emission_pdf
+//                     is not part of the path state.
 //   continue_path()   <after_step_5, at_end>: from that surface, steps 6 to 8
 //                     there, then the loop on from the next surface; step 5
 //                     there is the caller's.
@@ -135,27 +220,36 @@
 // loops called in turn compiled the transport twice into the path kernel,
 // and the second carried the first surface's Shading across every later ray
 // query; one specialized loop compiles once, the same steps over the same
-// state, in locals as before the split, so the path pass keeps its image and
-// its time (docs/research/2026-10-11-path-split-cost.md, which also records
+// state, in locals as before the split, so the path pass keeps its time
+// (docs/research/2026-10-11-path-split-cost.md, which also records
 // the shapes of the same loop that changed the time or, under fast math,
 // the rounding).
 //
-// The path pass calls radiance() alone, and draws the same numbers in the
-// same order as before the split: its image is unchanged to the bit, held by
-// comparing its accumulated image with the build before the split on every
-// scene (docs/research/2026-10-10-restir-di-layout.md, "Additive"). ReSTIR's
-// initial pass calls camera_segment() and writes its result as the pixel's
-// surface record and path state (contracts/surface_record.h); the shade
-// calls continue_path() on what it reads back, so step 5 is skipped there
-// and ReSTIR's direct light is the shade's to add
+// The path pass calls radiance() alone. Its image changed with MIS, on
+// purpose, by the weights alone, and its expectation did not: the one
+// change that has broken its bit-identity with the build before it,
+// declared (docs/process/MEMORY.md, 2026-10-11) and held instead by
+// converging to the same references (docs/research/2026-10-11-path-mis.md).
+// ReSTIR's initial pass calls camera_segment() and writes its result as the
+// pixel's surface record and path state (contracts/surface_record.h); the
+// shade calls continue_path() on what it reads back, so step 5 is skipped
+// there and ReSTIR's direct light is the shade's to add
 // (metal/passes/restir_di/restir_di.metal.h, step 6). Its numbers continue
 // the path's stream from where the segment left it: the three step 5 would
 // have drawn are not drawn, which changes which numbers later steps draw,
 // not their independence.
 //
-// Principle 7 holds through the split: at the first rough surface the
-// direct light is counted once, by the naive step 5 or by ReSTIR's shade,
-// and the next surface counts emission only after a delta lobe, in either.
+// ReSTIR's first surface, q, is principle 7's one exception. The shade's
+// direct light there is the reservoir's estimate, weighed against no BSDF
+// sample (a BSDF candidate, as RTXDI draws one, is ReSTIR's Phase B), so it
+// alone counts every firefly's direct light at q. continue_path() therefore
+// counts no light that the bounce from q strikes off a lobe that is not
+// delta: step 6 at q hands on not_counted in place of its pdf. A light the
+// coat's delta lobe reaches from q is counted in full, as everywhere. From
+// the next surface on, the continuation is the path tracer's, MIS and all,
+// being the same loop. So nothing is counted twice and nothing left out:
+// at q each firefly once, by ReSTIR; after q, each light path as the path
+// tracer counts it.
 //
 // What the continuation reads of the surface, beyond its Shading's BSDF, wo
 // and medium: the point and geometric normal (leaving it), the flags (which
@@ -169,8 +263,7 @@
 // object_position and shading normal it leaves 0, unread by the
 // continuation, and that is a contract of continue_path(): it reads no
 // other field of `here.surface`, and adding a read of one adds it to
-// contract 5's path state. The path pass never packs: its image is
-// unchanged.
+// contract 5's path state. The path pass never packs.
 
 
 #include <metal_raytracing>

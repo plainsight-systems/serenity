@@ -162,7 +162,9 @@
 //           from q as the naive path tracer does, for the indirect light
 //           (the Integrator's continue_from(): path.metal.h,
 //           continue_path(), with step 5 at q left out, since this step
-//           counted q's direct light: principle 7). The pixel's radiance is
+//           counted q's direct light, and with no firefly counted that the
+//           bounce from q strikes off a lobe that is not delta; past q, the
+//           path tracer's MIS: principle 7). The pixel's radiance is
 //           folded into the accumulated image, as the path pass folds its
 //           own (metal/film/accumulate.metal.h).
 //

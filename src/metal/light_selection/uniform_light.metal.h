@@ -10,6 +10,13 @@
 // them, because a light chosen is rarely the one that matters at a point.
 // ReSTIR's candidates and reuse are what bring that noise down (milestones 2
 // and 3), and this is what they are measured against.
+//
+// And the probability with which it chooses a given light, light_probability()
+// (pbrt-v4's LightSampler::PMF): what the path tracer's MIS weighs a light
+// struck by a bounced ray by, as the chance step 5 had of choosing it
+// (integrator/path.metal.h, step 3). 1 / N for every light, the light named
+// so that a strategy whose chance differs by light answers by the same
+// signature. Asked only of a light that exists, so N is at least 1 (I.5).
 
 #include <metal_stdlib>
 

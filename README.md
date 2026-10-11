@@ -182,7 +182,7 @@ it.
 - *Marbles at Night*, NVIDIA's 2020 RTX demo, for showing what many moving
   lights on simple geometry can look like.
 - pbrt-v4, by Matt Pharr, Wenzel Jakob and Greg Humphreys: the naive path
-  tracer follows its SimplePathIntegrator, and the error measure its
+  tracer follows its PathIntegrator, and the error measure its
   relative MSE.
 
 ## License

@@ -110,6 +110,34 @@ Decided 2026-10-08, at the repository's creation:
 - **The architecture documents come before rendering code**: logical
   overview, then change axes, then file mapping (`../architecture/`).
 
+Amended 2026-10-11, by the user's direction:
+
+- **The path tracer weighs light sampling against BSDF sampling by multiple
+  importance sampling**, as production path tracers do (pbrt-v4's
+  PathIntegrator rather than its SimplePathIntegrator; Falcor). At a surface
+  with a lobe that is not delta, a firefly's light is found by next event
+  estimation and by a BSDF-sampled ray striking it, each weighted by the
+  power heuristic; after a delta lobe and on the camera's own ray, in full;
+  the sky one way, as before; ReSTIR DI's first surface the exception, its
+  direct light the reservoir's alone. The reason: light sampling alone, at
+  the marbles' near-mirror steel (GGX alpha 10^-3), returns rare samples of
+  10^5 whose variance grows as 1 / alpha^2
+  (`research/2026-10-11-restir-ris-results.md`). Supersedes two earlier
+  decisions:
+  - **principle 7's one-way counting**, "every light path is counted once,
+    no path found two ways" (`../architecture/logical-overview.md`, which
+    states the new principle 7);
+  - **the time baseline as "the textbook kernel"**
+    (`research/2026-10-10-corpus-sweep.md`, "Decision";
+    `../writeups/milestone-1.md`, which records why it was kept so at the
+    time): the baseline every estimator is measured against is now the MIS
+    path tracer, measured again (`research/2026-10-11-path-mis.md`).
+
+  The path pass's images change; their expectation does not. Its
+  bit-identity with the build before it, held through every change until
+  now, is broken by this change alone, on purpose, and held instead by
+  converging to the same references, which stay valid.
+
 ## Research
 
 `../research/README.md` is the index.
