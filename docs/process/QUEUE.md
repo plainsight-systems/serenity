@@ -82,9 +82,11 @@ header per probe, that note's "Review of 7751a65"; the ray offset sized to
 the point's rounding (Wachter and Binder, hit points put back on their
 shapes) done 2026-10-11, docs/research/2026-10-11-ray-offset.md, the
 references at t = 120 and t = 8 to render again once, when ReSTIR DI
-is finished (not before), with the convergence runs after them; left: Phase B, the BSDF candidate (for the
-first surface's spikes, 2026-10-11-restir-ris-results.md) and the
-temporal and spatial merges,
+is finished (not before), with the convergence runs after them; Phase
+B done 2026-10-11 on branch restir-di: RTXDI's BSDF candidate, weighed
+against the light candidates by MIS, and the temporal merge in basic
+mode, graphs/restir_temporal.toml, docs/research/2026-10-11-restir-
+temporal.md; left: Phase C, the spatial merge,
 docs/research/2026-10-10-restir-di-layout.md); ReSTIR GI; caustics by manifold next
 event estimation; reservoir reuse as kernels; a denoiser of its own against
 Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
@@ -99,3 +101,11 @@ Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
 - Ray offset: +0.3 ms is `offset_ray()` itself; GPU counters for why a cheaper float form was no faster.
 - Ray offset: ReSTIR's visibility offsets along the record's 16-bit-quantized normal; no test aims at it.
 - Ray offset: a sphere ~100 m+ in radius whose surface passes near the origin re-hits (fixed 15 um step there); no scene has one.
+- ReSTIR temporal: raytraced mode is refused with restir_temporal; it needs last frame's structure kept (scene_acceleration.h, Keep::last_too).
+- ReSTIR temporal: a fixed-order ring around the reprojected pixel moved a grazing floor's mean +5.6%; a frame-drawn start fixed it; the theory says unbiased either way: why.
+- ReSTIR temporal: basic mode's edge bias at a grazing view, a box's shadow edge -7% to +10% by row, the lower floor -3% (restir-temporal.md).
+- ReSTIR temporal: the boiling filter (RTXDI's default, 0.2) still deferred.
+- Path MIS asks a light's density of the direction (light_pdf); on a firefly's rim that test rounds out, as ReSTIR's BSDF candidate found (light_point_pdf); check whether the path tracer counts rim hits twice.
+- ReSTIR's BSDF candidate costs 7 ms at 3456 x 2234 (+19% on the RIS graph); its ray and 8 BSDF densities are most of it.
+- ReSTIR DI loses to the MIS path tracer at equal time on the marbles (MSE x 1.4 to 1.7 at 1 s): measure the direct light's error alone, and at the traced resolution.
+- bsdf_candidates = 0 is Phase A but for rim points, now weighed where Phase A's direction test dropped them; not bit-identical.

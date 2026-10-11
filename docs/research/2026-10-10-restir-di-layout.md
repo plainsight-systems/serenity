@@ -566,3 +566,18 @@ for the RIS graph ((M + 1) placements of 76 bytes, M = 8), against 332 a
 candidate before (the review's count) plus the shade's; 988 with the merges
 at their defaults. What the compiled code loads, and how much of it hits
 cache, is still the counters' to show.
+
+## Phase B, implemented (2026-10-11)
+
+RTXDI's BSDF candidate and the temporal merge in basic mode; what was
+built, measured and queued: `2026-10-11-restir-temporal.md`. Where the
+headers changed:
+
+| Header | Change | Why |
+|---|---|---|
+| `core/contracts/reuse_settings.h`, `core/passes/restir_di.h` | `bsdf_candidates` (RTXDI's numBrdfSamples, 1) in the word that was padding | The "Candidates" row above set it aside; Phase A's results showed the first surface's light-only candidates losing to MIS at near-mirror lobes |
+| `metal/integrator/target.metal.h`, `restir_di.metal.h` | `candidate_density`: both strategies' balance heuristic; `draw_bsdf_candidate`, `weigh_struck`, `weigh`; the light strategy's density asked of the point (`light_point_pdf`) | A BSDF ray strikes a firefly's rim, where a direction's cone test rounds out |
+| `metal/reuse/similar.metal.h` | The material test asked by both merges | RTXDI's temporal pass asks `RAB_AreMaterialsSimilar` too |
+| `metal/reuse/temporal.metal.h` | The ring around the reprojected pixel visited from a start the frame draws | A fixed order drifted histories and moved a grazing floor's mean |
+| `metal/frame/renderer.h` | Raytraced mode with `restir_temporal` refused by name | Last frame's structure is not kept; basic mode needs none |
+| `metal/passes/restir_initial` | Previous positions bound always; the records and this frame's transforms stand in, untouched, without a temporal merge | Metal's validation requires every declared binding set |
