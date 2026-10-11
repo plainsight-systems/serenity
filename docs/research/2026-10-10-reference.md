@@ -191,5 +191,75 @@ references.
 
 ## Results
 
-To come: the references at t = 120 and t = 8, their floors, the two-
-reference check, and the naive estimator's convergence at both times.
+Rendered at 4cb5070's code (5f4c7de for the renders; the later commit
+changed no pixel), release build, M3 Max, `make reference` and `make
+convergence` with their defaults: 1920 x 1080, 64 batches of 1024 samples,
+65,536 a pixel; convergence 16,384 frames of one sample, from frame 65,536
+on, written at doubling frames.
+
+| | t = 120, every firefly awake | t = 8, the opening |
+|---|---|---|
+| Reference, wall time | 9 min 27 s | 9 min 39 s |
+| MSE floor | 0.00386 | 0.133 |
+| Relative MSE floor | 0.00173 | 0.00213 |
+| Convergence, wall time | 2 min 33 s | 2 min 51 s |
+
+The convergence curves, error against samples:
+
+| Samples | MSE, t = 120 | relative MSE, t = 120 | MSE, t = 8 | relative MSE, t = 8 |
+|---|---|---|---|---|
+| 1 | 1.84 | 37.1 | 106 | 174 |
+| 2 | 1.08 | 27.4 | 30.8 | 187 |
+| 4 | 11.6 | 55.1 | 11.6 | 66.6 |
+| 8 | 3.05 | 16.6 | 5.80 | 21.1 |
+| 16 | 2.19 | 997 | 2.39 | 8.28 |
+| 32 | 1.11 | 251 | 1.58 | 4.49 |
+| 64 | 0.809 | 76.8 | 0.702 | 2.18 |
+| 128 | 1.96 | 25.4 | 0.824 | 302 |
+| 256 | 2.85 | 21.7 | 0.392 | 76.8 |
+| 512 | 0.785 | 7.13 | 0.233 | 19.9 |
+| 1024 | 0.211 | 3.19 | 0.248 | 9.71 |
+| 2048 | 0.0707 | 1.71 | 0.205 | 6.10 |
+| 4096 | 0.0335 | 0.763 | 0.307 | 37.1 |
+| 8192 | 0.0592 | 1.27 | 0.191 | 12.4 |
+| 16384 | 0.0211 | 0.482 | 0.465 | 9.17 |
+
+The two-reference check at t = 120: a second reference from batches 64 to
+127, disjoint from the first's, against the first: MSE 0.0143 where twice
+the floor is 0.0077; relative MSE 0.220 where twice the floor is 0.0035.
+
+Facts, from these:
+
+- The curves do not fall as one slope. One image's error jumps by ten
+  times between doublings and back.
+- 94.7% of the MSE between the two references comes from 0.01% of the
+  pixels, some 200 of 2.07 million, and 92.6% of the relative MSE.
+  Without them the MSE is 0.00076. The worst pixel is 0.07 in one
+  reference and 49.8 in the other: at 65,536 samples, a pixel whose mean
+  rare samples of the order of 10^6 still set. They lie among the marbles
+  (rows 334 to 722, columns 386 to 1370 of 1080 x 1920).
+- The two references' means agree: 0.18651 and 0.18637, within 0.08%,
+  and within 0.00% without those pixels. No bias is seen.
+- Where the t = 120 curve is past 1024 samples, the error is what the
+  floor predicts for an unbiased estimator: some 65,536 / N floors of its
+  own plus the reference's (at 16,384, 0.019 predicted, 0.021 measured).
+  Below that it is far under the prediction: the rare samples that set the
+  expected error have not yet happened in most images.
+- The batches' floor underestimates the reference's error: twice the
+  floor is 0.0077 and the two references differ by 0.0143 in MSE; in
+  relative MSE, 0.0035 against 0.220, sixty times, since a rare sample in
+  the image judged, over a near-black reference pixel, is divided by that
+  pixel's (r + 0.01)^2.
+
+Inference: the naive estimator's samples are heavy-tailed. A sample's
+value ranges over orders of magnitude, its rare largest ones set its
+expected error, and a single image's error is a poor estimate of that
+expectation: the measure is right, and one measurement of it is not
+enough. Which paths carry those samples is not yet known; the likely ones
+are next event estimation's f |cos| L / (P p) on the glossy coat and the
+metal, P = 1/616, toward a light close by.
+
+## Decision
+
+Open, for the user: how the error is to be estimated so that estimators
+can be compared on it (see the reply that follows this note's commit).
