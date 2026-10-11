@@ -23,23 +23,38 @@ keeps the naive estimator's next event estimation.
    shadows) and p the density it was drawn with. One survives, in a
    reservoir, with probability its weight over the sum: resampled
    importance sampling (Talbot et al. 2005).
-3. **Temporal merge.** The reservoir this surface held last frame, found
-   where the surface was then, merged in, its history capped.
-4. **Spatial merge.** The reservoirs of k neighbors within a radius,
+3. **Visibility reuse.** One shadow ray toward the survivor; if it is
+   blocked, the reservoir's weight W becomes 0 (its count M is kept). What
+   a pixel shares with its neighbors and its next frame is then a light it
+   can see: the paper's main quality gain in an occluded scene, and this
+   scene is marbles.
+4. **Temporal merge.** The reservoir this surface held last frame, found
+   where the surface was then, merged in, its count capped at H x M.
+5. **Spatial merge.** The reservoirs of k neighbors within a radius,
    merged in.
-5. **Shade.** One shadow ray toward the survivor; the direct light is
+6. **Shade.** One shadow ray toward the survivor; the direct light is
    f |cos| L_e G V x W, W the reservoir's contribution weight. The path
    then continues from the surface as the naive path tracer does, for the
    indirect light, and the pixel's radiance is folded into the accumulated
    image.
 
-Merges 3 and 4 weigh each reservoir by generalized RIS with pairwise MIS
-(Bitterli 2022, thesis ch. 9.1; Wyman et al. 2023, "A Gentle Introduction
-to ReSTIR"), the bias correction RTXDI offers as `Pairwise`: O(k) target
-evaluations, not O(k²). The target is unshadowed throughout, so no merge
-traces a ray and the estimator stays unbiased; visibility enters once, at
-step 5. Reusing visibility (RTXDI's ray-traced correction) is a later,
-measured option.
+Merges 4 and 5 are the paper's unbiased combination (Bitterli et al. 2020,
+Algorithm 6). Each input reservoir r_i, from surface q_i, is streamed with
+weight p̂_q(y_i) W_i M_i, p̂_q this pixel's target; the survivor y's
+weight is then W = w_sum / (Z p̂_q(y)), where Z sums the counts M_i of the
+inputs whose surface could have produced y: those where p̂_{q_i}(y) > 0
+and y is visible from q_i. Visibility reuse (step 3) put visibility into
+what every reservoir holds, so it must be in that test too: one shadow ray
+from each input's surface toward y. The temporal input's surface is last
+frame's, and is tested as last frame saw it: its lights where they were,
+traced against last frame's acceleration structure. Without the rays, the
+merges are biased (darker, in shadow, RTXDI's `Basic`); with them,
+unbiased (RTXDI's `Raytraced`), the reference holds ReSTIR to the same
+image, and MSE x time charges it for every ray.
+
+Rays a pixel: 1 for visibility reuse, 1 for the temporal merge's test, k
+for the spatial merge's, 1 to shade: k + 3, 8 at k = 5, against the naive
+estimator's one at that surface.
 
 How production does it: NVIDIA's RTXDI library splits ReSTIR DI the same
 way (initial sampling, temporal, spatial, pairwise MIS, reservoir storage),
@@ -170,31 +185,38 @@ read by the ReSTIR passes)
 ### Metal backend
 
 **`metal/reuse/reservoir.metal.h`** (new; Sample reuse)
-- The reservoir in registers and its three operations: stream a candidate
-  (w = p̂ / p, keep it with probability w / w_sum), merge another reservoir
-  with a given MIS weight, and finish (W = w_sum / p̂(y)). The one merge
-  rule every reuse uses, direct and later indirect (change-axes.md).
+- The reservoir in registers and its operations: stream a candidate
+  (w = p̂ / p, keep it with probability w / w_sum); stream another
+  reservoir (w = p̂_q(y_i) W_i M_i); and finish, W = w_sum / (Z p̂_q(y)),
+  Z as the caller counted it (1 for candidates alone, so W = w_sum / (M
+  p̂) as RIS gives). The one merge rule every reuse uses, direct and later
+  indirect (change-axes.md).
 - The softmax parallel, and the test that holds it (above).
 - Guidelines: CDSA.23 (update and merge, a fixed order); GDSA.21 (the same
   draw as the random-key race); GDSA.3 (each choice's number from pixel,
   frame and purpose, metal/sampler).
 
-**`metal/reuse/pairwise_mis.metal.h`** (new; Sample reuse)
-- Defensive pairwise MIS with confidence weights (Bitterli 2022, eq. 9.10,
-  Alg. 8): each neighbor weighed against the pixel's own (canonical)
-  reservoir, the canonical's weight renormalized after the last neighbor.
-  Four target evaluations a neighbor.
-- Guidelines: GDSA.6 (O(k) evaluations, not O(k²)); I.7 (the weights sum
-  to 1 over the domains for any sample: the unbiasedness condition, a test).
+**`metal/reuse/unbiased.metal.h`** (new; Sample reuse)
+- Z, the paper's unbiased normalization: for the survivor y, the sum of
+  the counts M_i of the inputs whose surface supports y, p̂_{q_i}(y) > 0
+  and y visible from q_i, the visibility asked of a function the caller
+  passes (the integrator's shadow ray, against this frame's structure or
+  last frame's). Why it makes the merge unbiased, stated: every sample the
+  merge could have chosen is counted by the domains that could have made
+  it (Bitterli et al. 2020, section 4.3).
+- Guidelines: I.7 (the postcondition, E[W f] = ∫ f, held by the GPU test
+  that ReSTIR converges to the reference); P.1.
 
 **`metal/reuse/temporal.metal.h`, `metal/reuse/spatial.metal.h`** (new;
 Sample reuse)
 - Temporal: where this surface was last frame (its position through the
   previous camera), whether that pixel's surface is the same one (depth
-  within 10%, normals within cos 0.5), the history cap H x M. A surface
-  seen through glass reprojects wrongly; the similarity test and the MIS
-  weights make that noise, never bias (logical-overview.md).
-- Spatial: k neighbors drawn within the radius, each tested as above.
+  within 10%, normals within cos 0.5), the history cap H x M, and Z's test
+  of the previous surface, as last frame lit and occluded it. A surface
+  seen through glass reprojects wrongly; the similarity test and Z make
+  that noise, never bias (logical-overview.md).
+- Spatial: k neighbors drawn within the radius, each tested as above, and
+  Z's k visibility tests.
 - Guidelines: GDSA.3; SIMD.5 and GPU.2 (neighbor reads are gathers within
   a 30-pixel disc: cached, not coalesced; counted below, measured).
 
@@ -251,6 +273,17 @@ restir_spatial, restir_shade}/`** (new; Pass)
 - Guidelines: MEM.4 (double-buffered across one frame); GPU.9 (transient
   images from the frame's heap); MEM.9.
 
+**`metal/acceleration/scene_acceleration.h`** (added to)
+- Last frame's structure kept alive one frame more, for the temporal
+  merge's visibility as last frame saw it (RTXDI's `PrevSceneBVH`, used
+  when its sample has it). Only for a graph with a temporal pass. A
+  structure here is one level of the shapes' placed boxes, rebuilt each
+  frame: tens of kilobytes, and the build already paid; what is new is
+  holding it, and no frame in flight rebuilding into one another frame
+  still reads.
+- Guidelines: GPU.7 and GPU.9 (a resource's lifetime tied to the frames
+  that read it); MEM.4.
+
 **`metal/scene/shape_transforms.h`, `light_glows.h`** (changed)
 - The previous frame's transforms and glows beside this frame's, animated
   at the previous time on the CPU: the temporal merge's targets are
@@ -265,9 +298,9 @@ At P pixels, k neighbors, per frame (GDSA.6: count passes over memory):
 | Pass | Reads | Writes | Rays |
 |---|---|---|---|
 | surfaces | | 64 P + path state | the camera's, as now |
-| candidates | 64 P | 16 P | none; M target evaluations |
-| temporal | 2 x 64 P + 2 x 16 P | 16 P | none; 4 target evaluations |
-| spatial | k x (64 + 16) P | 16 P | none; 4k target evaluations |
+| candidates | 64 P | 16 P | 1, visibility reuse; M target evaluations |
+| temporal | 2 x 64 P + 2 x 16 P | 16 P | 1, Z's test; 2 target evaluations |
+| spatial | k x (64 + 16) P | 16 P | k, Z's tests; 2k target evaluations |
 | shade | 64 P + 16 P + path state | radiance | 1 shadow ray + the continuation |
 
 About (5 + k) x 80 bytes a pixel, 800 at k = 5: 6 GB a frame at 3456 x
@@ -284,7 +317,7 @@ convergence` on a ReSTIR graph.
 | Choice | Kept | Set aside, and why |
 |---|---|---|
 | Where | The first rough surface | Every bounce (ReSTIR PT): a later milestone |
-| Bias correction | Pairwise MIS, unshadowed target, no rays in merges | 1/Z with visibility rays (Bitterli 2020's unbiased form): k + 1 rays more a pixel, to be measured as an option; no correction: biased |
+| Bias correction | The paper's unbiased 1/Z with visibility rays, and visibility reuse | No rays in the merges and no visibility reuse: unbiased too, but neighbors share lights hidden behind marbles, and the paper's gain in an occluded scene is lost (proposed in this note's first draft, set aside the same day); `Basic` (no rays, visibility reuse kept): biased, darker in shadow; pairwise MIS (Bitterli 2022, O(k)): with visibility in the target it needs 2k rays, against 1/Z's k |
 | Candidates | M lights, uniform | A BSDF candidate (RTXDI's 1): a 1.5 mm firefly is almost never hit by a BSDF sample; power-weighted selection: later, measured |
 | Light identity | Index + octahedral point, 8 bytes | A position: wrong next frame (principle 6) |
 | Surface record | Resolved BSDF, 64 bytes | Primitive and position only, the BSDF re-resolved per neighbor: texture lookups (the wood's noise) in every merge |
@@ -292,16 +325,21 @@ convergence` on a ReSTIR graph.
 
 ## Changes to the architecture documents
 
-- logical-overview.md says an unbiased ReSTIR pixel traces about one ray
-  for the temporal merge and k for the spatial. With pairwise MIS over an
-  unshadowed target, the merges trace none; the overview is corrected when
-  the headers are.
+- logical-overview.md already describes this algorithm and its rays (one
+  for the temporal merge, k for the spatial, one to shade); it gains
+  visibility reuse's one ray beside them.
 - file-mapping.md gains contracts 4, 5 and 14 in its table.
 
-## Open, for the user
+## Decided (2026-10-10)
 
-1. Pairwise MIS without visibility rays as the first version, with
-   visibility reuse as a measured option later?
-2. Five passes and a 64-byte surface record first, packing later if
-   measured?
-3. Defaults: M = 8, H = 20, k = 5, radius 30 px?
+- The paper's ReSTIR DI, as written: visibility reuse, and the unbiased
+  merges' rays. A first draft of this note dropped both to keep the merges
+  free of rays; that was a convenience, not the algorithm, and was set
+  aside.
+- At the first rough surface (RTXDI's primary surface replacement through
+  glass and mirrors), naive next event estimation at every later bounce
+  until ReSTIR GI.
+- Five passes and a 64-byte surface record first; packing it is the first
+  measured follow-up.
+- Defaults M = 8, H = 20, k = 5, a 30-pixel radius, thresholds 0.1 and 0.5:
+  data, varied by measurement.
