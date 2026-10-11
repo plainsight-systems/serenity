@@ -477,3 +477,92 @@ the headers changed in implementing them, and why:
 | `metal/passes/restir_di/restir_di.metal.h` | `takes_test()` (step 6's rule), `direct_from()`, `pack_medium`/`unpack_medium` added; `FrameView`, `frame_permutation` marked Phase B; the shade's write-back deferred to the temporal merge | No graph that runs reads the write-back yet; the shade binds the final reservoirs read-only |
 | `metal/passes/restir_initial/restir_initial.h`, `restir_shade.h`, `core/passes/restir_di.h` | what Phase A refuses or defers, stated | No stubs that look real |
 | `metal/integrator/path.metal.h` | the loop as `arrive()` (steps 1 to 4) and `scatter()` (6 to 8) over a `Walk` | So the segment and the continuation share every line; the path pass's image unchanged to the bit (phase-a-guidelines-pass.md) |
+
+## The review of f86e7ae (2026-10-11)
+
+Codex's architecture and performance reviews of Phase A, answered on
+branch `phase-a-review` from b679fe0: 0bbb5af, b4ba342, c33f186. Each
+finding, its rule and its verdict:
+`2026-10-10-restir-di/phase-a-guidelines-pass.md`, "The review of
+f86e7ae". Where the headers changed, and why:
+
+| Header | Change | Why |
+|---|---|---|
+| `core/contracts/reuse_settings.h` (new) | The settings, their modes (`BiasCorrection`, `Permutation`, `VisibilityReuse`) and ranges, as Sample reuse's contract `ReuseSettings`, the same 48 bytes; `core/passes/restir_di.h` names it `passes::RestirDi` and keeps the values the graphs are written with; the reuse constants embed it | Sample reuse's merges read the settings and included the Pass's header for them; families meet at contracts (change-axes.md) |
+| `metal/integrator/restir_di.metal.h` (new) | `first_surface()`, `draw_candidate()`, `visible()`, `unshadowed()`, `continue_from()` | The light transport the Pass file had decided; the Integrator includes no Sample reuse or Pass header |
+| `metal/reuse/visibility.metal.h` (new) | `takes_test()`, `tested_here()` | Reusing a visibility test across pixels and frames is Sample reuse's rule |
+| `metal/passes/restir_di/restir_di.metal.h` | `candidates()` and `shade()` compose the families; the dependency directions stated | Composition and dispatch only |
+| `tools/check_boundaries.sh` | Rule 5: `metal/reuse/` includes no Integrator or Pass header (backend or core), `metal/integrator/` no Sample reuse or Pass header; seven probes | So the split stays; on b679fe0's tree it fires on four reuse headers |
+| `metal/lights/emitter.metal.h` | `place_light()` and `PlacedLight`; `draw_light_point`, `evaluate_light_point` and `light_pdf` read a placed light | A candidate read its light's 76 bytes three times at the source, and the transform a fourth |
+| `core/contracts/bsdf.h`, `core/scene/packed_range.h` (new), `metal/frame/renderer.h` | The packed form's precondition (finite, at most 65504 in magnitude) and its two-regime tolerance; the ReSTIR renderer refuses a scene outside it, naming the material (`SceneDescription::material_names`) | An ior above 65504 packed to infinity; a value below 2^-25 raised to 2^-24 broke the stated relative tolerance |
+| `metal/passes/restir_di/restir_di.metal.h`, `metal/frame/frame_images.h`, this note, `2026-10-09-pass-costs.md` | Bandwidth figures stated as ideal-bandwidth floors on time | "At most 2.8 ms at 400 GB/s" had the inequality backwards |
+
+### Measured
+
+Apple M3 Max, macOS 26.6.2, Xcode 26.2, release builds, `-fmetal-math-mode=fast`.
+`scenes/marbles.toml` at 3456 x 2234, t = 120; each run renders 201 frames
+with two in flight, and the figure is the median GPU time of frames 21 to
+199. Before each run, no serenity process and Device Utilization at most 5%
+for six seconds. The harness is the temporary doctest case of
+2026-10-11-path-split-cost.md, never committed. Three rounds, builds
+alternated in each.
+
+| Graph | Build | Round 1 | Round 2 | Round 3 |
+|---|---|---|---|---|
+| `restir_ris` | b679fe0 | 37.15 | 37.16 | 37.15 |
+| `restir_ris` | b4ba342 (light placed once; record unpacked once) | 36.33 | 36.32 | 36.32 |
+| `restir_ris` | c33f186 (light placed once; record unpacked where each use starts) | 36.17 | 36.16 | 36.17 |
+| `path` | b679fe0 | 29.37 | 29.41 | 29.41 |
+| `path` | c33f186 | 29.42 | 29.41 | 29.40 |
+
+The p10 to p90 spread within a run is about 0.5 ms for either graph. The
+b4ba342 row was built from 26314b1, b4ba342 before an amend that changed
+only an error message's number formatting (`core/scene/packed_range.cpp`).
+
+- **The RIS graph: 37.15 to 36.17 ms, −0.99 ms (−2.7%).** c33f186 differs
+  from b679fe0's shaders in two ways: each candidate's light placed once,
+  and the split, which moves the same code between headers and the
+  shade's unpacking to where each use starts, as b679fe0 had it. The
+  placement is the inference for the gain; the split's share was not
+  measured apart. An earlier, separate set of rounds agrees: b679fe0
+  37.15, 37.17, 37.15 against b4ba342 36.32, 36.33, 36.32; and b4ba342
+  against its own tree with the shade's record unpacked again for the
+  continuation, 36.33, 36.33, 36.32 against 36.17, 36.17, 36.15.
+- **Unpacking the shade's record once, as the review asked (B4): measured,
+  set aside.** It is 0.16 ms slower. The review's premise was that the RIS
+  graph traces no shade query, so nothing is held across one: true at run
+  time (every survivor's test is the initial pass's), not in the code. The
+  query is compiled into the shade, and the 72-byte unpacked surface
+  alive across it costs registers in every graph. c33f186 holds the
+  32-byte record across it and unpacks again where the continuation
+  starts. Inference, not counters: `xctrace` saves one Performance
+  Limiters recording in twelve on this machine (2026-10-11-path-split-
+  cost.md), and none was taken here. The merges' graphs, where the shade
+  does trace, are to measure the trade again.
+- **The path graph: unchanged.** 29.37 to 29.41 ms against 29.40 to 29.42,
+  medians within 0.05 ms in every round, inside the run's spread.
+  The path pass's code is unchanged; `emitter.metal.h`'s contract-3
+  functions, which it calls, are unchanged.
+
+What the code computes, checked with `serenity-headless --format pfm` at
+160 x 96, 3 frames of 4 samples, the four scenes at `--time 0`, `8`, `120`
+and `--step 0.5 --first 3` (48 PFMs a graph):
+
+- The path graph's PFMs from 0bbb5af, 26314b1 and c33f186 are
+  byte-identical to main 4b61224's, all 48.
+- Built with `-fmetal-math-mode=safe` (set temporarily in
+  `cmake/MetalLibrary.cmake`), the RIS graph's PFMs from 0bbb5af, 26314b1
+  and c33f186 are byte-identical to b679fe0's, all 48, and so are the path
+  graph's. The draw, the evaluation and the density read the same values
+  and compute the same arithmetic.
+- Under fast math, 45 of the 48 RIS PFMs differ from b679fe0's: 28 of
+  737,280 values in the first frames by more than 10^-5 relative, 67 in the
+  third, the largest single value by 22% (a 4-sample pixel where rounding
+  flipped a discrete choice), no image's mean by more than 2.3 x 10^-6.
+  Rounding, as b679fe0 against f86e7ae.
+
+Source-level light data a pixel, counted in `restir_di.metal.h`: 684 bytes
+for the RIS graph ((M + 1) placements of 76 bytes, M = 8), against 332 a
+candidate before (the review's count) plus the shade's; 988 with the merges
+at their defaults. What the compiled code loads, and how much of it hits
+cache, is still the counters' to show.

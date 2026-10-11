@@ -239,3 +239,185 @@ MEM.11 n/a.
 
 Conventions met (AGENTS.md): SF.8, SF.12, ES.23, ES.27, ES.49, ES.64,
 SL.con.1, Enum.7, Enum.8, ES.100, ES.102, ES.107.
+
+## The review of f86e7ae (2026-10-11)
+
+*Codex reviewed f86e7ae twice, for architecture and for performance
+(`.cache/reviews/f86e7ae-{architecture,performance}.json`, not in the
+repository): seven findings, two of them the same packed-BSDF defect seen
+by both. Answered on branch `phase-a-review` from b679fe0 by 0bbb5af (the
+structure and the loads), b4ba342 (the packed Bsdf) and c33f186 (the
+shade's unpacking, measured). Both corpora
+answered: the C++ Core Guidelines through its MCP server, the performance
+guidelines through its HTTP endpoint (the `cpp-perf-guidelines` MCP client
+was not connected; the endpoint was). Every category of each was listed
+and walked over the diff from b679fe0; every finding has an ID and a
+verdict.*
+
+### The review's findings
+
+| # | Review | Finding | Rule | Verdict |
+|---|---|---|---|---|
+| B1 | architecture P1 | `metal/reuse/unbiased.metal.h` included `core/passes/restir_di.h` for `passes::BiasCorrection`; so did `temporal`, `spatial` and `similar.metal.h` for `passes::RestirDi`, and the Sample-reuse-owned reuse constants for the settings | SF.9, A.4 (no cycle, and dependencies one way, between families: change-axes.md); I.4 | fixed: the settings, their three modes and their ranges are Sample reuse's contract, `core/contracts/reuse_settings.h` (`ReuseSettings`, the same 48 bytes); `core/passes/restir_di.h` consumes it (`passes::RestirDi` names it) and keeps the written values. `tools/check_boundaries.sh` rule 5 forbids it again, with probes; on b679fe0's tree it fires on the four reuse headers |
+| B2 | architecture P2 | The Pass file defined `first_surface()`, the candidates' transport, `direct_from()` and `shade()` | F.2 (one operation per function, one reason per file: change-axes.md); SF.9 | fixed: three ways. Integrator, `metal/integrator/restir_di.metal.h`: `first_surface()`, `draw_candidate()`, `visible()`, `unshadowed()`, `continue_from()`, seeing reservoirs as contract 14 only. Sample reuse: streaming, finishing, merging, and the stored-test rule (`metal/reuse/visibility.metal.h`, `takes_test()`, `tested_here()`). Pass, `metal/passes/restir_di/restir_di.metal.h`: `candidates()` and `shade()` compose, drawing the numbers and choosing which family each call goes to. Rule 5 holds both families to it |
+| B3 | both, P2 | `PackedBsdf` took an ior above 65504 to infinity, and raised positives below 2^-24 to 2^-24, outside its stated relative tolerance | ES.46; I.5, E.7 (state the precondition); P.7 (catch it early) | fixed: contract 2 states a precondition, every packed value finite and at most 65504 in magnitude, and a tolerance in two regimes: 2^-11 relative from 2^-14 up, 2^-24 absolute below. `core/scene/packed_range.h` finds the first material value outside it, naming the material; the Metal renderer refuses a ReSTIR graph over that scene by MetalError, as it refuses 0xffff media. The scene reader and the path graph unchanged |
+| B4 | performance P1 | The shade unpacked its record twice, in `direct_from()` and for the continuation | GDSA.18 (decode once where loaded); GPU.3; P.9; Per.6 | measured, and set aside: 0bbb5af unpacked once, as asked; that build's RIS graph measured 0.17 ms (0.5%) slower than the same tree unpacking again for the continuation (`2026-10-10-restir-di-layout.md`, "The review of f86e7ae"). The review's premise, that the RIS graph has no query in the shade, holds at run time but not in the code: the query is compiled into the shade, and the unpacked surface alive across it costs registers in every graph. c33f186 unpacks where each use starts (`continue_from()` takes the record); the headers state the trade, measured |
+| B5 | performance P1 | Each candidate read its light's record, sphere, transform and glow three times (draw, evaluate, pdf), and the draw the transform twice; the header's count omitted the pdf | GDSA.6 (count the passes over memory); ES.3; Per.6 | fixed: `place_light()` (`metal/lights/emitter.metal.h`) reads them once into a `PlacedLight`, which `draw_light_point()`, `evaluate_light_point()` and `light_pdf()` read. The header now counts what the code loads at the source: (M + 1) x 76 = 684 bytes a pixel for the RIS graph, (M + 2k + 3) x 76 = 988 with the merges, 13 placements; what the compiled code loads is the counters' |
+| B6 | performance P1 | "at most 2.8 ms at 400 GB/s" is a floor on time, not a ceiling | Per.6; GPU.10; GDSA.6 | fixed: reworded as an ideal-bandwidth floor in `restir_di.metal.h`, and in the two other places the same reading appeared, `metal/frame/frame_images.h` (0.6 ms) and `docs/research/2026-10-10-restir-di-layout.md`; `2026-10-09-pass-costs.md` too |
+| B7 | performance cost walk | The shade's comment traded registers for flops across a query the RIS graph never traces | GPU.3; GPU.10 | fixed with B4: the comment now says why the trade applies in a graph that traces no shade ray, and cites the measurement; the merges' graphs, where the shade traces, are to measure it again |
+
+No other finding is in either review: the cost walk's remaining items hold
+(one dispatch each, two barriers, no readback, no per-light loop, every
+helper inline), and its intermediate-traffic arithmetic agrees with the
+header's.
+
+### What the code computes, unchanged
+
+- **The path pass, against main 4b61224.** `graphs/path.toml`, rendered
+  as before (160 x 96, 3 frames of 4 samples, the four scenes at
+  `--time 0`, `8`, `120` and `--step 0.5 --first 3`, `--format pfm`,
+  release builds of 0bbb5af, 26314b1 (b4ba342 before an amend to an error
+  message) and c33f186): all 48 PFMs byte-identical to main's.
+- **The RIS graph, against b679fe0, under safe math.** The same builds
+  with `-fmetal-math-mode=safe` set temporarily in
+  `cmake/MetalLibrary.cmake`: all 48 `graphs/restir_ris.toml` PFMs
+  byte-identical, and all 48 path PFMs. The draw, the evaluation and the
+  density read the same values in and compute the same arithmetic; only
+  where they load them changed.
+- **Under fast math**, the build that ships: 45 of the 48 RIS PFMs differ
+  from b679fe0's. 28 of 737,280 values in the first frames differ by more
+  than 10^-5 relative, 67 in the third; the largest single value by 22%, a
+  4-sample pixel where a rounding flipped a reservoir's choice or a
+  roulette; no image's mean by more than 2.3 x 10^-6. Rounding, as for
+  b679fe0 itself against f86e7ae.
+- **Frame time**, three alternated rounds on the marbles at t = 120
+  (`2026-10-10-restir-di-layout.md`, "The review of f86e7ae"): the RIS
+  graph 37.15 ms at b679fe0, 36.32 at b4ba342, 36.17 at c33f186; the path
+  graph 29.37 to 29.41 at b679fe0, 29.40 to 29.42 at c33f186, unchanged.
+
+### Every category, rule by rule, over the diff from b679fe0
+
+Each rule: **B#** (the finding above), **holds** with where, **convention**
+(AGENTS.md "Guideline deviations"), or **n/a** with why.
+
+#### C++ Core Guidelines (listed fresh: In, P, I, F, C, Enum, R, ES, Per, CP, E, Con, T, CPL, SF, SL, A, NR, NL, GSL, Tools, FAQ, Discussion)
+
+**In.0** n/a.
+
+**P** — P.1 holds (the three families named in code: one header each, the
+Pass calling across). P.2 holds for host code; MSL by decision. P.3 holds
+(`place_light`, `draw_candidate`, `unshadowed`, `continue_from`,
+`takes_test`, `outside_packed_bsdf`). P.4 holds (layouts asserted,
+`ReuseSettings` 48 bytes). P.5 holds (a light kind added fails each
+`PlacedLight` switch's build). P.6, P.7 B3 (the precondition checked when
+the renderer is built, before any frame). P.8 n/a. P.9 B4, B5. P.10 holds.
+P.11 n/a. P.12 B1 (the boundary a tool's, proven by probes). P.13 n/a.
+
+**I** — I.1 holds. I.2 holds (no globals). I.3 n/a. I.4 B1 (the modes enum
+classes in the contract); `PlacedLight`, `Weighed`, `Unshadowed` named
+types. I.5 B3; `draw_candidate`, `unshadowed`, `evaluate_light_point`
+state theirs. I.6, I.8 n/a in MSL; the host's precondition thrown. I.7
+holds (`outside_packed_bsdf` says what it returns). I.10 holds
+(MetalError). I.11 n/a. I.13 n/a. I.22 holds. I.23 holds (at most six
+parameters: `continue_from`, `shade`). I.24 holds (no two adjacent
+parameters of one type in the new functions: `choose` a float beside the
+float2 `point_numbers`). I.25-I.30 n/a.
+
+**F** — F.1 holds. F.2 B2. F.3 holds (`candidates` 20 lines, `shade` 25,
+`outside_packed_bsdf` 40). F.4, F.5 hold (shader functions inline). F.6
+n/a. F.7 holds. F.8 holds (`place_light` reads only its arguments' arrays;
+the packing pure). F.9 n/a. F.10 holds. F.15, F.16 hold (small structs by
+value in MSL; `const SceneDescription&` on the host). F.17 holds
+(`numbers` in-out, as before). F.20, F.21 hold (`Weighed`, `Unshadowed`,
+`Shaded` returned). F.42-F.55 n/a. F.56 holds (`shade` two levels deep).
+
+**C** — C.1, C.2 hold (`PlacedLight`, `Weighed`, `Unshadowed` structs of
+independent members). C.162 holds (`evaluate_light_point` overloaded on
+`Lights` and `PlacedLight`, the same operation; `light_pdf` likewise).
+C.181 holds (`PlacedLight` holds a sphere's fields beside its record, not
+a union; a light kind added adds its own). Others n/a.
+
+**Enum** — Enum.3 holds. Enum.7, Enum.8 convention (the moved modes are
+shared with Metal). Others hold or n/a.
+
+**R** — n/a (no ownership added).
+
+**ES** — ES.3 B5 (one placement), B2 (one `takes_test`), and the
+transport still shared with the path tracer. ES.5, ES.6 hold. ES.12 holds
+(-Wshadow; `outside` the local in the renderer, `base_outside` the
+helper). ES.20 holds (`PlacedLight placed{}`, `Weighed{...}`). ES.23
+convention in MSL. ES.45 B3 (`packed_largest`, `packed_least_normal`,
+`packed_relative`, `packed_absolute`). ES.46 B3. ES.48, ES.49 hold. ES.70,
+ES.79 hold (switches on kinds, no default). ES.100, ES.107 convention.
+ES.105 holds (no new division). Others n/a.
+
+**Per** — Per.1-Per.4 hold (B4 and B5 measured, above; B4 set aside on
+the measurement). Per.6 B6, and
+each claim of this change measured (above). Per.7 holds. Per.19 holds.
+Others n/a.
+
+**CP** — n/a.
+
+**E** — E.2 holds (MetalError). E.7 B3. E.14 holds. Others n/a.
+
+**Con** — Con.1-Con.4 hold (const locals and parameters).
+
+**T** — n/a (no templates added).
+
+**CPL** — n/a.
+
+**SF** — SF.1, SF.2 hold. SF.5 holds. SF.7 holds (no `using namespace` in a
+header). SF.8 convention. SF.9 B1, B2 (`reuse_settings.h` includes
+`reservoir.h`, which only names it in a comment). SF.11 holds (each new
+header includes what it uses). SF.12 convention. Others n/a.
+
+**SL** — SL.str.1 holds (`std::string` for messages). SL.io.50 n/a.
+SL.con.3 holds (`.at()` on the description's arrays). Others n/a.
+
+**A** — A.4 B1 (as SF.9, between families). Others n/a.
+
+**NR, NL, GSL, Tools, FAQ, Discussion** — NL.1-NL.26 hold (names say what:
+`place_light`, `tested_here`, `material_names`). Others n/a.
+
+#### Performance guidelines (listed fresh: 13 categories, 157 rules)
+
+**cache-layout** — CACHE.1 n/a. CACHE.2, CACHE.3 hold (the light arrays as
+before, read once a candidate). CACHE.4-CACHE.8 n/a (no layout changed;
+`ReuseSettings` is `RestirDi`'s layout).
+
+**codegen** — GEN.1-GEN.8 n/a (the shader compiler's; every helper
+`inline`, as before).
+
+**concurrency** — n/a.
+
+**copy-move** — COPY.6 holds (`ReuseSettings` asserted trivially
+copyable). Others n/a.
+
+**cpu-dsa** — CDSA.31 holds in spirit (B3: a quantized form used only
+where the value fits it, refused where it does not). CDSA.32 n/a. Others
+n/a.
+
+**embedded** — n/a.
+
+**gpu** — GPU.1, GPU.2 hold. GPU.3 B4, B7. GPU.4 holds (the shade's
+branches as before). GPU.5-GPU.9 hold or n/a (no dispatch, barrier or
+resource changed). GPU.10 B6; frame times measured (above); counters not
+recorded (2026-10-11-path-split-cost.md: `xctrace` saves one recording in
+twelve).
+
+**gpu-dsa** — GDSA.2, GDSA.3 hold (the candidates' numbers drawn in the
+same order). GDSA.6 B5, B6. GDSA.16 holds as decided. GDSA.18 B4.
+Others n/a.
+
+**lifetime, memory, simd, telemetry, wasm** — n/a (no allocation, lifetime,
+SIMD path, telemetry or WebAssembly touched).
+
+### Counts
+
+| | Findings | Fixed | Set aside on measurement | Convention |
+|---|---|---|---|---|
+| The review's | 7 (B1-B7) | 6 (B1-B3, B5-B7) | 1 (B4) | 0 |
+| Found by the sweep beyond them | 0 | 0 | 0 | 0 |
+
+Conventions met (AGENTS.md): SF.8, SF.12, ES.23, Enum.7, Enum.8, ES.100,
+ES.107.
