@@ -13,7 +13,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <variant>
 #include <vector>
 
@@ -53,28 +52,8 @@ std::string csv_field(std::string_view field) {
     return quoted + "\"";
 }
 
-// Refuses an --out that names anything, a dangling link included: a
-// reference is never replaced (measure/options.h), as the headless
-// renderer refuses a directory that holds anything (OptionsError, as its
-// prepare_output's).
-void refuse_existing(const std::filesystem::path& out) {
-    std::error_code error;
-    const std::filesystem::file_status status = std::filesystem::symlink_status(out, error);
-    // Not found is the one answer that lets the run go on; libc++ reports it
-    // with an error code as well, so the type is asked first.
-    if (status.type() != std::filesystem::file_type::not_found && error) {
-        throw std::filesystem::filesystem_error("--out cannot be looked at", out, error);
-    }
-    if (std::filesystem::exists(status)) {
-        throw OptionsError("--out " + out.string() +
-                           " already exists; a reference is never replaced: remove it or name another");
-    }
-}
-
 // What a command prints, made whole before any of it is printed.
 std::string run(const MakeReference& command) {
-    // Before a batch is read, so a run that cannot write fails at once.
-    refuse_existing(command.out);
     measurement::ReferenceBuilder builder;
     for (const std::filesystem::path& batch : command.batches) {
         // One batch held at a time: read, folded in, dropped (reference.h).
@@ -84,9 +63,9 @@ std::string run(const MakeReference& command) {
     // printing.
     const double mse_floor = builder.mse_floor();
     const double relative_mse_floor = builder.relative_mse_floor();
-    // And again, just before the write: the batches took a while, and the
-    // stream would truncate a file made meanwhile.
-    refuse_existing(command.out);
+    // Created, never written over: the exclusive create is the check that
+    // --out names nothing, so two runs racing to one file cannot both write
+    // it (measure/options.h, core/output/pfm.h).
     output::write_pfm(command.out, builder.mean());
     return std::format("batches {}\nmse_floor {:.9g}\nrelative_mse_floor {:.9g}\n", builder.batches(), mse_floor,
                        relative_mse_floor);

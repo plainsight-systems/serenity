@@ -4,6 +4,7 @@
 // values included; and every file the reader refuses, each by name.
 
 #include <array>
+#include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -14,6 +15,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <sys/resource.h>
 
 #include <doctest/doctest.h>
 
@@ -128,9 +131,81 @@ TEST_CASE("pfm: an image the contract does not hold is refused before anything i
     CHECK_THROWS_AS(write_pfm(path, LinearImage{Extent{past, 1}, std::vector<float>(std::size_t{past} * 3)}),
                     std::invalid_argument);
     CHECK_FALSE(std::filesystem::exists(path));
-    // A path that cannot be opened is PfmError, naming it.
+    // A path that cannot be created is PfmError, naming it.
     CHECK(contains(serenity::tests::error_of<PfmError>([&] { write_pfm(scratch / "no" / "a.pfm", asymmetric()); }),
-                   "no/a.pfm"));
+                   "no/a.pfm: it cannot be created"));
+}
+
+TEST_CASE("pfm: a file is created, never written over: anything at the path is refused and left as it was") {
+    const ScratchDirectory scratch("pfm-exclusive");
+    const auto refusal = [&](const std::filesystem::path& path) {
+        return serenity::tests::error_of<PfmError>([&] { write_pfm(path, asymmetric()); });
+    };
+    // Another writer's file, there before this write's open: the exclusive
+    // create is the check, so a file that appears between any earlier
+    // check and the write is refused just the same, and kept whole.
+    write_bytes(scratch / "theirs.pfm", "another writer's file");
+    CHECK(contains(refusal(scratch / "theirs.pfm"), "something is already there"));
+    CHECK(read_bytes(scratch / "theirs.pfm") == "another writer's file");
+    // An earlier PFM: refused too, not replaced by an image of the same size.
+    write_pfm(scratch / "first.pfm", asymmetric());
+    const std::string first = read_bytes(scratch / "first.pfm");
+    CHECK(contains(refusal(scratch / "first.pfm"), "something is already there"));
+    CHECK(read_bytes(scratch / "first.pfm") == first);
+    // A dangling link: refused, and nothing made where it points.
+    std::filesystem::create_symlink(scratch / "nowhere.pfm", scratch / "link.pfm");
+    CHECK(contains(refusal(scratch / "link.pfm"), "something is already there"));
+    CHECK_FALSE(std::filesystem::exists(scratch / "nowhere.pfm"));
+    // A directory.
+    std::filesystem::create_directory(scratch / "dir.pfm");
+    CHECK(contains(refusal(scratch / "dir.pfm"), "something is already there"));
+}
+
+namespace {
+
+// Files this process writes held to `bytes` for as long as it lives, and the
+// signal a write past it raises ignored, so the write fails rather than
+// ending the process; both restored however the test ends (R.1). Test-only
+// process state: no other test runs beside it (doctest runs one at a time).
+class FileSizeLimit {
+public:
+    explicit FileSizeLimit(rlim_t bytes) : handler_(std::signal(SIGXFSZ, SIG_IGN)) {
+        REQUIRE(::getrlimit(RLIMIT_FSIZE, &saved_) == 0);
+        rlimit limited = saved_;
+        limited.rlim_cur = bytes;
+        REQUIRE(::setrlimit(RLIMIT_FSIZE, &limited) == 0);
+    }
+    ~FileSizeLimit() {
+        (void)::setrlimit(RLIMIT_FSIZE, &saved_);
+        (void)std::signal(SIGXFSZ, handler_);
+    }
+    FileSizeLimit(const FileSizeLimit&) = delete;
+    FileSizeLimit& operator=(const FileSizeLimit&) = delete;
+    FileSizeLimit(FileSizeLimit&&) = delete;
+    FileSizeLimit& operator=(FileSizeLimit&&) = delete;
+
+private:
+    rlimit saved_{};
+    void (*handler_)(int);
+};
+
+}  // namespace
+
+TEST_CASE("pfm: a write that fails once the file is made throws, and removes its own partial file") {
+    const ScratchDirectory scratch("pfm-write-fails");
+    const std::filesystem::path path = scratch / "big.pfm";
+    // 64 x 64 x 3 floats, 48 KiB, past a limit of 1 KiB.
+    const LinearImage big{Extent{64, 64}, std::vector<float>(std::size_t{64} * 64 * 3, 1.0f)};
+    std::string why;
+    {
+        const FileSizeLimit limit(1024);
+        why = serenity::tests::error_of<PfmError>([&] { write_pfm(path, big); });
+    }
+    CHECK(contains(why, "the write failed, and the partial file is removed"));
+    CHECK_FALSE(std::filesystem::exists(path));
+    // And with the limit gone, the same write succeeds.
+    write_pfm(path, big);
+    CHECK(read_pfm(path).rgb == big.rgb);
 }
 
 TEST_CASE("pfm: every malformed header is refused by name, before anything is allocated for it") {

@@ -115,20 +115,34 @@ for f in "${PFM}"/*.pfm; do
     head -c 12 "${f}" | cmp -s - "${SCRATCH}/pfm_header" || fail "${f}'s header is not 'PF 6 4 -1.0'"
 done
 
-# Refused before anything renders or is made: a pfm of a graph that
-# accumulates nothing, naming it; a format that is not Output's; and a run
-# past sample index 2^32 - 1.
+# Refused before anything renders or is made: a kind written from the
+# accumulated image (pfm) of a graph that accumulates nothing, naming the
+# graph; a name that is none of Output's kinds (which are Output's to list,
+# tests/image_format_test.cpp); and an accumulating run whose last sample,
+# frame 4194304's 1024th, is past index 2^32 - 1.
 expect_refusal "pfm of a graph that accumulates nothing" --graph "${GRAPHS}/test_pattern.toml" \
     --out "${SCRATCH}/pattern-pfm" --format pfm
-grep -q "graph ${GRAPHS}/test_pattern.toml accumulates nothing" "${SCRATCH}/stderr" ||
-    fail "a pfm of the test pattern: '$(cat "${SCRATCH}/stderr")'"
+grep -q "is written from the accumulated image, and the graph ${GRAPHS}/test_pattern.toml accumulates nothing" \
+    "${SCRATCH}/stderr" || fail "a pfm of the test pattern: '$(cat "${SCRATCH}/stderr")'"
 [ ! -e "${SCRATCH}/pattern-pfm" ] || fail "a pfm of a graph that accumulates nothing made its output directory"
-expect_refusal "an unknown format" --graph "${GRAPHS}/test_pattern.toml" --out "${SCRATCH}/exr" --format exr
-grep -q -- '--format needs png or pfm' "${SCRATCH}/stderr" || fail "an unknown format: '$(cat "${SCRATCH}/stderr")'"
-expect_refusal "a sample past 2^32 - 1" --graph "${GRAPHS}/test_pattern.toml" --out "${SCRATCH}/wrapped" \
-    --first 4194304 --samples 1024
-grep -q 'past sample index 2^32 - 1' "${SCRATCH}/stderr" || fail "a sample past 2^32 - 1: '$(cat "${SCRATCH}/stderr")'"
+expect_refusal "an unknown format" --graph "${GRAPHS}/test_pattern.toml" --out "${SCRATCH}/kind" --format no-such-kind
+grep -q -- "--format needs .*, not 'no-such-kind'" "${SCRATCH}/stderr" ||
+    fail "an unknown format: '$(cat "${SCRATCH}/stderr")'"
+[ ! -e "${SCRATCH}/kind" ] || fail "an unknown format made its output directory"
+expect_refusal "a sample past 2^32 - 1" --graph "${GRAPHS}/path.toml" --scene "${SCRATCH}/lit.toml" \
+    --out "${SCRATCH}/wrapped" --size 4x4 --first 4194304 --samples 1024
+grep -q 'at 1024 samples a frame, is past sample index 2^32 - 1' "${SCRATCH}/stderr" ||
+    fail "a sample past 2^32 - 1: '$(cat "${SCRATCH}/stderr")'"
 [ ! -e "${SCRATCH}/wrapped" ] || fail "a run past sample index 2^32 - 1 made its output directory"
+
+# The same range of a graph that accumulates nothing renders one sample a
+# frame, whatever --samples says (core/frame/history.h): frame 4194304's one
+# sample, index 4194304, far under 2^32. Accepted, and written.
+ONE="${SCRATCH}/one-sample"
+"${BIN}" --graph "${GRAPHS}/test_pattern.toml" --out "${ONE}" --size 4x4 --first 4194304 --samples 1024 \
+    >"${SCRATCH}/stdout" 2>"${SCRATCH}/stderr" ||
+    fail "a graph that accumulates nothing, from frame 4194304 at --samples 1024: '$(cat "${SCRATCH}/stderr")'"
+[ "$(names "${ONE}")" = "frame-4194304.png" ] || fail "from frame 4194304 wrote '$(names "${ONE}")'"
 
 # A frame that left samples out for not being finite fails the run once it
 # has completed, naming the count, before it is written: two lights at the

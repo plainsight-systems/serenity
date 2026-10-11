@@ -18,8 +18,19 @@ namespace {
 constexpr std::string_view usage =
     "usage: serenity-headless --graph FILE [--scene FILE] --out DIRECTORY [--frames N] [--first I] "
     "[--step SECONDS | --time SECONDS] [--size WIDTHxHEIGHT] [--write all|last|doubling] [--samples N] "
-    "[--format png|pfm]; "
+    "[--format KIND]; "
     "DIRECTORY must be new or empty";
+
+// Whether a run of `frames` frames from `first`, `n` samples a frame, has
+// its last sample index, (first + frames) x n - 1, past 2^32 - 1: the
+// shaders tell indices apart by their low 32 bits alone
+// (headless/options.h). Each step is bounded before the next is computed,
+// so nothing here wraps (ES.103): first + frames at most 2^32, then times
+// n, at most 2^24 - 1, under 2^56. `n` is at least 1.
+bool past_last_sample(std::uint64_t first, std::uint64_t frames, std::uint64_t n) {
+    constexpr std::uint64_t sample_indices = std::uint64_t{1} << 32;  // 0 .. 2^32 - 1
+    return first > sample_indices || frames > sample_indices - first || (first + frames) * n > sample_indices;
+}
 
 // The whole of `text` as a T, or none: std::from_chars reads no locale and
 // sets no errno (E.28), and takes no sign or space before the number.
@@ -137,7 +148,8 @@ Options parse(std::span<const char* const> args) {
             const std::string_view which = value();
             const std::optional<output::ImageFormat> format = output::image_format_named(which);
             if (!format) {
-                throw OptionsError("--format needs png or pfm, not '" + std::string{which} + "'");
+                throw OptionsError("--format needs " + output::image_format_names() + ", not '" + std::string{which} +
+                                   "'");
             }
             options.format = *format;
         } else if (option == "--size") {
@@ -165,20 +177,29 @@ Options parse(std::span<const char* const> args) {
     if (stepped && options.time) {
         throw OptionsError("--time and --step are exclusive: --time freezes every frame at one time");
     }
-    // The run's last sample, (first + frames) x N - 1, at most 2^32 - 1: the
-    // shaders tell indices apart by their low 32 bits alone
-    // (headless/options.h). Each step is bounded before the next is
-    // computed, so nothing here wraps (ES.103): first + frames at most 2^32,
-    // then times N, at most 2^24 - 1, under 2^56.
-    constexpr std::uint64_t sample_indices = std::uint64_t{1} << 32;  // 0 .. 2^32 - 1
-    const std::uint64_t n = options.samples;
-    if (options.first > sample_indices || options.frames > sample_indices - options.first ||
-        (options.first + options.frames) * n > sample_indices) {
+    // What parse() can check of the sample bound without the graph: every
+    // frame renders one sample at least, so the last frame's index must be
+    // under 2^32. The plan's own samples a frame are check_samples()'s.
+    if (past_last_sample(options.first, options.frames, 1)) {
         throw OptionsError("--first " + std::to_string(options.first) + " plus --frames " +
-                           std::to_string(options.frames) + ", at --samples " + std::to_string(n) +
-                           " per frame, is past sample index 2^32 - 1, the last whose random numbers are its own");
+                           std::to_string(options.frames) +
+                           " is past frame index 2^32 - 1, the last whose sample's random numbers are its own");
     }
     return options;
+}
+
+void check_samples(const Options& options, std::uint64_t samples_per_frame) {
+    if (samples_per_frame == 0 || samples_per_frame > frame::max_accumulated_frames) {
+        throw std::invalid_argument("check_samples: " + std::to_string(samples_per_frame) +
+                                    " samples a frame, where a plan renders from 1 to " +
+                                    std::to_string(frame::max_accumulated_frames));
+    }
+    if (past_last_sample(options.first, options.frames, samples_per_frame)) {
+        throw OptionsError("--first " + std::to_string(options.first) + " plus --frames " +
+                           std::to_string(options.frames) + ", at " + std::to_string(samples_per_frame) +
+                           " samples a frame, is past sample index 2^32 - 1, the last whose random numbers are its "
+                           "own");
+    }
 }
 
 bool written(Write write, RunFrame frame) {

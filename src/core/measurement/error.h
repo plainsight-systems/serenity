@@ -38,8 +38,12 @@ namespace serenity::measurement {
 // measure are checked against each other (docs/research/
 // 2026-10-10-reference.md).
 //
-// Not performance-sensitive: one pass of a few operations a value, on the
-// CPU, tens of milliseconds at 1920 x 1080.
+// Not performance-sensitive: two passes over the 3 x P values of both
+// images, on the CPU, tens of milliseconds at 1920 x 1080. The first checks
+// every value, the second sums: so every refusal comes before any sum, as
+// promised above, and a sum is never begun on images it will refuse. The
+// second pass reads both images again, 24 bytes a pixel, 50 MB at
+// 1920 x 1080, beside an image's seconds of rendering.
 
 inline constexpr double relative_epsilon = 0.01;
 

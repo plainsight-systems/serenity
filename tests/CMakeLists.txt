@@ -40,6 +40,7 @@ add_executable(serenity_tests
     coated_test.cpp
     frame_times_test.cpp
     png_test.cpp
+    image_format_test.cpp
     linear_image_test.cpp
     pfm_test.cpp
     reference_test.cpp

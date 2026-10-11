@@ -5,9 +5,11 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <fstream>
 #include <ios>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -32,16 +34,29 @@ constexpr std::string_view scale_written = "-1.0";  // little-endian, every valu
 // is not scanned to its end for a newline (SL.io.2).
 constexpr std::size_t longest_header_line = 32;
 
-// The bytes an image's floats are, for the stream's char interface: char
-// may alias any object ([basic.lval]), and the floats are this machine's
-// own (above). Reading into them writes the object representation of
-// floats that already exist (LIFE.4). The only casts in this file, kept to
-// these two (I.30).
-std::span<const char> bytes_of(std::span<const float> floats) {
-    return {reinterpret_cast<const char*>(floats.data()), floats.size_bytes()};
-}
+// The bytes an image's floats are, for the input stream's char interface:
+// char may alias any object ([basic.lval]), and the floats are this
+// machine's own (above). Reading into them writes the object
+// representation of floats that already exist (LIFE.4). The only cast in
+// this file, kept here (I.30); the writer's C stream takes the floats as
+// they are.
 std::span<char> writable_bytes_of(std::span<float> floats) {
     return {reinterpret_cast<char*>(floats.data()), floats.size_bytes()};
+}
+
+// A C stream that closes itself however its scope ends (R.1, E.6); the
+// writer closes it explicitly, to see the close's result.
+struct CloseFile {
+    void operator()(std::FILE* file) const noexcept { (void)std::fclose(file); }
+};
+using File = std::unique_ptr<std::FILE, CloseFile>;
+
+// `values` written whole to `file`; false if fewer were.
+bool write_all(std::FILE* file, std::span<const float> values) {
+    return std::fwrite(values.data(), sizeof(float), values.size(), file) == values.size();
+}
+bool write_all(std::FILE* file, std::string_view text) {
+    return std::fwrite(text.data(), 1, text.size(), file) == text.size();
 }
 
 // A byte count as the stream's: every count here is at most a 16384 x 16384
@@ -140,26 +155,39 @@ void write_pfm(const std::filesystem::path& path, const contracts::LinearImage& 
     // Sides bounded by the check, so this cannot overflow (ES.103).
     const std::size_t row_floats = std::size_t{extent.width} * channels;
 
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) {
-        throw PfmError("cannot write " + path.string() + ": it cannot be opened");
+    // Exclusive create: the open is the check that nothing is at the path,
+    // made by the file system at once, so no other writer can slip in
+    // between a check and the write (pfm.h).
+    File file{std::fopen(path.c_str(), "wbx")};
+    if (!file) {
+        // Why, asked of the file system rather than errno (E.28).
+        std::error_code ignored;
+        if (std::filesystem::exists(std::filesystem::symlink_status(path, ignored))) {
+            throw PfmError("cannot write " + path.string() +
+                           ": something is already there, and a PFM is never written over anything");
+        }
+        throw PfmError("cannot write " + path.string() + ": it cannot be created");
     }
-    // std::to_string, not the stream's operator<<: no locale's grouping can
+    // std::to_string, not a stream's operator<<: no locale's grouping can
     // reach the header (environmental determinism).
     const std::string header = std::string{magic} + "\n" + std::to_string(extent.width) + " " +
                                std::to_string(extent.height) + "\n" + std::string{scale_written} + "\n";
-    out.write(header.data(), stream_size(header.size()));
+    bool written = write_all(file.get(), header);
     // Rows from the bottom, as the format has them (pfm.h); each written
     // from the image as it is, through the stream's buffer, with no copy.
     const std::span<const float> rgb = image.rgb;
-    for (std::size_t r = 0; r < extent.height; ++r) {
+    for (std::size_t r = 0; written && r < extent.height; ++r) {
         const std::size_t row = extent.height - 1 - r;
-        const std::span<const char> bytes = bytes_of(rgb.subspan(row * row_floats, row_floats));
-        out.write(bytes.data(), stream_size(bytes.size()));
+        written = write_all(file.get(), rgb.subspan(row * row_floats, row_floats));
     }
-    out.close();
-    if (!out) {
-        throw PfmError("cannot write " + path.string() + ": the write failed");
+    // Closed here, its result seen: a buffered write can fail at the close.
+    const bool closed = std::fclose(file.release()) == 0;
+    if (!written || !closed) {
+        // The file is this call's own, made by it: a partial one is not
+        // left to look like a PFM.
+        std::error_code ignored;
+        std::filesystem::remove(path, ignored);
+        throw PfmError("cannot write " + path.string() + ": the write failed, and the partial file is removed");
     }
 }
 

@@ -21,17 +21,17 @@ namespace serenity::headless {
 //                     [--frames N] [--first I]
 //                     [--step SECONDS | --time SECONDS]
 //                     [--size WIDTHxHEIGHT] [--write all|last|doubling]
-//                     [--samples N] [--format png|pfm]
+//                     [--samples N] [--format KIND]
 //
 // DIRECTORY must be new or empty (prepare_output, below). It renders the
 // frame graph in FILE (core/frame/graph_file.h), over the scene in
 // --scene's FILE if the graph reads one (core/scene/scene.h), frames
 // first .. first + frames - 1, frame i at time i x step, each to
-// DIRECTORY/frame-NNNNNN.png (i, zero-padded to six digits; .pfm with
-// --format pfm, below). Time is computed, never measured: the same command
-// writes the same files, on any run (principle 1). Defaults: one frame,
-// from frame 0, a step of 1/60 s, 1920 x 1080, every frame written, one
-// sample, PNG.
+// DIRECTORY/frame-NNNNNN and its kind's extension (i, zero-padded to six
+// digits; --format, below). Time is computed, never measured: the same
+// command writes the same files, on any run (principle 1). Defaults: one
+// frame, from frame 0, a step of 1/60 s, 1920 x 1080, every frame written,
+// one sample, Output's default kind.
 //
 // --samples: each frame is rendered N times at its instant, as the
 // renderer's frames i x N .. i x N + N - 1 (core/frame/frame_inputs.h: the
@@ -65,42 +65,48 @@ namespace serenity::headless {
 // counted in frames, not samples. A frame not written is not read back
 // either, so `last` costs little more than the GPU's time.
 //
-// What a written frame is, --format, one of Output's kinds
-// (core/output/image_format.h), each written to frame-NNNNNN and its
-// extension:
-//   png  the frame as displayed, 8 bits a channel, tone mapped: for
-//        looking at, and the default (core/output/png.h);
-//   pfm  the graph's accumulated image, linear radiance in floats before
-//        tone mapping, its pixels' counts left out: for measuring
-//        (core/output/pfm.h, core/contracts/linear_image.h).
-//        What a reference is made of, and what is judged against one
-//        (core/measurement/). Only a graph that accumulates has that image
-//        (core/frame/history.h, accumulates): asked of one that does not,
-//        the run is refused before it renders, by OptionsError naming the
-//        graph, rather than at the first frame written.
+// What a written frame is, --format KIND: one of Output's kinds, by the
+// name Output gives it (core/output/image_format.h, which lists them, what
+// each is written from, and its extension; png by default). This program
+// names no kind: it reads back what the kind's source is, the frame as
+// displayed or the graph's accumulated image, and hands it to Output's
+// write_image(), each frame to frame-NNNNNN and the kind's extension. A
+// kind written from the accumulated image needs a graph that accumulates
+// (core/frame/history.h, accumulates): asked of one that does not, the run
+// is refused by OptionsError naming the graph, after the graph is read and
+// before anything renders or the directory is made, rather than at the
+// first frame written.
 //
-// parse() checks everything before anything renders and throws OptionsError
-// naming the argument (E.2, E.14): an unknown option, a missing or malformed
-// value (a --write other than all, last or doubling, a --format other than
-// png or pfm; a number with a sign,
-// a space or anything after it, read by std::from_chars, E.28), zero
-// frames, zero samples or more than an image holds (2^24 - 1,
-// frame::max_accumulated_frames, core/frame/frame_inputs.h), a size
-// with a zero side, a step that is not positive and finite, a time that is
-// not finite or is negative, --time with --step, a range whose last sample's
-// index, (first + frames) x N - 1, is past 2^32 - 1, a missing --graph or
-// --out. The shaders key every random number by an index's low 32 bits
-// (contracts/frame_constants.h, frame_index), so a sample at 2^32 + k
-// would draw sample k's numbers again: two samples of a run, or a
-// reference's batch and an image judged against it, that look independent
-// and are one (core/measurement/reference.h). The window's frames wrap
-// there, after two years; a headless run is refused before it renders one
-// (E.2, ES.46). A run that accumulates more samples across its frames
-// than an image holds is refused by the renderer at the first sample past
-// it: whether it accumulates across frames depends on the scene, which
-// parse() does not read. It does not touch the file system: the graph is
-// read, and the directory made ready (prepare_output), after parsing
-// succeeds.
+// parse() checks everything it can before anything renders and throws
+// OptionsError naming the argument (E.2, E.14): an unknown option, a
+// missing or malformed value (a --write other than all, last or doubling,
+// a --format that names none of Output's kinds; a number with a sign, a
+// space or anything after it, read by std::from_chars, E.28), zero frames,
+// zero samples or more than an image holds (2^24 - 1,
+// frame::max_accumulated_frames, core/frame/frame_inputs.h), a size with a
+// zero side, a step that is not positive and finite, a time that is not
+// finite or is negative, --time with --step, a missing --graph or --out,
+// and a range whose last frame, first + frames - 1, is past 2^32 - 1, for
+// every frame renders a sample at least.
+//
+// The run's last sample index, (first + frames) x N - 1, must be under
+// 2^32 too, N being the samples the plan renders a frame
+// (core/frame/history.h, plan_headless): --samples for a graph that
+// accumulates, 1 for one that does not, whatever --samples says. parse()
+// cannot check it alone, for it does not read the graph; check_samples()
+// does, once the plan is made, before anything renders or the directory is
+// made, and throws OptionsError naming the range. The shaders key every
+// random number by an index's low 32 bits (contracts/frame_constants.h,
+// frame_index), so a sample at 2^32 + k would draw sample k's numbers
+// again: two samples of a run, or a reference's batch and an image judged
+// against it, that look independent and are one
+// (core/measurement/reference.h). The window's frames wrap there, after
+// two years; a headless run is refused before it renders one (E.2, ES.46).
+// A run that accumulates more samples across its frames than an image
+// holds is refused by the renderer at the first sample past it: whether it
+// accumulates across frames depends on the scene. parse() does not touch
+// the file system: the graph is read, and the directory made ready
+// (prepare_output), after parsing succeeds.
 //
 // The directory holds this run's frames and nothing else: prepare_output()
 // creates it, or takes it if it is empty, and refuses by OptionsError one
@@ -132,7 +138,7 @@ struct Options {
     std::filesystem::path out;
     Write write = Write::all;
     std::uint64_t samples = 1;  // rendered per frame, at its instant
-    output::ImageFormat format = output::ImageFormat::png;
+    output::ImageFormat format = output::default_format;
 };
 
 // Which of a run's frames: the one `after_first` frames after its first, of
@@ -149,6 +155,13 @@ bool written(Write write, RunFrame frame);
 
 // `args` are the arguments after the program's name.
 Options parse(std::span<const char* const> args);
+
+// Throws OptionsError if the run `options` asks for, at `samples_per_frame`
+// (the plan's, core/frame/history.h), has a last sample index,
+// (first + frames) x samples_per_frame - 1, past 2^32 - 1; see above.
+// `options` as parse() made it; `samples_per_frame` from 1 to
+// frame::max_accumulated_frames, else std::invalid_argument (I.5).
+void check_samples(const Options& options, std::uint64_t samples_per_frame);
 
 // Makes `out` ready for a run's frames: creates it if it does not exist;
 // throws OptionsError if it is not an empty directory (see above), or

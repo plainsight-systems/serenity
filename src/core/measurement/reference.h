@@ -63,9 +63,10 @@ namespace serenity::measurement {
 // shared, for it is the same at every pixel: 48 bytes a pixel, some 100 MB
 // at 1920 x 1080, allocated once, when the first batch is added (MEM.9).
 // A batch is read, folded in and dropped: never more than one held.
-// Cost: some 20 floating-point operations a channel a batch, on the CPU;
-// at 1920 x 1080, tens of milliseconds a batch beside its seconds of
-// rendering.
+// Cost: two passes over each batch, the check above and then the fold,
+// some 20 floating-point operations a channel in all, on the CPU; at
+// 1920 x 1080, tens of milliseconds a batch beside its seconds of
+// rendering. One pass over the batches: Welford's, never a second.
 
 class ReferenceBuilder {
 public:

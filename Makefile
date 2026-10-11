@@ -98,8 +98,10 @@ movie:
 ## serenity-measure into REFERENCE, and the scratch directory removed; the
 ## reference's own error, its floors (serenity-measure's stdout), goes beside
 ## it as .txt. A reference is never replaced: remove it to make it again.
-## The defaults, 64 x 1024 samples at 1920 x 1080, take most of an hour of
-## GPU. For example: make reference SCENE=scenes/marbles.toml TIME=120
+## The defaults, 64 x 1024 samples at 1920 x 1080, take some ten minutes of
+## GPU, scaling with pixels and samples; see
+## docs/research/2026-10-10-reference.md. For example:
+## make reference SCENE=scenes/marbles.toml TIME=120
 TIME ?=
 BATCHES ?= 64
 BATCH_SAMPLES ?= 1024

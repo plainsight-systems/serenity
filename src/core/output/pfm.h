@@ -36,9 +36,20 @@ namespace serenity::output {
 // make_linear_image() accepts, which is checked before anything is written
 // (std::invalid_argument, I.5). Each float is written as it is, no scale and
 // no clamp, non-finite values included: what a value means is the
-// measurement's to judge (error.h refuses them). A write that fails throws
-// PfmError naming the path (E.2, E.14); a partial file may be left behind,
-// as write_png() may leave one (png.h).
+// measurement's to judge (error.h refuses them).
+//
+// write_pfm() creates its file, and never writes over one: the file is
+// opened by exclusive create (std::fopen's "x", C11 and C++17's <cstdio>;
+// O_CREAT | O_EXCL on this system), which fails if anything is at the path,
+// a dangling link included, and is the check itself, made by the file
+// system at once, so of two writers racing to one path one creates it and
+// the other is refused. That is what lets a reference be "never replaced"
+// (measure/options.h), and a frame never land on an earlier run's. An
+// existing path is refused by PfmError naming it, left as it was. A write
+// that fails after the file is created throws PfmError naming the path and
+// removes the file, this call's own. Written through a C stream, not an
+// iostream: C++20's file streams have no exclusive create (std::ios::
+// noreplace is C++23), a departure from SL.io.3 kept to pfm.cpp.
 //
 // read_pfm(): every file is untrusted input (SL.io.2), and is refused, by
 // PfmError naming the path and what is wrong, before anything is allocated
@@ -57,9 +68,11 @@ namespace serenity::output {
 // Not performance-sensitive: one file a reference batch or a measured
 // image, some 25 MB at 1920 x 1080, after its frame is done. Read whole
 // into the image with one stream operation, its rows then turned in place;
-// written a row at a time, bottom first, through the stream's buffer. No
-// copy of the image is made either way, so a file read holds no more than
-// its image (max_image_side's bound).
+// written a row at a time, bottom first, through the C stream's buffer. No
+// copy of the image is made here either way, so a file read holds no more
+// than its image (max_image_side's bound). What a caller copies to make
+// the image is its own cost (the headless renderer's: headless/options.h,
+// docs/research/2026-10-10-reference.md).
 
 class PfmError : public std::runtime_error {
 public:

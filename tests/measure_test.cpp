@@ -114,8 +114,17 @@ TEST_CASE("measure: a reference written, and its floors printed, from the batche
 
     // Asked again, its file there: refused, the file as it was.
     const std::string before = serenity::tests::read_bytes(scratch / "reference.pfm");
-    check_failed(measure(args, scratch), "already exists");
+    check_failed(measure(args, scratch), "something is already there");
     CHECK(serenity::tests::read_bytes(scratch / "reference.pfm") == before);
+
+    // Another run's file, made after this run was asked for and before it
+    // writes (here, before it starts: its only check is the exclusive
+    // create itself): refused, that file untouched.
+    const std::filesystem::path theirs = scratch / "theirs.pfm";
+    serenity::tests::write_bytes(theirs, "another run's reference");
+    args[2] = theirs.string();
+    check_failed(measure(args, scratch), "something is already there");
+    CHECK(serenity::tests::read_bytes(theirs) == "another run's reference");
 }
 
 TEST_CASE("measure: the error's CSV, a row an image in the order given, a path with a comma quoted") {

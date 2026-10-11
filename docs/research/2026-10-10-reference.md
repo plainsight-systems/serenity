@@ -61,8 +61,13 @@ is added, and no frame of the window costs more. A reference does cost the
 GPU what its graph does: graphs/path.toml is the path pass and then the
 tone map, so every sample of a batch also tone maps, into an image a PFM
 never reads; and each batch's PFM is one readback of the accumulated
-image, 16 bytes a pixel, 33 MB at 1920 x 1080, copied once (GPU.1). Both
-are budgeted below, under the review.
+image, copied three times on its way (GPU.1): GPU to a shared buffer, 16
+bytes a pixel; that buffer into the caller's span, 16 again
+(read_accumulated); and the span's radiance into a new image, 12
+(from_rgba). That is 33, 33 and 25 MB at 1920 x 1080, once a batch, beside
+some 8 s of rendering a batch. Both costs are budgeted below, under the
+review; the copies, a fraction of a second a reference, are not designed
+around.
 
 ## How it is run (the Makefile's targets)
 
@@ -152,6 +157,37 @@ its floors beside it as `.txt`, and the convergence's CSV beside it as
 `<same>-convergence-<frames>x<samples>.csv` (columns samples, image, mse,
 relative_mse). A reference is never replaced: `make reference` stops
 before rendering if its file is there.
+
+### The review of 5f4c7de
+
+Codex reviewed the implementation (both focuses). Taken, with the headers
+changed for each:
+
+- The sample-index bound was checked by parse() at --samples, while a
+  graph that accumulates nothing renders one sample a frame: a valid run
+  was refused. parse() now bounds the last frame index alone; the samples
+  bound is `check_samples()`, made at the plan's samples a frame once the
+  graph is read, before anything renders or the directory is made
+  (headless/options.h).
+- "A reference is never replaced" was a check, then a truncating open: two
+  runs could both pass it. `write_pfm()` now creates its file by exclusive
+  create, `std::fopen`'s "x", which is the check, and removes its own
+  partial file if a write fails (core/output/pfm.h); serenity-measure has
+  no check of its own (measure/options.h).
+- The headless renderer named Output's kinds. Output now says, for each
+  kind, its names, extension and source (displayed or accumulated), and
+  writes any kind by `write_image()` (core/output/image_format.h); the
+  headless renderer reads back by source and names no kind
+  (headless/options.h).
+- Three cost statements were wrong: the Makefile's "most of an hour" (some
+  ten minutes, above); "copied once" (three copies, above); error.h's "one
+  pass" (two, its check and its sums, so a refusal precedes any sum;
+  reference.h states its two passes a batch the same way).
+
+Rejected again, as at the design's review (above): caching the frozen
+scene's acceleration structure by time, and a graph without the tone map,
+each some 2% of a reference; their measured share comes with the first
+references.
 
 ## Results
 

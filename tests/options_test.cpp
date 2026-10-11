@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -80,82 +81,86 @@ TEST_CASE("headless: every mistake is refused by name") {
     CHECK(contains(headless_error({"--size", "640"}), "WIDTHxHEIGHT"));
     CHECK(contains(headless_error({"--size", "0x360"}), "at least 1"));
     CHECK(contains(headless_error({"--fast"}), "unknown option '--fast'"));
-    CHECK(contains(headless_error({"--first", last_index.c_str(), "--frames", "2"}), "past sample index 2^32 - 1"));
+    CHECK(contains(headless_error({"--first", last_index.c_str(), "--frames", "2"}), "past frame index 2^32 - 1"));
 }
 
-TEST_CASE("headless: the last sample index there can be, 2^32 - 1, is reachable, and one past it is not") {
-    // One sample a frame: frame 2^32 - 1 is the last.
+TEST_CASE("headless: parse() holds the last frame index under 2^32, every frame rendering a sample at least") {
+    // Frame 2^32 - 1 is the last; frame 2^32 is past it.
     const auto last = headless({"--first", last_index.c_str(), "--frames", "1"});
     CHECK(last.first == last_sample);
     CHECK(last.frames == 1);
-    CHECK(contains(headless_error({"--first", past_last_index.c_str()}), "past sample index 2^32 - 1"));
+    CHECK(contains(headless_error({"--first", past_last_index.c_str()}), "past frame index 2^32 - 1"));
     // From frame 0, 2^32 frames end at the last; one more is past it.
     const std::string all_frames = std::to_string(last_sample + 1);
     CHECK(headless({"--frames", all_frames.c_str()}).frames == last_sample + 1);
     const std::string one_more = std::to_string(last_sample + 2);
-    CHECK(contains(headless_error({"--frames", one_more.c_str()}), "past sample index"));
-    // Numbers that would wrap a 64-bit sum or product are refused, not
-    // wrapped into range (ES.103).
-    CHECK(contains(headless_error({"--first", largest.c_str()}), "past sample index"));
-    CHECK(contains(headless_error({"--first", "1", "--frames", largest.c_str()}), "past sample index"));
+    CHECK(contains(headless_error({"--frames", one_more.c_str()}), "past frame index"));
+    // Numbers that would wrap a 64-bit sum are refused, not wrapped into
+    // range (ES.103).
+    CHECK(contains(headless_error({"--first", largest.c_str()}), "past frame index"));
+    CHECK(contains(headless_error({"--first", "1", "--frames", largest.c_str()}), "past frame index"));
+    // --samples is not parse()'s to bound by: the plan's samples a frame
+    // depend on the graph (check_samples, below).
+    CHECK(headless({"--first", "4194304", "--samples", "1024"}).samples == 1024);
 }
 
-TEST_CASE("headless: samples per frame, from 1 to what an image holds, and the last sample reachable") {
+TEST_CASE("headless: samples per frame, from 1 to what an image holds") {
     CHECK(headless({}).samples == 1);
     CHECK(headless({"--samples", "64"}).samples == 64);
     CHECK(headless({"--samples", most_frames.c_str()}).samples == serenity::frame::max_accumulated_frames);
     CHECK(contains(headless_error({"--samples", "0"}), "--samples must be from 1"));
     CHECK(contains(headless_error({"--samples", past_most_frames.c_str()}), "the most an image holds"));
-    // The last frame's last sample, (first + frames) x N - 1, at most
-    // 2^32 - 1: at N = 1024, frames first .. 2^22 - 1 exactly reach it, and
-    // a frame more is past it. A reference's batch k at 1024 samples is
+}
+
+TEST_CASE("headless: check_samples holds the last sample index under 2^32 at the plan's samples a frame") {
+    using serenity::headless::check_samples;
+    const auto refusal = [](std::initializer_list<const char*> more, std::uint64_t samples_per_frame) {
+        const serenity::headless::Options options = headless(more);
+        return serenity::tests::error_of<serenity::headless::OptionsError>(
+            [&] { check_samples(options, samples_per_frame); });
+    };
+    // The run that a graph accumulating nothing renders at one sample a
+    // frame, whatever --samples says: frame 4194304's one sample, index
+    // 4194304, far under 2^32, is accepted at 1, and refused at 1024, where
+    // its last index is 2^32 + 1023.
+    CHECK(refusal({"--first", "4194304", "--samples", "1024"}, 1).empty());
+    CHECK(contains(refusal({"--first", "4194304", "--samples", "1024"}, 1024),
+                   "--first 4194304 plus --frames 1, at 1024 samples a frame, is past sample index 2^32 - 1"));
+    // At N = 1024, frames first .. 2^22 - 1 exactly reach the last index,
+    // and a frame more is past it. A reference's batch k at 1024 samples is
     // frame k, so 2^22 batches, and no more, have numbers of their own.
-    const std::uint64_t frames_at_1024 = std::uint64_t{1} << 22;
-    const std::string last_first = std::to_string(frames_at_1024 - 1);
-    const std::string past_first = std::to_string(frames_at_1024);
-    CHECK(headless({"--first", last_first.c_str(), "--samples", "1024"}).first == frames_at_1024 - 1);
-    CHECK(contains(headless_error({"--first", past_first.c_str(), "--samples", "1024"}),
-                   "--first 4194304 plus --frames 1, at --samples 1024 per frame, is past sample index 2^32 - 1"));
-    CHECK(headless({"--first", "4194300", "--frames", "4", "--samples", "1024"}).frames == 4);
-    CHECK(contains(headless_error({"--first", "4194300", "--frames", "5", "--samples", "1024"}), "past sample index"));
+    CHECK(refusal({"--first", "4194303"}, 1024).empty());
+    CHECK(refusal({"--first", "4194300", "--frames", "4"}, 1024).empty());
+    CHECK(contains(refusal({"--first", "4194300", "--frames", "5"}, 1024), "past sample index"));
     // The most samples an image holds, from frame 0: 256 frames of them
-    // reach (256 x (2^24 - 1)) - 1, inside the bound; the product is not
-    // what wraps here, and is still checked.
-    CHECK(headless({"--frames", "256", "--samples", most_frames.c_str()}).frames == 256);
-    CHECK(contains(headless_error({"--frames", "257", "--samples", most_frames.c_str()}), "past sample index"));
+    // reach 256 x (2^24 - 1) - 1, inside the bound; 257 do not.
+    constexpr std::uint64_t most = serenity::frame::max_accumulated_frames;
+    CHECK(refusal({"--frames", "256"}, most).empty());
+    CHECK(contains(refusal({"--frames", "257"}, most), "past sample index"));
     // The product exactly at the bound and one past it: 2^31 frames of 2
     // samples end at index 2^32 - 1; 6700417 frames of 641, 2^32 + 1
     // samples (its factors), end one past.
-    CHECK(headless({"--frames", "2147483648", "--samples", "2"}).frames == 2147483648u);
-    CHECK(contains(headless_error({"--frames", "6700417", "--samples", "641"}), "past sample index"));
-    CHECK(headless({"--frames", "6700416", "--samples", "641"}).frames == 6700416);
+    CHECK(refusal({"--frames", "2147483648"}, 2).empty());
+    CHECK(contains(refusal({"--frames", "6700417"}, 641), "past sample index"));
+    CHECK(refusal({"--frames", "6700416"}, 641).empty());
+    // A plan's samples a frame are from 1 to what an image holds.
+    const serenity::headless::Options any = headless({});
+    CHECK_THROWS_AS(check_samples(any, 0), std::invalid_argument);
+    CHECK_THROWS_AS(check_samples(any, most + 1), std::invalid_argument);
 }
 
-TEST_CASE("headless: what a written frame is, png by default or pfm, and nothing else") {
-    using serenity::output::ImageFormat;
-    CHECK(headless({}).format == ImageFormat::png);
-    CHECK(headless({"--format", "png"}).format == ImageFormat::png);
-    CHECK(headless({"--format", "pfm"}).format == ImageFormat::pfm);
-    for (const char* wrong : {"PFM", "exr", "", " pfm", "pfm "}) {
+TEST_CASE("headless: --format names one of Output's kinds, by Output's names") {
+    using serenity::output::image_format_names;
+    using serenity::output::image_format_named;
+    CHECK(headless({}).format == serenity::output::default_format);
+    // Every name Output gives is read as Output reads it.
+    const std::string named = std::string{serenity::output::extension(serenity::output::default_format)};
+    CHECK(headless({"--format", named.c_str()}).format == image_format_named(named));
+    for (const char* wrong : {"no-such-kind", "", " png"}) {
         INFO("--format '" << wrong << "'");
-        CHECK(contains(headless_error({"--format", wrong}), "--format needs png or pfm"));
+        CHECK(contains(headless_error({"--format", wrong}), "--format needs " + image_format_names()));
     }
     CHECK(contains(headless_error({"--format"}), "--format needs a value"));
-}
-
-TEST_CASE("output: the kinds a frame is written as, by name and by extension") {
-    using serenity::output::extension;
-    using serenity::output::image_format_named;
-    using serenity::output::ImageFormat;
-    CHECK(image_format_named("png") == ImageFormat::png);
-    CHECK(image_format_named("pfm") == ImageFormat::pfm);
-    CHECK_FALSE(image_format_named("Png").has_value());
-    CHECK_FALSE(image_format_named("").has_value());
-    CHECK(extension(ImageFormat::png) == "png");
-    CHECK(extension(ImageFormat::pfm) == "pfm");
-    // extension()'s refusal of a value no kind names is not reached here:
-    // the enumeration's two kinds span one bit, so no value of it is
-    // unnamed, and casting one in would be undefined behavior.
 }
 
 TEST_CASE("headless: a scene is optional") {

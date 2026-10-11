@@ -328,3 +328,66 @@ implementation's other header changes, in the design note's
 
 - Not applicable: no instrumentation, no vector code, no embedded or
   WebAssembly target.
+
+## The review of 5f4c7de
+
+Codex reviewed 5f4c7de, both focuses (`.cache/reviews/5f4c7de-*.json` in
+the main checkout). Each finding, the rule it falls under, and its
+verdict; both corpora consulted again for the code each fix writes. The
+design note's [Review of 5f4c7de](../2026-10-10-reference.md#the-review-of-5f4c7de)
+keeps the account.
+
+| # | Finding | Rule | Verdict |
+|---|---|---|---|
+| 1 | parse() bounded the last sample index at --samples, refusing a graph that accumulates nothing, which renders one sample a frame (`--first 4194304 --samples 1024` of the test pattern); the shell test pinned the false refusal | I.5 (a precondition checked against what is actually run) | **Fixed.** parse() bounds the last frame index; `check_samples()` bounds the plan's samples, after the graph is read and before anything renders or is made. The wrap test now uses the path graph; the test pattern's run is accepted and written |
+| 2 | "A reference is never replaced" was a check, then a truncating open: two runs could both pass it | E.2 (the contract as stated must hold), CP.2 (two writers, one file) | **Fixed.** `write_pfm()` opens by exclusive create (`std::fopen(path, "wbx")`), the check itself; a partial file of a failed write is removed. serenity-measure's own check is gone |
+| 3 | The headless renderer enumerated Output's kinds: their semantics in its header, names in its parser, a branch per writer in its main | A.1, ES.3 (one place names a kind) | **Fixed.** image_format.h lists each kind's names, extension and source in one table; `write_image()` writes any kind; the headless renderer reads back by source and calls it |
+| 4a | The Makefile said "most of an hour" for the default reference | Per.6 (no claim without its count) | **Fixed.** "Some ten minutes at 1920 x 1080, scaling with pixels and samples", pointing at the note |
+| 4b | "One readback ... copied once": it is three copies, 16, 16 and 12 bytes a pixel | GPU.1, GDSA.6 (count the passes over memory) | **Fixed,** the note and the headless renderer's comment give all three, 33, 33 and 25 MB at 1920 x 1080. No optimization added: a fraction of a second a reference (Per.3) |
+| 4c | error.h said one pass; it is two | Per.6, GDSA.6 | **Fixed,** error.h says two and why; reference.h states its two passes a batch the same way. Fusing them was offered and is **rejected**: the header promises every refusal before any sum, and the second pass costs 50 MB of reads beside seconds of rendering (Per.3) |
+| 5a | Frozen time rebuilds the same acceleration structure every sample | GDSA.17 (plan once per key) | **Rejected,** as at the design's review (2026-10-10-reference.md, "Review"): some 2% of a reference, and caching the scene by time touches every run's frame loop. Its measured share comes with the first references |
+| 5b | A PFM run tone maps every sample into an image it never reads | GPU.6, GDSA.6 | **Rejected,** as at the design's review (same section): some 2%, and a graph ending after the path pass changes the rule that a graph computing light ends in a presenting pass. Measured with the first references |
+
+The code each fix writes, rule by rule:
+
+- **R.1, R.20, E.6:** the C stream is a `std::unique_ptr<std::FILE,
+  CloseFile>`, closed however its scope ends; the writer closes it
+  explicitly to see the close's result (a buffered write can fail there).
+  The tests' `FileSizeLimit` restores the file-size limit and the signal it
+  ignores the same way.
+- **SL.io.3, rejected:** the writer uses a C stream, not an iostream: C++20's
+  file streams have no exclusive create (`std::ios::noreplace` is C++23).
+  Kept to pfm.cpp, stated in pfm.h (I.30). It also takes the floats as they
+  are, so the writer's `reinterpret_cast` is gone; the reader's one remains
+  (ES.48, rejected as before).
+- **E.28:** why an exclusive open failed is asked of the file system
+  (`symlink_status`), not read from `errno`.
+- **ES.3, ES.27, SL.con.1:** the kinds are one `std::array` of rows; every
+  lookup reads it. **ES.79:** `write_image()`'s and the headless
+  renderer's switches have no `default`, so a new kind or source without a
+  case fails to compile; a value no kind names throws `std::logic_error`
+  (P.6). **ES.78:** no fallthrough: the refusing cases call a
+  `[[noreturn]]` function.
+- **Enum.3:** `ImageSource` is an `enum class`. **I.24:** `write_image(format,
+  path, image)` and `check_samples(options, samples_per_frame)` take
+  parameters of distinct types. **I.5:** `check_samples()` refuses a
+  samples count no plan makes, by `std::invalid_argument`.
+- **ES.103:** the bound's sum and product, now one function
+  (`past_last_sample`) for both checks, each step bounded before the next.
+- **CP.2 in the tests:** the file-size limit and the ignored SIGXFSZ are
+  process state, set and restored inside one test case; doctest runs one
+  case at a time.
+
+Shown to fail, each by breaking the code it guards, then restoring it:
+the bound checked at --samples, or not at all, in the headless renderer
+(test_headless.sh); `check_samples()` checking nothing, and parse()
+dropping the frame bound (options_test); a non-accumulating graph's
+accumulated kind not refused (test_headless.sh); the truncating open
+instead of the exclusive one (pfm_test and measure_test); the partial file
+left, and both the write's and the close's failure ignored (pfm_test); an
+accumulated image written as a PNG, pfm's source given as displayed (the
+Output tests, and the headless run), the names list mis-joined, a PFM of
+zeros written by `write_image()` (image_format_test); and the headless
+renderer writing zeros for the accumulated image (the GPU test). Ignoring
+only the close's failure is not caught alone: under the file-size limit the
+write itself fails first, so the two checks are shown together.

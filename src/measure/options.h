@@ -24,7 +24,12 @@ namespace serenity::measure {
 //     `relative_mse_floor Y` (%.9g), the reference's own error. At least
 //     two batches, so there is a floor. FILE must not exist: a reference is
 //     never replaced by a run that might be another's (as the headless
-//     renderer's directory must be empty, headless/options.h).
+//     renderer's directory must be empty, headless/options.h). The file is
+//     created by exclusive create (core/output/pfm.h), which is the check:
+//     of two runs naming one FILE at once, one writes it and the other is
+//     refused, its file untouched. The check is made when the file is
+//     created, after the batches are read, so a run naming an existing
+//     FILE reads its batches before it is refused.
 //
 //   serenity-measure error --reference FILE IMAGE...
 //
