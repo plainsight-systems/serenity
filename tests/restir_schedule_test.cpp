@@ -47,6 +47,7 @@ RestirDi written_for(const std::vector<PassKind>& passes) {
     };
     RestirDi s{};
     s.candidates = serenity::passes::written_candidates;
+    s.bsdf_candidates = serenity::passes::written_bsdf_candidates;
     if (has(temporal)) {
         s.history = serenity::passes::written_history;
         s.permutation = serenity::passes::written_permutation;
@@ -166,6 +167,17 @@ TEST_CASE("the candidates, read by every ReSTIR graph, in [1, 32]") {
         CHECK(serenity::tests::contains(settings_refusal(s, passes), "candidates, " + std::to_string(m) +
                                                                          ", must be an integer in [1, 32]"));
     }
+}
+
+TEST_CASE("the BSDF candidates, read by every ReSTIR graph, in [0, 32]") {
+    const std::vector<PassKind> passes{initial, shade};
+    RestirDi s = written_for(passes);
+    for (const std::uint32_t n : {0u, 1u, 32u}) {
+        s.bsdf_candidates = n;
+        CHECK(settings_refusal(s, passes).empty());
+    }
+    s.bsdf_candidates = 33u;
+    CHECK(serenity::tests::contains(settings_refusal(s, passes), "bsdf_candidates, 33, must be an integer in [0, 32]"));
 }
 
 TEST_CASE("each setting the passes do not read must be its zero") {

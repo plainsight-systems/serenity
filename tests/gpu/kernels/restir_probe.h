@@ -93,6 +93,40 @@ struct TargetResult {
 
 static_assert(sizeof(TargetResult) == 32, "TargetResult must be the same 32 bytes on the host and in shaders");
 
+// Where a light candidate is drawn from, seen from where, with which
+// numbers, and how many candidates of each strategy weigh it
+// (candidate_mis).
+struct MisQuery {
+    contracts::Float3 position;
+    float u0;
+    contracts::Float3 wo;
+    float u1;
+    uint32_t light_candidates;  // n_l
+    uint32_t bsdf_candidates;   // n_b
+    uint32_t padding[2];
+};
+
+static_assert(sizeof(MisQuery) == 48, "MisQuery must be the same 48 bytes on the host and in shaders");
+
+// A light point y drawn by the light strategy (draw_candidate()) and the
+// same point as the BSDF strategy weighs it once a ray struck it
+// (weigh_struck()), each with its weight, the luminance of f |cos| L_e
+// toward it (the weight's numerator, target.metal.h), and the two
+// strategies' densities toward it per unit solid angle, light_pdf() and
+// bsdf_pdf() asked here, apart from the code under test (candidate_mis).
+struct MisResult {
+    float light_scattered;
+    float light_weight;
+    float light_density;       // p_l at the light candidate's direction
+    float light_bsdf_density;  // p_b at the light candidate's direction
+    float bsdf_scattered;
+    float bsdf_weight;
+    float bsdf_light_density;  // p_l at the BSDF candidate's direction
+    float bsdf_density;        // p_b at the BSDF candidate's direction
+};
+
+static_assert(sizeof(MisResult) == 32, "MisResult must be the same 32 bytes on the host and in shaders");
+
 // The streams of softmax_streams: `streams` reservoirs, each fed the
 // `count` scores, weight exp(scale x score), in an order `order` says,
 // from numbers keyed by its index and `seed`. zero: every weight 0.
@@ -133,6 +167,8 @@ static_assert(std::is_trivially_copyable_v<LightPointQuery>, "LightPointQuery is
 static_assert(std::is_trivially_copyable_v<LightPointResult>, "LightPointResult is copied from the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<TargetQuery>, "TargetQuery is copied to the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<TargetResult>, "TargetResult is copied from the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<MisQuery>, "MisQuery is copied to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<MisResult>, "MisResult is copied from the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<SoftmaxQuery>, "SoftmaxQuery is copied to the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<SoftmaxDraw>, "SoftmaxDraw is copied from the GPU as bytes");
 #endif

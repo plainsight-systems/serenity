@@ -319,6 +319,10 @@ std::optional<std::string> candidates_broken(const passes::RestirDi& settings) {
         return setting("candidates", std::to_string(settings.candidates)) + "must be " +
                integer_in(1u, contracts::max_candidates);
     }
+    if (settings.bsdf_candidates > contracts::max_bsdf_candidates) {
+        return setting("bsdf_candidates", std::to_string(settings.bsdf_candidates)) + "must be " +
+               integer_in(0u, contracts::max_bsdf_candidates);
+    }
     return std::nullopt;
 }
 

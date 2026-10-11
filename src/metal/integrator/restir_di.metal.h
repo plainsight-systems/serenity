@@ -46,8 +46,8 @@
 //                     with last frame's transforms, where its point was last
 //                     frame. No such surface: the record's kind none, and
 //                     the path state's light the pixel's.
-//   draw_candidate()  step 2, one candidate: a light chosen as the naive
-//                     estimator chooses one, uniformly
+//   draw_candidate()  step 2, one light candidate: a light chosen as the
+//                     naive estimator chooses one, uniformly
 //                     (light_selection/uniform_light.metal.h), placed once
 //                     (lights/emitter.metal.h, place_light: its record, data,
 //                     transform and glow, which drawing, evaluating and the
@@ -55,7 +55,16 @@
 //                     sample_light() draws a direction and evaluated at its
 //                     decoded point (contracts/light_sample.h), and its
 //                     target and its weight p̂ / p (target.metal.h), both in
-//                     the light's own area. What Sample reuse streams.
+//                     the light's own area, p the two strategies' density
+//                     (target.metal.h, candidate_density). What Sample
+//                     reuse streams.
+//   draw_bsdf_candidate()  step 2, one BSDF candidate (RTXDI's BRDF sample,
+//                     Phase B): a direction drawn by the surface's BSDF,
+//                     one ray to the nearest surface, and where it strikes a
+//                     light, that point stored as a light point
+//                     (light_point_at()) and weighed as a light candidate is
+//                     (weigh()), so both strategies weigh one sample by one
+//                     density.
 //   visible()         steps 3 and 6: one shadow ray from a recorded surface
 //                     to a light point's answer. The one visibility test
 //                     every step makes, so a sample is visible from a
@@ -93,7 +102,10 @@
 // Cost: first_surface() is the camera segment's (path.metal.h); a candidate
 // is one placed light (76 bytes of logical loads), one point drawn and
 // evaluated, one density, one target and weight (a BSDF evaluation and a
-// dozen flops); visible() one ray; unshadowed() one placed light and one
+// dozen flops), and with BSDF candidates one BSDF density more; a BSDF
+// candidate one BSDF sample, one ray to the nearest surface and, where it
+// strikes a light, one placed light, its point encoded and evaluated, and
+// two BSDF densities and one evaluation; visible() one ray; unshadowed() one placed light and one
 // BSDF evaluation; continue_from() the path tracer's continuation.
 // restir_di.metal.h counts them a pixel.
 
@@ -191,24 +203,88 @@ struct Weighed {
     float weight;                               // p̂_q(y) / p(y), finite and at least 0
 };
 
-// Step 2, one candidate at `here`: its light chosen from `lights` by
+// No candidate: a draw whose sample does not exist, weighing 0.
+inline Weighed no_candidate() {
+    return Weighed{serenity::contracts::LightPoint{0u, 0u}, serenity::contracts::LightReceived{}, 0.0f, 0.0f};
+}
+
+// `sample`, a point on `light` chosen with probability `probability`, as
+// either strategy's candidate at `here` weighs it: its answer, its target
+// and its weight p̂ / p, p the two strategies' density (target.metal.h,
+// candidate_density), so a light point is weighed the same whichever
+// strategy drew it. The light strategy's density is asked of the point
+// (light_point_pdf()), not of the direction toward it, whose test against
+// the light's rim rounding fails for some points on the rim: a BSDF ray
+// strikes the rim as often as anywhere, and a point there weighed as if no
+// light candidate could draw it is counted twice, which the BSDF
+// candidates' floor test in tests/gpu/restir_test.cpp finds. Precondition: holds_light(sample).
+inline Weighed weigh(PlacedLight light, serenity::contracts::LightPoint sample, RecordedSurface here,
+                     float probability, CandidateCounts counts) {
+    Weighed candidate{sample, evaluate_light_point(light, sample, here.position), 0.0f, 0.0f};
+    const float3 wi = to_float3(candidate.light.direction);
+    const StrategyDensities densities{probability * light_point_pdf(light, here.position, candidate.light),
+                                      counts.bsdf > 0u ? bsdf_pdf(here.bsdf, here.wo, wi) : 0.0f};
+    candidate.target = target(here, candidate.light);
+    candidate.weight =
+        candidate_weight(here, candidate.light, candidate_density(counts, densities, candidate.light.distance));
+    return candidate;
+}
+
+// Step 2, one light candidate at `here`: its light chosen from `lights` by
 // `selection` with the number `choose`, its point drawn with `point_numbers`
-// (the Pass's to draw, in the order the stream gives them). Precondition:
-// the scene has a light.
-inline Weighed draw_candidate(Lights lights, UniformLight selection, RecordedSurface here, float choose,
-                              float2 point_numbers) {
+// (the Pass's to draw, in the order the stream gives them), weighed against
+// both strategies by `counts`. Precondition: the scene has a light.
+inline Weighed draw_candidate(Lights lights, UniformLight selection, RecordedSurface here, CandidateCounts counts,
+                              float choose, float2 point_numbers) {
     const SelectedIndex chosen = select_light_index(selection, choose);
     const PlacedLight light = place_light(lights, chosen.index);
-    Weighed candidate{draw_light_point(light, chosen.index, here.position, point_numbers),
-                      serenity::contracts::LightReceived{}, 0.0f, 0.0f};
-    if (serenity::contracts::holds_light(candidate.sample)) {
-        candidate.light = evaluate_light_point(light, candidate.sample, here.position);
-        const float density =
-            chosen.probability * light_pdf(light, here.position, to_float3(candidate.light.direction));
-        candidate.target = target(here, candidate.light);
-        candidate.weight = candidate_weight(here, candidate.light, density);
+    const serenity::contracts::LightPoint sample = draw_light_point(light, chosen.index, here.position, point_numbers);
+    if (!serenity::contracts::holds_light(sample)) {
+        return no_candidate();
     }
-    return candidate;
+    return weigh(light, sample, here, chosen.probability, counts);
+}
+
+// A BSDF candidate's second half: the light record `index` its ray struck
+// at `reached`, as a light point weighed by weigh(); none where the light
+// point is beyond the BSDF's reach from `here` (target.metal.h,
+// bsdf_reach), which RTXDI tests again at the stored point. No ray: what
+// the ray found is its argument, so a probe can weigh any point.
+inline Weighed weigh_struck(Lights lights, UniformLight selection, RecordedSurface here, CandidateCounts counts,
+                            uint index, float3 reached) {
+    const PlacedLight light = place_light(lights, index);
+    const Weighed candidate =
+        weigh(light, light_point_at(light, index, reached), here, light_probability(selection, light.record), counts);
+    const float bsdf_density = bsdf_pdf(here.bsdf, here.wo, to_float3(candidate.light.direction));
+    return candidate.light.distance <= bsdf_reach(bsdf_density) ? candidate : no_candidate();
+}
+
+// Step 2, one BSDF candidate at `here` (target.metal.h, RTXDI's BRDF
+// sample): a direction drawn by its BSDF with `numbers`, traced from where
+// a ray leaves the surface (integrator/surface.metal.h, leave) as far as
+// the BSDF reaches, and the light it strikes first weighed (weigh_struck());
+// none from a delta lobe, which the target does not weigh, nor where the
+// ray strikes nothing or a shape that is not a light. One ray to the
+// nearest surface, always traced where the lobe is not delta.
+inline Weighed draw_bsdf_candidate(Scene scene, RecordedSurface here, CandidateCounts counts, float3 numbers) {
+    const serenity::contracts::BsdfSample drawn = bsdf_sample(here.bsdf, here.wo, numbers);
+    if (drawn.pdf <= 0.0f || (drawn.lobe & serenity::contracts::lobe_delta) != 0u) {
+        return no_candidate();
+    }
+    serenity::contracts::SurfaceInteraction leaving{};
+    leaving.position = to_packed(here.position);
+    leaving.geometric_normal = here.bsdf.normal;
+    const metal::raytracing::ray along = leave(leaving, to_float3(drawn.direction), bsdf_reach(drawn.pdf));
+    const Hit hit = trace(scene.structure, scene.shapes(), along);
+    if (!hit.found) {
+        return no_candidate();
+    }
+    const uint index = light_index_at(scene.lights(), hit.primitive);
+    if (index == serenity::lights::no_light) {
+        return no_candidate();
+    }
+    return weigh_struck(scene.lights(), scene.selection(), here, counts, index,
+                        along.origin + hit.t * along.direction);
 }
 
 // Whether `light`, as evaluate_light_point() gave it to `from`'s point, is

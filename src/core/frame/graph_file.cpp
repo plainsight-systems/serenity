@@ -135,10 +135,10 @@ contracts::BiasCorrection bias_correction(std::string_view source, const toml::n
 
 // Every [restir_di] key (graph_file.h), in the order the settings lay them
 // out.
-constexpr std::array<std::string_view, 11> restir_keys = {
+constexpr std::array<std::string_view, 12> restir_keys = {
     "candidates",       "history",          "permutation",      "neighbors",      "radius",
     "depth_threshold",  "normal_threshold", "bias_correction",  "visibility_reuse", "visibility_age",
-    "visibility_distance"};
+    "visibility_distance", "bsdf_candidates"};
 
 // Which [restir_di] keys a graph reads (graph_file.h): by its passes, and
 // by two of the settings, bias_correction and visibility_reuse, which are
@@ -151,7 +151,7 @@ struct RestirReads {
     bool reused = false;  // and it on: visibility_age and visibility_distance read
 
     bool reads(std::string_view key) const {
-        if (key == "candidates") {
+        if (key == "candidates" || key == "bsdf_candidates") {
             return true;
         }
         if (key == "history" || key == "permutation") {
@@ -222,6 +222,7 @@ void refuse_unread(std::string_view source, const toml::table& table, const Rest
 // other key `reads` reads, zeros for the rest.
 passes::RestirDi restir_baseline(passes::RestirDi settings, const RestirReads& reads) {
     settings.candidates = passes::written_candidates;
+    settings.bsdf_candidates = passes::written_bsdf_candidates;
     if (reads.temporal) {
         settings.history = passes::written_history;
         settings.permutation = passes::written_permutation;
@@ -270,6 +271,7 @@ passes::RestirDi read_restir_di(std::string_view source, const toml::table& tabl
         return [&source, key](const toml::node& node) { return finite_float(source, node, key); };
     };
     take("candidates", &passes::RestirDi::candidates, as_count("candidates"));
+    take("bsdf_candidates", &passes::RestirDi::bsdf_candidates, as_count("bsdf_candidates"));
     if (reads.temporal) {
         take("history", &passes::RestirDi::history, as_count("history"));
         take("permutation", &passes::RestirDi::permutation, [&](const toml::node& node) {

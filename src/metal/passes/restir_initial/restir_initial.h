@@ -20,8 +20,9 @@ namespace serenity::metal {
 //      with a temporal merge, previous position written
 //      (contracts/surface_record.h). The path state is written now, before
 //      the candidates, so it is not alive across step 3's ray query.
-//   2. M candidates at the record, streamed into a reservoir, finished as
-//      resampled importance sampling, W = w_sum / (M p̂);
+//   2. the light candidates and the BSDF candidates at the record, weighed
+//      by MIS over the two strategies, streamed into a reservoir, finished
+//      as resampled importance sampling, W = w_sum / (M p̂), M both kinds;
 //   3. the survivor's visibility traced, W set to 0 where it is hidden
 //      (visibility reuse), and the reservoir written, its test this ray's,
 //      here and now, its target the survivor's at the record.
@@ -58,9 +59,11 @@ namespace serenity::metal {
 //
 // Cost, per pixel: the camera segment's rays (one, and one more for each
 // glass or mirror surface before the first rough one) and its BSDF
-// resolutions; M light choices, M points drawn and M target evaluations
-// (each with its light's 76 bytes of logical loads); one shadow ray; 4M
-// numbers; 92 bytes written (32 record, 36 path state, 24 reservoir), 104
+// resolutions; for each light candidate a light chosen, a point drawn and
+// a target evaluated (with its light's 76 bytes of logical loads), and with
+// BSDF candidates a BSDF density; for each BSDF candidate a BSDF sample,
+// one ray to the nearest surface, and where it strikes a light one target
+// evaluation; one shadow ray; four numbers a candidate; 92 bytes written (32 record, 36 path state, 24 reservoir), 104
 // with the previous position, nothing read back. One dispatch.
 class RestirInitialPass {
 public:

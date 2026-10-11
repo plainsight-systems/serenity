@@ -103,8 +103,14 @@
 //           (contracts/light_sample.h); its weight p̂_q(y) / p(y), the
 //           target (target.metal.h) over the density, both in the light's
 //           own area. Then Sample reuse streams it into a reservoir
-//           (metal/reuse/reservoir.metal.h, step 2), and finishes with pi =
-//           1 and piSum = M: W = w_sum / (M p̂_q(y)), resampled importance
+//           (metal/reuse/reservoir.metal.h, step 2). Then, as RTXDI
+//           draws them beside the light candidates (Phase B), the BSDF
+//           candidates (the Integrator's draw_bsdf_candidate()): a
+//           direction from q's BSDF, one ray, and a light it strikes as a
+//           light point, each candidate of either kind weighed by MIS over
+//           the two strategies (target.metal.h, candidate_density). The
+//           reservoir finishes with pi = 1 and piSum = M, the candidates
+//           of both kinds: W = w_sum / (M p̂_q(y)), resampled importance
 //           sampling.
 //   Step 3  Visibility reuse (RTXDI's initial visibility, on by default).
 //           One shadow ray from q to the survivor (the Integrator's
@@ -364,32 +370,45 @@ struct FrameView {
 // with the temporal merge, as FrameView is.
 inline BlockPermutation frame_permutation(PathNumbers frame_numbers, serenity::contracts::ReuseSettings settings);
 
-// Steps 2 and 3 at `here`, the pixel's record unpacked, M = `count`;
-// `numbers` the candidates' stream. Precondition: here's kind is not none
-// and the scene has a light.
+// Steps 2 and 3 at `here`, the pixel's record unpacked, `counts` the light
+// and BSDF candidates (M their sum); `numbers` the candidates' stream.
+// Precondition: here's kind is not none and the scene has a light.
 //
-// Each candidate draws four numbers whether or not it yields a sample (a
-// light, a point on it, the reservoir's choice), in that order, and every
-// candidate counts in M, one drawn from inside its light included: it is a
-// draw whose sample does not exist, weighing 0, as the naive estimator's
-// next event counts nothing for it (GDSA.3: the counter a function of the
-// candidate's position in the stream, never of what an earlier one drew).
+// Each light candidate draws four numbers whether or not it yields a
+// sample (a light, a point on it, the reservoir's choice), in that order,
+// then each BSDF candidate four (a direction, three, and the choice), and
+// every candidate counts in M, one drawn from inside its light, or a BSDF
+// ray that strikes no light, included: it is a draw whose sample does not
+// exist, weighing 0, as the naive estimator's next event counts nothing for
+// it (GDSA.3: the counter a function of the candidate's position in the
+// stream, never of what an earlier one drew). A BSDF candidate traces its
+// ray here, so across that query what is alive is the streaming reservoir,
+// the survivor's answer and the unpacked surface (GPU.3).
 // The survivor's answer from its light, the direction, distance and shape
 // its shadow ray needs, is kept beside the stream as it is kept, so step 3
 // evaluates nothing again; across step 3's query what is alive is the
 // stored reservoir and that answer (above; GPU.3).
-inline serenity::contracts::Reservoir candidates(Scene scene, RecordedSurface here, uint count,
+inline serenity::contracts::Reservoir candidates(Scene scene, RecordedSurface here, CandidateCounts counts,
                                                  thread PathNumbers& numbers) {
     const Lights lights = scene.lights();
     const UniformLight selection = scene.selection();
     Streaming reservoir = empty_reservoir();
     serenity::contracts::LightReceived survivor{};
-    for (uint i = 0; i < count; ++i) {
+    for (uint i = 0; i < counts.lights; ++i) {
         // Step 2: the Integrator draws and weighs, Sample reuse streams.
         const float choose = next_number(numbers);
         const float2 point_numbers = next_numbers2(numbers);
         const float u = next_number(numbers);
-        const Weighed weighed = draw_candidate(lights, selection, here, choose, point_numbers);
+        const Weighed weighed = draw_candidate(lights, selection, here, counts, choose, point_numbers);
+        if (stream_candidate(reservoir, Candidate{weighed.sample, weighed.target, weighed.weight}, u)) {
+            survivor = weighed.light;
+        }
+    }
+    for (uint i = 0; i < counts.bsdf; ++i) {
+        // Step 2's BSDF candidates, after the light candidates' numbers.
+        const float3 direction_numbers = next_numbers3(numbers);
+        const float u = next_number(numbers);
+        const Weighed weighed = draw_bsdf_candidate(scene, here, counts, direction_numbers);
         if (stream_candidate(reservoir, Candidate{weighed.sample, weighed.target, weighed.weight}, u)) {
             survivor = weighed.light;
         }

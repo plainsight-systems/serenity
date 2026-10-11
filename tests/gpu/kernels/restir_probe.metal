@@ -19,6 +19,7 @@
 #include "core/contracts/reuse_settings.h"
 #include "core/lights/light.h"
 #include "core/lights/sphere_light.h"
+#include "metal/integrator/restir_di.metal.h"
 #include "metal/integrator/target.metal.h"
 #include "metal/lights/emitter.metal.h"
 #include "metal/materials/bsdf.metal.h"
@@ -34,6 +35,8 @@ using serenity::contracts::Bsdf;
 using serenity::contracts::LightPoint;
 using serenity::tests::LightPointQuery;
 using serenity::tests::LightPointResult;
+using serenity::tests::MisQuery;
+using serenity::tests::MisResult;
 using serenity::tests::SoftmaxDraw;
 using serenity::tests::SoftmaxQuery;
 using serenity::tests::TargetQuery;
@@ -159,6 +162,54 @@ kernel void target_at(device TargetResult* out [[buffer(0)]],
     out[i] = TargetResult{target(surface, received), candidate_weight(surface, received, query.selection * density),
                           light_area_density(density, received), received.cos_light,
                           to_packed(direct_light(surface, received, 1.0f)), received.distance};
+}
+
+// The two strategies' candidate at one light point, for the MIS weights'
+// sum: a light candidate drawn from the query's point with its numbers
+// (restir::draw_candidate()), and the BSDF strategy's weighing of the point
+// it reached (restir::weigh_struck()), as a BSDF ray that struck it there
+// would have; and the strategies' densities toward each, asked here. A
+// candidate holding no light is left 0. Inputs: the lights (1 to 5), the
+// queries, their count, the Bsdf.
+kernel void candidate_mis(device MisResult* out [[buffer(0)]],
+                          constant serenity::lights::LightRecord* records [[buffer(1)]],
+                          constant serenity::lights::SphereLightData* spheres [[buffer(2)]],
+                          constant serenity::contracts::Transform* transforms [[buffer(3)]],
+                          constant float* glows [[buffer(4)]],
+                          constant uint* shape_lights [[buffer(5)]],
+                          device const MisQuery* queries [[buffer(6)]],
+                          constant uint& count [[buffer(7)]],
+                          constant Bsdf& bsdf [[buffer(8)]],
+                          uint i [[thread_position_in_grid]]) {
+    if (i >= count) {
+        return;
+    }
+    const Lights lights = probe_lights(records, spheres, transforms, glows, shape_lights);
+    const UniformLight selection{records, 1u};
+    const MisQuery query = queries[i];
+    const RecordedSurface here{to_float3(query.position), to_float3(query.wo), bsdf};
+    const CandidateCounts counts{query.light_candidates, query.bsdf_candidates};
+    const PlacedLight light = place_light(lights, 0u);
+    MisResult result{};
+    const restir::Weighed drawn =
+        restir::draw_candidate(lights, selection, here, counts, 0.5f, float2(query.u0, query.u1));
+    if (serenity::contracts::holds_light(drawn.sample)) {
+        const float3 wi = to_float3(drawn.light.direction);
+        result.light_scattered = luminance(scattered(here, drawn.light));
+        result.light_weight = drawn.weight;
+        result.light_density = light_pdf(light, here.position, wi);  // the direction's: no rim here
+        result.light_bsdf_density = bsdf_pdf(bsdf, here.wo, wi);
+        const restir::Weighed struck = restir::weigh_struck(lights, selection, here, counts, 0u,
+                                                            here.position + drawn.light.distance * wi);
+        if (serenity::contracts::holds_light(struck.sample)) {
+            const float3 at = to_float3(struck.light.direction);
+            result.bsdf_scattered = luminance(scattered(here, struck.light));
+            result.bsdf_weight = struck.weight;
+            result.bsdf_light_density = light_pdf(light, here.position, at);
+            result.bsdf_density = bsdf_pdf(bsdf, here.wo, at);
+        }
+    }
+    out[i] = result;
 }
 
 // Stream i of query.streams: the scores streamed as candidates, weight and

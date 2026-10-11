@@ -62,6 +62,7 @@ kernel void restir_initial(constant serenity::contracts::FrameConstants& frame [
         return;
     }
     PathNumbers candidates_numbers = purpose_numbers(stream, restir::candidates_numbers);
-    output[i] = restir::candidates(scene, unpack_record(surfaces.record), reuse.settings.candidates,
+    output[i] = restir::candidates(scene, unpack_record(surfaces.record),
+                                   CandidateCounts{reuse.settings.candidates, reuse.settings.bsdf_candidates},
                                    candidates_numbers);
 }

@@ -157,6 +157,26 @@ inline serenity::contracts::LightPoint draw_light_point(PlacedLight light, uint 
     return serenity::contracts::LightPoint{0u, 0u};
 }
 
+// The identity of `reached`, a point on `light`, light record `index`, as a
+// ray found it: ReSTIR's BSDF candidate, which strikes a light rather than
+// drawing a point on it (metal/integrator/restir_di.metal.h). Stored as a
+// drawn point is, so it is evaluated, merged and shaded alike. Precondition:
+// `reached` on the light's surface, up to rounding.
+inline serenity::contracts::LightPoint light_point_at(PlacedLight light, uint index, float3 reached) {
+    switch (light.record.kind) {
+    case serenity::lights::LightKind::sphere:
+        return serenity::contracts::LightPoint{serenity::contracts::light_valid | index,
+                                               sphere_point_at(light.placed, reached)};
+    }
+    return serenity::contracts::LightPoint{0u, 0u};
+}
+
+// Which light record shape `primitive` is, or lights::no_light: what a ray
+// that struck it found, by index, for light_point_at().
+inline uint light_index_at(Lights lights, uint primitive) {
+    return lights.shape_lights[primitive];
+}
+
 // What `light` at `sample`'s point gives `point`. Precondition:
 // holds_light(sample), and `light` placed from sample's record.
 inline serenity::contracts::LightReceived evaluate_light_point(PlacedLight light,
@@ -174,6 +194,19 @@ inline serenity::contracts::LightReceived evaluate_light_point(PlacedLight light
 inline serenity::contracts::LightReceived evaluate_light_point(Lights lights, serenity::contracts::LightPoint sample,
                                                                float3 point) {
     return evaluate_light_point(place_light(lights, serenity::contracts::light_index(sample)), sample, point);
+}
+
+// Contract 3's density for a light point: the density with which
+// sample_light() draws, from `point`, the direction toward the point
+// `received` describes (evaluate_light_point()), asked of the point rather
+// than of a direction, so a point on the light's rim is not lost to the
+// rounding of a direction's test against the rim (sphere_point_pdf()).
+inline float light_point_pdf(PlacedLight light, float3 point, serenity::contracts::LightReceived received) {
+    switch (light.record.kind) {
+    case serenity::lights::LightKind::sphere:
+        return sphere_point_pdf(light.sphere, point, received);
+    }
+    return 0.0f;
 }
 
 // Contract 3's density for a placed light: as light_pdf() above, the

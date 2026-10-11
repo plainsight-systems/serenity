@@ -31,6 +31,17 @@
 //                     and the reservoir's choice); 32 bounds both. M = 1 is
 //                     naive next event estimation at the first surface, with
 //                     visibility reuse's ray.
+//   bsdf_candidates   the candidates each pixel draws by sampling its
+//                     surface's BSDF beside the M light candidates (RTXDI's
+//                     numBrdfSamples): one ray each, a candidate where it
+//                     strikes a light, and both kinds weighed by MIS over the
+//                     two strategies' densities (metal/integrator/
+//                     target.metal.h, candidate_density). An integer in
+//                     [0, 32]; 0 is light candidates alone. Each costs a
+//                     BSDF sample, a ray to the nearest surface and four
+//                     numbers a pixel, and every light candidate one BSDF
+//                     density more where it is not 0. The candidates a
+//                     reservoir counts are M plus these.
 //   history           H: the temporal input's count is capped at H x M
 //                     (step 4), so a sample chosen long ago is weighed as at
 //                     most H frames' candidates: how quickly the lighting
@@ -141,6 +152,7 @@ namespace serenity {
 namespace contracts {
 
 SERENITY_CONSTANT uint32_t max_candidates = 32;
+SERENITY_CONSTANT uint32_t max_bsdf_candidates = 32;
 SERENITY_CONSTANT uint32_t max_history = 64;
 SERENITY_CONSTANT uint32_t max_neighbors = 32;  // a 32-bit mask (above)
 SERENITY_CONSTANT float min_radius = 1.0f;
@@ -172,7 +184,7 @@ struct ReuseSettings {
     VisibilityReuse visibility_reuse;   // off when not read
     uint32_t visibility_age;            // frames; 0 when not read
     float visibility_distance;          // pixels; 0 when not read
-    uint32_t padding;
+    uint32_t bsdf_candidates;           // drawn by the BSDF beside the M light candidates
 };
 
 static_assert(sizeof(ReuseSettings) == 48, "ReuseSettings must be the same 48 bytes on the host and in shaders");

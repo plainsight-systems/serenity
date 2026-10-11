@@ -39,6 +39,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -517,6 +518,72 @@ TEST_CASE("the target, its candidate weight and the direct light: closed forms f
     }
 }
 
+TEST_CASE("a candidate's MIS weights over the light and BSDF strategies sum to 1, for a Lambert and a glossy surface") {
+    // A light point y drawn by the light strategy, and the same point as
+    // the BSDF strategy weighs it once its ray struck it. Each candidate's
+    // weight is L / p, L the luminance of f |cos| L_e and p the strategies'
+    // mix (n_l p_l + n_b p_b) / (n_l + n_b) (target.metal.h), so its MIS
+    // weight, n_s p_s / (n_l p_l + n_b p_b), is n_s p_s w / ((n_l + n_b) L),
+    // with p_l and p_b asked of the emitter and the BSDF apart from the
+    // weighing. The light's and the BSDF's at the same y sum to 1, at any
+    // counts; each is in [0, 1]. A firefly a meter or two off, well within
+    // the BSDF's reach, over a Lambert floor and a GGX one seen from its
+    // mirror direction, so light candidates land in the lobe and out of it.
+    const ProbeLight firefly{{0.3f, 1.5f, -0.2f}, 0.05f, 200.0f};
+    const std::vector<contracts::Float3> floor_points{{0.0f, 0.0f, 0.0f}, {1.2f, 0.0f, 0.4f}, {-0.8f, 0.0f, -1.1f}};
+    contracts::Bsdf lambert{};
+    lambert.normal = {0.0f, 1.0f, 0.0f};
+    lambert.kind = contracts::BsdfKind::lambert;
+    lambert.color = {0.8f, 0.8f, 0.8f};
+    contracts::Bsdf glossy = lambert;
+    glossy.kind = contracts::BsdfKind::conductor;
+    glossy.color = {0.9f, 0.9f, 0.9f};
+    glossy.alpha = 0.05f;
+    tests::ProbeRunner gpu;
+    constexpr std::uint32_t grid = 24;
+    struct Surface {
+        std::string name;
+        contracts::Bsdf bsdf;
+    };
+    for (const Surface& surface : {Surface{"lambert", lambert}, Surface{"glossy", glossy}}) {
+        const contracts::Bsdf& bsdf = surface.bsdf;
+        for (const auto& [n_l, n_b] : {std::pair{8u, 1u}, std::pair{2u, 5u}}) {
+            std::vector<tests::MisQuery> queries;
+            for (const contracts::Float3& p : floor_points) {
+                // wo: the mirror of the direction toward the light's center.
+                const Vec3 to = tests::normalized(tests::vec(firefly.center) - tests::vec(p));
+                const contracts::Float3 wo{static_cast<float>(-to.x), static_cast<float>(to.y),
+                                           static_cast<float>(-to.z)};
+                for (std::uint32_t a = 0; a < grid; ++a) {
+                    for (std::uint32_t b = 0; b < grid; ++b) {
+                        queries.push_back({p, (a + 0.5f) / grid, wo, (b + 0.5f) / grid, n_l, n_b, {0u, 0u}});
+                    }
+                }
+            }
+            const auto count = static_cast<std::uint32_t>(queries.size());
+            const std::vector<tests::MisResult> results = run_with_light<tests::MisResult>(
+                gpu, "candidate_mis", count, firefly, {Binding::of(queries), Binding::of(count), Binding::of(bsdf)});
+            const double total = n_l + n_b;
+            std::size_t weighed = 0;
+            double worst = 0.0;
+            for (const tests::MisResult& r : results) {
+                if (!(r.light_scattered > 0.0f && r.bsdf_scattered > 0.0f)) {
+                    continue;  // y gives this surface nothing: no weight to share
+                }
+                const double light_share = n_l * double(r.light_density) * r.light_weight / (total * r.light_scattered);
+                const double bsdf_share = n_b * double(r.bsdf_density) * r.bsdf_weight / (total * r.bsdf_scattered);
+                CHECK(light_share >= 0.0);
+                CHECK(bsdf_share >= 0.0);
+                worst = std::max(worst, std::abs(light_share + bsdf_share - 1.0));
+                ++weighed;
+            }
+            INFO(surface.name << ", n_l " << n_l << ", n_b " << n_b << ": " << weighed << " points weighed");
+            CHECK(weighed > count / 4);
+            CHECK(worst < 1e-3);
+        }
+    }
+}
+
 // ---- the reservoir against softmax -----------------------------------------
 
 namespace {
@@ -653,11 +720,13 @@ TEST_CASE("the shade takes a reservoir's own test where it is here and now, or r
 
 namespace {
 
-// A graph of resampled importance sampling with `candidates`, its
-// accumulated image shown as it is.
-frame::Schedule ris_graph(std::uint32_t candidates) {
+// A graph of resampled importance sampling with `candidates` light
+// candidates and `bsdf_candidates` BSDF ones, its accumulated image shown
+// as it is.
+frame::Schedule ris_graph(std::uint32_t candidates, std::uint32_t bsdf_candidates = 0) {
     return frame::parse_schedule("passes = [\"restir_initial\", \"restir_shade\", \"display\"]\n[restir_di]\n"
-                                 "candidates = " + std::to_string(candidates) + "\n",
+                                 "candidates = " + std::to_string(candidates) + "\nbsdf_candidates = " +
+                                     std::to_string(bsdf_candidates) + "\n",
                                  "ris graph");
 }
 
@@ -763,8 +832,9 @@ constexpr frame::Extent floor_size{64, 48};
 constexpr std::array<tests::Pixel, 3> floor_pixels{tests::Pixel{32, 30}, tests::Pixel{14, 38}, tests::Pixel{50, 26}};
 
 // Every floor pixel's patch against the closed form, within `tolerance`.
-void check_floor(const std::string& text, std::uint32_t candidates, std::uint64_t frames, double tolerance) {
-    Rig rig(text, ris_graph(candidates), floor_size);
+void check_floor(const std::string& text, std::uint32_t candidates, std::uint64_t frames, double tolerance,
+                 std::uint32_t bsdf_candidates = 0) {
+    Rig rig(text, ris_graph(candidates, bsdf_candidates), floor_size);
     const std::vector<float> image = rig.render(frames);
     for (const tests::Pixel pixel : floor_pixels) {
         const double expected =
@@ -814,6 +884,14 @@ TEST_CASE("resampled importance sampling with M = 8 converges to the same mean u
     const double eight = floor_rms(lit_floor(two_fireflies), 8, 16);
     MESSAGE("relative RMS error after 16 frames: M = 1 " << one << ", M = 8 " << eight);
     CHECK(eight < 0.75 * one);
+}
+
+TEST_CASE("light and BSDF candidates weighed by MIS converge to the same floor under two fireflies") {
+    // RTXDI's 8 light candidates and 1 BSDF candidate; and BSDF candidates
+    // outnumbering the lights' 4 to 1, so their rays and the light points
+    // they strike carry much of the estimate.
+    check_floor(lit_floor(two_fireflies), 8, 1024, 0.03, 1);
+    check_floor(lit_floor(two_fireflies), 1, 1024, 0.03, 4);
 }
 
 TEST_CASE("visibility reuse: a light hidden behind a box gives nothing, a visible one its whole light") {
@@ -880,8 +958,8 @@ TEST_CASE("the Metal backend refuses ReSTIR's merges by name until it implements
     metal::Device device;
     metal::Submission submission(device);
     const std::string merges =
-        "[restir_di]\ncandidates = 8\nhistory = 20\npermutation = true\nneighbors = 1\nradius = 32.0\n"
-        "depth_threshold = 0.1\nnormal_threshold = 0.5\nbias_correction = \"basic\"\nvisibility_reuse = true\n"
+        "[restir_di]\ncandidates = 8\nbsdf_candidates = 1\nhistory = 20\npermutation = true\nneighbors = 1\n"
+        "radius = 32.0\ndepth_threshold = 0.1\nnormal_threshold = 0.5\nbias_correction = \"basic\"\nvisibility_reuse = true\n"
         "visibility_age = 4\nvisibility_distance = 16.0\n";
     const auto refusal = [&](const char* passes, const std::string& settings) {
         const frame::Schedule schedule = frame::parse_schedule(std::string("passes = ") + passes + "\n" + settings, "g");
@@ -898,7 +976,9 @@ TEST_CASE("the Metal backend refuses ReSTIR's merges by name until it implements
                                   spatial_only),
                           "restir_spatial pass is not implemented by the Metal backend"));
     // The graph without them is built.
-    CHECK(refusal("[\"restir_initial\", \"restir_shade\", \"display\"]", "[restir_di]\ncandidates = 8\n").empty());
+    CHECK(refusal("[\"restir_initial\", \"restir_shade\", \"display\"]",
+                  "[restir_di]\ncandidates = 8\nbsdf_candidates = 1\n")
+              .empty());
 }
 
 TEST_CASE("a ReSTIR graph refuses a scene with more media than its path state's 16 bits hold") {

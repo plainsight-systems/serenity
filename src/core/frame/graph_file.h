@@ -28,6 +28,7 @@ namespace serenity::frame {
 //
 //   [restir_di]                   # exactly when a pass is one of ReSTIR DI's
 //   candidates = 8                # M, an integer in [1, 32]
+//   bsdf_candidates = 1           # an integer in [0, 32]
 //   history = 20                  # H, an integer in [1, 64]; (T)
 //   permutation = true            # a boolean; (T)
 //   neighbors = 1                 # k, an integer in [1, 32]; (S)

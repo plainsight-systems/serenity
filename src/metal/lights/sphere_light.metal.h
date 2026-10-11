@@ -164,12 +164,33 @@ inline float sphere_light_pdf(SphereLight light, float3 point, float3 direction)
 // from the center in the sphere's own space. Whether one was drawn is the
 // caller's to know: a point inside the light draws none (view_light()'s
 // distance at most the radius), and the emitter tests that first.
+// The point `reached`, on the sphere placed by `placed` up to rounding,
+// encoded as contract 4's `point`: the unit direction from the center in
+// the sphere's own space. What a drawn point and a point a ray struck are
+// both stored as.
+inline uint sphere_point_at(serenity::contracts::Transform placed, float3 reached) {
+    // On the unit sphere in its own space, up to the root's rounding.
+    return encode_unit(metal::normalize(transform_to_object(placed, reached)));
+}
+
 inline uint sphere_draw_point(SphereLight light, serenity::contracts::Transform placed, float3 point, float2 u) {
     const LightView v = view_light(light, point);
     const float3 d = direction_to_light(v, u);
-    const float3 reached = point + distance_to_light(light, v, d) * d;
-    // On the unit sphere in its own space, up to the root's rounding.
-    return encode_unit(metal::normalize(transform_to_object(placed, reached)));
+    return sphere_point_at(placed, point + distance_to_light(light, v, d) * d);
+}
+
+// The density with which sphere_sample_light() draws the direction from
+// `point` toward a point of the sphere that `received` describes, the
+// point's own: 1 over the cone's solid angle wherever the point faces
+// `point` (cos_light > 0), 0 behind and from inside. sphere_light_pdf()
+// asks it of a direction, whose test against the cone's rim rounding can
+// fail for a point on the rim itself; a point on the sphere is in the cone
+// by construction, so this asks nothing of the direction (ReSTIR's BSDF
+// candidates strike the rim as often as anywhere: metal/integrator/
+// restir_di.metal.h, weigh()).
+inline float sphere_point_pdf(SphereLight light, float3 point, serenity::contracts::LightReceived received) {
+    const LightView v = view_light(light, point);
+    return v.distance > light.radius && received.cos_light > 0.0f ? 1.0f / v.solid_angle : 0.0f;
 }
 
 // What the sphere's point in `sample` gives `point`, as this light is

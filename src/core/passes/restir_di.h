@@ -25,6 +25,7 @@
 //
 //   setting              written  RTXDI's name
 //   candidates           8        numLocalLightSamples
+//   bsdf_candidates      1        numBrdfSamples
 //   history              20       maxHistoryLength
 //   permutation          on       enablePermutationSampling
 //   neighbors            1        numSamples
@@ -38,8 +39,10 @@
 //
 // Every RTXDI default this header does not carry is named, with why, in
 // docs/research/2026-10-10-restir-di-layout.md, "Decided": its boiling
-// filter (a later, measured addition), its BSDF candidate and its
-// normalization's weights among them.
+// filter (a later, measured addition) among them. Its BSDF candidate,
+// first set aside there, is carried since Phase B (2026-10-11): without it
+// a light candidate that lands in a near-mirror lobe is the image's rarest,
+// largest sample (docs/research/2026-10-11-restir-ris-results.md).
 
 #include "core/contracts/shared_layout.h"
 #include "core/contracts/reuse_settings.h"
@@ -53,6 +56,7 @@ using RestirDi = contracts::ReuseSettings;
 
 // The values the graphs are written with (above).
 SERENITY_CONSTANT uint32_t written_candidates = 8;
+SERENITY_CONSTANT uint32_t written_bsdf_candidates = 1;
 SERENITY_CONSTANT uint32_t written_history = 20;
 SERENITY_CONSTANT contracts::Permutation written_permutation = contracts::Permutation::on;
 SERENITY_CONSTANT uint32_t written_neighbors = 1;
