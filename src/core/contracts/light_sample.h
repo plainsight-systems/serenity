@@ -45,8 +45,7 @@
 // weighs it: the point weighed, merged and shaded is one point everywhere,
 // decoded where it is loaded and never stored decoded (GDSA.18: decoded in
 // the consumer's load path). A cell is about 5 x 10^-5 radians across on
-// the unit sphere, so under 10^-4 of the light's radius in world space:
-// under 0.15 micrometres on a firefly of 1.5 mm (scenes/marbles.toml).
+// the unit sphere, so under 10^-4 of the light's radius in world space.
 // What it does to the estimator is a small bias, which production accepts
 // (RTXDI quantizes the same way): the sample's probability is its cell's,
 // the draw's density integrated over the cell, while the estimator weighs

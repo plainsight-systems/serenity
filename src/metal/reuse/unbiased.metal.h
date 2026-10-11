@@ -84,7 +84,12 @@
 //   of a shadow's edge, where a neighbor within the radius, or this surface
 //   last frame (a moving occluder or a moving firefly), is in that light's
 //   shadow: those pixels come out darker than the reference, and nowhere
-//   else. Second, a merged reservoir may keep a sample hidden from q with W
+//   else. How much darker is the hidden inputs' share of piSum: at its
+//   worst, a light just revealed to a surface that history, capped at
+//   C = H M, still counts, shows M / (M + C) of its light the first frame
+//   (1/21 at H = 20), recovering as the history follows it. A firefly
+//   waking is not that case: asleep last frame (glow 0), it gave last
+//   frame's surface nothing, so history does not count it. Second, a merged reservoir may keep a sample hidden from q with W
 //   > 0, which q's shade zeroes (its ray, or a test it reuses), but which
 //   the next frame's merges and this frame's spatial merge read as q's: a
 //   sample outside the domain they weigh q for, more of the same darkening

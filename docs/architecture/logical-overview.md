@@ -54,7 +54,8 @@ and the camera.
       the reservoir this surface held last frame, then the reservoirs of k
       neighbors; and shade with the light that survives, tracing its
       shadow ray unless a recent test of it can be reused. By default the
-      merges trace no rays and are slightly biased, as production's are;
+      merges trace no rays and are biased dark at shadow edges, as
+      production's are, most for a frame after a light is revealed;
       an unbiased mode, whose merges trace them, checks ReSTIR against the
       reference (`src/core/passes/restir_di.h`).
   - **Indirect** light: the path bounces on from the rough surface, through
@@ -101,7 +102,7 @@ pixels or across frames.
    reuse.** ReSTIR DI and GI each have an unbiased mode: averaged over
    enough frames it converges to the same image as the reference, to within
    what their stored samples' quantization leaves. Their default is
-   production's configuration, whose small bias at shadow edges is stated
+   production's configuration, whose bias at shadow edges is stated
    and measured against the same reference (decided 2026-10-10,
    `docs/research/2026-10-10-restir-di-layout.md`). Because the reference
    does none of their resampling, a bug in it cannot pass by matching

@@ -15,8 +15,10 @@
 //
 // Two modes (core/passes/restir_di.h, bias_correction; metal/reuse/
 // unbiased.metal.h states both exactly). Basic, the default and what ships:
-// no shadow ray in the merges, a small darkening on the lit side of shadow
-// edges, the shade tracing its survivor's ray or reusing a recent test.
+// no shadow ray in the merges, a darkening on the lit side of shadow edges,
+// at its worst a just-revealed light at M / (M + C) of its light for a
+// frame (unbiased.metal.h), the shade tracing its survivor's ray or reusing
+// a recent test.
 // Raytraced: the paper's unbiased merges, each tracing the rays that test
 // visibility in every domain, whose mean over frames is the reference's
 // image to within the light point's and the surface record's quantization
@@ -207,27 +209,34 @@
 //           when it does not, 136 to 192 at k = 1; restir_shade 92 read
 //           (record, path state, reservoir), the accumulated pixel's 16
 //           read and 16 written, and up to 8 written back to the final
-//           reservoir where it traced. In all, 512 to 576 bytes a pixel
-//           (4463eee's design: 1368 to 1928). At a traced 1728 x 1117
-//           (P = 1.93 M): 0.99 to 1.11 GB a frame, 2.5 to 2.8 ms at the M3
-//           Max's 400 GB/s if all of it went to DRAM; at the display's
-//           3456 x 2234, four times that. Arithmetic from the counts, not
-//           a measurement. In raytraced mode the same, less the shade's
+//           reservoir where it traced. In all, 568 to 576 logical bytes a
+//           pixel, the spatial merge's second walk counted whether or not it
+//           hits cache (a hit moves it from DRAM to cache traffic, not to
+//           nothing): 512 to 576 of them DRAM traffic, the first figure
+//           when the second walk hits. At a traced 1728 x 1117 (P = 1.93
+//           M): 1.10 to 1.11 GB a frame of logical traffic, at most 2.8 ms
+//           at the M3 Max's 400 GB/s if all of it went to DRAM; at the
+//           display's 3456 x 2234, four times that. Arithmetic from the
+//           counts, not a measurement: which bytes reach DRAM is the GPU
+//           counters' to say (GPU.10). In raytraced mode the same, less the shade's
 //           write-back.
 //   light data (logical loads, assumed served from cache):
 //           every target evaluation evaluates its light point
 //           (metal/lights/emitter.metal.h): the 8-byte light record, the
 //           16-byte sphere light, its 48-byte transform and 4-byte glow, 76
 //           bytes, and a candidate's draw reads the same 76 its target
-//           does. At most M + 2k + 3 evaluations (M in restir_initial, 2 in
+//           does, counted here as a load of its own: (2M + 2k + 3) x 76 =
+//           1596 bytes a pixel at the settings below, unless the compiled
+//           code keeps the light's data in registers from draw to
+//           evaluation, which the counters, not this count, would show.
+//           Target evaluations: at most M + 2k + 3 (M in restir_initial, 2 in
 //           the temporal merge, 2k in the spatial, 1 in the shade; each
 //           merge's own input weighed by its stored target, and its
 //           source's pi read from the source's, contracts/reservoir.h; in
 //           a merge, one evaluation to stream each other input and one for
 //           piSum at each input that is neither the source nor the
 //           pixel's own: metal/reuse/unbiased.metal.h), 13 at the settings
-//           above, in either mode: 988
-//           bytes a pixel of logical loads. They come from arrays of 76
+//           above, in either mode. They come from arrays of 76
 //           bytes a light in the constant address space, small beside the
 //           caches (76 KB for a thousand fireflies), so they are assumed to
 //           hit cache, not counted against DRAM; that assumption is the GPU

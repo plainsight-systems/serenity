@@ -71,9 +71,20 @@
 //                       basic      RTXDI's Basic, the default. No shadow ray
 //                                  in a merge: RTXDI's MIS-like weights
 //                                  over the inputs, each by its surface's
-//                                  unshadowed target at the survivor. Biased,
-//                                  slightly dark on the lit side of shadow
-//                                  edges, which production accepts. The shade
+//                                  unshadowed target at the survivor. Biased
+//                                  dark where an input's surface counts a
+//                                  light it could not see: at its worst a
+//                                  light just revealed to a surface (a
+//                                  firefly leaving a marble's shadow), which
+//                                  history still counts as its own, shows
+//                                  M / (M + C) of its light the first frame,
+//                                  C the capped history (1/21 at the
+//                                  defaults), recovering as history follows.
+//                                  A firefly waking is not that case: asleep
+//                                  last frame, it gave history nothing.
+//                                  RTXDI's Basic behaves alike, and
+//                                  production accepts it; raytraced removes
+//                                  it. The shade
 //                                  traces the survivor's shadow ray, or
 //                                  reuses a recent test (below). 1 shadow ray
 //                                  a pixel, and the shade's when it does not
