@@ -145,38 +145,33 @@ ONE="${SCRATCH}/one-sample"
 [ "$(names "${ONE}")" = "frame-4194304.png" ] || fail "from frame 4194304 wrote '$(names "${ONE}")'"
 
 # A frame that left samples out for not being finite fails the run once it
-# has completed, naming the count, before it is written: two lights at the
-# most radiance a float holds, close over a floor, whose light overflows
-# (as tests/support/scene_text.h's blinding_lights()).
+# has completed, naming the count, before it is written: a light at the
+# most radiance a float holds inside a closed white sphere, whose light
+# overflows (as tests/support/scene_text.h's blinding_lights()).
 cat >"${SCRATCH}/blinding.toml" <<'SCENE'
 [camera]
-position = [0, 1, 2]
-look_at = [0, 0, 0]
+position = [0, 0, 0.8]
+look_at = [0, 0, 1]
 vertical_fov_degrees = 60
 [environment]
 kind = "gradient"
 zenith = [0, 0, 0]
 horizon = [0, 0, 0]
-[materials.floor]
+[materials.wall]
 kind = "rough"
-color = [0.9, 0.9, 0.9]
+color = [1, 1, 1]
 [materials.blinding]
 kind = "emissive"
 radiance = [3e38, 3e38, 3e38]
 [[shapes]]
-kind = "box"
-min = [-5, -1, -5]
-max = [5, 0, 5]
-material = "floor"
+kind = "sphere"
+center = [0, 0, 0]
+radius = 1
+material = "wall"
 [[shapes]]
 kind = "sphere"
-center = [0, 0.3, 0]
-radius = 0.25
-material = "blinding"
-[[shapes]]
-kind = "sphere"
-center = [0.6, 0.3, 0]
-radius = 0.25
+center = [0, 0, 0]
+radius = 0.5
 material = "blinding"
 SCENE
 expect_refusal "samples not finite" --graph "${GRAPHS}/path.toml" --scene "${SCRATCH}/blinding.toml" \

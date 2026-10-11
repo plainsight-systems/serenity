@@ -51,10 +51,13 @@ This file tracks active and accepted work.
    that rises, the other held above that comes down; a sleeping light's
    shadow ray not traced, as pbrt-v4 does; a swarm's firefly whose flight
    is refused by chance drawn again; docs/research/2026-10-10-dark-
-   opening.md). The time baseline the estimators are measured against: the
-   naive path tracer at 1a617ab on the marbles at t = 120, every firefly
-   awake, 29.90 ms at 3456 x 2234, by the method that note keeps; the
-   opening's frames beside it, 19.1 ms with none awake. The reference and
+   opening.md). The baseline the estimators are measured against
+   (2026-10-11, superseding the textbook kernel's 29.90 ms at 1a617ab, by
+   the user's direction: MEMORY.md): the path tracer with MIS on the
+   marbles at t = 120, every firefly awake, 30.04 ms at 3456 x 2234, 31.95
+   ms at t = 8, by the method the dark opening's note keeps; error x time
+   at 1920 x 1080 about 0.018 at t = 120 and 0.04 at t = 8
+   (docs/research/2026-10-11-path-mis.md). The reference and
    its error, built (docs/research/2026-10-10-reference.md): the headless
    renderer's --format pfm, sample indices held under 2^32,
    serenity-measure, and make reference and make convergence. Left: the
@@ -70,8 +73,11 @@ cost.md; the review of f86e7ae answered 2026-10-11 on branch
 phase-a-review: the reuse settings Sample reuse's contract, the light
 transport the Integrator's, each candidate's light placed once, the packed
 Bsdf's range refused by name, the RIS graph 2.7% faster at t = 120,
-phase-a-guidelines-pass.md; left: its convergence measured on
-an idle GPU, then Phase B, the temporal and spatial merges,
+phase-a-guidelines-pass.md; MIS in the shared path tracer done
+2026-10-11 on branch path-mis, docs/research/2026-10-11-path-mis.md, the
+continuation's spikes gone; left: Phase B, the BSDF candidate (for the
+first surface's spikes, 2026-10-11-restir-ris-results.md) and the
+temporal and spatial merges,
 docs/research/2026-10-10-restir-di-layout.md); ReSTIR GI; caustics by manifold next
 event estimation; reservoir reuse as kernels; a denoiser of its own against
 Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.

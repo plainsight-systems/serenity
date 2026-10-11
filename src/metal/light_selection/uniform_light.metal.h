@@ -42,6 +42,12 @@ inline SelectedLight select_light(UniformLight selection, float u) {
     return SelectedLight{selection.records[i], 1.0f / float(selection.count)};
 }
 
+// The probability select_light() chooses `light` with (above). Precondition:
+// count is at least 1, as it is wherever a light exists to be asked of.
+inline float light_probability(UniformLight selection, serenity::lights::LightRecord) {
+    return 1.0f / float(selection.count);
+}
+
 // For ReSTIR DI's candidates, which keep a light by its record's index
 // (contracts/light_sample.h): the index select_light() chooses for the same
 // `u`, by the same formula, and its probability. select_light() stays as it

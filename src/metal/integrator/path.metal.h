@@ -60,10 +60,11 @@
 //               lights: w_b = p_b^2 / (p_b^2 + (P p_l)^2), the power
 //               heuristic, P = 1 / N the light's chance of being chosen
 //               (light_selection/uniform_light.metal.h, light_probability)
-//               and p_l the density with which step 5 at `from` draws this
-//               direction toward this light (contract 3's light_pdf(): the
-//               cone's 1 / its solid angle, and 0 outside it, where w_b is
-//               1, since no light sample could have found the light that way).
+//               and p_l the density with which step 5 draws this direction
+//               toward this light, asked from the point the ray started at
+//               (contract 3's light_pdf(): the cone's 1 / its solid angle,
+//               and 0 outside it, where w_b is 1; below, "Where p_l is
+//               asked").
 //             - not_counted, ReSTIR's continuation only (below): nothing.
 //           A light's surface scatters what its BSDF scatters: a glowing
 //           sphere's nothing, so its path ends at step 6.
@@ -124,16 +125,25 @@
 //   Step 8  Continue: the ray leaves the surface along wi, and from is the
 //           surface's point.
 //
-// What the loop carries between surfaces for MIS: `from`, carried already
-// for the medium's stretch, which is the point step 5 there drew its light
-// sample from; and emission_pdf, one float in place of the bool ("counts
-// emission") it replaces. Nothing else crosses a trace for it: step 3 finds
-// p_l at the hit, from `from`, the ray's direction and the light struck.
-// So step 5 and step 3 ask their densities of the same point and the same
-// direction. A ray starts ray_offset off that point, so near a light's rim
-// it can strike the light along a direction the cone from the point itself
-// just misses; light_pdf() is 0 there and w_b 1: a sliver of directions no
-// light sample draws, counted by the one strategy that does.
+// What the loop carries between surfaces for MIS: emission_pdf, one float
+// in place of the bool ("counts emission") it replaces. Nothing else
+// crosses a trace for it: step 3 finds p_l at the hit from the ray itself,
+// its origin and direction, and the light struck.
+//
+// Where p_l is asked: from the ray's own origin, ray_offset off the
+// surface's point, not from the point. Step 5 draws from the point, and the
+// bounced ray sees the light from its origin, 0.1 mm away; for a firefly a
+// few millimeters across that is a few percent of its width, so the two
+// cones differ by a crescent on either side. Asked from the point, a light
+// the ray struck in the crescent only its own cone holds had p_l 0 and w_b
+// 1, counted in full beside step 5's whole cone: the firefly's light over
+// a Lambert floor 2% too bright, 3% over the marbles' table (found by the
+// means against the reference, docs/research/2026-10-11-path-mis.md; held
+// by a test). Asked from the origin, the crescent the ray alone sees is
+// weighed as the one step 5 alone draws, on the cone's other side, and the
+// two cancel to the first order. What is left is the difference between
+// the light at the point and at 0.1 mm off it, below what the tests and
+// the references resolve.
 //
 // emission_pdf's two named values are values of its one purpose, how the
 // next surface counts a light (ES.26; ES.45): counted_in_full is 0 and
@@ -182,11 +192,14 @@
 // density (contract 2's pdf: a dot product for a Lambert surface; a half
 // vector, D and G1 for a conductor; a Fresnel term for a coated one) and
 // the heuristic (four multiplies, an add, a divide). Per light struck after
-// a lobe that is not delta it adds one light density (the cone from
-// `from`: a length, a square root, a cross product, a divide), the light's
+// a lobe that is not delta it adds one light density (the cone from the
+// ray's origin: a length, a square root, a cross product, a divide), the light's
 // data, transform and glow, read from the constant address space as step
-// 3's L_e already reads them, the selection's 1 / N and the heuristic. Each
-// is on the lanes that already take step 5 or step 3 (GPU.4). Measured
+// 3's L_e already reads them, the selection's 1 / N and the heuristic. And
+// step 3 reads which light a struck shape is (4 bytes, constant address
+// space) at every surface, where before MIS it read it only after a delta
+// lobe and on the camera's ray. Each is on the lanes that already take
+// step 5 or step 3 (GPU.4). Measured
 // against the build before it: docs/research/2026-10-11-path-mis.md.
 //
 // The split, for ReSTIR DI. The loop above is one function, walk_path(),
@@ -299,10 +312,43 @@ constant constexpr float max_survival = 0.95f;
 // uniformly.
 using Scene = SceneView<UniformLight>;
 
+// emission_pdf's two named values (above): how the next surface counts a
+// light it is, where that is not by a density.
+constant constexpr float counted_in_full = 0.0f;  // the camera's ray, and a delta lobe's: w_b = 1
+constant constexpr float not_counted = -1.0f;     // ReSTIR's bounce from q off a lobe that is not delta
+
+// The power heuristic (above): the weight of a sample drawn with density
+// `drawn` > 0 beside a strategy of density `other` >= 0 for the same
+// direction. Precondition: both below 10^19.
+inline float power_heuristic(float drawn, float other) {
+    const float d2 = drawn * drawn;
+    return d2 / (d2 + other * other);
+}
+
+// Step 5's w_l: for a light sample along `wi`, drawn with density
+// `light_density` (P p_l, above 0), at a surface of `bsdf` seen from `wo`.
+inline float next_event_weight(float light_density, serenity::contracts::Bsdf bsdf, float3 wo, float3 wi) {
+    return power_heuristic(light_density, bsdf_pdf(bsdf, wo, wi));
+}
+
+// Step 3's w_b: for `light`, struck by a ray from `origin` along unit
+// `direction` that its surface drew with emission_pdf `emission_pdf`, p_l
+// asked from the ray's origin (above, "Where p_l is asked").
+// Precondition: emission_pdf is not not_counted.
+inline float emission_weight(UniformLight selection, Lights lights, serenity::lights::LightRecord light, float3 origin,
+                             float3 direction, float emission_pdf) {
+    if (emission_pdf == counted_in_full) {
+        return 1.0f;
+    }
+    return power_heuristic(emission_pdf,
+                           light_probability(selection, light) * light_pdf(lights, light, origin, direction));
+}
+
 // Step 5 at `here`: what one light, chosen uniformly, sends toward wo along
-// one direction drawn toward it, f |cos| L_e T / (P p), or 0 where the
+// one direction drawn toward it, f |cos| L_e T / (P p) x w_l, or 0 where the
 // shadow ray to its surface is blocked. T is over `here`'s medium, which the
-// shadow ray crosses.
+// shadow ray crosses. The term is whole before the shadow ray's query, so
+// it alone of the step is alive across it (above, step 5).
 inline float3 next_event(Scene scene, Shading here, thread PathNumbers& numbers) {
     const SelectedLight chosen = select_light(scene.selection(), next_number(numbers));
     const serenity::contracts::LightSample sample =
@@ -312,37 +358,44 @@ inline float3 next_event(Scene scene, Shading here, thread PathNumbers& numbers)
     }
     const float3 wi = to_float3(sample.direction);
     const float3 f = bsdf_evaluate(here.bsdf, here.wo, wi);
-    if (!metal::any(f > 0.0f) ||
-        occluded(scene.structure, scene.shapes(), leave(here.surface, wi, sample.distance), sample.primitive)) {
+    if (!metal::any(f > 0.0f)) {
         return float3(0.0f);
     }
-    return f * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) * to_float3(sample.radiance) *
-           transmittance(scene.media(), here.medium, sample.distance) / (chosen.probability * sample.pdf);
+    const float light_density = chosen.probability * sample.pdf;
+    const float3 unshadowed = f * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) *
+                              to_float3(sample.radiance) *
+                              transmittance(scene.media(), here.medium, sample.distance) / light_density *
+                              next_event_weight(light_density, here.bsdf, here.wo, wi);
+    if (occluded(scene.structure, scene.shapes(), leave(here.surface, wi, sample.distance), sample.primitive)) {
+        return float3(0.0f);
+    }
+    return unshadowed;
 }
 
 // What the loop carries from one surface to the next (steps 1 to 8): the
-// light found, the throughput, eta_scale, whether the next surface counts
-// emission, the medium the ray is in, the ray, and where it truly left from
-// (the camera, then each surface's point; the ray itself starts ray_offset
-// off that surface, so its hit distance is short of the stretch by that
-// much, and a medium's stretch is measured from here).
+// light found, the throughput, eta_scale, how the next surface counts a
+// light it is (emission_pdf, above), the medium the ray is in, the ray, and
+// where it truly left from (the camera, then each surface's point; the ray
+// itself starts ray_offset off that surface, so its hit distance is short
+// of the stretch by that much, and a medium's stretch is measured from
+// here).
 struct Walk {
     float3 L;
     float3 beta;
     float eta_scale;
-    bool counts_emission;
+    float emission_pdf;
     uint medium;
     metal::raytracing::ray along;
     float3 from;
 };
 
 // The walk at the camera: nothing found, throughput 1, the camera's own ray,
-// which counts emission, in air.
+// which counts a light in full, in air.
 inline Walk walk_from(CameraRay camera) {
     return Walk{float3(0.0f),
                 float3(1.0f),
                 1.0f,
-                true,
+                counted_in_full,
                 serenity::contracts::no_medium,
                 metal::raytracing::ray(camera.origin, camera.direction, 0.0f, unbounded),
                 camera.origin};
@@ -383,12 +436,12 @@ template <Start start, Stop stop>
     float3 L = walk.L;
     float3 beta = walk.beta;
     float eta_scale = walk.eta_scale;
-    bool counts_emission = walk.counts_emission;
+    float emission_pdf = walk.emission_pdf;
     uint medium = walk.medium;
     metal::raytracing::ray along = walk.along;
     float3 from = walk.from;
     const auto carried = [&]() __attribute__((always_inline)) {
-        return Walk{L, beta, eta_scale, counts_emission, medium, along, from};
+        return Walk{L, beta, eta_scale, emission_pdf, medium, along, from};
     };
 
     // Steps 6 to 8 at `here`, the path's surface number `surface`: the walk
@@ -401,7 +454,7 @@ template <Start start, Stop stop>
         }
         const float3 wi = to_float3(next.direction);
         beta *= to_float3(next.value) * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) / next.pdf;
-        counts_emission = (next.lobe & serenity::contracts::lobe_delta) != 0u;
+        emission_pdf = (next.lobe & serenity::contracts::lobe_delta) != 0u ? counted_in_full : next.pdf;
         if ((next.lobe & serenity::contracts::lobe_transmission) != 0u) {
             medium = (here.surface.flags & serenity::contracts::arrived_from_outside) != 0u
                          ? here.surface.interior
@@ -430,6 +483,11 @@ template <Start start, Stop stop>
         if (!scatter(at, first)) {
             return Stopped{false, Shading{}, 0u, carried()};
         }
+        // ReSTIR's q: its direct light the shade's alone (above, "ReSTIR's
+        // first surface").
+        if (emission_pdf != counted_in_full) {
+            emission_pdf = not_counted;
+        }
     }
     for (uint surface = start == Start::after_step_5 ? first + 1u : first; surface < safety_stop; ++surface) {
         // Step 1.
@@ -445,11 +503,14 @@ template <Start start, Stop stop>
         const serenity::contracts::SurfaceInteraction surface_at =
             surface_interaction(scene.shapes(), hit.primitive, point, along.direction);
 
-        // Step 3: a shape's light record is read only where emission counts.
-        if (counts_emission) {
+        // Step 3: a shape's light record is read only where emission counts;
+        // only a walk that starts after step 5 ever holds not_counted.
+        if (start == Start::camera || emission_pdf != not_counted) {
             const ShapeLight glowing = light_at(scene.lights(), hit.primitive);
             if (glowing.is_light) {
-                L += beta * light_emitted(scene.lights(), glowing.light, point, -along.direction);
+                L += beta * light_emitted(scene.lights(), glowing.light, point, -along.direction) *
+                     emission_weight(scene.selection(), scene.lights(), glowing.light, along.origin,
+                                     along.direction, emission_pdf);
             }
         }
 
@@ -510,7 +571,7 @@ inline float3 continue_path(Scene scene, Segment segment, thread PathNumbers& nu
     const Walk walk{segment.L,
                     segment.beta,
                     segment.eta_scale,
-                    false,  // unread: step 6 at the segment's surface sets it before the next surface reads it
+                    counted_in_full,  // unread: step 6 at the segment's surface sets it before the next surface reads it
                     segment.here.medium,
                     metal::raytracing::ray(),  // unread: step 8 at the segment's surface sets it
                     float3(0.0f)};             // unread: step 8 at the segment's surface sets it

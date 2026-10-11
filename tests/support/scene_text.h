@@ -17,15 +17,20 @@ inline std::string sky(const char* zenith, const char* horizon) {
     return std::string("[environment]\nkind = \"gradient\"\nzenith = ") + zenith + "\nhorizon = " + horizon + "\n";
 }
 
-// Two lights at the most radiance a float holds, close over a floor: a path
-// tracer's light from them overflows a float.
+// A light at the most radiance a float holds, inside a closed white sphere,
+// the camera between them: a path tracer's light overflows a float. The
+// cavity loses light only to the light, so its wall's radiance is the
+// light's own, and a path's sum over its surfaces passes the largest float
+// in about a third of the samples. A sum, not one term: the path tracer's
+// MIS bounds a light sample's term at a Lambert surface by half the light's
+// radiance times the albedo (integrator/path.metal.h), so lights merely
+// close over a floor, under a black sky, no longer overflow it.
 inline std::string blinding_lights() {
-    return camera_text("[0, 1, 2]", "[0, 0, 0]", 60) + sky("[0, 0, 0]", "[0, 0, 0]") +
-           "[materials.floor]\nkind = \"rough\"\ncolor = [0.9, 0.9, 0.9]\n"
+    return camera_text("[0, 0, 0.8]", "[0, 0, 1]", 60) + sky("[0, 0, 0]", "[0, 0, 0]") +
+           "[materials.wall]\nkind = \"rough\"\ncolor = [1, 1, 1]\n"
            "[materials.blinding]\nkind = \"emissive\"\nradiance = [3e38, 3e38, 3e38]\n"
-           "[[shapes]]\nkind = \"box\"\nmin = [-5, -1, -5]\nmax = [5, 0, 5]\nmaterial = \"floor\"\n"
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.3, 0]\nradius = 0.25\nmaterial = \"blinding\"\n"
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0.6, 0.3, 0]\nradius = 0.25\nmaterial = \"blinding\"\n";
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"wall\"\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.5\nmaterial = \"blinding\"\n";
 }
 
 // Glass of radius 1 filled with a medium keeping half its red over 1 m;

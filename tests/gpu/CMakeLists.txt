@@ -49,6 +49,7 @@ serenity_add_metallib(
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/shape_probe.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/scene_block_probe.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/restir_probe.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/kernels/path_probe.metal"
     INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/src")
 
 # Under Metal's API and shader validation, in ctest as by hand (P.12): an

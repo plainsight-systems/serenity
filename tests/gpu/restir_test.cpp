@@ -53,6 +53,7 @@
 #include "core/passes/restir_di.h"
 #include "core/scene/scene.h"
 #include "gpu/kernels/probes.h"
+#include "gpu/support/probe_light.h"
 #include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"
 #include "metal/device/device.h"
@@ -141,40 +142,9 @@ constexpr double significance = 1e-3;
 
 // ---- the probes' one light -----------------------------------------------
 
-// Sphere light record 0, of `radius` at `center`, `radiance` every channel,
-// as the probes bind it (kernels/restir_probe.metal): the records, the
-// spheres, the transforms, the glows, which light each shape is.
-struct ProbeLight {
-    contracts::Float3 center;
-    float radius;
-    float radiance;
-
-    std::array<Binding, 5> bindings() const {
-        return {Binding::of(std::vector<lights::LightRecord>{{lights::LightKind::sphere, 0u}}),
-                Binding::of(std::vector<lights::SphereLightData>{{{radiance, radiance, radiance}, 0u}}),
-                Binding::of(std::vector<contracts::Transform>{contracts::placed(center, radius)}),
-                Binding::of(std::vector<float>{1.0f}), Binding::of(std::vector<std::uint32_t>{0u})};
-    }
-};
-
-// The light's bindings, then `rest`.
-std::vector<Binding> with_light(const ProbeLight& light, std::initializer_list<Binding> rest) {
-    const std::array<Binding, 5> first = light.bindings();
-    std::vector<Binding> all(first.begin(), first.end());
-    all.insert(all.end(), rest.begin(), rest.end());
-    return all;
-}
-
-// Runs `kernel` over `threads` with the light and `rest` bound from 1, its
-// output of Out at 0.
-template <typename Out>
-std::vector<Out> run_with_light(tests::ProbeRunner& gpu, const char* kernel, std::size_t threads,
-                                const ProbeLight& light, std::initializer_list<Binding> rest) {
-    std::vector<Binding> bindings{Binding::zeroed(threads * sizeof(Out))};
-    const std::vector<Binding> inputs = with_light(light, rest);
-    bindings.insert(bindings.end(), inputs.begin(), inputs.end());
-    return gpu.dispatch(kernel, threads, std::span<const Binding>(bindings)).template read<Out>(0);
-}
+// Sphere light record 0, as the probes bind it (gpu/support/probe_light.h).
+using tests::ProbeLight;
+using tests::run_with_light;
 
 double angle_between(Vec3 a, Vec3 b) {
     return std::acos(std::clamp(dot(tests::normalized(a), tests::normalized(b)), -1.0, 1.0));

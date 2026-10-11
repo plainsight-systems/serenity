@@ -13,8 +13,17 @@
 //     not reweigh what it keeps, loses light there;
 //   - next event estimation: a floor under one firefly, and under two, in a
 //     black sky, converges to albedo L sin^2 cos summed over the lights:
-//     the uniform selection's 1 / N, the emitter's pdf, and principle 7 (a
-//     bounce that reaches a firefly adds nothing) all at once;
+//     the uniform selection's 1 / N, the emitter's pdf, and principle 7
+//     (the light sample and the bounce that reaches a firefly, each
+//     weighted, counting it once between them) all at once;
+//   - multiple importance sampling (principle 7): the two strategies'
+//     weights for one direction sum to 1, from the densities the path
+//     tracer asks; a glossy floor's highlight of a firefly converges to the
+//     light's integral over the BSDF, worked out on the GPU from the BSDF
+//     itself, where each strategy carries a large share of it, so counting
+//     the bounce's share in full, or not at all, fails; and a firefly that
+//     a delta lobe, a black coated sphere's coat, mirrors is counted in
+//     full: F0 L;
 //   - the accumulated image: what it holds, what it refuses, and starting
 //     over;
 //   - principle 2: the same inputs give the same image, and frame k rendered
@@ -35,13 +44,18 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <doctest/doctest.h>
 
 #include "core/camera/thin_lens.h"
+#include "core/contracts/bsdf.h"
 #include "core/frame/graph_file.h"
 #include "core/scene/scene.h"
+#include "gpu/kernels/probes.h"
+#include "gpu/support/probe_light.h"
+#include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"
 #include "metal/device/device.h"
 #include "metal/device/error.h"
@@ -169,8 +183,9 @@ TEST_CASE("integrating sphere: light bounced many times inside a white sphere co
     // and the wall's radiance is rho / pi of that: rho L (r / R)^2 / (1 - rho).
     // With rho = 0.9, nine tenths of it has bounced at least twice and the
     // mean path is ten bounces long, so the roulette, the BSDF sampling and
-    // principle 7 (a bounce that reaches the light adds nothing) are all in
-    // play: a path cut at 8 bounces would keep 1 - 0.9^8 = 57% of it. The
+    // principle 7 (the light sample and a bounce that reaches the light,
+    // each weighted) are all in play: a path cut at 8 bounces would keep
+    // 1 - 0.9^8 = 57% of it. The
     // light itself absorbs what reaches it, a part in a few hundred per
     // bounce, inside the tolerance.
     constexpr double rho = 0.9;
@@ -289,11 +304,11 @@ std::string firefly(const char* center) {
 const std::string one_firefly = firefly("[0.3, 2.5, -0.5]");
 
 // albedo x L sin^2 cos, summed over the lights, at the floor point the
-// center of pixel (x, y) sees.
-double expected_floor(const scene::SceneDescription& description, frame::Extent size, std::uint32_t x,
-                      std::uint32_t y) {
+// image's point (x, y) sees, in pixels from the top left: pixel (i, j)'s
+// center is (i + 0.5, j + 0.5).
+double expected_floor(const scene::SceneDescription& description, frame::Extent size, double x, double y) {
     const contracts::CameraData c = camera::shader_form(description.camera, size);
-    const Vec3 d = tests::camera_direction(c, x + 0.5, y + 0.5, size);
+    const Vec3 d = tests::camera_direction(c, x, y, size);
     const Vec3 p = tests::vec(c.origin) + (-c.origin.y / d.y) * d;
     double sum = 0.0;
     for (const lights::SphereLightData& light : description.sphere_lights) {
@@ -314,7 +329,7 @@ void check_floor(const std::string& text, std::uint64_t frames) {
     for (const tests::Pixel pixel : {tests::Pixel{32, 30}, tests::Pixel{14, 38}, tests::Pixel{50, 26}}) {
         // A 3 x 3 patch's mean against the formula at its center: the
         // formula varies little over three pixels of floor.
-        const double expected = expected_floor(rig.description(), rig.size(), pixel.x, pixel.y);
+        const double expected = expected_floor(rig.description(), rig.size(), pixel.x + 0.5, pixel.y + 0.5);
         INFO("pixel " << pixel.x << ", " << pixel.y << ": expected " << expected);
         CHECK(mean_red(image, rig.size(), {pixel.x, pixel.y, 1}) == doctest::Approx(expected).scale(0).epsilon(0.03));
     }
@@ -328,6 +343,45 @@ TEST_CASE("next event estimation: a floor under one firefly converges to albedo 
 
 TEST_CASE("next event estimation: under two fireflies, chosen one at a time, the floor converges to their sum") {
     check_floor(lit_floor(one_firefly + firefly("[-1.2, 1.5, 0.4]")), 1024);
+}
+
+TEST_CASE("MIS: a firefly millimeters across, just over a floor, converges to albedo L sin^2 cos there too") {
+    // A firefly of radius 3 mm, 2 cm over the floor: the 0.1 mm a bounced
+    // ray starts off the floor (ray_offset) is 3% of its radius. The cone
+    // the light fills seen from that start is shifted from the cone seen
+    // from the floor's point, by up to 3% of its width. Step 3 weighs a
+    // light the bounce strikes by the density from where the ray starts,
+    // which is where the ray saw it; weighed from the floor's point, the
+    // crescent of the light only the shifted cone holds had light_pdf() 0
+    // there, so w_b 1, beside next event estimation's whole cone: +2% over
+    // the floor (measured, docs/research/2026-10-11-path-mis.md), within
+    // the 3% the tests above allow. Each pixel's mean against the closed
+    // form averaged over 4 x 4 points of it, to 0.5%.
+    const std::string text = camera_text("[0, 0.1, 0.1]", "[0, 0, 0]", 60) + sky("[0, 0, 0]", "[0, 0, 0]") +
+                             "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
+                             "[materials.glow]\nkind = \"emissive\"\nradiance = [30, 30, 30]\n"
+                             "[[shapes]]\nkind = \"box\"\nmin = [-50, -1, -50]\nmax = [50, 0, 50]\nmaterial = \"floor\"\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.02, 0]\nradius = 0.003\nmaterial = \"glow\"\n";
+    constexpr frame::Extent size{64, 48};
+    Rig rig(text, size);
+    (void)rig.render(65536);
+    const std::vector<float> image = rig.accumulated();
+    constexpr std::uint32_t within = 4;  // points a side in each pixel
+    for (const tests::Pixel pixel : {tests::Pixel{16, 24}, tests::Pixel{48, 30}, tests::Pixel{32, 40},
+                                     tests::Pixel{24, 12}}) {
+        double expected = 0.0;
+        for (std::uint32_t j = 0; j < within; ++j) {
+            for (std::uint32_t i = 0; i < within; ++i) {
+                expected += expected_floor(rig.description(), size, pixel.x + (i + 0.5) / within,
+                                           pixel.y + (j + 0.5) / within);
+            }
+        }
+        expected /= within * within;
+        const double rendered = image[(std::size_t{pixel.y} * size.width + pixel.x) * 4];
+        INFO("pixel " << pixel.x << ", " << pixel.y << ": rendered " << rendered << ", expected " << expected);
+        MESSAGE("pixel " << pixel.x << ", " << pixel.y << ": rendered " << rendered << ", expected " << expected);
+        CHECK(rendered == doctest::Approx(expected).scale(0).epsilon(0.005));
+    }
 }
 
 TEST_CASE("the same inputs give the same image") {
@@ -462,9 +516,9 @@ TEST_CASE("the camera sees a light's glow, through the emitter") {
 }
 
 TEST_CASE("an infinity a path computes is counted as not finite, under the shaders' fast math") {
-    // Two lights at the most radiance a float holds, close over a floor:
-    // next event estimation's L f cos / pdf, over the selection's 1 / 2,
-    // overflows. Film's finite() test of the sample (metal/film/
+    // A light at the most radiance a float holds inside a closed white
+    // sphere: a path's sum over its surfaces overflows
+    // (support/scene_text.h). Film's finite() test of the sample (metal/film/
     // accumulate.metal.h) must still see it, under -fmetal-math-mode=fast
     // (cmake/MetalLibrary.cmake), whose compiler may assume a value it
     // computed is finite.
@@ -524,4 +578,201 @@ TEST_CASE("before any light wakes, under a black sky, the image is black: the op
     Rig waking(lit_floor(sleeping("[0.3, 2.5, -0.5]", 10.0) + sleeping("[-0.2, 0.8, 0.1]", -1.0)), {48, 36});
     (void)waking.render(8);
     CHECK(light_in(waking.accumulated()) > 0);
+}
+
+// ---- multiple importance sampling (path.metal.h, steps 3 and 5) -----------
+
+namespace {
+
+// A surface at the origin facing +y, and a firefly where a mirror there
+// would show it to wo: what the MIS probe asks about.
+const contracts::Float3 mis_wo{0.0f, 0.5547002f, 0.8320503f};  // (0, 2, 3) normalized
+const tests::ProbeLight mis_light{{0.0f, 0.9f, -1.35f}, 0.3f, 10.0f};
+
+contracts::Bsdf floor_bsdf(contracts::BsdfKind kind, float alpha) {
+    contracts::Bsdf bsdf{};
+    bsdf.normal = {0.0f, 1.0f, 0.0f};
+    bsdf.kind = kind;
+    bsdf.color = {0.8f, 0.8f, 0.8f};
+    bsdf.alpha = alpha;
+    return bsdf;
+}
+
+// What the MIS probe found over its draws of both strategies.
+struct WeightSums {
+    std::size_t both = 0;          // directions both strategies draw
+    std::size_t by_bsdf_both = 0;  // of them, the BSDF's draws: bounces that strike the light
+    double worst = 0.0;            // the largest |w_l + w_b - 1| among them
+    double worst_alone = 0.0;      // the largest |w_b - 1| where the BSDF's draw misses the light
+};
+
+WeightSums weight_sums(tests::ProbeRunner& gpu, const contracts::Bsdf& bsdf, std::uint32_t light_count,
+                       std::uint32_t struck_light_count) {
+    constexpr std::uint32_t draws = 4096;
+    const tests::MisQuery query{{0.0f, 0.0f, 0.0f}, draws, mis_wo, light_count, struck_light_count, {0u, 0u, 0u}};
+    const std::vector<tests::MisDraw> results = tests::run_with_light<tests::MisDraw>(
+        gpu, "mis_weights", 2 * draws, mis_light, {tests::Binding::of(query), tests::Binding::of(bsdf)});
+    WeightSums sums;
+    for (const tests::MisDraw& d : results) {
+        if (d.light_density > 0.0f && d.bsdf_density > 0.0f) {
+            ++sums.both;
+            sums.by_bsdf_both += d.by_bsdf;
+            sums.worst = std::max(sums.worst, std::abs(static_cast<double>(d.light_weight) + d.bsdf_weight - 1.0));
+        } else if (d.by_bsdf == 1u && d.bsdf_density > 0.0f) {
+            sums.worst_alone = std::max(sums.worst_alone, std::abs(static_cast<double>(d.bsdf_weight) - 1.0));
+        }
+    }
+    return sums;
+}
+
+}  // namespace
+
+TEST_CASE("MIS: for a direction both strategies draw, the light sample's weight and the bounce's sum to 1") {
+    // From the densities each step asks (step 5: the selection's 1 / N, the
+    // light's own sample pdf and the BSDF's pdf(); step 3: the bounce's own
+    // pdf, the selection's 1 / N and light_pdf()), at a glossy conductor and
+    // a Lambert surface, over each strategy's draws. The sum is 1 only where
+    // the two steps ask the same densities of the same direction; to 10^-4,
+    // the rounding of a conductor's half vector, found from the drawn
+    // microfacet normal by sample() and from wo + wi by pdf(). A direction
+    // the BSDF draws that misses the light is the bounce's alone: w_b 1, to
+    // the rounding of fast math's division.
+    constexpr double tolerance = 1e-4;
+    tests::ProbeRunner gpu;
+    const std::array<std::pair<std::string, contracts::Bsdf>, 2> surfaces{
+        {{"conductor, alpha 0.1", floor_bsdf(contracts::BsdfKind::conductor, 0.1f)},
+         {"lambert", floor_bsdf(contracts::BsdfKind::lambert, 0.0f)}}};
+    for (const auto& [name, bsdf] : surfaces) {
+        const WeightSums sums = weight_sums(gpu, bsdf, 4, 4);
+        INFO(name << ": " << sums.both << " directions both draw (" << sums.by_bsdf_both
+                  << " of them the BSDF's), worst |w_l + w_b - 1| " << sums.worst << ", worst |w_b - 1| alone "
+                  << sums.worst_alone);
+        MESSAGE(name << ": " << sums.both << " directions both draw (" << sums.by_bsdf_both
+                     << " of them the BSDF's), worst |w_l + w_b - 1| " << sums.worst << ", worst |w_b - 1| alone "
+                     << sums.worst_alone);
+        // Not empty: every light sample is above the surface, and some
+        // bounces strike the light.
+        CHECK(sums.both > 4096);
+        CHECK(sums.by_bsdf_both > 0);
+        CHECK(sums.worst < tolerance);
+        CHECK(sums.worst_alone < 1e-6);
+        // And the check can fail: step 3 weighing the struck light as if it
+        // were the only one (P = 1) while step 5 chose among 4. Off by far
+        // more than the tolerance at either surface: by most of the weight
+        // at the conductor, where the strategies share it; less at the
+        // Lambert surface, where the light's density dominates both.
+        const WeightSums wrong = weight_sums(gpu, bsdf, 4, 1);
+        INFO("step 3's P of 1 against step 5's 1 / 4: worst " << wrong.worst);
+        MESSAGE(name << ", step 3's P of 1 against step 5's 1 / 4: worst |w_l + w_b - 1| " << wrong.worst);
+        CHECK(wrong.worst > 10.0 * tolerance);
+    }
+}
+
+namespace {
+
+// A conductor floor, alpha 0.1 (roughness 0.316), seen from (0, 1, 2), and
+// a firefly where the floor mirrors it to the camera's middle, out of the
+// camera's view: the floor's highlight of it. highlight_light is the
+// scene's firefly, as the probe binds it: the same center, radius and
+// radiance, written twice.
+constexpr float glossy_roughness = 0.31622776f;  // alpha = roughness^2 = 0.1
+const tests::ProbeLight highlight_light{{0.0f, 0.7155418f, -1.4310835f}, 0.3f, 10.0f};  // 1.6 along (0, 1, -2)
+
+std::string glossy_floor() {
+    return camera_text("[0, 1, 2]", "[0, 0, 0]", 30) + sky("[0, 0, 0]", "[0, 0, 0]") +
+           "[materials.floor]\nkind = \"conductor\"\nf0 = [0.8, 0.8, 0.8]\nroughness = 0.31622776\n"
+           "[materials.glow]\nkind = \"emissive\"\nradiance = [10, 10, 10]\n"
+           "[[shapes]]\nkind = \"box\"\nmin = [-50, -1, -50]\nmax = [50, 0, 50]\nmaterial = \"floor\"\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.7155418, -1.4310835]\nradius = 0.3\nmaterial = \"glow\"\n";
+}
+
+}  // namespace
+
+TEST_CASE("MIS: a glossy floor's highlight of a firefly converges to the light's integral, each strategy a large share") {
+    // The floor's radiance toward the camera is the light's integral of
+    // f |cos| L_e over its cone: nothing is between them, and nothing else
+    // is lit. The probe works it out on the GPU from the BSDF and the
+    // emitter themselves, by the midpoint rule over the cone at 4 x 4
+    // points in each pixel, and the share of it step 5's weighted light
+    // samples carry. The render must converge to the integral, to 1.5%
+    // (65,536 frames leave some 0.5% of noise at these pixels). At each of
+    // them each strategy carries between a third and two thirds of it, so a
+    // bounce's light counted in full (1 + share) or not at all (share), or
+    // a light sample unweighted, is off by a third or more.
+    constexpr frame::Extent size{64, 48};
+    Rig rig(glossy_floor(), size);
+    const contracts::CameraData c = camera::shader_form(rig.description().camera, size);
+    const contracts::Bsdf bsdf = floor_bsdf(contracts::BsdfKind::conductor, glossy_roughness * glossy_roughness);
+    constexpr std::uint32_t within = 4;  // points a side in each pixel
+    constexpr std::uint32_t cone_grid = 128;
+    const std::array<tests::Pixel, 6> pixels{{{32, 24}, {32, 16}, {36, 24}, {28, 20}, {32, 20}, {35, 28}}};
+    std::vector<tests::DirectQuery> queries;
+    for (const tests::Pixel pixel : pixels) {
+        for (std::uint32_t j = 0; j < within; ++j) {
+            for (std::uint32_t i = 0; i < within; ++i) {
+                const Vec3 d = tests::camera_direction(c, pixel.x + (i + 0.5) / within, pixel.y + (j + 0.5) / within,
+                                                       size);
+                const Vec3 p = tests::vec(c.origin) + (-c.origin.y / d.y) * d;
+                queries.push_back({{static_cast<float>(p.x), 0.0f, static_cast<float>(p.z)},
+                                   cone_grid,
+                                   {static_cast<float>(-d.x), static_cast<float>(-d.y), static_cast<float>(-d.z)},
+                                   1u});
+            }
+        }
+    }
+    tests::ProbeRunner gpu;
+    const auto count = static_cast<std::uint32_t>(queries.size());
+    const std::vector<tests::DirectIntegral> integrals = tests::run_with_light<tests::DirectIntegral>(
+        gpu, "light_integral", count, highlight_light,
+        {tests::Binding::of(queries), tests::Binding::of(count), tests::Binding::of(bsdf)});
+
+    (void)rig.render(65536);
+    const std::vector<float> image = rig.accumulated();
+    for (std::size_t k = 0; k < pixels.size(); ++k) {
+        double expected = 0.0;
+        double light_part = 0.0;
+        for (std::size_t q = k * within * within; q < (k + 1) * within * within; ++q) {
+            expected += integrals[q].direct;
+            light_part += static_cast<double>(integrals[q].direct) * integrals[q].light_share;
+        }
+        const double share = light_part / expected;
+        expected /= within * within;
+        const double rendered = image[(std::size_t{pixels[k].y} * size.width + pixels[k].x) * 4];
+        INFO("pixel " << pixels[k].x << ", " << pixels[k].y << ": rendered " << rendered << ", expected " << expected
+                      << ", the light samples' share " << share);
+        MESSAGE("pixel " << pixels[k].x << ", " << pixels[k].y << ": rendered " << rendered << ", expected "
+                         << expected << ", the light samples' share " << share);
+        CHECK(share > 1.0 / 3.0);
+        CHECK(share < 2.0 / 3.0);
+        CHECK(rendered == doctest::Approx(expected).scale(0).epsilon(0.015));
+    }
+}
+
+TEST_CASE("MIS: a firefly a delta lobe mirrors is counted in full: a black coated sphere's coat shows F0 L") {
+    // A coated sphere of black base, its coat of ior 1.5, and behind the
+    // camera a large firefly of radiance 25 that the coat mirrors at the
+    // sphere's middle: the coat's delta lobe reaches it, and step 3 counts
+    // it in full, F0 L = 0.04 x 25 = 1 (the base, black, adds nothing). Had
+    // the delta lobe's ray been weighted against the light's density, as a
+    // glossy lobe's is, its weight would be some 10^-4: near 0. The coat is
+    // drawn 4% of the time, so the mean of 25 pixels over 4096 frames has
+    // some 1.6% of noise.
+    const std::string text = camera_text("[0, 0, 4]", "[0, 0, 0]", 30) + sky("[0, 0, 0]", "[0, 0, 0]") +
+                             "[materials.black]\nkind = \"coated\"\ncolor = [0, 0, 0]\nior = 1.5\n"
+                             "[materials.glow]\nkind = \"emissive\"\nradiance = [25, 25, 25]\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"black\"\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 7]\nradius = 1.5\nmaterial = \"glow\"\n";
+    Rig rig(text, square);
+    (void)rig.render(4096);
+    const std::vector<float> image = rig.accumulated();
+    const Patch patch = middle_of(square, 2);
+    double sum = 0.0;
+    for (std::uint32_t y = patch.y - patch.half; y <= patch.y + patch.half; ++y) {
+        for (std::uint32_t x = patch.x - patch.half; x <= patch.x + patch.half; ++x) {
+            sum += image[(std::size_t{y} * square.width + x) * 4];
+        }
+    }
+    const double mean = sum / ((2 * patch.half + 1) * (2 * patch.half + 1));
+    MESSAGE("the coat's middle: " << mean << ", F0 L " << glass_f0 * 25.0);
+    CHECK(mean == doctest::Approx(glass_f0 * 25.0).scale(0).epsilon(0.05));
 }
