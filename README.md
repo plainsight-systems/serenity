@@ -4,21 +4,25 @@
 
 # Serenity
 
-Serenity is a real-time path tracer I'm writing for one scene: a few glass
-and metal spheres on a table at night, lit by hundreds to thousands of
+Serenity is a real-time path tracer I'm writing for one scene: 36 glass,
+porcelain and metal marbles on a walnut table at night, lit only by 616
 fireflies that never stop moving. The geometry is deliberately simple and
 there are no art assets. Everything you see comes from the light, and the
 light stays correct as it moves.
 
-It runs natively on Apple silicon through Metal 4, in C++, at the display's
-full resolution and 60 frames a second. A second backend,
-Vulkan on an AMD Strix Halo, comes later.
+It runs natively on Apple silicon through Metal 4, in C++. The aim is the
+display's full resolution at 60 frames a second, traced lower and upscaled;
+the naive path tracer runs at full resolution at about 33 today. A second
+backend, Vulkan on an AMD Strix Halo, comes later.
 
-**Status: early.** The path a frame takes is built and running end to end:
-a frame graph file names the passes a frame runs, the Metal 4 backend renders it,
-and it appears in a window at the display's full resolution or is written
-to PNG files. What it renders so far is a test pattern; the path tracer is
-next. The design is in [`docs/architecture/`](docs/architecture/README.md).
+![The marbles, ten seconds into the opening: fireflies resting among them](docs/writeups/images/marbles-opening-10s.jpg)
+
+**Status: milestone 1 is done.** The naive path tracer renders the marbles,
+opening in the dark as the fireflies wake one by one, at 29.9 ms a frame at
+3456 x 2234 on an M3 Max. There is a reference image to judge it against and
+one number to judge it by, error x time. What I learned getting there is in
+[the milestone 1 write-up](docs/writeups/milestone-1.md). ReSTIR DI is next.
+The design is in [`docs/architecture/`](docs/architecture/README.md).
 
 ## Why I built it
 
@@ -52,7 +56,7 @@ The plan, in order:
 7. The second machine: the same scene on AMD, through Vulkan, and what
    differed.
 
-None of it is built yet; this list says what I'm aiming at, not what exists.
+The first is built; the rest is what I'm aiming at, not what exists.
 
 Serenity is R&D under Plainsight Systems LLC.
 
@@ -85,14 +89,22 @@ make run      # the window, running graphs/test_pattern.toml
 make headless # the same frames, as 60 PNGs in frames/
 ```
 
+The scene itself, through the naive path tracer, at half the window's
+resolution each way for speed:
+
+```bash
+make run GRAPH=graphs/path.toml SCENE=scenes/marbles.toml SCALE=0.5
+```
+
 `serenity-headless` writes into its `--out` directory only if it is new or
 empty, and refuses one that holds anything, so no earlier run's frame sits
 beside this run's; `make headless` clears its own frames from `frames/`
 first.
 
 `make run GRAPH=graphs/other.toml` runs another frame graph, and `SCENE=` gives
-it a scene. The first lit scene, a soft brass sphere on a checkerboard at night
-lit by two fireflies:
+it a scene. The marbles are written by `scripts/make_marbles.py`; edit the
+scene there. The first lit scene, a soft brass sphere on a checkerboard at
+night lit by two fireflies:
 
 ```bash
 make run GRAPH=graphs/preview.toml SCENE=scenes/brass_sphere.toml
@@ -118,6 +130,18 @@ Escape or closing the window ends it. `make movie` with the same `GRAPH` and
 instant (64 unless given), and encodes them with ffmpeg into `media/`, which
 git ignores.
 
+A reference image, and how far the naive path tracer is from it:
+
+```bash
+make reference SCENE=scenes/marbles.toml TIME=120    # some ten minutes of GPU
+make convergence SCENE=scenes/marbles.toml TIME=120  # error, and error x time
+```
+
+Both write into `.cache/references/`: the reference as a PFM, and a CSV of
+mean squared error and error x time at 1, 2, 4 ... 16,384 samples.
+`serenity-measure` does the arithmetic, on the CPU, from the headless
+renderer's float images.
+
 The build is pinned to one toolchain. Metal can't run in a container, so the
 versions of Xcode, the SDK the build compiles against, the Metal compiler,
 Apple's clang (as the C, C++ and Objective-C compiler) and CMake are recorded
@@ -133,14 +157,16 @@ stb_image_write and doctest, each pinned by commit or by checksum.
 | `src/core/` | the platform-neutral core: what is rendered, how it moves, the frame's schedule, film and output. No GPU or windowing API |
 | `src/metal/` | the Metal backend, the only code that touches Metal: the device, and every shader |
 | `src/app/`, `src/headless/` | the two ways to run a frame: in a window, or to files |
+| `src/measure/` | the measuring program: a reference made from files, and images judged against it |
 | `scenes/` | scene descriptions, as data: what is rendered |
 | `graphs/` | frame graphs, as data: which passes a frame runs |
 | `cmake/` | the toolchain pin, and how shaders are compiled into the binary |
 | `tests/` | tests; `tests/gpu/` runs on this machine's GPU |
 | `tools/` | the toolchain and boundary checks |
-| `scripts/` | an independent review of a commit, on request |
+| `scripts/` | the marbles scene's generator, and an independent review of a commit |
 | `docs/architecture/` | the design, written before the code it describes: start with the [logical overview](docs/architecture/logical-overview.md) |
 | `docs/research/` | measurements and investigations, each dated, with the machine and toolchain it ran on |
+| `docs/writeups/` | what each milestone taught me, for the interested engineer |
 | `docs/process/` | decisions and the work queue |
 
 The rule that shapes the layout: the core never knows which GPU it runs on.
@@ -155,6 +181,9 @@ it.
   real-time ray tracing with dynamic direct lighting," SIGGRAPH 2020.
 - *Marbles at Night*, NVIDIA's 2020 RTX demo, for showing what many moving
   lights on simple geometry can look like.
+- pbrt-v4, by Matt Pharr, Wenzel Jakob and Greg Humphreys: the naive path
+  tracer follows its SimplePathIntegrator, and the error measure its
+  relative MSE.
 
 ## License
 
