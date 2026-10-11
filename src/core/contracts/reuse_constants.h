@@ -31,8 +31,13 @@
 // light_glows.h), and its structure is kept
 // (metal/acceleration/scene_acceleration.h).
 //
+// The temporal merge's permutation (core/passes/restir_di.h) is not here:
+// it is a number of the frame alone, which every pixel draws the same from
+// the Sampler's stream for pixel 0 and the frame (metal/reuse/
+// temporal.metal.h), so no CPU computes it and no backend can draw another.
+//
 // Written by the CPU once a frame into a ring of one copy per frame in
-// flight (metal/device/frame_array.h): 112 bytes a frame.
+// flight (metal/device/frame_array.h): 128 bytes a frame.
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
@@ -50,7 +55,7 @@ struct ReuseConstants {
     uint32_t padding[3];
 };
 
-static_assert(sizeof(ReuseConstants) == 112, "ReuseConstants must be the same 112 bytes on the host and in shaders");
+static_assert(sizeof(ReuseConstants) == 128, "ReuseConstants must be the same 128 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
 static_assert(std::is_trivially_copyable_v<ReuseConstants>, "ReuseConstants is written to the GPU as bytes");
 #endif

@@ -53,5 +53,16 @@ inline float3 cosine_direction(float3 n, float2 u) {
     return d.x * f.t + d.y * f.b + metal::sqrt(metal::max(0.0f, 1.0f - metal::dot(d, d))) * n;
 }
 
+// The equal-area octahedral map between the unit sphere and the square
+// (Clarberg 2008), quantized to two 16-bit numbers in one word, x in bits
+// 0 to 15 and y in 16 to 31 (contracts/light_sample.h states it and what
+// it loses): how ReSTIR DI stores a light's point on its unit sphere
+// (contract 4), a surface's wo and its shading normal (contracts 5 and 2).
+// A mapping every family whose points are unit directions may use, so it
+// is here, not in one of them. Declared for review; defined with the
+// ReSTIR implementation.
+inline uint encode_unit(float3 unit);
+inline float3 decode_unit(uint encoded);  // unit length
+
 }  // namespace shaders
 }  // namespace serenity

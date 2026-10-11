@@ -69,8 +69,9 @@ struct FrameResources {
     // path states and previous positions (contract 5) and last frame's
     // records; the working reservoirs, and this frame's and last frame's
     // final ones (contract 14); and, for the temporal merge, last frame's
-    // transforms, glows and structure (metal/scene/shape_transforms.h,
-    // light_glows.h, metal/acceleration/scene_acceleration.h).
+    // transforms and glows, and in raytraced mode its structure
+    // (metal/scene/shape_transforms.h, light_glows.h,
+    // metal/acceleration/scene_acceleration.h; empty in basic mode).
     MTL::GPUAddress reuse = 0;
     MTL::GPUAddress records = 0;
     MTL::GPUAddress path_states = 0;

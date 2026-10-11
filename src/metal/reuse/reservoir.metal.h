@@ -16,9 +16,10 @@
 //
 // A reservoir in registers (Streaming, below) is contract 14's stored
 // reservoir (core/contracts/reservoir.h) with what streaming needs and a
-// stored reservoir does not: the running weight sum w_sum, the target at
-// the kept sample, and which input it came from, which the unbiased
-// normalization asks (metal/reuse/unbiased.metal.h).
+// stored reservoir does not: the running weight sum w_sum, and which input
+// the kept sample came from, which the normalization asks (metal/reuse/
+// unbiased.metal.h); and the kept sample's target at this surface and its
+// visibility test's offset and age, which the stored reservoir keeps.
 //
 // The operations, each the whole of its step:
 //
@@ -29,18 +30,25 @@
 //      [0, 1): kept with probability w / w_sum, so after the stream each
 //      candidate is the one kept with probability its weight over the
 //      total. w = 0 is never kept; a p of 0 is never streamed (the caller
-//      has no sample).
+//      has no sample). A kept candidate's test is not yet made: its offset
+//      and age are 0, here and now, for the test the caller makes next
+//      (visibility reuse).
 //   3. Stream a reservoir r_i, from surface q_i, with its count already
 //      capped where the merge caps it: w = p̂_q(y_i) W_i M_i, w_sum += w,
 //      M += M_i, keep y_i as in 2, remembering the input's position in the
-//      merge. Its W_i makes p̂_q(y_i) W_i the weight a candidate drawn with
-//      density 1 / W_i would have had, and M_i counts the candidates it
-//      stands for (Bitterli et al. 2020, Algorithm 4).
-//   4. Finish: W = w_sum / (Z p̂_q(y)), Z the count of candidates that could
-//      have produced y, as the caller counted it (unbiased.metal.h); 0 if
+//      merge and its test as the caller moved it here (its offset plus the
+//      offset it is reused across, its age plus 1 if it is last frame's:
+//      contracts/reservoir.h). Its W_i makes p̂_q(y_i) W_i the weight a
+//      candidate drawn with density 1 / W_i would have had, and M_i counts
+//      the candidates it stands for (Bitterli et al. 2020, Algorithm 4).
+//      p̂_q(y_i) for the pixel's own input is its stored target, which is
+//      q's this frame; for any other, the caller evaluates it.
+//   4. Finish: W = w_sum / (Z p̂_q(y)), Z the count of candidates counted
+//      for y, as the caller counted it by its mode (unbiased.metal.h); 0 if
 //      p̂_q(y) or Z is 0, or nothing was kept. For candidates alone every
 //      candidate was drawn by the same density, so Z = M, and W = w_sum /
-//      (M p̂_q(y)), as resampled importance sampling gives.
+//      (M p̂_q(y)), as resampled importance sampling gives. The stored
+//      reservoir's target is p̂_q(y), its test the kept sample's.
 //
 // The order is fixed: a merge streams its own reservoir first, then the
 // temporal input, then the neighbors in the order they were drawn. Which
@@ -70,8 +78,8 @@
 // is the one thing attention's online softmax adds for its range.
 //
 // Cost, per operation: one multiply-add on w_sum, one compare against one
-// number, a conditional copy of the 16-byte sample and two words; in
-// registers, 32 bytes of state, nothing read or written. What a stream
+// number, a conditional copy of the 8-byte sample and three words; in
+// registers, 28 bytes of state, nothing read or written. What a stream
 // costs is its target evaluations (the caller's Frame's) and the bytes of
 // the reservoirs it reads, which each pass counts.
 
@@ -90,10 +98,11 @@ constant constexpr uint from_temporal = 0xfffffffeu;
 
 // A reservoir being streamed into: steps 1 to 3.
 struct Streaming {
-    serenity::contracts::LightPoint sample;  // y; light no_light when empty
+    serenity::contracts::LightPoint sample;  // y; holding no light when empty
     float weight_sum;                        // w_sum
     uint count;                              // M
-    float target;                            // p̂_q(y), for finish()
+    float target;                            // p̂_q(y), for finish() and the stored reservoir
+    uint tested;                             // y's test, as contracts/reservoir.h packs it
     uint source;                             // from_own, from_temporal, or a neighbor's index
 };
 
@@ -107,9 +116,9 @@ struct Candidate {
 
 // A reservoir streamed into a merge, as the merge weighs it.
 struct MergeInput {
-    serenity::contracts::Reservoir reservoir;  // r_i
+    serenity::contracts::Reservoir reservoir;  // r_i, its `tested` moved to this pixel and frame
     uint count;                                // M_i, capped where the merge caps it
-    float target;                              // p̂_q(y_i), at the merging surface
+    float target;                              // p̂_q(y_i), at the merging surface: the stored one for the own input
     uint source;                               // from_own, from_temporal, or a neighbor's index
 };
 
@@ -124,6 +133,15 @@ inline void stream_reservoir(thread Streaming& reservoir, MergeInput input, floa
 
 // Step 4: the stored reservoir, Z as the caller counted it.
 inline serenity::contracts::Reservoir finish(Streaming reservoir, uint z);
+
+// `reservoir` as reused `offset` pixels from where it was stored (the
+// reused pixel minus the reusing one, so a test's offset is always where
+// it was made minus the pixel holding it) and `frames` later: its test's
+// offset plus `offset`, each coordinate clamped to [-127, 127], and its age
+// plus `frames`, saturating at 255 (contracts/reservoir.h, tested). What
+// the merges stream, so a survivor arrives with its test placed relative
+// to the pixel that keeps it.
+inline serenity::contracts::Reservoir reused_from(serenity::contracts::Reservoir reservoir, int2 offset, uint frames);
 
 }  // namespace shaders
 }  // namespace serenity

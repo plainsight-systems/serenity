@@ -29,12 +29,19 @@ namespace serenity::frame {
 //   [restir_di]                   # exactly when a pass is one of ReSTIR DI's
 //   candidates = 8                # M, an integer in [1, 32]
 //   history = 20                  # H, an integer in [1, 64]; (T)
-//   neighbors = 5                 # k, an integer in [1, 32]; (S)
-//   radius = 30.0                 # pixels, in [1, 1024]; (S)
+//   permutation = true            # a boolean; (T)
+//   neighbors = 1                 # k, an integer in [1, 32]; (S)
+//   radius = 32.0                 # pixels, in [1, 1024]; (S)
 //   depth_threshold = 0.1         # in (0, 1]; (T) or (S)
 //   normal_threshold = 0.5        # a cosine, in [-1, 1]; (T) or (S)
+//   bias_correction = "basic"     # "basic" or "raytraced"; (T) or (S)
+//   visibility_reuse = true       # a boolean; (B)
+//   visibility_age = 4            # frames, an integer in [0, 255]; (B), if reused
+//   visibility_distance = 16.0    # pixels, in [0, 127]; (B), if reused
 //
-// (T): only in a graph with restir_temporal; (S): only with restir_spatial.
+// (T): only in a graph with restir_temporal; (S): only with restir_spatial;
+// (B): only in a graph with either, in basic mode. The values shown are
+// the ones the graphs are written with, RTXDI's defaults.
 //
 // The ReSTIR settings are core/passes/restir_di.h's, which says what each
 // does and why its range is what it is. Each is required exactly when a
@@ -42,8 +49,13 @@ namespace serenity::frame {
 // temporal merge that writes `history` has a key nobody reads, and one with
 // it that leaves `history` out has asked for no value, which is refused,
 // never filled in (ES.45: the values the graphs are written with are
-// named in that header, not defaulted here). Counts are TOML integers: 8.0
-// is not a count.
+// named in that header, not defaulted here). What a pass reads can depend
+// on another setting: visibility_age and visibility_distance are read only
+// where visibility_reuse is true, and the three only where bias_correction
+// is "basic", so in a raytraced graph they are keys nobody reads. Counts
+// are TOML integers: 8.0 is not a count. bias_correction is one of its two
+// strings, any other refused; permutation and visibility_reuse are TOML
+// booleans.
 //
 // Every key is checked. A missing passes, a passes that is not a non-empty
 // array of strings, an unknown pass name, a [tone_map] or [restir_di] table

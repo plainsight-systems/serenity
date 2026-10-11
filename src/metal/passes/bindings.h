@@ -65,7 +65,9 @@ enum Texture : unsigned { input = 0, level = 1, bloom = 1, target = 2 };
 // constants (core/contracts/reuse_constants.h) at 6; then the records and
 // reservoirs it reads and writes, flat arrays in buffers (contracts 5 and
 // 14), each at its own index. The temporal merge also reads last frame's
-// scene: its structure, transforms and glows. Which reservoir array a pass
+// scene: its transforms and glows, and in raytraced mode its structure
+// (bound only then). The shade writes its final reservoirs back in a graph
+// with a temporal merge (restir_shade.h). Which reservoir array a pass
 // writes, the working one or the frame's final one, the renderer binds by
 // the graph (metal/frame/frame_images.h); the kernel names one output.
 namespace restir_initial {
@@ -100,7 +102,7 @@ enum Buffer : unsigned {
     last_final = 10,      // last frame's final reservoirs
     input = 11,           // the initial reservoirs
     output = 12,          // the same array, in place, when a spatial merge follows; else this frame's final
-    last_structure = 13,  // last frame's
+    last_structure = 13,  // last frame's, in raytraced mode
     last_glows = 14,
     last_transforms = 15,
 };
@@ -132,7 +134,7 @@ enum Buffer : unsigned {
     reuse = 6,
     records = 7,
     path_states = 8,
-    final_reservoirs = 9,
+    final_reservoirs = 9,  // read; its tested reservoirs written back in a graph with a temporal merge
     non_finite = 10,  // the frame's count of samples not finite (metal/film/non_finite.h)
 };
 enum Texture : unsigned { accumulated = 0 };  // also the frame's radiance, as the path pass's

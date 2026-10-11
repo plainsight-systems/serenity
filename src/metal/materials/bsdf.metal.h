@@ -22,6 +22,7 @@
 #include "metal/materials/conductor.metal.h"
 #include "metal/materials/dielectric.metal.h"
 #include "metal/materials/rough.metal.h"
+#include "metal/math/warp.metal.h"
 
 namespace serenity {
 namespace shaders {
@@ -116,6 +117,15 @@ inline uint bsdf_lobes(serenity::contracts::Bsdf bsdf) {
     }
     return 0u;
 }
+
+// Contract 2's packed form (contracts/bsdf.h states both functions and
+// what packing loses): Material's one definition of how a Bsdf is stored in
+// ReSTIR DI's surface record and read back, by every pass that writes or
+// reads one. A switch on the kind with no default, as above, so a kind
+// added and not packed fails to compile. Declared for review; defined with
+// the ReSTIR implementation, and called by nothing until then.
+inline serenity::contracts::PackedBsdf pack_bsdf(serenity::contracts::Bsdf bsdf);
+inline serenity::contracts::Bsdf unpack_bsdf(serenity::contracts::PackedBsdf packed);
 
 }  // namespace shaders
 }  // namespace serenity

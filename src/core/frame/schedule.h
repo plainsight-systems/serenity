@@ -171,8 +171,9 @@ bool reuses_history(const Schedule& schedule);
 //   - ReSTIR DI's passes in their order, each at most once, with
 //     restir_initial and restir_shade both present if any of the four is
 //     (above); and its settings exactly when its passes are present, each
-//     setting the passes read in its range and each they do not read 0
-//     (core/passes/restir_di.h).
+//     setting the passes read, as the graph's other settings decide what
+//     they read (bias_correction and visibility_reuse), in its range, and
+//     each they do not read its zero (core/passes/restir_di.h).
 //
 // None if `schedule` is valid; otherwise why not, in words a reader of the
 // frame graph file can act on. The graph reader refuses an invalid schedule
@@ -186,7 +187,8 @@ std::optional<std::string> invalid(const Schedule& schedule);
 std::optional<std::string> invalid(const passes::ToneMap& settings);
 
 // The ReSTIR rule's settings alone: whether `settings` hold what `passes`
-// read, in range, and 0 for what they do not (core/passes/restir_di.h).
+// read, in range, and its zero for what they do not (core/passes/
+// restir_di.h).
 // For the graph reader, to name the line of the setting.
 std::optional<std::string> invalid(const passes::RestirDi& settings, std::span<const PassKind> passes);
 

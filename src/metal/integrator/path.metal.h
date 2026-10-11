@@ -148,11 +148,17 @@
 // What the continuation reads of the surface, beyond its Shading's BSDF, wo
 // and medium: the point and geometric normal (leaving it), the flags (which
 // side it was arrived at from) and interior (the medium a transmission
-// enters). The shade rebuilds those from the record and path state; the
-// SurfaceInteraction's material, primitive, object_position and shading
-// normal it leaves 0, unread by the continuation, and that is a contract of
-// continue_path(): it reads no other field of `here.surface`, and adding a
-// read of one adds it to contract 5's path state.
+// enters). The shade rebuilds those from the record and path state, its
+// Shading's BSDF, wo and geometric normal from the record unpacked (the
+// geometric normal is the shading normal for every surface so far:
+// contracts/surface_record.h), so the continuation leaves from the surface
+// ReSTIR weighed, its packing's small difference from the reference's
+// stated there; the SurfaceInteraction's material, primitive,
+// object_position and shading normal it leaves 0, unread by the
+// continuation, and that is a contract of continue_path(): it reads no
+// other field of `here.surface`, and adding a read of one adds it to
+// contract 5's path state. The path pass never packs: its image is
+// unchanged.
 
 
 #include <metal_raytracing>

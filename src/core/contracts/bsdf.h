@@ -76,6 +76,49 @@
 // Emission is not here. A glowing surface scatters nothing (kind none) and
 // its light is the emitter contract's (contract 3).
 //
+// The packed form. A Bsdf as a G-buffer stores one, 16 bytes against its
+// 48, for ReSTIR DI's surface record (contract 5, core/contracts/
+// surface_record.h), which its merges read at every neighbor and so is most
+// of their traffic. Material owns it, here, beside the Bsdf it packs: one
+// definition of what a resolved material is, in two forms, so a field
+// Material adds is packed where it is added (ES.3). Two functions, each
+// backend's (metal/materials/bsdf.metal.h), to these semantics:
+//
+//   PackedBsdf pack_bsdf(Bsdf)     the kind as it is; the shading normal
+//                                  by the equal-area octahedral map in two
+//                                  16-bit numbers (contracts/
+//                                  light_sample.h states the map); color,
+//                                  and each scalar the kind reads, to the
+//                                  nearest IEEE half (binary16). A
+//                                  positive value below half's least, 2^-24,
+//                                  is stored as 2^-24, never 0, so a lobe
+//                                  never loses its support: a conductor's
+//                                  alpha never becomes a mirror's 0. The
+//                                  scalar word holds the one of alpha (a
+//                                  conductor's) and ior (a coated or
+//                                  dielectric surface's) the kind reads; a
+//                                  lambert's is 0.
+//   Bsdf unpack_bsdf(PackedBsdf)   the Bsdf the packed values stand for:
+//                                  the kind; the decoded normal, unit
+//                                  length; the halves widened; every field
+//                                  the kind does not read 0, padding 0.
+//
+// What packing loses, stated (ES.46: deliberate narrowings). A half keeps
+// 11 significant bits, so color, alpha, ior and escape are each within
+// 2^-11 (5 x 10^-4) of their value, relatively, over half's normal range (6.1
+// x 10^-5 to 65504, which holds every albedo, f0, ior and escape a material
+// resolves to, and every alpha but a conductor's of roughness under about
+// 0.008, whose alpha keeps less precision as a subnormal half). The normal is
+// within about 5 x 10^-5 radians (contracts/light_sample.h). Every question
+// asked of a surface stored packed is asked of its unpacked Bsdf, by every
+// pass, the target's and the shade's alike, so each pixel's surface is one
+// surface: what packing changes is which surface that is, by those amounts,
+// against the full-precision one the reference shades. A small bias in the
+// image, as a G-buffer's is in production; it is part of what the raytraced
+// mode's check against the reference holds within its tolerance
+// (core/passes/restir_di.h). The naive path tracer never packs a Bsdf, and
+// shades what it did.
+//
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
 #include "core/contracts/shared_layout.h"
@@ -131,6 +174,19 @@ struct Bsdf {
 static_assert(sizeof(Bsdf) == 48, "Bsdf must be the same 48 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
 static_assert(std::is_trivially_copyable_v<Bsdf>, "Bsdf is written to the GPU as bytes");
+#endif
+
+// A Bsdf packed (above): four words, read whole.
+struct PackedBsdf {
+    uint32_t normal;           // equal-area octahedral, x in bits 0-15, y in bits 16-31
+    uint32_t color_rg;         // halves: red in bits 0-15, green in bits 16-31
+    uint32_t color_b_scalar;   // halves: blue in bits 0-15; alpha or ior, as the kind reads, in bits 16-31
+    uint32_t escape_kind;      // half: escape (coated; else 0) in bits 0-15; BsdfKind in bits 16-23; 0 above
+};
+
+static_assert(sizeof(PackedBsdf) == 16, "PackedBsdf must be the same 16 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<PackedBsdf>, "PackedBsdf is written to the GPU as bytes");
 #endif
 
 // What sample() returns.

@@ -33,8 +33,9 @@
 //     draws with the same u, the point where it meets the sphere (the
 //     nearer root, distance_to_light()), and that point in the sphere's own
 //     space, the unit direction R^T (y - c) / r from its center
-//     (metal/math/transform.metal.h, transform_to_object), as three floats,
-//     exactly as computed (contracts/light_sample.h). Its own
+//     (metal/math/transform.metal.h, transform_to_object), encoded by the
+//     equal-area octahedral map (metal/math/warp.metal.h; contracts/
+//     light_sample.h states what it loses). Its own
 //     space and not the world's: a light that turns keeps its point, as one
 //     that moves does. The scene's transforms do not turn yet
 //     (contracts/transform.h); the identity is correct when they do.
@@ -160,15 +161,15 @@ inline float sphere_light_pdf(SphereLight light, float3 point, float3 direction)
 // defined with the ReSTIR implementation, and called by nothing until then.
 
 // The point on the sphere that sphere_sample_light(light, point, u) draws
-// the direction toward: contract 4's `point`, the unit direction from the
-// center in the sphere's own space. Whether one was drawn is the caller's
-// to know: a point inside the light draws none (view_light()'s distance at
-// most the radius), and the emitter tests that first.
-inline float3 sphere_draw_point(SphereLight light, serenity::contracts::Transform placed, float3 point, float2 u);
+// the direction toward, encoded: contract 4's `point`, the unit direction
+// from the center in the sphere's own space. Whether one was drawn is the
+// caller's to know: a point inside the light draws none (view_light()'s
+// distance at most the radius), and the emitter tests that first.
+inline uint sphere_draw_point(SphereLight light, serenity::contracts::Transform placed, float3 point, float2 u);
 
 // What the sphere's point in `sample` gives `point`, as this light is
-// placed and lit. The identity, not its bare vector, so the two positions
-// cannot be passed in each other's places (I.24).
+// placed and lit, at the decoded point. The identity, not its bare word,
+// so it cannot be passed in another word's place (I.24).
 inline serenity::contracts::LightReceived sphere_evaluate_point(SphereLight light,
                                                                serenity::contracts::Transform placed,
                                                                serenity::contracts::LightPoint sample,

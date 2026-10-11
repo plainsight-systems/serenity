@@ -84,12 +84,15 @@ namespace serenity::metal {
 // same note.
 //
 // Last frame's structure, kept one frame longer, for a graph with ReSTIR's
-// temporal merge (Keep::last_too; metal/reuse/temporal.metal.h): its Z test
+// temporal merge in raytraced mode (Keep::last_too; core/passes/
+// restir_di.h, bias_correction; metal/reuse/temporal.metal.h): its Z test
 // asks whether a sample was visible from last frame's surface as last frame
 // saw it, so its shadow ray is traced against the structure last frame
 // traced, not this one (RTXDI's previous-frame BVH, which it falls back
 // from when an application has none, at the cost of bias; here it is always
-// there). Only for such a graph; every other keeps what it has now.
+// there in that mode). Basic mode, the default, traces no ray in its
+// merges and keeps nothing more. Only for such a graph; every other keeps
+// what it has now.
 //
 //   - A still scene: its one structure is last frame's too. Nothing more.
 //   - A scene where shapes move: frames_in_flight + 1 structures, three,

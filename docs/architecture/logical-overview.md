@@ -47,13 +47,16 @@ and the camera.
     frame:
     - **Naive**: for each sample, pick a light, pick a point on it, trace a
       shadow ray.
-    - **ReSTIR DI, unbiased** (Bitterli et al. 2020): weigh M candidate
-      lights by the light each would deliver, ignoring shadows, and keep one
-      in a reservoir; trace one shadow ray to it, and keep it only if it is
-      visible (visibility reuse); merge in the reservoir this surface held
-      last frame, then the reservoirs of k neighbors; and shade with the
-      light that survives, which the merges have made sure this surface
-      can see.
+    - **ReSTIR DI** (Bitterli et al. 2020), configured as NVIDIA's RTXDI
+      ships it: weigh M candidate lights by the light each would deliver,
+      ignoring shadows, and keep one in a reservoir; trace one shadow ray
+      to it, and keep it only if it is visible (visibility reuse); merge in
+      the reservoir this surface held last frame, then the reservoirs of k
+      neighbors; and shade with the light that survives, tracing its
+      shadow ray unless a recent test of it can be reused. By default the
+      merges trace no rays and are slightly biased, as production's are;
+      an unbiased mode, whose merges trace them, checks ReSTIR against the
+      reference (`src/core/passes/restir_di.h`).
   - **Indirect** light: the path bounces on from the rough surface, through
     glass, off metal and off other rough surfaces, taking direct light at
     each rough surface it reaches. ReSTIR GI (Ouyang et al. 2021) later
@@ -95,9 +98,14 @@ pixels or across frames.
    generator state, so any frame can be rendered again exactly, alone.
 
 3. **The reference shares the scene and the light transport, never the
-   reuse.** ReSTIR DI and GI are unbiased: averaged over enough frames they
-   converge to the same image as the reference. Because the reference does
-   none of their resampling, a bug in it cannot pass by matching itself.
+   reuse.** ReSTIR DI and GI each have an unbiased mode: averaged over
+   enough frames it converges to the same image as the reference, to within
+   what their stored samples' quantization leaves. Their default is
+   production's configuration, whose small bias at shadow edges is stated
+   and measured against the same reference (decided 2026-10-10,
+   `docs/research/2026-10-10-restir-di-layout.md`). Because the reference
+   does none of their resampling, a bug in it cannot pass by matching
+   itself.
 
 4. **Estimators are interchangeable.** Naive and ReSTIR, and ReSTIR with
    temporal reuse, spatial reuse or both, take the same surface records and
@@ -174,10 +182,16 @@ Two consequences are worth stating outright:
 - **Unbiasedness costs rays.** Merging a reservoir from another frame or
   another pixel is unbiased only if the merge accounts for whether that
   reservoir's sample could have been chosen here, and finding out takes a
-  shadow ray. A ReSTIR pixel traces one ray for visibility reuse, about one
-  for the temporal merge and k for the spatial merge, against the naive
-  estimator's one per sample. Each step keeps a light the surface can see,
-  by those same rays, so shading the survivor needs no ray of its own.
+  shadow ray. Production does without them and accepts a small darkening at
+  shadow edges; so does Serenity's default. Rays a ReSTIR pixel traces at
+  its first rough surface, against the naive estimator's one per sample:
+  - **basic** (the default, RTXDI's): one for visibility reuse, and one to
+    shade the survivor unless a test of it from within a few frames and
+    pixels is reused: one or two;
+  - **raytraced** (unbiased, for checking against the reference): one for
+    visibility reuse, about one for the temporal merge and k for the
+    spatial merge, and none to shade, since each step keeps a light the
+    surface can see by those same rays: k + 2.
 
 ## Reservoirs are state keyed on surfaces
 

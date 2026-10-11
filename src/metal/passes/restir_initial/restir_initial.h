@@ -23,13 +23,19 @@ namespace serenity::metal {
 //   2. M candidates at the record, streamed into a reservoir, finished with
 //      Z = M;
 //   3. the survivor's visibility traced, W set to 0 where it is hidden
-//      (visibility reuse), and the reservoir written.
+//      (visibility reuse), and the reservoir written, its test this ray's,
+//      here and now, its target the survivor's at the record.
+//
+// The record is packed as it is written (contracts/surface_record.h) and
+// unpacked at once for steps 2 and 3, so the candidates are weighed at the
+// surface every later pass reads back, not the full-precision one.
 //
 // One kernel, not two: steps 2 and 3 read nothing of another pixel's step
-// 1, so splitting them would only write the record and read it back (80
+// 1, so splitting them would only write the record and read it back (32
 // bytes a pixel) with a dispatch and a barrier between (GDSA.6, GPU.6).
-// What is alive across visibility reuse's query is the record and the
-// streaming reservoir, as it would be in a kernel of its own.
+// What is alive across visibility reuse's query is the streaming reservoir,
+// the record and path state having been written before it, as it would be
+// in a kernel of its own (restir_di.metal.h states it).
 //
 // Reads: the frame's constants and camera, the scene and this frame's
 // structure, the reuse constants (M); in a graph with a temporal merge,
@@ -41,7 +47,7 @@ namespace serenity::metal {
 // array when a merge follows in the graph, else to this frame's final
 // array (frame_resources.h, ReservoirOutput). A pixel with no surface, or
 // in a scene with no light, writes an empty reservoir (no sample, W = 0,
-// M = 0).
+// M = 0, target 0).
 //
 // Ordering: it writes this frame's half of the records' ping-pong, which
 // the frame before this one's temporal merge read as last frame's. The
@@ -54,8 +60,8 @@ namespace serenity::metal {
 // glass or mirror surface before the first rough one) and its BSDF
 // resolutions; M light choices, M points drawn and M target evaluations
 // (each with its light's 76 bytes of logical loads); one shadow ray; 4M
-// numbers; 176 bytes written, 188 with the previous position, nothing read
-// back. One dispatch.
+// numbers; 92 bytes written (32 record, 36 path state, 24 reservoir), 104
+// with the previous position, nothing read back. One dispatch.
 class RestirInitialPass {
 public:
     RestirInitialPass(const Library& library, ReservoirOutput output);

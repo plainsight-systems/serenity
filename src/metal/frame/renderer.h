@@ -179,7 +179,7 @@ namespace serenity::metal {
 //     and asked by it, from the frame's inputs' reused_since
 //     (core/frame/frame_inputs.h), whether the frame has a previous one;
 //   - a second ring beside the frame constants', of the reuse constants
-//     (core/contracts/reuse_constants.h), 112 bytes a frame: the settings,
+//     (core/contracts/reuse_constants.h), 128 bytes a frame: the settings,
 //     whether there is a previous frame, and the previous frame's camera,
 //     framed for this frame's size, which the renderer keeps from the frame
 //     before (its inputs' camera: the renderer holds no camera of its own
@@ -188,10 +188,15 @@ namespace serenity::metal {
 //     a second ShapeTransforms and LightGlows, which recording a frame fills
 //     by animating at the previous frame's time, kept from the frame before
 //     as its camera is (metal/scene/shape_transforms.h, light_glows.h), and
-//     only what moves or glows, as for this frame's; and the acceleration
-//     structure kept a frame longer (scene_acceleration.h, Keep::last_too).
-//     At the first frame of a history there is no previous frame, and none
-//     of it is read.
+//     only what moves or glows, as for this frame's; and, in raytraced
+//     mode only (core/passes/restir_di.h), the acceleration structure kept
+//     a frame longer (scene_acceleration.h, Keep::last_too), which basic
+//     mode's temporal merge, tracing no ray, never reads. At the first
+//     frame of a history there is no previous frame, and none of it is
+//     read;
+//   - the scene's media counted: a scene with 0xffff media or more is
+//     refused by MetalError, since the path state keeps a medium's index in
+//     16 bits (core/contracts/surface_record.h; I.5).
 //
 // Barriers, each naming its hazard (GPU.8): the queue barrier before the
 // initial pass, the first that writes what frames share (this frame's
@@ -202,7 +207,7 @@ namespace serenity::metal {
 // accumulated image. Four dispatches and four barriers for the light, where
 // the path graph has one dispatch and one barrier.
 //
-// Cost of recording a ReSTIR frame, on the CPU, beyond the above: 112 bytes
+// Cost of recording a ReSTIR frame, on the CPU, beyond the above: 128 bytes
 // of reuse constants, four pipeline binds and dispatches with their
 // argument-table entries; with a temporal merge, one more animation of
 // what moves and glows, at the previous time (O(movers + glowers), as

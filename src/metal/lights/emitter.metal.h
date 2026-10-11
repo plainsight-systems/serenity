@@ -13,11 +13,13 @@
 // numbers into the same directions as before). An identity names its light
 // by its record's index, which these read the record by, so Sample reuse
 // stores 4 bytes of which light rather than the record's 8. Each kind
-// places its own point in the identity's three floats: the sphere a unit
-// direction, a rectangle, when one comes, its (u, v) and a 0.
+// places its own point in the identity's two 16-bit numbers: the sphere a
+// unit direction by the equal-area octahedral map, a rectangle, when one
+// comes, its (u, v).
 //
-// Cost: drawing a point is sample_light()'s work and one transform of the
-// point into the light's space (a few dozen flops); evaluating one is a
+// Cost: drawing a point is sample_light()'s work, one transform of the
+// point into the light's space and its encoding (a few dozen flops);
+// evaluating one is its decoding (a square root and a dozen flops), a
 // transform, a normalization and the reads sample_light() makes: the 8-byte
 // light record, the 16-byte sphere light, its 48-byte transform and 4-byte
 // glow, 76 bytes of logical loads from small arrays in the constant address
@@ -104,13 +106,13 @@ inline float light_pdf(Lights lights, serenity::lights::LightRecord light, float
 // implementation, and called by nothing until then.
 
 // A point on light record `light`, drawn from `point` as sample_light()
-// draws a direction with the same `u`; light no_light where `point` is
-// inside the light.
+// draws a direction with the same `u`; holding no light (contracts/
+// light_sample.h, holds_light) where `point` is inside the light.
 inline serenity::contracts::LightPoint draw_light_point(Lights lights, uint light, float3 point, float2 u);
 
 // What the light at `sample` gives `point`, as `lights` place and light it:
 // this frame's arrays, or last frame's for the temporal merge's previous
-// surface. Precondition: sample.light is a record's index, not no_light.
+// surface. Precondition: holds_light(sample).
 inline serenity::contracts::LightReceived evaluate_light_point(Lights lights, serenity::contracts::LightPoint sample,
                                                                float3 point);
 

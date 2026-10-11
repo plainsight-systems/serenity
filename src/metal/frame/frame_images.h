@@ -129,25 +129,26 @@ private:
 // made only for a graph that has those passes, so a graph without them
 // allocates what it did and renders what it did
 // (docs/research/2026-10-10-restir-di-layout.md, "Additive"). Buffers, not
-// textures: each element is a shared layout of 12 to 80 bytes, read whole,
+// textures: each element is a shared layout of 12 to 36 bytes, read whole,
 // flat in row-major pixel order (contracts/surface_record.h,
 // contracts/reservoir.h; GPU.2).
 //
-//   records             contract 5's SurfaceRecord, 80 bytes a pixel; two,
+//   records             contract 5's SurfaceRecord, 32 bytes a pixel; two,
 //                       ping-ponged, in a graph with a temporal merge: this
 //                       frame's, which the initial pass writes, and last
 //                       frame's, which the temporal merge reads (MEM.4: data
 //                       that crosses one frame, double-buffered); one
 //                       otherwise.
-//   path states         contract 5's PathState, 64 bytes a pixel, one.
+//   path states         contract 5's PathState, 36 bytes a pixel, one.
 //   previous positions  a Float3, 12 bytes a pixel, one, only in a graph
 //                       with a temporal merge.
-//   working reservoirs  contract 14, 32 bytes a pixel, one, only in a graph
+//   working reservoirs  contract 14, 24 bytes a pixel, one, only in a graph
 //                       with a merge: written by the initial pass, merged in
 //                       place by the temporal merge, read at neighbors by
 //                       the spatial merge.
-//   final reservoirs    contract 14, 32 bytes a pixel: what the last pass
-//                       before the shade writes, which the shade reads; two,
+//   final reservoirs    contract 14, 24 bytes a pixel: what the last pass
+//                       before the shade writes, which the shade reads and,
+//                       where it traced, writes back its own pixel's; two,
 //                       ping-ponged, in a graph with a temporal merge, so
 //                       last frame's survives until this frame's temporal
 //                       merge has read it, whichever pass writes this
@@ -178,9 +179,10 @@ private:
 // queue barrier before the initial pass keeps a frame from writing what
 // the frame before still reads (metal/frame/renderer.h).
 //
-// Cost, memory, at P pixels, for a graph with all four passes: 160 + 64 +
-// 12 + 32 + 64 = 332 bytes a pixel, 2.56 GB at the display's 3456 x 2234
-// and 641 MB at a traced 1728 x 1117; the surface records are half of it.
+// Cost, memory, at P pixels, for a graph with all four passes: 64 + 36 +
+// 12 + 24 + 48 = 184 bytes a pixel, 1.42 GB at the display's 3456 x 2234
+// and 355 MB at a traced 1728 x 1117; the two halves of the surface
+// records are a third of it.
 // Per frame, what the passes read and write of it is counted in
 // metal/passes/restir_di/restir_di.metal.h. No CPU-GPU crossing: the CPU never
 // reads them.
