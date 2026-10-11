@@ -5,9 +5,9 @@
 // What "contribution" means for ReSTIR DI: the target p̂_q(y) a light sample
 // y is weighed by at surface q, ignoring what may be in the way. The
 // Integrator owns it (change-axes.md: the target function belongs with the
-// light transport it stands for); the candidates, every merge and every Z
-// test call this one definition (ES.3), so none can weigh a sample one way
-// and normalize it another.
+// light transport it stands for); the candidates, every merge and every
+// normalization's domain target call this one definition (ES.3), so none
+// can weigh a sample one way and normalize it another.
 //
 // Depends on contracts 2, 4 and 5, Material's packed form and the shared
 // unit-vector map, and the Integrator's own Shading; nothing of Sample
@@ -39,8 +39,9 @@
 // one is the integrand without visibility and transmittance, which makes it
 // the best that needs no ray (the paper's choice). Its support is the
 // integrand's: f > 0, L_e > 0 and y on the side of the light that faces q;
-// what visibility removes is accounted for by Z (metal/reuse/
-// unbiased.metal.h), and a medium's transmittance, never 0, by the shade.
+// what visibility removes is accounted for by the merges' normalization
+// (metal/reuse/unbiased.metal.h), and a medium's transmittance, never 0, by
+// the shade.
 //
 // The density a candidate is drawn with, in the same measure: Light
 // selection's probability of its light, times the emitter's density per

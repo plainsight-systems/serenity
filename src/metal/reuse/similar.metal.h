@@ -30,7 +30,8 @@
 // Serenity's, named here (CDSA.21), each a value the implementation's
 // measurements may move. A neighbor of another material lit by the same
 // light takes a different share of it, so its reservoir is a worse
-// candidate here, and in basic mode its count in Z a worse guess.
+// candidate here, and in basic mode its share of the normalization a
+// worse guess.
 //
 // Depends on contracts 2 and 5, the settings and the shared unit-vector map
 // alone.
@@ -40,7 +41,8 @@
 // surface could have produced each sample (unbiased.metal.h), so a wrong
 // surface let through costs variance, and one kept out costs only the reuse
 // it would have given. In basic mode they also bound its bias: what a
-// surface they let through cannot see is what Z counts wrongly. A surface
+// surface they let through cannot see is what the normalization weighs
+// wrongly. A surface
 // seen through glass sits at a depth the camera's straight ray does not
 // see it at; the depth test is then wrong more often, and that, too, is
 // noise or, in basic mode, the same edge-bounded bias.

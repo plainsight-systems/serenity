@@ -98,7 +98,8 @@ namespace serenity::frame {
 // whose renderer makes its images anew. A camera cut would, and is not yet
 // a frame input: a camera the caller replaces with another is, to the
 // history, a camera that moved far in one frame, and the merges' similarity
-// tests and Z then keep the frame as correct as any other while its reuse
+// tests and normalization then keep the frame as correct as any other
+// while its reuse
 // finds little: unbiased in raytraced mode, and within basic mode's
 // edge-bounded bias in basic (metal/reuse/unbiased.metal.h). The input
 // arrives with the first caller that cuts.

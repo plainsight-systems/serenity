@@ -46,23 +46,29 @@
 //      (find_last_frame()).
 //   4. Stream: q's own reservoir r (count M_r, its stored target, which is
 //      q's this frame), then last frame's final reservoir r' at x', its
-//      count capped at H x M (core/passes/restir_di.h): a sample kept for
-//      many frames is weighed as at most H frames' candidates, which bounds
-//      how long an old choice outlives the light that made it a good one;
-//      weighed by its sample's target at q as this frame lights it, and
-//      its test moved here, x' - p added to its offset and 1 to its age
-//      (reservoir.metal.h, reused_from).
-//   5. Z (unbiased.metal.h), for the survivor y, by the graph's mode:
-//        y from r:  M_r, plus min(M_r', H M) if q' supports y as last frame
-//                   saw it: its target by last frame's transforms and
-//                   glows, and, in raytraced mode, where positive, one
-//                   shadow ray from q' against last frame's structure;
-//        y from r': min(M_r', H M), plus M_r: in basic mode counted (its
-//                   target at q is positive, or y would not have been
-//                   kept); in raytraced mode if y is visible from q, one
-//                   shadow ray from q against this frame's structure, and
-//                   if it is hidden the output is hide()'s and the ray is
-//                   the survivor's test, here and now.
+//      count capped at C = min(M_r', H M_r), H times the own reservoir's
+//      count (RTXDI's history cap; core/passes/restir_di.h): a sample kept
+//      for many frames is weighed as at most H frames' candidates, which
+//      bounds how long an old choice outlives the light that made it a
+//      good one; weighed by its sample's target at q as this frame lights
+//      it, and its test moved here, x' - p added to its offset and 1 to its
+//      age (reservoir.metal.h, reused_from). The capped C weighs r' both
+//      here and in step 5.
+//   5. Normalize (unbiased.metal.h), for the survivor y, by the graph's
+//      mode, d_{q'} the domain target at q' as last frame saw it (its
+//      target by last frame's transforms and glows, and in raytraced mode,
+//      where positive, times y's visibility from q', one shadow ray against
+//      last frame's structure):
+//        y from r:  pi = p̂_q(y), from streaming;
+//                   piSum = M_r p̂_q(y) + C d_{q'}(y): one evaluation, and
+//                   in raytraced mode at most one ray;
+//        y from r': pi = r''s stored target, p̂_{q'}(y) as last frame lit
+//                   it, visible from q' by the invariant in raytraced mode:
+//                   no evaluation, no ray at q';
+//                   piSum = M_r p̂_q(y) + C pi. In raytraced mode, one
+//                   shadow ray from q against this frame's structure: if y
+//                   is hidden the output is hide()'s, and the ray is the
+//                   survivor's test, here and now.
 //   6. Finish (reservoir.metal.h, step 4); the caller writes it where the
 //      graph's next pass reads (metal/frame/frame_images.h): the working
 //      reservoir, in place, when a spatial merge follows, which reads it at
@@ -80,9 +86,9 @@
 // which the `then` Frame answers from. A surface seen through glass or in a
 // mirror reprojects as if seen straight, which is wrong when the glass
 // moves or the camera does; the similarity test then rejects it, or lets
-// through a surface whose reservoir Z weighs by what it could have
-// produced: noise in raytraced mode, and in basic mode the edge-bounded
-// bias unbiased.metal.h states.
+// through a surface whose reservoir the normalization weighs by how
+// likely it was to produce the survivor: noise in raytraced mode, and in
+// basic mode the edge-bounded bias unbiased.metal.h states.
 //
 // Step 5's ray, in raytraced mode, is one ray query whichever frame it asks
 // of: each lane chooses its structure, its ray's origin and the light's
@@ -99,11 +105,11 @@
 // where all nine are tried; the reads at x' gathered from wherever the
 // surface was, which for a still or slow camera is near x, so neighbouring
 // lanes read neighbouring addresses (GPU.2). Writes 24. Target evaluations:
-// one (r''s sample at q) and at most one more (Z's, at q'), r's own target
-// read from the reservoir. Rays: none in basic mode; at most one in
-// raytraced. Numbers: two, the choices of step 4, from the pass's own
-// stream (metal/sampler/sampler.metal.h), and the frame's two for the
-// permutation.
+// one (r''s sample at q) and at most one more (piSum's, at q'), r's own
+// target and r''s at q' read from the reservoirs. Rays: none in basic mode;
+// at most one in raytraced. Numbers: two, the choices of step 4, from the
+// pass's own stream (metal/sampler/sampler.metal.h), and the frame's two for
+// the permutation.
 
 #include <metal_stdlib>
 

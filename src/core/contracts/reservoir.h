@@ -62,10 +62,14 @@
 //               surface, streams the reservoir with it rather than
 //               evaluating the target again: the temporal merge its pixel's
 //               initial reservoir, the spatial merge its pixel's own input.
-//               Valid only there: at another surface, or in another frame
-//               for this one, it is that surface's or that frame's target
-//               and is not this one's, and a pass that needs this one
-//               evaluates it. Written by every pass that writes a
+//               And a merge whose survivor came from another input takes
+//               that input's stored target as its normalization's pi, the
+//               survivor's target at the surface it came from as that
+//               surface's frame lit it, which is exactly what it stores
+//               (metal/reuse/unbiased.metal.h). As this surface's target it
+//               is valid only at this surface in the frame that wrote it,
+//               and a pass that needs another surface's or frame's
+//               evaluates that. Written by every pass that writes a
 //               reservoir, 0 for an empty one.
 //   weight      W, the contribution weight: for the surface q the reservoir
 //               belongs to, W estimates 1 / p(y), the density of the sample

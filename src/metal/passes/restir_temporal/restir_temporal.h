@@ -14,8 +14,8 @@ namespace serenity::metal {
 // metal/reuse/temporal.metal.h): one thread a pixel; last frame's final
 // reservoir, where the pixel's surface was, merged into the candidates' by
 // the rule of the graph's mode (core/passes/restir_di.h, bias_correction),
-// its Z asked of last frame's surface and lights, and in raytraced mode of
-// last frame's structure.
+// its normalization asked of last frame's surface and lights, and in
+// raytraced mode of last frame's structure.
 //
 // Reads: this frame's scene, structure, camera, reuse constants, records,
 // previous positions and the initial reservoirs (the working array);

@@ -83,8 +83,9 @@
 //           decoded point (contracts/light_sample.h); streamed into a
 //           reservoir with weight p̂_q(y) / p(y), the target
 //           (target.metal.h) over the density, both in the light's own area
-//           (metal/reuse/reservoir.metal.h, step 2). Finished with Z = M:
-//           W = w_sum / (M p̂_q(y)), resampled importance sampling.
+//           (metal/reuse/reservoir.metal.h, step 2). Finished with pi = 1
+//           and piSum = M: W = w_sum / (M p̂_q(y)), resampled importance
+//           sampling.
 //   Step 3  Visibility reuse (RTXDI's initial visibility, on by default).
 //           One shadow ray from q to the survivor (visible(), below);
 //           blocked, W = 0 and M kept (hide()). What a pixel then shares
@@ -98,15 +99,17 @@
 //   Step 4  Temporal merge (metal/reuse/temporal.metal.h). Last frame's
 //           final reservoir where q was: at the reprojected pixel, permuted
 //           within its block, or the first similar pixel around it; its
-//           count capped at H x M; normalized by the graph's mode, its Z
-//           asked of last frame's surface and lights, and in raytraced
-//           mode of last frame's structure, with at most one ray.
+//           count capped at H times this pixel's; normalized by
+//           RTXDI's MIS-like weights (pi over piSum, metal/reuse/
+//           unbiased.metal.h), asked of last frame's surface and lights,
+//           and in raytraced mode of last frame's structure, with at most
+//           one ray.
 //
 // restir_spatial
 //
 //   Step 5  Spatial merge (metal/reuse/spatial.metal.h). k neighbors within
 //           the radius, each similar in geometry and material or not an
-//           input; normalized by the graph's mode, in raytraced mode with
+//           input; normalized by the same weights, in raytraced mode with
 //           at most k rays.
 //
 // restir_shade
@@ -149,7 +152,7 @@
 //           so the error is light where q's own ray would have found the
 //           sample hidden: within that many pixels of a shadow's edge, and
 //           for that many frames behind an occluder or a firefly that
-//           moved. A brightening, where basic mode's Z darkens; both at
+//           moved. A brightening, where basic mode's weights darken; both at
 //           shadow edges, both what production ships, both measured
 //           against the reference with the rest of basic mode's error.
 //
@@ -218,8 +221,12 @@
 //           bytes, and a candidate's draw reads the same 76 its target
 //           does. At most M + 2k + 3 evaluations (M in restir_initial, 2 in
 //           the temporal merge, 2k in the spatial, 1 in the shade; each
-//           merge's own input weighed by its stored target, contracts/
-//           reservoir.h), 13 at the settings above, in either mode: 988
+//           merge's own input weighed by its stored target, and its
+//           source's pi read from the source's, contracts/reservoir.h; in
+//           a merge, one evaluation to stream each other input and one for
+//           piSum at each input that is neither the source nor the
+//           pixel's own: metal/reuse/unbiased.metal.h), 13 at the settings
+//           above, in either mode: 988
 //           bytes a pixel of logical loads. They come from arrays of 76
 //           bytes a light in the constant address space, small beside the
 //           caches (76 KB for a thousand fireflies), so they are assumed to

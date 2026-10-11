@@ -14,8 +14,8 @@ namespace serenity::metal {
 // metal/reuse/spatial.metal.h): one thread a pixel; the reservoirs of k
 // neighbors within the radius, similar in geometry and material, merged
 // into the pixel's own by the rule of the graph's mode (core/passes/
-// restir_di.h, bias_correction), its Z asked of each neighbor's surface in
-// this frame.
+// restir_di.h, bias_correction), its normalization asked of each
+// neighbor's surface in this frame.
 //
 // Reads: the scene, structure, camera, reuse constants and records, and
 // the working reservoirs, at the pixel and its neighbors. Writes: this

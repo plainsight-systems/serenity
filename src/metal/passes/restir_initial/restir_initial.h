@@ -20,8 +20,8 @@ namespace serenity::metal {
 //      with a temporal merge, previous position written
 //      (contracts/surface_record.h). The path state is written now, before
 //      the candidates, so it is not alive across step 3's ray query.
-//   2. M candidates at the record, streamed into a reservoir, finished with
-//      Z = M;
+//   2. M candidates at the record, streamed into a reservoir, finished as
+//      resampled importance sampling, W = w_sum / (M p̂);
 //   3. the survivor's visibility traced, W set to 0 where it is hidden
 //      (visibility reuse), and the reservoir written, its test this ray's,
 //      here and now, its target the survivor's at the record.

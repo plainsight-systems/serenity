@@ -38,26 +38,30 @@ keeps the naive estimator's next event estimation.
    indirect light, and the pixel's radiance is folded into the accumulated
    image.
 
-Merges 4 and 5 normalize as the paper's Algorithm 6 does. Each input
-reservoir r_i, from surface q_i, is streamed with weight p̂_q(y_i) W_i
-M_i, p̂_q this pixel's target; the survivor y's weight is then W = w_sum /
-(Z p̂_q(y)), where Z sums the counts M_i of the inputs counted for y. The
-graph's `bias_correction` says how an input is counted (the production
-rework, below):
+Merges 4 and 5 normalize as RTXDI does, by MIS-like weights over the
+inputs (the balance heuristic). Each input reservoir r_i, from surface q_i
+with count M_i (the temporal input's capped at H times this pixel's), is
+streamed with weight p̂_q(y_i) W_i M_i, p̂_q this pixel's target; with y
+kept from input s, W = w_sum pi / (p̂_q(y) piSum), where pi = d_s(y) and
+piSum = sum_i M_i d_i(y), d_i input i's domain target at y as its own
+frame lit it. The graph's `bias_correction` says what d_i holds (the
+production rework, below):
 
-- **basic** (the default, RTXDI's `Basic`): where p̂_{q_i}(y) > 0. No ray
-  in a merge. Visibility reuse put visibility into what every reservoir
-  holds and this test leaves it out, so Z is too large where y is visible
-  here and hidden from an input's surface: a small darkening on the lit
-  side of shadow edges, which production accepts. The shade traces the
+- **basic** (the default, RTXDI's `Basic`): d_i = p̂_{q_i}, unshadowed. No
+  ray in a merge. Visibility reuse put visibility into what every
+  reservoir holds and these weights leave it out, so an input whose
+  surface cannot see y still takes a share of it: a small darkening on the
+  lit side of shadow edges, which production accepts. The shade traces the
   survivor's shadow ray, or reuses a test of it made within 4 frames and
   16 pixels (RTXDI's `reuseFinalVisibility`).
-- **raytraced** (unbiased, for checking against the reference): where
-  p̂_{q_i}(y) > 0 and y is visible from q_i, one shadow ray from each
-  input's surface; the temporal input's tested as last frame saw it, its
-  lights where they were, against last frame's acceleration structure;
-  and the pixel's own domain tested by the ray that also decides the
-  survivor's visibility, so the shade traces none.
+- **raytraced** (unbiased, for checking against the reference): d_i =
+  p̂_{q_i} V_{q_i}, one shadow ray from each input's surface but the
+  source's (visible by the merges' invariant); the temporal input's
+  tested as last frame saw it, its lights where they were, against last
+  frame's acceleration structure; and the pixel's own domain tested by the
+  ray that also decides the survivor's visibility, so the shade traces
+  none. The same weights by the same code as basic, so this mode checks
+  what basic ships.
 
 Rays a pixel, against the naive estimator's one at that surface: basic, 1
 for visibility reuse and at most 1 to shade, 1 to 2; raytraced, 1 for
@@ -344,9 +348,9 @@ the demo makes. The naive baseline it is measured against: 29.90 ms at
 | Choice | Kept | Set aside, and why |
 |---|---|---|
 | Where | The first rough surface | Every bounce (ReSTIR PT): a later milestone |
-| Bias correction | `basic`, RTXDI's `Basic`, the default: Z counts an input where its target at the survivor is positive, no rays in the merges; and `raytraced` as a setting, for checking ReSTIR against the reference | The paper's unbiased merges as the default (every domain's visibility ray and the own-domain ray, k + 2 rays a pixel): exact, and with the other textbook choices below it made a ReSTIR slower than the naive path tracer at full resolution. Real-world software accepts Basic's darkening at shadow edges; the user directed it on 2026-10-10. Kept as `raytraced`. Earlier set aside: no visibility reuse (the paper's gain in an occluded scene lost); pairwise MIS (with visibility in the target, 2k rays against 1/Z's k) |
-| Normalization's weights | 1/Z, an input counted by its whole count, in both modes, so they differ in rays alone and `raytraced` checks the code `basic` ships | RTXDI's MIS-like weights (each input by its target at y times its count, pi over piSum), in both its modes: the same evaluations and rays, less noise. A later change to both modes together, measured by error x time |
-| Candidates | M = 8 lights, uniform (RTXDI's `Uniform` local light sampling) | RTXDI's 1 BSDF candidate: a small firefly is almost never hit by a BSDF sample, and the candidate would cost a ray; power-weighted selection: later, measured |
+| Bias correction | `basic`, RTXDI's `Basic`, the default: the inputs' weights from their unshadowed targets, no rays in the merges; and `raytraced` as a setting, for checking ReSTIR against the reference | The paper's unbiased merges as the default (every domain's visibility ray and the own-domain ray, k + 2 rays a pixel): exact, and with the other textbook choices below it made a ReSTIR slower than the naive path tracer at full resolution. Real-world software accepts Basic's darkening at shadow edges; the user directed it on 2026-10-10. Kept as `raytraced`. Earlier set aside: no visibility reuse (the paper's gain in an occluded scene lost); pairwise MIS (with visibility in the target, 2k rays against 1/Z's k) |
+| Normalization's weights | RTXDI's MIS-like weights in both modes: W = w_sum pi / (p̂_q(y) piSum), pi the source's domain target at y, piSum the sum of each input's count times its domain target, unshadowed in `basic`, with visibility in `raytraced`; so the modes differ in rays alone and `raytraced` checks the code `basic` ships. The source's pi is its reservoir's stored target, no evaluation | 1/Z, the paper's Algorithm 6, an input counted by its whole count where it could have produced y (1c19b2a, and 4463eee before it): unbiased too, but it shares each sample equally among the domains that could have made it, however unlikely one was to, which costs noise where the inputs' targets differ, at the same evaluations and rays as the weights RTXDI ships. Set aside 2026-10-10 by the user's direction, production's defaults now, not a later measured change |
+| Candidates | M = 8 lights, uniform (RTXDI's `Uniform` local light sampling) | RTXDI's 1 BSDF candidate: a 1.5 mm firefly is almost never hit by a BSDF sample, and the candidate would cost a ray; power-weighted selection: later, measured |
 | Light identity | Index with a valid bit and a point in 2 x 16 bits, equal-area octahedral for a sphere: 8 bytes, RTXDI's `lightData` and `uvData` | The point as drawn, three floats (16 bytes; 4463eee): exact, where the quantization is a small bias, of the order of a cell, 10^-4 of the light's radius; production accepts it, and the user directed it on 2026-10-10. It is why `raytraced` is a check within a tolerance, which the implementation measures. Cigolle et al.'s plain octahedral map: cells of unequal area on the sphere; equal-area makes the quantization the same everywhere on a light, for a square root more to decode. A position: wrong next frame (principle 6) |
 | Reservoir | 24 bytes, RTXDI's six words: sample (8), M (24 bits), where and when its visibility was tested (offset 2 x 8 bits, age 8), its target at its own surface, W | 32 bytes with 8 of padding (4463eee), so no reservoir straddles a cache line in the spatial gathers: a third more traffic on every read, to spare the 1 in 8 gathered reservoirs that straddle a 128-byte line, one gather a pixel at k = 1; set aside 2026-10-10 by the same direction. RTXDI's 18 bits of RGB visibility: shadows here are binary and a hidden sample weighs 0, so W > 0 is that bit |
 | Surface record | 32 bytes, G-buffer sized: position at full precision (through glass and mirrors the surface is not on the camera ray, so a depth cannot place it), wo packed (4), contract 2's PackedBsdf (16: normal packed, halves) | 80 bytes, contract 2's Bsdf whole, position and wo at full precision (4463eee): exact, and most of the merges' traffic. Production's G-buffers pack; the target and the shade read the same unpacked surface, so the packing is a small, stated difference from the reference's surface (normal and wo within 10^-4 radians, parameters within 5 x 10^-4 relative), not a mismatch between target and integrand. Primitive and position only, the BSDF re-resolved per neighbor: texture lookups in every merge |
@@ -427,9 +431,9 @@ history of the choice, superseded.
 | About (5 + k) x 80 bytes a pixel, 800 at k = 5 | Intermediate-buffer traffic 1368 to 1928 bytes a pixel at k = 5; light data counted apart, 76 logical bytes per target evaluation, 1748 a pixel at the written settings, assumed cached; traversal counted as rays | Counted from the passes: the path state, the previous position, the accumulated pixel, the 80-byte record and 32-byte reservoir, and the spatial merge's second walk over its neighbors for Z (from cache or not). The first headers' total of 1080 to 1480 was intermediate traffic alone, without saying so (review) |
 | Last frame's structure "kept alive one frame more" | A ring of three structures, indexed by frame index, for a temporal graph whose shapes move, each with the last submission that traced it | With one per slot, frame i + 1 rebuilds what frame i reads as last frame's. The first headers promised three and declared storage for two (review) |
 | The twelve files | Also: `metal/reuse/similar.metal.h` (the similarity test both merges ask), `metal/camera/thin_lens.metal.h` (projection and depth), `metal/sampler/sampler.metal.h` (a purpose's stream), `metal/light_selection/uniform_light.metal.h` (the chosen index), `core/frame/frame_inputs.h` (reused_since), `core/frame/schedule.cpp` (its list asserted against the final kind), `metal/frame/frame_resources.h` and `renderer.h` | Each is the axis that owns the piece; every change is a declaration or a comment beside what exists, or, in `schedule.cpp`, an assertion that now checks the whole enum |
-| (rework) Merges: the paper's unbiased normalization with every domain's ray and the own-domain ray; no shade ray; k + 2 rays | `bias_correction`: `basic` by default, no ray in a merge, the shade's ray or a reused test, 1 to 2 rays; `raytraced`, the 4463eee design kept whole, k + 2 | RTXDI's production default (user's direction, 2026-10-10). `metal/reuse/unbiased.metal.h` states both modes, their rays and basic's bias: darker on the lit side of shadow edges, where Z counts an input that cannot see the survivor. Both modes divide by Z, so they differ in rays alone |
+| (rework) Merges: the paper's unbiased normalization with every domain's ray and the own-domain ray; no shade ray; k + 2 rays | `bias_correction`: `basic` by default, no ray in a merge, the shade's ray or a reused test, 1 to 2 rays; `raytraced`, the 4463eee design kept whole, k + 2 | RTXDI's production default (user's direction, 2026-10-10). `metal/reuse/unbiased.metal.h` states both modes, their rays and basic's bias: darker on the lit side of shadow edges, where Z counts an input that cannot see the survivor. Both modes use RTXDI's MIS-like weights, pi over piSum (1c19b2a divided by Z; this table's last row says why that changed), so they differ in rays alone |
 | (rework) The light point as drawn, three floats: 16 bytes | The index with a valid bit, and the point equal-area octahedral in 2 x 16 bits: 8 bytes (RTXDI's `lightData`, `uvData`); its map declared again in `metal/math/warp.metal.h` (`encode_unit`, `decode_unit`), shared by the record's wo and normal | The quantization's bias, of the order of a cell (about 10^-4 of the light's radius), is stated in `contracts/light_sample.h` as production accepts it; it makes `raytraced` a check within a tolerance, which the implementation measures. Equal-area over Cigolle's octahedral: every cell the same area, in the measure the estimator integrates |
-| (rework) Reservoir: 32 bytes, 8 of them padding | 24 bytes: the sample (8), M in 24 bits, `tested` (offset 2 x 8 bits and age 8 bits), the target at its own surface, W | RTXDI's six words. The stored target is the earlier "set aside" use of the padding, now taken: each merge streams its own input by it, which saves the evaluation the 4463eee row "3 and 1 + 2k" added. RTXDI's visibility bits are not kept: binary shadows and W = 0 for a hidden sample make W > 0 that bit |
+| (rework) Reservoir: 32 bytes, 8 of them padding | 24 bytes: the sample (8), M in 24 bits, `tested` (offset 2 x 8 bits and age 8 bits), the target at its own surface, W | RTXDI's six words. The stored target is the earlier "set aside" use of the padding, now taken: each merge streams its own input by it, and takes a source's as that source's pi, which saves the evaluations the 4463eee row "3 and 1 + 2k" added. RTXDI's visibility bits are not kept: binary shadows and W = 0 for a hidden sample make W > 0 that bit |
 | (rework) Record: contract 2's Bsdf whole, position and wo at full precision: 80 | 32: position (12), wo encoded (4), contract 2's `PackedBsdf` (16: the normal encoded, color and the kind's scalar and escape as halves, the kind), owned by Material in `contracts/bsdf.h` with `pack_bsdf` and `unpack_bsdf` (`metal/materials/bsdf.metal.h`) | One definition kept (the Codex finding on 70dbe59): the packed form is Material's, beside the Bsdf. Not exact, and stated: every pass, the shade included, reads the same unpacked surface, so the target is the integrand without visibility exactly, and the surface differs from the reference's by the packing's error (`contracts/surface_record.h`) |
 | (rework) Path state: 64 bytes | 36: throughput, eta scale and L in floats; the numbers' counter, the surface's count and contract 1's flags in one word; the two media in 16 bits each | Read once a pixel by the shade, so exact where the image depends on it and packed where the values are small; the geometric normal dropped, equal to the shading normal for every surface so far; a scene of 0xffff media or more refused by the renderer |
 | (rework) Spatial: k = 5 within 30 pixels | k = 1 within 32, and the material test (`metal/reuse/similar.metal.h`, `similar_material`, tolerances named there) | RTXDI's defaults; k a setting. The material test is RTXDI's spatial one; its comparison is RTXDI's application's, so Serenity's tolerances are its own |
@@ -438,6 +442,7 @@ history of the choice, superseded.
 | (rework) Last frame's structure kept for every temporal graph | Only for a raytraced one | Basic mode's merges trace no ray, and a temporal graph in it keeps nothing more than last frame's transforms and glows |
 | (rework) Traffic 1368 to 1928 bytes a pixel at k = 5; 23 target evaluations; k + 2 rays | 512 to 576 bytes; at most 13 evaluations; 1 to 2 rays in basic, 3 in raytraced, at the defaults | Counted pass by pass in the headers ("What it costs, counted", above) |
 | (rework) Reuse constants: 112 bytes | 128: the settings grew to 48 bytes (mode, permutation, visibility reuse and its two limits) | The settings a shader reads, still one definition (`core/passes/restir_di.h`) |
+| (rework, after 1c19b2a) Normalization: 1/Z, the inputs that could have produced y counted by their whole counts | RTXDI's pi over piSum in both modes (`metal/reuse/unbiased.metal.h`): pi the source's domain target, read from its reservoir's stored target; piSum each input's count (the temporal one capped at H times the pixel's) times its domain target, unshadowed in basic, times visibility in raytraced. The same evaluations and rays as 1/Z | Read from RTXDI's temporal and spatial resampling: both modes, and the canonical input weighted by its stored target and its own unshadowed target in piSum. Less noise at the same cost, and production's default, adopted now on the user's direction rather than deferred. Two departures, stated in the header: the source's visibility is not traced (the invariant gives it), and raytraced mode traces the canonical input's (RTXDI's does not) |
 
 Set aside in designing them: aliasing the frame-transient arrays (the
 working reservoirs, the path states) with the tone map's pyramid in one

@@ -43,12 +43,13 @@
 //      the candidates it stands for (Bitterli et al. 2020, Algorithm 4).
 //      p̂_q(y_i) for the pixel's own input is its stored target, which is
 //      q's this frame; for any other, the caller evaluates it.
-//   4. Finish: W = w_sum / (Z p̂_q(y)), Z the count of candidates counted
-//      for y, as the caller counted it by its mode (unbiased.metal.h); 0 if
-//      p̂_q(y) or Z is 0, or nothing was kept. For candidates alone every
-//      candidate was drawn by the same density, so Z = M, and W = w_sum /
-//      (M p̂_q(y)), as resampled importance sampling gives. The stored
-//      reservoir's target is p̂_q(y), its test the kept sample's.
+//   4. Finish: W = w_sum pi / (p̂_q(y) piSum), pi and piSum the merge's
+//      MIS-like normalization as the caller computed it by its mode
+//      (unbiased.metal.h); 0 if p̂_q(y) or piSum is 0, or nothing was kept.
+//      For candidates alone every candidate was drawn by the same density,
+//      so pi = 1 and piSum = M, and W = w_sum / (M p̂_q(y)), as resampled
+//      importance sampling gives. The stored reservoir's target is p̂_q(y),
+//      its test the kept sample's.
 //
 // The order is fixed: a merge streams its own reservoir first, then the
 // temporal input, then the neighbors in the order they were drawn. Which
@@ -131,8 +132,16 @@ inline void stream_candidate(thread Streaming& reservoir, Candidate candidate, f
 // Step 3: `input`, kept or not by `u`.
 inline void stream_reservoir(thread Streaming& reservoir, MergeInput input, float u);
 
-// Step 4: the stored reservoir, Z as the caller counted it.
-inline serenity::contracts::Reservoir finish(Streaming reservoir, uint z);
+// Step 4's normalization, by name, so its two numbers cannot be passed in
+// each other's places (I.24): pi and piSum (unbiased.metal.h); {1, M} for
+// candidates alone.
+struct Normalization {
+    float pi;      // the survivor's own input's domain target
+    float pi_sum;  // the sum over the inputs of count times domain target
+};
+
+// Step 4: the stored reservoir, normalized as the caller computed.
+inline serenity::contracts::Reservoir finish(Streaming reservoir, Normalization normalization);
 
 // `reservoir` as reused `offset` pixels from where it was stored (the
 // reused pixel minus the reusing one, so a test's offset is always where

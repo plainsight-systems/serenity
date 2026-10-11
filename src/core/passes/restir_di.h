@@ -69,16 +69,17 @@
 //   bias_correction   how a merge normalizes what it reuses
 //                     (metal/reuse/unbiased.metal.h states both exactly):
 //                       basic      RTXDI's Basic, the default. No shadow ray
-//                                  in a merge: an input is counted where
-//                                  its surface's target at the survivor is
-//                                  positive. Biased, slightly dark on the
-//                                  lit side of shadow edges, which
-//                                  production accepts. The shade traces the
-//                                  survivor's shadow ray, or reuses a recent
-//                                  test (below). 1 shadow ray a pixel, and
-//                                  the shade's when it does not reuse.
-//                       raytraced  the paper's unbiased normalization with
-//                                  visibility in every domain, each merge
+//                                  in a merge: RTXDI's MIS-like weights
+//                                  over the inputs, each by its surface's
+//                                  unshadowed target at the survivor. Biased,
+//                                  slightly dark on the lit side of shadow
+//                                  edges, which production accepts. The shade
+//                                  traces the survivor's shadow ray, or
+//                                  reuses a recent test (below). 1 shadow ray
+//                                  a pixel, and the shade's when it does not
+//                                  reuse.
+//                       raytraced  the same weights with visibility in
+//                                  every input's target, each merge
 //                                  tracing the rays that test it (k + 2 a
 //                                  pixel). For checking ReSTIR against the
 //                                  reference, not for shipping: its mean

@@ -37,17 +37,21 @@
 //   3. Stream: q's own reservoir, weighed by its stored target, then each
 //      input r_n in n's order, weighed by its sample's target at q (the
 //      Frame's target()).
-//   4. Z (unbiased.metal.h), for the survivor y from source s, by the
-//      graph's mode:
-//        own:       M_q if s is own. Else, in basic mode, M_q (its target
-//                   at q is positive); in raytraced mode M_q if y is
-//                   visible from q, one shadow ray from q, and if hidden
-//                   the output is hide()'s, the ray being the survivor's
-//                   test here and now;
-//        neighbor n in the mask, n != s: M_n if q_n supports y: its target,
-//                   and in raytraced mode, where positive, one shadow ray
-//                   from q_n;
-//        neighbor s: M_s.
+//   4. Normalize (unbiased.metal.h), for the survivor y from source s, by
+//      the graph's mode: piSum = M_q p̂_q(y) + the sum over the neighbors
+//      n in the mask of M_n d_n(y), each M_n the neighbor's count as
+//      stored (uncapped, as RTXDI's), and pi the source's term's domain
+//      target:
+//        own:       d_q(y) = p̂_q(y), from streaming. If s is own, pi is
+//                   it. Else, in raytraced mode, one shadow ray from q: if
+//                   y is hidden the output is hide()'s, the ray being the
+//                   survivor's test here and now;
+//        neighbor n in the mask, n != s: d_n(y), its target at q_n, and in
+//                   raytraced mode, where positive, times y's visibility,
+//                   one shadow ray from q_n;
+//        neighbor s: d_s(y) = its reservoir's stored target, p̂_{q_s}(y)
+//                   this frame, visible from q_s by the invariant in
+//                   raytraced mode: no evaluation, no ray; pi is it.
 //      The neighbors are drawn again from the same numbers for this walk
 //      (the numbers are a function of their position in the stream,
 //      metal/sampler/sampler.metal.h), and their records and counts read
@@ -80,7 +84,8 @@
 // row-major order in the first version; a tiled order (GDSA.15's
 // space-filling curve) is the follow-up if the counters show the spatial
 // pass bound by those lines. At most 2k target evaluations (k streamed, k
-// for Z; q's own read from its reservoir). Shadow rays: none in basic mode;
+// for piSum; q's own and the source neighbor's read from their
+// reservoirs). Shadow rays: none in basic mode;
 // at most k in raytraced, one per input that did not produce y. Numbers:
 // 2k for the offsets and 1 + k for the choices, from the pass's own stream.
 

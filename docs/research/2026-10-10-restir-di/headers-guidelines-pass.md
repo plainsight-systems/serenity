@@ -507,3 +507,50 @@ pixel. At RTXDI's defaults (M = 8, H = 20, k = 1, basic): 512 to 576 bytes
 a pixel of intermediate traffic, at most 13 target evaluations (988
 logical bytes of light data), 1 to 2 rays at the first rough surface; in
 raytraced mode k + 2 = 3 rays.
+
+### The normalization, after 1c19b2a
+
+The coordinator's follow-up: adopt RTXDI's normalization in both modes now,
+rather than defer it. Read from RTXDI's temporal and spatial resampling
+headers (design facts only; none of their code or wording):
+
+- Each input is streamed with weight p̂_q(y_i) W_i M_i; the pixel's own
+  input (RTXDI's canonical one) first, by its stored target.
+- The temporal input's count is capped at H times the current reservoir's
+  count before it is streamed, and the capped count is the one its piSum
+  term uses; neighbors' counts are not capped.
+- The reservoir is finished with W = w_sum pi / (p̂_q(y) piSum): pi the
+  survivor's source's target at the source's surface (for the canonical
+  input, p̂_q(y)); piSum the canonical input's count times p̂_q(y), plus each
+  other input's count times its target at y at its surface, the temporal
+  input's with last frame's light data.
+- Raytraced mode multiplies each non-canonical input's target by a
+  visibility ray from its surface, where the target is positive, the
+  source's included (in the spatial merge always; in the temporal merge
+  unless an off-by-default shortcut is set). The canonical input's term is
+  never shadowed.
+
+Two parts were not certain from the headers read, and are not relied on:
+`discountNaiveSamples` sets a neighbor's mask bit before skipping it, so a
+skipped neighbor still enters piSum, which reads as a deliberate bias or
+an oversight, and its threshold is defined outside the headers at hand
+(Serenity does not carry the option, as before); and light-index
+translation between frames, which Serenity's stable indices make the
+identity.
+
+Serenity's departures, stated in `metal/reuse/unbiased.metal.h`: the
+source's visibility is not traced, since the merges' invariant gives it in
+raytraced mode, and the source's pi is its reservoir's stored target
+rather than a fresh evaluation, equal to it; and raytraced mode traces the
+canonical input's visibility, which keeps that invariant.
+
+| # | ID | Where | Finding | Verdict |
+|---|---|---|---|---|
+| W12 | I.24 | reuse/reservoir.metal.h | finish(reservoir, pi, pi_sum) would take two adjacent floats | fixed: a `Normalization` struct, {1, M} for candidates alone |
+| W13 | F.1 | reuse/unbiased.metal.h | supports() answered a yes or no; the weights need the domain target's value | fixed: domain_target(), returning d_i(y), 0 outside the domain |
+| W14 | ES.3 | reuse/unbiased.metal.h, temporal.metal.h, spatial.metal.h | the two modes could compute their weights by two paths | holds: one domain_target(), its mode the one difference, so raytraced checks basic's code |
+| W15 | I.7 | reuse/unbiased.metal.h | the postcondition restated for the weights | holds: the weights over the inputs whose domains hold y sum to 1, stated with the expectation it gives |
+| W16 | Per.6 | the layout note | "less noise" for the weights | holds as a statement of why production ships them, not a measured claim; error x time measures it |
+
+Every other verdict of "The production rework" stands. Every changed
+header compiles on its own again, and every kernel.
