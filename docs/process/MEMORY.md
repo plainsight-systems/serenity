@@ -89,8 +89,14 @@ Decided 2026-10-08, at the repository's creation:
 - **The target is the look of *Marbles at Night*:** full path tracing of
   glass and polished metal lit by thousands of moving fireflies, with
   indirect light and caustics. ReSTIR DI for direct light, ReSTIR GI for
-  indirect, manifold next event estimation for caustics, all unbiased
-  against one reference. The window shows the display's full resolution at
+  indirect, manifold next event estimation for caustics, each in the
+  configuration production ships, judged against one reference by error x
+  time. Amended 2026-10-10, by the user's direction: an IC demo performs as
+  real-world software does, so each estimator's default is a shipping
+  system's (ReSTIR DI's is RTXDI's, `basic` bias correction among it), and
+  its unbiased, textbook-exact form is a setting, kept to check it against
+  the reference (`research/2026-10-10-restir-di-layout.md`). Superseding
+  "all unbiased against one reference". The window shows the display's full resolution at
   60 fps, traced lower and upscaled with MetalFX
   (`../architecture/logical-overview.md`).
 - **A window and a headless renderer arrive together**, in the first
