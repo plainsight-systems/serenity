@@ -13,7 +13,7 @@
 // later surface of the path keeps the naive path tracer's next event
 // estimation (metal/integrator/path.metal.h), until ReSTIR GI.
 //
-// Two modes (core/passes/restir_di.h, bias_correction; metal/reuse/
+// Two modes (core/contracts/reuse_settings.h, bias_correction; metal/reuse/
 // unbiased.metal.h states both exactly). Basic, the default and what ships:
 // no shadow ray in the merges, a darkening on the lit side of shadow edges,
 // at its worst a just-revealed light at M / (M + C) of its light for a
@@ -40,22 +40,38 @@
 //     against the reference (`make convergence`), the comparison the demo
 //     makes. ReSTIR reduces noise; its win is far less error at equal time.
 //
-// Where the families meet. This header is the one place that composes
-// them: the Integrator's light transport and target (metal/integrator/
-// path.metal.h, target.metal.h), Sample reuse's reservoir and merges
-// (metal/reuse/), the Light and Light selection families' identities and
-// choices (metal/lights/emitter.metal.h, metal/light_selection/),
-// Material's packed BSDF (through the target's record unpacking), the
-// Camera's projection, the Acceleration family's shadow rays and the
-// Sampler's numbers. It includes them; none includes it, and none of them
-// includes another family's shaders for ReSTIR: Sample reuse asks this
-// frame's and last frame's questions of a FrameView this header defines and
-// passes (metal/reuse/unbiased.metal.h states what a Frame answers), and the
-// Integrator knows no reservoir (change-axes.md: families meet at
-// contracts). Only the four passes' shaders include it
-// (metal/passes/restir_{initial,temporal,spatial,shade}/), so a change of
-// how ReSTIR composes its families changes this file and its passes, and
-// no family.
+// Where the families meet. This header composes them and decides nothing
+// they decide (decided 2026-10-11, by the review of f86e7ae, which found
+// the first surface, the candidates' transport and the shade's in this
+// file):
+//
+//   Integrator    metal/integrator/restir_di.metal.h: the light transport,
+//                 the first surface (first_surface()), one candidate drawn
+//                 and weighed (draw_candidate(), through target.metal.h),
+//                 visibility (visible()), and the shade's transport
+//                 (unshadowed(), continue_from()). Sees a reservoir only as
+//                 contract 14's data; includes no Sample reuse and no Pass.
+//   Sample reuse  metal/reuse/: streaming and finishing a reservoir
+//                 (reservoir.metal.h), the merges and their normalization
+//                 (temporal, spatial, similar, unbiased), and the rule for
+//                 taking a stored test (visibility.metal.h). Depends on
+//                 contracts and the Sampler; includes no Integrator and no
+//                 Pass. It asks this frame's and last frame's questions of a
+//                 FrameView this header defines and passes
+//                 (metal/reuse/unbiased.metal.h states what a Frame answers).
+//   Pass          this header and the four passes' kernels
+//                 (metal/passes/restir_{initial,temporal,spatial,shade}/):
+//                 the order of the steps, the numbers each draws, which
+//                 family each call goes to, and the bindings and barriers.
+//                 Includes both families; neither includes it.
+//
+// So a dependency points from the Pass to the Integrator and to Sample
+// reuse, and from each family to contracts, never between the two
+// families (change-axes.md: families meet at contracts); tools/
+// check_boundaries.sh holds the two families to it. A change of how ReSTIR
+// composes its families changes this file and its passes, and no family; a
+// change of its light transport changes the Integrator alone, and of its
+// reuse Sample reuse alone.
 //
 // The algorithm, whose steps the code carries by number, by pass
 // (core/frame/schedule.h; each pass's header says what its dispatch reads
@@ -64,8 +80,9 @@
 // restir_initial (steps 1 to 3, one kernel: no step needs another pixel's
 // result, so nothing is written and read back between them)
 //
-//   Step 1  Surfaces. The camera's path, as the path tracer runs it
-//           (path.metal.h, camera_segment()), to its first surface q with a
+//   Step 1  Surfaces (the Integrator's first_surface()). The camera's
+//           path, as the path tracer runs it (path.metal.h,
+//           camera_segment()), to its first surface q with a
 //           lobe that is not delta: q's surface record (its point, and its
 //           wo and Bsdf packed, as a G-buffer holds them), its path state
 //           (throughput, the light found on the way, media, the numbers'
@@ -77,20 +94,22 @@
 //           asks its questions of the record unpacked (target.metal.h,
 //           unpack_record), this one too: the surface the candidates are
 //           weighed at is the one the shade shades.
-//   Step 2  Candidates. M times: a light chosen as the naive estimator
-//           chooses one, uniformly, probability 1 / N
-//           (light_selection/uniform_light.metal.h; RTXDI's local light
-//           sampling mode, Uniform); a point on it drawn as sample_light()
-//           draws a direction, stored quantized and evaluated at its
-//           decoded point (contracts/light_sample.h); streamed into a
-//           reservoir with weight p̂_q(y) / p(y), the target
-//           (target.metal.h) over the density, both in the light's own area
-//           (metal/reuse/reservoir.metal.h, step 2). Finished with pi = 1
-//           and piSum = M: W = w_sum / (M p̂_q(y)), resampled importance
+//   Step 2  Candidates. M times, the Integrator's draw_candidate(): a
+//           light chosen as the naive estimator chooses one, uniformly,
+//           probability 1 / N (light_selection/uniform_light.metal.h;
+//           RTXDI's local light sampling mode, Uniform), placed once; a
+//           point on it drawn as sample_light() draws a direction, stored
+//           quantized and evaluated at its decoded point
+//           (contracts/light_sample.h); its weight p̂_q(y) / p(y), the
+//           target (target.metal.h) over the density, both in the light's
+//           own area. Then Sample reuse streams it into a reservoir
+//           (metal/reuse/reservoir.metal.h, step 2), and finishes with pi =
+//           1 and piSum = M: W = w_sum / (M p̂_q(y)), resampled importance
 //           sampling.
 //   Step 3  Visibility reuse (RTXDI's initial visibility, on by default).
-//           One shadow ray from q to the survivor (visible(), below);
-//           blocked, W = 0 and M kept (hide()). What a pixel then shares
+//           One shadow ray from q to the survivor (the Integrator's
+//           visible()); blocked, W = 0 and M kept (Sample reuse's hide(),
+//           metal/reuse/unbiased.metal.h). What a pixel then shares
 //           with its neighbors and its next frame is a light it can see:
 //           the paper's quality gain where lights are occluded, and this
 //           scene is marbles. The reservoir's test is this ray, here and
@@ -116,47 +135,37 @@
 //
 // restir_shade
 //
-//   Step 6  Shade. The direct light from the final reservoir's sample y,
-//           where W > 0, and y's visibility V from q:
+//   Step 6  Shade. q's record unpacked once, for its direct light and its
+//           continuation both. The direct light from the final reservoir's
+//           sample y, where W > 0, without visibility first (the
+//           Integrator's unshadowed(): f(wo, wi) |cos θ_x| L_e G x T x W,
+//           target.metal.h, direct_light); then y's visibility V from q,
+//           where that light is not 0:
 //
-//             - y's test is here and now (its offset and age 0: the
-//               initial pass's ray, or a raytraced merge's, from this
-//               record this frame): V = 1, no ray. That is every survivor
-//               in raytraced mode, by its invariant (unbiased.metal.h),
-//               and in a graph with no merge.
-//             - in basic mode with visibility_reuse on, y's test within the
-//               graph's visibility_age frames and visibility_distance
-//               pixels (RTXDI's reuseFinalVisibility, 4 and 16): V = 1, no
-//               ray. RTXDI takes a test only from age 1 on, its age 0
-//               meaning none is stored; here every sample is tested when
-//               it is drawn, so age 0 is a test, and one with offset 0 is
-//               this pixel's own.
-//             - otherwise: one shadow ray from q (visible(), below). Its
-//               result is the reservoir's test, here and now: in a graph
-//               with a temporal merge the shade writes it back to the
-//               final reservoir, which the next frame's temporal merge
-//               reads, with W = 0 where y was hidden (hide()), so the next
-//               frame does not carry a light it knows q cannot see.
+//             - from the reservoir's own test, where Sample reuse's rule
+//               takes it (metal/reuse/visibility.metal.h, takes_test(),
+//               which states the rule and the bias it costs): a test here
+//               and now always, which is every survivor in raytraced mode,
+//               by its invariant (unbiased.metal.h), and every survivor in
+//               a graph with no merge; in basic mode with visibility_reuse
+//               on, a recent and near one (RTXDI's reuseFinalVisibility).
+//               V = 1, no ray.
+//             - otherwise: one shadow ray from q (the Integrator's
+//               visible()). Its result is the reservoir's test, here and
+//               now (tested_here()): in a graph with a temporal merge the
+//               shade writes it back to the final reservoir, which the
+//               next frame's temporal merge reads, with W = 0 where y was
+//               hidden (hide()), so the next frame does not carry a light
+//               it knows q cannot see.
 //
-//           Then f(wo, wi) |cos θ_x| L_e G x V x T x W (target.metal.h,
-//           direct_light), times the path state's throughput, plus the
-//           light it found on the way; then the path continues from q as
-//           the naive path tracer does, for the indirect light
-//           (path.metal.h, continue_path(), with step 5 at q left out,
-//           since this step counted q's direct light: principle 7). The
-//           pixel's radiance is folded into the accumulated image, as the
-//           path pass folds its own (metal/film/accumulate.metal.h).
-//
-//           What final-visibility reuse costs in bias, stated: a test made
-//           up to visibility_age frames ago, or up to visibility_distance
-//           pixels away, is taken for q's now. Every test a reservoir with
-//           W > 0 carries found its sample visible (contracts/reservoir.h),
-//           so the error is light where q's own ray would have found the
-//           sample hidden: within that many pixels of a shadow's edge, and
-//           for that many frames behind an occluder or a firefly that
-//           moved. A brightening, where basic mode's weights darken; both at
-//           shadow edges, both what production ships, both measured
-//           against the reference with the rest of basic mode's error.
+//           Then that light times V, times the path state's throughput,
+//           plus the light it found on the way; then the path continues
+//           from q as the naive path tracer does, for the indirect light
+//           (the Integrator's continue_from(): path.metal.h,
+//           continue_path(), with step 5 at q left out, since this step
+//           counted q's direct light: principle 7). The pixel's radiance is
+//           folded into the accumulated image, as the path pass folds its
+//           own (metal/film/accumulate.metal.h).
 //
 // Every step after step 1 skips a pixel whose record's kind is none (its
 // reservoir written empty), and the shade folds in its path state's light
@@ -185,12 +194,18 @@
 // record and path state were written before step 2, and nothing after the
 // query reads the surface, its ray's origin and direction being made
 // before it. The raytraced merges' queries carry their pixel's record (32,
-// packed) and reservoir and the streaming one. The shade computes the
-// unshadowed direct light before its query, so across it what is alive is
-// that radiance, the reservoir, the path state and the packed record, which
-// the continuation unpacks again after it rather than holding the 72-byte
-// unpacked surface across the query: registers traded for a few dozen
-// flops, which the counters may reverse (GPU.10).
+// packed) and reservoir and the streaming one. The shade unpacks its record
+// once and computes the unshadowed direct light before its query, so across
+// it what is alive is that radiance, the reservoir, the path state, the
+// packed record's point and the 72-byte unpacked surface, which the
+// continuation reads after it. In a graph with no merge the shade traces
+// no query (every survivor's test is the initial pass's, here and now:
+// takes_test()), and unpacking once spares every shaded pixel a second
+// unpack (two unit-vector decodes) for nothing held across a query (decided
+// 2026-10-11, by the review of f86e7ae). In a graph with merges, where the
+// shade traces, whether holding the unpacked surface across the query or
+// unpacking the record again after it is faster is a register-for-flops
+// trade for the merges' change to measure (GPU.3, GPU.10).
 //
 // Cost, per pixel per frame, all four passes, at the settings the graphs
 // are written with (M = 8, H = 20, k = 1, basic mode, permutation and
@@ -214,33 +229,41 @@
 //           hits cache (a hit moves it from DRAM to cache traffic, not to
 //           nothing): 512 to 576 of them DRAM traffic, the first figure
 //           when the second walk hits. At a traced 1728 x 1117 (P = 1.93
-//           M): 1.10 to 1.11 GB a frame of logical traffic, at most 2.8 ms
-//           at the M3 Max's 400 GB/s if all of it went to DRAM; at the
-//           display's 3456 x 2234, four times that. Arithmetic from the
+//           M): 1.10 to 1.11 GB a frame of logical traffic. At the M3
+//           Max's peak 400 GB/s that takes at least 2.8 ms, were all of it
+//           DRAM traffic: an ideal-bandwidth floor on the time, not a bound
+//           above it, since caches, access patterns, occupancy, traversal
+//           and arithmetic only add to it (decided 2026-10-11, by the
+//           review of f86e7ae, which found it written as "at most"). At
+//           the display's 3456 x 2234, four times that. Arithmetic from the
 //           counts, not a measurement: which bytes reach DRAM is the GPU
-//           counters' to say (GPU.10). In raytraced mode the same, less the shade's
-//           write-back.
-//   light data (logical loads, assumed served from cache):
-//           every target evaluation evaluates its light point
-//           (metal/lights/emitter.metal.h): the 8-byte light record, the
-//           16-byte sphere light, its 48-byte transform and 4-byte glow, 76
-//           bytes, and a candidate's draw reads the same 76 its target
-//           does, counted here as a load of its own: (2M + 2k + 3) x 76 =
-//           1596 bytes a pixel at the settings below, unless the compiled
-//           code keeps the light's data in registers from draw to
-//           evaluation, which the counters, not this count, would show.
-//           Target evaluations: at most M + 2k + 3 (M in restir_initial, 2 in
-//           the temporal merge, 2k in the spatial, 1 in the shade; each
-//           merge's own input weighed by its stored target, and its
-//           source's pi read from the source's, contracts/reservoir.h; in
-//           a merge, one evaluation to stream each other input and one for
-//           piSum at each input that is neither the source nor the
-//           pixel's own: metal/reuse/unbiased.metal.h), 13 at the settings
-//           above, in either mode. They come from arrays of 76
-//           bytes a light in the constant address space, small beside the
-//           caches (76 KB for a thousand fireflies), so they are assumed to
-//           hit cache, not counted against DRAM; that assumption is the GPU
-//           counters' to check (GPU.10).
+//           counters' to say, and the time the timings' (GPU.10). In
+//           raytraced mode the same, less the shade's write-back.
+//   light data (logical loads at the source, assumed served from cache):
+//           each light a pixel asks about is placed once
+//           (metal/lights/emitter.metal.h, place_light(): the 8-byte light
+//           record, the 16-byte sphere light, its 48-byte transform and its
+//           4-byte glow, 76 bytes), and every question asked of it reads
+//           that one value: a candidate's draw, its evaluation and its
+//           density are one placement (decided 2026-10-11, by the review of
+//           f86e7ae: each had read the light's data again, and the draw its
+//           transform twice, 332 bytes a candidate at the source). Each
+//           other target evaluation is one placement: at most 2 in the
+//           temporal merge and 2k in the spatial (each merge's own input
+//           weighed by its stored target, and its source's pi read from
+//           the source's, contracts/reservoir.h; in a merge, one evaluation
+//           to stream each other input and one for piSum at each input
+//           that is neither the source nor the pixel's own:
+//           metal/reuse/unbiased.metal.h), and 1 in the shade.
+//           Placements: M + 2k + 3, 13 at the settings above in either
+//           mode, (M + 2k + 3) x 76 = 988 bytes a pixel; in a graph with no
+//           merge (graphs/restir_ris.toml), M + 1, 684 bytes. Counted at
+//           the source: what the compiled code loads is the counters' to
+//           show (GPU.10). They come from arrays of 76 bytes a light in
+//           the constant address space, small beside the caches (76 KB for
+//           a thousand fireflies), so they are assumed to hit cache, not
+//           counted against DRAM; that assumption is the GPU counters' to
+//           check (GPU.10).
 //   rays    the camera segment's, as the path tracer's; then, against the
 //           naive estimator's 1 at q:
 //             basic      1 for visibility reuse and at most 1 for the
@@ -278,112 +301,29 @@
 #include "core/contracts/camera.h"
 #include "core/contracts/light_sample.h"
 #include "core/contracts/reservoir.h"
-#include "core/contracts/surface_interaction.h"
+#include "core/contracts/reuse_settings.h"
 #include "core/contracts/surface_record.h"
-#include "core/contracts/transform.h"
-#include "core/passes/restir_di.h"
-#include "metal/acceleration/trace.metal.h"
 #include "metal/camera/thin_lens.metal.h"
-#include "metal/integrator/path.metal.h"
+#include "metal/integrator/restir_di.metal.h"
 #include "metal/integrator/target.metal.h"
-#include "metal/light_selection/uniform_light.metal.h"
 #include "metal/lights/emitter.metal.h"
+#include "metal/light_selection/uniform_light.metal.h"
 #include "metal/reuse/reservoir.metal.h"
 #include "metal/reuse/spatial.metal.h"
 #include "metal/reuse/temporal.metal.h"
 #include "metal/reuse/unbiased.metal.h"
+#include "metal/reuse/visibility.metal.h"
 #include "metal/sampler/sampler.metal.h"
-#include "metal/scene/scene_block.metal.h"
 
 namespace serenity {
 namespace shaders {
 namespace restir {
-
-// The scene, its lights chosen among uniformly, as the path tracer's.
-using Scene = SceneView<UniformLight>;
 
 // Each step's stream's first dimension (sampler.metal.h, purpose_numbers).
 constant constexpr uint candidates_numbers = 1u << 24;   // steps 2 and 3
 constant constexpr uint temporal_numbers = 2u << 24;     // step 4
 constant constexpr uint spatial_numbers = 3u << 24;      // step 5
 constant constexpr uint permutation_numbers = 4u << 24;  // step 4's permutation, drawn at pixel (0, 0)
-
-// Contract 12's medium index in the path state's 16 bits, and back
-// (contracts/surface_record.h): no_medium is 0xffff there, and every other
-// index is under it, which the renderer checks of the scene (I.5).
-inline uint pack_medium(uint medium) {
-    return medium == serenity::contracts::no_medium ? serenity::contracts::path_no_medium : medium;
-}
-
-inline uint unpack_medium(uint packed) {
-    const uint medium = packed & serenity::contracts::path_counter_mask;
-    return medium == serenity::contracts::path_no_medium ? serenity::contracts::no_medium : medium;
-}
-
-// Step 1's result for one pixel.
-struct Surfaces {
-    serenity::contracts::SurfaceRecord record;
-    serenity::contracts::PathState state;
-    float3 previous_position;  // where the record's point was last frame; unset without last_transforms
-};
-
-// Where `surface`'s point was last frame: its object-space point placed by
-// its shape's transform among `last_transforms`, last frame's (contract
-// 10: s R p + T).
-inline float3 previous_position(constant serenity::contracts::Transform* last_transforms,
-                                serenity::contracts::SurfaceInteraction surface) {
-    const serenity::contracts::Transform placed = last_transforms[surface.primitive];
-    return transform_translation(placed) + transform_direction(placed, to_float3(surface.object_position));
-}
-
-// Step 1: the camera's segment along `ray`, as a record and a path state;
-// `numbers` the path's stream, which the state's counter records.
-// `last_transforms`, last frame's shape transforms in a graph with a
-// temporal merge and null otherwise, places the surface's point as last
-// frame placed its shape (previous_position()). A path that ends before
-// such a surface leaves the record zero, its bsdf's kind none, and its
-// light in the state.
-inline Surfaces first_surface(Scene scene, CameraRay ray, constant serenity::contracts::Transform* last_transforms,
-                              thread PathNumbers& numbers) {
-    const path::Segment segment = path::camera_segment(scene, ray, numbers);
-    Surfaces found{};
-    found.state.radiance = to_packed(segment.L);
-    found.state.counts = numbers.dimension & serenity::contracts::path_counter_mask;
-    found.state.media = serenity::contracts::path_no_medium |
-                        (serenity::contracts::path_no_medium << serenity::contracts::path_interior_shift);
-    if (!segment.at_surface) {
-        return found;
-    }
-    const Shading here = segment.here;
-    found.record = surface_record(here);
-    found.state.throughput = to_packed(segment.beta);
-    found.state.eta_scale = segment.eta_scale;
-    found.state.counts |= (segment.surface << serenity::contracts::path_surface_shift) |
-                          (here.surface.flags << serenity::contracts::path_flags_shift);
-    found.state.media =
-        pack_medium(here.medium) | (pack_medium(here.surface.interior) << serenity::contracts::path_interior_shift);
-    if (last_transforms != nullptr) {
-        found.previous_position = previous_position(last_transforms, here.surface);
-    }
-    return found;
-}
-
-// Whether `light`, as evaluate_light_point() gave it to `from`'s point, is
-// visible from `from`: one shadow ray against `scene`'s structure, leaving
-// along the surface's unpacked shading normal (contracts/surface_record.h),
-// ignoring the light's own shape. The one visibility test every step
-// makes, so a sample is visible from a surface by every step or by none,
-// and a test one step made is the one another would have made. The ray
-// leaves as every ray leaves a surface (integrator/surface.metal.h, leave:
-// ES.3), from a surface holding only the point and the normal leave()
-// reads.
-inline bool visible(Scene scene, RecordedSurface from, serenity::contracts::LightReceived light) {
-    serenity::contracts::SurfaceInteraction leaving{};
-    leaving.position = to_packed(from.position);
-    leaving.geometric_normal = from.bsdf.normal;
-    return !occluded(scene.structure, scene.shapes(), leave(leaving, to_float3(light.direction), light.distance),
-                     light.primitive);
-}
 
 // Step 2 of temporal reuse, the caller's: where a point is in a frame's
 // image, through that frame's camera, rounded to the nearest pixel; none
@@ -406,9 +346,9 @@ struct FrameView {
     constant serenity::contracts::CameraData* camera;
     uint2 size;
 
-    // target.metal.h, unpacking q (unpack_record) for the evaluation
+    // the Integrator's target (target.metal.h), unpacking q (unpack_record)
     float target(serenity::contracts::SurfaceRecord q, serenity::contracts::LightPoint y) const;
-    // visible(), above; asked only in raytraced mode
+    // the Integrator's visible(); asked only in raytraced mode
     bool visible(serenity::contracts::SurfaceRecord q, serenity::contracts::LightPoint y) const;
     float depth(float3 point) const;          // thin_lens.metal.h, camera_depth
     Reprojected project(float3 point) const;  // thin_lens.metal.h, camera_pixel
@@ -418,22 +358,22 @@ struct FrameView {
 // purpose's stream at pixel (0, 0)): two numbers in [0, 3], x's and y's;
 // the identity when `settings` turn permutation off. Declared, and defined
 // with the temporal merge, as FrameView is.
-inline BlockPermutation frame_permutation(PathNumbers frame_numbers, serenity::passes::RestirDi settings);
+inline BlockPermutation frame_permutation(PathNumbers frame_numbers, serenity::contracts::ReuseSettings settings);
 
 // Steps 2 and 3 at `here`, the pixel's record unpacked, M = `count`;
 // `numbers` the candidates' stream. Precondition: here's kind is not none
 // and the scene has a light.
 //
 // Each candidate draws four numbers whether or not it yields a sample (a
-// light, a point on it, the reservoir's choice), and every candidate
-// counts in M, one drawn from inside its light included: it is a draw
-// whose sample does not exist, weighing 0, as the naive estimator's next
-// event counts nothing for it (GDSA.3: the counter a function of the
+// light, a point on it, the reservoir's choice), in that order, and every
+// candidate counts in M, one drawn from inside its light included: it is a
+// draw whose sample does not exist, weighing 0, as the naive estimator's
+// next event counts nothing for it (GDSA.3: the counter a function of the
 // candidate's position in the stream, never of what an earlier one drew).
 // The survivor's answer from its light, the direction, distance and shape
 // its shadow ray needs, is kept beside the stream as it is kept, so step 3
 // evaluates nothing again; across step 3's query what is alive is the
-// stored reservoir and that answer (restir_di.metal.h, above; GPU.3).
+// stored reservoir and that answer (above; GPU.3).
 inline serenity::contracts::Reservoir candidates(Scene scene, RecordedSurface here, uint count,
                                                  thread PathNumbers& numbers) {
     const Lights lights = scene.lights();
@@ -441,22 +381,13 @@ inline serenity::contracts::Reservoir candidates(Scene scene, RecordedSurface he
     Streaming reservoir = empty_reservoir();
     serenity::contracts::LightReceived survivor{};
     for (uint i = 0; i < count; ++i) {
-        // Step 2.
-        const SelectedIndex chosen = select_light_index(selection, next_number(numbers));
-        const serenity::contracts::LightPoint y =
-            draw_light_point(lights, chosen.index, here.position, next_numbers2(numbers));
+        // Step 2: the Integrator draws and weighs, Sample reuse streams.
+        const float choose = next_number(numbers);
+        const float2 point_numbers = next_numbers2(numbers);
         const float u = next_number(numbers);
-        serenity::contracts::LightReceived light{};
-        Candidate candidate{y, 0.0f, 0.0f};
-        if (serenity::contracts::holds_light(y)) {
-            light = evaluate_light_point(lights, y, here.position);
-            const float density = chosen.probability * light_pdf(lights, selection.records[chosen.index],
-                                                                 here.position, to_float3(light.direction));
-            candidate.target = target(here, light);
-            candidate.weight = candidate_weight(here, light, density);
-        }
-        if (stream_candidate(reservoir, candidate, u)) {
-            survivor = light;
+        const Weighed weighed = draw_candidate(lights, selection, here, choose, point_numbers);
+        if (stream_candidate(reservoir, Candidate{weighed.sample, weighed.target, weighed.weight}, u)) {
+            survivor = weighed.light;
         }
     }
     // Resampled importance sampling's normalization: pi = 1, piSum = M.
@@ -468,26 +399,6 @@ inline serenity::contracts::Reservoir candidates(Scene scene, RecordedSurface he
         return hide(chosen);
     }
     return chosen;
-}
-
-// Step 6's rule for whether a reservoir's own test stands for q's now
-// (above): a test here and now always; in basic mode with visibility
-// reuse on, one made within the graph's visibility_age frames and closer
-// than its visibility_distance pixels (contracts/reservoir.h, tested).
-inline bool takes_test(uint tested, serenity::passes::RestirDi settings) {
-    // The offset's two signed 8-bit coordinates, their bits taken apart as
-    // unsigned (ES.101) and read back as two's complement, and the age.
-    const uint mask = serenity::contracts::tested_field_mask;
-    const int2 offset =
-        int2(int(as_type<char>(uchar((tested >> serenity::contracts::tested_offset_x_shift) & mask))),
-             int(as_type<char>(uchar((tested >> serenity::contracts::tested_offset_y_shift) & mask))));
-    const uint age = (tested >> serenity::contracts::tested_age_shift) & mask;
-    if (age == 0u && offset.x == 0 && offset.y == 0) {
-        return true;
-    }
-    return settings.bias_correction == serenity::passes::BiasCorrection::basic &&
-           settings.visibility_reuse == serenity::passes::VisibilityReuse::on && age <= settings.visibility_age &&
-           metal::length(float2(offset)) < settings.visibility_distance;
 }
 
 // Step 6's result: the pixel's radiance, and whether the shade traced its
@@ -502,74 +413,35 @@ struct Shaded {
     serenity::contracts::Reservoir reservoir;  // the final reservoir, its test the shade's where traced
 };
 
-// The direct light at `record`'s surface from `final_reservoir` (step 6):
-// f |cos| L_e G V T W where W > 0, V from the reservoir's own test where
-// takes_test() takes it, else from one shadow ray. `medium` the path's
-// there. Unshadowed first, so across the query what is alive is that
-// radiance, the reservoir and the light's answer; the surface is unpacked
-// here and again by the caller after (above: registers traded for flops).
-struct Direct {
-    float3 radiance;
-    bool traced;
-    serenity::contracts::Reservoir reservoir;
-};
-
-inline Direct direct_from(Scene scene, serenity::contracts::SurfaceRecord record, uint medium,
-                          serenity::contracts::Reservoir final_reservoir, serenity::passes::RestirDi settings) {
-    Direct direct{float3(0.0f), false, final_reservoir};
-    if (!serenity::contracts::holds_light(final_reservoir.sample) || !(final_reservoir.weight > 0.0f)) {
-        return direct;
-    }
-    const RecordedSurface here = unpack_record(record);
-    const serenity::contracts::LightReceived light = evaluate_light_point(scene.lights(), final_reservoir.sample,
-                                                                          here.position);
-    direct.radiance = direct_light(here, light, final_reservoir.weight) *
-                      transmittance(scene.media(), medium, light.distance);
-    if (!metal::any(direct.radiance > 0.0f) || takes_test(final_reservoir.tested, settings)) {
-        return direct;  // nothing to see, or seen already
-    }
-    direct.traced = true;
-    direct.reservoir.tested = 0u;  // here and now
-    if (!visible(scene, here, light)) {
-        direct.radiance = float3(0.0f);
-        direct.reservoir = hide(direct.reservoir);
-    }
-    return direct;
-}
-
 // Step 6, from the pixel's record, path state and final reservoir, by the
 // graph's `settings` (its mode and visibility reuse); `numbers` the path's
-// stream, from the state's counter.
+// stream, from the state's counter. The record is unpacked once, for the
+// direct light and the continuation both (above).
 inline Shaded shade(Scene scene, serenity::contracts::SurfaceRecord record, serenity::contracts::PathState state,
-                    serenity::contracts::Reservoir final_reservoir, serenity::passes::RestirDi settings,
+                    serenity::contracts::Reservoir final_reservoir, serenity::contracts::ReuseSettings settings,
                     thread PathNumbers& numbers) {
-    const float3 found = to_float3(state.radiance);
     if (packed_kind(record.bsdf) == serenity::contracts::BsdfKind::none) {  // no surface (first_surface())
-        return Shaded{found, false, final_reservoir};
+        return Shaded{to_float3(state.radiance), false, final_reservoir};
     }
-    const uint medium = unpack_medium(state.media);
-    const float3 beta = to_float3(state.throughput);
-    const Direct direct = direct_from(scene, record, medium, final_reservoir, settings);
-
-    // The continuation, from the surface rebuilt from the record and the
-    // path state as continue_path() reads it (path.metal.h): the point,
-    // the normal as the geometric normal, the flags and the interior; and
-    // the Shading's BSDF, wo and medium.
     const RecordedSurface here = unpack_record(record);
-    serenity::contracts::SurfaceInteraction surface{};
-    surface.position = record.position;
-    surface.geometric_normal = here.bsdf.normal;
-    surface.flags = state.counts >> serenity::contracts::path_flags_shift;
-    surface.interior = unpack_medium(state.media >> serenity::contracts::path_interior_shift);
-    const path::Segment segment{true,
-                                Shading{surface, here.bsdf, here.wo, medium},
-                                found + beta * direct.radiance,
-                                beta,
-                                state.eta_scale,
-                                (state.counts >> serenity::contracts::path_surface_shift) &
-                                    serenity::contracts::path_surface_mask};
-    return Shaded{path::continue_path(scene, segment, numbers), direct.traced,
-                  direct.reservoir};
+    Shaded shaded{float3(0.0f), false, final_reservoir};
+    float3 direct = float3(0.0f);
+    if (serenity::contracts::holds_light(final_reservoir.sample) && final_reservoir.weight > 0.0f) {
+        const Unshadowed lit =
+            unshadowed(scene, here, unpack_medium(state.media), final_reservoir.sample, final_reservoir.weight);
+        direct = lit.radiance;
+        // V: nothing to see, or seen already (takes_test()), or one ray.
+        if (metal::any(direct > 0.0f) && !takes_test(final_reservoir.tested, settings)) {
+            shaded.traced = true;
+            shaded.reservoir = tested_here(final_reservoir);
+            if (!visible(scene, here, lit.light)) {
+                direct = float3(0.0f);
+                shaded.reservoir = hide(shaded.reservoir);
+            }
+        }
+    }
+    shaded.radiance = continue_from(scene, record, here, state, direct, numbers);
+    return shaded;
 }
 
 }  // namespace restir

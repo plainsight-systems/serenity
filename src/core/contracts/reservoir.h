@@ -27,8 +27,8 @@
 //               visibility. At most (H + 1) M after the temporal merge (its
 //               input capped at H x M, and this frame's M) and (k + 1)(H +
 //               1) M after the spatial merge: under 7 x 10^4 at the
-//               settings' limits (core/passes/restir_di.h), so 24 bits hold
-//               it with room, and every value 24 bits hold is exact as a
+//               settings' limits (core/contracts/reuse_settings.h), so
+//               24 bits hold it with room, and every value 24 bits hold is exact as a
 //               float, where a merge weighs by it. Written by the initial
 //               pass (M) and by each merge (its sum).
 //               RTXDI packs a sample's last-tested visibility beside M,

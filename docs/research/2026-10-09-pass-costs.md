@@ -44,7 +44,9 @@ header said "1.6 ms more"). Not kept.
 the light pass "at a measured 0.6 ms" (d827b2d). No measurement of the
 display pass alone was recorded: the 0.6 ms figures above are the tone map's
 cost over the display pass, and the header's own derivation, 247 MB of
-traffic at the M3 Max's 400 GB/s, also gives about 0.6 ms. The header now
+traffic at the M3 Max's peak 400 GB/s, also gives about 0.6 ms, as an
+ideal-bandwidth floor on the time, not a bound above it (worded so
+2026-10-11). The header now
 says it is derived, not measured.
 
 ## The barrier between frames

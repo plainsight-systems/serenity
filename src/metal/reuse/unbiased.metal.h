@@ -2,7 +2,7 @@
 
 // Axis: Sample reuse (the merges' normalization, in its two modes).
 //
-// Depends on contracts 4, 5 and 14, the settings (core/passes/restir_di.h)
+// Depends on contracts 4, 5 and 14, the settings (contracts/reuse_settings.h)
 // and this family's reservoir alone. It asks a frame's questions (the
 // target at a surface, a shadow ray) of a Frame its caller passes (below),
 // so it includes nothing of the Integrator, the lights or the acceleration
@@ -64,7 +64,7 @@
 //
 // "visible" a shadow ray from q_i's record (contracts/surface_record.h) to
 // y's point, against its frame's structure. The two modes
-// (core/passes/restir_di.h, bias_correction) differ in one thing: whether
+// (contracts/reuse_settings.h, bias_correction) differ in one thing: whether
 // d_i holds that visibility, at the price of the rays that test it. Both
 // compute the same weights by the same code, so the raytraced mode checks
 // what basic mode ships.
@@ -166,7 +166,7 @@
 #include "core/contracts/light_sample.h"
 #include "core/contracts/reservoir.h"
 #include "core/contracts/surface_record.h"
-#include "core/passes/restir_di.h"
+#include "core/contracts/reuse_settings.h"
 #include "metal/reuse/reservoir.metal.h"
 
 namespace serenity {
@@ -204,7 +204,7 @@ struct Merging {
 // stream_reservoir).
 template <typename Frame>
 inline float domain_target(Frame frame, serenity::contracts::SurfaceRecord there, serenity::contracts::LightPoint y,
-                           serenity::passes::BiasCorrection mode);
+                           serenity::contracts::BiasCorrection mode);
 
 // `reservoir` with its sample weighed 0 and its count kept: what a test
 // that finds its sample hidden makes of it, in every pass that tests one

@@ -70,8 +70,9 @@ namespace serenity::metal {
 // Cost: at 3456 x 2234 (P = 7.7 M pixels), the radiance image is 123 MB,
 // when the light pass does not accumulate, and the pyramid 21 MB. Per
 // frame, the light pass writes the radiance image once, P texels; the
-// display pass reads it once, P texels, 247 MB of traffic in all, some
-// 0.6 ms of the M3 Max's 400 GB/s. The tone-map pass reads it twice, in two
+// display pass reads it once, P texels, 247 MB of traffic in all: at the M3
+// Max's peak 400 GB/s an ideal-bandwidth floor of some 0.6 ms, the least it
+// could take, not the most. The tone-map pass reads it twice, in two
 // dispatches ten apart, too far for one read to leave it cached for the
 // other: 13 filtered samples for each of B_0's P / 4 texels, then P exact
 // reads (passes/tone_map/tone_map.h); what that costs in memory traffic is

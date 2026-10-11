@@ -87,7 +87,8 @@ namespace serenity::frame {
 // principle 6), so moving fireflies, a blinking one, and a camera that
 // moves never start it over; the camera's motion is the reprojection's to
 // follow. And no cap on the frames held: what bounds an old sample's weight
-// is the temporal merge's cap on its count, H x M (core/passes/restir_di.h).
+// is the temporal merge's cap on its count, H x M
+// (core/contracts/reuse_settings.h).
 // Anything else is refused by HistoryError, as for the accumulated image: a
 // frame skipped, a size changed or a reused_since moved without starting
 // over, or a reused_since after the frame. Merged in, last frame's

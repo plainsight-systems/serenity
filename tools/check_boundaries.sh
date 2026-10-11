@@ -1,5 +1,6 @@
 #!/bin/sh
-# Enforces the boundary that keeps the core platform-neutral.
+# Enforces the boundary that keeps the core platform-neutral, and the one
+# between two shader families that only a Pass composes (rule 5).
 #
 # src/core/ is the scene, the sampling and the math every backend shares. It
 # must build and be tested with no GPU API at all, so that a second backend
@@ -36,7 +37,7 @@ METAL_DIR=src/metal/
 status=0
 fail() { echo "BOUNDARY VIOLATION: $1" >&2; status=1; }
 
-for dir in src src/core src/metal src/measure; do
+for dir in src src/core src/metal src/measure src/metal/reuse src/metal/integrator; do
     [ -d "${dir}" ] || { echo "check_boundaries: ${dir} is missing; nothing would be checked" >&2; exit 2; }
 done
 
@@ -105,6 +106,23 @@ confined() {
 confined '#[[:space:]]*include[[:space:]]*[<"]SDL3/' 'src/app/' 'SDL'
 confined '#[[:space:]]*include[[:space:]]*[<"]toml\+\+/' 'src/core/(frame/graph_file|scene/scene)\.cpp$' 'toml++'
 confined '#[[:space:]]*include[[:space:]]*[<"]stb_' 'src/core/output/png\.cpp$' 'stb'
+
+# 5. Sample reuse and the Integrator meet at contracts, and only a Pass
+#    composes them (change-axes.md; metal/passes/restir_di/
+#    restir_di.metal.h, "Where the families meet"): src/metal/reuse/
+#    includes no Integrator header and no Pass header, the backend's or the
+#    core's, and src/metal/integrator/ no Sample reuse header and no Pass
+#    header. By quoted, angled and relative path.
+hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal/|core/)?(integrator|passes)/' src/metal/reuse/)"
+if [ -n "${hits}" ]; then
+    echo "${hits}" | sed 's/^/  /' >&2
+    fail "src/metal/reuse/ includes the Integrator or a Pass. Sample reuse depends on contracts and the Sampler."
+fi
+hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal/|core/)?(reuse|passes)/' src/metal/integrator/)"
+if [ -n "${hits}" ]; then
+    echo "${hits}" | sed 's/^/  /' >&2
+    fail "src/metal/integrator/ includes Sample reuse or a Pass. The Integrator sees reservoirs as contract 14 alone."
+fi
 
 if [ "${status}" -eq 0 ]; then
     echo "boundaries OK"

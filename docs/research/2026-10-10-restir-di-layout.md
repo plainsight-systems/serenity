@@ -326,8 +326,10 @@ headers carry the same counts, pass by pass
 In all, 512 to 576 bytes a pixel of intermediate traffic, against 1368 to
 1928 in 4463eee's design (its 80-byte record, 32-byte reservoir, 64-byte
 path state, five neighbors and their second walk). At a traced 1728 x 1117
-that is 0.99 to 1.11 GB a frame: 2.5 to 2.8 ms at the M3 Max's 400 GB/s
-were none of it cached. Light data: at most M + 2k + 3 = 13 target
+that is 0.99 to 1.11 GB a frame: at the M3 Max's peak 400 GB/s, an
+ideal-bandwidth floor of 2.5 to 2.8 ms were none of it cached, the least
+the traffic could take, not the most (corrected 2026-10-11, by the review
+of f86e7ae). Light data: at most M + 2k + 3 = 13 target
 evaluations, 988 logical bytes a pixel, assumed cached (76 KB for a
 thousand fireflies). Rays at the first rough surface: 1 to 2 in basic mode,
 k + 2 = 3 in raytraced, against the naive estimator's 1. ReuseImages: 184

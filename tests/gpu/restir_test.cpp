@@ -646,14 +646,14 @@ TEST_CASE("the shade takes a reservoir's own test where it is here and now, or r
     CHECK(taken(ris) == std::vector<std::uint32_t>{1, 0, 0, 0, 0, 0, 0, 0});
     passes::RestirDi basic = ris;
     basic.history = 20;
-    basic.bias_correction = passes::BiasCorrection::basic;
-    basic.visibility_reuse = passes::VisibilityReuse::on;
+    basic.bias_correction = contracts::BiasCorrection::basic;
+    basic.visibility_reuse = contracts::VisibilityReuse::on;
     basic.visibility_age = 4;
     basic.visibility_distance = 16.0f;
     // Age at most 4, offset shorter than 16 pixels.
     CHECK(taken(basic) == std::vector<std::uint32_t>{1, 1, 1, 0, 0, 1, 1, 0});
     passes::RestirDi raytraced = basic;
-    raytraced.bias_correction = passes::BiasCorrection::raytraced;
+    raytraced.bias_correction = contracts::BiasCorrection::raytraced;
     CHECK(taken(raytraced) == std::vector<std::uint32_t>{1, 0, 0, 0, 0, 0, 0, 0});
 }
 

@@ -43,8 +43,8 @@ namespace serenity::frame {
 // (B): only in a graph with either, in basic mode. The values shown are
 // the ones the graphs are written with, RTXDI's defaults.
 //
-// The ReSTIR settings are core/passes/restir_di.h's, which says what each
-// does and why its range is what it is. Each is required exactly when a
+// The ReSTIR settings are core/contracts/reuse_settings.h's, which says what
+// each does and why its range is what it is. Each is required exactly when a
 // pass of the graph reads it, as the comments say: a graph without a
 // temporal merge that writes `history` has a key nobody reads, and one with
 // it that leaves `history` out has asked for no value, which is refused,

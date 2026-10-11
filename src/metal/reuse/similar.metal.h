@@ -18,7 +18,7 @@
 // Frame gives it (unbiased.metal.h), the normals the records' shading
 // normals, decoded (contracts/bsdf.h, PackedBsdf::normal; metal/math/
 // warp.metal.h), and there's kind not none (contracts/surface_record.h).
-// The thresholds are the graph's (core/passes/restir_di.h).
+// The thresholds are the graph's (contracts/reuse_settings.h).
 //
 // Material, the spatial merge's alone (RTXDI's material similarity test,
 // on by default, and so always here): the two packed BSDFs are of the same
@@ -54,7 +54,7 @@
 
 #include "core/contracts/bsdf.h"
 #include "core/contracts/surface_record.h"
-#include "core/passes/restir_di.h"
+#include "core/contracts/reuse_settings.h"
 #include "metal/math/warp.metal.h"
 
 namespace serenity {
@@ -69,7 +69,7 @@ constant constexpr float material_scalar_tolerance = 0.5f;
 // its pixel against several surfaces. No two adjacent parameters of one
 // type (I.24), as before.
 inline bool similar(float depth_here, float3 normal_here, serenity::contracts::SurfaceRecord there, float depth_there,
-                    serenity::passes::RestirDi settings);
+                    serenity::contracts::ReuseSettings settings);
 
 // The material test. Symmetric, so its two same-typed parameters cannot be
 // passed in the wrong order.

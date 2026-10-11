@@ -77,6 +77,28 @@ probe "SDL outside src/app/" src/core/_probe10.h '#pragma once\n#include <SDL3/S
 probe "toml++ outside the frame graph reader" src/core/frame/_probe11.cpp '#include <toml++/toml.hpp>\n'
 probe "stb outside the PNG writer" src/core/frame/_probe12.cpp '#include <stb_image_write.h>\n'
 
+# 4b. Sample reuse and the Integrator including each other, or a Pass: the
+#     backend's and the core's, by quoted, angled and relative path.
+probe "Sample reuse includes the Integrator" src/metal/reuse/_probe25.metal.h \
+    '#pragma once\n#include "metal/integrator/target.metal.h"\n'
+probe "Sample reuse includes a Pass" src/metal/reuse/_probe26.metal.h \
+    '#pragma once\n#include "metal/passes/restir_di/restir_di.metal.h"\n'
+probe "Sample reuse includes the core's Pass settings" src/metal/reuse/_probe27.metal.h \
+    '#pragma once\n#include <core/passes/restir_di.h>\n'
+probe "Sample reuse includes the Integrator by relative path" src/metal/reuse/_probe28.metal.h \
+    '#pragma once\n#include "../integrator/path.metal.h"\n'
+probe "the Integrator includes Sample reuse" src/metal/integrator/_probe29.metal.h \
+    '#pragma once\n#include "metal/reuse/reservoir.metal.h"\n'
+probe "the Integrator includes a Pass" src/metal/integrator/_probe30.metal.h \
+    '#pragma once\n#include "metal/passes/restir_di/restir_di.metal.h"\n'
+probe "the Integrator includes the core's Pass settings by relative path" src/metal/integrator/_probe31.metal.h \
+    '#pragma once\n#include "../../core/passes/restir_di.h"\n'
+# Contracts are where they meet, and are allowed.
+F=src/metal/reuse/_probe32.metal.h; CREATED="${CREATED} ${F}"
+printf '#pragma once\n#include "core/contracts/reuse_settings.h"\n' > "${F}"
+"${CHECK}" >/dev/null 2>&1 || fail "a contract included by Sample reuse was refused"
+rm -f "${F}"
+
 # 5. A search that cannot read a file fails the check, rather than finding
 #    nothing in it and passing.
 F=src/core/_probe19.h; CREATED="${CREATED} ${F}"

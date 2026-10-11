@@ -288,7 +288,7 @@ std::string setting(std::string_view key, const std::string& value) {
 }
 
 // A setting the schedule's passes do not read must be its zero
-// (core/passes/restir_di.h); `readers` says which passes read it.
+// (core/contracts/reuse_settings.h); `readers` says which passes read it.
 std::string unread(std::string_view key, const std::string& value, std::string_view readers) {
     return setting(key, value) + "is read only " + std::string(readers) +
            ", and must be its zero (left out of the graph file) otherwise";
@@ -315,25 +315,25 @@ bool finite_within(float value, float low, float high) {
 // settings (F.3): the candidates' (always read), the temporal merge's, the
 // spatial merge's, either merge's, and the shade's final-visibility reuse.
 std::optional<std::string> candidates_broken(const passes::RestirDi& settings) {
-    if (settings.candidates < 1u || settings.candidates > passes::max_candidates) {
+    if (settings.candidates < 1u || settings.candidates > contracts::max_candidates) {
         return setting("candidates", std::to_string(settings.candidates)) + "must be " +
-               integer_in(1u, passes::max_candidates);
+               integer_in(1u, contracts::max_candidates);
     }
     return std::nullopt;
 }
 
 std::optional<std::string> temporal_broken(const passes::RestirDi& settings, bool temporal) {
     constexpr std::string_view readers = "with restir_temporal";
-    if (temporal && (settings.history < 1u || settings.history > passes::max_history)) {
-        return setting("history", std::to_string(settings.history)) + "must be " + integer_in(1u, passes::max_history);
+    if (temporal && (settings.history < 1u || settings.history > contracts::max_history)) {
+        return setting("history", std::to_string(settings.history)) + "must be " + integer_in(1u, contracts::max_history);
     }
     if (!temporal && settings.history != 0u) {
         return unread("history", std::to_string(settings.history), readers);
     }
-    if (settings.permutation != passes::Permutation::off && settings.permutation != passes::Permutation::on) {
+    if (settings.permutation != contracts::Permutation::off && settings.permutation != contracts::Permutation::on) {
         return setting("permutation", text(settings.permutation)) + "is neither off nor on";
     }
-    if (!temporal && settings.permutation != passes::Permutation::off) {
+    if (!temporal && settings.permutation != contracts::Permutation::off) {
         return unread("permutation", "on", readers);
     }
     return std::nullopt;
@@ -341,16 +341,16 @@ std::optional<std::string> temporal_broken(const passes::RestirDi& settings, boo
 
 std::optional<std::string> spatial_broken(const passes::RestirDi& settings, bool spatial) {
     constexpr std::string_view readers = "with restir_spatial";
-    if (spatial && (settings.neighbors < 1u || settings.neighbors > passes::max_neighbors)) {
+    if (spatial && (settings.neighbors < 1u || settings.neighbors > contracts::max_neighbors)) {
         return setting("neighbors", std::to_string(settings.neighbors)) + "must be " +
-               integer_in(1u, passes::max_neighbors);
+               integer_in(1u, contracts::max_neighbors);
     }
     if (!spatial && settings.neighbors != 0u) {
         return unread("neighbors", std::to_string(settings.neighbors), readers);
     }
-    if (spatial && !finite_within(settings.radius, passes::min_radius, passes::max_radius)) {
-        return setting("radius", text(settings.radius)) + "must be finite, within [" + text(passes::min_radius) +
-               ", " + text(passes::max_radius) + "] pixels";
+    if (spatial && !finite_within(settings.radius, contracts::min_radius, contracts::max_radius)) {
+        return setting("radius", text(settings.radius)) + "must be finite, within [" + text(contracts::min_radius) +
+               ", " + text(contracts::max_radius) + "] pixels";
     }
     if (!spatial && settings.radius != 0.0f) {
         return unread("radius", text(settings.radius), readers);
@@ -373,37 +373,37 @@ std::optional<std::string> merges_broken(const passes::RestirDi& settings, bool 
     if (!merges && settings.normal_threshold != 0.0f) {
         return unread("normal_threshold", text(settings.normal_threshold), readers);
     }
-    if (settings.bias_correction != passes::BiasCorrection::basic &&
-        settings.bias_correction != passes::BiasCorrection::raytraced) {
+    if (settings.bias_correction != contracts::BiasCorrection::basic &&
+        settings.bias_correction != contracts::BiasCorrection::raytraced) {
         return setting("bias_correction", text(settings.bias_correction)) + "is neither basic nor raytraced";
     }
-    if (!merges && settings.bias_correction != passes::BiasCorrection::basic) {
+    if (!merges && settings.bias_correction != contracts::BiasCorrection::basic) {
         return unread("bias_correction", "raytraced", readers);
     }
     return std::nullopt;
 }
 
 std::optional<std::string> visibility_broken(const passes::RestirDi& settings, bool merges) {
-    const bool basic = merges && settings.bias_correction == passes::BiasCorrection::basic;
-    if (settings.visibility_reuse != passes::VisibilityReuse::off &&
-        settings.visibility_reuse != passes::VisibilityReuse::on) {
+    const bool basic = merges && settings.bias_correction == contracts::BiasCorrection::basic;
+    if (settings.visibility_reuse != contracts::VisibilityReuse::off &&
+        settings.visibility_reuse != contracts::VisibilityReuse::on) {
         return setting("visibility_reuse", text(settings.visibility_reuse)) + "is neither off nor on";
     }
-    if (!basic && settings.visibility_reuse != passes::VisibilityReuse::off) {
+    if (!basic && settings.visibility_reuse != contracts::VisibilityReuse::off) {
         return unread("visibility_reuse", "on", "in basic mode, with restir_temporal or restir_spatial");
     }
-    const bool reused = basic && settings.visibility_reuse == passes::VisibilityReuse::on;
+    const bool reused = basic && settings.visibility_reuse == contracts::VisibilityReuse::on;
     constexpr std::string_view readers = "where visibility_reuse is on";
-    if (reused && settings.visibility_age > passes::max_visibility_age) {
+    if (reused && settings.visibility_age > contracts::max_visibility_age) {
         return setting("visibility_age", std::to_string(settings.visibility_age)) + "must be " +
-               integer_in(0u, passes::max_visibility_age);
+               integer_in(0u, contracts::max_visibility_age);
     }
     if (!reused && settings.visibility_age != 0u) {
         return unread("visibility_age", std::to_string(settings.visibility_age), readers);
     }
-    if (reused && !finite_within(settings.visibility_distance, 0.0f, passes::max_visibility_distance)) {
+    if (reused && !finite_within(settings.visibility_distance, 0.0f, contracts::max_visibility_distance)) {
         return setting("visibility_distance", text(settings.visibility_distance)) + "must be finite, within [0, " +
-               text(passes::max_visibility_distance) + "] pixels";
+               text(contracts::max_visibility_distance) + "] pixels";
     }
     if (!reused && settings.visibility_distance != 0.0f) {
         return unread("visibility_distance", text(settings.visibility_distance), readers);

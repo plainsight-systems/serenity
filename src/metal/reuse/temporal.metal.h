@@ -9,7 +9,7 @@
 // surface, not a pixel (logical-overview.md, "Reservoirs are state keyed on
 // surfaces"), so it is looked up where the surface was.
 //
-// Depends on contracts 5 and 14, the settings (core/passes/restir_di.h),
+// Depends on contracts 5 and 14, the settings (contracts/reuse_settings.h),
 // this family's other headers, and the Sampler's numbers (the shared thing
 // every stage draws from: change-axes.md). This frame's and last frame's
 // answers come from the Frames its caller passes (unbiased.metal.h), so it
@@ -29,7 +29,7 @@
 //      camera (metal/passes/restir_di/restir_di.metal.h,
 //      FrameView::project).
 //   3. Is it the same surface. The first pixel x' tried is p, or, with
-//      permutation on (core/passes/restir_di.h), p's image under the
+//      permutation on (contracts/reuse_settings.h), p's image under the
 //      frame's permutation: p's coordinates with their two low bits each
 //      exclusive-or'ed with two numbers in [0, 3] the frame draws, a
 //      permutation of each aligned 4 x 4 block, the same for every pixel of
@@ -47,7 +47,7 @@
 //   4. Stream: q's own reservoir r (count M_r, its stored target, which is
 //      q's this frame), then last frame's final reservoir r' at x', its
 //      count capped at C = min(M_r', H M_r), H times the own reservoir's
-//      count (RTXDI's history cap; core/passes/restir_di.h): a sample kept
+//      count (RTXDI's history cap; contracts/reuse_settings.h): a sample kept
 //      for many frames is weighed as at most H frames' candidates, which
 //      bounds how long an old choice outlives the light that made it a
 //      good one; weighed by its sample's target at q as this frame lights
@@ -115,7 +115,7 @@
 
 #include "core/contracts/reservoir.h"
 #include "core/contracts/surface_record.h"
-#include "core/passes/restir_di.h"
+#include "core/contracts/reuse_settings.h"
 #include "metal/reuse/reservoir.metal.h"
 #include "metal/reuse/similar.metal.h"
 #include "metal/reuse/unbiased.metal.h"
@@ -175,7 +175,7 @@ struct Found {
 // frame's.
 template <typename Frame>
 inline Found find_last_frame(Frame then, Merging pixel, Reprojection reprojection, LastArrays arrays,
-                             BlockPermutation permutation, serenity::passes::RestirDi settings);
+                             BlockPermutation permutation, serenity::contracts::ReuseSettings settings);
 
 // Steps 4 to 6 for `pixel`, given what `last` frame left. `now` and `then`
 // are this frame's and last frame's Frames (unbiased.metal.h states what a
@@ -183,7 +183,7 @@ inline Found find_last_frame(Frame then, Merging pixel, Reprojection reprojectio
 // temporal input (steps 1 to 3) do not call it.
 template <typename Frame>
 inline serenity::contracts::Reservoir merge_temporal(Frame now, Frame then, Merging pixel, LastFrame last,
-                                                     serenity::passes::RestirDi settings,
+                                                     serenity::contracts::ReuseSettings settings,
                                                      thread PathNumbers& numbers);
 
 }  // namespace shaders

@@ -138,8 +138,8 @@ struct Schedule {
     // that pass (graph_file.h, core/passes/tone_map.h).
     std::optional<passes::ToneMap> tone_map;
     // ReSTIR DI's settings: present exactly when the schedule has its
-    // passes (graph_file.h, core/passes/restir_di.h). Last, and none unless
-    // given, so a schedule written {passes, tone_map} keeps its meaning.
+    // passes (graph_file.h, core/contracts/reuse_settings.h). Last, and
+    // none unless given, so a schedule written {passes, tone_map} keeps its meaning.
     std::optional<passes::RestirDi> restir_di = std::nullopt;
 };
 
@@ -174,7 +174,7 @@ bool reuses_history(const Schedule& schedule);
 //     (above); and its settings exactly when its passes are present, each
 //     setting the passes read, as the graph's other settings decide what
 //     they read (bias_correction and visibility_reuse), in its range, and
-//     each they do not read its zero (core/passes/restir_di.h).
+//     each they do not read its zero (core/contracts/reuse_settings.h).
 //
 // None if `schedule` is valid; otherwise why not, in words a reader of the
 // frame graph file can act on. The graph reader refuses an invalid schedule

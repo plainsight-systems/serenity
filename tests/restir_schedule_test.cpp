@@ -1,7 +1,7 @@
 // ReSTIR DI in the core's schedule (core/frame/schedule.h): what its four
 // pass kinds read and write, the order a graph keeps them in, and which
 // settings each graph's passes read, in what ranges, every other its zero
-// (core/passes/restir_di.h).
+// (core/contracts/reuse_settings.h).
 
 #include <cstdint>
 #include <limits>
@@ -19,11 +19,11 @@
 #include "support/text.h"
 
 using namespace serenity::frame;
-using serenity::passes::BiasCorrection;
-using serenity::passes::Permutation;
+using serenity::contracts::BiasCorrection;
+using serenity::contracts::Permutation;
+using serenity::contracts::VisibilityReuse;
 using serenity::passes::RestirDi;
 using serenity::passes::ToneMap;
-using serenity::passes::VisibilityReuse;
 
 namespace {
 

@@ -106,7 +106,8 @@ std::uint32_t count(std::string_view source, const toml::node& node, std::string
     }
     if (*value < 0 || *value > std::int64_t{std::numeric_limits<std::uint32_t>::max()}) {
         throw GraphFileError(at(source, node, "'" + std::string(key) + "', " + std::to_string(*value) +
-                                                  ", is no count of [restir_di]'s (core/passes/restir_di.h)"));
+                                                  ", is no count of [restir_di]'s "
+                                                  "(core/contracts/reuse_settings.h)"));
     }
     return static_cast<std::uint32_t>(*value);
 }
@@ -121,13 +122,13 @@ bool switched_on(std::string_view source, const toml::node& node, std::string_vi
 }
 
 // `node` as bias_correction: one of its two strings.
-passes::BiasCorrection bias_correction(std::string_view source, const toml::node& node) {
+contracts::BiasCorrection bias_correction(std::string_view source, const toml::node& node) {
     const std::optional<std::string_view> value = node.value<std::string_view>();
     if (value == "basic") {
-        return passes::BiasCorrection::basic;
+        return contracts::BiasCorrection::basic;
     }
     if (value == "raytraced") {
-        return passes::BiasCorrection::raytraced;
+        return contracts::BiasCorrection::raytraced;
     }
     throw GraphFileError(at(source, node, "'bias_correction' must be \"basic\" or \"raytraced\""));
 }
@@ -184,13 +185,13 @@ RestirReads restir_reads(std::string_view source, const toml::table& table, std:
     if (reads.merges) {
         settings.bias_correction = bias_correction(source, required(source, table, "bias_correction", "[restir_di]"));
     }
-    reads.basic = reads.merges && settings.bias_correction == passes::BiasCorrection::basic;
+    reads.basic = reads.merges && settings.bias_correction == contracts::BiasCorrection::basic;
     if (reads.basic) {
         const bool on =
             switched_on(source, required(source, table, "visibility_reuse", "[restir_di]"), "visibility_reuse");
-        settings.visibility_reuse = on ? passes::VisibilityReuse::on : passes::VisibilityReuse::off;
+        settings.visibility_reuse = on ? contracts::VisibilityReuse::on : contracts::VisibilityReuse::off;
     }
-    reads.reused = settings.visibility_reuse == passes::VisibilityReuse::on;
+    reads.reused = settings.visibility_reuse == contracts::VisibilityReuse::on;
     return reads;
 }
 
@@ -212,8 +213,8 @@ void refuse_unread(std::string_view source, const toml::table& table, const Rest
                             std::ranges::find(restir_keys, key) == restir_keys.end()
                                 ? "unknown key '" + key + "' in [restir_di]"
                                 : "'" + key +
-                                      "' is not read by this frame graph's passes (core/passes/restir_di.h says "
-                                      "which read it): a key nobody reads"));
+                                      "' is not read by this frame graph's passes "
+                                      "(core/contracts/reuse_settings.h says which read it): a key nobody reads"));
 }
 
 // The settings each value is checked beside (read_restir_di): `settings`'
@@ -272,7 +273,7 @@ passes::RestirDi read_restir_di(std::string_view source, const toml::table& tabl
     if (reads.temporal) {
         take("history", &passes::RestirDi::history, as_count("history"));
         take("permutation", &passes::RestirDi::permutation, [&](const toml::node& node) {
-            return switched_on(source, node, "permutation") ? passes::Permutation::on : passes::Permutation::off;
+            return switched_on(source, node, "permutation") ? contracts::Permutation::on : contracts::Permutation::off;
         });
     }
     if (reads.spatial) {

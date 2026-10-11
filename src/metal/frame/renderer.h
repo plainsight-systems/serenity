@@ -196,8 +196,8 @@ namespace serenity::metal {
 //     by animating at the previous frame's time, kept from the frame before
 //     as its camera is (metal/scene/shape_transforms.h, light_glows.h), and
 //     only what moves or glows, as for this frame's; and, in raytraced
-//     mode only (core/passes/restir_di.h), the acceleration structure kept
-//     a frame longer (scene_acceleration.h, Keep::last_too), which basic
+//     mode only (core/contracts/reuse_settings.h), the acceleration
+//     structure kept a frame longer (scene_acceleration.h, Keep::last_too), which basic
 //     mode's temporal merge, tracing no ray, never reads. At the first
 //     frame of a history there is no previous frame, and none of it is
 //     read;

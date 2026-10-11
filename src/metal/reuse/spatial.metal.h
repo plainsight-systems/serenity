@@ -11,7 +11,7 @@
 // k = 1 within 32 pixels, with its material test (core/passes/
 // restir_di.h).
 //
-// Depends on contracts 5 and 14, the settings (core/passes/restir_di.h),
+// Depends on contracts 5 and 14, the settings (contracts/reuse_settings.h),
 // this family's other headers, and the Sampler's numbers (the shared thing
 // every stage draws from: change-axes.md). This frame's answers come from
 // the Frame its caller passes (unbiased.metal.h), so it includes nothing of
@@ -30,7 +30,7 @@
 //      Else its record q_n, whose kind must be not none and which must be
 //      similar to q (similar.metal.h: the geometric test, by the Frame's
 //      depths, and the material test); if so, bit n of a 32-bit mask is
-//      set (k <= 32, core/passes/restir_di.h) and its reservoir r_n is an
+//      set (k <= 32, contracts/reuse_settings.h) and its reservoir r_n is an
 //      input, its test moved here, x_n - x added to its offset
 //      (reservoir.metal.h, reused_from). The mask keeps which neighbors
 //      passed, and nothing else.
@@ -93,7 +93,7 @@
 
 #include "core/contracts/reservoir.h"
 #include "core/contracts/surface_record.h"
-#include "core/passes/restir_di.h"
+#include "core/contracts/reuse_settings.h"
 #include "metal/reuse/reservoir.metal.h"
 #include "metal/reuse/similar.metal.h"
 #include "metal/reuse/unbiased.metal.h"
@@ -125,7 +125,7 @@ struct NeighborArrays {
 // Frame answers). `numbers` is the pass's stream.
 template <typename Frame>
 inline serenity::contracts::Reservoir merge_spatial(Frame now, Merging pixel, uint2 at, NeighborArrays arrays,
-                                                    serenity::passes::RestirDi settings,
+                                                    serenity::contracts::ReuseSettings settings,
                                                     thread PathNumbers& numbers);
 
 }  // namespace shaders

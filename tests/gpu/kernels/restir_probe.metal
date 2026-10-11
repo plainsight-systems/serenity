@@ -3,27 +3,29 @@
 // (metal/materials/bsdf.metal.h), the light point (metal/lights/
 // emitter.metal.h), the target (metal/integrator/target.metal.h), the
 // reservoir (metal/reuse/reservoir.metal.h) and the shade's rule for a
-// reservoir's test (metal/passes/restir_di/restir_di.metal.h). Bindings: the
-// output at 0, the inputs after it in the order each kernel lists them
-// (probes.h). A light kernel's lights are one sphere light, record 0, read
-// through the emitter as the passes read them: the records, the spheres,
-// the transforms, the glows and which light each shape is, at 1 to 5.
+// reservoir's test (metal/reuse/visibility.metal.h). Bindings: the output
+// at 0, the inputs after it in the order each kernel lists them (probes.h).
+// A light kernel's lights are one sphere light, record 0, read through the
+// emitter as the passes read them: the records, the spheres, the
+// transforms, the glows and which light each shape is, at 1 to 5; placed
+// once (place_light()) and asked every question of contract 4, as a
+// candidate asks them.
 
 #include <metal_stdlib>
 
 #include "core/contracts/bsdf.h"
 #include "core/contracts/light_sample.h"
 #include "core/contracts/reservoir.h"
+#include "core/contracts/reuse_settings.h"
 #include "core/lights/light.h"
 #include "core/lights/sphere_light.h"
-#include "core/passes/restir_di.h"
 #include "metal/integrator/target.metal.h"
 #include "metal/lights/emitter.metal.h"
 #include "metal/materials/bsdf.metal.h"
 #include "metal/math/hash.metal.h"
 #include "metal/math/warp.metal.h"
-#include "metal/passes/restir_di/restir_di.metal.h"
 #include "metal/reuse/reservoir.metal.h"
+#include "metal/reuse/visibility.metal.h"
 #include "metal/sampler/sampler.metal.h"
 #include "probes.h"
 
@@ -109,7 +111,8 @@ kernel void light_points(device LightPointResult* out [[buffer(0)]],
     const float3 point = to_float3(queries[i].point);
     const float2 u = float2(queries[i].u0, queries[i].u1);
     const serenity::contracts::LightSample drawn = sample_light(lights, records[0], point, u);
-    const LightPoint y = draw_light_point(lights, 0u, point, u);
+    const PlacedLight light = place_light(lights, 0u);
+    const LightPoint y = draw_light_point(light, 0u, point, u);
     LightPointResult result{};
     result.sample_direction = drawn.direction;
     result.sample_distance = drawn.distance;
@@ -117,13 +120,13 @@ kernel void light_points(device LightPointResult* out [[buffer(0)]],
     result.sample_pdf = drawn.pdf;
     result.light = y.light;
     if (serenity::contracts::holds_light(y)) {
-        const serenity::contracts::LightReceived received = evaluate_light_point(lights, y, point);
+        const serenity::contracts::LightReceived received = evaluate_light_point(light, y, point);
         result.direction = received.direction;
         result.distance = received.distance;
         result.radiance = received.radiance;
         result.cos_light = received.cos_light;
         result.area_scale = received.area_scale;
-        result.pdf = light_pdf(lights, records[0], point, to_float3(received.direction));
+        result.pdf = light_pdf(light, point, to_float3(received.direction));
         result.area_density = light_area_density(result.pdf, received);
     }
     out[i] = result;
@@ -150,8 +153,9 @@ kernel void target_at(device TargetResult* out [[buffer(0)]],
     const TargetQuery query = queries[i];
     const RecordedSurface surface{to_float3(query.position), to_float3(query.wo), bsdf};
     const LightPoint y{serenity::contracts::light_valid | 0u, query.light_point};
-    const serenity::contracts::LightReceived received = evaluate_light_point(lights, y, surface.position);
-    const float density = light_pdf(lights, records[0], surface.position, to_float3(received.direction));
+    const PlacedLight light = place_light(lights, 0u);
+    const serenity::contracts::LightReceived received = evaluate_light_point(light, y, surface.position);
+    const float density = light_pdf(light, surface.position, to_float3(received.direction));
     out[i] = TargetResult{target(surface, received), candidate_weight(surface, received, query.selection * density),
                           light_area_density(density, received), received.cos_light,
                           to_packed(direct_light(surface, received, 1.0f)), received.distance};
@@ -182,15 +186,15 @@ kernel void softmax_streams(device SoftmaxDraw* out [[buffer(0)]],
                          reservoir.weight_sum, {0u, 0u, 0u}};
 }
 
-// The shade's rule (restir::takes_test) for each test word under
-// `settings`: 1 where the reservoir's own test is taken for this pixel's
-// now. Inputs: the words, their count, the settings.
+// The shade's rule (takes_test()) for each test word under `settings`: 1
+// where the reservoir's own test is taken for this pixel's now. Inputs: the
+// words, their count, the settings.
 kernel void takes_test_of(device uint* out [[buffer(0)]],
                           device const uint* tested [[buffer(1)]],
                           constant uint& count [[buffer(2)]],
-                          constant serenity::passes::RestirDi& settings [[buffer(3)]],
+                          constant serenity::contracts::ReuseSettings& settings [[buffer(3)]],
                           uint i [[thread_position_in_grid]]) {
     if (i < count) {
-        out[i] = restir::takes_test(tested[i], settings) ? 1u : 0u;
+        out[i] = takes_test(tested[i], settings) ? 1u : 0u;
     }
 }

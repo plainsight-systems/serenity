@@ -7,7 +7,7 @@
 // camera (contract 8): the previous frame's camera, framed for the same
 // image, which the temporal merge reprojects through and the initial pass
 // projects last frame's position through; whether there is a previous frame
-// to merge; and the estimator's settings (core/passes/restir_di.h). Its own
+// to merge; and the estimator's settings (contracts/reuse_settings.h). Its own
 // buffer, bound only by ReSTIR's passes, so contract 7, which every pass
 // binds, is unchanged, and so is every graph without them
 // (docs/research/2026-10-10-restir-di-layout.md, "Additive").
@@ -31,7 +31,7 @@
 // light_glows.h), and its structure is kept
 // (metal/acceleration/scene_acceleration.h).
 //
-// The temporal merge's permutation (core/passes/restir_di.h) is not here:
+// The temporal merge's permutation (contracts/reuse_settings.h) is not here:
 // it is a number of the frame alone, which every pixel draws the same from
 // the Sampler's stream for pixel 0 and the frame (metal/reuse/
 // temporal.metal.h), so no CPU computes it and no backend can draw another.
@@ -43,14 +43,14 @@
 
 #include "core/contracts/shared_layout.h"
 #include "core/contracts/camera.h"
-#include "core/passes/restir_di.h"
+#include "core/contracts/reuse_settings.h"
 
 namespace serenity {
 namespace contracts {
 
 struct ReuseConstants {
     CameraData previous_camera;
-    passes::RestirDi settings;
+    ReuseSettings settings;
     uint32_t previous;  // 1: the frame before is this one's history; 0: it starts over
     uint32_t padding[3];
 };

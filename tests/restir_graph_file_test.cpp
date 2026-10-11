@@ -17,9 +17,9 @@ using serenity::frame::GraphFileError;
 using serenity::frame::load_schedule;
 using serenity::frame::parse_schedule;
 using serenity::frame::PassKind;
-using serenity::passes::BiasCorrection;
-using serenity::passes::Permutation;
-using serenity::passes::VisibilityReuse;
+using serenity::contracts::BiasCorrection;
+using serenity::contracts::Permutation;
+using serenity::contracts::VisibilityReuse;
 using serenity::tests::contains;
 using serenity::tests::graphs_dir;
 

@@ -57,7 +57,7 @@ and the camera.
       merges trace no rays and are biased dark at shadow edges, as
       production's are, most for a frame after a light is revealed;
       an unbiased mode, whose merges trace them, checks ReSTIR against the
-      reference (`src/core/passes/restir_di.h`).
+      reference (`src/core/contracts/reuse_settings.h`).
   - **Indirect** light: the path bounces on from the rough surface, through
     glass, off metal and off other rough surfaces, taking direct light at
     each rough surface it reaches. ReSTIR GI (Ouyang et al. 2021) later
