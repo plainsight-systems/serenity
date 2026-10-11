@@ -81,8 +81,8 @@ leave from, the power heuristic without overflow, the probes' layouts one
 header per probe, that note's "Review of 7751a65"; the ray offset sized to
 the point's rounding (Wachter and Binder, hit points put back on their
 shapes) done 2026-10-11, docs/research/2026-10-11-ray-offset.md, the
-references at t = 120 and t = 8 to render again with it and the
-convergence runs after them; left: Phase B, the BSDF candidate (for the
+references at t = 120 and t = 8 to render again once, when ReSTIR DI
+is finished (not before), with the convergence runs after them; left: Phase B, the BSDF candidate (for the
 first surface's spikes, 2026-10-11-restir-ris-results.md) and the
 temporal and spatial merges,
 docs/research/2026-10-10-restir-di-layout.md); ReSTIR GI; caustics by manifold next
