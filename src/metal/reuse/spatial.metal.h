@@ -51,7 +51,8 @@
 //                   one shadow ray from q_n;
 //        neighbor s: d_s(y) = its reservoir's stored target, p̂_{q_s}(y)
 //                   this frame, visible from q_s by the invariant in
-//                   raytraced mode: no evaluation, no ray; pi is it.
+//                   raytraced mode: no evaluation, no ray; pi is it, one
+//                   float kept from step 3 when s is kept.
 //      The neighbors are drawn again from the same numbers for this walk
 //      (the numbers are a function of their position in the stream,
 //      metal/sampler/sampler.metal.h), and their records and counts read
@@ -109,7 +110,16 @@ struct Neighbor {
     bool found;
     uint2 pixel;
 };
-inline Neighbor neighbor_pixel(uint2 at, float2 u, float radius, uint2 size);
+inline Neighbor neighbor_pixel(uint2 at, float2 u, float radius, uint2 size) {
+    const float r = radius * metal::sqrt(u.x);
+    const float phi = 2.0f * M_PI_F * u.y;
+    const float2 place = float2(at) + 0.5f + r * float2(metal::cos(phi), metal::sin(phi));
+    if (!(metal::all(place >= 0.0f) && metal::all(place < float2(size)))) {
+        return Neighbor{false, uint2(0u)};
+    }
+    const uint2 pixel = metal::min(uint2(place), size - 1u);
+    return Neighbor{!metal::all(pixel == at), pixel};
+}
 
 // Where the neighbors are read from: this frame's surface records and the
 // reservoirs the pass before wrote, one a pixel in row-major order, of an
@@ -126,7 +136,94 @@ struct NeighborArrays {
 template <typename Frame>
 inline serenity::contracts::Reservoir merge_spatial(Frame now, Merging pixel, uint2 at, NeighborArrays arrays,
                                                     serenity::contracts::ReuseSettings settings,
-                                                    thread PathNumbers& numbers);
+                                                    thread PathNumbers& numbers) {
+    namespace c = serenity::contracts;
+    // Step 1: the own input, weighed by its stored target.
+    const uint own_count = pixel.own.count & c::count_mask;
+    const float3 normal_here = decode_unit(pixel.here.bsdf.normal);
+    const float depth_here = now.depth(to_float3(pixel.here.position));
+    Streaming reservoir = empty_reservoir();
+    stream_reservoir(reservoir, MergeInput{pixel.own, own_count, pixel.own.target, from_own}, next_number(numbers));
+
+    // Steps 2 and 3: each neighbor drawn, tested and streamed in n's order;
+    // the stream's place kept, so step 4 draws the same neighbors again.
+    const PathNumbers drawn = numbers;
+    uint passed = 0u;  // the mask: bit n set where neighbor n is an input
+    float pi = 0.0f;   // the source neighbor's stored target, where a neighbor is the source
+    for (uint n = 0; n < settings.neighbors; ++n) {
+        const float2 u = next_numbers2(numbers);
+        const float choose = next_number(numbers);
+        const Neighbor neighbor = neighbor_pixel(at, u, settings.radius, arrays.size);
+        if (!neighbor.found) {
+            continue;
+        }
+        const uint j = neighbor.pixel.y * arrays.size.x + neighbor.pixel.x;
+        const c::SurfaceRecord there = arrays.records[j];
+        if (!similar(depth_here, normal_here, there, now.depth(to_float3(there.position)), settings) ||
+            !similar_material(pixel.here.bsdf, there.bsdf)) {
+            continue;
+        }
+        passed |= 1u << n;
+        const c::Reservoir input = arrays.inputs[j];
+        const float target_here = c::holds_light(input.sample) ? now.target(pixel.here, input.sample) : 0.0f;
+        stream_reservoir(reservoir,
+                         MergeInput{reused_from(input, int2(neighbor.pixel) - int2(at), 0u),
+                                    input.count & c::count_mask, target_here, n},
+                         choose);
+        if (reservoir.source == n) {
+            pi = input.target;
+        }
+    }
+    if (!c::holds_light(reservoir.sample) || !(reservoir.target > 0.0f)) {
+        return finish(reservoir, Normalization{0.0f, 0.0f});  // nothing kept: W = 0, its count kept
+    }
+
+    // Step 4: piSum by the graph's mode. The own term from streaming; then
+    // one walk over the neighbors in the mask: an input that did not
+    // produce y gives its domain target at its surface, y's source its
+    // stored target (kept above), where raytraced mode tests y from q
+    // instead: one query a lane per iteration, its origin data (GPU.4).
+    const bool raytraced = settings.bias_correction == c::BiasCorrection::raytraced;
+    const c::LightPoint y = reservoir.sample;
+    float pi_sum = float(own_count) * reservoir.target;
+    bool seen_here = true;  // y from q; tested in raytraced mode where y is a neighbor's
+    PathNumbers again = drawn;
+    for (uint n = 0; n < settings.neighbors; ++n) {
+        const float2 u = next_numbers2(again);
+        (void)next_number(again);  // the choice's, used in step 3
+        if ((passed & (1u << n)) == 0u) {
+            continue;
+        }
+        const uint2 at_n = neighbor_pixel(at, u, settings.radius, arrays.size).pixel;
+        const uint j = at_n.y * arrays.size.x + at_n.x;
+        const bool source = reservoir.source == n;
+        const c::SurfaceRecord there = arrays.records[j];
+        float domain = source ? pi : now.target(there, y);
+        if (raytraced && domain > 0.0f) {
+            const bool visible = now.visible(source ? pixel.here : there, y);
+            if (source) {
+                seen_here = visible;
+            } else if (!visible) {
+                domain = 0.0f;
+            }
+        }
+        pi_sum += float(arrays.inputs[j].count & c::count_mask) * domain;
+    }
+
+    // Step 5.
+    if (reservoir.source == from_own) {
+        return finish(reservoir, Normalization{reservoir.target, pi_sum});
+    }
+    const c::Reservoir merged = finish(reservoir, Normalization{pi, pi_sum});
+    if (raytraced && merged.weight > 0.0f) {
+        // The own domain's ray from q, the survivor's test here and now
+        // (unbiased.metal.h).
+        c::Reservoir tested = merged;
+        tested.tested = 0u;
+        return seen_here ? tested : hide(tested);
+    }
+    return merged;
+}
 
 }  // namespace shaders
 }  // namespace serenity

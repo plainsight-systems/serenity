@@ -112,8 +112,8 @@
 //                     and is unbiased either way. The Metal backend runs
 //                     restir_temporal in basic mode, and refuses by name
 //                     raytraced mode with it (last frame's structure is not
-//                     yet kept) and restir_spatial (metal/frame/
-//                     renderer.h).
+//                     yet kept); restir_spatial in either mode
+//                     (metal/frame/renderer.h).
 //   visibility_reuse  whether the shade, in basic mode, takes a recent
 //                     visibility test of its survivor for its own instead of
 //                     tracing one (RTXDI's reuseFinalVisibility; step 6;

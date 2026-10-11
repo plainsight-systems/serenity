@@ -26,6 +26,7 @@
 #include "metal/math/hash.metal.h"
 #include "metal/math/warp.metal.h"
 #include "metal/reuse/reservoir.metal.h"
+#include "metal/reuse/spatial.metal.h"
 #include "metal/reuse/temporal.metal.h"
 #include "metal/reuse/visibility.metal.h"
 #include "metal/sampler/sampler.metal.h"
@@ -240,6 +241,23 @@ kernel void temporal_merge(device serenity::contracts::Reservoir* out [[buffer(0
     const LastFrame last{float3(0.0f), int2(0), serenity::contracts::SurfaceRecord{}, query.last};
     out[i] = merge_temporal(frame, frame, Merging{serenity::contracts::SurfaceRecord{}, query.own}, last,
                             query.settings, numbers);
+}
+
+// The spatial merge (merge_spatial()) at the middle pixel of an image of
+// `size`, its record the middle one, its own reservoir the query's, its
+// numbers a stream keyed by i and the query's seed. Inputs: the query (its
+// `last` unread), the image's records, its input reservoirs, its size.
+kernel void spatial_merge(device serenity::contracts::Reservoir* out [[buffer(0)]],
+                          constant MergeQuery& query [[buffer(1)]],
+                          device const serenity::contracts::SurfaceRecord* records [[buffer(2)]],
+                          device const serenity::contracts::Reservoir* inputs [[buffer(3)]],
+                          constant uint2& size [[buffer(4)]],
+                          uint i [[thread_position_in_grid]]) {
+    const ProbeFrame frame{query.scale};
+    const uint2 middle = size / 2u;
+    PathNumbers numbers = PathNumbers{uint2(i, query.seed), 0u};
+    out[i] = merge_spatial(frame, Merging{records[middle.y * size.x + middle.x], query.own}, middle,
+                           NeighborArrays{records, inputs, size}, query.settings, numbers);
 }
 
 // find_last_frame() for the pixel `here`, its surface last frame at its

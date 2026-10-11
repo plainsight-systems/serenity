@@ -22,7 +22,11 @@
 //     closed form the path tracer's does, with M = 1 (next event estimation)
 //     and M = 8 alike, M = 8 with less noise; visibility reuse leaves a
 //     hidden light nothing; the same inputs give the same image; and a
-//     graph with the merges is refused by name.
+//     graph with raytraced mode and the temporal merge is refused by name;
+//   - the spatial merge: a neighbor that fails the similarity test adds
+//     nothing, M is the own and accepted counts, and with it a still floor
+//     converges as without it, raytraced mode to RIS under an occluder,
+//     to the bit for the same inputs.
 //
 // Every statistical check is deterministic: its numbers are the sampler's,
 // keyed by the stream's index, so it passes or fails the same every run.
@@ -68,6 +72,7 @@
 #include "metal/frame/renderer.h"
 #include "metal/passes/restir_initial/restir_initial.h"
 #include "metal/passes/restir_shade/restir_shade.h"
+#include "metal/passes/restir_spatial/restir_spatial.h"
 #include "metal/passes/restir_temporal/restir_temporal.h"
 #include "serenity/metallib/shaders.h"
 #include "support/references.h"
@@ -704,6 +709,160 @@ TEST_CASE("a reprojected pixel whose surface fails the similarity test takes no 
     CHECK(found(all(record_at(10.0f, up, BsdfKind::none))).found == 0u);      // no surface there
 }
 
+// ---- the spatial merge -----------------------------------------------------
+
+namespace {
+
+// RTXDI's spatial settings in basic mode with `neighbors` neighbors
+// (core/passes/restir_di.h), and no temporal merge.
+passes::RestirDi spatial_settings(std::uint32_t neighbors) {
+    passes::RestirDi s{};
+    s.candidates = passes::written_candidates;
+    s.bsdf_candidates = passes::written_bsdf_candidates;
+    s.neighbors = neighbors;
+    s.radius = passes::written_radius;
+    s.depth_threshold = passes::written_depth_threshold;
+    s.normal_threshold = passes::written_normal_threshold;
+    s.bias_correction = contracts::BiasCorrection::basic;
+    s.visibility_reuse = passes::written_visibility_reuse;
+    s.visibility_age = passes::written_visibility_age;
+    s.visibility_distance = passes::written_visibility_distance;
+    return s;
+}
+
+// The probe's image: 65 x 65, the merging pixel in the middle, (32, 32),
+// so every neighbor within 32 pixels is inside it.
+constexpr std::uint32_t probe_side = 65;
+constexpr std::uint32_t probe_middle = probe_side / 2;
+constexpr std::uint32_t probe_merges = 4096;
+
+// A reservoir's test's offset, as contracts/reservoir.h packs it.
+std::pair<int, int> tested_offset(std::uint32_t tested) {
+    const auto field = [&](std::uint32_t shift) {
+        return static_cast<int>(static_cast<std::int8_t>((tested >> shift) & contracts::tested_field_mask));
+    };
+    return {field(contracts::tested_offset_x_shift), field(contracts::tested_offset_y_shift)};
+}
+
+}  // namespace
+
+TEST_CASE("the spatial merge: a neighbor that fails the similarity test contributes nothing") {
+    // The middle pixel's surface at depth 10 facing +z, its own reservoir
+    // of M = 9 and W = 1; every other pixel's reservoir of count 1000 on
+    // another light. Where every neighbor fails a test, the merge is the
+    // own reservoir as it was: its count, its sample, its W and its test.
+    tests::ProbeRunner gpu;
+    const std::vector<contracts::Float3> normals{{0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -1.0f}};
+    const auto two = static_cast<std::uint32_t>(normals.size());
+    const std::vector<tests::UnitTrip> codes =
+        gpu.run<tests::UnitTrip>("unit_trip", two, {Binding::of(normals), Binding::of(two)});
+    const std::uint32_t up = codes[0].code;
+    const std::uint32_t down = codes[1].code;
+    using contracts::BsdfKind;
+    const contracts::SurfaceRecord here = record_at(10.0f, up, BsdfKind::lambert);
+    const std::vector<contracts::Reservoir> inputs(probe_side * probe_side, reservoir_of(1, 1000, 4.0f, 0.5f));
+    const std::array<std::uint32_t, 2> size{probe_side, probe_side};
+    const auto merged = [&](contracts::SurfaceRecord others, std::uint32_t neighbors) {
+        std::vector<contracts::SurfaceRecord> records(probe_side * probe_side, others);
+        records[probe_middle * probe_side + probe_middle] = here;
+        const tests::MergeQuery query{reservoir_of(0, 9, 2.0f, 1.0f), {}, spatial_settings(neighbors), 7u, 2.0f, {0u, 0u}};
+        return gpu.run<contracts::Reservoir>("spatial_merge", probe_merges,
+                                             {Binding::of(query), Binding::of(records), Binding::of(inputs),
+                                              Binding::of(size)});
+    };
+    for (const auto& [others, why] : {std::pair{record_at(12.0f, up, BsdfKind::lambert), "depth 20% off"},
+                                      std::pair{record_at(10.0f, down, BsdfKind::lambert), "facing away"},
+                                      std::pair{record_at(10.0f, up, BsdfKind::conductor), "another material"},
+                                      std::pair{record_at(10.0f, up, BsdfKind::none), "no surface there"}}) {
+        INFO(why);
+        std::size_t unchanged = 0;
+        for (const contracts::Reservoir& r : merged(others, 4)) {
+            unchanged += (r.count & contracts::count_mask) == 9u && contracts::light_index(r.sample) == 0u &&
+                                 std::abs(r.weight - 1.0f) < 1e-6f && r.tested == 0u
+                             ? 1u
+                             : 0u;
+        }
+        CHECK(unchanged == probe_merges);
+    }
+    // And similar neighbors are merged: their counts, and their sample kept
+    // about as often as the weights say (2 x 1 x 9 against 4 x 0.5 x 1000).
+    std::size_t counted = 0;
+    std::size_t kept = 0;
+    for (const contracts::Reservoir& r : merged(record_at(10.5f, up, BsdfKind::lambert), 1)) {
+        counted += (r.count & contracts::count_mask) == 1009u ? 1u : 0u;
+        kept += contracts::light_index(r.sample) == 1u ? 1u : 0u;
+    }
+    CHECK(counted > probe_merges * 99 / 100);
+    CHECK(kept > probe_merges * 9 / 10);
+}
+
+TEST_CASE("the spatial merge's M is its own and its accepted neighbors' counts, within the contract's bound") {
+    // k = 3. The right half of the image (x > 32) is similar to the middle
+    // pixel, each reservoir there of count (H + 1) M = 189, the most a
+    // temporal merge leaves; the left half another material, of count 10^6.
+    // Every merge's M is 189 (its own) plus 189 for each neighbor that
+    // landed right, never a left one's; at most (k + 1)(H + 1) M
+    // (contracts/reservoir.h). A neighbor's survivor carries its test moved
+    // by the neighbor's offset, right of the pixel and within the radius,
+    // for the shade's final-visibility reuse.
+    tests::ProbeRunner gpu;
+    const std::vector<contracts::Float3> normals{{0.0f, 0.0f, 1.0f}};
+    const std::uint32_t up =
+        gpu.run<tests::UnitTrip>("unit_trip", 1, {Binding::of(normals), Binding::of(std::uint32_t{1})})[0].code;
+    using contracts::BsdfKind;
+    constexpr std::uint32_t most = (passes::written_history + 1) * 9;  // 189
+    std::vector<contracts::SurfaceRecord> records;
+    std::vector<contracts::Reservoir> inputs;
+    for (std::uint32_t y = 0; y < probe_side; ++y) {
+        for (std::uint32_t x = 0; x < probe_side; ++x) {
+            const bool right = x > probe_middle;
+            records.push_back(record_at(10.0f, up, right ? BsdfKind::lambert : BsdfKind::conductor));
+            inputs.push_back(right ? reservoir_of(1, most, 4.0f, 0.5f) : reservoir_of(2, 1000000, 4.0f, 0.5f));
+        }
+    }
+    records[probe_middle * probe_side + probe_middle] = record_at(10.0f, up, BsdfKind::lambert);
+    constexpr std::uint32_t k = 3;
+    const tests::MergeQuery query{reservoir_of(0, most, 2.0f, 1.0f), {}, spatial_settings(k), 11u, 2.0f, {0u, 0u}};
+    const std::array<std::uint32_t, 2> size{probe_side, probe_side};
+    const std::vector<contracts::Reservoir> merged = gpu.run<contracts::Reservoir>(
+        "spatial_merge", probe_merges,
+        {Binding::of(query), Binding::of(records), Binding::of(inputs), Binding::of(size)});
+    std::array<std::size_t, k + 1> accepted{};
+    std::size_t from_neighbor = 0;
+    for (const contracts::Reservoir& r : merged) {
+        const std::uint32_t m = r.count & contracts::count_mask;
+        REQUIRE(m >= most);
+        REQUIRE((m - most) % most == 0u);
+        const std::uint32_t a = (m - most) / most;
+        REQUIRE(a <= k);
+        ++accepted[a];
+        CHECK(m <= (k + 1) * most);
+        CHECK(contracts::light_index(r.sample) != 2u);
+        CHECK(std::isfinite(r.weight));
+        CHECK(r.weight > 0.0f);
+        if (contracts::light_index(r.sample) == 1u) {
+            ++from_neighbor;
+            const auto [dx, dy] = tested_offset(r.tested);
+            CHECK(dx >= 1);
+            CHECK(dx * dx + dy * dy <= 33 * 33);
+            CHECK((r.tested >> contracts::tested_age_shift) == 0u);
+        } else {
+            CHECK(r.tested == 0u);
+        }
+    }
+    // Each neighbor lands right a little under half the time.
+    double mean = 0.0;
+    for (std::uint32_t a = 0; a <= k; ++a) {
+        INFO(a << " accepted: " << accepted[a]);
+        CHECK(accepted[a] > 0u);
+        mean += static_cast<double>(a * accepted[a]) / probe_merges;
+    }
+    MESSAGE("neighbors accepted, mean of " << k << ": " << mean);
+    CHECK(mean > 1.3);
+    CHECK(mean < 1.6);
+    CHECK(from_neighbor > 0u);
+}
+
 // ---- the reservoir against softmax -----------------------------------------
 
 namespace {
@@ -1155,7 +1314,93 @@ TEST_CASE("resampled importance sampling: the same inputs give the same image, t
     CHECK(std::memcmp(a.data(), second.render(1).data(), a.size() * sizeof(float)) != 0);
 }
 
-TEST_CASE("the Metal backend runs the temporal merge in basic mode, and refuses by name what it does not implement") {
+namespace {
+
+// A graph with the spatial merge, RTXDI's defaults, by `mode` ("basic" or
+// "raytraced"): ReSTIR DI whole (graphs/restir.toml) with `temporal`, else
+// the spatial merge alone (graphs/restir_spatial.toml); its accumulated
+// image shown as it is.
+frame::Schedule spatial_graph(bool temporal, const std::string& mode) {
+    const std::string passes = temporal ? "[\"restir_initial\", \"restir_temporal\", \"restir_spatial\", "
+                                          "\"restir_shade\", \"display\"]"
+                                        : "[\"restir_initial\", \"restir_spatial\", \"restir_shade\", \"display\"]";
+    return frame::parse_schedule(
+        "passes = " + passes + "\n[restir_di]\ncandidates = 8\nbsdf_candidates = 1\n" +
+            (temporal ? "history = 20\npermutation = true\n" : "") +
+            "neighbors = 1\nradius = 32.0\ndepth_threshold = 0.1\nnormal_threshold = 0.5\nbias_correction = \"" +
+            mode + "\"\n" +
+            (mode == "basic" ? "visibility_reuse = true\nvisibility_age = 4\nvisibility_distance = 16.0\n" : ""),
+        "spatial graph");
+}
+
+// The red sum of rows [from, to) of an image `width` wide.
+double rows_red(const std::vector<float>& image, std::uint32_t width, std::uint32_t from, std::uint32_t to) {
+    double sum = 0.0;
+    for (std::size_t i = std::size_t{from} * width; i < std::size_t{to} * width; ++i) {
+        sum += image[i * 4];
+    }
+    return sum;
+}
+
+}  // namespace
+
+TEST_CASE("spatial reuse: a still floor under two fireflies converges to the same mean as without it") {
+    // Nothing on the floor hides a firefly from any of it, so basic mode's
+    // bias at shadow edges (metal/reuse/unbiased.metal.h) is not there to
+    // see: the mean over frames is the closed form's within the 3% the RIS
+    // and temporal graphs are held to, for ReSTIR DI whole and for the
+    // spatial merge alone.
+    for (const bool temporal : {true, false}) {
+        Rig rig(lit_floor(two_fireflies), spatial_graph(temporal, "basic"), floor_size);
+        const std::vector<float> image = rig.render(1024);
+        for (const tests::Pixel pixel : floor_pixels) {
+            const double expected = floor_from(rig.description(), floor_point(rig.description(), rig.size(), pixel),
+                                               every_light(rig.description()));
+            INFO((temporal ? "whole" : "spatial alone") << ", pixel " << pixel.x << ", " << pixel.y << ": expected "
+                                                        << expected);
+            CHECK(patch_red(image, rig.size(), pixel) == doctest::Approx(expected).scale(0).epsilon(0.03));
+        }
+    }
+}
+
+TEST_CASE("spatial reuse in raytraced mode: a floor under a box converges to the RIS graph's mean") {
+    // The box hides the firefly above from the floor beneath it, so
+    // neighbors across its shadow's edge see different lights: raytraced
+    // mode's merge weighs each by whether its surface sees the survivor,
+    // and is unbiased; its lower half is RIS's within 1.5%, each fourth
+    // within 3%. Basic mode's edge bias, there by design, is printed.
+    const std::string scene = box_scene(firefly("[0, 4, 0]") + firefly("[2, 0.6, 0]"));
+    constexpr frame::Extent size{64, 48};
+    Rig ris(scene, ris_graph(8, 1), size);
+    Rig raytraced(scene, spatial_graph(false, "raytraced"), size);
+    Rig basic(scene, spatial_graph(false, "basic"), size);
+    const std::vector<float> without = ris.render(1024);
+    const std::vector<float> traced = raytraced.render(1024);
+    const std::vector<float> shipped = basic.render(1024);
+    const double ratio = rows_red(traced, size.width, 24, 48) / rows_red(without, size.width, 24, 48);
+    MESSAGE("lower half over RIS: raytraced " << ratio << ", basic "
+                                              << rows_red(shipped, size.width, 24, 48) /
+                                                     rows_red(without, size.width, 24, 48));
+    CHECK(ratio == doctest::Approx(1.0).epsilon(0.015));
+    for (std::uint32_t from = 24; from < 48; from += 6) {
+        INFO("rows " << from << " to " << from + 5);
+        CHECK(rows_red(traced, size.width, from, from + 6) / rows_red(without, size.width, from, from + 6) ==
+              doctest::Approx(1.0).epsilon(0.03));
+    }
+}
+
+TEST_CASE("ReSTIR DI whole: the same inputs give the same image, to the bit") {
+    Rig first(lit_floor(two_fireflies), spatial_graph(true, "basic"), {32, 24});
+    Rig second(lit_floor(two_fireflies), spatial_graph(true, "basic"), {32, 24});
+    const std::vector<float> a = first.render(6);
+    const std::vector<float> b = second.render(6);
+    REQUIRE(a.size() == b.size());
+    CHECK(std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
+    // And the comparison can fail: one frame more is another image.
+    CHECK(std::memcmp(a.data(), second.render(1).data(), a.size() * sizeof(float)) != 0);
+}
+
+TEST_CASE("the Metal backend runs both merges, and refuses by name raytraced mode with the temporal merge") {
     const scene::SceneDescription description = scene::parse(lit_floor(one_firefly), "test scene");
     metal::Device device;
     metal::Submission submission(device);
@@ -1181,9 +1426,19 @@ TEST_CASE("the Metal backend runs the temporal merge in basic mode, and refuses 
                           "restir_temporal pass with bias_correction = \"raytraced\" is not implemented"));
     const std::string spatial_only =
         tests::replaced(tests::replaced(merges, "history = 20\n", ""), "permutation = true\n", "");
-    CHECK(tests::contains(refusal("[\"restir_initial\", \"restir_spatial\", \"restir_shade\", \"display\"]",
-                                  spatial_only),
-                          "restir_spatial pass is not implemented by the Metal backend"));
+    // The spatial merge, alone and after the temporal one, is built; and in
+    // raytraced mode alone, its rays being this frame's.
+    const char* spatial_passes = "[\"restir_initial\", \"restir_spatial\", \"restir_shade\", \"display\"]";
+    CHECK(refusal(spatial_passes, spatial_only).empty());
+    CHECK(refusal("[\"restir_initial\", \"restir_temporal\", \"restir_spatial\", \"restir_shade\", \"display\"]",
+                  merges)
+              .empty());
+    const std::string spatial_raytraced = tests::replaced(
+        tests::replaced(tests::replaced(tests::replaced(spatial_only, "\"basic\"", "\"raytraced\""),
+                                        "visibility_reuse = true\n", ""),
+                        "visibility_age = 4\n", ""),
+        "visibility_distance = 16.0\n", "");
+    CHECK(refusal(spatial_passes, spatial_raytraced).empty());
     // The graph without them is built.
     CHECK(refusal("[\"restir_initial\", \"restir_shade\", \"display\"]",
                   "[restir_di]\ncandidates = 8\nbsdf_candidates = 1\n")
@@ -1307,6 +1562,9 @@ TEST_CASE("ReSTIR's passes refuse a frame without what they read and write") {
 
     const metal::RestirTemporalPass merge(library, metal::ReservoirOutput::final);
     CHECK(tests::contains(refusal(merge, full), "RestirTemporalPass: the frame lacks"));
+
+    const metal::RestirSpatialPass spatial(library);
+    CHECK(tests::contains(refusal(spatial, full), "RestirSpatialPass: the frame lacks"));  // no working reservoirs
 
     const metal::RestirShadePass shade(library);
     CHECK(tests::contains(refusal(shade, metal::FrameResources{}), "RestirShadePass: the frame lacks"));

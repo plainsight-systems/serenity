@@ -197,9 +197,10 @@ private:
 // rule. With the temporal merge (graphs/restir_temporal.toml), the two
 // halves of the records and final reservoirs, the previous positions and
 // the working array: 32 x 2 + 36 + 12 + 24 + 24 x 2 = 184 bytes a pixel,
-// and prepare() asks frame::ReuseHistory. The spatial merge's graph, which
-// this backend refuses until it is implemented (metal/frame/renderer.h),
-// needs the same arrays.
+// and prepare() asks frame::ReuseHistory. The full graph, both merges
+// (graphs/restir.toml), needs the same arrays; the spatial merge alone
+// (graphs/restir_spatial.toml) one record array, the path states, the
+// working and one final array, 116 bytes a pixel, and keeps no history.
 //
 // Throws MetalError if the frame's size is not one Metal makes an image of
 // (metal/device/device.h, max_texture_side; the arrays are sized from it,

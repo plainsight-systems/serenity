@@ -348,8 +348,7 @@ struct Reprojected {
 // structure, and its camera framed for the image of `size` pixels. The
 // temporal merge is given this frame's and last frame's, which differ in
 // data only, so its one ray query serves either (temporal.metal.h, GPU.4).
-// The temporal merge asks it of both frames; the spatial merge, refused by
-// name until it is implemented (metal/frame/renderer.h), will ask this
+// The temporal merge asks it of both frames; the spatial merge of this
 // frame's.
 struct FrameView {
     Scene scene;
@@ -426,6 +425,20 @@ inline serenity::contracts::Reservoir temporal(FrameView now, FrameView then, Me
     }
     PathNumbers numbers = purpose_numbers(path_numbers(at, frame_index), temporal_numbers);
     return merge_temporal(now, then, pixel, found.last, settings, numbers);
+}
+
+// Step 5 at one pixel, the spatial merge's kernel's whole work: `pixel`'s
+// record and input reservoir (the temporal merge's, or the initial pass's),
+// `now` this frame's view, the arrays its neighbors are read from, and the
+// frame's index. The input as it is where the pixel has no surface
+// (spatial.metal.h).
+inline serenity::contracts::Reservoir spatial(FrameView now, Merging pixel, uint2 at, NeighborArrays arrays,
+                                              uint frame_index, serenity::contracts::ReuseSettings settings) {
+    if (packed_kind(pixel.here.bsdf) == serenity::contracts::BsdfKind::none) {
+        return pixel.own;
+    }
+    PathNumbers numbers = purpose_numbers(path_numbers(at, frame_index), spatial_numbers);
+    return merge_spatial(now, pixel, at, arrays, settings, numbers);
 }
 
 // Steps 2 and 3 at `here`, the pixel's record unpacked, `counts` the light

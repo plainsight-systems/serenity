@@ -55,6 +55,7 @@ static_assert(bindings::tone_map::target < max_textures);
 constexpr NS::UInteger max_restir_buffers = 16;
 static_assert(bindings::restir_initial::output < max_restir_buffers);
 static_assert(bindings::restir_temporal::last_transforms < max_restir_buffers);
+static_assert(bindings::restir_spatial::output < max_restir_buffers);
 static_assert(bindings::restir_shade::non_finite < max_restir_buffers);
 
 // The reuse constants are written into their ring as their bytes.
@@ -164,10 +165,9 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
                                              spatial ? ReservoirOutput::working : ReservoirOutput::final}});
             break;
         case frame::PassKind::restir_spatial:
-            // Refused by name, never skipped (core/frame/schedule.h).
-            throw MetalError("Renderer: the frame graph's " + std::string(frame::name(kind)) +
-                             " pass is not implemented by the Metal backend yet; ReSTIR DI runs here as "
-                             "restir_initial, restir_temporal if given, then restir_shade");
+            // Always to the final array, from the working one.
+            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirSpatialPass>, library_}});
+            break;
         case frame::PassKind::restir_shade:
             steps_.push_back(Step{kind, Pass{std::in_place_type<RestirShadePass>, library_}});
             break;

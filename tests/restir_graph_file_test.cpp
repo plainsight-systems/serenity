@@ -85,6 +85,29 @@ TEST_CASE("the temporal graph in graphs/ reads, at RTXDI's defaults") {
     CHECK(s.neighbors == 0u);
 }
 
+TEST_CASE("the full ReSTIR DI graph and the spatial graph in graphs/ read, at RTXDI's defaults") {
+    const auto full = load_schedule(graphs_dir / "restir.toml");
+    REQUIRE(full.passes.size() == 5);
+    CHECK(full.passes[1] == PassKind::restir_temporal);
+    CHECK(full.passes[2] == PassKind::restir_spatial);
+    CHECK(full.passes[3] == PassKind::restir_shade);
+    REQUIRE(full.restir_di.has_value());
+    CHECK(full.restir_di->history == serenity::passes::written_history);
+    CHECK(full.restir_di->neighbors == serenity::passes::written_neighbors);
+    CHECK(full.restir_di->radius == serenity::passes::written_radius);
+    CHECK(full.restir_di->bias_correction == serenity::passes::written_bias_correction);
+    CHECK(full.restir_di->visibility_reuse == serenity::passes::written_visibility_reuse);
+
+    const auto spatial = load_schedule(graphs_dir / "restir_spatial.toml");
+    REQUIRE(spatial.passes.size() == 4);
+    CHECK(spatial.passes[1] == PassKind::restir_spatial);
+    REQUIRE(spatial.restir_di.has_value());
+    CHECK(spatial.restir_di->history == 0u);
+    CHECK(spatial.restir_di->neighbors == serenity::passes::written_neighbors);
+    CHECK(spatial.restir_di->radius == serenity::passes::written_radius);
+    CHECK(spatial.restir_di->visibility_age == serenity::passes::written_visibility_age);
+}
+
 TEST_CASE("every key of a graph with both merges is read, as written") {
     const auto schedule = parse_schedule(std::string(both) + std::string(every_key), "graph.toml");
     REQUIRE(schedule.restir_di.has_value());

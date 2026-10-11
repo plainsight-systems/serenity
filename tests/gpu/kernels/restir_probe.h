@@ -130,7 +130,8 @@ struct MisResult {
 static_assert(sizeof(MisResult) == 32, "MisResult must be the same 32 bytes on the host and in shaders");
 
 // One temporal merge (temporal_merge): the pixel's own reservoir and last
-// frame's, under `settings`, with a number for each choice. The merge asks
+// frame's, under `settings`, with a number for each choice; or one spatial
+// merge (spatial_merge), which reads `own` and not `last`. The merge asks
 // its targets of a probe's Frame (restir_probe.metal, ProbeFrame), whose
 // target for a light point is `scale` x (1 + its light's index), the same
 // at every surface, both frames.

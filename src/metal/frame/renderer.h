@@ -32,6 +32,7 @@
 #include "metal/passes/preview/preview.h"
 #include "metal/passes/restir_initial/restir_initial.h"
 #include "metal/passes/restir_shade/restir_shade.h"
+#include "metal/passes/restir_spatial/restir_spatial.h"
 #include "metal/passes/restir_temporal/restir_temporal.h"
 #include "metal/passes/test_pattern/test_pattern.h"
 #include "metal/passes/tone_map/tone_map.h"
@@ -171,10 +172,11 @@ namespace serenity::metal {
 //
 // ReSTIR DI. A graph with its passes (core/frame/schedule.h) gets, at
 // construction, everything below and nothing else changes for a graph
-// without them. Implemented: restir_initial, restir_temporal in basic mode
-// and restir_shade. Refused at construction by MetalError, naming what is
-// refused, never run without it: a graph with restir_spatial (Phase C);
-// and one with restir_temporal in raytraced mode, whose merge traces last
+// without them. Implemented: restir_initial, restir_temporal in basic mode,
+// restir_spatial in either mode (its rays are this frame's) and
+// restir_shade. Refused at construction by MetalError, naming what is
+// refused, never run without it: a graph with restir_temporal in raytraced
+// mode, whose merge traces last
 // frame's surface against last frame's structure, which is not yet kept
 // (scene_acceleration.h, Keep::last_too). In detail:
 //
@@ -292,7 +294,7 @@ public:
 
 private:
     using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass, RestirInitialPass,
-                              RestirTemporalPass, RestirShadePass>;
+                              RestirTemporalPass, RestirSpatialPass, RestirShadePass>;
 
     // A pass of the schedule, with its kind (C.1).
     struct Step {

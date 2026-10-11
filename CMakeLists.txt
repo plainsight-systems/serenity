@@ -181,6 +181,7 @@ add_library(serenity_metal STATIC
     src/metal/passes/preview/preview.cpp
     src/metal/passes/restir_initial/restir_initial.cpp
     src/metal/passes/restir_shade/restir_shade.cpp
+    src/metal/passes/restir_spatial/restir_spatial.cpp
     src/metal/passes/restir_temporal/restir_temporal.cpp
     src/metal/passes/test_pattern/test_pattern.cpp
     src/metal/passes/tone_map/tone_map.cpp
@@ -196,6 +197,7 @@ serenity_add_metallib(
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/tone_map/tone_map.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_initial/restir_initial.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_shade/restir_shade.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_spatial/restir_spatial.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_temporal/restir_temporal.metal"
     INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
