@@ -2,6 +2,13 @@
 
 // Axis: Sample reuse (the unbiased normalization, Z).
 //
+// Depends on contracts 4, 5 and 14 and on this family's reservoir alone. It
+// asks a frame's questions (the target at a surface, a shadow ray) of a
+// Frame its caller passes (below), so it includes nothing of the
+// Integrator, the lights or the acceleration structure (change-axes.md:
+// families meet at contracts); the composition that passes one is
+// metal/passes/restir_di/restir_di.metal.h.
+//
 // What makes a merge of reservoirs from other surfaces and other frames
 // unbiased (Bitterli et al. 2020, section 4.3 and Algorithm 6): finishing a
 // merge at surface q with survivor y, W = w_sum / (Z p̂_q(y))
@@ -23,8 +30,8 @@
 // the mean, and which the convergence test below is there to catch if it
 // does not.
 //
-// The domains. Visibility reuse (metal/integrator/restir_di.metal.h, step
-// 3) puts visibility into what a reservoir holds, so a domain is
+// The domains. Visibility reuse (metal/passes/restir_di/restir_di.metal.h,
+// step 3) puts visibility into what a reservoir holds, so a domain is
 //
 //   Omega_i = { y : p̂_{q_i}(y) > 0 and y is visible from q_i },
 //
@@ -84,10 +91,11 @@
 // Cost, per merge at one pixel: one target evaluation for each input that
 // did not produce y, and one shadow ray for each of those whose target is
 // positive; the temporal merge's two inputs make one of each, the spatial
-// merge's 1 + k make k. No memory beyond what the merge already read: each
-// input's surface record and count were read to stream it, and the spatial
-// merge keeps which neighbors passed its similarity test in a mask, not by
-// reading them again (spatial.metal.h).
+// merge's 1 + k make k. Memory: the temporal merge's test reads nothing
+// more, last frame's record being in registers from step 3. The spatial
+// merge's does: its mask keeps only which neighbors passed the similarity
+// test, and its walk for Z reads each passing neighbor's record and
+// reservoir again, (80 + 32) k bytes a pixel, counted in spatial.metal.h.
 
 #include <metal_stdlib>
 
@@ -106,19 +114,26 @@ struct Merging {
     serenity::contracts::Reservoir own;
 };
 
-// Whether `there`, one input's surface as its own frame saw it, could have
-// produced `y`: its target at y is positive and y is visible from it, the
-// visibility asked only where the target is positive. `Surface` is the
-// caller's (temporal.metal.h, spatial.metal.h), a type with
+// A Frame: one frame's answers, which the merges ask and the composition
+// gives (metal/passes/restir_di/restir_di.metal.h, FrameView), as that
+// frame's lights, structure and camera have them:
 //
-//   float target(LightPoint y) const;  p̂ there, by its frame's lights
-//   bool visible(LightPoint y) const;  a shadow ray, by its frame's structure
+//   float target(SurfaceRecord q, LightPoint y) const;
+//       p̂_q(y), the Integrator's target (metal/integrator/target.metal.h);
+//   bool visible(SurfaceRecord q, LightPoint y) const;
+//       y unblocked from q, one shadow ray against that frame's structure;
+//   float depth(float3 point) const;
+//       the point's depth along that frame's camera's forward axis.
 //
-// so this rule names neither frame nor any family's arrays. Stated here,
-// not as a concept: the shading language has none (I.9, T.10, as far as
-// the language allows).
-template <typename Surface>
-inline bool supports(Surface there, serenity::contracts::LightPoint y);
+// Stated here, not as a concept: the shading language has none (I.9, T.10,
+// as far as the language allows). A type that has them is passed by value;
+// no merge names the arrays behind it.
+
+// Whether `there`, one input's surface, could have produced `y` as `frame`,
+// that surface's own frame, saw it: its target at y is positive and y is
+// visible from it, the visibility asked only where the target is positive.
+template <typename Frame>
+inline bool supports(Frame frame, serenity::contracts::SurfaceRecord there, serenity::contracts::LightPoint y);
 
 // `reservoir` with its sample weighed 0 and its count kept: what visibility
 // reuse and a hidden survivor make of it (above).

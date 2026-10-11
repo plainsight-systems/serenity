@@ -47,64 +47,70 @@ namespace serenity::frame {
 // backend records the barrier between a pass that writes an image and a
 // later one that reads it (metal/frame/renderer.h).
 //
-// ReSTIR DI (Bitterli et al. 2020) is five passes, one or two steps of its
-// algorithm each (metal/integrator/restir_di.metal.h states it by numbered
-// steps): so each kernel traces with little alive across its ray queries
-// (logical-overview.md, "Little is kept alive across a ray query"), and the
-// spatial merge reads its neighbors' reservoirs only after every pixel has
-// written its own. What each reads and writes, of the frame's images
+// ReSTIR DI (Bitterli et al. 2020) is four passes, one or more steps of its
+// algorithm each (metal/passes/restir_di/restir_di.metal.h states it by
+// numbered steps): split where a step must see every pixel's result before
+// it, the spatial merge reading its neighbors' reservoirs only after every
+// pixel has written its own, and where a pass would otherwise hold more
+// alive across its ray queries (logical-overview.md, "Little is kept alive
+// across a ray query"). What each reads and writes, of the frame's images
 // (contract 6; contracts 5 and 14 lay out the records and the reservoirs):
 //
-//   surfaces           the camera's path to its first surface that aims at
-//                      lights (step 1); writes the surface records, the
-//                      path states and, in a graph with a temporal merge,
-//                      the surfaces' previous positions.
-//   restir_candidates  M candidates and visibility reuse (steps 2 and 3);
-//                      reads the records; writes a reservoir a pixel.
-//   restir_temporal    the temporal merge (step 4); reads the records and
-//                      previous positions, last frame's records and final
-//                      reservoirs, and the candidates' reservoirs; writes a
-//                      reservoir a pixel.
-//   restir_spatial     the spatial merge (step 5); reads the records and
-//                      the reservoirs the pass before it wrote, at k
-//                      neighbors; writes a reservoir a pixel.
-//   restir_shade       the direct light from the final reservoir, and the
-//                      path's continuation (step 6); reads the records, the
-//                      path states and the final reservoirs; accumulates,
-//                      and so writes radiance, as the path pass does.
+//   restir_initial   the camera's path to its first surface that aims at
+//                    lights, then M candidates there and visibility reuse
+//                    (steps 1 to 3); writes the surface records, the path
+//                    states and, in a graph with a temporal merge, the
+//                    surfaces' previous positions; and a reservoir a pixel.
+//   restir_temporal  the temporal merge (step 4); reads the records and
+//                    previous positions, last frame's records and final
+//                    reservoirs, and the initial reservoirs; writes a
+//                    reservoir a pixel.
+//   restir_spatial   the spatial merge (step 5); reads the records and the
+//                    reservoirs the pass before it wrote, at k neighbors;
+//                    writes a reservoir a pixel.
+//   restir_shade     the direct light from the final reservoir, and the
+//                    path's continuation (step 6); reads the records, the
+//                    path states and the final reservoirs; accumulates, and
+//                    so writes radiance, as the path pass does.
 //
 // The reservoirs the last pass before restir_shade writes are the frame's
 // final reservoirs, which the next frame's temporal merge reads as last
 // frame's (metal/frame/frame_images.h). The order a schedule keeps, checked
-// by invalid() below: surfaces, restir_candidates, restir_temporal if
-// present, restir_spatial if present, restir_shade, each at most once;
-// surfaces, restir_candidates and restir_shade all present if any of the
-// five is; and the shade, which writes radiance, before the presenting pass
-// that reads it, as every light pass is.
+// by invalid() below: restir_initial, restir_temporal if present,
+// restir_spatial if present, restir_shade, each at most once;
+// restir_initial and restir_shade both present if any of the four is; and
+// the shade, which writes radiance, before the presenting pass that reads
+// it, as every light pass is.
 //
 // An estimator is a graph (logical-overview.md, principle 4: estimators are
 // interchangeable over the same scene):
 //
-//   surfaces, restir_candidates, restir_shade
+//   ["restir_initial", "restir_shade"]
 //       resampled importance sampling alone, with visibility reuse; with
 //       candidates = 1, naive next event estimation at the first surface;
-//   with restir_temporal, restir_spatial, or both, in that order
+//   with restir_temporal, restir_spatial, or both between them, in that order
 //       temporal reuse, spatial reuse, or both;
-//   path
+//   ["path"]
 //       the reference, unchanged: the naive path tracer
 //       (metal/integrator/path.metal.h), to whose image every ReSTIR graph
 //       converges (principle 3).
+//
+// `last` names the final kind, without being a kind of its own (a second
+// name for its value, which no switch needs a case for): schedule.cpp
+// asserts its list of every kind against it, so a kind missing from the
+// list fails to compile (P.5). A kind is added before `last`, and `last`
+// set to it.
 enum class PassKind {
     test_pattern,  // a diagnostic image, a function of pixel and time; writes the target
     preview,       // deterministic ray tracing, direct light only; needs a scene; writes radiance
     path,          // path tracing, naive, accumulating while the image holds still; needs a scene; writes radiance
     display,       // radiance as it is: the largest channel above 1 scaled to 1, then sRGB; writes the target
     tone_map,      // radiance exposed, bloomed and rolled off (core/passes/tone_map.h), then sRGB; writes the target
-    surfaces,           // ReSTIR DI step 1: the camera's path to its first rough surface; needs a scene
-    restir_candidates,  // steps 2 and 3: M candidates, one survivor, its visibility; needs a scene
-    restir_temporal,    // step 4: last frame's reservoir merged in; needs a scene
-    restir_spatial,     // step 5: k neighbors' reservoirs merged in; needs a scene
-    restir_shade,       // step 6: the survivor's light and the path's continuation; accumulates; writes radiance
+    restir_initial,   // ReSTIR DI steps 1 to 3: the first rough surface, M candidates, visibility; needs a scene
+    restir_temporal,  // step 4: last frame's reservoir merged in; needs a scene
+    restir_spatial,   // step 5: k neighbors' reservoirs merged in; needs a scene
+    restir_shade,     // step 6: the survivor's light and the path's continuation; accumulates; writes radiance
+    last = restir_shade,
 };
 
 // Whether a pass of `kind` reads the scene. A frame graph with such a pass
@@ -121,7 +127,7 @@ bool writes_radiance(PassKind kind);
 bool reads_radiance(PassKind kind);
 bool writes_target(PassKind kind);
 
-// Whether a pass of `kind` is one of ReSTIR DI's five (above): it reads or
+// Whether a pass of `kind` is one of ReSTIR DI's four (above): it reads or
 // writes the surface records or the reservoirs, and reads the [restir_di]
 // settings.
 bool is_restir(PassKind kind);
@@ -162,8 +168,8 @@ bool reuses_history(const Schedule& schedule);
 //   - tone-map settings exactly when there is a tone_map pass, with an
 //     exposure finite within [-10, 10] stops and a bloom in [0, 1)
 //     (core/passes/tone_map.h);
-//   - ReSTIR DI's passes in their order, each at most once, with surfaces,
-//     restir_candidates and restir_shade all present if any of the five is
+//   - ReSTIR DI's passes in their order, each at most once, with
+//     restir_initial and restir_shade both present if any of the four is
 //     (above); and its settings exactly when its passes are present, each
 //     setting the passes read in its range and each they do not read 0
 //     (core/passes/restir_di.h).

@@ -13,10 +13,13 @@
 //   |depth_there - depth_here| <= depth_threshold x depth_here, and
 //   dot(normal_here, normal_there) >= normal_threshold,
 //
-// each depth along its camera's forward axis (metal/camera/thin_lens.metal.h,
-// camera_depth), the normals the records' shading normals, and there's
-// record not of kind none (contracts/surface_record.h). The thresholds are
-// the graph's (core/passes/restir_di.h).
+// each depth along its frame's camera's forward axis, as the caller's
+// Frame gives it (unbiased.metal.h), the normals the records' shading
+// normals (bsdf.normal), and there's bsdf not of kind none
+// (contracts/surface_record.h). The thresholds are the graph's
+// (core/passes/restir_di.h).
+//
+// Depends on contract 5 and the settings alone.
 //
 // The test decides noise, never correctness: a reservoir from a surface it
 // lets through is weighed by whether that surface could have produced each

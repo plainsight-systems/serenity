@@ -131,13 +131,13 @@
 // order, and its image is unchanged to the bit; held by comparing the path
 // pass's accumulated image before and after the split on every scene, and
 // its frame time against its baseline, measured again
-// (docs/research/2026-10-10-restir-di-layout.md, "Additive"). The surfaces
-// pass calls camera_segment() and writes its result as the pixel's surface
-// record and path state (contracts/surface_record.h); the shade calls
+// (docs/research/2026-10-10-restir-di-layout.md, "Additive"). ReSTIR's
+// initial pass calls camera_segment() and writes its result as the pixel's
+// surface record and path state (contracts/surface_record.h); the shade calls
 // continue_path() on what it reads back, with `first` = reused, so step 5 is
 // skipped there and ReSTIR's direct light is the shade's to add
-// (restir_di.metal.h, step 6). Its numbers continue the path's stream from
-// where the segment left it: the three step 5 would have drawn are not
+// (metal/passes/restir_di/restir_di.metal.h, step 6). Its numbers
+// continue the path's stream from where the segment left it: the three step 5 would have drawn are not
 // drawn, which changes which numbers later steps draw, not their
 // independence.
 //

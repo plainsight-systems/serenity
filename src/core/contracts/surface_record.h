@@ -6,20 +6,21 @@
 // What a pixel's camera path found at its first surface that can be lit by
 // aiming at a light (contracts/bsdf.h, aims_at_lights): through glass and
 // off mirrors to it, as RTXDI's primary surface replacement does, and no
-// further. The surfaces pass writes them (metal/passes/surfaces/surfaces.h,
-// by metal/integrator/restir_di.metal.h's step 1); every later ReSTIR pass
-// reads them. Three arrays, one element a pixel, flat, in row-major pixel
-// order (GPU.2: neighbouring lanes, neighbouring pixels, neighbouring
+// further. ReSTIR's initial pass writes them (metal/passes/restir_initial/
+// restir_initial.h, by metal/passes/restir_di/restir_di.metal.h's step 1);
+// every later ReSTIR pass reads them. Three arrays, one element a pixel,
+// flat, in row-major pixel order (GPU.2: neighbouring lanes, neighbouring
+// pixels, neighbouring
 // addresses), each split by who reads it (CACHE.6: hot fields apart from
 // cold when the reads are memory-bound, and the merges' are):
 //
 //   SurfaceRecord   what the target function needs of the surface
 //                   (metal/integrator/target.metal.h): where it is, the
 //                   direction its light leaves toward, and its resolved
-//                   BSDF. Read by every pass after the surfaces pass, and
-//                   by the spatial merge at k neighbors a pixel: the record
-//                   is most of ReSTIR's memory traffic, so it holds that and
-//                   nothing else, in 64 bytes (CACHE.4: the merges read
+//                   BSDF. Read by every pass after the initial one, and by
+//                   the spatial merge at k neighbors a pixel: the record is
+//                   most of ReSTIR's memory traffic, so it holds that and
+//                   nothing else, in 80 bytes (CACHE.4: the merges read
 //                   every field of a record together, so one record is one
 //                   structure).
 //   PathState       what the path's continuation from the surface needs and
@@ -34,7 +35,7 @@
 //
 // The record. A pixel whose camera path reaches no such surface (it left
 // the scene, reached a light, or roulette or the safety stop ended it among
-// glass and mirrors) has a record of kind BsdfKind::none, which no pass
+// glass and mirrors) has a record whose bsdf.kind is none, which no pass
 // aims at a light from or reuses (bsdf.h: none has no lobe), and its path
 // state holds what it found.
 //
@@ -46,15 +47,18 @@
 //             precision, not packed: the shade evaluates the BSDF at it,
 //             and an f evaluated at a direction other than the path's would
 //             be the image of another surface.
-//   kind, normal, color, alpha, ior, escape
-//             contract 2's Bsdf, field for field, without its 8 bytes of
-//             padding, which is where wo's precision comes from: the
-//             record is 64 bytes, not 80. metal/integrator/target.metal.h
-//             makes a Bsdf of them again (record_bsdf()). A field added to
-//             Bsdf fails the assertion on its size below, so the record is
-//             revisited with it, not left behind.
+//   bsdf      contract 2's Bsdf, whole: the surface's material resolved
+//             there, the one definition Material owns (ES.3). A field
+//             Material adds to it, in its padding or not, is in the record
+//             with no change here, and a change of its size fails the
+//             assertion on the record's size below.
+//   padding   two words, unread: Bsdf's 48 bytes and two packed triples
+//             make 72, and the record is 80, five 16-byte groups, so an
+//             array of them keeps every record 16-byte aligned (GPU.2). No
+//             layout of one Bsdf definition and the two full-precision
+//             triples fits 64: the Bsdf alone is 48.
 //
-// A ray leaves the record's surface offset along `normal`, the BSDF's
+// A ray leaves the record's surface offset along bsdf.normal, the BSDF's
 // shading normal, where the path tracer offsets along the geometric normal
 // (metal/integrator/surface.metal.h): equal for every shape kind and
 // material so far (contract 1: only a material that perturbs the normal
@@ -72,18 +76,19 @@
 // contract 1's, the fields of the surface the continuation reads (leaving
 // it, and which medium a transmission enters).
 //
-// Cost, per frame, at P pixels: the surfaces pass writes 64 + 64 bytes a
+// Cost, per frame, at P pixels: the initial pass writes 80 + 64 bytes a
 // pixel, and 12 more in a graph with a temporal merge; then the record is
-// read once by the candidates, twice by the temporal merge (this pixel's
-// and, last frame's, the one it reprojects to), 1 + k times by the spatial
-// merge and once by the shade; the path state once, by the shade. At the
-// display's 3456 x 2234 (P = 7.7 M), a record array is 494 MB, as is the
-// path states'; the window traces fewer pixels than that
-// (logical-overview.md, "The frame"). Totals: metal/integrator/
-// restir_di.metal.h.
+// read twice by the temporal merge (this pixel's and, last frame's, the one
+// it reprojects to), up to 1 + 2k times by the spatial merge (its own, and
+// each neighbor's in its two walks) and once by the shade; the path state
+// once, by the shade. At the display's 3456 x 2234 (P = 7.7 M), a record
+// array is 618 MB and the path states' 494 MB; the window traces fewer
+// pixels than that (logical-overview.md, "The frame"). Totals:
+// metal/passes/restir_di/restir_di.metal.h.
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h):
-// each struct four groups of a packed triple and a word (CACHE.5).
+// the record the Bsdf's three groups and two groups of a packed triple and
+// a word, the path state four such groups (CACHE.5).
 
 #include "core/contracts/shared_layout.h"
 #include "core/contracts/bsdf.h"
@@ -92,20 +97,15 @@
 namespace serenity {
 namespace contracts {
 
-static_assert(sizeof(Bsdf) == 48, "SurfaceRecord copies Bsdf's fields: a field added to Bsdf is added here too");
-
 struct SurfaceRecord {
-    Float3 position;  // world space
-    BsdfKind kind;    // none: the pixel has no surface to aim at lights from
-    Float3 wo;        // unit, toward where the light goes
-    float alpha;      // Bsdf::alpha
-    Float3 normal;    // Bsdf::normal: unit, outward, the shading normal
-    float ior;        // Bsdf::ior
-    Float3 color;     // Bsdf::color
-    float escape;     // Bsdf::escape
+    Bsdf bsdf;          // contract 2; kind none: the pixel has no surface to aim at lights from
+    Float3 position;    // world space
+    uint32_t padding0;
+    Float3 wo;          // unit, toward where the light goes
+    uint32_t padding1;
 };
 
-static_assert(sizeof(SurfaceRecord) == 64, "SurfaceRecord must be the same 64 bytes on the host and in shaders");
+static_assert(sizeof(SurfaceRecord) == 80, "SurfaceRecord must be the same 80 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
 static_assert(std::is_trivially_copyable_v<SurfaceRecord>, "SurfaceRecord is written to the GPU as bytes");
 #endif

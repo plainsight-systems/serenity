@@ -2,26 +2,34 @@
 
 // Axis: Sample reuse (spatial reuse).
 //
-// ReSTIR DI's step 5 (metal/integrator/restir_di.metal.h): the reservoirs of
-// k neighbors within a radius merged into this pixel's, by the unbiased
-// rule (reservoir.metal.h, unbiased.metal.h). The only step that reads
-// other pixels of this frame (logical-overview.md, principle 5), and so a
-// pass of its own: every pixel's input reservoir is written, by the pass
-// before, before any neighbor reads it.
+// ReSTIR DI's step 5 (metal/passes/restir_di/restir_di.metal.h): the
+// reservoirs of k neighbors within a radius merged into this pixel's, by
+// the unbiased rule (reservoir.metal.h, unbiased.metal.h). The only step
+// that reads other pixels of this frame (logical-overview.md, principle 5),
+// and so a pass of its own: every pixel's input reservoir is written, by
+// the pass before, before any neighbor reads it.
+//
+// Depends on contracts 5 and 14, the settings (core/passes/restir_di.h),
+// this family's other headers, and the Sampler's numbers (the shared thing
+// every stage draws from: change-axes.md). This frame's answers come from
+// the Frame its caller passes (unbiased.metal.h), so it includes nothing of
+// the Integrator, the Camera, the lights or the acceleration structure.
 //
 // The steps, for pixel x with record q (contracts/surface_record.h):
 //
 //   1. Own input: the reservoir the pass before wrote at x (the temporal
-//      merge's, or the candidates' in a graph without one), count M_q.
+//      merge's, or the initial pass's in a graph without one), count M_q.
 //   2. Neighbors: for n = 0 .. k - 1, a point drawn uniformly in the disc
 //      of the graph's radius about x's center (two numbers, the square
 //      root's warp for the radius), rounded to pixel x_n. x_n = x, or
-//      outside the image: not an input. Else its record q_n, which must be
-//      of kind not none and similar to q (similar.metal.h), by this frame's
-//      camera's depths; if so, bit n of a 32-bit mask is set (k <= 32,
-//      core/passes/restir_di.h) and its reservoir r_n is an input.
+//      outside the image: not an input. Else its record q_n, whose bsdf
+//      must be of kind not none and which must be similar to q
+//      (similar.metal.h), by the Frame's depths; if so, bit n of a 32-bit
+//      mask is set (k <= 32, core/passes/restir_di.h) and its reservoir r_n
+//      is an input. The mask keeps which neighbors passed, and nothing
+//      else.
 //   3. Stream: q's own reservoir, then each input r_n in n's order, each
-//      weighed by its sample's target at q (target.metal.h).
+//      weighed by its sample's target at q (the Frame's target()).
 //   4. Z (unbiased.metal.h), for the survivor y from source s:
 //        own:       M_q if s is own; else M_q if y is visible from q, one
 //                   shadow ray from q; if hidden, the output weighs y 0 and
@@ -32,7 +40,7 @@
 //      The neighbors are drawn again from the same numbers for this walk
 //      (the numbers are a function of their position in the stream,
 //      metal/sampler/sampler.metal.h), and their records and counts read
-//      again, rather than kept: k records are 64 k bytes a thread, which
+//      again, rather than kept: k records are 80 k bytes a thread, which
 //      registers would hold only by giving up the threads that hide the ray
 //      queries' latency (GPU.3).
 //   5. Finish, and write this frame's final reservoir.
@@ -48,11 +56,12 @@
 // neighbors' (GPU.4); a lane whose neighbor n is not in the mask, or whose
 // target there is 0, skips its query.
 //
-// Cost, per pixel, at k neighbors: reads q's record and reservoir (80
-// bytes) and, per neighbor, its record and reservoir (80) twice, in steps
-// 2 and 4: up to (1 + 2k) x 80 bytes, 880 at k = 5, the second walk from
-// cache where the first walk's lines are still there, which is what
-// measurement will tell; writes 16. The reads are gathers within the
+// Cost, per pixel, at k neighbors: reads q's record and reservoir (80 + 32
+// = 112 bytes) and, per neighbor that passes, its record and reservoir
+// (112) twice, in steps 2 and 4: up to (1 + 2k) x 112 bytes, 1232 at k = 5,
+// of which the second walk's k x 112 come from cache where the first
+// walk's lines are still there, which is what measurement will tell; writes
+// 32. The reads are gathers within the
 // radius, not the coalesced reads of a pixel's own (SIMD.5, GPU.2):
 // neighbouring lanes draw unrelated offsets, so a SIMD group's 32 reads of
 // one neighbor touch up to 32 lines. Kept in row-major order in the first
@@ -65,10 +74,9 @@
 
 #include <metal_stdlib>
 
-#include "core/contracts/camera.h"
 #include "core/contracts/reservoir.h"
-#include "core/contracts/reuse_constants.h"
 #include "core/contracts/surface_record.h"
+#include "core/passes/restir_di.h"
 #include "metal/reuse/reservoir.metal.h"
 #include "metal/reuse/similar.metal.h"
 #include "metal/reuse/unbiased.metal.h"
@@ -96,13 +104,11 @@ struct NeighborArrays {
 };
 
 // Steps 1 to 5 for `pixel`, at image coordinates `at`, its neighbors read
-// from `arrays`; `camera` this frame's, for the depths. `Scene` is
-// scene_block.metal.h's SceneView, this frame's. `numbers` is the pass's
-// stream.
-template <typename Scene>
-inline serenity::contracts::Reservoir merge_spatial(Scene now, Merging pixel, uint2 at, NeighborArrays arrays,
-                                                    constant serenity::contracts::CameraData& camera,
-                                                    constant serenity::contracts::ReuseConstants& reuse,
+// from `arrays`; `now` this frame's Frame (unbiased.metal.h states what a
+// Frame answers). `numbers` is the pass's stream.
+template <typename Frame>
+inline serenity::contracts::Reservoir merge_spatial(Frame now, Merging pixel, uint2 at, NeighborArrays arrays,
+                                                    serenity::passes::RestirDi settings,
                                                     thread PathNumbers& numbers);
 
 }  // namespace shaders

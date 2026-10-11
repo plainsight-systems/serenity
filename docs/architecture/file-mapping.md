@@ -111,7 +111,7 @@ depend on contracts, not on each other.
 | 1 | **Surface interaction**: position, in the world and the shape's own coordinates, normals, the side arrived from, material, the medium inside; (u, v) with the first texture that needs them | Shape | Material, Texture, Integrator, Sample reuse |
 | 2 | **BSDF**: a material resolved at a surface, and evaluate, sample, pdf and lobes on it | Material | Integrator, Sample reuse |
 | 3 | **Emitter**: a direction toward the light drawn from numbers, the radiance along it, the distance to it, the pdf; the radiance it emits; which light, if any, a shape is | Light | Light selection, Integrator, Sample reuse |
-| 4 | **Light sample**: which light and which point on it, in its own coordinates (`light_sample.h`: the light's record and an octahedral point, 8 bytes), and what that point gives a surface | Light | Sample reuse, Integrator |
+| 4 | **Light sample**: which light and which point on it, in its own coordinates (`light_sample.h`: the light's record and the point as drawn, in full precision, 16 bytes), and what that point gives a surface | Light | Sample reuse, Integrator |
 | 5 | **Film outputs**: radiance, normal, depth, motion per pixel; first, ReSTIR's surface record at a pixel's first rough surface, the path's state there, and where that surface was last frame (`surface_record.h`) | Film | Pass, Sample reuse |
 | 6 | **Frame images**: the images between passes and the history across frames; first, the accumulated image | Frame graph | every Pass |
 | 7 | **Frame constants**: the frame's time and index, the size of the image written, and the frames the accumulated image holds | Frame graph | every Pass |
@@ -121,7 +121,7 @@ depend on contracts, not on each other.
 | 11 | **Obstacles**: what a motion must keep clear of, as distances and touches against the still shapes | Animation | Scene content (answers) |
 | 12 | **Medium**: what fills a shape's inside, and the share of light a stretch through it keeps | Medium | Integrator; named by Shape |
 | 13 | **Linear image**: a rendered image's radiance on the CPU, three floats a pixel, before tone mapping | Film | Output, Measurement |
-| 14 | **Reservoir**: a light sample by identity, its contribution weight and its count, as stored between passes and frames (`reservoir.h`, 16 bytes) | Sample reuse | Pass, Frame graph |
+| 14 | **Reservoir**: a light sample by identity, its contribution weight and its count, as stored between passes and frames (`reservoir.h`, 32 bytes) | Sample reuse | Pass, Frame graph |
 
 Each is designed on its own, header first, before the code that uses it.
 Contract 7 was the first written: `src/core/contracts/frame_constants.h`.

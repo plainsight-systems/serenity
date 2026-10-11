@@ -13,15 +13,15 @@
 // numbers into the same directions as before). An identity names its light
 // by its record's index, which these read the record by, so Sample reuse
 // stores 4 bytes of which light rather than the record's 8. Each kind
-// encodes its own point in the identity's word: the sphere by the
-// octahedral map (metal/math/warp.metal.h), a rectangle, when one comes,
-// by its (u, v).
+// places its own point in the identity's three floats: the sphere a unit
+// direction, a rectangle, when one comes, its (u, v) and a 0.
 //
-// Cost: drawing a point is sample_light()'s work, one transform of the
-// point into the light's space and an encoding (a few dozen flops);
-// evaluating one is a decoding, a transform, a normalization and the
-// glow's read, the same 16-byte light record and 48-byte transform reads
-// sample_light() makes, from the constant address space.
+// Cost: drawing a point is sample_light()'s work and one transform of the
+// point into the light's space (a few dozen flops); evaluating one is a
+// transform, a normalization and the reads sample_light() makes: the 8-byte
+// light record, the 16-byte sphere light, its 48-byte transform and 4-byte
+// glow, 76 bytes of logical loads from small arrays in the constant address
+// space (metal/passes/restir_di/restir_di.metal.h counts them a pixel).
 
 #include <metal_stdlib>
 

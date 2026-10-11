@@ -5,7 +5,7 @@
 //
 // What a ReSTIR pass reads beyond the frame's constants (contract 7) and
 // camera (contract 8): the previous frame's camera, framed for the same
-// image, which the temporal merge reprojects through and the surfaces pass
+// image, which the temporal merge reprojects through and the initial pass
 // projects last frame's position through; whether there is a previous frame
 // to merge; and the estimator's settings (core/passes/restir_di.h). Its own
 // buffer, bound only by ReSTIR's passes, so contract 7, which every pass

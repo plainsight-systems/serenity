@@ -188,12 +188,20 @@ private:
     std::vector<std::uint32_t> moving_;          // the shapes that move, whose boxes update() writes
     std::vector<shapes::Bounds> moving_bounds_;  // each one's object-space bounds, in moving_'s order
     std::unique_ptr<FrameArray> boxes_;          // one box per shape, per structure
-    // One structure for a still scene, in slot 0, which every frame traces;
-    // one per slot when shapes move. With Keep::last_too and shapes moving,
-    // the implementation makes this frames_in_flight + 1, indexed by frame
-    // index (above), each with the sequence of the last submission that
-    // traced it.
-    std::array<Built, frames_in_flight> structures_;
+    // One structure for a still scene, in entry 0, which every frame traces;
+    // one per slot when shapes move, entries 0 .. frames_in_flight - 1,
+    // indexed by slot; with Keep::last_too and shapes moving, all
+    // frames_in_flight + 1 entries, indexed by frame index mod 3 (above).
+    // The last entry is made only then; otherwise it holds nothing and
+    // costs nothing. Sized for every mode, so no index the header promises
+    // is out of bounds (SL.con.3).
+    std::array<Built, frames_in_flight + 1> structures_;
+    // With Keep::last_too: for each entry, the sequence + 1 of the last
+    // submission that traced it, as its own frame's structure or as last
+    // frame's; 0 for none. update_kept() waits for that one submission
+    // before rebuilding the entry, and no other (GPU.7, MEM.4).
+    std::array<std::uint64_t, frames_in_flight + 1> traced_through_{};
+    Keep keep_ = Keep::this_frame;
 };
 
 }  // namespace serenity::metal

@@ -11,6 +11,9 @@
 // reservoir and the merge rule" belong to Sample reuse, so ReSTIR GI
 // changes no line here).
 //
+// Depends on contracts 4 and 14 alone: what a sample's target is, and the
+// numbers it chooses by, are its caller's to pass.
+//
 // A reservoir in registers (Streaming, below) is contract 14's stored
 // reservoir (core/contracts/reservoir.h) with what streaming needs and a
 // stored reservoir does not: the running weight sum w_sum, the target at
@@ -67,10 +70,10 @@
 // is the one thing attention's online softmax adds for its range.
 //
 // Cost, per operation: one multiply-add on w_sum, one compare against one
-// number, a conditional copy of 8 bytes and two words; in registers, nothing
-// read or written. What a stream costs is its target evaluations
-// (target.metal.h) and the bytes of the reservoirs it reads, which each
-// pass counts.
+// number, a conditional copy of the 16-byte sample and two words; in
+// registers, 32 bytes of state, nothing read or written. What a stream
+// costs is its target evaluations (the caller's Frame's) and the bytes of
+// the reservoirs it reads, which each pass counts.
 
 #include <metal_stdlib>
 

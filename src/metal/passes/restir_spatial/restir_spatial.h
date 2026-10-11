@@ -10,7 +10,7 @@ namespace serenity::metal {
 
 // Axis: Pass (ReSTIR DI's spatial merge).
 //
-// ReSTIR DI's step 5 (metal/integrator/restir_di.metal.h, carried out by
+// ReSTIR DI's step 5 (metal/passes/restir_di/restir_di.metal.h, carried out by
 // metal/reuse/spatial.metal.h): one thread a pixel; the reservoirs of k
 // neighbors within the radius merged into the pixel's own by the unbiased
 // rule, its Z tested against each neighbor's surface in this frame.
@@ -28,9 +28,10 @@ namespace serenity::metal {
 // this frame's half of the ping-pong; last frame's half, which the temporal
 // merge read, it does not touch.
 //
-// Cost, per pixel at k neighbors: up to (1 + 2k) x 80 bytes read, gathered
-// within the radius (SIMD.5), and 16 written; at most 1 + 2k target
-// evaluations and k shadow rays; 3k + 1 numbers (metal/reuse/
+// Cost, per pixel at k neighbors: up to (1 + 2k) x 112 bytes read, the
+// neighbors' gathered within the radius (SIMD.5), and 32 written; at most
+// 1 + 2k target evaluations, each with its light's 76 bytes of logical
+// loads, and k shadow rays; 3k + 1 numbers (metal/reuse/
 // spatial.metal.h counts them). The pass the frame's memory traffic
 // concentrates in: its time, against its count, is the first measurement
 // the implementation makes (GPU.10). One dispatch.

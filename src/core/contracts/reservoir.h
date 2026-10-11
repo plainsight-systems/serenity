@@ -6,12 +6,12 @@
 // A reservoir as it is stored between ReSTIR DI's passes and from one frame
 // to the next: the one light sample it kept, its contribution weight W, and
 // the count M of candidates it stands for. Everything resampling streams
-// through it is summarized in these 16 bytes (CDSA.23: a fixed-size state
-// that update and merge both act on); what is streamed and how two merge is
+// through it is summarized in this fixed-size state (CDSA.23: one that
+// update and merge both act on); what is streamed and how two merge is
 // Sample reuse's, in registers (metal/reuse/reservoir.metal.h), where the
 // running weight sum lives until the reservoir is finished into W.
 //
-//   sample  the light sample, by identity (contract 4,
+//   sample  the light sample, by identity, its point exact (contract 4,
 //           core/contracts/light_sample.h): evaluated again wherever and
 //           whenever the reservoir is read. light no_light when it holds
 //           none.
@@ -34,11 +34,18 @@
 //           7 x 10^4 at the settings' limits (core/passes/restir_di.h),
 //           well within 32 bits, and exact as a float where a merge
 //           weighs by it.
+//   padding 8 bytes, unread, to make the reservoir 32.
 //
-// Stored flat, one a pixel, in row-major pixel order, 16 bytes aligned to
-// 16, so a SIMD group's 32 lanes read 512 contiguous bytes for their own
-// pixels (GPU.2); the spatial merge's reads of neighbors' reservoirs are
-// gathers, counted in metal/reuse/spatial.metal.h.
+// 32 bytes, not the 24 its fields fill. Stored flat, one a pixel, in
+// row-major pixel order (GPU.2): a SIMD group's 32 lanes read their own
+// pixels' reservoirs as one contiguous run either way, but the spatial
+// merge reads its neighbors' as gathers (metal/reuse/spatial.metal.h), one
+// reservoir a lane from unrelated places, and there a reservoir that
+// straddles two cache lines costs two. A 32-byte reservoir, its array
+// aligned to 32, never straddles a line of 32 bytes or more, and loads as
+// two aligned 16-byte words; a 24-byte one straddles a 64- or 128-byte line
+// at a fixed share of its places. The 8 bytes are counted in every pass's
+// traffic, as the price of that.
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
@@ -52,9 +59,10 @@ struct Reservoir {
     LightPoint sample;  // y
     float weight;       // W
     uint32_t count;     // M
+    uint32_t padding[2];
 };
 
-static_assert(sizeof(Reservoir) == 16, "Reservoir must be the same 16 bytes on the host and in shaders");
+static_assert(sizeof(Reservoir) == 32, "Reservoir must be the same 32 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
 static_assert(std::is_trivially_copyable_v<Reservoir>, "Reservoir is written to the GPU as bytes");
 #endif

@@ -14,13 +14,14 @@ namespace {
 
 // Every kind, in declaration order: the list pass_kind() reads names back
 // through. The switches below cover every kind (-Wswitch); this list is
-// held to the enum by its length, so a kind added last and left out of it
-// fails to compile (schedule.h).
+// held to the enum's final kind, PassKind::last, so a kind left out of it
+// fails to compile (schedule.h). Until the ReSTIR implementation adds its
+// four kinds here, this fails, as the switches below do.
 constexpr std::array<PassKind, 5> kinds = {PassKind::test_pattern, PassKind::preview, PassKind::path,
                                            PassKind::display, PassKind::tone_map};
-static_assert(kinds.size() == static_cast<std::size_t>(PassKind::tone_map) + 1,
+static_assert(kinds.size() == static_cast<std::size_t>(PassKind::last) + 1,
               "every PassKind is in `kinds`, in declaration order");
-static_assert(kinds.back() == PassKind::tone_map, "the last PassKind is last in `kinds`");
+static_assert(kinds.back() == PassKind::last, "the last PassKind is last in `kinds`");
 
 [[noreturn]] void no_case(const char* where) {
     // After a switch over every PassKind: reached only by a value no

@@ -9,6 +9,12 @@
 // test call this one definition (ES.3), so none can weigh a sample one way
 // and normalize it another.
 //
+// Depends on contracts 2, 4 and 5 and the Integrator's own Shading; nothing
+// of Sample reuse. The merges reach it only through the Frame the
+// composition passes them (metal/reuse/unbiased.metal.h;
+// metal/passes/restir_di/restir_di.metal.h), so a change to the merges
+// changes nothing here, and a change here none of their headers.
+//
 // The target, for surface record q (contracts/surface_record.h) and the
 // light at y as evaluate_light_point() gives it (contracts/light_sample.h):
 //
@@ -42,7 +48,7 @@
 // cancelled form; the header says what it is equal to.
 //
 // The shade's estimate of the direct light at q, given the final reservoir's
-// sample and weight W (metal/integrator/restir_di.metal.h, step 6):
+// sample and weight W (metal/passes/restir_di/restir_di.metal.h, step 6):
 //
 //   L_direct = f(wo, wi) |cos θ_x| L_e max(cos θ_y, 0) a / d^2 x T x W
 //
@@ -50,12 +56,10 @@
 // its surface or W is 0 (unbiased.metal.h). T is the transmittance of the
 // medium the path is in over d (contract 12), 1 in air.
 //
-// The light sample is evaluated at the point its identity decodes to,
-// everywhere, the candidates' pass included (contracts/light_sample.h): the
-// density the candidate was drawn with is the drawn direction's, which its
-// decoded point differs from by under 1e-4 radians on the light, a relative
-// error in its weight of the density's variation over one cell of the
-// encoding. Not zero, and what it costs is the reference test's to show.
+// The light sample is evaluated at the point its identity holds,
+// everywhere, the candidates' weights included: the point as drawn, kept
+// exactly (contracts/light_sample.h), so the density a candidate is weighed
+// by is its own point's, the measure the reference integrates.
 //
 // Pure functions of their arguments, inline, nothing read from memory: the
 // record and the light's answer are in registers (F.8: pure functions, so
@@ -63,8 +67,9 @@
 //
 // Cost, per evaluation: one BSDF evaluation (contract 2: a few dozen flops
 // for the conductor's GGX, fewer for the others), the light's answer
-// (evaluate_light_point(): a transform of the decoded point, a normalization),
-// and a dozen flops more. restir_di.metal.h counts the evaluations a pixel
+// (evaluate_light_point(): a transform of the point, a normalization, and
+// 76 bytes of the light's data loaded), and a dozen flops more.
+// metal/passes/restir_di/restir_di.metal.h counts the evaluations a pixel
 // makes.
 
 #include <metal_stdlib>
@@ -77,11 +82,9 @@
 namespace serenity {
 namespace shaders {
 
-// The record's BSDF as contract 2 lays it out, and the record made from a
-// surface being shaded: field for field (contracts/surface_record.h). The
-// surfaces pass makes the record from the surface's Shading (its point, wo
-// and resolved BSDF); every later pass reads the BSDF from it.
-inline serenity::contracts::Bsdf record_bsdf(serenity::contracts::SurfaceRecord record);
+// The record made from a surface being shaded: its resolved Bsdf, point and
+// wo (contracts/surface_record.h). The initial pass makes it; every later
+// pass reads the Bsdf from it as it is.
 inline serenity::contracts::SurfaceRecord surface_record(Shading here);
 
 // Rec. 709 luminance of a linear sRGB radiance.

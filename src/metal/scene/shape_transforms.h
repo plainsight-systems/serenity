@@ -38,7 +38,7 @@ namespace serenity::metal {
 // Last frame's transforms, for a graph with ReSTIR's temporal merge
 // (metal/reuse/temporal.metal.h): the merge evaluates last frame's surface
 // as last frame lit it, a light where last frame placed it, and the
-// surfaces pass places a hit's point where last frame placed its shape. The
+// initial pass places a hit's point where last frame placed its shape. The
 // renderer keeps a second ShapeTransforms for them, of this same class, and
 // in each frame being recorded animates the moving shapes into its slot's
 // copy at the previous frame's time (metal/frame/renderer.h). Not the

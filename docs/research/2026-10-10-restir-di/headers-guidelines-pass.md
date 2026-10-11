@@ -329,3 +329,46 @@ counted; F26). SIMD.6-SIMD.8 n/a.
 
 Conventions met (AGENTS.md): SF.8, SF.12, ES.27, SL.con.1, Enum.7, Enum.8,
 ES.100, ES.102, ES.107, and MSL's conversion syntax.
+
+## The review of 70dbe59
+
+Codex reviewed 70dbe59 for performance and for architecture
+(`.cache/reviews/70dbe59-performance.json`, `70dbe59-architecture.json`
+in the main checkout). Every finding was valid and is fixed in the commit
+after it. The IDs below were checked against the corpora before they were
+cited: GPU.6 (fuse stages), GDSA.6, GDSA.16, GPU.2, CACHE.5, GPU.7, MEM.4,
+SL.con.3, ES.3, P.5 and I.24, each fetched or listed and read for what it is
+cited for.
+
+| # | Review | Finding | IDs | What changed |
+|---|---|---|---|---|
+| R1 | both, P1 | The 16-bit octahedral light point makes the estimator a quadrature over grid cells, biased, which F14 above had stated as small instead of removing | ES.46 | contracts/light_sample.h: the point stored as drawn, three floats in the light's own space; LightPoint 16 bytes. The octahedral map, its "not zero" statement and its warp.metal.h declarations removed; nothing else used them. GDSA.18 and ES.46 no longer apply: nothing is narrowed. F14's verdict is superseded |
+| R2 | both | The reservoir's size with an exact point | GPU.2, CACHE.5 | contracts/reservoir.h: 32 bytes, the 24 of its fields and 8 of named padding, so it never straddles a cache line and loads as two aligned 16-byte words; why stated there |
+| R3 | performance, P1 | Surfaces and candidates split for no dependency: 80 bytes a pixel written and read back, a dispatch and a barrier | GDSA.6, GPU.6 | One pass, `restir_initial` (steps 1 to 3); the path state written before the candidate loop. schedule.h's kinds, order rules and graphs (RIS alone is ["restir_initial", "restir_shade"]), the pass directory and header, bindings.h, renderer.h and every cost table follow |
+| R4 | architecture, P1 | The Integrator's restir_di.metal.h included Sample reuse | change-axes.md | Moved to metal/passes/restir_di/restir_di.metal.h, a Pass-axis composition the four passes include. The merges ask a Frame (unbiased.metal.h states it: target, visible, depth) that the composition's FrameView provides, so metal/reuse/ includes only contracts, the settings, its own headers and the Sampler; the Integrator keeps target.metal.h and the path split and includes nothing of Sample reuse. Each header states its dependencies |
+| R5 | architecture, P2 | SurfaceRecord copied Bsdf's fields, a second definition of Material's layout | ES.3 | The record embeds contract 2's Bsdf whole, with position and wo at full precision and two words of padding: 80 bytes. record_bsdf() removed |
+| R6 | architecture, P1 | `first_written` inserted mid-aggregate broke plan_headless()'s positional initialization: a still run's samples became 0 | I.24 (as for parameters, so for positional aggregates) | HeadlessPlan::first_written, Sample::reused_since, HeadlessRun::reuses and FrameInputs::reused_since all declared last, each saying the implementation wires it. Checked: plan_headless({first 3, samples 4, accumulates}) gives 4 samples, sample (3, 2) index 14, and a moving run keeps `instants` (a scratch program against history.cpp) |
+| R7 | both, P2 | Three kept structures promised, storage for two | SL.con.3, GPU.7, MEM.4 | scene_acceleration.h: `std::array<Built, frames_in_flight + 1>`, the last entry made only with Keep::last_too and moving shapes, and each entry's last tracing submission, for the one wait update_kept() makes |
+| R8 | architecture, P2 | schedule.cpp's assertion held the list to tone_map, so a ReSTIR kind left out of it would compile | P.5 | PassKind gains `last = restir_shade`, a second name for the final value, which needs no switch case (checked with -Wswitch -Werror); schedule.cpp asserts against PassKind::last, and now fails until the implementation lists the four kinds, as its switches do |
+| R9 | performance, P1 | The bandwidth total omitted light data and traversal | GDSA.6 | The composition's cost is now three kinds, not added: intermediate-buffer traffic (1368 to 1928 bytes a pixel at k = 5, logical, and DRAM as far as uncached); light data, 76 logical bytes per target evaluation, 1748 a pixel at the written settings, assumed cached, 13.5 GB a frame at the display's size were it not; traversal as the rays' own cost |
+| R10 | architecture, P1 | unbiased.metal.h said the spatial mask avoided rereading neighbors; spatial.metal.h rereads them | GDSA.6 | Both now say the mask keeps acceptance only, and the second walk's k x 112 bytes are counted |
+
+What the rule-by-rule pass above says that the fixes change:
+
+- I.24 holds for sphere_evaluate_point(): with the octahedral word gone it
+  takes the LightPoint, not a bare vector beside the point (F6's fix,
+  kept by other means).
+- SF.9 holds without the warp.metal.h map: nothing shared remains for
+  sphere_light.metal.h and emitter.metal.h to cycle over.
+- I.9 and T.10: the merges are generic over a Frame, stated in
+  unbiased.metal.h, as supports() was over a Surface (F20).
+- GDSA.16 (F17): the reason the intermediates are written now names the
+  one split that stays without a grid-wide dependency to justify it, the
+  shade's, which keeps the continuation out of the merges' kernels; steps 1
+  to 3 are one kernel.
+- Every header compiles on its own again (SF.11), and every existing shader.
+
+New byte counts: SurfaceRecord 80, PathState 64, LightPoint 16, Reservoir
+32; per pixel at k = 5, M = 8, all four passes: 1368 to 1928 bytes of
+intermediate traffic, 1748 logical bytes of light data; ReuseImages 332
+bytes a pixel, 2.56 GB at 3456 x 2234 and 641 MB at 1728 x 1117.

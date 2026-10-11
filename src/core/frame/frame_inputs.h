@@ -56,6 +56,12 @@ struct FrameInputs {
     // Never after index.
     std::uint64_t accumulated_since = 0;
 
+    // The camera the frame is seen through, at the frame's time
+    // (contracts/camera.h). None when the frame has no scene; a frame graph
+    // that reads a scene refuses to render without one
+    // (metal/frame/renderer.h).
+    std::optional<contracts::Camera> camera;
+
     // The frame from which a graph that reuses history (frame::
     // reuses_history: ReSTIR's temporal merge) carries its reservoirs and
     // surface records: frame index's image is a function of the frames
@@ -66,14 +72,10 @@ struct FrameInputs {
     // light is what temporal reuse is for. Which frames may share it, and
     // the window's and the headless renderer's plans, are the core's
     // (frame/history.h, ReuseHistory). Unread by a graph that does not
-    // reuse history. Never after index.
+    // reuse history. Never after index. Last, after the members callers
+    // name in order; the window and the headless renderer set it with the
+    // ReSTIR implementation, and until then it is 0 and unread.
     std::uint64_t reused_since = 0;
-
-    // The camera the frame is seen through, at the frame's time
-    // (contracts/camera.h). None when the frame has no scene; a frame graph
-    // that reads a scene refuses to render without one
-    // (metal/frame/renderer.h).
-    std::optional<contracts::Camera> camera;
 };
 
 }  // namespace serenity::frame

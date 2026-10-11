@@ -90,7 +90,7 @@ inline float3 next_numbers3(thread PathNumbers& numbers) {
 // purposes' numbers are distinct words from the path's and from each
 // other's, as independent as any two of the path's (GDSA.3: a stream per
 // pixel and frame, a counter within it). The shade continues the path's own
-// stream where the surfaces pass left it (contracts/surface_record.h,
+// stream where the initial pass left it (contracts/surface_record.h,
 // PathState::dimension). The stream as one value, not its pixel and frame,
 // so a frame's index and a dimension, both words, cannot be passed in each
 // other's places (I.24). Declared for review; defined with the ReSTIR

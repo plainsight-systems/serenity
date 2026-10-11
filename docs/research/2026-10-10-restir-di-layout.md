@@ -346,24 +346,31 @@ convergence` on a ReSTIR graph.
 
 ## Where the headers depart from this layout (2026-10-10)
 
-Written while designing the headers; each header states the choice, and
-this note keeps what was set aside. The guideline pass over the headers is
+Written while designing the headers, and revised after Codex's review of
+70dbe59; each header states the choice, and this note keeps what was set
+aside. The guideline pass over the headers, and the review's findings
+with what each changed, are in
 `2026-10-10-restir-di/headers-guidelines-pass.md`.
 
 | Layout | Headers | Why |
 |---|---|---|
+| Five passes: surfaces, candidates, temporal, spatial, shade | Four: `restir_initial` (steps 1 to 3: the camera segment, M candidates, visibility reuse), temporal, spatial, shade | Surfaces and candidates are adjacent, always together, and share no pixel: split, they wrote the record and read it back (80 bytes a pixel) across a dispatch and a barrier. The path state is written before the candidates, so what is alive across visibility reuse's query is the record and the reservoir, as in a separate kernel (review of 70dbe59) |
+| `metal/integrator/restir_di.metal.h`, the steps in the Integrator | `metal/passes/restir_di/restir_di.metal.h`, a Pass-axis composition the four passes include | In the Integrator it included Sample reuse, which change-axes.md rules out. The merges now ask a Frame the composition passes them for the target, visibility and depths, and include no other family's shaders but the Sampler's numbers; the Integrator knows no reservoir (review) |
 | The shade traces one shadow ray; k + 3 rays a pixel | No shade ray; k + 2 | The merges keep an invariant: every reservoir written holds a sample visible from its surface, or weighs 0. The temporal merge's ray, when the survivor came from last frame, is traced from this pixel's surface, and the spatial merge's, when it came from a neighbor, likewise: each tests the pixel's own domain for Z and is the visibility the shade needs. Without it (the layout's plan, and RTXDI's), Z counts the pixel's own candidates for a sample it cannot see; harmless to its own image, which the final ray zeroes, but the merged reservoir then holds samples outside the domain a neighbor's spatial test grants it, a bias in that neighbor's image (`metal/reuse/unbiased.metal.h`) |
-| The record: position, wo octahedral (4 bytes), Bsdf (48) | position, wo at full precision, Bsdf's fields without its 8 bytes of padding: still 64 | A BSDF evaluated at a quantized wo is the image of another surface, and its support differs at grazing angles |
-| The temporal merge finds where the surface was from its position through the previous camera | A third array, the surface's previous position (12 bytes, temporal graphs only), written by the surfaces pass from the hit's object-space point and last frame's transform | The temporal merge cannot place a moving shape's point from the record alone, and the spatial merge's k neighbor reads should not carry it |
+| A light point as the light's index and an octahedral point in 2 x 16 bits: 8 bytes | The index and the point as drawn, three floats in the light's own space: 16 bytes | A point snapped to a grid makes the sample the cell's representative, whose probability is the density integrated over the cell; weighed by the density at the point, the estimator sums a quadrature that no number of frames turns into the reference's integral. The first headers stated the error as small; it is a bias, and both reviews of 70dbe59 said so. Kept exactly, the estimator integrates the reference's measure |
+| A reservoir of 16 bytes | 32: the 16-byte light point, W, M, and 8 bytes of padding | Its fields fill 24. At 32 a reservoir never straddles a cache line and loads as two aligned 16-byte words, which the spatial merge's gathers, one reservoir a lane from unrelated places, are where it pays; the padding is counted in every pass's traffic |
+| The record: position, wo octahedral (4 bytes), Bsdf (48): 64 | Contract 2's Bsdf whole, position and wo at full precision, two words of padding: 80 | A BSDF evaluated at a quantized wo is the image of another surface. The first headers kept 64 by copying Bsdf's fields without its padding; that defined Material's layout twice, and a field Material added in its padding would have been dropped silently (review). No layout of one Bsdf and the two full-precision triples fits 64 |
+| The temporal merge finds where the surface was from its position through the previous camera | A third array, the surface's previous position (12 bytes, temporal graphs only), written by the initial pass from the hit's object-space point and last frame's transform | The temporal merge cannot place a moving shape's point from the record alone, and the spatial merge's k neighbor reads should not carry it |
 | Reuse constants: the previous camera and time | The previous camera; no time | No shader reads the previous time: last frame's transforms and glows, animated at it on the CPU, are what carry it |
-| Target evaluations: temporal 2, spatial 2k | 3 and 1 + 2k | The pixel's own reservoir is streamed with its sample's target, which the 16-byte reservoir does not store |
-| About (5 + k) x 80 bytes a pixel, 800 at k = 5 | 1080 to 1480 bytes at k = 5 | Counted from the passes: the path state (64 written, 64 read), the previous position, the accumulated pixel, and the spatial merge's second walk over its neighbors for Z (from cache or not) |
-| Last frame's structure "kept alive one frame more" | A ring of three structures, indexed by frame index, for a temporal graph whose shapes move | With one per slot, frame i + 1 rebuilds what frame i reads as last frame's |
-| The twelve files | Also: `metal/reuse/similar.metal.h` (the similarity test both merges ask), `metal/math/warp.metal.h` (the octahedral map), `metal/camera/thin_lens.metal.h` (projection and depth), `metal/sampler/sampler.metal.h` (a purpose's stream), `metal/light_selection/uniform_light.metal.h` (the chosen index), `core/frame/frame_inputs.h` (reused_since), `metal/frame/frame_resources.h` and `renderer.h` | Each is the axis that owns the piece; every change is a declaration or a comment beside what exists |
+| Target evaluations: temporal 2, spatial 2k | 3 and 1 + 2k | The pixel's own reservoir is streamed with its sample's target, which the reservoir does not store |
+| About (5 + k) x 80 bytes a pixel, 800 at k = 5 | Intermediate-buffer traffic 1368 to 1928 bytes a pixel at k = 5; light data counted apart, 76 logical bytes per target evaluation, 1748 a pixel at the written settings, assumed cached; traversal counted as rays | Counted from the passes: the path state, the previous position, the accumulated pixel, the 80-byte record and 32-byte reservoir, and the spatial merge's second walk over its neighbors for Z (from cache or not). The first headers' total of 1080 to 1480 was intermediate traffic alone, without saying so (review) |
+| Last frame's structure "kept alive one frame more" | A ring of three structures, indexed by frame index, for a temporal graph whose shapes move, each with the last submission that traced it | With one per slot, frame i + 1 rebuilds what frame i reads as last frame's. The first headers promised three and declared storage for two (review) |
+| The twelve files | Also: `metal/reuse/similar.metal.h` (the similarity test both merges ask), `metal/camera/thin_lens.metal.h` (projection and depth), `metal/sampler/sampler.metal.h` (a purpose's stream), `metal/light_selection/uniform_light.metal.h` (the chosen index), `core/frame/frame_inputs.h` (reused_since), `core/frame/schedule.cpp` (its list asserted against the final kind), `metal/frame/frame_resources.h` and `renderer.h` | Each is the axis that owns the piece; every change is a declaration or a comment beside what exists, or, in `schedule.cpp`, an assertion that now checks the whole enum |
 
 Set aside in designing them: aliasing the frame-transient arrays (the
 working reservoirs, the path states) with the tone map's pyramid in one
-heap (GPU.9), until memory at the traced resolution is a constraint; and
-fusing the surfaces and candidates passes, until the counters say whether
-the record's round trip costs more than the registers a fused kernel holds
-across its queries.
+heap (GPU.9), until memory at the traced resolution is a constraint; using
+the reservoir's 8 bytes of padding to keep its sample's target at its own
+surface, which would save the merges one target evaluation each, until the
+counters say target evaluations matter; and a 64-byte record, which no
+single definition of the Bsdf and two full-precision directions fits.

@@ -3,7 +3,7 @@
 // Axis: Pass (ReSTIR DI's settings: what its passes compute with, for every
 // backend).
 //
-// The numbers ReSTIR DI's five passes (core/frame/schedule.h) are run with,
+// The numbers ReSTIR DI's four passes (core/frame/schedule.h) are run with,
 // decided here, in the core, so every backend reuses the same candidates,
 // history and neighbors for the same graph (logical-overview.md,
 // principle 10). They are the estimator's values, not its mechanism
@@ -20,7 +20,7 @@
 // can disagree with another (ES.45).
 //
 //   candidates        M, the lights each pixel weighs at its surface
-//                     (metal/integrator/restir_di.metal.h, step 2): an
+//                     (metal/passes/restir_di/restir_di.metal.h, step 2): an
 //                     integer in [1, 32], written 8. Its cost per pixel is
 //                     M target evaluations and 4 M numbers (a light, a
 //                     point on it, and the reservoir's choice); 32 bounds
