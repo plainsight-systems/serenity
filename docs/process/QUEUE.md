@@ -86,8 +86,11 @@ is finished (not before), with the convergence runs after them; Phase
 B done 2026-10-11 on branch restir-di: RTXDI's BSDF candidate, weighed
 against the light candidates by MIS, and the temporal merge in basic
 mode, graphs/restir_temporal.toml, docs/research/2026-10-11-restir-
-temporal.md; left: Phase C, the spatial merge,
-docs/research/2026-10-10-restir-di-layout.md); ReSTIR GI; caustics by manifold next
+temporal.md; Phase C done 2026-10-11 on branch restir-di: the spatial
+merge, RTXDI's k = 1 within 32 pixels, basic mode and raytraced alone,
+graphs/restir.toml (ReSTIR DI whole) and graphs/restir_spatial.toml,
+docs/research/2026-10-11-restir-spatial.md; left: the references
+rendered again and the convergence runs); ReSTIR GI; caustics by manifold next
 event estimation; reservoir reuse as kernels; a denoiser of its own against
 Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
 
@@ -108,4 +111,6 @@ Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
 - Path MIS asks a light's density of the direction (light_pdf); on a firefly's rim that test rounds out, as ReSTIR's BSDF candidate found (light_point_pdf); check whether the path tracer counts rim hits twice.
 - ReSTIR's BSDF candidate costs 7 ms at 3456 x 2234 (+19% on the RIS graph); its ray and 8 BSDF densities are most of it.
 - ReSTIR DI loses to the MIS path tracer at equal time on the marbles (MSE x 1.4 to 1.7 at 1 s): measure the direct light's error alone, and at the traced resolution.
+- ReSTIR spatial: graphs/restir.toml in basic mode is -1.45% against the reference's mean at t = 120 (-0.33% at t = 8), each merge alone within 0.16%; check against raytraced once last frame's structure is kept (restir-spatial.md).
+- ReSTIR spatial: the pass costs 3.4 ms at 3456 x 2234; GPU counters against its counted traffic (gathers within the radius; a tiled order if line-bound).
 - bsdf_candidates = 0 is Phase A but for rim points, now weighed where Phase A's direction test dropped them; not bit-identical.
