@@ -4,7 +4,7 @@
 // emitter.metal.h), the target (metal/integrator/target.metal.h), the
 // reservoir (metal/reuse/reservoir.metal.h) and the shade's rule for a
 // reservoir's test (metal/reuse/visibility.metal.h). Bindings: the output
-// at 0, the inputs after it in the order each kernel lists them (probes.h).
+// at 0, the inputs after it in the order each kernel lists them (restir_probe.h).
 // A light kernel's lights are one sphere light, record 0, read through the
 // emitter as the passes read them: the records, the spheres, the
 // transforms, the glows and which light each shape is, at 1 to 5; placed
@@ -27,7 +27,7 @@
 #include "metal/reuse/reservoir.metal.h"
 #include "metal/reuse/visibility.metal.h"
 #include "metal/sampler/sampler.metal.h"
-#include "probes.h"
+#include "restir_probe.h"
 
 using namespace serenity::shaders;
 using serenity::contracts::Bsdf;

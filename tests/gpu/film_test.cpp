@@ -10,7 +10,7 @@
 
 #include <doctest/doctest.h>
 
-#include "gpu/kernels/probes.h"
+#include "gpu/kernels/film_probe.h"
 #include "gpu/support/probe_runner.h"
 
 using namespace serenity;

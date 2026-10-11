@@ -2,12 +2,12 @@
 // tests/gpu/film_test.cpp: thread i folds samples[i] into pixels[i], starting
 // over where starts[i] is 1, and every thread reports its failure to the
 // shared counter, as the path pass does. Bindings: the output at 0, then the
-// pixels, the samples, the starts, their count and the counter (probes.h).
+// pixels, the samples, the starts, their count and the counter (film_probe.h).
 
 #include <metal_stdlib>
 
 #include "metal/film/accumulate.metal.h"
-#include "probes.h"
+#include "film_probe.h"
 
 using namespace serenity::shaders;
 using serenity::tests::Float4;

@@ -53,7 +53,7 @@
 #include "core/contracts/bsdf.h"
 #include "core/frame/graph_file.h"
 #include "core/scene/scene.h"
-#include "gpu/kernels/probes.h"
+#include "gpu/kernels/path_probe.h"
 #include "gpu/support/probe_light.h"
 #include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"

@@ -34,7 +34,8 @@ target_link_libraries(serenity_gpu_tests PRIVATE serenity_metal serenity_test_su
 add_dependencies(serenity_gpu_tests serenity-headless)
 
 # The probe kernels, each running a shader half on its own for its test
-# (kernels/probes.h), and the smallest kernel, smoke, that the library and
+# (each kernel's records in its own header, kernels/<kernel>.h, shared with
+# its test alone), and the smallest kernel, smoke, that the library and
 # argument-table tests run.
 serenity_add_metallib(
     TARGET serenity_gpu_tests NAME probes

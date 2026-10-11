@@ -19,7 +19,7 @@
 #include <doctest/doctest.h>
 
 #include "core/scene/scene.h"
-#include "gpu/kernels/probes.h"
+#include "gpu/kernels/trace_probe.h"
 #include "gpu/support/probe_runner.h"
 #include "metal/acceleration/scene_acceleration.h"
 #include "metal/device/device.h"

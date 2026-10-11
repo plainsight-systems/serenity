@@ -1,11 +1,11 @@
 // Runs the numbers a path draws (metal/sampler/sampler.metal.h) for
 // tests/gpu/sampler_test.cpp. Bindings: the output at 0, the inputs after
-// it in the order the kernel lists them (probes.h).
+// it in the order the kernel lists them (sampler_probe.h).
 
 #include <metal_stdlib>
 
 #include "metal/sampler/sampler.metal.h"
-#include "probes.h"
+#include "sampler_probe.h"
 
 using namespace serenity::shaders;
 using serenity::tests::PathNumbersDraw;

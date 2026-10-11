@@ -34,7 +34,7 @@
 #include "core/contracts/surface_interaction.h"
 #include "core/materials/coated.h"
 #include "core/scene/scene.h"
-#include "gpu/kernels/probes.h"
+#include "gpu/kernels/bsdf_probe.h"
 #include "gpu/support/probe_runner.h"
 #include "metal/scene/scene_buffers.h"
 #include "support/references.h"

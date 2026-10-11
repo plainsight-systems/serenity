@@ -5,7 +5,7 @@
 // at any scale, and a hit names its shape by its primitive index
 // (scene_acceleration.h). Bindings: the output at 0, then the rays, their
 // count, the structure, and the shapes' records, transforms and boxes
-// (probes.h).
+// (trace_probe.h).
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -15,7 +15,7 @@
 #include "core/shapes/primitive.h"
 #include "metal/acceleration/trace.metal.h"
 #include "metal/device/layout.metal.h"
-#include "probes.h"
+#include "trace_probe.h"
 
 using namespace serenity::shaders;
 using serenity::tests::TraceHit;

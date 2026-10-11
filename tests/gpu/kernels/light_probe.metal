@@ -2,7 +2,7 @@
 // for tests/gpu/light_test.cpp. The light is its data and its shape's
 // transform, as the emitter reads it (emitter.metal.h). Bindings: the output
 // at 0, then the light's data, the query and the light's transform
-// (probes.h).
+// (light_probe.h).
 
 #include <metal_stdlib>
 
@@ -11,7 +11,7 @@
 #include "metal/device/layout.metal.h"
 #include "metal/math/hash.metal.h"
 #include "metal/lights/sphere_light.metal.h"
-#include "probes.h"
+#include "light_probe.h"
 
 using namespace serenity::shaders;
 using serenity::tests::LightDraw;

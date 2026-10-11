@@ -11,7 +11,7 @@
 #include "core/contracts/medium.h"
 #include "core/contracts/surface_interaction.h"
 #include "core/scene/scene.h"
-#include "gpu/kernels/probes.h"
+#include "gpu/kernels/shape_probe.h"
 #include "gpu/support/probe_runner.h"
 
 using namespace serenity;

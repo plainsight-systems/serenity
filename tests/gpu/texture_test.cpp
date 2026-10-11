@@ -21,7 +21,7 @@
 #include "core/textures/noise.h"
 #include "core/textures/swirl.h"
 #include "core/textures/wood.h"
-#include "gpu/kernels/probes.h"
+#include "gpu/kernels/texture_probe.h"
 #include "gpu/support/probe_runner.h"
 
 using namespace serenity;

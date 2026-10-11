@@ -1,6 +1,6 @@
 // Runs the BSDF contract's shader side (metal/materials/bsdf.metal.h,
 // resolve.metal.h) for tests/gpu/bsdf_test.cpp. Bindings: the output at 0,
-// the inputs after it in the order each kernel lists them (probes.h).
+// the inputs after it in the order each kernel lists them (bsdf_probe.h).
 
 #include <metal_stdlib>
 
@@ -10,7 +10,7 @@
 #include "metal/materials/resolve.metal.h"
 #include "metal/math/hash.metal.h"
 #include "metal/scene/scene_block.h"
-#include "probes.h"
+#include "bsdf_probe.h"
 
 using namespace serenity::shaders;
 using serenity::contracts::Bsdf;

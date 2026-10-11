@@ -10,7 +10,7 @@
 // Bindings are positional: binding i is the kernel's [[buffer(i)]]. run()
 // binds its output at 0 and its inputs from 1, in the order given; each
 // probe kernel's comment lists its bindings in that order, its records in
-// kernels/probes.h.
+// its own header beside it (kernels/<kernel>.h).
 //
 // Failures are the test's (P.7): a buffer, argument table or pipeline the
 // device does not make fails the test case at once, naming Metal's reason

@@ -52,7 +52,7 @@
 #include "core/lights/sphere_light.h"
 #include "core/passes/restir_di.h"
 #include "core/scene/scene.h"
-#include "gpu/kernels/probes.h"
+#include "gpu/kernels/restir_probe.h"
 #include "gpu/support/probe_light.h"
 #include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"

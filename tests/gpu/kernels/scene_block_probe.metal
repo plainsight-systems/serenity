@@ -4,12 +4,12 @@
 // word of that element, and the probe writes that word. Each element is
 // found through the field's own type, so its stride is the shader's size of
 // that type. Bindings: the output at 0, then the queries, their count and
-// the block (probes.h).
+// the block (scene_block_probe.h).
 
 #include <metal_stdlib>
 
 #include "metal/scene/scene_block.h"
-#include "probes.h"
+#include "scene_block_probe.h"
 
 using serenity::tests::BlockQuery;
 

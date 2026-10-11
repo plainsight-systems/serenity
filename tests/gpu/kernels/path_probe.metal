@@ -6,7 +6,7 @@
 // the lights at 1 to 5 (the records, the spheres, the transforms, the
 // glows and which light each shape is: one sphere light, record 0, read
 // through the emitter as the passes read it), then the inputs each kernel
-// lists (probes.h).
+// lists (path_probe.h).
 
 #include <metal_stdlib>
 
@@ -20,7 +20,7 @@
 #include "metal/lights/emitter.metal.h"
 #include "metal/materials/bsdf.metal.h"
 #include "metal/math/hash.metal.h"
-#include "probes.h"
+#include "path_probe.h"
 
 using namespace serenity::shaders;
 using serenity::contracts::Bsdf;

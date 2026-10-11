@@ -3,7 +3,7 @@
 // points[i].point with seed points[i].seed; the wood (metal/textures/
 // wood.metal.h) and the swirl (metal/textures/swirl.metal.h) at
 // points[i].point, given their data. Bindings: the output at 0, then the
-// points, their count, and the texture's data (probes.h).
+// points, their count, and the texture's data (texture_probe.h).
 
 #include <metal_stdlib>
 
@@ -11,7 +11,7 @@
 #include "metal/textures/noise.metal.h"
 #include "metal/textures/swirl.metal.h"
 #include "metal/textures/wood.metal.h"
-#include "probes.h"
+#include "texture_probe.h"
 
 using namespace serenity::shaders;
 using serenity::tests::TexturePoint;

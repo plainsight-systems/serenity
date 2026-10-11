@@ -25,7 +25,7 @@
 
 #include "core/camera/thin_lens.h"
 #include "core/scene/scene.h"
-#include "gpu/kernels/probes.h"
+#include "gpu/kernels/scene_block_probe.h"
 #include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"
 #include "metal/scene/scene_block.h"

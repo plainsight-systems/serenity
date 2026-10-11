@@ -2,13 +2,13 @@
 // tests/gpu/camera_test.cpp: thread i makes the ray through image point
 // queries[i]'s pixel from its lens point, for an image of image.width x
 // image.height. Bindings: the output at 0, then the queries, their count,
-// the framed camera and the image (probes.h).
+// the framed camera and the image (camera_probe.h).
 
 #include <metal_stdlib>
 
 #include "metal/camera/thin_lens.metal.h"
 #include "metal/device/layout.metal.h"
-#include "probes.h"
+#include "camera_probe.h"
 
 using namespace serenity::shaders;
 using serenity::tests::CameraImage;

@@ -2,13 +2,13 @@
 // tests/gpu/shape_test.cpp: thread i fills contract 1 at queries[i].point on
 // shape queries[i].shape, a ray arriving from +z. Bindings: the output at 0,
 // then the queries, their count, and the shapes' records, transforms and
-// boxes (probes.h).
+// boxes (shape_probe.h).
 
 #include <metal_stdlib>
 
 #include "metal/device/layout.metal.h"
 #include "metal/shapes/shapes.metal.h"
-#include "probes.h"
+#include "shape_probe.h"
 
 using namespace serenity::shaders;
 using serenity::tests::ShapeQuery;

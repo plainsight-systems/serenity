@@ -17,7 +17,7 @@
 
 #include "core/contracts/transform.h"
 #include "core/lights/sphere_light.h"
-#include "gpu/kernels/probes.h"
+#include "gpu/kernels/light_probe.h"
 #include "gpu/support/probe_runner.h"
 #include "support/vector.h"
 

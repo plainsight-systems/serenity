@@ -14,7 +14,7 @@
 
 #include "core/animation/draw.h"
 #include "core/camera/thin_lens.h"
-#include "gpu/kernels/probes.h"
+#include "gpu/kernels/camera_probe.h"
 #include "gpu/support/probe_runner.h"
 #include "support/references.h"
 #include "support/vector.h"
