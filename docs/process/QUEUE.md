@@ -62,7 +62,11 @@ This file tracks active and accepted work.
    two-reference check, and the naive estimator's convergence at both
    times, into that note's Results.
 
-Then, each in its turn: ReSTIR DI; ReSTIR GI; caustics by manifold next
+Then, each in its turn: ReSTIR DI (Phase A done 2026-10-10, branch
+restir-di-phase-a: resampled importance sampling with visibility reuse,
+graphs/restir_ris.toml; left: its frame time and convergence measured on
+an idle GPU, then Phase B, the temporal and spatial merges,
+docs/research/2026-10-10-restir-di-layout.md); ReSTIR GI; caustics by manifold next
 event estimation; reservoir reuse as kernels; a denoiser of its own against
 Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
 

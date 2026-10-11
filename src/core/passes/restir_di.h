@@ -102,6 +102,10 @@
 //                     Written basic (biasCorrectionMode). Read by a graph
 //                     with restir_temporal or restir_spatial; a graph with
 //                     neither merges nothing, and is unbiased either way.
+//                     Until the merges are implemented (the Metal backend
+//                     refuses restir_temporal and restir_spatial by name,
+//                     metal/frame/renderer.h), it is read and checked here
+//                     and changes no image: no graph that runs merges.
 //   visibility_reuse  whether the shade, in basic mode, takes a recent
 //                     visibility test of its survivor for its own instead of
 //                     tracing one (RTXDI's reuseFinalVisibility; step 6):

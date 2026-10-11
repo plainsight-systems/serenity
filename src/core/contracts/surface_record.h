@@ -50,7 +50,8 @@
 //   wo        unit, toward where the surface's light goes: the camera, or
 //             the mirror or glass the camera's path came through. The
 //             equal-area octahedral map in two 16-bit numbers
-//             (contracts/light_sample.h), within about 5 x 10^-5 radians.
+//             (contracts/light_sample.h), within 10^-4 radians
+//             (unit_round_trip_error; 6.3 x 10^-5 measured).
 //   bsdf      contract 2's PackedBsdf: the surface's material resolved
 //             there, packed by Material's one definition (contracts/
 //             bsdf.h, pack_bsdf; its shading normal is in it). A field
@@ -143,6 +144,7 @@ static_assert(std::is_trivially_copyable_v<SurfaceRecord>, "SurfaceRecord is wri
 // PathState's packed words' bits (above).
 SERENITY_CONSTANT uint32_t path_counter_mask = 0xffffu;
 SERENITY_CONSTANT uint32_t path_surface_shift = 16u;
+SERENITY_CONSTANT uint32_t path_surface_mask = 0xffu;  // after its shift
 SERENITY_CONSTANT uint32_t path_flags_shift = 24u;
 SERENITY_CONSTANT uint32_t path_interior_shift = 16u;
 SERENITY_CONSTANT uint32_t path_no_medium = 0xffffu;  // contract 12's no_medium, in 16 bits

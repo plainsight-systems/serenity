@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 #include <Foundation/Foundation.hpp>
@@ -187,6 +188,19 @@ private:
 // metal/passes/restir_di/restir_di.metal.h. No CPU-GPU crossing: the CPU never
 // reads them.
 //
+// What is made so far: the arrays of a graph with no merge, the one this
+// backend runs until restir_temporal and restir_spatial are implemented
+// (metal/frame/renderer.h refuses them by name): one record array, the
+// path states and one final reservoir array, 92 bytes a pixel, 178 MB at a
+// traced 1728 x 1117. With no temporal merge there is no history to keep:
+// prepare() makes the arrays at the frame's size, remade as above when it
+// changes, and returns 0, no previous frame, asking no rule (frame::
+// ReuseHistory is the temporal merge's, and arrives with it). The two
+// halves, the previous positions, the working array and the history come
+// with the merges; until then a ReuseImages asked for them (Temporal::
+// merged, Working::needed) is refused by MetalError at construction,
+// never made without them.
+//
 // Throws MetalError if the frame's size is not one Metal makes an image of
 // (metal/device/device.h, max_texture_side; the arrays are sized from it,
 // as the images are), or the device cannot make a buffer.
@@ -209,8 +223,9 @@ public:
 
     // Ready for frame `inputs` at `size`; see above. Returns the frames the
     // history holds before this one (0: it starts over, and last frame's
-    // halves are not to be read). Throws MetalError if the core's rule
-    // refuses the frame, or an array cannot be made.
+    // halves are not to be read; always 0 until the temporal merge, above).
+    // Throws MetalError if the core's rule refuses the frame, or an array
+    // cannot be made.
     std::uint64_t prepare(const frame::FrameInputs& inputs, frame::Extent size);
 
     // The arrays frame `index` reads and writes, as a shader binds them:
@@ -233,16 +248,17 @@ private:
         Resident resident;  // released after the GPU is done with it (submission.h, Lifetime)
     };
 
+    // Makes `array` of `bytes` in private storage, resident (GPU.9, MEM.9).
+    void make(Array& array, std::size_t bytes, const char* what);
+
     NS::SharedPtr<MTL::Device> device_;
     Submission& submission_;
-    Temporal temporal_;
-    Working working_;
-    std::array<Array, 2> records_;  // the second only with a temporal merge
+    frame::Extent size_;  // the arrays' size; none before the first prepare()
+    // A graph without a merge's arrays (above). The temporal merge's halves,
+    // previous positions, working array and history are added with it.
+    Array records_;
     Array path_states_;
-    Array previous_positions_;
-    Array working_reservoirs_;
-    std::array<Array, 2> final_reservoirs_;  // the second only with a temporal merge
-    frame::ReuseHistory history_;  // the core's rule, and what the arrays hold
+    Array final_reservoirs_;
 };
 
 }  // namespace serenity::metal

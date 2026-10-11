@@ -14,6 +14,8 @@
 #include "core/camera/thin_lens.h"
 #include "core/contracts/camera.h"
 #include "core/contracts/frame_constants.h"
+#include "core/contracts/reuse_constants.h"
+#include "core/contracts/surface_record.h"
 #include "metal/device/error.h"
 #include "metal/device/support.h"
 #include "metal/passes/bindings.h"
@@ -46,6 +48,21 @@ constexpr NS::UInteger max_buffers = 8;
 constexpr NS::UInteger max_textures = 4;
 static_assert(bindings::path::non_finite < max_buffers);
 static_assert(bindings::tone_map::target < max_textures);
+// A ReSTIR graph's table: its passes bind up to 16 buffers (bindings.h,
+// restir_temporal's 0 to 15), so every other graph's table keeps the 8 it
+// had (renderer.h).
+constexpr NS::UInteger max_restir_buffers = 16;
+static_assert(bindings::restir_initial::output < max_restir_buffers);
+static_assert(bindings::restir_temporal::last_transforms < max_restir_buffers);
+static_assert(bindings::restir_shade::non_finite < max_restir_buffers);
+
+// The reuse constants are written into their ring as their bytes.
+static_assert(std::is_trivially_copyable_v<contracts::ReuseConstants>);
+
+// What the path state keeps of a medium's index: 16 bits, 0xffff for none
+// (core/contracts/surface_record.h). A ReSTIR graph refuses a scene with
+// that many media or more (I.5).
+constexpr std::size_t max_restir_media = contracts::path_no_medium;
 
 // Shaders read the time as a float (contracts/frame_constants.h): a double
 // past float's range would reach them as infinity.
@@ -57,10 +74,10 @@ void check_time(const frame::FrameInputs& inputs) {
     }
 }
 
-NS::SharedPtr<MTL4::ArgumentTable> make_argument_table(MTL::Device* device) {
+NS::SharedPtr<MTL4::ArgumentTable> make_argument_table(MTL::Device* device, NS::UInteger buffers) {
     const auto pool = scoped_pool();  // Metal's error, if any, is autoreleased
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-    descriptor->setMaxBufferBindCount(max_buffers);
+    descriptor->setMaxBufferBindCount(buffers);
     descriptor->setMaxTextureBindCount(max_textures);
     NS::Error* error = nullptr;
     auto table = NS::TransferPtr(device->newArgumentTable(descriptor.get(), &error));
@@ -77,7 +94,9 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     : submission_(submission),
       library_(device, serenity::metallib::shaders),
       constants_(device, submission, std::vector<std::byte>(ring_slot_size), FrameArray::Copies::per_frame),
-      arguments_(make_argument_table(device.handle())) {
+      arguments_(make_argument_table(device.handle(), std::ranges::any_of(schedule.passes, frame::is_restir)
+                                                          ? max_restir_buffers
+                                                          : max_buffers)) {
     // The core decides which schedules can be carried out (principle 10).
     if (const std::optional<std::string> reason = frame::invalid(schedule)) {
         throw MetalError("Renderer: " + *reason);
@@ -91,9 +110,10 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     }
     const auto pool = scoped_pool();
 
-    // The first pass that writes the images between passes or accumulates.
+    // The first pass that writes the images between passes, accumulates,
+    // or writes ReSTIR's arrays, which the frame before's shade reads.
     const auto crosses_frames = [](frame::PassKind kind) {
-        return frame::writes_radiance(kind) || frame::accumulates(kind);
+        return frame::writes_radiance(kind) || frame::accumulates(kind) || frame::is_restir(kind);
     };
     if (const auto first = std::ranges::find_if(schedule.passes, crosses_frames); first != schedule.passes.end()) {
         first_cross_frame_ = static_cast<std::size_t>(first - schedule.passes.begin());
@@ -120,6 +140,21 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
             steps_.push_back(
                 Step{kind, Pass{std::in_place_type<ToneMapPass>, device, library_, submission, *schedule.tone_map}});
             break;
+        case frame::PassKind::restir_initial:
+            // No merge follows yet (the two below are refused): its
+            // reservoirs are the frame's final ones (frame_resources.h).
+            steps_.push_back(
+                Step{kind, Pass{std::in_place_type<RestirInitialPass>, library_, ReservoirOutput::final}});
+            break;
+        case frame::PassKind::restir_temporal:
+        case frame::PassKind::restir_spatial:
+            // Refused by name, never skipped (core/frame/schedule.h).
+            throw MetalError("Renderer: the frame graph's " + std::string(frame::name(kind)) +
+                             " pass is not implemented by the Metal backend yet; ReSTIR DI runs here without "
+                             "reuse, as restir_initial then restir_shade");
+        case frame::PassKind::restir_shade:
+            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirShadePass>, library_}});
+            break;
         }
     }
     // The pass that accumulates is the one that writes radiance (the core
@@ -134,6 +169,21 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     if (accumulates) {
         accumulation_ = std::make_unique<Accumulation>(device, submission);
         non_finite_ = std::make_unique<NonFinite>(device, submission);
+    }
+    // ReSTIR's arrays and constants, only for its graph (renderer.h). Its
+    // passes read a scene, which the check above has made sure of.
+    if (schedule.restir_di) {
+        if (scene->media.size() >= max_restir_media) {
+            throw MetalError("Renderer: the scene has " + std::to_string(scene->media.size()) +
+                             " media, and ReSTIR DI's path state keeps a medium's index in 16 bits, under " +
+                             std::to_string(max_restir_media));
+        }
+        restir_ = schedule.restir_di;
+        reuse_ = std::make_unique<ReuseImages>(device, submission, ReuseImages::Temporal::none,
+                                               ReuseImages::Working::none);
+        reuse_constants_ = std::make_unique<FrameArray>(device, submission,
+                                                        std::vector<std::byte>(sizeof(contracts::ReuseConstants)),
+                                                        FrameArray::Copies::per_frame);
     }
 
     // Only a graph that reads the scene has it put on the GPU, and only its
@@ -179,12 +229,15 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
         throw MetalError("Renderer: frame " + std::to_string(inputs.index) +
                     ": the frame graph reads a scene, and the frame has no camera");
     }
-    if (!accumulation_ && !images_) {
+    if (!accumulation_ && !images_ && !reuse_) {
         return;
     }
     prepared_.reset();
     if (images_) {
         images_->prepare(size);
+    }
+    if (reuse_) {
+        (void)reuse_->prepare(inputs, size);  // 0: no frame before to merge, without a temporal merge
     }
     const std::uint32_t held =
         accumulation_ ? accumulation_->prepare(inputs, size,
@@ -237,7 +290,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
     }
     check_time(inputs);
     std::uint32_t accumulated_frames = 0;
-    if (accumulation_ || images_) {
+    if (accumulation_ || images_ || reuse_) {
         if (!prepared_ || prepared_->index != inputs.index || !(prepared_->size == size)) {
             throw MetalError("Renderer::record: frame " + std::to_string(inputs.index) +
                         " was not prepared at this size (Renderer::prepare)");
@@ -294,6 +347,20 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         resources.non_finite_counter = non_finite_->address(begun.slot);
     }
 
+    if (reuse_) {
+        // The reuse constants: the settings, and no frame before to merge
+        // (previous 0, its camera unread) until the temporal merge.
+        contracts::ReuseConstants reuse{};
+        reuse.settings = *restir_;
+        reuse.previous = 0u;
+        std::memcpy(reuse_constants_->bytes(begun.slot).data(), &reuse, sizeof(reuse));
+        resources.reuse = reuse_constants_->address(begun.slot);
+        const ReuseImages::Addresses arrays = reuse_->addresses(inputs.index);
+        resources.records = arrays.records;
+        resources.path_states = arrays.path_states;
+        resources.final_reservoirs = arrays.final_reservoirs;
+    }
+
     MTL4::ComputeCommandEncoder* encoder = begun.commands->computeCommandEncoder();
     if (encoder == nullptr) {
         throw MetalError("Renderer::record: the command buffer made no compute encoder");
@@ -310,16 +377,25 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         }
     }
     encoder->setArgumentTable(resources.arguments);
+    bool restir_before = false;  // whether a ReSTIR pass came before, in this frame
     for (std::size_t i = 0; i < steps_.size(); ++i) {
         const Step& step = steps_[i];
         if (i == first_cross_frame_) {
-            // The frames in flight share the images between passes and the
-            // accumulated image: none writes them while the frame before
-            // still reads them, and none reads the accumulated image before
-            // the frame before has written it. One barrier for both hazards,
-            // before the first pass that touches either (GPU.8).
+            // The frames in flight share the images between passes, the
+            // accumulated image and ReSTIR's arrays: none writes them while
+            // the frame before still reads them, and none reads the
+            // accumulated image before the frame before has written it. One
+            // barrier for every such hazard, before the first pass that
+            // touches any (GPU.8).
             encoder->barrierAfterQueueStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
         }
+        if (frame::is_restir(step.kind) && restir_before) {
+            // What the ReSTIR pass before it wrote this frame: the records,
+            // path states and reservoirs (GPU.8: a write and its reader).
+            encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch,
+                                               MTL4::VisibilityOptionDevice);
+        }
+        restir_before = restir_before || frame::is_restir(step.kind);
         if (frame::reads_radiance(step.kind)) {
             // The radiance image an earlier pass of this frame wrote.
             encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch,

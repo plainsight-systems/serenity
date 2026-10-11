@@ -138,8 +138,9 @@ struct Schedule {
     // that pass (graph_file.h, core/passes/tone_map.h).
     std::optional<passes::ToneMap> tone_map;
     // ReSTIR DI's settings: present exactly when the schedule has its
-    // passes (graph_file.h, core/passes/restir_di.h).
-    std::optional<passes::RestirDi> restir_di;
+    // passes (graph_file.h, core/passes/restir_di.h). Last, and none unless
+    // given, so a schedule written {passes, tone_map} keeps its meaning.
+    std::optional<passes::RestirDi> restir_di = std::nullopt;
 };
 
 // Whether any pass of `schedule` accumulates: whether its frames build on

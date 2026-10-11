@@ -157,15 +157,20 @@ inline float sphere_light_pdf(SphereLight light, float3 point, float3 direction)
 }
 
 // Contract 4, for a sphere light placed by `placed` (the transform
-// sphere_light() read its center and radius from). Declared for review;
-// defined with the ReSTIR implementation, and called by nothing until then.
+// sphere_light() read its center and radius from). Pure (F.8).
 
 // The point on the sphere that sphere_sample_light(light, point, u) draws
 // the direction toward, encoded: contract 4's `point`, the unit direction
 // from the center in the sphere's own space. Whether one was drawn is the
 // caller's to know: a point inside the light draws none (view_light()'s
 // distance at most the radius), and the emitter tests that first.
-inline uint sphere_draw_point(SphereLight light, serenity::contracts::Transform placed, float3 point, float2 u);
+inline uint sphere_draw_point(SphereLight light, serenity::contracts::Transform placed, float3 point, float2 u) {
+    const LightView v = view_light(light, point);
+    const float3 d = direction_to_light(v, u);
+    const float3 reached = point + distance_to_light(light, v, d) * d;
+    // On the unit sphere in its own space, up to the root's rounding.
+    return encode_unit(metal::normalize(transform_to_object(placed, reached)));
+}
 
 // What the sphere's point in `sample` gives `point`, as this light is
 // placed and lit, at the decoded point. The identity, not its bare word,
@@ -173,7 +178,20 @@ inline uint sphere_draw_point(SphereLight light, serenity::contracts::Transform 
 inline serenity::contracts::LightReceived sphere_evaluate_point(SphereLight light,
                                                                serenity::contracts::Transform placed,
                                                                serenity::contracts::LightPoint sample,
-                                                               float3 point);
+                                                               float3 point) {
+    // s R v: the outward normal at y scaled by the radius, and y - c.
+    const float3 outward = transform_direction(placed, decode_unit(sample.point));
+    const float3 to_light = light.center + outward - point;
+    const float distance = metal::length(to_light);
+    const float3 direction = to_light / distance;
+    return serenity::contracts::LightReceived{to_packed(direction),
+                                              distance,
+                                              to_packed(light.radiance),
+                                              -metal::dot(metal::normalize(outward), direction),
+                                              light.radius * light.radius,
+                                              light.primitive,
+                                              {0u, 0u}};
+}
 
 }  // namespace shaders
 }  // namespace serenity

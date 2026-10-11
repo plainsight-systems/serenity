@@ -102,19 +102,40 @@ inline float light_pdf(Lights lights, serenity::lights::LightRecord light, float
     return 0.0f;
 }
 
-// Contract 4 (above). Declared for review; defined with the ReSTIR
-// implementation, and called by nothing until then.
+// Contract 4 (above).
 
 // A point on light record `light`, drawn from `point` as sample_light()
 // draws a direction with the same `u`; holding no light (contracts/
 // light_sample.h, holds_light) where `point` is inside the light.
-inline serenity::contracts::LightPoint draw_light_point(Lights lights, uint light, float3 point, float2 u);
+inline serenity::contracts::LightPoint draw_light_point(Lights lights, uint light, float3 point, float2 u) {
+    const serenity::lights::LightRecord record = lights.records[light];
+    switch (record.kind) {
+    case serenity::lights::LightKind::sphere: {
+        const SphereLight sphere = sphere_light_at(lights, record.index);
+        if (metal::distance(sphere.center, point) <= sphere.radius) {
+            return serenity::contracts::LightPoint{0u, 0u};  // inside it: no sample, as sample_light()
+        }
+        const serenity::contracts::Transform placed = lights.transforms[lights.spheres[record.index].shape];
+        return serenity::contracts::LightPoint{serenity::contracts::light_valid | light,
+                                               sphere_draw_point(sphere, placed, point, u)};
+    }
+    }
+    return serenity::contracts::LightPoint{0u, 0u};
+}
 
 // What the light at `sample` gives `point`, as `lights` place and light it:
 // this frame's arrays, or last frame's for the temporal merge's previous
 // surface. Precondition: holds_light(sample).
 inline serenity::contracts::LightReceived evaluate_light_point(Lights lights, serenity::contracts::LightPoint sample,
-                                                               float3 point);
+                                                               float3 point) {
+    const serenity::lights::LightRecord record = lights.records[serenity::contracts::light_index(sample)];
+    switch (record.kind) {
+    case serenity::lights::LightKind::sphere:
+        return sphere_evaluate_point(sphere_light_at(lights, record.index),
+                                     lights.transforms[lights.spheres[record.index].shape], sample, point);
+    }
+    return serenity::contracts::LightReceived{};
+}
 
 }  // namespace shaders
 }  // namespace serenity

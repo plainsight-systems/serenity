@@ -308,6 +308,18 @@ constant constexpr uint temporal_numbers = 2u << 24;     // step 4
 constant constexpr uint spatial_numbers = 3u << 24;      // step 5
 constant constexpr uint permutation_numbers = 4u << 24;  // step 4's permutation, drawn at pixel (0, 0)
 
+// Contract 12's medium index in the path state's 16 bits, and back
+// (contracts/surface_record.h): no_medium is 0xffff there, and every other
+// index is under it, which the renderer checks of the scene (I.5).
+inline uint pack_medium(uint medium) {
+    return medium == serenity::contracts::no_medium ? serenity::contracts::path_no_medium : medium;
+}
+
+inline uint unpack_medium(uint packed) {
+    const uint medium = packed & serenity::contracts::path_counter_mask;
+    return medium == serenity::contracts::path_no_medium ? serenity::contracts::no_medium : medium;
+}
+
 // Step 1's result for one pixel.
 struct Surfaces {
     serenity::contracts::SurfaceRecord record;
@@ -315,26 +327,63 @@ struct Surfaces {
     float3 previous_position;  // where the record's point was last frame; unset without last_transforms
 };
 
+// Where `surface`'s point was last frame: its object-space point placed by
+// its shape's transform among `last_transforms`, last frame's (contract
+// 10: s R p + T).
+inline float3 previous_position(constant serenity::contracts::Transform* last_transforms,
+                                serenity::contracts::SurfaceInteraction surface) {
+    const serenity::contracts::Transform placed = last_transforms[surface.primitive];
+    return transform_translation(placed) + transform_direction(placed, to_float3(surface.object_position));
+}
+
 // Step 1: the camera's segment along `ray`, as a record and a path state;
 // `numbers` the path's stream, which the state's counter records.
 // `last_transforms`, last frame's shape transforms in a graph with a
 // temporal merge and null otherwise, places the surface's point as last
-// frame placed its shape (previous_position()).
+// frame placed its shape (previous_position()). A path that ends before
+// such a surface leaves the record zero, its bsdf's kind none, and its
+// light in the state.
 inline Surfaces first_surface(Scene scene, CameraRay ray, constant serenity::contracts::Transform* last_transforms,
-                              thread PathNumbers& numbers);
-
-// Where `surface`'s point was last frame: its object-space point placed by
-// its shape's transform among `last_transforms`, last frame's.
-inline float3 previous_position(constant serenity::contracts::Transform* last_transforms,
-                                serenity::contracts::SurfaceInteraction surface);
+                              thread PathNumbers& numbers) {
+    const path::Segment segment = path::camera_segment(scene, ray, numbers);
+    Surfaces found{};
+    found.state.radiance = to_packed(segment.L);
+    found.state.counts = numbers.dimension & serenity::contracts::path_counter_mask;
+    found.state.media = serenity::contracts::path_no_medium |
+                        (serenity::contracts::path_no_medium << serenity::contracts::path_interior_shift);
+    if (!segment.at_surface) {
+        return found;
+    }
+    const Shading here = segment.here;
+    found.record = surface_record(here);
+    found.state.throughput = to_packed(segment.beta);
+    found.state.eta_scale = segment.eta_scale;
+    found.state.counts |= (segment.surface << serenity::contracts::path_surface_shift) |
+                          (here.surface.flags << serenity::contracts::path_flags_shift);
+    found.state.media =
+        pack_medium(here.medium) | (pack_medium(here.surface.interior) << serenity::contracts::path_interior_shift);
+    if (last_transforms != nullptr) {
+        found.previous_position = previous_position(last_transforms, here.surface);
+    }
+    return found;
+}
 
 // Whether `light`, as evaluate_light_point() gave it to `from`'s point, is
 // visible from `from`: one shadow ray against `scene`'s structure, leaving
 // along the surface's unpacked shading normal (contracts/surface_record.h),
 // ignoring the light's own shape. The one visibility test every step
 // makes, so a sample is visible from a surface by every step or by none,
-// and a test one step made is the one another would have made.
-inline bool visible(Scene scene, RecordedSurface from, serenity::contracts::LightReceived light);
+// and a test one step made is the one another would have made. The ray
+// leaves as every ray leaves a surface (integrator/surface.metal.h, leave:
+// ES.3), from a surface holding only the point and the normal leave()
+// reads.
+inline bool visible(Scene scene, RecordedSurface from, serenity::contracts::LightReceived light) {
+    serenity::contracts::SurfaceInteraction leaving{};
+    leaving.position = to_packed(from.position);
+    leaving.geometric_normal = from.bsdf.normal;
+    return !occluded(scene.structure, scene.shapes(), leave(leaving, to_float3(light.direction), light.distance),
+                     light.primitive);
+}
 
 // Step 2 of temporal reuse, the caller's: where a point is in a frame's
 // image, through that frame's camera, rounded to the nearest pixel; none
@@ -349,6 +398,9 @@ struct Reprojected {
 // structure, and its camera framed for the image of `size` pixels. The
 // temporal merge is given this frame's and last frame's, which differ in
 // data only, so its one ray query serves either (temporal.metal.h, GPU.4).
+// Declared, and defined with the merges that ask it (restir_temporal,
+// restir_spatial), which the Metal backend refuses by name until then
+// (metal/frame/renderer.h).
 struct FrameView {
     Scene scene;
     constant serenity::contracts::CameraData* camera;
@@ -364,30 +416,161 @@ struct FrameView {
 
 // Step 4's permutation for the frame of `frame_numbers` (the permutation
 // purpose's stream at pixel (0, 0)): two numbers in [0, 3], x's and y's;
-// the identity when `settings` turn permutation off.
+// the identity when `settings` turn permutation off. Declared, and defined
+// with the temporal merge, as FrameView is.
 inline BlockPermutation frame_permutation(PathNumbers frame_numbers, serenity::passes::RestirDi settings);
 
-// Steps 2 and 3 at `here`, the pixel's record unpacked, M = `candidates`;
+// Steps 2 and 3 at `here`, the pixel's record unpacked, M = `count`;
 // `numbers` the candidates' stream. Precondition: here's kind is not none
 // and the scene has a light.
-inline serenity::contracts::Reservoir candidates(Scene scene, RecordedSurface here, uint candidates,
-                                                 thread PathNumbers& numbers);
+//
+// Each candidate draws four numbers whether or not it yields a sample (a
+// light, a point on it, the reservoir's choice), and every candidate
+// counts in M, one drawn from inside its light included: it is a draw
+// whose sample does not exist, weighing 0, as the naive estimator's next
+// event counts nothing for it (GDSA.3: the counter a function of the
+// candidate's position in the stream, never of what an earlier one drew).
+// The survivor's answer from its light, the direction, distance and shape
+// its shadow ray needs, is kept beside the stream as it is kept, so step 3
+// evaluates nothing again; across step 3's query what is alive is the
+// stored reservoir and that answer (restir_di.metal.h, above; GPU.3).
+inline serenity::contracts::Reservoir candidates(Scene scene, RecordedSurface here, uint count,
+                                                 thread PathNumbers& numbers) {
+    const Lights lights = scene.lights();
+    const UniformLight selection = scene.selection();
+    Streaming reservoir = empty_reservoir();
+    serenity::contracts::LightReceived survivor{};
+    for (uint i = 0; i < count; ++i) {
+        // Step 2.
+        const SelectedIndex chosen = select_light_index(selection, next_number(numbers));
+        const serenity::contracts::LightPoint y =
+            draw_light_point(lights, chosen.index, here.position, next_numbers2(numbers));
+        const float u = next_number(numbers);
+        serenity::contracts::LightReceived light{};
+        Candidate candidate{y, 0.0f, 0.0f};
+        if (serenity::contracts::holds_light(y)) {
+            light = evaluate_light_point(lights, y, here.position);
+            const float density = chosen.probability * light_pdf(lights, selection.records[chosen.index],
+                                                                 here.position, to_float3(light.direction));
+            candidate.target = target(here, light);
+            candidate.weight = candidate_weight(here, light, density);
+        }
+        if (stream_candidate(reservoir, candidate, u)) {
+            survivor = light;
+        }
+    }
+    // Resampled importance sampling's normalization: pi = 1, piSum = M.
+    const serenity::contracts::Reservoir chosen = finish(reservoir, Normalization{1.0f, float(reservoir.count)});
+
+    // Step 3: visibility reuse, its test here and now (tested 0, as finish()
+    // left it).
+    if (chosen.weight > 0.0f && !visible(scene, here, survivor)) {
+        return hide(chosen);
+    }
+    return chosen;
+}
+
+// Step 6's rule for whether a reservoir's own test stands for q's now
+// (above): a test here and now always; in basic mode with visibility
+// reuse on, one made within the graph's visibility_age frames and closer
+// than its visibility_distance pixels (contracts/reservoir.h, tested).
+inline bool takes_test(uint tested, serenity::passes::RestirDi settings) {
+    // The offset's two signed 8-bit coordinates, their bits taken apart as
+    // unsigned (ES.101) and read back as two's complement, and the age.
+    const uint mask = serenity::contracts::tested_field_mask;
+    const int2 offset =
+        int2(int(as_type<char>(uchar((tested >> serenity::contracts::tested_offset_x_shift) & mask))),
+             int(as_type<char>(uchar((tested >> serenity::contracts::tested_offset_y_shift) & mask))));
+    const uint age = (tested >> serenity::contracts::tested_age_shift) & mask;
+    if (age == 0u && offset.x == 0 && offset.y == 0) {
+        return true;
+    }
+    return settings.bias_correction == serenity::passes::BiasCorrection::basic &&
+           settings.visibility_reuse == serenity::passes::VisibilityReuse::on && age <= settings.visibility_age &&
+           metal::length(float2(offset)) < settings.visibility_distance;
+}
 
 // Step 6's result: the pixel's radiance, and whether the shade traced its
 // survivor's ray, in which case `reservoir`, carrying that test (and W = 0
-// where the sample was hidden), is written back for the next frame.
+// where the sample was hidden), is what the next frame's temporal merge is
+// to read. Writing it back is the temporal merge's to add with it
+// (restir_shade.h): no graph this backend runs has one yet, so nothing
+// would read it, and the shade's kernel writes nothing back.
 struct Shaded {
     float3 radiance;
     bool traced;
     serenity::contracts::Reservoir reservoir;  // the final reservoir, its test the shade's where traced
 };
 
+// The direct light at `record`'s surface from `final_reservoir` (step 6):
+// f |cos| L_e G V T W where W > 0, V from the reservoir's own test where
+// takes_test() takes it, else from one shadow ray. `medium` the path's
+// there. Unshadowed first, so across the query what is alive is that
+// radiance, the reservoir and the light's answer; the surface is unpacked
+// here and again by the caller after (above: registers traded for flops).
+struct Direct {
+    float3 radiance;
+    bool traced;
+    serenity::contracts::Reservoir reservoir;
+};
+
+inline Direct direct_from(Scene scene, serenity::contracts::SurfaceRecord record, uint medium,
+                          serenity::contracts::Reservoir final_reservoir, serenity::passes::RestirDi settings) {
+    Direct direct{float3(0.0f), false, final_reservoir};
+    if (!serenity::contracts::holds_light(final_reservoir.sample) || !(final_reservoir.weight > 0.0f)) {
+        return direct;
+    }
+    const RecordedSurface here = unpack_record(record);
+    const serenity::contracts::LightReceived light = evaluate_light_point(scene.lights(), final_reservoir.sample,
+                                                                          here.position);
+    direct.radiance = direct_light(here, light, final_reservoir.weight) *
+                      transmittance(scene.media(), medium, light.distance);
+    if (!metal::any(direct.radiance > 0.0f) || takes_test(final_reservoir.tested, settings)) {
+        return direct;  // nothing to see, or seen already
+    }
+    direct.traced = true;
+    direct.reservoir.tested = 0u;  // here and now
+    if (!visible(scene, here, light)) {
+        direct.radiance = float3(0.0f);
+        direct.reservoir = hide(direct.reservoir);
+    }
+    return direct;
+}
+
 // Step 6, from the pixel's record, path state and final reservoir, by the
 // graph's `settings` (its mode and visibility reuse); `numbers` the path's
 // stream, from the state's counter.
-inline Shaded shade(Scene scene, serenity::contracts::SurfaceRecord here, serenity::contracts::PathState state,
+inline Shaded shade(Scene scene, serenity::contracts::SurfaceRecord record, serenity::contracts::PathState state,
                     serenity::contracts::Reservoir final_reservoir, serenity::passes::RestirDi settings,
-                    thread PathNumbers& numbers);
+                    thread PathNumbers& numbers) {
+    const float3 found = to_float3(state.radiance);
+    if (packed_kind(record.bsdf) == serenity::contracts::BsdfKind::none) {  // no surface (first_surface())
+        return Shaded{found, false, final_reservoir};
+    }
+    const uint medium = unpack_medium(state.media);
+    const float3 beta = to_float3(state.throughput);
+    const Direct direct = direct_from(scene, record, medium, final_reservoir, settings);
+
+    // The continuation, from the surface rebuilt from the record and the
+    // path state as continue_path() reads it (path.metal.h): the point,
+    // the normal as the geometric normal, the flags and the interior; and
+    // the Shading's BSDF, wo and medium.
+    const RecordedSurface here = unpack_record(record);
+    serenity::contracts::SurfaceInteraction surface{};
+    surface.position = record.position;
+    surface.geometric_normal = here.bsdf.normal;
+    surface.flags = state.counts >> serenity::contracts::path_flags_shift;
+    surface.interior = unpack_medium(state.media >> serenity::contracts::path_interior_shift);
+    const path::Segment segment{true,
+                                Shading{surface, here.bsdf, here.wo, medium},
+                                found + beta * direct.radiance,
+                                beta,
+                                state.eta_scale,
+                                (state.counts >> serenity::contracts::path_surface_shift) &
+                                    serenity::contracts::path_surface_mask};
+    return Shaded{path::continue_path(scene, segment, path::FirstLight::reused, numbers), direct.traced,
+                  direct.reservoir};
+}
 
 }  // namespace restir
 }  // namespace shaders

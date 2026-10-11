@@ -37,14 +37,19 @@ inline SelectedLight select_light(UniformLight selection, float u) {
 
 // For ReSTIR DI's candidates, which keep a light by its record's index
 // (contracts/light_sample.h): the index select_light() chooses for the same
-// `u`, by the same formula, and its probability. Declared for review;
-// defined with the ReSTIR implementation. select_light() stays as it is, so
-// the naive path tracer's image does not move by a bit.
+// `u`, by the same formula, and its probability. select_light() stays as it
+// is, so the naive path tracer's image does not move by a bit; the formula
+// is written twice, three lines, rather than select_light() rewritten over
+// this one, which would put the path tracer's image at the compiler's
+// mercy for no gain (ES.3 weighed against the additive rule).
 struct SelectedIndex {
     uint index;         // into the light records
     float probability;  // 1 / count
 };
-inline SelectedIndex select_light_index(UniformLight selection, float u);
+inline SelectedIndex select_light_index(UniformLight selection, float u) {
+    const uint i = metal::min(uint(u * float(selection.count)), selection.count - 1u);
+    return SelectedIndex{i, 1.0f / float(selection.count)};
+}
 
 }  // namespace shaders
 }  // namespace serenity

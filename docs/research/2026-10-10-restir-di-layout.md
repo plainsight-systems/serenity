@@ -451,3 +451,27 @@ heap (GPU.9), until memory at the traced resolution is a constraint; and a
 full-precision directions fits (superseded by the rework's 32-byte packed
 record). The reservoir's stored target, set aside here for 4463eee, is
 taken in the rework.
+
+## Phase A, implemented (2026-10-10)
+
+ReSTIR DI without reuse, end to end: the path tracer's split, contracts
+4, 5 and 14, light points, the target, the reservoir's candidates and
+finish, `restir_initial` and `restir_shade`, `graphs/restir_ris.toml`. The
+merges, the reuse history, last frame's copies and structure, raytraced
+mode's rays and the boiling filter are Phase B's; the Metal backend
+refuses `restir_temporal` and `restir_spatial` by name until then. Where
+the headers changed in implementing them, and why:
+
+| Header | Change | Why |
+|---|---|---|
+| `metal/reuse/reservoir.metal.h` | `Candidate` carries the weight p̂ / p, not the density; `stream_candidate` returns whether it kept the candidate | The target and the density share cos θ_y a / d², which the target header says the implementation cancels; the reservoir is given the quotient (`candidate_weight`). The return lets the candidates keep the survivor's light answer for visibility reuse's ray without evaluating it again (F.21) |
+| `metal/integrator/target.metal.h` | `candidate_weight(surface, light, density)` added, with `scattered()` and `area_factor()` | The cancelled form, defined once (ES.3); one density argument (I.24) |
+| `core/contracts/light_sample.h`, `surface_record.h`, `bsdf.h` | `unit_round_trip_error` = 10^-4 radians, the map's measured worst 6.3 x 10^-5 stated where "about 5 x 10^-5" was | 5 x 10^-5 is a cell's width; a round trip's worst, where the map shears, measured over 262,336 directions, is 6.3 x 10^-5 |
+| `metal/math/warp.metal.h` | r = sqrt((x² + y²) / (1 + |z|)) in place of sqrt(1 - |z|) | The same number for a unit vector, without cancelling near the poles, where sqrt(1 - |z|) lost several cells |
+| `core/contracts/bsdf.h`, `surface_record.h` | the packed fields' shifts and masks named | ES.45 |
+| `metal/frame/frame_images.h` | `ReuseImages` makes a graph without merges' arrays (one record array, the path states, one final array) and refuses `Temporal::merged` and `Working::needed` by `MetalError`; no history member yet | Only the arrays Phase A's passes use; `ReuseHistory` arrives with the temporal merge |
+| `metal/frame/renderer.h` | the argument table holds 16 buffers for a ReSTIR graph, 8 as before for any other; the queue barrier also precedes the first ReSTIR pass | Its passes bind up to 12 (16 with the temporal merge); additive |
+| `core/frame/schedule.h` | `Schedule::restir_di` defaults to none | So a schedule written {passes, tone_map} keeps its meaning and the existing tests compile unchanged |
+| `metal/passes/restir_di/restir_di.metal.h` | `takes_test()` (step 6's rule), `direct_from()`, `pack_medium`/`unpack_medium` added; `FrameView`, `frame_permutation` marked Phase B; the shade's write-back deferred to the temporal merge | No graph that runs reads the write-back yet; the shade binds the final reservoirs read-only |
+| `metal/passes/restir_initial/restir_initial.h`, `restir_shade.h`, `core/passes/restir_di.h` | what Phase A refuses or defers, stated | No stubs that look real |
+| `metal/integrator/path.metal.h` | the loop as `arrive()` (steps 1 to 4) and `scatter()` (6 to 8) over a `Walk` | So the segment and the continuation share every line; the path pass's image unchanged to the bit (phase-a-guidelines-pass.md) |

@@ -30,6 +30,8 @@ target_compile_options(serenity_test_support INTERFACE
 add_executable(serenity_tests
     schedule_test.cpp
     graph_file_test.cpp
+    restir_schedule_test.cpp
+    restir_graph_file_test.cpp
     scene_test.cpp
     thin_lens_test.cpp
     shapes_test.cpp

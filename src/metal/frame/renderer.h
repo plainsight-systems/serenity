@@ -30,6 +30,8 @@
 #include "metal/passes/display/display.h"
 #include "metal/passes/path/path.h"
 #include "metal/passes/preview/preview.h"
+#include "metal/passes/restir_initial/restir_initial.h"
+#include "metal/passes/restir_shade/restir_shade.h"
 #include "metal/passes/test_pattern/test_pattern.h"
 #include "metal/passes/tone_map/tone_map.h"
 #include "metal/scene/shape_transforms.h"
@@ -127,7 +129,8 @@ namespace serenity::metal {
 // pass records its own (passes/tone_map/tone_map.h). Between frames, the
 // images between passes are one set the frames in flight share
 // (frame_images.h), and the accumulated image is the frame before's history:
-// before the first pass of a frame that writes the images or accumulates,
+// before the first pass of a frame that writes the images, accumulates or
+// is one of ReSTIR DI's (whose arrays, ReuseImages, the frames share too),
 // the renderer records one barrier waiting for the queue's earlier
 // dispatches (barrierAfterQueueStages, dispatch before dispatch), so a frame
 // never writes the images while the frame before still reads them, nor reads
@@ -165,10 +168,14 @@ namespace serenity::metal {
 // scene_acceleration.h), and one structure build and one barrier.
 // Nothing is allocated.
 //
-// ReSTIR DI (designed here; the members and the switch's four cases come
-// with its implementation). A graph with its passes (core/frame/schedule.h)
-// gets, at construction, everything below and nothing else changes for a
-// graph without them:
+// ReSTIR DI. A graph with its passes (core/frame/schedule.h) gets, at
+// construction, everything below and nothing else changes for a graph
+// without them. Implemented so far: restir_initial and restir_shade, the
+// graph with no merge, resampled importance sampling alone. A graph with
+// restir_temporal or restir_spatial is refused at construction by
+// MetalError naming the pass, never run without it; what is below for
+// those passes (the working array, last frame's copies, structure and
+// camera) comes with them. In detail:
 //
 //   - its passes, each built with where it writes its reservoirs, from the
 //     graph's order (frame_resources.h, ReservoirOutput): the initial pass
@@ -207,9 +214,13 @@ namespace serenity::metal {
 // accumulated image. Four dispatches and four barriers for the light, where
 // the path graph has one dispatch and one barrier.
 //
+// The argument table of a ReSTIR graph holds 16 buffer bindings, the
+// passes' most being 12 (passes/bindings.h); every other graph's holds the
+// 8 it did.
+//
 // Cost of recording a ReSTIR frame, on the CPU, beyond the above: 128 bytes
 // of reuse constants, four pipeline binds and dispatches with their
-// argument-table entries; with a temporal merge, one more animation of
+// argument-table entries (two of each without the merges); with a temporal merge, one more animation of
 // what moves and glows, at the previous time (O(movers + glowers), as
 // animate()'s cost is: core/animation/animate.h), and no
 // second structure build: last frame's structure is the one last frame
@@ -272,7 +283,8 @@ public:
     void read_accumulated(std::span<float> out);
 
 private:
-    using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass>;
+    using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass, RestirInitialPass,
+                              RestirShadePass>;
 
     // A pass of the schedule, with its kind (C.1).
     struct Step {
@@ -300,10 +312,17 @@ private:
     std::unique_ptr<FrameImages> images_;         // when a pass writes radiance, unless into the accumulated image
     std::unique_ptr<Accumulation> accumulation_;  // when a pass accumulates
     std::unique_ptr<NonFinite> non_finite_;       // with it
+    // ReSTIR DI's (above): its settings, as the graph gives them; its
+    // arrays; and the ring of its reuse constants, one copy per frame in
+    // flight. None for a graph without its passes.
+    std::optional<passes::RestirDi> restir_;
+    std::unique_ptr<ReuseImages> reuse_;
+    std::unique_ptr<FrameArray> reuse_constants_;
     std::optional<Prepared> prepared_;
     std::vector<Step> steps_;  // in schedule order
-    // The first pass that writes the images between passes or accumulates,
-    // before which the queue barrier is recorded; none if none does.
+    // The first pass that writes the images between passes, accumulates or
+    // is one of ReSTIR DI's (whose arrays the frames share), before which
+    // the queue barrier is recorded; none if none does.
     std::optional<std::size_t> first_cross_frame_;
 };
 

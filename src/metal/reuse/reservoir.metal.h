@@ -30,7 +30,11 @@
 //      [0, 1): kept with probability w / w_sum, so after the stream each
 //      candidate is the one kept with probability its weight over the
 //      total. w = 0 is never kept; a p of 0 is never streamed (the caller
-//      has no sample). A kept candidate's test is not yet made: its offset
+//      has no sample). The caller gives w, not p: the target and the
+//      density share factors that cancel in their quotient, which the
+//      Integrator computes cancelled (target.metal.h, candidate_weight),
+//      so the reservoir never divides two numbers that both vanish at a
+//      light's rim. A kept candidate's test is not yet made: its offset
 //      and age are 0, here and now, for the test the caller makes next
 //      (visibility reuse).
 //   3. Stream a reservoir r_i, from surface q_i, with its count already
@@ -71,10 +75,10 @@
 // with probability w_b / w_sum, is FlashAttention's combine of two blocks'
 // partial softmax state; a reservoir keeps one sample where attention keeps
 // the weighted sum of every value, which is the difference worth stating.
-// Held by a GPU test to be written with the implementation (MEMORY.md:
-// sampling shown on the GPU against the distribution it should draw from):
-// a reservoir fed exp(score) for a row of attention scores, its kept key
-// counted over many draws, the counts held to softmax by a chi-squared test.
+// Held by a GPU test (MEMORY.md: sampling shown on the GPU against the
+// distribution it should draw from; tests/gpu/restir_test.cpp): a reservoir
+// fed exp(score) for a row of attention scores, its kept key counted over
+// many draws, the counts held to softmax by a chi-squared test.
 // Scores are kept small there, so exp(score) needs no running maximum, which
 // is the one thing attention's online softmax adds for its range.
 //
@@ -112,7 +116,7 @@ struct Streaming {
 struct Candidate {
     serenity::contracts::LightPoint sample;  // y
     float target;                            // p̂_q(y)
-    float density;                           // p(y), > 0, in the same measure
+    float weight;                            // p̂_q(y) / p(y), finite and at least 0 (step 2)
 };
 
 // A reservoir streamed into a merge, as the merge weighs it.
@@ -124,12 +128,32 @@ struct MergeInput {
 };
 
 // Step 1.
-inline Streaming empty_reservoir();
+inline Streaming empty_reservoir() {
+    return Streaming{serenity::contracts::LightPoint{0u, 0u}, 0.0f, 0u, 0.0f, 0u, from_own};
+}
 
-// Step 2: `candidate`, kept or not by `u`.
-inline void stream_candidate(thread Streaming& reservoir, Candidate candidate, float u);
+// Step 2: `candidate`, kept or not by `u`; whether it was kept, so the
+// caller can hold beside the stream what it needs of the survivor (the
+// light's answer, for visibility reuse's ray) without asking for it again.
+// An in-out parameter, the state streamed into (F.17); a weight of 0 adds
+// to M and is never kept.
+inline bool stream_candidate(thread Streaming& reservoir, Candidate candidate, float u) {
+    reservoir.weight_sum += candidate.weight;
+    reservoir.count += 1u;
+    if (!(candidate.weight > 0.0f && u * reservoir.weight_sum < candidate.weight)) {
+        return false;
+    }
+    reservoir.sample = candidate.sample;
+    reservoir.target = candidate.target;
+    reservoir.tested = 0u;  // here and now: the test is the caller's next (visibility reuse)
+    reservoir.source = from_own;
+    return true;
+}
 
-// Step 3: `input`, kept or not by `u`.
+// Step 3: `input`, kept or not by `u`. Declared, and defined with the
+// merges that call it (temporal.metal.h, spatial.metal.h): restir_temporal
+// and restir_spatial, which the Metal backend refuses by name until then
+// (metal/frame/renderer.h).
 inline void stream_reservoir(thread Streaming& reservoir, MergeInput input, float u);
 
 // Step 4's normalization, by name, so its two numbers cannot be passed in
@@ -140,8 +164,17 @@ struct Normalization {
     float pi_sum;  // the sum over the inputs of count times domain target
 };
 
-// Step 4: the stored reservoir, normalized as the caller computed.
-inline serenity::contracts::Reservoir finish(Streaming reservoir, Normalization normalization);
+// Step 4: the stored reservoir, normalized as the caller computed. Its
+// count is M in contract 14's 24 bits: every M the settings allow fits
+// (contracts/reservoir.h), so the mask drops nothing.
+inline serenity::contracts::Reservoir finish(Streaming reservoir, Normalization normalization) {
+    const bool kept = serenity::contracts::holds_light(reservoir.sample) && reservoir.target > 0.0f &&
+                      normalization.pi_sum > 0.0f;
+    const float weight =
+        kept ? reservoir.weight_sum * normalization.pi / (reservoir.target * normalization.pi_sum) : 0.0f;
+    return serenity::contracts::Reservoir{reservoir.sample, reservoir.count & serenity::contracts::count_mask,
+                                          reservoir.tested, kept ? reservoir.target : 0.0f, weight};
+}
 
 // `reservoir` as reused `offset` pixels from where it was stored (the
 // reused pixel minus the reusing one, so a test's offset is always where
@@ -149,7 +182,8 @@ inline serenity::contracts::Reservoir finish(Streaming reservoir, Normalization 
 // offset plus `offset`, each coordinate clamped to [-127, 127], and its age
 // plus `frames`, saturating at 255 (contracts/reservoir.h, tested). What
 // the merges stream, so a survivor arrives with its test placed relative
-// to the pixel that keeps it.
+// to the pixel that keeps it. Declared, and defined with the merges, as
+// stream_reservoir() is.
 inline serenity::contracts::Reservoir reused_from(serenity::contracts::Reservoir reservoir, int2 offset, uint frames);
 
 }  // namespace shaders

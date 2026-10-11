@@ -93,9 +93,10 @@ inline float3 next_numbers3(thread PathNumbers& numbers) {
 // path's own stream where the initial pass left it
 // (contracts/surface_record.h, PathState::dimension). The stream as one
 // value, not its pixel and frame, so a frame's index and a dimension, both
-// words, cannot be passed in each other's places (I.24). Declared for review;
-// defined with the ReSTIR implementation.
-inline PathNumbers purpose_numbers(PathNumbers stream, uint first);
+// words, cannot be passed in each other's places (I.24).
+inline PathNumbers purpose_numbers(PathNumbers stream, uint first) {
+    return PathNumbers{stream.key, first};
+}
 
 }  // namespace shaders
 }  // namespace serenity

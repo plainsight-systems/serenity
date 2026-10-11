@@ -201,7 +201,126 @@ struct BlockQuery {
 
 static_assert(sizeof(BlockQuery) == 12, "BlockQuery must be the same 12 bytes on the host and in shaders");
 
+// ---- restir_probe.metal -----------------------------------------------------
+
+// A unit vector's equal-area octahedral code, and its decoding (unit_trip).
+struct UnitTrip {
+    contracts::Float3 decoded;
+    uint32_t code;
+};
+
+static_assert(sizeof(UnitTrip) == 16, "UnitTrip must be the same 16 bytes on the host and in shaders");
+
+// How unit_codes draws its directions: uniformly over the sphere, or by the
+// cosine about +z (a distribution that is not uniform, to show the
+// equal-area test can fail).
+SERENITY_CONSTANT uint32_t draw_uniform = 0u;
+SERENITY_CONSTANT uint32_t draw_cosine = 1u;
+
+struct UnitDraws {
+    uint32_t count;
+    uint32_t distribution;  // draw_uniform or draw_cosine
+};
+
+static_assert(sizeof(UnitDraws) == 8, "UnitDraws must be the same 8 bytes on the host and in shaders");
+
+// Where a light point is drawn from, and the u it is drawn with
+// (light_points).
+struct LightPointQuery {
+    contracts::Float3 point;
+    float u0;
+    float u1;
+    uint32_t padding[3];
+};
+
+static_assert(sizeof(LightPointQuery) == 32, "LightPointQuery must be the same 32 bytes on the host and in shaders");
+
+// What contract 3's sample_light() draws from a point with u, and what
+// contract 4's draw_light_point() then evaluate_light_point() give the
+// same point for the same u (light_points).
+struct LightPointResult {
+    contracts::Float3 sample_direction;
+    float sample_distance;
+    contracts::Float3 sample_radiance;
+    float sample_pdf;
+    contracts::Float3 direction;  // evaluate_light_point()'s
+    float distance;
+    contracts::Float3 radiance;
+    float cos_light;
+    float area_scale;
+    float pdf;           // light_pdf() asked of the evaluated direction
+    float area_density;  // light_area_density(pdf, the evaluation)
+    uint32_t light;      // the identity's light word
+};
+
+static_assert(sizeof(LightPointResult) == 80, "LightPointResult must be the same 80 bytes on the host and in shaders");
+
+// A surface the target is evaluated at, and the identity it is asked of
+// (target_at): the surface as a record unpacks it, and the light point.
+struct TargetQuery {
+    contracts::Float3 position;
+    uint32_t light_point;  // contract 4's point word, of light record 0
+    contracts::Float3 wo;
+    float selection;       // the light's selection probability, for candidate_weight()
+};
+
+static_assert(sizeof(TargetQuery) == 32, "TargetQuery must be the same 32 bytes on the host and in shaders");
+
+// target(), candidate_weight() at the cone's density, light_area_density()
+// of that density, and direct_light() with W = 1 (target_at).
+struct TargetResult {
+    float target;
+    float weight;
+    float area_density;
+    float cos_light;
+    contracts::Float3 direct;
+    float distance;
+};
+
+static_assert(sizeof(TargetResult) == 32, "TargetResult must be the same 32 bytes on the host and in shaders");
+
+// The streams of softmax_streams: `streams` reservoirs, each fed the
+// `count` scores, weight exp(scale x score), in an order `order` says,
+// from numbers keyed by its index and `seed`. zero: every weight 0.
+SERENITY_CONSTANT uint32_t order_forward = 0u;
+SERENITY_CONSTANT uint32_t order_reversed = 1u;
+SERENITY_CONSTANT uint32_t order_rotated = 2u;  // stream i starts at score i mod count
+SERENITY_CONSTANT uint32_t max_scores = 16u;
+
+struct SoftmaxQuery {
+    uint32_t count;
+    uint32_t streams;
+    uint32_t order;
+    uint32_t seed;
+    float scale;
+    uint32_t zero;  // 1: every weight 0, an empty stream
+    uint32_t padding[2];
+    float scores[max_scores];
+};
+
+static_assert(sizeof(SoftmaxQuery) == 96, "SoftmaxQuery must be the same 96 bytes on the host and in shaders");
+
+// One stream's finished reservoir and the sum it finished with.
+struct SoftmaxDraw {
+    uint32_t light;   // the kept sample's light word: light_valid | the score's index; 0 for none
+    uint32_t count;   // M
+    float target;     // the kept candidate's target, exp(scale x score)
+    float weight;     // W
+    float weight_sum;
+    uint32_t padding[3];
+};
+
+static_assert(sizeof(SoftmaxDraw) == 32, "SoftmaxDraw must be the same 32 bytes on the host and in shaders");
+
 #if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<UnitTrip>, "UnitTrip is copied from the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<UnitDraws>, "UnitDraws is copied to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<LightPointQuery>, "LightPointQuery is copied to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<LightPointResult>, "LightPointResult is copied from the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<TargetQuery>, "TargetQuery is copied to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<TargetResult>, "TargetResult is copied from the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<SoftmaxQuery>, "SoftmaxQuery is copied to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<SoftmaxDraw>, "SoftmaxDraw is copied from the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<BlockQuery>, "BlockQuery is copied to the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<Float4>, "Float4 is copied to and from the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<BsdfQuery>, "BsdfQuery is copied to the GPU as bytes");

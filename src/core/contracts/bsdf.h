@@ -109,7 +109,8 @@
 // x 10^-5 to 65504, which holds every albedo, f0, ior and escape a material
 // resolves to, and every alpha but a conductor's of roughness under about
 // 0.008, whose alpha keeps less precision as a subnormal half). The normal is
-// within about 5 x 10^-5 radians (contracts/light_sample.h). Every question
+// within 10^-4 radians (contracts/light_sample.h, unit_round_trip_error;
+// 6.2 x 10^-5 measured over the sphere). Every question
 // asked of a surface stored packed is asked of its unpacked Bsdf, by every
 // pass, the target's and the shade's alike, so each pixel's surface is one
 // surface: what packing changes is which surface that is, by those amounts,
@@ -175,6 +176,13 @@ static_assert(sizeof(Bsdf) == 48, "Bsdf must be the same 48 bytes on the host an
 #if !defined(__METAL_VERSION__)
 static_assert(std::is_trivially_copyable_v<Bsdf>, "Bsdf is written to the GPU as bytes");
 #endif
+
+// PackedBsdf's fields (below), named once (ES.45): a half in a word's low
+// 16 bits or, shifted, its high 16; the kind's 8 bits, shifted.
+SERENITY_CONSTANT uint32_t packed_half_mask = 0xffffu;
+SERENITY_CONSTANT uint32_t packed_high_shift = 16u;
+SERENITY_CONSTANT uint32_t packed_kind_shift = 16u;
+SERENITY_CONSTANT uint32_t packed_kind_mask = 0xffu;
 
 // A Bsdf packed (above): four words, read whole.
 struct PackedBsdf {

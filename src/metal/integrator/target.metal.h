@@ -102,7 +102,9 @@ namespace shaders {
 // The record made from a surface being shaded: its point, wo encoded and
 // its resolved Bsdf packed (contracts/surface_record.h; contracts/bsdf.h,
 // pack_bsdf). The initial pass makes it.
-inline serenity::contracts::SurfaceRecord surface_record(Shading here);
+inline serenity::contracts::SurfaceRecord surface_record(Shading here) {
+    return serenity::contracts::SurfaceRecord{here.surface.position, encode_unit(here.wo), pack_bsdf(here.bsdf)};
+}
 
 // A record unpacked: the surface every question about the pixel is asked
 // of, from the initial pass's candidates to the shade (contracts/
@@ -112,22 +114,63 @@ struct RecordedSurface {
     float3 wo;                           // unit, decoded
     serenity::contracts::Bsdf bsdf;      // unpack_bsdf()
 };
-inline RecordedSurface unpack_record(serenity::contracts::SurfaceRecord record);
+inline RecordedSurface unpack_record(serenity::contracts::SurfaceRecord record) {
+    return RecordedSurface{to_float3(record.position), decode_unit(record.wo), unpack_bsdf(record.bsdf)};
+}
 
 // Rec. 709 luminance of a linear sRGB radiance.
-inline float luminance(float3 radiance);
+inline float luminance(float3 radiance) {
+    return metal::dot(radiance, float3(0.2126f, 0.7152f, 0.0722f));
+}
+
+// f(wo, wi) |cos θ_x| L_e at `surface` for `light`: the factor the target,
+// a candidate's weight and the direct light share (ES.3).
+inline float3 scattered(RecordedSurface surface, serenity::contracts::LightReceived light) {
+    const float3 wi = to_float3(light.direction);
+    return bsdf_evaluate(surface.bsdf, surface.wo, wi) * metal::abs(metal::dot(wi, to_float3(surface.bsdf.normal))) *
+           to_float3(light.radiance);
+}
+
+// G's factor into the light's own area: cos θ_y a / d^2, 0 where cos θ_y
+// <= 0 (the far side of the light gives nothing).
+inline float area_factor(serenity::contracts::LightReceived light) {
+    return light.cos_light > 0.0f ? light.cos_light * light.area_scale / (light.distance * light.distance) : 0.0f;
+}
 
 // p̂_q(y): `surface` q, `light` what the light at y gives q's point.
-inline float target(RecordedSurface surface, serenity::contracts::LightReceived light);
+inline float target(RecordedSurface surface, serenity::contracts::LightReceived light) {
+    const float g = area_factor(light);
+    return g > 0.0f ? luminance(scattered(surface, light)) * g : 0.0f;
+}
 
 // A density per unit solid angle at q's point turned into one per unit of
 // the light's own area at y: times cos θ_y a / d^2; 0 where cos θ_y <= 0.
-inline float light_area_density(float solid_angle_density, serenity::contracts::LightReceived light);
+inline float light_area_density(float solid_angle_density, serenity::contracts::LightReceived light) {
+    return solid_angle_density * area_factor(light);
+}
+
+// A candidate's weight p̂ / p, p = `solid_angle_density` x cos θ_y a /
+// d^2, the density the candidate was drawn with per unit solid angle at q,
+// its light's selection probability times the emitter's (one number, so a
+// caller cannot pass the two factors in each other's places: I.24), in
+// the cancelled form above: luminance(f |cos θ_x| L_e) /
+// solid_angle_density, 0 where cos θ_y <= 0 or the density is 0, finite at
+// the light's rim, where target() and light_area_density() both go to 0.
+// What the reservoir streams (metal/reuse/reservoir.metal.h, step 2).
+inline float candidate_weight(RecordedSurface surface, serenity::contracts::LightReceived light,
+                              float solid_angle_density) {
+    return light.cos_light > 0.0f && solid_angle_density > 0.0f
+               ? luminance(scattered(surface, light)) / solid_angle_density
+               : 0.0f;
+}
 
 // The direct light at q from y, without visibility, times `weight`: the
 // shade's estimate with W, where the caller has found y visible; the caller
 // multiplies by its medium's T.
-inline float3 direct_light(RecordedSurface surface, serenity::contracts::LightReceived light, float weight);
+inline float3 direct_light(RecordedSurface surface, serenity::contracts::LightReceived light, float weight) {
+    const float g = area_factor(light);
+    return g > 0.0f ? scattered(surface, light) * (g * weight) : float3(0.0f);
+}
 
 }  // namespace shaders
 }  // namespace serenity

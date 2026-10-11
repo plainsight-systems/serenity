@@ -41,7 +41,13 @@ test-sanitize:
 ## test pattern) over the scene SCENE, if given (a graph that reads a scene
 ## needs one), rendered at SCALE of the window's pixels if given (0.5 is a
 ## quarter of the pixels). Escape or closing the window ends it.
-GRAPH ?= graphs/test_pattern.toml
+##
+## GRAPH is one variable with a default per use: the test pattern for what
+## is shown (run, headless, movie), the naive path tracer for the image
+## measured (convergence), each named once here.
+GRAPH ?=
+SHOWN_GRAPH = $(or $(GRAPH),graphs/test_pattern.toml)
+MEASURED_GRAPH = $(or $(GRAPH),graphs/path.toml)
 SCENE ?=
 SCENE_ARG := $(if $(SCENE),--scene $(SCENE),)
 SCALE ?=
@@ -49,7 +55,7 @@ SCALE_ARG := $(if $(SCALE),--scale $(SCALE),)
 run:
 	cmake --preset native-release $(CONFIGURE_QUIET)
 	cmake --build --preset native-release --target serenity
-	./build/native-release/serenity --graph $(GRAPH) $(SCENE_ARG) $(SCALE_ARG)
+	./build/native-release/serenity --graph $(SHOWN_GRAPH) $(SCENE_ARG) $(SCALE_ARG)
 
 ## Headless frames of GRAPH, over SCENE if given, release build, as PNGs in
 ## OUT. FRAMES frames from frame 0, a sixtieth of a second apart. The frames
@@ -61,7 +67,7 @@ headless:
 	cmake --preset native-release $(CONFIGURE_QUIET)
 	cmake --build --preset native-release --target serenity-headless
 	rm -f $(OUT)/frame-*.png
-	./build/native-release/serenity-headless --graph $(GRAPH) $(SCENE_ARG) --out $(OUT) --frames $(FRAMES)
+	./build/native-release/serenity-headless --graph $(SHOWN_GRAPH) $(SCENE_ARG) --out $(OUT) --frames $(FRAMES)
 
 ## A movie of GRAPH over SCENE, for sharing: SECONDS seconds at FPS frames a
 ## second, SIZE pixels, each frame SAMPLES renders of its instant
@@ -74,13 +80,13 @@ FPS ?= 60
 SIZE ?= 1920x1080
 SAMPLES ?= 64
 MOVIE_FRAMES := build/movie-frames
-MOVIE ?= media/$(shell date +%Y-%m-%d)-$(basename $(notdir $(or $(SCENE),none)))-$(basename $(notdir $(GRAPH))).mp4
+MOVIE ?= media/$(shell date +%Y-%m-%d)-$(basename $(notdir $(or $(SCENE),none)))-$(basename $(notdir $(SHOWN_GRAPH))).mp4
 movie:
 	@command -v ffmpeg >/dev/null || { echo "make movie needs ffmpeg: brew install ffmpeg" >&2; exit 1; }
 	cmake --preset native-release $(CONFIGURE_QUIET)
 	cmake --build --preset native-release --target serenity-headless
 	rm -rf $(MOVIE_FRAMES) && mkdir -p media
-	./build/native-release/serenity-headless --graph $(GRAPH) $(SCENE_ARG) --out $(MOVIE_FRAMES) \
+	./build/native-release/serenity-headless --graph $(SHOWN_GRAPH) $(SCENE_ARG) --out $(MOVIE_FRAMES) \
 		--frames $$(( $(SECONDS) * $(FPS) )) --step $$(awk 'BEGIN { printf "%.17g", 1 / $(FPS) }') --size $(SIZE) \
 		--samples $(SAMPLES) >/dev/null
 	ffmpeg -hide_banner -loglevel error -y -framerate $(FPS) -i $(MOVIE_FRAMES)/frame-%06d.png \
@@ -102,6 +108,8 @@ movie:
 ## GPU, scaling with pixels and samples; see
 ## docs/research/2026-10-10-reference.md. For example:
 ## make reference SCENE=scenes/marbles.toml TIME=120
+## The reference is the naive path tracer's always, whatever GRAPH names:
+## every estimator is measured against the one reference (principle 3).
 TIME ?=
 BATCHES ?= 64
 BATCH_SAMPLES ?= 1024
@@ -130,10 +138,12 @@ reference:
 	@cat $(REFERENCE_FLOORS)
 	@echo $(REFERENCE)
 
-## The naive path tracer's convergence against the reference above (made
+## GRAPH's convergence (MEASURED_GRAPH: graphs/path.toml, the naive path
+## tracer, unless GRAPH names another, as make convergence
+## GRAPH=graphs/restir_ris.toml does) against the reference above (made
 ## first, by make reference with the same SCENE, TIME, SIZE, BATCHES and
 ## BATCH_SAMPLES): CONVERGENCE_FRAMES frames of CONVERGENCE_SAMPLES samples
-## of graphs/path.toml at TIME, from the first frame index whose samples
+## of the graph at TIME, from the first frame index whose samples
 ## follow every one of the reference's, so none is any of them and their
 ## noise is independent (core/measurement/error.h). Written at doubling
 ## frames as PFMs (--write doubling), each measured against the reference by
@@ -144,10 +154,14 @@ reference:
 ## it holds still as samples grow, error falling as 1/N while time grows as
 ## N). The seconds are the run's wall clock over its samples, writing
 ## included: some ten milliseconds a sample at 1920 x 1080. The frames are
-## removed once measured.
+## removed once measured. The CSV is named as the reference, then the
+## graph's name unless it is graphs/path.toml (whose CSV keeps the name it
+## had), then the frames and samples.
 CONVERGENCE_FRAMES ?= 16384
 CONVERGENCE_SAMPLES ?= 1
-CONVERGENCE_NAME = $(REFERENCE_NAME)-convergence-$(CONVERGENCE_FRAMES)x$(CONVERGENCE_SAMPLES)
+CONVERGENCE_GRAPH_TAG = $(if $(filter graphs/path.toml,$(MEASURED_GRAPH)),,-$(basename $(notdir $(MEASURED_GRAPH))))
+CONVERGENCE_NAME = \
+	$(REFERENCE_NAME)$(CONVERGENCE_GRAPH_TAG)-convergence-$(CONVERGENCE_FRAMES)x$(CONVERGENCE_SAMPLES)
 CONVERGENCE_FRAMES_DIR = $(REFERENCES)/$(CONVERGENCE_NAME).frames
 CONVERGENCE = $(REFERENCES)/$(CONVERGENCE_NAME).csv
 convergence:
@@ -158,7 +172,7 @@ convergence:
 	rm -rf $(CONVERGENCE_FRAMES_DIR) $(CONVERGENCE)
 	first=$$(( ($(BATCHES) * $(BATCH_SAMPLES) + $(CONVERGENCE_SAMPLES) - 1) / $(CONVERGENCE_SAMPLES) )) && \
 	start=$$(python3 -c 'import time; print(time.time())') && \
-	frames=$$(./build/native-release/serenity-headless --graph graphs/path.toml --scene $(SCENE) \
+	frames=$$(./build/native-release/serenity-headless --graph $(MEASURED_GRAPH) --scene $(SCENE) \
 		--out $(CONVERGENCE_FRAMES_DIR) --size $(SIZE) --first $$first --frames $(CONVERGENCE_FRAMES) \
 		--samples $(CONVERGENCE_SAMPLES) --time $(TIME) --write doubling --format pfm) && \
 	per_sample=$$(python3 -c "import time; print((time.time() - $$start) / ($(CONVERGENCE_FRAMES) * $(CONVERGENCE_SAMPLES)))") && \

@@ -45,7 +45,10 @@
 // weighs it: the point weighed, merged and shaded is one point everywhere,
 // decoded where it is loaded and never stored decoded (GDSA.18: decoded in
 // the consumer's load path). A cell is about 5 x 10^-5 radians across on
-// the unit sphere, so under 10^-4 of the light's radius in world space.
+// the unit sphere, and a point's round trip, the angle from it to its
+// cell's representative, at most unit_round_trip_error, 10^-4 (6.3 x 10^-5
+// measured over the sphere, where the map's shear stretches a cell; below),
+// so under 10^-4 of the light's radius in world space.
 // What it does to the estimator is a small bias, which production accepts
 // (RTXDI quantizes the same way): the sample's probability is its cell's,
 // the draw's density integrated over the cell, while the estimator weighs
@@ -93,6 +96,12 @@
 
 namespace serenity {
 namespace contracts {
+
+// The equal-area octahedral map's round trip, at most: the angle, in
+// radians, between a unit vector and its 32-bit code decoded (above;
+// metal/math/warp.metal.h). Measured over the sphere by
+// tests/gpu/restir_test.cpp, which holds the map to it.
+SERENITY_CONSTANT float unit_round_trip_error = 1.0e-4f;
 
 // LightPoint::light's bits (above).
 SERENITY_CONSTANT uint32_t light_valid = 0x80000000u;

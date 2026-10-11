@@ -122,10 +122,84 @@ inline uint bsdf_lobes(serenity::contracts::Bsdf bsdf) {
 // what packing loses): Material's one definition of how a Bsdf is stored in
 // ReSTIR DI's surface record and read back, by every pass that writes or
 // reads one. A switch on the kind with no default, as above, so a kind
-// added and not packed fails to compile. Declared for review; defined with
-// the ReSTIR implementation, and called by nothing until then.
-inline serenity::contracts::PackedBsdf pack_bsdf(serenity::contracts::Bsdf bsdf);
-inline serenity::contracts::Bsdf unpack_bsdf(serenity::contracts::PackedBsdf packed);
+// added and not packed fails to compile.
+//
+// A half is rounded from a float to nearest, ties to even, by the shading
+// language's conversion; a positive value that rounds to 0 is raised to
+// half's least, 2^-24 (contracts/bsdf.h). Cost: pack, one encode_unit and
+// four conversions; unpack, one decode_unit and four widenings (GDSA.18:
+// decoded where it is loaded, never stored decoded). Pure (F.8).
+
+// `value` as a half's bits, a positive value never 0.
+constant constexpr uint half_magnitude = 0x7fffu;  // a half's bits but its sign
+constant constexpr uint half_least = 1u;           // the least positive half, 2^-24, a subnormal
+
+inline uint pack_half(float value) {
+    const ushort bits = as_type<ushort>(half(value));
+    return value > 0.0f && (bits & half_magnitude) == 0u ? half_least : uint(bits);
+}
+
+inline float unpack_half(uint bits) {
+    return float(as_type<half>(ushort(bits & serenity::contracts::packed_half_mask)));
+}
+
+// The scalar in color_b_scalar's high half: the one of alpha and ior the
+// kind reads, 0 for a kind that reads neither (contracts/bsdf.h).
+inline float packed_scalar(serenity::contracts::Bsdf bsdf) {
+    switch (bsdf.kind) {
+    case serenity::contracts::BsdfKind::none:
+    case serenity::contracts::BsdfKind::lambert:
+        return 0.0f;
+    case serenity::contracts::BsdfKind::conductor:
+        return bsdf.alpha;
+    case serenity::contracts::BsdfKind::dielectric:
+    case serenity::contracts::BsdfKind::coated:
+        return bsdf.ior;
+    }
+    return 0.0f;
+}
+
+inline serenity::contracts::PackedBsdf pack_bsdf(serenity::contracts::Bsdf bsdf) {
+    const bool escapes = bsdf.kind == serenity::contracts::BsdfKind::coated;
+    return serenity::contracts::PackedBsdf{
+        encode_unit(to_float3(bsdf.normal)),
+        pack_half(bsdf.color.x) | (pack_half(bsdf.color.y) << serenity::contracts::packed_high_shift),
+        pack_half(bsdf.color.z) | (pack_half(packed_scalar(bsdf)) << serenity::contracts::packed_high_shift),
+        (escapes ? pack_half(bsdf.escape) : 0u) | (uint(bsdf.kind) << serenity::contracts::packed_kind_shift),
+    };
+}
+
+// The kind alone, read without unpacking the rest: whether a stored surface
+// is one at all (kind none: contracts/surface_record.h).
+inline serenity::contracts::BsdfKind packed_kind(serenity::contracts::PackedBsdf packed) {
+    return serenity::contracts::BsdfKind((packed.escape_kind >> serenity::contracts::packed_kind_shift) &
+                                         serenity::contracts::packed_kind_mask);
+}
+
+inline serenity::contracts::Bsdf unpack_bsdf(serenity::contracts::PackedBsdf packed) {
+    serenity::contracts::Bsdf bsdf{};
+    bsdf.normal = to_packed(decode_unit(packed.normal));
+    bsdf.kind = packed_kind(packed);
+    bsdf.color = serenity::contracts::Float3{unpack_half(packed.color_rg), unpack_half(packed.color_rg >> serenity::contracts::packed_high_shift),
+                                             unpack_half(packed.color_b_scalar)};
+    const float scalar = unpack_half(packed.color_b_scalar >> serenity::contracts::packed_high_shift);
+    switch (bsdf.kind) {
+    case serenity::contracts::BsdfKind::none:
+    case serenity::contracts::BsdfKind::lambert:
+        break;
+    case serenity::contracts::BsdfKind::conductor:
+        bsdf.alpha = scalar;
+        break;
+    case serenity::contracts::BsdfKind::dielectric:
+        bsdf.ior = scalar;
+        break;
+    case serenity::contracts::BsdfKind::coated:
+        bsdf.ior = scalar;
+        bsdf.escape = unpack_half(packed.escape_kind);
+        break;
+    }
+    return bsdf;
+}
 
 }  // namespace shaders
 }  // namespace serenity
