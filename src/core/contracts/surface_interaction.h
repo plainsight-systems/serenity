@@ -12,6 +12,13 @@
 // between surfaces, which is why it is a shared layout and not only a
 // shader struct.
 //
+// The point is on the shape's surface to a few units in the last place of
+// its own coordinates, however far the ray that found it came: the shape
+// puts the ray's hit back on its surface (metal/shapes/shapes.metal.h),
+// since a ray leaving the surface is offset by the point's own rounding and
+// no more (metal/integrator/surface.metal.h). Tightened 2026-10-11, from
+// the ray's origin + t d (docs/research/2026-10-11-ray-offset.md).
+//
 // The normals point out of the shape, as the shape defines them, whichever
 // side the ray arrived from; `flags` says which side that was. Keeping them
 // unflipped lets glass tell entering from leaving, and lets a stored

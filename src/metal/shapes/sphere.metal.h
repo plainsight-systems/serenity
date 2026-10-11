@@ -2,11 +2,11 @@
 
 // Axis: Shape (shader half of shapes/sphere.h).
 //
-// The exact hit of a ray on the unit sphere, in object space, and its
-// outward normal there, the point itself. The ray's direction is not unit
-// length (contracts/transform.h: it is the world's carried into object
-// space, scaled by 1 / radius), so the roots of |o + t d|^2 = 1 are found
-// with a = d.d kept, b = o.d, c = o.o - 1.
+// The exact hit of a ray on the unit sphere, in object space, and a point
+// found near it put back on it, which is also its outward normal there.
+// The ray's direction is not unit length (contracts/transform.h: it is the
+// world's carried into object space, scaled by 1 / radius), so the roots of
+// |o + t d|^2 = 1 are found with a = d.d kept, b = o.d, c = o.o - 1.
 //
 // In the stable form of Haines et al. (Ray Tracing Gems, ch. 7), since a
 // small sphere seen from afar is the scene's whole point: the discriminant
@@ -55,9 +55,10 @@ inline Crossing intersect_sphere(metal::raytracing::ray r) {
     return no_crossing();
 }
 
-// The outward normal at `point`, in object space: the point itself, on the
-// unit sphere.
-inline float3 sphere_normal(float3 point) {
+// The point on the unit sphere nearest `point`, a hit found near it: along
+// the same direction from the center, as pbrt-v4 reprojects a sphere's hit.
+// Also the outward normal there.
+inline float3 sphere_surface_point(float3 point) {
     return metal::normalize(point);
 }
 

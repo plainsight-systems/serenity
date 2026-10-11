@@ -58,6 +58,12 @@ inline float3 transform_to_object(serenity::contracts::Transform x, float3 p) {
     return transform_transposed(x, p - transform_translation(x)) * transform_inverse_scale2(x);
 }
 
+// s R p + T: an object-space point in the world, transform_to_object()'s
+// inverse.
+inline float3 transform_to_world(serenity::contracts::Transform x, float3 p) {
+    return transform_direction(x, p) + transform_translation(x);
+}
+
 // A world ray in object space: R^T (o - T) / s and R^T d / s, the
 // direction not renormalized, so a parameter t means the same point in both
 // (contracts/transform.h), and the ray's bounds carry over as they are. One

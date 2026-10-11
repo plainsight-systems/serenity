@@ -3,10 +3,11 @@
 // Axis: Shape (shader half of shapes/box.h).
 //
 // The exact hit of a ray on an axis-aligned box, in object space, by
-// slabs, and the outward normal of the face a point lies on there. The
-// slabs need no unit direction: t is where the ray crosses each plane,
-// whatever the direction's length (contracts/transform.h). A ray that starts
-// inside the box hits it on the way out.
+// slabs, the outward normal of the face a point lies on there, and a point
+// found near a face put back on its plane. The slabs need no unit
+// direction: t is where the ray crosses each plane, whatever the
+// direction's length (contracts/transform.h). A ray that starts inside the
+// box hits it on the way out.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -62,6 +63,14 @@ inline float3 box_normal(serenity::shapes::BoxData box, float3 point) {
         return float3(0.0f, metal::sign(local.y), 0.0f);
     }
     return float3(0.0f, 0.0f, metal::sign(local.z));
+}
+
+// `point`, found near the face whose outward normal is `normal`
+// (box_normal()), on that face's plane: its coordinate on the face's axis
+// the corner's, exactly; the other two as they are.
+inline float3 box_surface_point(serenity::shapes::BoxData box, float3 point, float3 normal) {
+    const float3 plane = metal::select(to_float3(box.min), to_float3(box.max), normal > 0.0f);
+    return metal::select(point, plane, normal != 0.0f);
 }
 
 }  // namespace shaders

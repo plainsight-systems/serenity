@@ -43,9 +43,9 @@
 //   Step 1  Trace: the nearest surface along the ray; beta *=
 //           transmittance(medium, t) (contract 12), what the medium the ray
 //           crossed kept of it, t the stretch from the surface the ray truly
-//           left, not from the point ray_offset off it the ray starts at: at a
-//           marble's scale, and its tint's absorption of some 140 per meter,
-//           that 0.1 mm is a percent of its light. 1 in air.
+//           left, not from the point just off it the ray starts at
+//           (integrator/surface.metal.h), so the medium's light does not
+//           hang on the offset's size. 1 in air.
 //   Step 2  Escape: if there is none, L += beta x sky(direction), and stop.
 //           The sky is not aimed at, so this is the one way it is counted.
 //   Step 3  Emission: if the surface is a light (contract 3, light_at),
@@ -93,9 +93,17 @@
 //           the same point, so for any direction both strategies can draw,
 //           w_l + w_b = 1, and the light is counted once in expectation
 //           (below, "One origin"). T is the transmittance of the medium the
-//           path is in from the surface's point to the light's, as step 1
-//           measures a stretch: 1 in air; a light inside the same glass as
-//           the surface, dimmed as the glass dims. The term is computed whole before the shadow ray is
+//           path is in over the shadow ray, from the point it leaves from to
+//           the light's: 1 in air; a light inside the same glass as the
+//           surface, dimmed as the glass dims. Not from the surface's point,
+//           as step 1 measures a stretch: short of it by at most the step
+//           the point leaves from (surface.metal.h), which keeps some
+//           sigma x step more of the light, 0.2% for 15 um of the
+//           marbles' ruby (140 per meter), and only for a light in the
+//           surface's own medium, which no scene has. As pbrt-v4 and Falcor
+//           measure a shadow ray's medium. Measured from the surface's
+//           point it was slower (docs/research/2026-10-11-ray-offset.md).
+//           The term is computed whole before the shadow ray is
 //           traced, so across that query the step holds one float3 beside
 //           the walk's own state, not f, wi, L_e, T and the densities
 //           (GPU.3; ReSTIR's shade does the same,
@@ -152,9 +160,10 @@
 // its origin and direction, and the light struck.
 //
 // One origin (decided 2026-10-11, by the review of 7751a65). Every ray
-// leaves a surface from leaving_point(), ray_offset off its point on the
-// side the ray leaves toward (integrator/surface.metal.h). Both strategies
-// draw, and weigh, a direction from the point its ray leaves from:
+// leaves a surface from leaving_point(), just off its point on the side
+// the ray leaves toward, by the point's own float rounding
+// (integrator/surface.metal.h). Both strategies draw, and weigh, a
+// direction from the point its ray leaves from:
 //
 //   - step 5 draws its light sample from next_event_origin(), the point a
 //     ray toward wo's side leaves from, its density P p_l the cone's from
@@ -187,24 +196,21 @@
 // step 6 hands on counted_in_full and w_b = 1; step 5's directions all have
 // p_b > 0 at a lobe they can be lit through. Every direction is counted
 // once in expectation. tests/gpu/path_test.cpp holds the sum from these
-// very functions and points, at a firefly millimeters across where the
-// two points' cones differ by percents.
+// very functions and points, at a firefly millimeters across, near enough
+// that the surface's point and the leaving point see different cones.
 //
 // What is estimated, then, is the light as seen from the point the rays
-// leave from, ray_offset off the surface, not from its point: the same
-// integrand for both strategies, as the bounce always saw it. For a light
-// at height h over a surface that is a relative 2 ray_offset / h more of
-// its light directly below it, and as much as ray_offset / h less to its
-// side, far from it: for the marbles' fireflies, which rest on the table
-// and the marbles with their middles 1.5 mm up, some 7% less of their light
-// on the table beside them. It is stated, not hidden, and ray_offset's own
-// (surface.metal.h): an offset scaled to the float error at the point, as
-// pbrt-v4's is, would make it negligible, a change to leave() for every
-// estimator (docs/research/2026-10-11-path-mis.md, "Review of 7751a65",
-// "Open"). pbrt-v4's PathIntegrator draws as this does (SampleLd() moves
-// its light sample's point to the ray origin offset toward wo for a
-// reflective BSDF), its offset the bound of the float error, so there the
-// difference is below the noise.
+// leave from, not from the surface's point: the same integrand for both
+// strategies, as the bounce always saw it. For a light at height h over a
+// surface that is a relative 2 delta / h more of its light directly below
+// it, and as much as delta / h less to its side, far from it, delta the
+// leaving point's step off the surface: the float rounding of the point
+// (surface.metal.h), 15 um on the marbles' table, 0.75 m up, so 1% for a
+// firefly resting there with its middle 1.5 mm up, where the 0.1 mm step
+// before it made 7% (docs/research/2026-10-11-ray-offset.md). pbrt-v4's
+// PathIntegrator draws as this does (SampleLd() moves its light sample's
+// point to the ray origin offset toward wo for a reflective BSDF), its
+// offset the bound of the float error.
 // Considered and not taken: drawing and weighing both from the surface's
 // point, the offset only the traversal's. The bounce's ray then sees the
 // light from a point other than the one its density is asked of, and the
@@ -214,7 +220,7 @@
 // and step 5 from the point (7751a65), two densities of the same light that
 // differ, whose weights do not sum to 1 (the review of 7751a65). Only a
 // ray traced from the point itself would make the point's integrand the
-// bounce's, which is leave()'s to change, for every estimator.
+// bounce's; surface.metal.h records why rays are not.
 //
 // emission_pdf's two named values are values of its one purpose, how the
 // next surface counts a light (ES.26; ES.45): counted_in_full is 0 and
@@ -249,7 +255,7 @@
 // converges, and any frame can be rendered again exactly, alone (principle 2).
 // MIS draws no number: each path draws the numbers it drew before MIS, in
 // the same order. Its bounces are the rays they were; its shadow rays are
-// drawn from the point they leave from (above, "One origin"), 0.1 mm off
+// drawn from the point they leave from (above, "One origin"), just off
 // the point they were drawn from before, so they and what they add differ.
 //
 // A safety stop at 256 surfaces bounds one thread's work, against a path
@@ -286,14 +292,14 @@
 //     for a conductor; a Fresnel term for a coated one) and the heuristic
 //     (a min, a max, a compare, a divide, a few multiplies and an add);
 //     per step 5, the point it draws from and the side its direction
-//     leaves on (a dot product, a select and a multiply-add each), and the
-//     stretch from the surface's point to the light's for T, from the
-//     sample's distance and its cosine to the geometric normal (a dot
-//     product, two multiply-adds and a square root; next_event());
+//     leaves on (a dot product each; the point's offset_ray(), a few
+//     integer adds, compares and selects), T over the sample's distance;
 //   - per step 6, the side its direction leaves on (a dot product).
 //
 // Each is on the lanes that already take step 5, 6 or 3 (GPU.4). Measured
-// against the build before it: docs/research/2026-10-11-path-mis.md.
+// against the build before it: docs/research/2026-10-11-path-mis.md; the
+// offset sized to the point's rounding, docs/research/
+// 2026-10-11-ray-offset.md.
 //
 // The split, for ReSTIR DI. The loop above is one function, walk_path(),
 // whose start and stop are template parameters, so the reference and ReSTIR
@@ -474,9 +480,8 @@ inline float handed_on(serenity::contracts::BsdfSample next, Shading here) {
 // one direction drawn toward it, f |cos| L_e T / (P p) x w_l, or 0 where the
 // shadow ray to its surface is blocked. Drawn, weighed and its shadow ray
 // traced from next_event_origin(). T is over `here`'s medium, which the
-// shadow ray crosses, from the surface's point to the light's, as step 1
-// measures a stretch. The term is whole before the shadow ray's query, so
-// it alone of the step is alive across it (above, step 5).
+// shadow ray crosses, along it (above, step 5). The term is whole before
+// the shadow ray's query, so it alone of the step is alive across it.
 inline float3 next_event(Scene scene, Shading here, thread PathNumbers& numbers) {
     const SelectedLight chosen = select_light(scene.selection(), next_number(numbers));
     const float3 origin = next_event_origin(here.surface, here.wo);
@@ -489,23 +494,13 @@ inline float3 next_event(Scene scene, Shading here, thread PathNumbers& numbers)
     if (!leave_alike(here.surface, wi, here.wo)) {
         return float3(0.0f);  // on wo's other side: not step 5's to draw (above, "One origin")
     }
-    // T's stretch, from the surface's point to the light's: |r n + d wi|,
-    // r = ray_offset, n the geometric normal turned to wi's side (the origin
-    // is r n off the point), so n . wi = |cos|, and the length is
-    // sqrt(d (d + 2 r |cos|) + r^2). Optimization: from the distance and the
-    // cosine, not as distance(point, origin + d wi), which held the point
-    // beside the origin through the step and measured slower (docs/research/
-    // 2026-10-11-path-mis.md, "Review of 7751a65").
-    const float cos_g = metal::abs(metal::dot(wi, to_float3(here.surface.geometric_normal)));
-    const float stretch = metal::sqrt(sample.distance * (sample.distance + 2.0f * ray_offset * cos_g) +
-                                      ray_offset * ray_offset);
     const float3 f = bsdf_evaluate(here.bsdf, here.wo, wi);
     if (!metal::any(f > 0.0f)) {
         return float3(0.0f);
     }
     const float light_density = chosen.probability * sample.pdf;
     const float3 unshadowed = f * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) *
-                              to_float3(sample.radiance) * transmittance(scene.media(), here.medium, stretch) /
+                              to_float3(sample.radiance) * transmittance(scene.media(), here.medium, sample.distance) /
                               light_density * next_event_weight(light_density, here.bsdf, here.wo, wi);
     if (occluded(scene.structure, scene.shapes(), metal::raytracing::ray(origin, wi, 0.0f, sample.distance),
                  sample.primitive)) {
@@ -518,9 +513,8 @@ inline float3 next_event(Scene scene, Shading here, thread PathNumbers& numbers)
 // light found, the throughput, eta_scale, how the next surface counts a
 // light it is (emission_pdf, above), the medium the ray is in, the ray, and
 // where it truly left from (the camera, then each surface's point; the ray
-// itself starts ray_offset off that surface, so its hit distance is short
-// of the stretch by that much, and a medium's stretch is measured from
-// here).
+// itself starts just off that surface, so its hit distance is short of the
+// stretch by that much, and a medium's stretch is measured from here).
 struct Walk {
     float3 L;
     float3 beta;

@@ -310,12 +310,11 @@ const std::string one_firefly = firefly("[0.3, 2.5, -0.5]");
 
 // albedo x L sin^2 cos, summed over the lights, at the floor point the
 // image's point (x, y) sees, in pixels from the top left: pixel (i, j)'s
-// center is (i + 0.5, j + 0.5); seen from `lift` over that point.
-double expected_floor(const scene::SceneDescription& description, frame::Extent size, double x, double y,
-                      double lift = 0.0) {
+// center is (i + 0.5, j + 0.5).
+double expected_floor(const scene::SceneDescription& description, frame::Extent size, double x, double y) {
     const contracts::CameraData c = camera::shader_form(description.camera, size);
     const Vec3 d = tests::camera_direction(c, x, y, size);
-    const Vec3 p = tests::vec(c.origin) + (-c.origin.y / d.y) * d + Vec3{0.0, lift, 0.0};
+    const Vec3 p = tests::vec(c.origin) + (-c.origin.y / d.y) * d;
     double sum = 0.0;
     for (const lights::SphereLightData& light : description.sphere_lights) {
         // Where its shape is, and how big: the transform's translation and
@@ -351,31 +350,20 @@ TEST_CASE("next event estimation: under two fireflies, chosen one at a time, the
     check_floor(lit_floor(one_firefly + firefly("[-1.2, 1.5, 0.4]")), 1024);
 }
 
-namespace {
-
-// How far over its surface a ray leaves from: ray_offset
-// (metal/integrator/surface.metal.h), on the side it leaves toward. The
-// path tracer's light at a surface is the light seen from there
-// (path.metal.h, "One origin").
-constexpr double ray_offset = 1e-4;
-
-}  // namespace
-
-TEST_CASE("MIS: a firefly millimeters across, just over a floor, converges to albedo L sin^2 cos from where rays leave") {
-    // A firefly of radius 3 mm, 2 cm over the floor: the 0.1 mm a ray
-    // leaves the floor from (ray_offset) is 3% of its radius, and 0.5% of
-    // its height. Both strategies draw and weigh a direction from that
-    // point, the one its ray leaves from (path.metal.h, "One origin"), so
-    // the floor converges to the closed form seen from there: some 0.3 to
-    // 0.4% darker than from the floor's point at the four pixels to the
-    // firefly's side, 1% brighter at the one below it (32, 24), which tells
-    // the two apart. With step 5 drawn from the floor's point, as 7751a65
-    // drew it, which carries nearly all of a Lambert floor's light (its
-    // density is the far larger there), the floor converges near the floor
-    // point's closed form instead, 1% short of this one below the firefly;
-    // 7751a65's first version counted the crescent between the two cones
-    // in full, +1.4 to +5.6%. Each pixel's mean against the closed form
-    // averaged over 4 x 4 points of it, to 0.5%.
+TEST_CASE("MIS: a firefly millimeters across, just over a floor, converges to albedo L sin^2 cos at the floor") {
+    // A firefly of radius 3 mm, 2 cm over the floor. Both strategies draw
+    // and weigh a direction from the point its ray leaves from
+    // (path.metal.h, "One origin"), the floor's point offset by its own
+    // float rounding (integrator/surface.metal.h): at y = 0, within
+    // offset_ray()'s band about the origin, 15 um up, 0.08% of the
+    // firefly's height, so the floor converges to the closed form at its
+    // own point, to 0.5%. With the 0.1 mm step before it, the light seen
+    // from 0.1 mm up, the floor converged 0.3 to 0.4% darker to the
+    // firefly's side and 0.9% brighter below it, at (32, 24), outside the
+    // tolerance (docs/research/2026-10-11-ray-offset.md); with step 5 drawn
+    // from the floor's point and its rays leaving from 0.1 mm up, as 7751a65
+    // drew, 1% short below it. Each pixel's mean against the closed form
+    // averaged over 4 x 4 points of it.
     const std::string text = camera_text("[0, 0.1, 0.1]", "[0, 0, 0]", 60) + sky("[0, 0, 0]", "[0, 0, 0]") +
                              "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
                              "[materials.glow]\nkind = \"emissive\"\nradiance = [30, 30, 30]\n"
@@ -389,24 +377,17 @@ TEST_CASE("MIS: a firefly millimeters across, just over a floor, converges to al
     for (const tests::Pixel pixel : {tests::Pixel{16, 24}, tests::Pixel{48, 30}, tests::Pixel{32, 40},
                                      tests::Pixel{24, 12}, tests::Pixel{32, 24}}) {
         double expected = 0.0;
-        double at_point = 0.0;
         for (std::uint32_t j = 0; j < within; ++j) {
             for (std::uint32_t i = 0; i < within; ++i) {
-                const double x = pixel.x + (i + 0.5) / within;
-                const double y = pixel.y + (j + 0.5) / within;
-                expected += expected_floor(rig.description(), size, x, y, ray_offset);
-                at_point += expected_floor(rig.description(), size, x, y);
+                expected += expected_floor(rig.description(), size, pixel.x + (i + 0.5) / within,
+                                           pixel.y + (j + 0.5) / within);
             }
         }
         expected /= within * within;
-        at_point /= within * within;
         const double rendered = image[(std::size_t{pixel.y} * size.width + pixel.x) * 4];
-        INFO("pixel " << pixel.x << ", " << pixel.y << ": rendered " << rendered << ", expected " << expected
-                      << " (from the floor's point " << at_point << ")");
+        INFO("pixel " << pixel.x << ", " << pixel.y << ": rendered " << rendered << ", expected " << expected);
         MESSAGE("pixel " << pixel.x << ", " << pixel.y << ": rendered " << rendered << ", expected " << expected
-                         << ", rendered / expected - 1 = " << (rendered / expected - 1.0) * 100.0
-                         << "%; from the floor's point " << at_point << ", rendered / it - 1 = "
-                         << (rendered / at_point - 1.0) * 100.0 << "%");
+                         << ", rendered / expected - 1 = " << (rendered / expected - 1.0) * 100.0 << "%");
         CHECK(rendered == doctest::Approx(expected).scale(0).epsilon(0.005));
     }
 }
@@ -628,9 +609,9 @@ namespace {
 
 // A surface at the origin facing +y, and fireflies where a mirror there
 // would show them to wo: what the MIS probe asks about. mis_light is 0.3
-// across at 1.6, near_light 3 mm across at 2 cm, where the 0.1 mm a ray
-// leaves the surface from (ray_offset) moves the cone the light fills by
-// percents.
+// across at 1.6, near_light 3 mm across at 2 cm, near enough that the step
+// a ray leaves the surface from (integrator/surface.metal.h, 15 um at the
+// origin) moves the cone the light fills.
 const contracts::Float3 mis_wo{0.0f, 0.5547002f, 0.8320503f};  // (0, 2, 3) normalized
 const tests::ProbeLight mis_light{{0.0f, 0.9f, -1.35f}, 0.3f, 10.0f};
 const tests::ProbeLight near_light{{0.0f, 0.011094004f, -0.016641006f}, 0.003f, 10.0f};  // 0.02 along (0, 2, -3)
@@ -731,11 +712,11 @@ TEST_CASE("MIS: for a direction both strategies draw, the light sample's weight 
     }
     // And it fails where step 5 draws from the surface's point, as 7751a65
     // drew, while step 3 asks from the point the bounce leaves from: at the
-    // near firefly, whose cone the 0.1 mm between the two points moves by
-    // percents, the two densities of one direction differ, and in the
-    // crescent one point's cone holds and the other's does not, only one is
-    // 0. At the far firefly the two points' densities differ by some 10^-4,
-    // within the rounding: why the check above asks at the near one too.
+    // near firefly, whose cone the 15 um between the two points moves, the
+    // two densities of one direction differ, and in the crescent one
+    // point's cone holds and the other's does not, only one is 0. At the far
+    // firefly the two points' densities differ within the rounding: why the
+    // check above asks at the near one too.
     for (const auto& [name, bsdf] : surfaces) {
         const WeightSums wrong = weight_sums(gpu, bsdf, near_light, 4, 4, LightFrom::surface_point);
         MESSAGE("firefly 3 mm across at 2 cm, " << name << ", step 5 from the surface's point: worst |w_l + w_b - 1| "
@@ -880,8 +861,8 @@ namespace {
 // A conductor floor, alpha 0.1, seen from (0, 0.1, 0.1) through a lens of
 // 10 degrees, and a firefly 3 mm across 2 cm along the direction the floor
 // at the camera's middle mirrors it to: the floor's highlight of it, some
-// twenty pixels across, the light close enough that the 0.1 mm a ray
-// leaves the floor from moves its cone by percents. near_highlight_light
+// twenty pixels across, the light close enough that the step a ray leaves
+// the floor from moves its cone. near_highlight_light
 // is the scene's firefly, as the probe binds it.
 const tests::ProbeLight near_highlight_light{{0.0f, 0.014142136f, -0.014142136f}, 0.003f, 30.0f};
 
@@ -906,8 +887,9 @@ TEST_CASE("MIS: a glossy floor's highlight of a firefly millimeters across conve
     // points in each pixel, and the share of it step 5's weighted light
     // samples carry: 0.76 to 0.92 at these pixels, the bounce's the rest.
     // The render must converge to it, to 1%. Seen from the floor's point the
-    // integral is 1.4 to 3.7% away from it at five of them, as a light 2 cm
-    // off moves for 0.1 mm (in the message). With step 5 drawn from the
+    // integral is up to 0.6% away from it, as a light 2 cm off moves for the
+    // 15 um step at the origin (in the message; 1.4 to 3.7% for the 0.1 mm
+    // step before it). With step 5 drawn from the
     // floor's point, as 7751a65 drew it, the weights do not sum to 1 and the
     // render converges to neither integral: 1 to 2.4% off this one at four
     // of the pixels.

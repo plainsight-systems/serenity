@@ -58,14 +58,16 @@ inline constexpr double camera_to_core = 0.7;
 inline constexpr double light_to_core = 0.424;
 
 // A bead of radius 1 mm, filled with a medium keeping exp(-0.7) of its red
-// over 1 mm: 700 per meter. At this scale the 0.1 mm a ray starts off a
-// surface is 7% of a crossing's light; the stretch must be measured from the
-// surface itself.
+// over 1 mm: 700 per meter, seen along z, 5 m from the origin. There a ray
+// starts 256 ulps of 5 off a surface it leaves along z, 0.12 mm
+// (integrator/surface.metal.h), 8% of a crossing's light; the stretch must
+// be measured from the surface itself. (At the origin the step is 15 um,
+// 1%, too little to tell.)
 inline std::string tinted_bead() {
-    return camera_text("[0, 0, 0.004]", "[0, 0, 0]", 30) + sky("[0.5, 0.5, 0.5]", "[0.5, 0.5, 0.5]") +
+    return camera_text("[0, 0, 5.004]", "[0, 0, 5]", 30) + sky("[0.5, 0.5, 0.5]", "[0.5, 0.5, 0.5]") +
            "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
            "[media.red_out]\nkind = \"absorbing\"\ntint = [0.4965853, 1, 1]\ntint_distance = 0.001\n"
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.001\nmaterial = \"glass\"\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 5]\nradius = 0.001\nmaterial = \"glass\"\n"
            "interior = \"red_out\"\n";
 }
 

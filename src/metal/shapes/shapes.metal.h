@@ -14,8 +14,21 @@
 // direction not renormalized, so its t is the world's
 // (contracts/transform.h), and tests it against the kind's geometry about
 // the origin. surface_interaction() takes the world's hit point, carries it
-// into object space the same way, asks the kind for its object-space normal
-// there, and turns that normal by the transform's rotation into the world's.
+// into object space the same way, asks the kind to put it back on its
+// surface and for its object-space normal there, places that point in the
+// world and turns that normal by the transform's rotation into the world's.
+//
+// Why the point is put back (decided 2026-10-11, with the ray offset:
+// docs/research/2026-10-11-ray-offset.md). The hit the ray gives, origin +
+// t d, is off the surface by t's rounding, which grows with t, so a point
+// found from 100 m away is off by more than the step a leaving ray is
+// offset by (integrator/surface.metal.h). Put back on the surface where the
+// kind defines it and placed from there, it is off by a few ulps of its own
+// coordinates, as a triangle's point interpolated from its vertices is in
+// Falcor and RTXDI. A box's lies on its face's plane exactly, its transform
+// the identity (shapes/box.h). Per hit: a box's plane chosen by two
+// selects, and one transform of a point (three dot products and an add);
+// a sphere's normal, already the normalized point, is now also its point.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -52,41 +65,53 @@ inline Crossing intersect_shape(Shapes shapes, uint shape, metal::raytracing::ra
     return no_crossing();
 }
 
-// The outward normal, in the world, of shape `shape` at `at`, a point on it
-// in its own coordinates: found there by its kind, turned by the
-// transform's rotation.
-inline float3 normal_at(Shapes shapes, uint shape, float3 at) {
+// A point found near shape `shape`'s surface, in its own coordinates, put
+// back on it, and the outward normal there, both in its own coordinates.
+struct OnShape {
+    float3 point;
+    float3 normal;
+};
+
+// By its kind: a sphere's along the same direction from its center, a box's
+// onto the plane of the face it is nearest.
+inline OnShape on_shape(Shapes shapes, uint shape, float3 at) {
     const serenity::shapes::ShapeRecord record = shapes.records[shape];
-    float3 normal = float3(0.0f, 1.0f, 0.0f);
     switch (record.kind) {
-    case serenity::shapes::ShapeKind::sphere:
-        normal = sphere_normal(at);
-        break;
-    case serenity::shapes::ShapeKind::box:
-        normal = box_normal(shapes.boxes[record.geometry], at);
-        break;
+    case serenity::shapes::ShapeKind::sphere: {
+        const float3 on = sphere_surface_point(at);
+        return OnShape{on, on};
     }
-    return metal::normalize(transform_direction(shapes.transforms[shape], normal));
+    case serenity::shapes::ShapeKind::box: {
+        const serenity::shapes::BoxData box = shapes.boxes[record.geometry];
+        const float3 normal = box_normal(box, at);
+        return OnShape{box_surface_point(box, at, normal), normal};
+    }
+    }
+    return OnShape{at, float3(0.0f, 1.0f, 0.0f)};
 }
 
-// Contract 1: where a ray along `direction` met shape `shape` at world
+// Contract 1: where a ray along `direction` met shape `shape` near world
 // `point`, filled by the shape (contracts/surface_interaction.h). The
-// shading normal is the geometric one for every kind so far. The point in
-// the shape's own coordinates is found once, for the normal and for the
-// textures laid on the shape.
+// shading normal is the geometric one for every kind so far. The point is
+// put back on the shape's surface in its own coordinates and placed in the
+// world from there (above): on it to a few ulps of its own coordinates,
+// however far the ray came, as leaving it needs (integrator/
+// surface.metal.h). The object-space point is found once, for the normal,
+// the world's point and the textures laid on the shape.
 inline serenity::contracts::SurfaceInteraction surface_interaction(Shapes shapes, uint shape, float3 point,
                                                                     float3 direction) {
     const serenity::shapes::ShapeRecord record = shapes.records[shape];
-    const float3 at = transform_to_object(shapes.transforms[shape], point);
-    const float3 normal = normal_at(shapes, shape, at);
+    const serenity::contracts::Transform placed = shapes.transforms[shape];
+    const OnShape on = on_shape(shapes, shape, transform_to_object(placed, point));
+    const float3 normal = metal::normalize(transform_direction(placed, on.normal));
     serenity::contracts::SurfaceInteraction s{};
-    s.position = to_packed(point);
+    s.position = to_packed(transform_to_world(placed, on.point));
     s.material = record.material;
     s.geometric_normal = to_packed(normal);
     s.primitive = shape;
     s.shading_normal = to_packed(normal);
     s.flags = metal::dot(direction, normal) < 0.0f ? serenity::contracts::arrived_from_outside : 0u;
-    s.object_position = to_packed(at);
+    s.object_position = to_packed(on.point);
     s.interior = record.interior;
     return s;
 }

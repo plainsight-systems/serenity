@@ -1,8 +1,10 @@
 // The shapes' surface interaction on the GPU (tests/gpu/kernels/
 // shape_probe.metal), held to contract 1: the point in the shape's own
-// coordinates is where the hit is on its geometry before its transform, and
-// the interior is the shape's medium (contract 12).
+// coordinates is where the hit is on its geometry before its transform, a
+// point found near the surface is put back on it, and the interior is the
+// shape's medium (contract 12).
 
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -81,4 +83,50 @@ material = "matte"
     CHECK(out[1].object_position.y == doctest::Approx(0.0f).epsilon(1e-6));
     CHECK(out[1].object_position.z == doctest::Approx(-0.5f).scale(0).epsilon(1e-6));
     CHECK(out[1].interior == contracts::no_medium);
+}
+
+TEST_CASE("a point found near a shape is put back on its surface: a sphere's along its radius, a box's onto its face") {
+    // A ray's origin + t d is off the surface by t's rounding; contract 1's
+    // point is on it, to a few ulps of its own coordinates
+    // (shapes/shapes.metal.h), as leaving it needs (integrator/
+    // surface.metal.h). Asked 1 mm off each: the sphere's comes back 0.5
+    // from its center along the same direction, the box's on its top face's
+    // plane, y = 0, exactly.
+    const scene::SceneDescription description = scene::parse(R"(
+[camera]
+position = [0, 0, 5]
+look_at = [0, 0, 0]
+vertical_fov_degrees = 40
+[environment]
+kind = "gradient"
+zenith = [0, 0, 0]
+horizon = [0, 0, 0]
+[materials.matte]
+kind = "rough"
+color = [0.5, 0.5, 0.5]
+[[shapes]]
+kind = "sphere"
+center = [1, 2, 3]
+radius = 0.5
+material = "matte"
+[[shapes]]
+kind = "box"
+min = [-2, -1, -1]
+max = [-1, 0, 0]
+material = "matte"
+)",
+                                                             "s");
+    // 0.501 from the sphere's center along (0.6, 0, 0.8); 1 mm over the box.
+    const std::vector<ShapeQuery> queries = {{{1.3006f, 2.0f, 3.4008f}, 0u}, {{-1.5f, 0.001f, -0.5f}, 1u}};
+    const auto out = interactions(description, queries);
+    const double dx = out[0].position.x - 1.0;
+    const double dy = out[0].position.y - 2.0;
+    const double dz = out[0].position.z - 3.0;
+    CHECK(std::sqrt(dx * dx + dy * dy + dz * dz) == doctest::Approx(0.5).scale(0).epsilon(1e-6));
+    CHECK(dx / 0.5 == doctest::Approx(0.6).scale(0).epsilon(1e-5));
+    CHECK(dz / 0.5 == doctest::Approx(0.8).scale(0).epsilon(1e-5));
+    CHECK(out[1].position.x == -1.5f);
+    CHECK(out[1].position.y == 0.0f);
+    CHECK(out[1].position.z == -0.5f);
+    CHECK(out[1].geometric_normal.y == 1.0f);
 }

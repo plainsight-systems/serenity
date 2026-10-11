@@ -4,30 +4,25 @@
 // world's distance and names the shape, at any scale; and a moved shape is
 // hit where it moved to and not where it was, through both frame slots.
 //
-// Its own dispatch, not the probe runner's (support/probe_runner.h): it
+// Its own dispatch, not the probe runner's (support/traced_probe.h): it
 // binds the structure as a resource, and records the structure's update in
 // the same encoder as the trace, as a frame does.
 
-#include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <cstring>
 #include <optional>
-#include <span>
 #include <vector>
 
 #include <doctest/doctest.h>
 
 #include "core/scene/scene.h"
 #include "gpu/kernels/trace_probe.h"
-#include "gpu/support/probe_runner.h"
+#include "gpu/support/traced_probe.h"
 #include "metal/acceleration/scene_acceleration.h"
 #include "metal/device/device.h"
-#include "metal/device/library.h"
 #include "metal/device/submission.h"
 #include "metal/scene/scene_buffers.h"
 #include "metal/scene/shape_transforms.h"
-#include "serenity/metallib/probes.h"
 #include "support/vector.h"
 
 using namespace serenity;
@@ -36,69 +31,15 @@ using tests::TraceRay;
 
 namespace {
 
-// A scene on the GPU, as a frame traces it: its arrays, its shapes'
-// transforms and its structure.
-struct Traced {
-    metal::Device& device;
-    metal::Submission& submission;
-    const metal::SceneBuffers& buffers;
-    metal::ShapeTransforms& transforms;
-    metal::SceneAcceleration& acceleration;
-};
-
 // Traces `rays` through the structure for the next frame's slot, in one
 // command buffer; if `moved` is given, first writes them as the slot's
-// transforms and records the structure's update, as a frame does.
-std::vector<TraceHit> probe(const Traced& traced, const std::vector<TraceRay>& rays,
+// transforms and records the structure's update, as a frame does
+// (support/traced_probe.h).
+std::vector<TraceHit> probe(const tests::Traced& traced, const std::vector<TraceRay>& rays,
                             const std::optional<std::vector<contracts::Transform>>& moved) {
-    metal::Library library(traced.device, metallib::probes);
-    const auto pipeline = library.compute_pipeline("trace_probe");
-    const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
-    MTL::Device* mtl = traced.device.handle();
     const auto count = static_cast<std::uint32_t>(rays.size());
-    auto out = NS::TransferPtr(mtl->newBuffer(count * sizeof(TraceHit), MTL::ResourceStorageModeShared));
-    REQUIRE(out);
-    auto ray_buffer =
-        NS::TransferPtr(mtl->newBuffer(rays.data(), count * sizeof(TraceRay), MTL::ResourceStorageModeShared));
-    REQUIRE(ray_buffer);
-    auto count_buffer = NS::TransferPtr(mtl->newBuffer(&count, sizeof count, MTL::ResourceStorageModeShared));
-    REQUIRE(count_buffer);
-    for (MTL::Buffer* b : {out.get(), ray_buffer.get(), count_buffer.get()}) {
-        traced.submission.make_resident(b);
-    }
-    auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-    descriptor->setMaxBufferBindCount(7);
-    NS::Error* error = nullptr;
-    auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
-    INFO("argument table: " << tests::reason(error));
-    REQUIRE(table);
-
-    const metal::FrameSlot slot = traced.submission.begin();
-    MTL4::ComputeCommandEncoder* encoder = slot.commands->computeCommandEncoder();
-    REQUIRE(encoder != nullptr);
-    if (moved) {
-        const std::span<contracts::Transform> placed = traced.transforms.transforms(slot.slot);
-        std::ranges::copy(*moved, placed.begin());
-        traced.acceleration.update(encoder, slot.slot, placed);
-    }
-    // The bindings kernels/trace_probe.metal lists.
-    table->setAddress(out->gpuAddress(), 0);
-    table->setAddress(ray_buffer->gpuAddress(), 1);
-    table->setAddress(count_buffer->gpuAddress(), 2);
-    table->setResource(traced.acceleration.resource(slot.slot), 3);
-    table->setAddress(traced.buffers.block().shapes, 4);
-    table->setAddress(traced.transforms.address(slot.slot), 5);
-    table->setAddress(traced.buffers.block().boxes, 6);
-    encoder->setArgumentTable(table.get());
-    encoder->setComputePipelineState(pipeline.get());
-    encoder->dispatchThreads(MTL::Size(count, 1, 1), MTL::Size(pipeline->threadExecutionWidth(), 1, 1));
-    encoder->endEncoding();
-    traced.submission.commit();
-    (void)traced.submission.wait_until_complete(slot.sequence);
-
-    std::vector<TraceHit> hits(count);
-    std::memcpy(hits.data(), out->contents(), count * sizeof(TraceHit));
-    return hits;
+    return tests::run_traced<TraceHit>(traced, "trace_probe", count,
+                                       {tests::Binding::of(rays), tests::Binding::of(count)}, moved);
 }
 
 // A ray from `origin` along the unit vector toward `toward`.

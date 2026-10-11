@@ -14,6 +14,7 @@ add_executable(serenity_gpu_tests
     restir_test.cpp
     film_test.cpp
     acceleration_test.cpp
+    leave_test.cpp
     motion_test.cpp
     history_test.cpp
     tone_map_test.cpp
@@ -45,6 +46,7 @@ serenity_add_metallib(
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/sampler_probe.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/film_probe.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/trace_probe.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/kernels/leave_probe.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/texture_probe.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/camera_probe.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/shape_probe.metal"
