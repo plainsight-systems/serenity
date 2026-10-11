@@ -321,6 +321,10 @@ struct SceneDescription {
     std::vector<materials::ConductorData> conductors;
     std::vector<materials::EmissiveData> emissives;
     std::vector<materials::CoatedData> coateds;
+    // Each material's name in the file, in record order, for an error that
+    // names one (packed_range.h). Empty for a description built in code
+    // rather than read, whose errors name a material by its record's index.
+    std::vector<std::string> material_names;
 
     // The media shapes are filled with (contract 12): one record per
     // medium, one array per kind, as for materials. A shape names one by

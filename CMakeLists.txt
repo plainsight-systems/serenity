@@ -145,6 +145,7 @@ add_library(serenity_core STATIC
     src/core/output/image_format.cpp
     src/core/output/pfm.cpp
     src/core/output/png.cpp
+    src/core/scene/packed_range.cpp
     src/core/scene/scene.cpp
     src/core/scene/swarm.cpp
     src/core/shapes/shapes.cpp

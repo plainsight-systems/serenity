@@ -126,9 +126,12 @@ inline uint bsdf_lobes(serenity::contracts::Bsdf bsdf) {
 //
 // A half is rounded from a float to nearest, ties to even, by the shading
 // language's conversion; a positive value that rounds to 0 is raised to
-// half's least, 2^-24 (contracts/bsdf.h). Cost: pack, one encode_unit and
-// four conversions; unpack, one decode_unit and four widenings (GDSA.18:
-// decoded where it is loaded, never stored decoded). Pure (F.8).
+// half's least, 2^-24. Precondition: each value finite and at most 65504
+// in magnitude, which a renderer that packs has checked of the scene
+// (contracts/bsdf.h states both, and the tolerance). Cost: pack, one
+// encode_unit and four conversions; unpack, one decode_unit and four
+// widenings (GDSA.18: decoded where it is loaded, never stored decoded).
+// Pure (F.8).
 
 // `value` as a half's bits, a positive value never 0.
 constant constexpr uint half_magnitude = 0x7fffu;  // a half's bits but its sign

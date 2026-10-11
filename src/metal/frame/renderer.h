@@ -203,7 +203,12 @@ namespace serenity::metal {
 //     read;
 //   - the scene's media counted: a scene with 0xffff media or more is
 //     refused by MetalError, since the path state keeps a medium's index in
-//     16 bits (core/contracts/surface_record.h; I.5).
+//     16 bits (core/contracts/surface_record.h; I.5);
+//   - the scene's materials checked against the packed Bsdf's range: a
+//     scene with a color or scalar a material resolves to that is not
+//     finite or is above 65504 in magnitude is refused by MetalError naming
+//     the material and the value, since the surface record packs them as
+//     halves (core/contracts/bsdf.h; core/scene/packed_range.h; I.5).
 //
 // Barriers, each naming its hazard (GPU.8): the queue barrier before the
 // initial pass, the first that writes what frames share (this frame's
@@ -232,8 +237,10 @@ public:
     // ring resident through `submission`, and, if any pass reads the scene,
     // puts `scene` on the GPU. `scene` may be null when no pass reads it.
     // Throws MetalError if the schedule is invalid (frame::invalid), a pass needs a
-    // scene and there is none, a glowing light is not one of the scene's, or
-    // a pipeline, buffer or structure cannot be built.
+    // scene and there is none, a glowing light is not one of the scene's, a
+    // ReSTIR graph's scene has more media or a wider material value than its
+    // path state and surface record hold (above), or a pipeline, buffer or
+    // structure cannot be built.
     Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
              const scene::SceneDescription* scene);
 

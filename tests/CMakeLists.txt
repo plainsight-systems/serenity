@@ -33,6 +33,7 @@ add_executable(serenity_tests
     restir_schedule_test.cpp
     restir_graph_file_test.cpp
     scene_test.cpp
+    packed_range_test.cpp
     thin_lens_test.cpp
     shapes_test.cpp
     animation_test.cpp

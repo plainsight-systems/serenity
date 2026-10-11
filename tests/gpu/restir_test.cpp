@@ -267,11 +267,13 @@ TEST_CASE("the equal-area octahedral map is equal-area: uniform draws fill the s
 
 namespace {
 
-// Contract 2's tolerance for a half: 2^-11 of the value, relatively.
-constexpr double half_tolerance = 1.0 / 2048.0;
-
+// Contract 2's tolerance for a half: 2^-11 of the value, relatively, from
+// half's least normal up; 2^-24, absolutely, below it.
 bool within_half(double packed, double value) {
-    return std::abs(packed - value) <= half_tolerance * std::abs(value);
+    const double tolerance = std::abs(value) >= double{contracts::packed_least_normal}
+                                 ? double{contracts::packed_relative} * std::abs(value)
+                                 : double{contracts::packed_absolute};
+    return std::abs(packed - value) <= tolerance;
 }
 
 }  // namespace
@@ -309,12 +311,24 @@ TEST_CASE("a packed Bsdf unpacks within contract 2's tolerances, for every kind"
         }
         bsdfs.push_back(b);
     }
-    // A conductor's alpha below half's least, and a dimmed color: kept
-    // positive (contract 2).
+    // The contract's endpoints (contracts/bsdf.h), each held to its
+    // tolerance in the loop below with the rest: the largest, 65504, in the
+    // ior and a color, and its negative; half's least normal, 2^-14, where
+    // the relative tolerance starts; and below it, where the absolute one
+    // holds: values that round to subnormals, 1.5 x 2^-24, and positive
+    // ones under 2^-25, which round to 0 and are raised to 2^-24 (1e-9, 60
+    // times smaller, among them).
+    const std::size_t endpoints = bsdfs.size();
+    contracts::Bsdf largest{};
+    largest.normal = {0.0f, 0.0f, 1.0f};
+    largest.kind = contracts::BsdfKind::dielectric;
+    largest.color = {contracts::packed_largest, -contracts::packed_largest, contracts::packed_least_normal};
+    largest.ior = contracts::packed_largest;
+    bsdfs.push_back(largest);
     contracts::Bsdf glassy_metal{};
     glassy_metal.normal = {0.0f, 1.0f, 0.0f};
     glassy_metal.kind = contracts::BsdfKind::conductor;
-    glassy_metal.color = {1e-9f, 0.5f, 0.5f};
+    glassy_metal.color = {1e-9f, 1.5f * contracts::packed_absolute, 0.4f * contracts::packed_absolute};
     glassy_metal.alpha = 1e-9f;
     bsdfs.push_back(glassy_metal);
     const auto count = static_cast<std::uint32_t>(bsdfs.size());
@@ -324,7 +338,7 @@ TEST_CASE("a packed Bsdf unpacks within contract 2's tolerances, for every kind"
         gpu.run<contracts::Bsdf>("bsdf_round_trip", count, {Binding::of(bsdfs), Binding::of(count)});
     double worst_normal = 0.0;
     std::size_t outside = 0;
-    for (std::size_t i = 0; i + 1 < bsdfs.size(); ++i) {
+    for (std::size_t i = 0; i < bsdfs.size(); ++i) {
         const contracts::Bsdf& a = bsdfs[i];
         const contracts::Bsdf& b = back[i];
         CHECK(a.kind == b.kind);
@@ -341,12 +355,20 @@ TEST_CASE("a packed Bsdf unpacks within contract 2's tolerances, for every kind"
     MESSAGE("worst normal " << worst_normal << " radians");
     CHECK(worst_normal <= contracts::unit_round_trip_error);
     CHECK(outside == 0u);
-    // The tolerance check can fail: a value off by two halves' steps is
-    // outside it.
-    CHECK_FALSE(within_half(0.75 * (1.0 + 2.0 * half_tolerance), 0.75));
-    // Below half's least: 2^-24, never 0.
-    CHECK(back.back().alpha == std::ldexp(1.0f, -24));
-    CHECK(back.back().color.x == std::ldexp(1.0f, -24));
+    // The tolerance check can fail, in either regime: a value off by two
+    // halves' steps, and one off by twice the absolute bound.
+    CHECK_FALSE(within_half(0.75 * (1.0 + 4.0 * double{contracts::packed_relative}), 0.75));
+    CHECK_FALSE(within_half(3.0 * double{contracts::packed_absolute}, 1e-9));
+    // The endpoints exactly: 65504 and 2^-14 are halves; below 2^-25, 2^-24,
+    // never 0.
+    const contracts::Bsdf& at_largest = back[endpoints];
+    CHECK(at_largest.ior == contracts::packed_largest);
+    CHECK(at_largest.color.x == contracts::packed_largest);
+    CHECK(at_largest.color.y == -contracts::packed_largest);
+    CHECK(at_largest.color.z == contracts::packed_least_normal);
+    CHECK(back.back().alpha == contracts::packed_absolute);
+    CHECK(back.back().color.x == contracts::packed_absolute);
+    CHECK(back.back().color.z == contracts::packed_absolute);
 }
 
 // ---- the light point -------------------------------------------------------
@@ -922,6 +944,26 @@ TEST_CASE("a ReSTIR graph refuses a scene with more media than its path state's 
     CHECK(tests::contains(refusal(ris_graph(8)), "keeps a medium's index in 16 bits"));
     // The path graph keeps no path state, and takes it.
     CHECK(refusal(tests::path_graph()).empty());
+}
+
+TEST_CASE("a ReSTIR graph refuses a scene whose materials its packed surface record cannot hold, by name") {
+    metal::Device device;
+    metal::Submission submission(device);
+    const auto refusal = [&](const std::string& extra, const frame::Schedule& schedule) {
+        const scene::SceneDescription description = scene::parse(lit_floor(one_firefly + extra), "test scene");
+        return tests::error_of<metal::MetalError>(
+            [&] { return metal::Renderer(device, submission, schedule, &description); });
+    };
+    const auto glass = [](const char* ior) {
+        return std::string("[materials.glass]\nkind = \"dielectric\"\nior = ") + ior +
+               "\n[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.3, 0]\nradius = 0.3\nmaterial = \"glass\"\n";
+    };
+    // Half's largest is held (contracts/bsdf.h); past it, refused naming the
+    // material and the value; the path graph, which packs nothing, takes it.
+    CHECK(refusal(glass("65504"), ris_graph(8)).empty());
+    const std::string refused = refusal(glass("70000"), ris_graph(8));
+    CHECK(tests::contains(refused, "material 'glass''s ior, 70000, is outside what ReSTIR DI's packed surface record"));
+    CHECK(refusal(glass("70000"), tests::path_graph()).empty());
 }
 
 TEST_CASE("ReSTIR's arrays: what the merges need is refused until they come, and a size Metal cannot make") {

@@ -642,6 +642,7 @@ NameIndex read_materials(const Reader& r, const toml::table& all, const NameInde
                                                     "'; known kinds: rough, coated, dielectric, conductor, emissive");
         }
         index.emplace(name, static_cast<std::uint32_t>(description.materials.size() - 1));
+        description.material_names.push_back(name);
     }
     return index;
 }

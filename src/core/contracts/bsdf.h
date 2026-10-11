@@ -90,35 +90,60 @@
 //                                  light_sample.h states the map); color,
 //                                  and each scalar the kind reads, to the
 //                                  nearest IEEE half (binary16). A
-//                                  positive value below half's least, 2^-24,
-//                                  is stored as 2^-24, never 0, so a lobe
+//                                  positive value that rounds to 0 is
+//                                  stored as half's least, 2^-24, so a lobe
 //                                  never loses its support: a conductor's
 //                                  alpha never becomes a mirror's 0. The
 //                                  scalar word holds the one of alpha (a
 //                                  conductor's) and ior (a coated or
 //                                  dielectric surface's) the kind reads; a
 //                                  lambert's is 0.
+//                                  Precondition: each such value v is
+//                                  finite with |v| <= 65504, half's largest
+//                                  (packed_largest, below).
 //   Bsdf unpack_bsdf(PackedBsdf)   the Bsdf the packed values stand for:
 //                                  the kind; the decoded normal, unit
 //                                  length; the halves widened; every field
 //                                  the kind does not read 0, padding 0.
 //
-// What packing loses, stated (ES.46: deliberate narrowings). A half keeps
-// 11 significant bits, so color, alpha, ior and escape are each within
-// 2^-11 (5 x 10^-4) of their value, relatively, over half's normal range (6.1
-// x 10^-5 to 65504, which holds every albedo, f0, ior and escape a material
-// resolves to, and every alpha but a conductor's of roughness under about
-// 0.008, whose alpha keeps less precision as a subnormal half). The normal is
-// within 10^-4 radians (contracts/light_sample.h, unit_round_trip_error;
-// 6.2 x 10^-5 measured over the sphere). Every question
-// asked of a surface stored packed is asked of its unpacked Bsdf, by every
-// pass, the target's and the shade's alike, so each pixel's surface is one
-// surface: what packing changes is which surface that is, by those amounts,
-// against the full-precision one the reference shades. A small bias in the
-// image, as a G-buffer's is in production; it is part of what the raytraced
-// mode's check against the reference holds within its tolerance
-// (core/passes/restir_di.h). The naive path tracer never packs a Bsdf, and
-// shades what it did.
+// What packing loses, stated (ES.46: deliberate narrowings). For every
+// value v the precondition admits, its unpacked h is within:
+//
+//   |h - v| <= 2^-11 |v|   where |v| >= 2^-14, half's least normal: a
+//                          half keeps 11 significant bits, so rounding to
+//                          nearest loses at most half a step, a relative
+//                          2^-11 (5 x 10^-4);
+//   |h - v| <= 2^-24       where |v| < 2^-14: the subnormal halves are
+//                          2^-24 apart, so rounding loses at most 2^-25,
+//                          and a positive value raised to 2^-24 from below
+//                          2^-25 moves less than 2^-24. Absolute, not
+//                          relative: 10^-9 becomes 2^-24, 60 times itself,
+//                          and is still within 6 x 10^-8 of it.
+//
+// The bounds (packed_relative, packed_absolute, packed_least_normal) are
+// named below, one definition for the shaders' packing and the tests that
+// hold it. Every albedo, f0 and escape a material resolves to is in
+// [0, 1.12] (a texture's shade at most: core/textures/wood.h), and every
+// alpha in [10^-3, 1] (metal/materials/resolve.metal.h, least_alpha), so
+// those are within the precondition by the scene's own checks; an ior is
+// any finite number above 1, and a rough material's constant color, or a
+// checker's, any finite number. A renderer that packs (ReSTIR DI's) refuses,
+// by MetalError naming the material, a scene with a value a material can
+// resolve to outside the precondition (core/scene/packed_range.h; the path
+// graph, which packs nothing, takes it): a value packed past 65504 would be
+// infinity, a different surface from the one the reference shades, and
+// nothing about it would be within a tolerance.
+//
+// The normal is within 10^-4 radians (contracts/light_sample.h,
+// unit_round_trip_error; 6.2 x 10^-5 measured over the sphere). Every
+// question asked of a surface stored packed is asked of its unpacked Bsdf,
+// by every pass, the target's and the shade's alike, so each pixel's
+// surface is one surface: what packing changes is which surface that is,
+// by those amounts, against the full-precision one the reference shades. A
+// small bias in the image, as a G-buffer's is in production; it is part of
+// what the raytraced mode's check against the reference holds within its
+// tolerance (core/contracts/reuse_settings.h, bias_correction). The naive
+// path tracer never packs a Bsdf, and shades what it did.
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
@@ -183,6 +208,12 @@ SERENITY_CONSTANT uint32_t packed_half_mask = 0xffffu;
 SERENITY_CONSTANT uint32_t packed_high_shift = 16u;
 SERENITY_CONSTANT uint32_t packed_kind_shift = 16u;
 SERENITY_CONSTANT uint32_t packed_kind_mask = 0xffu;
+
+// The packed form's range and tolerance (above), named once (ES.45).
+SERENITY_CONSTANT float packed_largest = 65504.0f;            // half's largest finite value
+SERENITY_CONSTANT float packed_least_normal = 6.103515625e-5f;  // 2^-14, half's least normal value
+SERENITY_CONSTANT float packed_relative = 4.8828125e-4f;      // 2^-11, at and above packed_least_normal
+SERENITY_CONSTANT float packed_absolute = 5.9604644775390625e-8f;  // 2^-24, below packed_least_normal
 
 // A Bsdf packed (above): four words, read whole.
 struct PackedBsdf {

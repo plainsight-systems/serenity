@@ -16,6 +16,7 @@
 #include "core/contracts/frame_constants.h"
 #include "core/contracts/reuse_constants.h"
 #include "core/contracts/surface_record.h"
+#include "core/scene/packed_range.h"
 #include "metal/device/error.h"
 #include "metal/device/support.h"
 #include "metal/passes/bindings.h"
@@ -177,6 +178,9 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
             throw MetalError("Renderer: the scene has " + std::to_string(scene->media.size()) +
                              " media, and ReSTIR DI's path state keeps a medium's index in 16 bits, under " +
                              std::to_string(max_restir_media));
+        }
+        if (const std::optional<std::string> outside = scene::outside_packed_bsdf(*scene)) {
+            throw MetalError("Renderer: the scene's " + *outside);
         }
         restir_ = schedule.restir_di;
         reuse_ = std::make_unique<ReuseImages>(device, submission, ReuseImages::Temporal::none,
