@@ -568,7 +568,7 @@ inline Shaded shade(Scene scene, serenity::contracts::SurfaceRecord record, sere
                                 state.eta_scale,
                                 (state.counts >> serenity::contracts::path_surface_shift) &
                                     serenity::contracts::path_surface_mask};
-    return Shaded{path::continue_path(scene, segment, path::FirstLight::reused, numbers), direct.traced,
+    return Shaded{path::continue_path(scene, segment, numbers), direct.traced,
                   direct.reservoir};
 }
 

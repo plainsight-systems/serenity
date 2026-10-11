@@ -64,7 +64,9 @@ This file tracks active and accepted work.
 
 Then, each in its turn: ReSTIR DI (Phase A done 2026-10-10, branch
 restir-di-phase-a: resampled importance sampling with visibility reuse,
-graphs/restir_ris.toml; left: its frame time and convergence measured on
+graphs/restir_ris.toml; its split of the path loop made one loop again,
+the path pass's time and bits kept, docs/research/2026-10-11-path-split-
+cost.md; left: its frame time and convergence measured on
 an idle GPU, then Phase B, the temporal and spatial merges,
 docs/research/2026-10-10-restir-di-layout.md); ReSTIR GI; caustics by manifold next
 event estimation; reservoir reuse as kernels; a denoiser of its own against

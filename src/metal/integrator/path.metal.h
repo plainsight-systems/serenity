@@ -107,41 +107,51 @@
 // surface, so about twice the mean path length, a handful of surfaces in
 // practice; 512 rays at the safety stop.
 //
-// The split, for ReSTIR DI. The loop above is two functions, at the end,
-// that radiance() calls in turn, so the reference and ReSTIR share every
-// line of light transport but the direct light at the first rough surface
-// (logical-overview.md, principle 3; ES.3). Each is built of the loop's
-// steps as two functions both call, arrive() (steps 1 to 4) and scatter()
-// (6 to 8), over the state a Walk carries between surfaces (F.3: one step
-// group a function; F.17: the walk an in-out parameter):
+// The split, for ReSTIR DI. The loop above is one function, walk_path(),
+// whose start and stop are template parameters, so the reference and ReSTIR
+// share every line of light transport but the direct light at the first
+// rough surface (logical-overview.md, principle 3; ES.3), each caller
+// compiling the loop for its own start and stop:
 //
-//   camera_segment()  steps 1 to 4 and, at surfaces with no lobe that aims
-//                     at lights, 6 to 8, from the camera ray to the first
-//                     surface that aims at lights (aims_at_lights), stopping
-//                     there after step 4: its Shading, and the path's state,
-//                     L, beta, eta_scale, the surface's count, and the
-//                     numbers' counter, which the caller holds. Or the
-//                     path's end before any such surface (it left the scene,
-//                     reached a light, or roulette or the safety stop ended
-//                     it among glass and mirrors), with L.
-//   continue_path()   from that surface, step 5 there as `first` says, then
-//                     steps 6 to 8 there and the loop on from the next
-//                     surface, exactly as the loop runs now.
+//   radiance()        <camera, at_end>: the loop above, from the camera's
+//                     ray to the path's end. The path pass's.
+//   camera_segment()  <camera, at_first_aimed>: steps 1 to 4 and, at
+//                     surfaces with no lobe that aims at lights, 6 to 8, from
+//                     the camera ray to the first surface that aims at lights
+//                     (aims_at_lights), stopping there after step 4: its
+//                     Shading, and the path's state, L, beta, eta_scale, the
+//                     surface's count, and the numbers' counter, which the
+//                     caller holds. Or the path's end before any such surface
+//                     (it left the scene, reached a light, or roulette or the
+//                     safety stop ended it among glass and mirrors), with L.
+//   continue_path()   <after_step_5, at_end>: from that surface, steps 6 to 8
+//                     there, then the loop on from the next surface; step 5
+//                     there is the caller's.
 //
-// Three callers: the path pass calls both, with `first` = aimed, so step 5
-// runs at the surface as it does now, drawing the same numbers in the same
-// order, and its image is unchanged to the bit; held by comparing the path
-// pass's accumulated image before and after the split on every scene, and
-// its frame time against its baseline, measured again
-// (docs/research/2026-10-10-restir-di-layout.md, "Additive"). ReSTIR's
+// Why one loop, specialized, and not two loops called in turn: the path
+// pass's loop must keep the state it kept before the split live across its
+// ray queries, and no more, since that state is what holds its occupancy
+// down (docs/research/2026-10-10-path-kernel-counters.md). Two
+// loops called in turn compiled the transport twice into the path kernel,
+// and the second carried the first surface's Shading across every later ray
+// query; one specialized loop compiles once, the same steps over the same
+// state, in locals as before the split, so the path pass keeps its image and
+// its time (docs/research/2026-10-11-path-split-cost.md, which also records
+// the shapes of the same loop that changed the time or, under fast math,
+// the rounding).
+//
+// The path pass calls radiance() alone, and draws the same numbers in the
+// same order as before the split: its image is unchanged to the bit, held by
+// comparing its accumulated image with the build before the split on every
+// scene (docs/research/2026-10-10-restir-di-layout.md, "Additive"). ReSTIR's
 // initial pass calls camera_segment() and writes its result as the pixel's
-// surface record and path state (contracts/surface_record.h); the shade calls
-// continue_path() on what it reads back, with `first` = reused, so step 5 is
-// skipped there and ReSTIR's direct light is the shade's to add
-// (metal/passes/restir_di/restir_di.metal.h, step 6). Its numbers
-// continue the path's stream from where the segment left it: the three step 5 would have drawn are not
-// drawn, which changes which numbers later steps draw, not their
-// independence.
+// surface record and path state (contracts/surface_record.h); the shade
+// calls continue_path() on what it reads back, so step 5 is skipped there
+// and ReSTIR's direct light is the shade's to add
+// (metal/passes/restir_di/restir_di.metal.h, step 6). Its numbers continue
+// the path's stream from where the segment left it: the three step 5 would
+// have drawn are not drawn, which changes which numbers later steps draw,
+// not their independence.
 //
 // Principle 7 holds through the split: at the first rough surface the
 // direct light is counted once, by the naive step 5 or by ReSTIR's shade,
@@ -233,77 +243,152 @@ struct Walk {
     float3 from;
 };
 
-// Steps 1 to 4: where the walk's ray arrives, as a surface resolved; or,
-// where it escapes, nothing, step 2 having added the sky (F.21: one result).
-struct Arrival {
-    bool found;
-    Shading here;  // read only where found
+// The walk at the camera: nothing found, throughput 1, the camera's own ray,
+// which counts emission, in air.
+inline Walk walk_from(CameraRay camera) {
+    return Walk{float3(0.0f),
+                float3(1.0f),
+                1.0f,
+                true,
+                serenity::contracts::no_medium,
+                metal::raytracing::ray(camera.origin, camera.direction, 0.0f, unbounded),
+                camera.origin};
+}
+
+// Where walk_path() starts and where it stops (above, "The split").
+enum class Start {
+    camera,       // at step 1, along the walk's ray
+    after_step_5  // at step 6, at a surface already resolved, whose step 5 is the caller's
+};
+enum class Stop {
+    at_end,         // where the path ends
+    at_first_aimed  // also at the first surface that aims at lights, after its step 4
 };
 
-inline Arrival arrive(Scene scene, thread Walk& walk) {
-    // Step 1.
-    const Hit hit = trace(scene.structure, scene.shapes(), walk.along);
+// Where walk_path() stopped, and the walk there.
+struct Stopped {
+    bool at_surface;  // at a surface that aims at lights (Stop::at_first_aimed only); else the path ended
+    Shading here;     // that surface, after step 4; read only where at_surface
+    uint surface;     // its count along the path, from 0; read only where at_surface
+    Walk walk;        // where the path ended, only L is meaningful
+};
 
-    // Step 2.
-    if (!hit.found) {
-        walk.L += walk.beta * gradient_sky(scene.sky(), walk.along.direction);
-        return Arrival{};
-    }
-    const float3 point = walk.along.origin + hit.t * walk.along.direction;
-    walk.beta *= transmittance(scene.media(), walk.medium, metal::distance(walk.from, point));
-    const serenity::contracts::SurfaceInteraction surface_at =
-        surface_interaction(scene.shapes(), hit.primitive, point, walk.along.direction);
+// Steps 1 to 8 for each surface from `first`, the count of the surface the
+// walk starts at, until the path ends or `stop` says; `at` the surface
+// Start::after_step_5 starts at, unread by Start::camera.
+//
+// One loop, compiled for each caller's start and stop: they are template
+// parameters, not arguments, so the path pass's walk, <camera, at_end>,
+// holds neither (ES.3; GPU.3). Its state is in locals and its steps in its
+// own body, steps 6 to 8 a lambda over those locals (F.50, F.52), both
+// forced inline (GEN.6, overridden deliberately): so the path pass's loop
+// is the loop before the split, keeping the same state live across its
+// ray queries (above, "The split").
+template <Start start, Stop stop>
+[[gnu::always_inline]] inline Stopped walk_path(Scene scene, Walk walk, Shading at, uint first,
+                                                thread PathNumbers& numbers) {
+    float3 L = walk.L;
+    float3 beta = walk.beta;
+    float eta_scale = walk.eta_scale;
+    bool counts_emission = walk.counts_emission;
+    uint medium = walk.medium;
+    metal::raytracing::ray along = walk.along;
+    float3 from = walk.from;
+    const auto carried = [&]() __attribute__((always_inline)) {
+        return Walk{L, beta, eta_scale, counts_emission, medium, along, from};
+    };
 
-    // Step 3: a shape's light record is read only where emission counts.
-    if (walk.counts_emission) {
-        const ShapeLight glowing = light_at(scene.lights(), hit.primitive);
-        if (glowing.is_light) {
-            walk.L += walk.beta * light_emitted(scene.lights(), glowing.light, point, -walk.along.direction);
-        }
-    }
-
-    // Step 4.
-    return Arrival{true, Shading{surface_at, resolve_bsdf(scene.materials(), scene.textures(), surface_at),
-                                 -walk.along.direction, walk.medium}};
-}
-
-// Steps 6 to 8 at `here`, the path's surface number `surface` (from 0): the
-// walk sent on from it; false where the path ends there.
-inline bool scatter(Scene scene, thread Walk& walk, Shading here, uint surface, thread PathNumbers& numbers) {
-    // Step 6.
-    const serenity::contracts::BsdfSample next = bsdf_sample(here.bsdf, here.wo, next_numbers3(numbers));
-    if (next.pdf <= 0.0f) {
-        return false;
-    }
-    const float3 wi = to_float3(next.direction);
-    walk.beta *= to_float3(next.value) * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) / next.pdf;
-    walk.counts_emission = (next.lobe & serenity::contracts::lobe_delta) != 0u;
-    if ((next.lobe & serenity::contracts::lobe_transmission) != 0u) {
-        walk.medium = (here.surface.flags & serenity::contracts::arrived_from_outside) != 0u
-                          ? here.surface.interior
-                          : serenity::contracts::no_medium;
-        const float eta = bsdf_eta(here.bsdf, here.wo);
-        walk.eta_scale *= eta * eta;
-    }
-
-    // Step 7.
-    if (surface >= roulette_from) {
-        const float energy = metal::max(metal::max(walk.beta.r, walk.beta.g), walk.beta.b) * walk.eta_scale;
-        const float q = metal::min(energy, max_survival);
-        if (next_number(numbers) >= q) {
+    // Steps 6 to 8 at `here`, the path's surface number `surface`: the walk
+    // sent on from it; false where the path ends there.
+    const auto scatter = [&](Shading here, uint surface) __attribute__((always_inline)) -> bool {
+        // Step 6.
+        const serenity::contracts::BsdfSample next = bsdf_sample(here.bsdf, here.wo, next_numbers3(numbers));
+        if (next.pdf <= 0.0f) {
             return false;
         }
-        walk.beta /= q;
-    }
+        const float3 wi = to_float3(next.direction);
+        beta *= to_float3(next.value) * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) / next.pdf;
+        counts_emission = (next.lobe & serenity::contracts::lobe_delta) != 0u;
+        if ((next.lobe & serenity::contracts::lobe_transmission) != 0u) {
+            medium = (here.surface.flags & serenity::contracts::arrived_from_outside) != 0u
+                         ? here.surface.interior
+                         : serenity::contracts::no_medium;
+            const float eta = bsdf_eta(here.bsdf, here.wo);
+            eta_scale *= eta * eta;
+        }
 
-    // Step 8.
-    walk.from = to_float3(here.surface.position);
-    walk.along = leave(here.surface, wi);
-    return true;
+        // Step 7.
+        if (surface >= roulette_from) {
+            const float energy = metal::max(metal::max(beta.r, beta.g), beta.b) * eta_scale;
+            const float q = metal::min(energy, max_survival);
+            if (next_number(numbers) >= q) {
+                return false;
+            }
+            beta /= q;
+        }
+
+        // Step 8.
+        from = to_float3(here.surface.position);
+        along = leave(here.surface, wi);
+        return true;
+    };
+
+    if constexpr (start == Start::after_step_5) {
+        if (!scatter(at, first)) {
+            return Stopped{false, Shading{}, 0u, carried()};
+        }
+    }
+    for (uint surface = start == Start::after_step_5 ? first + 1u : first; surface < safety_stop; ++surface) {
+        // Step 1.
+        const Hit hit = trace(scene.structure, scene.shapes(), along);
+
+        // Step 2.
+        if (!hit.found) {
+            L += beta * gradient_sky(scene.sky(), along.direction);
+            break;
+        }
+        const float3 point = along.origin + hit.t * along.direction;
+        beta *= transmittance(scene.media(), medium, metal::distance(from, point));
+        const serenity::contracts::SurfaceInteraction surface_at =
+            surface_interaction(scene.shapes(), hit.primitive, point, along.direction);
+
+        // Step 3: a shape's light record is read only where emission counts.
+        if (counts_emission) {
+            const ShapeLight glowing = light_at(scene.lights(), hit.primitive);
+            if (glowing.is_light) {
+                L += beta * light_emitted(scene.lights(), glowing.light, point, -along.direction);
+            }
+        }
+
+        // Step 4.
+        const Shading here{surface_at, resolve_bsdf(scene.materials(), scene.textures(), surface_at),
+                           -along.direction, medium};
+
+        // Step 5, or the stop before it.
+        if constexpr (stop == Stop::at_first_aimed) {
+            if (serenity::contracts::aims_at_lights(bsdf_lobes(here.bsdf))) {
+                return Stopped{true, here, surface, carried()};
+            }
+        }
+        if (serenity::contracts::aims_at_lights(bsdf_lobes(here.bsdf)) && scene.selection().count > 0u) {
+            L += beta * next_event(scene, here, numbers);
+        }
+
+        // Steps 6 to 8.
+        if (!scatter(here, surface)) {
+            break;
+        }
+    }
+    return Stopped{false, Shading{}, 0u, carried()};
 }
 
-// The split (above): the loop in two functions, which radiance() calls in
-// turn, steps 1 to 8 in the same order with the same numbers.
+// The radiance arriving along the camera's ray, by the algorithm above;
+// `numbers` the path's own. The path pass's.
+inline float3 radiance(Scene scene, CameraRay camera, thread PathNumbers& numbers) {
+    return walk_path<Start::camera, Stop::at_end>(scene, walk_from(camera), Shading{}, 0u, numbers).walk.L;
+}
+
+// ReSTIR's two parts of the same walk (above, "The split").
 
 // Where the camera segment stopped, and the path's state there.
 struct Segment {
@@ -315,69 +400,28 @@ struct Segment {
     uint surface;      // the surface's count along the path, from 0
 };
 
-// Step 5 at the segment's surface: aimed at a light, as the naive path
-// tracer does, or left to ReSTIR's shade.
-enum class FirstLight { aimed, reused };
-
+// The walk from the camera's ray to the first surface that aims at lights,
+// stopped there after step 4; or to the path's end before any.
 inline Segment camera_segment(Scene scene, CameraRay camera, thread PathNumbers& numbers) {
-    Walk walk{float3(0.0f),   float3(1.0f),
-              1.0f,           true,  // the camera's own ray counts emission
-              serenity::contracts::no_medium,  // air, at the camera
-              metal::raytracing::ray(camera.origin, camera.direction, 0.0f, unbounded),
-              camera.origin};
-    for (uint surface = 0; surface < safety_stop; ++surface) {
-        const Arrival arrival = arrive(scene, walk);
-        if (!arrival.found) {
-            break;
-        }
-        // Step 5 runs only where the surface aims at lights: the segment
-        // stops there, before it.
-        if (serenity::contracts::aims_at_lights(bsdf_lobes(arrival.here.bsdf))) {
-            return Segment{true, arrival.here, walk.L, walk.beta, walk.eta_scale, surface};
-        }
-        if (!scatter(scene, walk, arrival.here, surface, numbers)) {
-            break;
-        }
-    }
-    return Segment{false, Shading{}, walk.L, walk.beta, walk.eta_scale, 0u};
+    const Stopped stopped =
+        walk_path<Start::camera, Stop::at_first_aimed>(scene, walk_from(camera), Shading{}, 0u, numbers);
+    return Segment{stopped.at_surface, stopped.here,           stopped.walk.L,
+                   stopped.walk.beta,  stopped.walk.eta_scale, stopped.surface};
 }
 
-// The radiance the path gathers from `segment`'s surface on, L included.
-// Precondition: segment.at_surface. Reads of segment.here.surface only its
-// position, geometric normal, flags and interior (above).
-inline float3 continue_path(Scene scene, Segment segment, FirstLight first, thread PathNumbers& numbers) {
-    Walk walk{segment.L, segment.beta, segment.eta_scale,
-              false,  // unread: step 6 at the segment's surface sets it before the next surface reads it
-              segment.here.medium, metal::raytracing::ray(), float3(0.0f)};
-    Shading here = segment.here;
-    for (uint surface = segment.surface; surface < safety_stop; ++surface) {
-        const bool at_segment = surface == segment.surface;
-        if (!at_segment) {
-            const Arrival arrival = arrive(scene, walk);
-            if (!arrival.found) {
-                break;
-            }
-            here = arrival.here;
-        }
-
-        // Step 5.
-        if ((!at_segment || first == FirstLight::aimed) &&
-            serenity::contracts::aims_at_lights(bsdf_lobes(here.bsdf)) && scene.selection().count > 0u) {
-            walk.L += walk.beta * next_event(scene, here, numbers);
-        }
-
-        if (!scatter(scene, walk, here, surface, numbers)) {
-            break;
-        }
-    }
-    return walk.L;
-}
-
-// The radiance arriving along the camera's ray, by the algorithm above;
-// `numbers` the path's own.
-inline float3 radiance(Scene scene, CameraRay camera, thread PathNumbers& numbers) {
-    const Segment segment = camera_segment(scene, camera, numbers);
-    return segment.at_surface ? continue_path(scene, segment, FirstLight::aimed, numbers) : segment.L;
+// The radiance the path gathers from `segment`'s surface on, L included:
+// the walk from step 6 there, step 5 there the caller's. Precondition:
+// segment.at_surface. Reads of segment.here.surface only its position,
+// geometric normal, flags and interior (above).
+inline float3 continue_path(Scene scene, Segment segment, thread PathNumbers& numbers) {
+    const Walk walk{segment.L,
+                    segment.beta,
+                    segment.eta_scale,
+                    false,  // unread: step 6 at the segment's surface sets it before the next surface reads it
+                    segment.here.medium,
+                    metal::raytracing::ray(),  // unread: step 8 at the segment's surface sets it
+                    float3(0.0f)};             // unread: step 8 at the segment's surface sets it
+    return walk_path<Start::after_step_5, Stop::at_end>(scene, walk, segment.here, segment.surface, numbers).walk.L;
 }
 
 }  // namespace path
