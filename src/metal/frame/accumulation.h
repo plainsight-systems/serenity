@@ -49,6 +49,17 @@ namespace serenity::metal {
 // The order between frames is the pass's to make: Metal 4 does not track
 // hazards, so the pass waits, at its start, for the previous submission's
 // dispatches to finish writing the image (path.h).
+//
+// The converging pass is the path pass, or ReSTIR DI's shade
+// (metal/passes/restir_shade/restir_shade.h), which folds its pixels in by
+// the same rule; a graph has one or the other, never both (the core's rule:
+// one pass accumulates, core/frame/schedule.h). This image is unchanged by
+// ReSTIR: the same format, size and history rule, so the path graph
+// allocates and renders what it did. ReSTIR's own history, its reservoirs
+// and surface records, is a second history beside this one, with its own
+// rule (core/frame/history.h, ReuseHistory) and its own arrays
+// (frame_images.h, ReuseImages): a changing scene starts this image over
+// every frame and keeps that history, so the two are kept apart.
 class Accumulation {
 public:
     Accumulation(const Device& device, Submission& submission);

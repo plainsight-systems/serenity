@@ -31,6 +31,14 @@ namespace serenity::metal {
 // frame being recorded (animation::animate). A scene with no sphere lights
 // keeps one factor, unread, since a buffer must have bytes.
 //
+// Last frame's glows, for a graph with ReSTIR's temporal merge, as last
+// frame's transforms are kept (shape_transforms.h): a second LightGlows,
+// lit at the previous frame's time each frame, so the merge's test of last
+// frame's surface sees each firefly as bright as last frame did: one asleep
+// then gave that surface nothing, whatever it gives now
+// (metal/reuse/unbiased.metal.h). A scene with no glowing light needs none:
+// its one copy is last frame's too.
+//
 // Throws MetalError if the backend cannot make the array.
 class LightGlows {
 public:

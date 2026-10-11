@@ -164,6 +164,51 @@ namespace serenity::metal {
 // transform's write and its box's (core/animation/animate.h,
 // scene_acceleration.h), and one structure build and one barrier.
 // Nothing is allocated.
+//
+// ReSTIR DI (designed here; the members and the switch's five cases come
+// with its implementation). A graph with its passes (core/frame/schedule.h)
+// gets, at construction, everything below and nothing else changes for a
+// graph without them:
+//
+//   - its passes, each built with where it writes its reservoirs, from the
+//     graph's order (frame_resources.h, ReservoirOutput): the candidates to
+//     the working array when a merge follows, else the final one; the
+//     temporal merge in place when a spatial merge follows, else to the
+//     final one; the spatial merge always to the final one;
+//   - ReuseImages (frame_images.h), made by prepare() at the frame's size
+//     and asked by it, from the frame's inputs' reused_since
+//     (core/frame/frame_inputs.h), whether the frame has a previous one;
+//   - a second ring beside the frame constants', of the reuse constants
+//     (core/contracts/reuse_constants.h), 112 bytes a frame: the settings,
+//     whether there is a previous frame, and the previous frame's camera,
+//     framed for this frame's size, which the renderer keeps from the frame
+//     before (its inputs' camera: the renderer holds no camera of its own
+//     beyond the one it was last given);
+//   - for a graph with a temporal merge: last frame's transforms and glows,
+//     a second ShapeTransforms and LightGlows, which recording a frame fills
+//     by animating at the previous frame's time, kept from the frame before
+//     as its camera is (metal/scene/shape_transforms.h, light_glows.h), and
+//     only what moves or glows, as for this frame's; and the acceleration
+//     structure kept a frame longer (scene_acceleration.h, Keep::last_too).
+//     At the first frame of a history there is no previous frame, and none
+//     of it is read.
+//
+// Barriers, each naming its hazard (GPU.8): the queue barrier before the
+// surfaces pass, the first that writes what frames share (this frame's
+// halves of the ping-pongs, which the frame before read as its own, and
+// the accumulated image, through the shade); and a dispatch-to-dispatch
+// barrier before each later ReSTIR pass, each reading what the one before
+// wrote, and before the presenting pass, which reads the shade's
+// accumulated image. Five dispatches and five barriers for the light, where
+// the path graph has one dispatch and one barrier.
+//
+// Cost of recording a ReSTIR frame, on the CPU, beyond the above: 112 bytes
+// of reuse constants, five pipeline binds and dispatches with their
+// argument-table entries; with a temporal merge, one more animation of
+// what moves and glows, at the previous time (O(movers + glowers), as
+// animate()'s cost is: core/animation/animate.h), and no
+// second structure build: last frame's structure is the one last frame
+// built. Nothing is allocated.
 class Renderer {
 public:
     // Builds a pass for each entry of `schedule` from the backend's shader

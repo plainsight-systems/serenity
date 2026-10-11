@@ -35,6 +35,22 @@ namespace serenity::metal {
 // only the moving ones in the copy of the frame being recorded
 // (animation::animate).
 //
+// Last frame's transforms, for a graph with ReSTIR's temporal merge
+// (metal/reuse/temporal.metal.h): the merge evaluates last frame's surface
+// as last frame lit it, a light where last frame placed it, and the
+// surfaces pass places a hit's point where last frame placed its shape. The
+// renderer keeps a second ShapeTransforms for them, of this same class, and
+// in each frame being recorded animates the moving shapes into its slot's
+// copy at the previous frame's time (metal/frame/renderer.h). Not the
+// previous slot's copy of this array: with two frames in flight, frame i
+// would read frame i - 1's copy as last frame's, and frame i + 1, in the
+// same slot as i - 1, rewrites it while frame i may still be running. A
+// second array is the same copy-per-slot rule the
+// first keeps (frame_array.h), and costs one more animation of the moving
+// shapes a frame on the CPU and the array's size again. A still scene
+// needs none: its one copy is last frame's too. Only a graph with a
+// temporal merge has it.
+//
 // Throws MetalError if there are no shapes or the backend cannot make the array.
 class ShapeTransforms {
 public:

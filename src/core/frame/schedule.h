@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include "core/passes/restir_di.h"
 #include "core/passes/tone_map.h"
 
 namespace serenity::frame {
@@ -35,8 +36,9 @@ namespace serenity::frame {
 //   - the radiance image, the frame's linear radiance at the frame's size,
 //     between a pass that computes light and the pass that presents it.
 //
-// A pass that computes light (preview, path) writes radiance; a presenting
-// pass (display, tone_map) reads it and writes the target; the test
+// A pass that computes light (preview, path, restir_shade) writes radiance;
+// a presenting pass (display, tone_map) reads it and writes the target; the
+// test
 // pattern, a diagnostic in display values already, writes the target alone.
 // So a frame graph that computes light ends in a presenting pass, which
 // decides how its light looks: display shows it as it is, as tests and
@@ -44,12 +46,65 @@ namespace serenity::frame {
 // roll-off, as the window and movies want (core/passes/tone_map.h). The
 // backend records the barrier between a pass that writes an image and a
 // later one that reads it (metal/frame/renderer.h).
+//
+// ReSTIR DI (Bitterli et al. 2020) is five passes, one or two steps of its
+// algorithm each (metal/integrator/restir_di.metal.h states it by numbered
+// steps): so each kernel traces with little alive across its ray queries
+// (logical-overview.md, "Little is kept alive across a ray query"), and the
+// spatial merge reads its neighbors' reservoirs only after every pixel has
+// written its own. What each reads and writes, of the frame's images
+// (contract 6; contracts 5 and 14 lay out the records and the reservoirs):
+//
+//   surfaces           the camera's path to its first surface that aims at
+//                      lights (step 1); writes the surface records, the
+//                      path states and, in a graph with a temporal merge,
+//                      the surfaces' previous positions.
+//   restir_candidates  M candidates and visibility reuse (steps 2 and 3);
+//                      reads the records; writes a reservoir a pixel.
+//   restir_temporal    the temporal merge (step 4); reads the records and
+//                      previous positions, last frame's records and final
+//                      reservoirs, and the candidates' reservoirs; writes a
+//                      reservoir a pixel.
+//   restir_spatial     the spatial merge (step 5); reads the records and
+//                      the reservoirs the pass before it wrote, at k
+//                      neighbors; writes a reservoir a pixel.
+//   restir_shade       the direct light from the final reservoir, and the
+//                      path's continuation (step 6); reads the records, the
+//                      path states and the final reservoirs; accumulates,
+//                      and so writes radiance, as the path pass does.
+//
+// The reservoirs the last pass before restir_shade writes are the frame's
+// final reservoirs, which the next frame's temporal merge reads as last
+// frame's (metal/frame/frame_images.h). The order a schedule keeps, checked
+// by invalid() below: surfaces, restir_candidates, restir_temporal if
+// present, restir_spatial if present, restir_shade, each at most once;
+// surfaces, restir_candidates and restir_shade all present if any of the
+// five is; and the shade, which writes radiance, before the presenting pass
+// that reads it, as every light pass is.
+//
+// An estimator is a graph (logical-overview.md, principle 4: estimators are
+// interchangeable over the same scene):
+//
+//   surfaces, restir_candidates, restir_shade
+//       resampled importance sampling alone, with visibility reuse; with
+//       candidates = 1, naive next event estimation at the first surface;
+//   with restir_temporal, restir_spatial, or both, in that order
+//       temporal reuse, spatial reuse, or both;
+//   path
+//       the reference, unchanged: the naive path tracer
+//       (metal/integrator/path.metal.h), to whose image every ReSTIR graph
+//       converges (principle 3).
 enum class PassKind {
     test_pattern,  // a diagnostic image, a function of pixel and time; writes the target
     preview,       // deterministic ray tracing, direct light only; needs a scene; writes radiance
     path,          // path tracing, naive, accumulating while the image holds still; needs a scene; writes radiance
     display,       // radiance as it is: the largest channel above 1 scaled to 1, then sRGB; writes the target
     tone_map,      // radiance exposed, bloomed and rolled off (core/passes/tone_map.h), then sRGB; writes the target
+    surfaces,           // ReSTIR DI step 1: the camera's path to its first rough surface; needs a scene
+    restir_candidates,  // steps 2 and 3: M candidates, one survivor, its visibility; needs a scene
+    restir_temporal,    // step 4: last frame's reservoir merged in; needs a scene
+    restir_spatial,     // step 5: k neighbors' reservoirs merged in; needs a scene
+    restir_shade,       // step 6: the survivor's light and the path's continuation; accumulates; writes radiance
 };
 
 // Whether a pass of `kind` reads the scene. A frame graph with such a pass
@@ -66,16 +121,31 @@ bool writes_radiance(PassKind kind);
 bool reads_radiance(PassKind kind);
 bool writes_target(PassKind kind);
 
+// Whether a pass of `kind` is one of ReSTIR DI's five (above): it reads or
+// writes the surface records or the reservoirs, and reads the [restir_di]
+// settings.
+bool is_restir(PassKind kind);
+
 struct Schedule {
     std::vector<PassKind> passes;  // run in this order; at least one
     // The tone-map pass's settings: present exactly when the schedule has
     // that pass (graph_file.h, core/passes/tone_map.h).
     std::optional<passes::ToneMap> tone_map;
+    // ReSTIR DI's settings: present exactly when the schedule has its
+    // passes (graph_file.h, core/passes/restir_di.h).
+    std::optional<passes::RestirDi> restir_di;
 };
 
 // Whether any pass of `schedule` accumulates: whether its frames build on
 // the frames before them (frame/history.h).
 bool accumulates(const Schedule& schedule);
+
+// Whether `schedule` has restir_temporal: whether its frames build on the
+// reservoirs and surface records of the frames before them, since its reuse
+// history started (frame/history.h, ReuseHistory). Apart from
+// accumulates(): a changing scene starts the accumulated image over every
+// frame, and keeps its reuse history.
+bool reuses_history(const Schedule& schedule);
 
 // What makes a schedule one a backend can carry out, decided here, in the
 // core, so that every backend refuses the same schedules (principle 10):
@@ -91,7 +161,12 @@ bool accumulates(const Schedule& schedule);
 //     computed and never shown is a mistake, not a frame;
 //   - tone-map settings exactly when there is a tone_map pass, with an
 //     exposure finite within [-10, 10] stops and a bloom in [0, 1)
-//     (core/passes/tone_map.h).
+//     (core/passes/tone_map.h);
+//   - ReSTIR DI's passes in their order, each at most once, with surfaces,
+//     restir_candidates and restir_shade all present if any of the five is
+//     (above); and its settings exactly when its passes are present, each
+//     setting the passes read in its range and each they do not read 0
+//     (core/passes/restir_di.h).
 //
 // None if `schedule` is valid; otherwise why not, in words a reader of the
 // frame graph file can act on. The graph reader refuses an invalid schedule
@@ -103,6 +178,11 @@ std::optional<std::string> invalid(const Schedule& schedule);
 // For the graph reader, to name the line of the settings rather than of the
 // passes.
 std::optional<std::string> invalid(const passes::ToneMap& settings);
+
+// The ReSTIR rule's settings alone: whether `settings` hold what `passes`
+// read, in range, and 0 for what they do not (core/passes/restir_di.h).
+// For the graph reader, to name the line of the setting.
+std::optional<std::string> invalid(const passes::RestirDi& settings, std::span<const PassKind> passes);
 
 // The name each kind is written as in a frame graph file, and back: name()
 // is the one mapping, a switch with no default (-Wswitch), and pass_kind()

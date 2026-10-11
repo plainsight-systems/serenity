@@ -49,9 +49,11 @@ and the camera.
       shadow ray.
     - **ReSTIR DI, unbiased** (Bitterli et al. 2020): weigh M candidate
       lights by the light each would deliver, ignoring shadows, and keep one
-      in a reservoir; merge in the reservoir this surface held last frame,
-      then the reservoirs of k neighbors; trace one shadow ray for the light
-      that survives, and shade.
+      in a reservoir; trace one shadow ray to it, and keep it only if it is
+      visible (visibility reuse); merge in the reservoir this surface held
+      last frame, then the reservoirs of k neighbors; and shade with the
+      light that survives, which the merges have made sure this surface
+      can see.
   - **Indirect** light: the path bounces on from the rough surface, through
     glass, off metal and off other rough surfaces, taking direct light at
     each rough surface it reaches. ReSTIR GI (Ouyang et al. 2021) later
@@ -172,9 +174,10 @@ Two consequences are worth stating outright:
 - **Unbiasedness costs rays.** Merging a reservoir from another frame or
   another pixel is unbiased only if the merge accounts for whether that
   reservoir's sample could have been chosen here, and finding out takes a
-  shadow ray. A ReSTIR pixel traces about one ray for the temporal merge, k
-  for the spatial merge and one to shade, against the naive estimator's one
-  per sample.
+  shadow ray. A ReSTIR pixel traces one ray for visibility reuse, about one
+  for the temporal merge and k for the spatial merge, against the naive
+  estimator's one per sample. Each step keeps a light the surface can see,
+  by those same rays, so shading the survivor needs no ray of its own.
 
 ## Reservoirs are state keyed on surfaces
 

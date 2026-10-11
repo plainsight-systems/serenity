@@ -15,10 +15,19 @@ namespace serenity::metal {
 //
 // What a pass is given to record itself: the frame's constants, the image it
 // writes, the argument table it binds through, and the scene, the framed
-// camera and the accumulated image, if the frame has them. One struct for
+// camera, the accumulated image and ReSTIR's records and reservoirs, if the
+// frame has them. One struct for
 // every pass, so the renderer records any pass the same way (renderer.h); each
 // pass takes what it needs and refuses, by MetalError, to run without what it
 // needs.
+
+// Where a ReSTIR pass that produces reservoirs writes them: the working
+// array, when a merge after it reads them, or the frame's final array, when
+// it is the last before the shade (frame_images.h). Decided by the graph,
+// once, when the renderer builds the pass; a type, so the call says which
+// (I.4).
+enum class ReservoirOutput { working, final };
+
 struct FrameResources {
     MTL4::ArgumentTable* arguments = nullptr;
     MTL::GPUAddress constants = 0;  // the frame's contracts::FrameConstants
@@ -52,6 +61,27 @@ struct FrameResources {
     MTL::GPUAddress transforms = 0;
     MTL::GPUAddress glows = 0;
     MTL::ResourceID acceleration{};
+
+    // ReSTIR DI's (frame_images.h, ReuseImages; core/frame/schedule.h): all
+    // 0 when the schedule has none of its passes, and each 0 when its
+    // passes do not use it. The reuse constants
+    // (core/contracts/reuse_constants.h); this frame's surface records,
+    // path states and previous positions (contract 5) and last frame's
+    // records; the working reservoirs, and this frame's and last frame's
+    // final ones (contract 14); and, for the temporal merge, last frame's
+    // transforms, glows and structure (metal/scene/shape_transforms.h,
+    // light_glows.h, metal/acceleration/scene_acceleration.h).
+    MTL::GPUAddress reuse = 0;
+    MTL::GPUAddress records = 0;
+    MTL::GPUAddress path_states = 0;
+    MTL::GPUAddress previous_positions = 0;
+    MTL::GPUAddress last_records = 0;
+    MTL::GPUAddress working_reservoirs = 0;
+    MTL::GPUAddress final_reservoirs = 0;
+    MTL::GPUAddress last_final_reservoirs = 0;
+    MTL::GPUAddress last_transforms = 0;
+    MTL::GPUAddress last_glows = 0;
+    MTL::ResourceID last_acceleration{};
 };
 
 }  // namespace serenity::metal

@@ -53,5 +53,14 @@ inline float3 cosine_direction(float3 n, float2 u) {
     return d.x * f.t + d.y * f.b + metal::sqrt(metal::max(0.0f, 1.0f - metal::dot(d, d))) * n;
 }
 
+// The octahedral map between the unit sphere and the square, quantized to
+// two 16-bit numbers in one word (contracts/light_sample.h states it and its
+// error): a light's point on its unit sphere as a reservoir keeps it. A
+// mapping every family whose points are unit directions may use, so it is
+// here, not in one of them. Declared for review; defined with the ReSTIR
+// implementation.
+inline uint encode_octahedral(float3 unit);
+inline float3 decode_octahedral(uint encoded);  // unit length
+
 }  // namespace shaders
 }  // namespace serenity

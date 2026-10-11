@@ -9,7 +9,8 @@
 
 namespace serenity::frame {
 
-// Axis: Frame graph (history across frames: contract 6's accumulated image).
+// Axis: Frame graph (history across frames: contract 6's accumulated image,
+// and ReSTIR's reservoirs and surface records).
 //
 // Which frames an accumulated image holds: the rule, and the two plans that
 // keep it. Decided here, in the core, so every backend holds the same
@@ -62,6 +63,67 @@ namespace serenity::frame {
 // frame, whatever N: its frames are the same function of the same inputs, so
 // a second would render the same image again.
 //
+// The reuse history: ReSTIR DI's reservoirs and surface records (contracts
+// 14 and 5), which its temporal merge carries from one frame to the next
+// (frame::reuses_history; metal/reuse/temporal.metal.h). History as the
+// accumulated image is: a frame with temporal reuse is a function of the
+// frames since its history started, reused_since (frame_inputs.h), so the
+// same rule-and-plans shape keeps it, here, for every backend. A backend
+// keeps the records and reservoirs on its GPU, and asks ReuseHistory
+// whether a frame may join them (metal/frame/frame_images.h, ReuseImages).
+//
+// The rule. The reservoirs and records hold the frames reused_since ..
+// index - 1, of one size, and a frame joins them when:
+//
+//   - it starts over (reused_since == index): it holds none, the temporal
+//     merge merges nothing, and the images are made anew if they have no
+//     size yet or another one;
+//   - or it is the next frame (index is the one after the last held), of
+//     the same reused_since and the same size.
+//
+// No condition on time: frames at two instants are what temporal reuse
+// reuses across, and each merge evaluates last frame's samples as last
+// frame lit them and this frame's as this one does (logical-overview.md,
+// principle 6), so moving fireflies, a blinking one, and a camera that
+// moves never start it over; the camera's motion is the reprojection's to
+// follow. And no cap on the frames held: what bounds an old sample's weight
+// is the temporal merge's cap on its count, H x M (core/passes/restir_di.h).
+// Anything else is refused by HistoryError, as for the accumulated image: a
+// frame skipped, a size changed or a reused_since moved without starting
+// over, or a reused_since after the frame. Merged in, last frame's
+// reservoirs would then be some other frame's, and the frame would claim a
+// history it does not have (principle 1).
+//
+// What starts it over: a new size (the plans below), and a new graph,
+// whose renderer makes its images anew. A camera cut would, and is not yet
+// a frame input: a camera the caller replaces with another is, to the
+// history, a camera that moved far in one frame, and the merges' similarity
+// tests and Z then keep the frame unbiased while its reuse finds little
+// (metal/reuse/unbiased.metal.h). The input arrives with the first caller
+// that cuts.
+//
+// The postcondition both plans keep (I.7): the same frames since the same
+// start give the same reservoirs, and so the same image, in the window, in
+// a headless run, and rendered alone.
+//
+// The window's plan (LiveReuse): starts over when its size changes (the
+// caller says) and when a frame's index is not the one after the last it
+// planned; never while the scene changes.
+//
+// The headless renderer's plan. Frame k rendered alone must be frame k of
+// a run from the start (principle 2), and a reusing frame is a function of
+// every frame since its history started. So a graph that reuses history
+// starts its history at the timeline's start, the renderer's frame 0 (the
+// first sample of frame 0), and a run asked to start at frame f renders
+// frames 0 .. f - 1 first, by the same plan, writing none of them: it
+// replays them (HeadlessPlan::first, first_written). Each replayed frame is
+// the plan's own sample of it, at its own time, so a still scene's
+// accumulated image holds the replayed samples too, exactly as a run from
+// frame 0's would. A run from frame 0, as every movie is, replays nothing;
+// one from frame f pays f x N renderer frames before its first written one,
+// the price of an exact frame f (principle 2), stated rather than avoided
+// by starting the history late and rendering another image than the run's.
+//
 // Not performance-sensitive: a few comparisons a frame.
 
 class HistoryError : public std::runtime_error {
@@ -112,18 +174,56 @@ private:
     std::uint64_t since_ = 0;
 };
 
+// What a frame joining the reuse history is told.
+struct ReuseJoined {
+    std::uint64_t held = 0;  // frames the history holds before this one: 0, the temporal merge merges nothing
+    bool remade = false;     // the records and reservoirs must be made anew, at the frame's size
+};
+
+// The reuse history's rule (above), as History is the accumulated image's.
+class ReuseHistory {
+public:
+    // Frame `inputs`, at `size`, joins the reservoirs and records; see
+    // above. Throws HistoryError, changing nothing, if it may not.
+    ReuseJoined join(const FrameInputs& inputs, Extent size);
+
+private:
+    bool made_ = false;  // whether the images have a size yet
+    Extent size_;
+    std::uint64_t since_ = 0;  // reused_since of the frames held
+    std::uint64_t next_ = 0;   // the index of the frame they take next
+};
+
+// A running window's reused_since, frame by frame.
+class LiveReuse {
+public:
+    // reused_since for frame `index`; `view`, whether what the window shows
+    // changed since the last frame (its size). Starts over at the first
+    // frame, when the view changed, and when `index` is not the one after
+    // the last asked for. Throws HistoryError for an index at or before the
+    // last asked for: frames out of order (I.5).
+    std::uint64_t since(std::uint64_t index, View view);
+
+private:
+    bool started_ = false;
+    std::uint64_t since_ = 0;
+    std::uint64_t last_ = 0;
+};
+
 // One of the headless renderer's samples: the renderer's frame for it.
 struct Sample {
     std::uint64_t index = 0;
     std::uint64_t accumulated_since = 0;
+    std::uint64_t reused_since = 0;  // 0 for a graph that reuses history (above); unread otherwise
 };
 
 // What the headless renderer is asked to run, each by name, so two counts
-// and three flags cannot be passed in each other's places (I.24).
+// and four flags cannot be passed in each other's places (I.24).
 struct HeadlessRun {
     std::uint64_t first = 0;     // the first frame's index
     std::uint64_t samples = 1;   // asked for per frame
     bool accumulates = false;    // the graph accumulates (frame::accumulates)
+    bool reuses = false;         // the graph reuses history (frame::reuses_history)
     bool scene_changes = false;  // anything in the scene moves or glows
     bool time_frozen = false;    // every frame at one time
 };
@@ -136,7 +236,13 @@ struct SampleOf {
 
 // How the headless renderer renders a run.
 struct HeadlessPlan {
+    // The first frame rendered: the run's first, or 0 for a graph that
+    // reuses history, which replays the frames before the run's first
+    // (above). The plan's samples, accumulated image included, start here.
     std::uint64_t first = 0;
+    // The first frame written: the run's first, always. Frames first ..
+    // first_written - 1 are rendered and not written.
+    std::uint64_t first_written = 0;
     std::uint64_t samples = 1;  // rendered per frame: 1 for a graph that accumulates nothing
     bool instants = false;      // each frame's image its own: the scene changes and time advances
 

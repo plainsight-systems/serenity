@@ -23,10 +23,38 @@
 // the radius its scale (core/contracts/transform.h), wherever this frame
 // placed it, and the radiance the light's peak times its glow this frame
 // (core/animation/animate.h).
+//
+// Its answers to contract 4, the light sample by identity
+// (contracts/light_sample.h), declared at the end beside contract 3's and
+// leaving them as they are, so the naive path tracer draws the numbers it
+// drew and renders the image it rendered:
+//
+//   - a point drawn with its identity: the direction sphere_sample_light()
+//     draws with the same u, the point where it meets the sphere (the
+//     nearer root, distance_to_light()), and that point in the sphere's own
+//     space, the unit direction R^T (y - c) / r from its center
+//     (metal/math/transform.metal.h, transform_to_object), encoded by the
+//     octahedral map (metal/math/warp.metal.h). Its own
+//     space and not the world's: a light that turns keeps its point, as one
+//     that moves does. The scene's transforms do not turn yet
+//     (contracts/transform.h); the identity is correct when they do.
+//   - an identity evaluated at a point: the decoded unit direction placed by
+//     this frame's transform, y = c + s R v; the direction and distance from
+//     the point to y; the radiance (the same every way, its glow this
+//     frame's); the cosine at y between the sphere's outward normal R v and
+//     the direction back to the point, at most 0 for the half of the sphere
+//     the point cannot see; and the area scale s^2, a sphere's world area
+//     per unit of its own.
+//
+// What the cone draws, it draws only on the cap the point can see; an
+// identity evaluated from another point may be on that point's far side,
+// and gives it nothing (cos <= 0): the target's support, not a failure
+// (metal/integrator/target.metal.h).
 
 #include <metal_stdlib>
 
 #include "core/contracts/emitter.h"
+#include "core/contracts/light_sample.h"
 #include "core/contracts/transform.h"
 #include "core/lights/sphere_light.h"
 #include "metal/device/layout.metal.h"
@@ -126,6 +154,24 @@ inline float sphere_light_pdf(SphereLight light, float3 point, float3 direction)
     }
     return 1.0f / v.solid_angle;
 }
+
+// Contract 4, for a sphere light placed by `placed` (the transform
+// sphere_light() read its center and radius from). Declared for review;
+// defined with the ReSTIR implementation, and called by nothing until then.
+
+// The point on the sphere that sphere_sample_light(light, point, u) draws
+// the direction toward, encoded: contract 4's `point`. Whether one was
+// drawn is the caller's to know: a point inside the light draws none
+// (view_light()'s distance at most the radius), and the emitter tests that
+// first.
+inline uint sphere_draw_point(SphereLight light, serenity::contracts::Transform placed, float3 point, float2 u);
+
+// What the sphere's encoded point `encoded` gives `point`, as this light is
+// placed and lit. A word, not the decoded vector, so the two positions
+// cannot be passed in each other's places (I.24).
+inline serenity::contracts::LightReceived sphere_evaluate_point(SphereLight light,
+                                                               serenity::contracts::Transform placed,
+                                                               uint encoded, float3 point);
 
 }  // namespace shaders
 }  // namespace serenity

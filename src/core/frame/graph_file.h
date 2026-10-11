@@ -26,10 +26,30 @@ namespace serenity::frame {
 //   exposure = 0.0                # stops, within [-10, 10] (core/passes/tone_map.h)
 //   bloom = 0.04                  # the fraction of light spread into glare
 //
+//   [restir_di]                   # exactly when a pass is one of ReSTIR DI's
+//   candidates = 8                # M, an integer in [1, 32]
+//   history = 20                  # H, an integer in [1, 64]; (T)
+//   neighbors = 5                 # k, an integer in [1, 32]; (S)
+//   radius = 30.0                 # pixels, in [1, 1024]; (S)
+//   depth_threshold = 0.1         # in (0, 1]; (T) or (S)
+//   normal_threshold = 0.5        # a cosine, in [-1, 1]; (T) or (S)
+//
+// (T): only in a graph with restir_temporal; (S): only with restir_spatial.
+//
+// The ReSTIR settings are core/passes/restir_di.h's, which says what each
+// does and why its range is what it is. Each is required exactly when a
+// pass of the graph reads it, as the comments say: a graph without a
+// temporal merge that writes `history` has a key nobody reads, and one with
+// it that leaves `history` out has asked for no value, which is refused,
+// never filled in (ES.45: the values the graphs are written with are
+// named in that header, not defaulted here). Counts are TOML integers: 8.0
+// is not a count.
+//
 // Every key is checked. A missing passes, a passes that is not a non-empty
-// array of strings, an unknown pass name, a [tone_map] table without a
-// tone_map pass or the pass without the table, a setting missing or out of
-// range, a schedule the core does not accept (schedule.h, invalid()), or a
+// array of strings, an unknown pass name, a [tone_map] or [restir_di] table
+// without its passes or the passes without the table, a setting missing,
+// of the wrong type or out of range, a schedule the core does not accept
+// (schedule.h, invalid()), or a
 // key nobody reads is a GraphFileError, never a default or an ignored line: a typo
 // must fail the run that reads it, not render something else (E.2, E.14).
 // Each GraphFileError names the file and the line, and an unknown pass name lists the

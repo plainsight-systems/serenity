@@ -35,5 +35,16 @@ inline SelectedLight select_light(UniformLight selection, float u) {
     return SelectedLight{selection.records[i], 1.0f / float(selection.count)};
 }
 
+// For ReSTIR DI's candidates, which keep a light by its record's index
+// (contracts/light_sample.h): the index select_light() chooses for the same
+// `u`, by the same formula, and its probability. Declared for review;
+// defined with the ReSTIR implementation. select_light() stays as it is, so
+// the naive path tracer's image does not move by a bit.
+struct SelectedIndex {
+    uint index;         // into the light records
+    float probability;  // 1 / count
+};
+inline SelectedIndex select_light_index(UniformLight selection, float u);
+
 }  // namespace shaders
 }  // namespace serenity

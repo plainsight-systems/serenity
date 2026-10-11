@@ -6,10 +6,27 @@
 // its kind: the one place a shader dispatches on LightKind, so light
 // selection and the estimators name none. Each switch has no default, so a
 // kind added to LightKind and not here fails to compile (-Werror).
+//
+// And contract 4, the light sample by identity (contracts/light_sample.h),
+// for ReSTIR DI: the same dispatch, declared at the end, beside contract 3's
+// functions and changing none of them (sample_light() draws the same
+// numbers into the same directions as before). An identity names its light
+// by its record's index, which these read the record by, so Sample reuse
+// stores 4 bytes of which light rather than the record's 8. Each kind
+// encodes its own point in the identity's word: the sphere by the
+// octahedral map (metal/math/warp.metal.h), a rectangle, when one comes,
+// by its (u, v).
+//
+// Cost: drawing a point is sample_light()'s work, one transform of the
+// point into the light's space and an encoding (a few dozen flops);
+// evaluating one is a decoding, a transform, a normalization and the
+// glow's read, the same 16-byte light record and 48-byte transform reads
+// sample_light() makes, from the constant address space.
 
 #include <metal_stdlib>
 
 #include "core/contracts/emitter.h"
+#include "core/contracts/light_sample.h"
 #include "core/contracts/transform.h"
 #include "core/lights/light.h"
 #include "core/lights/sphere_light.h"
@@ -82,6 +99,20 @@ inline float light_pdf(Lights lights, serenity::lights::LightRecord light, float
     }
     return 0.0f;
 }
+
+// Contract 4 (above). Declared for review; defined with the ReSTIR
+// implementation, and called by nothing until then.
+
+// A point on light record `light`, drawn from `point` as sample_light()
+// draws a direction with the same `u`; light no_light where `point` is
+// inside the light.
+inline serenity::contracts::LightPoint draw_light_point(Lights lights, uint light, float3 point, float2 u);
+
+// What the light at `sample` gives `point`, as `lights` place and light it:
+// this frame's arrays, or last frame's for the temporal merge's previous
+// surface. Precondition: sample.light is a record's index, not no_light.
+inline serenity::contracts::LightReceived evaluate_light_point(Lights lights, serenity::contracts::LightPoint sample,
+                                                               float3 point);
 
 }  // namespace shaders
 }  // namespace serenity

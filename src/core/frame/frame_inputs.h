@@ -56,6 +56,19 @@ struct FrameInputs {
     // Never after index.
     std::uint64_t accumulated_since = 0;
 
+    // The frame from which a graph that reuses history (frame::
+    // reuses_history: ReSTIR's temporal merge) carries its reservoirs and
+    // surface records: frame index's image is a function of the frames
+    // reused_since .. index (principle 1), as an accumulated image is of
+    // accumulated_since's. Equal to index to start over. A history apart
+    // from the accumulated image's: a changing scene starts its accumulated
+    // image over every frame and keeps this one, since following a moving
+    // light is what temporal reuse is for. Which frames may share it, and
+    // the window's and the headless renderer's plans, are the core's
+    // (frame/history.h, ReuseHistory). Unread by a graph that does not
+    // reuse history. Never after index.
+    std::uint64_t reused_since = 0;
+
     // The camera the frame is seen through, at the frame's time
     // (contracts/camera.h). None when the frame has no scene; a frame graph
     // that reads a scene refuses to render without one

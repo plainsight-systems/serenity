@@ -49,5 +49,18 @@ inline CameraRay camera_ray(constant serenity::contracts::CameraData& camera, fl
     return CameraRay{start, metal::normalize(focus - start)};
 }
 
+// The inverse, for ReSTIR DI's reuse (metal/reuse/temporal.metal.h,
+// similar.metal.h). Declared for review; defined with the ReSTIR
+// implementation.
+//
+// camera_depth: how far in front of the camera `point` is, along forward:
+// dot(point - origin, forward). camera_pixel: where the pinhole ray through
+// `point` crosses the image of `size` pixels, in pixels from its top-left
+// corner, by contracts/camera.h's formula solved for (px, py); the lens
+// ignored, as a point's place in the image is its pinhole ray's, the lens
+// blurring it about that place. Meaningful only where camera_depth > 0.
+inline float camera_depth(constant serenity::contracts::CameraData& camera, float3 point);
+inline float2 camera_pixel(constant serenity::contracts::CameraData& camera, float3 point, uint2 size);
+
 }  // namespace shaders
 }  // namespace serenity

@@ -343,3 +343,27 @@ convergence` on a ReSTIR graph.
   measured follow-up.
 - Defaults M = 8, H = 20, k = 5, a 30-pixel radius, thresholds 0.1 and 0.5:
   data, varied by measurement.
+
+## Where the headers depart from this layout (2026-10-10)
+
+Written while designing the headers; each header states the choice, and
+this note keeps what was set aside. The guideline pass over the headers is
+`2026-10-10-restir-di/headers-guidelines-pass.md`.
+
+| Layout | Headers | Why |
+|---|---|---|
+| The shade traces one shadow ray; k + 3 rays a pixel | No shade ray; k + 2 | The merges keep an invariant: every reservoir written holds a sample visible from its surface, or weighs 0. The temporal merge's ray, when the survivor came from last frame, is traced from this pixel's surface, and the spatial merge's, when it came from a neighbor, likewise: each tests the pixel's own domain for Z and is the visibility the shade needs. Without it (the layout's plan, and RTXDI's), Z counts the pixel's own candidates for a sample it cannot see; harmless to its own image, which the final ray zeroes, but the merged reservoir then holds samples outside the domain a neighbor's spatial test grants it, a bias in that neighbor's image (`metal/reuse/unbiased.metal.h`) |
+| The record: position, wo octahedral (4 bytes), Bsdf (48) | position, wo at full precision, Bsdf's fields without its 8 bytes of padding: still 64 | A BSDF evaluated at a quantized wo is the image of another surface, and its support differs at grazing angles |
+| The temporal merge finds where the surface was from its position through the previous camera | A third array, the surface's previous position (12 bytes, temporal graphs only), written by the surfaces pass from the hit's object-space point and last frame's transform | The temporal merge cannot place a moving shape's point from the record alone, and the spatial merge's k neighbor reads should not carry it |
+| Reuse constants: the previous camera and time | The previous camera; no time | No shader reads the previous time: last frame's transforms and glows, animated at it on the CPU, are what carry it |
+| Target evaluations: temporal 2, spatial 2k | 3 and 1 + 2k | The pixel's own reservoir is streamed with its sample's target, which the 16-byte reservoir does not store |
+| About (5 + k) x 80 bytes a pixel, 800 at k = 5 | 1080 to 1480 bytes at k = 5 | Counted from the passes: the path state (64 written, 64 read), the previous position, the accumulated pixel, and the spatial merge's second walk over its neighbors for Z (from cache or not) |
+| Last frame's structure "kept alive one frame more" | A ring of three structures, indexed by frame index, for a temporal graph whose shapes move | With one per slot, frame i + 1 rebuilds what frame i reads as last frame's |
+| The twelve files | Also: `metal/reuse/similar.metal.h` (the similarity test both merges ask), `metal/math/warp.metal.h` (the octahedral map), `metal/camera/thin_lens.metal.h` (projection and depth), `metal/sampler/sampler.metal.h` (a purpose's stream), `metal/light_selection/uniform_light.metal.h` (the chosen index), `core/frame/frame_inputs.h` (reused_since), `metal/frame/frame_resources.h` and `renderer.h` | Each is the axis that owns the piece; every change is a declaration or a comment beside what exists |
+
+Set aside in designing them: aliasing the frame-transient arrays (the
+working reservoirs, the path states) with the tone map's pyramid in one
+heap (GPU.9), until memory at the traced resolution is a constraint; and
+fusing the surfaces and candidates passes, until the counters say whether
+the record's round trip costs more than the registers a fused kernel holds
+across its queries.

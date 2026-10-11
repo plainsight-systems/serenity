@@ -106,6 +106,53 @@
 // Cost per path: one ray to the next surface and at most one shadow ray per
 // surface, so about twice the mean path length, a handful of surfaces in
 // practice; 512 rays at the safety stop.
+//
+// The split, for ReSTIR DI (designed here, made with its implementation;
+// the code below is unchanged until then). The loop above becomes two
+// functions, declared at the end, that radiance() calls in turn, so the
+// reference and ReSTIR share every line of light transport but the direct
+// light at the first rough surface (logical-overview.md, principle 3; ES.3):
+//
+//   camera_segment()  steps 1 to 4 and, at surfaces with no lobe that aims
+//                     at lights, 6 to 8, from the camera ray to the first
+//                     surface that aims at lights (aims_at_lights), stopping
+//                     there after step 4: its Shading, and the path's state,
+//                     L, beta, eta_scale, the surface's count, and the
+//                     numbers' counter, which the caller holds. Or the
+//                     path's end before any such surface (it left the scene,
+//                     reached a light, or roulette or the safety stop ended
+//                     it among glass and mirrors), with L.
+//   continue_path()   from that surface, step 5 there as `first` says, then
+//                     steps 6 to 8 there and the loop on from the next
+//                     surface, exactly as the loop runs now.
+//
+// Three callers: the path pass calls both, with `first` = aimed, so step 5
+// runs at the surface as it does now, drawing the same numbers in the same
+// order, and its image is unchanged to the bit; held by comparing the path
+// pass's accumulated image before and after the split on every scene, and
+// its frame time against its baseline, measured again
+// (docs/research/2026-10-10-restir-di-layout.md, "Additive"). The surfaces
+// pass calls camera_segment() and writes its result as the pixel's surface
+// record and path state (contracts/surface_record.h); the shade calls
+// continue_path() on what it reads back, with `first` = reused, so step 5 is
+// skipped there and ReSTIR's direct light is the shade's to add
+// (restir_di.metal.h, step 6). Its numbers continue the path's stream from
+// where the segment left it: the three step 5 would have drawn are not
+// drawn, which changes which numbers later steps draw, not their
+// independence.
+//
+// Principle 7 holds through the split: at the first rough surface the
+// direct light is counted once, by the naive step 5 or by ReSTIR's shade,
+// and the next surface counts emission only after a delta lobe, in either.
+//
+// What the continuation reads of the surface, beyond its Shading's BSDF, wo
+// and medium: the point and geometric normal (leaving it), the flags (which
+// side it was arrived at from) and interior (the medium a transmission
+// enters). The shade rebuilds those from the record and path state; the
+// SurfaceInteraction's material, primitive, object_position and shading
+// normal it leaves 0, unread by the continuation, and that is a contract of
+// continue_path(): it reads no other field of `here.surface`, and adding a
+// read of one adds it to contract 5's path state.
 
 
 #include <metal_raytracing>
@@ -240,6 +287,29 @@ inline float3 radiance(Scene scene, CameraRay camera, thread PathNumbers& number
     }
     return L;
 }
+
+// The split (above). Declared for review; radiance() is unchanged until the
+// ReSTIR implementation makes it these two calls.
+
+// Where the camera segment stopped, and the path's state there.
+struct Segment {
+    bool at_surface;   // false: the path ended before a surface that aims at lights; only L is meaningful
+    Shading here;      // the surface, after step 4
+    float3 L;          // the light found on the way
+    float3 beta;       // throughput to the surface
+    float eta_scale;   // step 6's
+    uint surface;      // the surface's count along the path, from 0
+};
+
+// Step 5 at the segment's surface: aimed at a light, as the naive path
+// tracer does, or left to ReSTIR's shade.
+enum class FirstLight { aimed, reused };
+
+inline Segment camera_segment(Scene scene, CameraRay camera, thread PathNumbers& numbers);
+
+// The radiance the path gathers from `segment`'s surface on, L included.
+// Precondition: segment.at_surface.
+inline float3 continue_path(Scene scene, Segment segment, FirstLight first, thread PathNumbers& numbers);
 
 }  // namespace path
 }  // namespace shaders
