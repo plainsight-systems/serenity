@@ -78,12 +78,15 @@
 // Cost, per evaluation: one BSDF evaluation (contract 2: a few dozen flops
 // for the conductor's GGX, fewer for the others), the light's answer
 // (evaluate_light_point(): the point's decoding, a transform, a
-// normalization, and 76 bytes of the light's data loaded), and a dozen
-// flops more. Unpacking a record (decoding wo and the normal, widening four
-// halves: two square roots and a few dozen flops) is paid once per record
-// a pass loads, by unpack_record(), not once per evaluation, where the
-// caller holds the unpacked surface; the merges' Frame, which is given
-// records, unpacks per evaluation, ALU it trades for registers.
+// normalization, and 76 bytes of the light's data loaded, once per placed
+// light), and a dozen flops more. Unpacking a record (decoding wo and the
+// normal, widening four halves: two square roots and a few dozen flops) is
+// paid once per record a pass loads, by unpack_record(), not once per
+// evaluation, where the caller holds the unpacked surface; the shade pays
+// it twice, once for its direct light and once where its continuation
+// starts, rather than hold the surface across its visibility query
+// (metal/integrator/restir_di.metal.h); the merges' Frame, which is given
+// records, unpacks per evaluation. Each is ALU traded for registers.
 // metal/passes/restir_di/restir_di.metal.h counts the evaluations a pixel
 // makes.
 

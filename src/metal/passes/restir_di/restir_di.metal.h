@@ -135,8 +135,7 @@
 //
 // restir_shade
 //
-//   Step 6  Shade. q's record unpacked once, for its direct light and its
-//           continuation both. The direct light from the final reservoir's
+//   Step 6  Shade. The direct light from the final reservoir's
 //           sample y, where W > 0, without visibility first (the
 //           Integrator's unshadowed(): f(wo, wi) |cos θ_x| L_e G x T x W,
 //           target.metal.h, direct_light); then y's visibility V from q,
@@ -194,18 +193,21 @@
 // record and path state were written before step 2, and nothing after the
 // query reads the surface, its ray's origin and direction being made
 // before it. The raytraced merges' queries carry their pixel's record (32,
-// packed) and reservoir and the streaming one. The shade unpacks its record
-// once and computes the unshadowed direct light before its query, so across
-// it what is alive is that radiance, the reservoir, the path state, the
-// packed record's point and the 72-byte unpacked surface, which the
-// continuation reads after it. In a graph with no merge the shade traces
-// no query (every survivor's test is the initial pass's, here and now:
-// takes_test()), and unpacking once spares every shaded pixel a second
-// unpack (two unit-vector decodes) for nothing held across a query (decided
-// 2026-10-11, by the review of f86e7ae). In a graph with merges, where the
-// shade traces, whether holding the unpacked surface across the query or
-// unpacking the record again after it is faster is a register-for-flops
-// trade for the merges' change to measure (GPU.3, GPU.10).
+// packed) and reservoir and the streaming one. The shade computes the
+// unshadowed direct light before its query, so across it what is alive is
+// that radiance, the reservoir, the path state and the packed record (32
+// bytes), which the continuation unpacks again after it
+// (metal/integrator/restir_di.metal.h, continue_from()) rather than the
+// shade holding the 72-byte unpacked surface across the query: registers
+// traded for two unit-vector decodes. The query is in the shade's code in
+// every graph, the RIS graph's included, though there no pixel traces it
+// (every survivor's test is the initial pass's, here and now:
+// takes_test()); registers are allocated across it all the same. Unpacking
+// once, which the review of f86e7ae asked for, was measured slower in the
+// RIS graph, and is set aside (decided 2026-10-11:
+// docs/research/2026-10-10-restir-di-layout.md, "The review of f86e7ae";
+// GPU.3, GPU.10). The merges' graphs, where the shade traces, are to
+// measure the trade again.
 //
 // Cost, per pixel per frame, all four passes, at the settings the graphs
 // are written with (M = 8, H = 20, k = 1, basic mode, permutation and
@@ -415,18 +417,19 @@ struct Shaded {
 
 // Step 6, from the pixel's record, path state and final reservoir, by the
 // graph's `settings` (its mode and visibility reuse); `numbers` the path's
-// stream, from the state's counter. The record is unpacked once, for the
-// direct light and the continuation both (above).
+// stream, from the state's counter. The record is unpacked for the direct
+// light, and by continue_from() again for the continuation, so the
+// unpacked surface is not alive across the visibility query (above).
 inline Shaded shade(Scene scene, serenity::contracts::SurfaceRecord record, serenity::contracts::PathState state,
                     serenity::contracts::Reservoir final_reservoir, serenity::contracts::ReuseSettings settings,
                     thread PathNumbers& numbers) {
     if (packed_kind(record.bsdf) == serenity::contracts::BsdfKind::none) {  // no surface (first_surface())
         return Shaded{to_float3(state.radiance), false, final_reservoir};
     }
-    const RecordedSurface here = unpack_record(record);
     Shaded shaded{float3(0.0f), false, final_reservoir};
     float3 direct = float3(0.0f);
     if (serenity::contracts::holds_light(final_reservoir.sample) && final_reservoir.weight > 0.0f) {
+        const RecordedSurface here = unpack_record(record);
         const Unshadowed lit =
             unshadowed(scene, here, unpack_medium(state.media), final_reservoir.sample, final_reservoir.weight);
         direct = lit.radiance;
@@ -440,7 +443,7 @@ inline Shaded shade(Scene scene, serenity::contracts::SurfaceRecord record, sere
             }
         }
     }
-    shaded.radiance = continue_from(scene, record, here, state, direct, numbers);
+    shaded.radiance = continue_from(scene, record, state, direct, numbers);
     return shaded;
 }
 

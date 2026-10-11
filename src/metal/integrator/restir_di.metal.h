@@ -67,15 +67,21 @@
 //                     that tests V.
 //   continue_from()   step 6: the pixel's radiance, the path state's light
 //                     plus its throughput times the direct light, then the
-//                     path continued from the surface as the naive path
-//                     tracer continues it (continue_path(), step 5 there
-//                     left out: principle 7).
+//                     path continued from the record's surface as the
+//                     naive path tracer continues it (continue_path(),
+//                     step 5 there left out: principle 7).
 //
-// Every function takes the surface unpacked (target.metal.h,
-// unpack_record): the one a pass unpacked once from its record, so the
-// surface the candidates are weighed at is the one the shade shades, and
-// the shade unpacks its record once for its direct light and its
-// continuation both.
+// Every function asks its questions of the surface unpacked from its record
+// (target.metal.h, unpack_record), so the surface the candidates are
+// weighed at is the one the shade shades. The initial pass unpacks it once
+// for its candidates and their ray. The shade unpacks it for its direct
+// light, and continue_from() again where the continuation starts, rather
+// than the shade holding the 72-byte unpacked surface across its
+// visibility query: the query is in the shade's code whether or not a
+// pixel traces it, so what is alive across it costs registers in every
+// graph, and two unpacks (two unit-vector decodes) cost less (decided
+// 2026-10-11 by measurement, against the review of f86e7ae's unpack-once:
+// docs/research/2026-10-10-restir-di-layout.md, "The review of f86e7ae").
 //
 // Cost: first_surface() is the camera segment's (path.metal.h); a candidate
 // is one placed light (76 bytes of logical loads), one point drawn and
@@ -230,14 +236,15 @@ inline Unshadowed unshadowed(Scene scene, RecordedSurface here, uint medium, ser
 }
 
 // Step 6's radiance: the path state's light, plus its throughput times
-// `direct`, the direct light at `here` (0 where there is none, or it is
-// hidden), then the continuation from `here`, the surface unpacked from
-// `record`, rebuilt as continue_path() reads it (path.metal.h): the point
-// and the normal as the geometric normal, the flags and the interior from
-// the path state; and the Shading's BSDF, wo and medium. `numbers` the
-// path's stream, from the state's counter.
-inline float3 continue_from(Scene scene, serenity::contracts::SurfaceRecord record, RecordedSurface here,
+// `direct`, the direct light at the record's surface (0 where there is
+// none, or it is hidden), then the continuation from that surface,
+// `record` unpacked here (above) and rebuilt as continue_path() reads it
+// (path.metal.h): the point and the normal as the geometric normal, the
+// flags and the interior from the path state; and the Shading's BSDF, wo
+// and medium. `numbers` the path's stream, from the state's counter.
+inline float3 continue_from(Scene scene, serenity::contracts::SurfaceRecord record,
                             serenity::contracts::PathState state, float3 direct, thread PathNumbers& numbers) {
+    const RecordedSurface here = unpack_record(record);
     const uint medium = unpack_medium(state.media);
     const float3 beta = to_float3(state.throughput);
     serenity::contracts::SurfaceInteraction surface{};
