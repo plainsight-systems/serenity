@@ -78,7 +78,11 @@ phase-a-guidelines-pass.md; MIS in the shared path tracer done
 continuation's spikes gone; the review of 7751a65 answered 2026-10-11 on
 branch mis-review: both strategies drawn and weighed from the point rays
 leave from, the power heuristic without overflow, the probes' layouts one
-header per probe, that note's "Review of 7751a65"; left: Phase B, the BSDF candidate (for the
+header per probe, that note's "Review of 7751a65"; the ray offset sized to
+the point's rounding (Wachter and Binder, hit points put back on their
+shapes) done 2026-10-11, docs/research/2026-10-11-ray-offset.md, the
+references at t = 120 and t = 8 to render again with it and the
+convergence runs after them; left: Phase B, the BSDF candidate (for the
 first surface's spikes, 2026-10-11-restir-ris-results.md) and the
 temporal and spatial merges,
 docs/research/2026-10-10-restir-di-layout.md); ReSTIR GI; caustics by manifold next
@@ -90,3 +94,8 @@ Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
 - **Whether MoltenVK supports Vulkan ray tracing.** Believed not; verify
   before the Vulkan backend, since it decides whether that backend could also
   run on the Mac.
+- Ray offset: one cat's-eye rim still moves ~4% between the chapter's step and one 4x smaller (pbrt-v4 bounds would shrink it).
+- Ray offset: step 5's T is over the shadow ray, short of the surface's point by one step (only for a light in the surface's medium).
+- Ray offset: +0.3 ms is `offset_ray()` itself; GPU counters for why a cheaper float form was no faster.
+- Ray offset: ReSTIR's visibility offsets along the record's 16-bit-quantized normal; no test aims at it.
+- Ray offset: a sphere ~100 m+ in radius whose surface passes near the origin re-hits (fixed 15 um step there); no scene has one.
