@@ -138,7 +138,13 @@ reference:
 ## noise is independent (core/measurement/error.h). Written at doubling
 ## frames as PFMs (--write doubling), each measured against the reference by
 ## serenity-measure, into a CSV beside it: samples, image, MSE and relative
-## MSE, a row a written frame. The frames are removed once measured.
+## MSE, a row a written frame, and each times the seconds those samples
+## took, mse_seconds and relative_mse_seconds: error x time, the one number
+## estimators are compared by (lower is better; for an unbiased estimator
+## it holds still as samples grow, error falling as 1/N while time grows as
+## N). The seconds are the run's wall clock over its samples, writing
+## included: some ten milliseconds a sample at 1920 x 1080. The frames are
+## removed once measured.
 CONVERGENCE_FRAMES ?= 16384
 CONVERGENCE_SAMPLES ?= 1
 CONVERGENCE_NAME = $(REFERENCE_NAME)-convergence-$(CONVERGENCE_FRAMES)x$(CONVERGENCE_SAMPLES)
@@ -151,14 +157,16 @@ convergence:
 	cmake --build --preset native-release --target serenity-headless serenity-measure
 	rm -rf $(CONVERGENCE_FRAMES_DIR) $(CONVERGENCE)
 	first=$$(( ($(BATCHES) * $(BATCH_SAMPLES) + $(CONVERGENCE_SAMPLES) - 1) / $(CONVERGENCE_SAMPLES) )) && \
+	start=$$(python3 -c 'import time; print(time.time())') && \
 	frames=$$(./build/native-release/serenity-headless --graph graphs/path.toml --scene $(SCENE) \
 		--out $(CONVERGENCE_FRAMES_DIR) --size $(SIZE) --first $$first --frames $(CONVERGENCE_FRAMES) \
 		--samples $(CONVERGENCE_SAMPLES) --time $(TIME) --write doubling --format pfm) && \
+	per_sample=$$(python3 -c "import time; print((time.time() - $$start) / ($(CONVERGENCE_FRAMES) * $(CONVERGENCE_SAMPLES)))") && \
 	errors=$$(./build/native-release/serenity-measure error --reference $(REFERENCE) $$frames) && \
-	printf '%s\n' "$$errors" | awk -F, -v first=$$first -v m=$(CONVERGENCE_SAMPLES) \
-		'NR == 1 { print "samples," $$0; next } \
-		 match($$0, /frame-[0-9]+\.pfm/) { frame = substr($$0, RSTART + 6, RLENGTH - 10) + 0; \
-			printf "%d,%s\n", (frame - first + 1) * m, $$0; next } \
+	printf '%s\n' "$$errors" | awk -F, -v first=$$first -v m=$(CONVERGENCE_SAMPLES) -v s=$$per_sample \
+		'NR == 1 { print "samples," $$0 ",mse_seconds,relative_mse_seconds"; next } \
+		 match($$0, /frame-[0-9]+\.pfm/) { frame = substr($$0, RSTART + 6, RLENGTH - 10) + 0; n = (frame - first + 1) * m; \
+			printf "%d,%s,%.6g,%.6g\n", n, $$0, $$(NF - 1) * n * s, $$NF * n * s; next } \
 		 { print "unmatched row: " $$0 > "/dev/stderr"; exit 1 }' >$(CONVERGENCE) || { rm -f $(CONVERGENCE); exit 1; }
 	rm -rf $(CONVERGENCE_FRAMES_DIR)
 	@cat $(CONVERGENCE)

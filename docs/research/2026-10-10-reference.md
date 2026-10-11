@@ -261,5 +261,22 @@ metal, P = 1/616, toward a light close by.
 
 ## Decision
 
-Open, for the user: how the error is to be estimated so that estimators
-can be compared on it (see the reply that follows this note's commit).
+Estimators are compared by one number, error x time: MSE (and relative
+MSE) times the seconds the samples took, lower better. It is Monte Carlo
+efficiency's inverse, the rendering counterpart of bits per byte: for an
+unbiased estimator it holds still as samples grow (error 1/N, time N), so
+it compares estimators that differ in cost per sample, which is ReSTIR's
+whole claim. `make convergence` writes it beside each row; the seconds are
+the run's wall clock over its samples. Read it off the long end of a run,
+where the rare large samples have averaged in, and show an equal-time
+image beside the reference.
+
+The naive baseline, from the runs above at t = 120 and some 9.3 ms a
+sample: 2.0 MSE-seconds at 1024 samples, 1.35 at 2048, 1.28 at 4096, 3.2
+at 16,384: some 1.3 to 3.
+
+Set aside, as more than a demo needs (2026-10-10, the user): repeated
+runs for error bars, a second reference to measure the floor, trimmed
+errors, and tracing which paths carry the rare samples. Serenity shows the
+parallel between attention and path tracing with real numbers; it is not
+a paper.
