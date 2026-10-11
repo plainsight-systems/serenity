@@ -49,6 +49,17 @@ pixels, a depth threshold of 10% and a normal threshold of cos 0.5. Its
 library is under NVIDIA's proprietary license: read for its design, none
 of it copied.
 
+## Additive: the naive path tracer stays as it is
+
+Every change adds beside what exists. The naive path tracer's graphs read
+as now, render the same images to the bit, allocate the same images and
+cost the same time; ReSTIR's images, constants and previous-frame copies
+exist only for a graph that has its passes. The one edit to existing code
+is path.metal.h's split into two functions the path pass calls in turn.
+Held by: the existing GPU tests unchanged; the path pass's accumulated
+image compared bit for bit before and after on every scene; and the path
+graph's frame time measured again against its 29.90 ms baseline.
+
 ## The parallel with attention
 
 | ReSTIR DI | Attention |
@@ -71,7 +82,7 @@ and the reservoir header states it.
 
 ## The headers
 
-Twelve files new or changed. Core first, then the Metal backend. Each entry:
+Twelve files new or added to; every change is additive (above). Core first, then the Metal backend. Each entry:
 the piece of the algorithm it owns, then the guidelines that shape it.
 
 ### Core (platform-neutral)
@@ -146,10 +157,15 @@ read by Pass and Frame graph)
 - Guidelines: GPU.2; CDSA.23 (a small, mergeable state: the whole
   streaming state of resampling is these 16 bytes); P.5.
 
-**`core/contracts/frame_constants.h`** (changed; contract 7)
+**`core/contracts/reuse_constants.h`** (new; owned by Sample reuse,
+read by the ReSTIR passes)
 - The previous frame's camera and time, for the temporal merge's
-  reprojection and its targets evaluated as the previous frame lit them.
-- Guidelines: as the contract's existing rules.
+  reprojection and its targets evaluated as the previous frame lit them;
+  the settings the shaders read (M, H, k, radius, thresholds). Its own
+  buffer, bound only by the ReSTIR passes, so contract 7, which every pass
+  binds, is unchanged.
+- Guidelines: shared-layout rules (P.5); I.5 (settings checked on the CPU
+  before they are written).
 
 ### Metal backend
 
@@ -210,9 +226,10 @@ Sample reuse)
 
 **`metal/lights/sphere_light.metal.h`, `emitter.metal.h`** (changed;
 contract 3)
-- A sample drawn with its identity (the point on the sphere it reached),
-  and a sample evaluated from an identity at any point: direction,
-  distance, radiance, the cosine at the light.
+- New, beside the existing functions: a sample drawn with its identity
+  (the point on the sphere it reached), and a sample evaluated from an
+  identity at any point: direction, distance, radiance, the cosine at the
+  light. sample_light() is unchanged and draws the same numbers.
 - Guidelines: I.1 (the identity explicit, never a position kept from
   another frame: principle 6).
 
@@ -228,14 +245,17 @@ restir_spatial, restir_shade}/`** (new; Pass)
 **`metal/frame/frame_images.h`, `accumulation.h`** (changed; contract 6)
 - The new images: the surface records, this frame's and last frame's
   (ping-pong); reservoirs: one working, and two finals ping-ponged so last
-  frame's survives this frame's spatial pass. Allocated once per size.
+  frame's survives this frame's spatial pass. Allocated once per size, and
+  only for a graph with ReSTIR passes: the path graph allocates what it
+  does now.
 - Guidelines: MEM.4 (double-buffered across one frame); GPU.9 (transient
   images from the frame's heap); MEM.9.
 
 **`metal/scene/shape_transforms.h`, `light_glows.h`** (changed)
 - The previous frame's transforms and glows beside this frame's, animated
   at the previous time on the CPU: the temporal merge's targets are
-  evaluated as the previous frame lit them. Some 43 µs more a frame.
+  evaluated as the previous frame lit them. Some 43 µs more a frame, and
+  only for a graph with a temporal pass.
 - Guidelines: MEM.9; the existing frame-copy rules.
 
 ## What it costs, counted
