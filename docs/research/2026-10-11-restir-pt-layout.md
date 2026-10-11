@@ -104,7 +104,7 @@ times the pixels) on an M3 Max, where the path tracer alone takes 30 ms.
 Expect ReSTIR PT at full resolution to cost several times the path tracer.
 Production runs path-traced reuse at a reduced internal resolution and
 upscales; the window already renders at a scale (`--scale`). The frame
-time at full and half scale is measured at Phase 2's checkpoint; nothing
+time at full and half scale is measured at Phase 1's checkpoint; nothing
 is tuned before then.
 
 ## How success is judged
@@ -115,9 +115,9 @@ taking as many samples per pixel as fit in ReSTIR PT's frame time. Shown
 live, side by side, and as frame time plus that one-frame MSE. No
 references are rendered until ReSTIR PT is finished.
 
-The gate: if at Phase 2's checkpoint ReSTIR PT does not visibly beat the
+The gate: if at Phase 1's checkpoint ReSTIR PT does not visibly beat the
 path tracer in the glass, the mirrors and the porcelain at equal frame
-time, stop and say so before Phase 3.
+time, stop and say so before Phase 2.
 
 ## The parallel with attention
 
@@ -244,18 +244,18 @@ sampled lobe; what it lacks is added there.
 
 Each ends with something to watch, not a reference render.
 
-1. **Initial sampling, no reuse.** The path tree with NEE at every vertex,
-   RIS over it into the path reservoir, shaded. Its mean matches the path
-   tracer's (the existing closed-form floor tests); its frame time
-   measured. Visibly about the path tracer's noise: it reuses nothing yet.
-2. **Spatial reuse.** Hybrid shift, the criteria, paired neighbors,
-   pairwise MIS, replay compaction, color noise. The checkpoint: watch it
+1. **Initial sampling and spatial reuse, together.** The path tree with
+   NEE at every vertex, RIS over it into the path reservoir; then the
+   hybrid shift, the criteria, paired neighbors, pairwise MIS, replay
+   compaction, color noise. Initial sampling alone reuses nothing and
+   shows nothing new, so it is not a stop; its mean is still tested
+   against the closed-form floors on the way. The checkpoint: watch it
    live beside the path tracer at equal frame time, at full and half
    scale. The gate above applies here.
-3. **Temporal reuse and decorrelation.** Talbot MIS, the cap, the
+2. **Temporal reuse and decorrelation.** Talbot MIS, the cap, the
    duplication map. Watch it live: the caustics and cores are where the
    temporal persistence shows.
-4. **Close.** References once, the clip, the write-up.
+3. **Close.** References once, the clip, the write-up.
 
 Measurement at each phase: frame time and the one-frame comparison at
 equal time. Anything under about 1%, or not visible, goes to the queue.
