@@ -6,10 +6,10 @@
 // candidates at the record, unpacked, and visibility reuse; the reservoir
 // written to `output`, the array the renderer binds by the graph.
 //
-// Bound here: what a graph without a temporal merge reads and writes. The
-// previous positions and last frame's transforms (bindings.h) are the
-// temporal merge's, bound with it; a graph with one is refused by the
-// renderer until it is implemented (metal/frame/renderer.h).
+// The previous positions and last frame's transforms (bindings.h) are the
+// temporal merge's: bound, written and read only in a graph with one, which
+// the settings say (contracts/reuse_settings.h: history is read, and so
+// not 0, exactly there).
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -37,6 +37,10 @@ kernel void restir_initial(constant serenity::contracts::FrameConstants& frame [
                            constant serenity::contracts::ReuseConstants& reuse [[buffer(binding::reuse)]],
                            device serenity::contracts::SurfaceRecord* records [[buffer(binding::records)]],
                            device serenity::contracts::PathState* path_states [[buffer(binding::path_states)]],
+                           device serenity::contracts::Float3* previous_positions
+                           [[buffer(binding::previous_positions)]],
+                           constant serenity::contracts::Transform* last_transforms
+                           [[buffer(binding::last_transforms)]],
                            device serenity::contracts::Reservoir* output [[buffer(binding::output)]],
                            uint2 pixel [[thread_position_in_grid]]) {
     if (pixel.x >= frame.width || pixel.y >= frame.height) {
@@ -51,9 +55,13 @@ kernel void restir_initial(constant serenity::contracts::FrameConstants& frame [
     const float2 within = next_numbers2(numbers);  // the point in the pixel
     const float2 lens = has_lens(camera) ? next_numbers2(numbers) : float2(0.0f);
     const CameraRay ray = camera_ray(camera, float2(pixel) + within, lens, uint2(frame.width, frame.height));
-    const restir::Surfaces surfaces = restir::first_surface(scene, ray, nullptr, numbers);
+    const bool temporal = reuse.settings.history != 0u;  // the graph has restir_temporal
+    const restir::Surfaces surfaces = restir::first_surface(scene, ray, temporal ? last_transforms : nullptr, numbers);
     records[i] = surfaces.record;
     path_states[i] = surfaces.state;  // written before step 2: not alive across step 3's query
+    if (temporal) {
+        previous_positions[i] = to_packed(surfaces.previous_position);
+    }
 
     // Steps 2 and 3, at the record as every later pass reads it.
     if (packed_kind(surfaces.record.bsdf) == serenity::contracts::BsdfKind::none ||

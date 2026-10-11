@@ -191,8 +191,8 @@
 // path tracer's would. Steps 2 and 3, 4, and 5 each draw their own purpose's
 // stream (the purposes below), so no step's numbers repeat another's, and
 // each frame's are independent of every other frame's. Step 4's
-// permutation draws the permutation purpose's stream at pixel (0, 0): the
-// same two numbers in every pixel of the frame.
+// permutation and its ring's start draw the permutation purpose's stream at
+// pixel (0, 0): the same three numbers in every pixel of the frame.
 //
 // What is alive across each ray query (logical-overview.md, "Little is kept
 // alive across a ray query"; GPU.3): the camera segment's queries carry the
@@ -348,27 +348,85 @@ struct Reprojected {
 // structure, and its camera framed for the image of `size` pixels. The
 // temporal merge is given this frame's and last frame's, which differ in
 // data only, so its one ray query serves either (temporal.metal.h, GPU.4).
-// Declared, and defined with the merges that ask it (restir_temporal,
-// restir_spatial), which the Metal backend refuses by name until then
-// (metal/frame/renderer.h).
+// The temporal merge asks it of both frames; the spatial merge, refused by
+// name until it is implemented (metal/frame/renderer.h), will ask this
+// frame's.
 struct FrameView {
     Scene scene;
     constant serenity::contracts::CameraData* camera;
     uint2 size;
 
-    // the Integrator's target (target.metal.h), unpacking q (unpack_record)
-    float target(serenity::contracts::SurfaceRecord q, serenity::contracts::LightPoint y) const;
+    // the Integrator's target (target.metal.h), unpacking q (unpack_record);
+    // 0 for a sample holding no light
+    float target(serenity::contracts::SurfaceRecord q, serenity::contracts::LightPoint y) const {
+        if (!serenity::contracts::holds_light(y)) {
+            return 0.0f;
+        }
+        const RecordedSurface here = unpack_record(q);
+        return serenity::shaders::target(here, evaluate_light_point(scene.lights(), y, here.position));
+    }
     // the Integrator's visible(); asked only in raytraced mode
-    bool visible(serenity::contracts::SurfaceRecord q, serenity::contracts::LightPoint y) const;
-    float depth(float3 point) const;          // thin_lens.metal.h, camera_depth
-    Reprojected project(float3 point) const;  // thin_lens.metal.h, camera_pixel
+    bool visible(serenity::contracts::SurfaceRecord q, serenity::contracts::LightPoint y) const {
+        const RecordedSurface here = unpack_record(q);
+        return restir::visible(scene, here, evaluate_light_point(scene.lights(), y, here.position));
+    }
+    // thin_lens.metal.h, camera_depth
+    float depth(float3 point) const { return camera_depth(*camera, point); }
+    // thin_lens.metal.h, camera_pixel: the pixel whose square holds the
+    // point's place, which rounds the place in pixel units, centers at
+    // + 0.5, to the nearest center (RTXDI's rounding)
+    Reprojected project(float3 point) const {
+        if (!(depth(point) > 0.0f)) {
+            return Reprojected{false, uint2(0u)};
+        }
+        const float2 place = camera_pixel(*camera, point, size);
+        if (!(metal::all(place >= 0.0f) && metal::all(place < float2(size)))) {
+            return Reprojected{false, uint2(0u)};
+        }
+        return Reprojected{true, metal::min(uint2(place), size - 1u)};
+    }
 };
 
-// Step 4's permutation for the frame of `frame_numbers` (the permutation
-// purpose's stream at pixel (0, 0)): two numbers in [0, 3], x's and y's;
-// the identity when `settings` turn permutation off. Declared, and defined
-// with the temporal merge, as FrameView is.
-inline BlockPermutation frame_permutation(PathNumbers frame_numbers, serenity::contracts::ReuseSettings settings);
+// Step 4's order of tries for the frame of `frame_numbers` (the
+// permutation purpose's stream at pixel (0, 0)): the permutation, two
+// numbers in [0, 3], x's and y's, the identity when `settings` turn
+// permutation off; and the ring's start (temporal.metal.h, step 3).
+inline BlockPermutation frame_permutation(PathNumbers frame_numbers, serenity::contracts::ReuseSettings settings) {
+    const float2 u = next_numbers2(frame_numbers);
+    const uint start = metal::min(uint(next_number(frame_numbers) * 8.0f), 7u);
+    if (settings.permutation == serenity::contracts::Permutation::off) {
+        return BlockPermutation{uint2(0u), start};
+    }
+    return BlockPermutation{metal::min(uint2(u * 4.0f), uint2(3u)), start};
+}
+
+// Step 4 at one pixel, the temporal merge's kernel's whole work: `pixel`'s
+// record and initial reservoir, where its surface was last frame, `now`
+// and `then` this frame's and last frame's views, last frame's arrays, and
+// the frame's index. The initial reservoir as it is where the history
+// starts over, the pixel has no surface, the surface was outside last
+// frame's image, or no pixel tried was similar (temporal.metal.h, steps 1
+// to 3).
+inline serenity::contracts::Reservoir temporal(FrameView now, FrameView then, Merging pixel, float3 previous_position,
+                                               LastArrays arrays, bool previous, uint2 at, uint frame_index,
+                                               serenity::contracts::ReuseSettings settings) {
+    if (!previous || packed_kind(pixel.here.bsdf) == serenity::contracts::BsdfKind::none) {
+        return pixel.own;
+    }
+    const Reprojected reprojected = then.project(previous_position);
+    if (!reprojected.found) {
+        return pixel.own;
+    }
+    const BlockPermutation permutation =
+        frame_permutation(purpose_numbers(path_numbers(uint2(0u), frame_index), permutation_numbers), settings);
+    const Found found = find_last_frame(then, pixel, Reprojection{previous_position, reprojected.pixel}, arrays,
+                                        permutation, settings);
+    if (!found.found) {
+        return pixel.own;
+    }
+    PathNumbers numbers = purpose_numbers(path_numbers(at, frame_index), temporal_numbers);
+    return merge_temporal(now, then, pixel, found.last, settings, numbers);
+}
 
 // Steps 2 and 3 at `here`, the pixel's record unpacked, `counts` the light
 // and BSDF candidates (M their sum); `numbers` the candidates' stream.
@@ -427,9 +485,8 @@ inline serenity::contracts::Reservoir candidates(Scene scene, RecordedSurface he
 // Step 6's result: the pixel's radiance, and whether the shade traced its
 // survivor's ray, in which case `reservoir`, carrying that test (and W = 0
 // where the sample was hidden), is what the next frame's temporal merge is
-// to read. Writing it back is the temporal merge's to add with it
-// (restir_shade.h): no graph this backend runs has one yet, so nothing
-// would read it, and the shade's kernel writes nothing back.
+// to read. The shade's kernel writes it back in a graph with a temporal
+// merge (restir_shade.h).
 struct Shaded {
     float3 radiance;
     bool traced;

@@ -50,8 +50,7 @@ inline CameraRay camera_ray(constant serenity::contracts::CameraData& camera, fl
 }
 
 // The inverse, for ReSTIR DI's reuse (metal/reuse/temporal.metal.h,
-// similar.metal.h). Declared for review; defined with the ReSTIR
-// implementation.
+// similar.metal.h).
 //
 // camera_depth: how far in front of the camera `point` is, along forward:
 // dot(point - origin, forward). camera_pixel: where the pinhole ray through
@@ -59,8 +58,22 @@ inline CameraRay camera_ray(constant serenity::contracts::CameraData& camera, fl
 // corner, by contracts/camera.h's formula solved for (px, py); the lens
 // ignored, as a point's place in the image is its pinhole ray's, the lens
 // blurring it about that place. Meaningful only where camera_depth > 0.
-inline float camera_depth(constant serenity::contracts::CameraData& camera, float3 point);
-inline float2 camera_pixel(constant serenity::contracts::CameraData& camera, float3 point, uint2 size);
+inline float camera_depth(constant serenity::contracts::CameraData& camera, float3 point) {
+    return metal::dot(point - to_float3(camera.origin), to_float3(camera.forward));
+}
+
+inline float2 camera_pixel(constant serenity::contracts::CameraData& camera, float3 point, uint2 size) {
+    const float3 v = point - to_float3(camera.origin);
+    // d = v / depth has dot(d, forward) = 1, as the ray formula's d, whose
+    // right and up parts are sx right and sy up; right, up and forward are
+    // square to one another (contracts/camera.h).
+    const float3 d = v / metal::dot(v, to_float3(camera.forward));
+    const float3 right = to_float3(camera.right);
+    const float3 up = to_float3(camera.up);
+    const float sx = metal::dot(d, right) / metal::dot(right, right);
+    const float sy = metal::dot(d, up) / metal::dot(up, up);
+    return float2((sx + 1.0f) * 0.5f * float(size.x), (1.0f - sy) * 0.5f * float(size.y));
+}
 
 }  // namespace shaders
 }  // namespace serenity

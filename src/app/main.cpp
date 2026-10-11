@@ -110,6 +110,7 @@ int main(int argc, char** argv) {
         // When the image starts over is the core's plan (core/frame/history.h).
         frame::LiveHistory history(loaded && scene::changes(*loaded) ? frame::SceneMotion::changing
                                                                    : frame::SceneMotion::still);
+        frame::LiveReuse reuse;
         for (app::Window::Events events = window.poll(); !events.quit; events = window.poll()) {
             if (events.resized) {
                 presenter.resize(app::render_size(window.size_in_pixels(), options.scale));
@@ -119,6 +120,7 @@ int main(int argc, char** argv) {
                 .index = index,
                 .accumulated_since = history.since(index, events.resized ? frame::View::changed : frame::View::same),
                 .camera = loaded ? std::optional{loaded->camera} : std::nullopt,
+                .reused_since = reuse.since(index, events.resized ? frame::View::changed : frame::View::same),
             };
             if (const auto rendered = metal::render_to_window(submission, presenter, renderer, inputs)) {
                 ++index;

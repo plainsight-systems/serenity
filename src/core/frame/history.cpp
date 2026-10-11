@@ -66,6 +66,49 @@ std::uint64_t LiveHistory::since(std::uint64_t index, View view) {
     return since_;
 }
 
+ReuseJoined ReuseHistory::join(const FrameInputs& inputs, Extent size) {
+    if (inputs.reused_since > inputs.index) {
+        throw HistoryError("frame " + std::to_string(inputs.index) + " reuses history since frame " +
+                           std::to_string(inputs.reused_since) + ", after itself");
+    }
+    const std::uint64_t held = inputs.index - inputs.reused_since;
+    if (held == 0) {
+        const bool remade = !made_ || !(size == size_);
+        made_ = true;
+        size_ = size;
+        since_ = inputs.reused_since;
+        next_ = inputs.index + 1;
+        return ReuseJoined{0, remade};
+    }
+    if (!made_ || inputs.reused_since != since_ || inputs.index != next_ || !(size == size_)) {
+        const std::string holds =
+            made_ ? "frames " + std::to_string(since_) + " .. " + std::to_string(next_ - 1) + " at " + at(size_)
+                  : "nothing yet";
+        throw HistoryError("frame " + std::to_string(inputs.index) + " claims reservoirs reused since frame " +
+                           std::to_string(inputs.reused_since) + " at " + at(size) +
+                           ", which is not what the history holds (" + holds +
+                           "); a frame skipped, or a change without starting over");
+    }
+    next_ = inputs.index + 1;
+    return ReuseJoined{held, false};
+}
+
+std::uint64_t LiveReuse::since(std::uint64_t index, View view) {
+    if (started_ && index < last_) {
+        throw HistoryError("frame " + std::to_string(index) + " asked after frame " + std::to_string(last_) +
+                           "; a running window's frames are asked for in order");
+    }
+    if (started_ && index == last_) {
+        return since_;  // asked again: a frame the window had no drawable for
+    }
+    if (!started_ || view == View::changed || index != last_ + 1) {
+        since_ = index;
+    }
+    started_ = true;
+    last_ = index;
+    return since_;
+}
+
 Sample HeadlessPlan::sample(SampleOf of) const {
     const std::uint64_t frame = of.frame;
     if (!(of.sample < samples)) {
@@ -82,11 +125,14 @@ Sample HeadlessPlan::sample(SampleOf of) const {
         throw std::overflow_error("HeadlessPlan::sample: frame " + std::to_string(frame) +
                                   "'s samples pass the largest frame index");
     }
-    return Sample{frame * samples + of.sample, start * samples};
+    return Sample{frame * samples + of.sample, start * samples, 0};
 }
 
 HeadlessPlan plan_headless(const HeadlessRun& run) {
-    return HeadlessPlan{run.first, run.accumulates ? run.samples : 1u, run.scene_changes && !run.time_frozen};
+    // A graph that reuses history replays the run's frames from the
+    // timeline's start, writing none of them (above).
+    return HeadlessPlan{run.reuses ? 0u : run.first, run.accumulates ? run.samples : 1u,
+                        run.scene_changes && !run.time_frozen, run.first};
 }
 
 }  // namespace serenity::frame

@@ -203,8 +203,10 @@ public:
     // reused_since for frame `index`; `view`, whether what the window shows
     // changed since the last frame (its size). Starts over at the first
     // frame, when the view changed, and when `index` is not the one after
-    // the last asked for. Throws HistoryError for an index at or before the
-    // last asked for: frames out of order (I.5).
+    // the last asked for. The last index asked again gives the same answer
+    // (a frame the window had no drawable for, and asks for again). Throws
+    // HistoryError for an index before the last asked for: frames out of
+    // order (I.5).
     std::uint64_t since(std::uint64_t index, View view);
 
 private:
@@ -217,9 +219,9 @@ private:
 struct Sample {
     std::uint64_t index = 0;
     std::uint64_t accumulated_since = 0;
-    // 0 for a graph that reuses history (above); unread otherwise. Last, so
-    // the plan's positional Sample{index, accumulated_since} keeps its
-    // meaning; set by plan_headless() with the ReSTIR implementation.
+    // 0, the timeline's start, for a graph that reuses history (above);
+    // unread otherwise. Last, so the plan's positional Sample{index,
+    // accumulated_since} keeps its meaning.
     std::uint64_t reused_since = 0;
 };
 
@@ -232,9 +234,7 @@ struct HeadlessRun {
     bool scene_changes = false;  // anything in the scene moves or glows
     bool time_frozen = false;    // every frame at one time
     // The graph reuses history (frame::reuses_history). Last, after the
-    // members callers name in order; the headless renderer sets it and
-    // plan_headless() reads it with the ReSTIR implementation. Until then
-    // false and unread.
+    // members callers name in order.
     bool reuses = false;
 };
 
@@ -246,19 +246,16 @@ struct SampleOf {
 
 // How the headless renderer renders a run.
 struct HeadlessPlan {
-    // The first frame rendered: the run's first, or, once the
-    // implementation wires the reuse history, 0 for a graph that reuses
-    // history, which replays the frames before the run's first (above).
-    // The plan's samples, accumulated image included, start here.
+    // The first frame rendered: the run's first, or 0 for a graph that
+    // reuses history, which replays the frames before the run's first
+    // (above). The plan's samples, accumulated image included, start here.
     std::uint64_t first = 0;
     std::uint64_t samples = 1;  // rendered per frame: 1 for a graph that accumulates nothing
     bool instants = false;      // each frame's image its own: the scene changes and time advances
     // The first frame written: the run's first, always; frames first ..
     // first_written - 1 are rendered and not written. Declared last, after
     // the members plan_headless() initializes in order, so it changes none
-    // of their meanings; plan_headless() and the headless renderer set and
-    // read it, and HeadlessRun::reuses and Sample::reused_since, with the
-    // ReSTIR implementation. Until then it is 0 and unread.
+    // of their meanings.
     std::uint64_t first_written = 0;
 
     // Sample `of.sample` of frame `of.frame`. Preconditions, checked (I.5,

@@ -85,6 +85,7 @@ int main(int argc, char** argv) {
             .accumulates = frame::accumulates(schedule),
             .scene_changes = loaded && scene::changes(*loaded),
             .time_frozen = options.time.has_value(),
+            .reuses = frame::reuses_history(schedule),
         });
         headless::check_samples(options, plan.samples);
 
@@ -144,6 +145,7 @@ int main(int argc, char** argv) {
                     .index = sample.index,
                     .accumulated_since = sample.accumulated_since,
                     .camera = loaded ? std::optional{loaded->camera} : std::nullopt,
+                    .reused_since = sample.reused_since,
                 };
                 last = metal::render_to_offscreen(submission, target, renderer, inputs);
             }
@@ -153,6 +155,11 @@ int main(int argc, char** argv) {
             return *last;
         };
 
+        // A graph that reuses history first replays the frames before the
+        // run's first, writing none (core/frame/history.h, plan.first).
+        for (std::uint64_t index = plan.first; index < plan.first_written; ++index) {
+            submission.wait_until_complete(render_samples(index));
+        }
         // Counted, so the last frame there can be is reachable without its
         // successor (headless/options.h).
         for (std::uint64_t n = 0; n < options.frames; ++n) {

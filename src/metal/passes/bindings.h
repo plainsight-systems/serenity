@@ -102,7 +102,7 @@ enum Buffer : unsigned {
     last_final = 10,      // last frame's final reservoirs
     input = 11,           // the initial reservoirs
     output = 12,          // the same array, in place, when a spatial merge follows; else this frame's final
-    last_structure = 13,  // last frame's, in raytraced mode
+    last_structure = 13,  // last frame's, in raytraced mode: refused with a temporal merge until it is kept
     last_glows = 14,
     last_transforms = 15,
 };

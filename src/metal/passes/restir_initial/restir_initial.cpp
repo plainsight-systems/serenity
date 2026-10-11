@@ -23,12 +23,11 @@ void RestirInitialPass::record(MTL4::ComputeCommandEncoder* encoder, const Frame
                              ? "RestirInitialPass: the frame has no working reservoirs to write"
                              : "RestirInitialPass: the frame has no final reservoirs to write");
     }
-    // The previous positions are written for a temporal merge, which this
-    // backend does not run yet (metal/frame/renderer.h): asked for, they
-    // are refused, not silently left unwritten.
-    if (resources.previous_positions != 0) {
-        throw MetalError("RestirInitialPass: the surfaces' previous positions are written for restir_temporal, "
-                         "which this backend does not implement yet");
+    // The previous positions, written for a temporal merge, are placed by
+    // last frame's transforms.
+    if (resources.previous_positions != 0 && resources.last_transforms == 0) {
+        throw MetalError("RestirInitialPass: the surfaces' previous positions are asked for without last frame's "
+                         "transforms to place them by");
     }
     // Bindings: passes/bindings.h, as restir_initial.metal declares them.
     namespace binding = bindings::restir_initial;
@@ -42,6 +41,14 @@ void RestirInitialPass::record(MTL4::ComputeCommandEncoder* encoder, const Frame
     arguments->setAddress(resources.reuse, binding::reuse);
     arguments->setAddress(resources.records, binding::records);
     arguments->setAddress(resources.path_states, binding::path_states);
+    // Metal requires every binding a kernel declares to be set. A graph with
+    // no temporal merge has no previous positions nor last frame's
+    // transforms, and its kernel neither writes nor reads them (history 0,
+    // restir_initial.metal): the records and this frame's transforms stand
+    // in those two places, untouched.
+    const bool temporal = resources.previous_positions != 0;
+    arguments->setAddress(temporal ? resources.previous_positions : resources.records, binding::previous_positions);
+    arguments->setAddress(temporal ? resources.last_transforms : resources.transforms, binding::last_transforms);
     arguments->setAddress(output, binding::output);
     encoder->setComputePipelineState(pipeline_.get());
     dispatch_per_pixel(encoder, pipeline_.get(), resources.size);

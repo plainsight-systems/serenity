@@ -109,11 +109,11 @@
 //                                  tolerance the implementation measures.
 //                     Read by a graph with restir_temporal or
 //                     restir_spatial; a graph with neither merges nothing,
-//                     and is unbiased either way. Until the merges are
-//                     implemented (the Metal backend refuses
-//                     restir_temporal and restir_spatial by name,
-//                     metal/frame/renderer.h), it is read and checked and
-//                     changes no image: no graph that runs merges.
+//                     and is unbiased either way. The Metal backend runs
+//                     restir_temporal in basic mode, and refuses by name
+//                     raytraced mode with it (last frame's structure is not
+//                     yet kept) and restir_spatial (metal/frame/
+//                     renderer.h).
 //   visibility_reuse  whether the shade, in basic mode, takes a recent
 //                     visibility test of its survivor for its own instead of
 //                     tracing one (RTXDI's reuseFinalVisibility; step 6;

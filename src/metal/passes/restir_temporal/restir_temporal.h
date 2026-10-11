@@ -22,14 +22,16 @@ namespace serenity::metal {
 // previous positions and the initial reservoirs (the working array);
 // last frame's records and final reservoirs (metal/frame/frame_images.h,
 // the other half of their ping-pongs), transforms and glows
-// (metal/scene/shape_transforms.h, light_glows.h), and in raytraced mode
-// its structure (metal/acceleration/scene_acceleration.h). Writes: one
+// (metal/scene/shape_transforms.h, light_glows.h); raytraced mode would
+// read its structure too (metal/acceleration/scene_acceleration.h), and
+// is refused with a temporal merge until that structure is kept
+// (metal/frame/renderer.h). Writes: one
 // reservoir a pixel, in place in the working array when a spatial merge
 // follows, which reads it at neighbors, else to this frame's final array
 // (ReservoirOutput). In place is safe: each thread reads and writes its own
 // pixel's alone. When the reuse constants say the frame starts its history
-// over, each pixel's output is its initial reservoir, copied only where the
-// output is not the input.
+// over, each pixel's output is its initial reservoir, copied (written over
+// itself where the output is the input).
 //
 // Ordering: after the candidates' dispatch, behind the renderer's dispatch
 // barrier. Last frame's arrays were written by the frame before, its final
@@ -42,7 +44,7 @@ namespace serenity::metal {
 // counts them); at most two target evaluations (each with its light's 76
 // bytes of logical loads, this frame's or last's); no shadow ray in basic
 // mode, at most one in raytraced, against either frame's structure as the
-// survivor's source says; two numbers, and the frame's two for the
+// survivor's source says; two numbers, and the frame's three for the
 // permutation. One dispatch.
 class RestirTemporalPass {
 public:

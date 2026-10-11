@@ -29,11 +29,7 @@ namespace serenity::metal {
 // own pixel's final reservoir, in place: that ray as the reservoir's test,
 // here and now, and W = 0 where the sample was hidden, for the next frame's
 // temporal merge. In place is safe: each thread reads and writes its own
-// pixel's alone, and nothing after the shade reads them this frame. The
-// write-back arrives with the temporal merge that reads it: until then no
-// graph the backend runs has one, its kernel binds the final reservoirs
-// read-only and writes nothing back, and step 6 returns what it would
-// write (restir_di.metal.h, Shaded).
+// pixel's alone, and nothing after the shade reads them this frame.
 //
 // Ordering: after the last merge (or the candidates), behind the renderer's
 // dispatch barrier; the accumulated image is the frame before's history,

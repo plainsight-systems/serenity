@@ -138,3 +138,72 @@ TEST_CASE("the plans refuse what would wrap an index: frames out of order, a sam
         {.first = 0, .samples = 0, .accumulates = true, .scene_changes = false, .time_frozen = false});
     CHECK_THROWS_AS(none.sample({.frame = 0, .sample = 0}), std::invalid_argument);
 }
+
+namespace {
+
+FrameInputs reusing(std::uint64_t index, std::uint64_t reused_since) {
+    FrameInputs inputs = frame_at(index, index);
+    inputs.reused_since = reused_since;
+    return inputs;
+}
+
+}  // namespace
+
+TEST_CASE("the reuse history holds consecutive frames since it started over, at one size, at any times") {
+    frame::ReuseHistory history;
+    const frame::ReuseJoined first = history.join(reusing(0, 0), small);
+    CHECK(first.held == 0);
+    CHECK(first.remade);
+    FrameInputs later = reusing(1, 0);
+    later.time = Seconds(5.0);  // another instant: temporal reuse follows it
+    CHECK(history.join(later, small).held == 1);
+    CHECK_FALSE(history.join(reusing(2, 0), small).remade);
+
+    CHECK_THROWS_AS(history.join(reusing(4, 0), small), HistoryError);  // a frame skipped
+    CHECK_THROWS_AS(history.join(reusing(3, 0), large), HistoryError);  // a size changed
+    CHECK_THROWS_AS(history.join(reusing(3, 1), small), HistoryError);  // since moved
+    CHECK_THROWS_AS(history.join(reusing(3, 5), small), HistoryError);  // since after the frame
+    CHECK(history.join(reusing(3, 0), small).held == 3);
+
+    CHECK_FALSE(history.join(reusing(4, 4), small).remade);
+    const frame::ReuseJoined resized = history.join(reusing(5, 5), large);
+    CHECK(resized.held == 0);
+    CHECK(resized.remade);
+}
+
+TEST_CASE("the window's reuse starts over at its first frame, a resize and a gap, and is asked again alike") {
+    frame::LiveReuse live;
+    CHECK(live.since(7, frame::View::same) == 7);
+    CHECK(live.since(8, frame::View::same) == 7);
+    CHECK(live.since(8, frame::View::same) == 7);  // asked again: no drawable last time
+    CHECK(live.since(9, frame::View::changed) == 9);
+    CHECK(live.since(12, frame::View::same) == 12);  // a gap
+    CHECK_THROWS_AS(live.since(11, frame::View::same), HistoryError);
+}
+
+TEST_CASE("headless: a graph that reuses history replays the frames before the run's first, writing none") {
+    const frame::HeadlessPlan still = frame::plan_headless({.first = 3,
+                                                            .samples = 4,
+                                                            .accumulates = true,
+                                                            .scene_changes = false,
+                                                            .time_frozen = false,
+                                                            .reuses = true});
+    CHECK(still.first == 0);
+    CHECK(still.first_written == 3);
+    CHECK(still.sample({.frame = 0, .sample = 0}).index == 0);
+    CHECK(still.sample({.frame = 3, .sample = 1}).accumulated_since == 0);
+    CHECK(still.sample({.frame = 3, .sample = 1}).reused_since == 0);
+    const frame::HeadlessPlan moving = frame::plan_headless({.first = 3,
+                                                             .samples = 4,
+                                                             .accumulates = true,
+                                                             .scene_changes = true,
+                                                             .time_frozen = false,
+                                                             .reuses = true});
+    CHECK(moving.sample({.frame = 3, .sample = 1}).accumulated_since == 12);
+    CHECK(moving.sample({.frame = 3, .sample = 1}).reused_since == 0);
+    // Without reuse, the run starts where it is asked to.
+    const frame::HeadlessPlan plain = frame::plan_headless(
+        {.first = 3, .samples = 4, .accumulates = true, .scene_changes = false, .time_frozen = false});
+    CHECK(plain.first == 3);
+    CHECK(plain.first_written == 3);
+}

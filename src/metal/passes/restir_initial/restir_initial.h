@@ -72,10 +72,9 @@ public:
     // Records the pass. Throws MetalError if `resources` has no scene, no
     // camera, no reuse constants, no records or path states, or no array
     // where `output` says it writes; or, when `resources.previous_positions`
-    // is set, no last frame's transforms. Until the temporal merge is
-    // implemented, a set `resources.previous_positions` is refused by
-    // MetalError, never left unwritten: the kernel binds what a graph with
-    // no temporal merge reads and writes.
+    // is set, no last frame's transforms. The kernel writes the previous
+    // positions exactly in a graph with a temporal merge, whose renderer
+    // sets them.
     void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
 
 private:

@@ -47,6 +47,8 @@
 #include "core/camera/thin_lens.h"
 #include "core/contracts/bsdf.h"
 #include "core/contracts/light_sample.h"
+#include "core/contracts/reservoir.h"
+#include "core/contracts/surface_record.h"
 #include "core/contracts/transform.h"
 #include "core/frame/graph_file.h"
 #include "core/lights/light.h"
@@ -66,6 +68,7 @@
 #include "metal/frame/renderer.h"
 #include "metal/passes/restir_initial/restir_initial.h"
 #include "metal/passes/restir_shade/restir_shade.h"
+#include "metal/passes/restir_temporal/restir_temporal.h"
 #include "serenity/metallib/shaders.h"
 #include "support/references.h"
 #include "support/scene_text.h"
@@ -584,6 +587,123 @@ TEST_CASE("a candidate's MIS weights over the light and BSDF strategies sum to 1
     }
 }
 
+// ---- the temporal merge ----------------------------------------------------
+
+namespace {
+
+// RTXDI's temporal settings in basic mode (core/passes/restir_di.h).
+passes::RestirDi temporal_settings() {
+    passes::RestirDi s{};
+    s.candidates = passes::written_candidates;
+    s.bsdf_candidates = passes::written_bsdf_candidates;
+    s.history = passes::written_history;
+    s.permutation = passes::written_permutation;
+    s.depth_threshold = passes::written_depth_threshold;
+    s.normal_threshold = passes::written_normal_threshold;
+    s.bias_correction = contracts::BiasCorrection::basic;
+    s.visibility_reuse = passes::written_visibility_reuse;
+    s.visibility_age = passes::written_visibility_age;
+    s.visibility_distance = passes::written_visibility_distance;
+    return s;
+}
+
+contracts::Reservoir reservoir_of(std::uint32_t light, std::uint32_t count, float target, float weight) {
+    return contracts::Reservoir{contracts::LightPoint{contracts::light_valid | light, 0u}, count, 0u, target, weight};
+}
+
+}  // namespace
+
+TEST_CASE("the temporal merge caps last frame's count at H times the pixel's own, and keeps M within it") {
+    // The pixel's own reservoir of M = 9 (8 light candidates and a BSDF
+    // one) and last frame's of count C: the merge's M is 9 + min(C, 20 x 9),
+    // whichever it keeps, for C below, at and past the cap.
+    const passes::RestirDi settings = temporal_settings();
+    tests::ProbeRunner gpu;
+    constexpr std::uint32_t own_count = 9;
+    for (const std::uint32_t last_count : {5u, 100u, 180u, 181u, 5000u, 1000000u}) {
+        std::vector<tests::MergeQuery> queries;
+        for (std::uint32_t seed = 0; seed < 256; ++seed) {
+            queries.push_back({reservoir_of(0, own_count, 2.0f, 1.0f), reservoir_of(1, last_count, 4.0f, 0.5f),
+                               settings, seed, 2.0f, {0u, 0u}});
+        }
+        const auto count = static_cast<std::uint32_t>(queries.size());
+        const std::vector<contracts::Reservoir> merged =
+            gpu.run<contracts::Reservoir>("temporal_merge", count, {Binding::of(queries)});
+        const std::uint32_t expected = own_count + std::min(last_count, settings.history * own_count);
+        std::size_t kept_last = 0;
+        for (const contracts::Reservoir& r : merged) {
+            INFO("last frame's count " << last_count);
+            CHECK((r.count & contracts::count_mask) == expected);
+            CHECK(r.count <= (settings.history + 1) * own_count);
+            CHECK(std::isfinite(r.weight));
+            CHECK(r.weight > 0.0f);
+            kept_last += contracts::light_index(r.sample) == 1u ? 1u : 0u;
+        }
+        // Both inputs are kept, last frame's more often the more it counts.
+        CHECK(kept_last > 0u);
+        CHECK(kept_last < merged.size());
+    }
+}
+
+namespace {
+
+// A surface record at depth `z` (the probe Frame's depth), facing
+// `normal_code` (an encoded unit vector), of `kind`.
+contracts::SurfaceRecord record_at(float z, std::uint32_t normal_code, contracts::BsdfKind kind) {
+    contracts::SurfaceRecord r{};
+    r.position = {0.0f, 0.0f, z};
+    r.wo = normal_code;
+    r.bsdf.normal = normal_code;
+    r.bsdf.escape_kind = static_cast<std::uint32_t>(kind) << contracts::packed_kind_shift;
+    return r;
+}
+
+}  // namespace
+
+TEST_CASE("a reprojected pixel whose surface fails the similarity test takes no history") {
+    // The pixel's surface at depth 10 facing +z; last frame's 3 x 3 around
+    // the reprojected pixel, which find_last_frame() tries middle first,
+    // then the ring. Similar: depth within 10%, normals within cos 0.5, the
+    // same material.
+    tests::ProbeRunner gpu;
+    const std::vector<contracts::Float3> normals{{0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -1.0f}};
+    const auto two = static_cast<std::uint32_t>(normals.size());
+    const std::vector<tests::UnitTrip> codes =
+        gpu.run<tests::UnitTrip>("unit_trip", two, {Binding::of(normals), Binding::of(two)});
+    const std::uint32_t up = codes[0].code;
+    const std::uint32_t down = codes[1].code;
+    using contracts::BsdfKind;
+    const contracts::SurfaceRecord here = record_at(10.0f, up, BsdfKind::lambert);
+    const passes::RestirDi settings = temporal_settings();
+    const std::vector<contracts::Reservoir> finals(9, reservoir_of(0, 9, 1.0f, 1.0f));
+    const auto found = [&](const std::vector<contracts::SurfaceRecord>& last) {
+        return gpu.run<tests::FoundResult>(
+            "last_frame_found", 1,
+            {Binding::of(here), Binding::of(last), Binding::of(finals), Binding::of(settings)})[0];
+    };
+    const auto all = [](contracts::SurfaceRecord r) { return std::vector<contracts::SurfaceRecord>(9, r); };
+
+    // The same surface: the reprojected pixel, the middle.
+    const tests::FoundResult same = found(all(record_at(10.5f, up, BsdfKind::lambert)));
+    CHECK(same.found == 1u);
+    CHECK(same.index == 4u);
+    CHECK(same.dx == 0);
+    // The middle too far, the ring's first close: that one, offset (-1, -1).
+    std::vector<contracts::SurfaceRecord> middle_off = all(record_at(10.0f, up, BsdfKind::lambert));
+    middle_off[4] = record_at(12.0f, up, BsdfKind::lambert);
+    const tests::FoundResult beside = found(middle_off);
+    CHECK(beside.found == 1u);
+    CHECK(beside.index == 0u);
+    CHECK(beside.dx == -1);
+    CHECK(beside.dy == -1);
+    // Each test failed by every pixel: no history.
+    CHECK(found(all(record_at(12.0f, up, BsdfKind::lambert))).found == 0u);   // depth 20% off
+    CHECK(found(all(record_at(8.9f, up, BsdfKind::lambert))).found == 0u);    // 11% nearer
+    CHECK(found(all(record_at(10.0f, down, BsdfKind::lambert))).found == 0u); // facing away
+    CHECK(found(all(record_at(10.0f, up, BsdfKind::conductor))).found == 0u); // another material
+    CHECK(found(all(record_at(10.0f, up, BsdfKind::none))).found == 0u);      // no surface there
+}
+
 // ---- the reservoir against softmax -----------------------------------------
 
 namespace {
@@ -743,8 +863,9 @@ public:
     std::vector<float> render(std::uint64_t frames) {
         std::uint64_t sequence = 0;
         for (std::uint64_t i = 0; i < frames; ++i, ++next_) {
-            sequence = metal::render_to_offscreen(submission_, target_, renderer_,
-                                                  tests::frame_at(next_, 0, 0.0, description_.camera));
+            frame::FrameInputs inputs = tests::frame_at(next_, 0, 0.0, description_.camera);
+            inputs.reused_since = 0;  // a temporal graph's history, from the first frame
+            sequence = metal::render_to_offscreen(submission_, target_, renderer_, inputs);
         }
         (void)submission_.wait_until_complete(sequence);
         CHECK(renderer_.non_finite_samples() == 0);
@@ -894,6 +1015,97 @@ TEST_CASE("light and BSDF candidates weighed by MIS converge to the same floor u
     check_floor(lit_floor(two_fireflies), 1, 1024, 0.03, 4);
 }
 
+namespace {
+
+// The temporal graph, RTXDI's defaults, its accumulated image shown as it
+// is.
+frame::Schedule temporal_graph() {
+    return frame::parse_schedule(
+        "passes = [\"restir_initial\", \"restir_temporal\", \"restir_shade\", \"display\"]\n[restir_di]\n"
+        "candidates = 8\nbsdf_candidates = 1\nhistory = 20\npermutation = true\ndepth_threshold = 0.1\n"
+        "normal_threshold = 0.5\nbias_correction = \"basic\"\nvisibility_reuse = true\nvisibility_age = 4\n"
+        "visibility_distance = 16.0\n",
+        "temporal graph");
+}
+
+}  // namespace
+
+TEST_CASE("temporal reuse: a still floor under two fireflies converges to the same mean as without it") {
+    // Nothing on the floor hides a firefly from any of it, so basic mode's
+    // bias (on the lit side of shadow edges: metal/reuse/unbiased.metal.h)
+    // is not there to see, and the mean over frames is the closed form's,
+    // within the tolerance the RIS graph is held to.
+    Rig rig(lit_floor(two_fireflies), temporal_graph(), floor_size);
+    const std::vector<float> image = rig.render(1024);
+    for (const tests::Pixel pixel : floor_pixels) {
+        const double expected =
+            floor_from(rig.description(), floor_point(rig.description(), rig.size(), pixel), every_light(rig.description()));
+        INFO("pixel " << pixel.x << ", " << pixel.y << ": expected " << expected);
+        CHECK(patch_red(image, rig.size(), pixel) == doctest::Approx(expected).scale(0).epsilon(0.03));
+    }
+}
+
+TEST_CASE("temporal reuse: a still floor seen at a grazing angle converges to the same mean as without it") {
+    // Seen low, a pixel's neighbors lie at depths far apart, so a pixel's
+    // first try at last frame's reservoir often fails and the ring around
+    // it is tried (metal/reuse/temporal.metal.h, step 3): the case where a
+    // ring visited from the same place every frame drifted each pixel's
+    // history one way, and moved the mean. One firefly overhead, nothing to
+    // hide it, so basic mode's bias at shadow edges is not there; the lower
+    // half's mean is the RIS graph's within 1%, each fourth of it within 2%.
+    const std::string scene = tests::camera_text("[0, 0.35, 2.5]", "[0, 0.05, 0]", 40) +
+                              tests::sky("[0, 0, 0]", "[0, 0, 0]") +
+                              "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
+                              "[materials.glow]\nkind = \"emissive\"\nradiance = [200, 200, 200]\n"
+                              "[[shapes]]\nkind = \"box\"\nmin = [-50, -1, -50]\nmax = [50, 0, 50]\n"
+                              "material = \"floor\"\n" +
+                              firefly("[0, 4, 0]");
+    constexpr frame::Extent size{64, 48};
+    Rig ris(scene, ris_graph(8, 1), size);
+    Rig reused(scene, temporal_graph(), size);
+    const std::vector<float> without = ris.render(1024);
+    const std::vector<float> with = reused.render(1024);
+    const auto band = [&](const std::vector<float>& image, std::uint32_t from, std::uint32_t to) {
+        double sum = 0.0;
+        for (std::size_t i = std::size_t{from} * size.width; i < std::size_t{to} * size.width; ++i) {
+            sum += image[i * 4];
+        }
+        return sum;
+    };
+    const double ratio = band(with, 24, 48) / band(without, 24, 48);
+    MESSAGE("lower half, temporal over RIS: " << ratio);
+    CHECK(ratio == doctest::Approx(1.0).epsilon(0.01));
+    for (std::uint32_t from = 24; from < 48; from += 6) {
+        INFO("rows " << from << " to " << from + 5);
+        CHECK(band(with, from, from + 6) / band(without, from, from + 6) == doctest::Approx(1.0).epsilon(0.02));
+    }
+}
+
+TEST_CASE("temporal reuse: the same inputs give the same image, to the bit") {
+    Rig first(lit_floor(two_fireflies), temporal_graph(), {32, 24});
+    Rig second(lit_floor(two_fireflies), temporal_graph(), {32, 24});
+    const std::vector<float> a = first.render(6);
+    const std::vector<float> b = second.render(6);
+    REQUIRE(a.size() == b.size());
+    CHECK(std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
+}
+
+namespace {
+
+// A black box held over the lit floor, seen low from the side, under
+// `lights`; nothing but the floor reflects.
+std::string box_scene(const std::string& lights) {
+    return tests::camera_text("[0, 0.35, 2.5]", "[0, 0.05, 0]", 40) + tests::sky("[0, 0, 0]", "[0, 0, 0]") +
+           "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
+           "[materials.glow]\nkind = \"emissive\"\nradiance = [200, 200, 200]\n"
+           "[materials.black]\nkind = \"rough\"\ncolor = [0, 0, 0]\n"
+           "[[shapes]]\nkind = \"box\"\nmin = [-50, -1, -50]\nmax = [50, 0, 50]\nmaterial = \"floor\"\n"
+           "[[shapes]]\nkind = \"box\"\nmin = [-0.6, 0.6, -0.6]\nmax = [0.6, 0.7, 0.6]\nmaterial = \"black\"\n" +
+           lights;
+}
+
+}  // namespace
+
 TEST_CASE("visibility reuse: a light hidden behind a box gives nothing, a visible one its whole light") {
     // A black box held over the floor, a firefly straight above it, and
     // another low to the side, under the box's edge. The floor beneath the
@@ -905,19 +1117,9 @@ TEST_CASE("visibility reuse: a light hidden behind a box gives nothing, a visibl
     // hidden one shows nothing there (W = 0), and the mean over frames is
     // the low one's light, unbiased, with the noise of a coin's toss, which
     // 2048 frames hold to a percent or so.
-    const std::string box = "[[shapes]]\nkind = \"box\"\nmin = [-0.6, 0.6, -0.6]\nmax = [0.6, 0.7, 0.6]\n"
-                            "material = \"black\"\n";
     const std::string above = firefly("[0, 4, 0]");
     const std::string low = firefly("[2, 0.6, 0]");
-    const std::string camera = tests::camera_text("[0, 0.35, 2.5]", "[0, 0.05, 0]", 40);
-    const auto scene_of = [&](const std::string& lights) {
-        return camera + tests::sky("[0, 0, 0]", "[0, 0, 0]") +
-               "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
-               "[materials.glow]\nkind = \"emissive\"\nradiance = [200, 200, 200]\n"
-               "[materials.black]\nkind = \"rough\"\ncolor = [0, 0, 0]\n"
-               "[[shapes]]\nkind = \"box\"\nmin = [-50, -1, -50]\nmax = [50, 0, 50]\nmaterial = \"floor\"\n" +
-               box + lights;
-    };
+    const auto scene_of = box_scene;
     constexpr frame::Extent size{64, 48};
 
     // The floor beneath the box's middle, where the box hides the firefly
@@ -953,7 +1155,7 @@ TEST_CASE("resampled importance sampling: the same inputs give the same image, t
     CHECK(std::memcmp(a.data(), second.render(1).data(), a.size() * sizeof(float)) != 0);
 }
 
-TEST_CASE("the Metal backend refuses ReSTIR's merges by name until it implements them") {
+TEST_CASE("the Metal backend runs the temporal merge in basic mode, and refuses by name what it does not implement") {
     const scene::SceneDescription description = scene::parse(lit_floor(one_firefly), "test scene");
     metal::Device device;
     metal::Submission submission(device);
@@ -967,9 +1169,16 @@ TEST_CASE("the Metal backend refuses ReSTIR's merges by name until it implements
     };
     const std::string temporal_only = tests::replaced(
         tests::replaced(merges, "neighbors = 1\n", ""), "radius = 32.0\n", "");
-    CHECK(tests::contains(refusal("[\"restir_initial\", \"restir_temporal\", \"restir_shade\", \"display\"]",
-                                  temporal_only),
-                          "restir_temporal pass is not implemented by the Metal backend"));
+    const char* temporal_passes = "[\"restir_initial\", \"restir_temporal\", \"restir_shade\", \"display\"]";
+    CHECK(refusal(temporal_passes, temporal_only).empty());
+    // Raytraced mode's merge needs last frame's structure, not yet kept.
+    const std::string raytraced = tests::replaced(
+        tests::replaced(tests::replaced(tests::replaced(temporal_only, "\"basic\"", "\"raytraced\""),
+                                        "visibility_reuse = true\n", ""),
+                        "visibility_age = 4\n", ""),
+        "visibility_distance = 16.0\n", "");
+    CHECK(tests::contains(refusal(temporal_passes, raytraced),
+                          "restir_temporal pass with bias_correction = \"raytraced\" is not implemented"));
     const std::string spatial_only =
         tests::replaced(tests::replaced(merges, "history = 20\n", ""), "permutation = true\n", "");
     CHECK(tests::contains(refusal("[\"restir_initial\", \"restir_spatial\", \"restir_shade\", \"display\"]",
@@ -1016,20 +1225,10 @@ TEST_CASE("a ReSTIR graph refuses a scene whose materials its packed surface rec
     CHECK(refusal(glass("70000"), tests::path_graph()).empty());
 }
 
-TEST_CASE("ReSTIR's arrays: what the merges need is refused until they come, and a size Metal cannot make") {
+TEST_CASE("ReSTIR's arrays: a graph without merges makes its own alone, and a size Metal cannot make is refused") {
     metal::Device device;
     metal::Submission submission(device);
     using metal::ReuseImages;
-    CHECK(tests::contains(tests::error_of<metal::MetalError>([&] {
-                              return ReuseImages(device, submission, ReuseImages::Temporal::merged,
-                                                 ReuseImages::Working::none);
-                          }),
-                          "restir_temporal's, which this backend does not implement yet"));
-    CHECK(tests::contains(tests::error_of<metal::MetalError>([&] {
-                              return ReuseImages(device, submission, ReuseImages::Temporal::none,
-                                                 ReuseImages::Working::needed);
-                          }),
-                          "the working reservoirs are the merges'"));
     ReuseImages arrays(device, submission, ReuseImages::Temporal::none, ReuseImages::Working::none);
     CHECK(arrays.addresses(0).records == 0u);  // nothing before the first prepare()
     const frame::FrameInputs inputs = tests::frame_at(0, 0, 0.0, std::nullopt);
@@ -1044,6 +1243,34 @@ TEST_CASE("ReSTIR's arrays: what the merges need is refused until they come, and
     CHECK(made.previous_positions == 0u);
     CHECK(made.working == 0u);
     CHECK(made.last_final == 0u);
+}
+
+TEST_CASE("ReSTIR's arrays with a temporal merge: two halves swapped by parity, and the core's history rule") {
+    metal::Device device;
+    metal::Submission submission(device);
+    using metal::ReuseImages;
+    ReuseImages arrays(device, submission, ReuseImages::Temporal::merged, ReuseImages::Working::needed);
+    const auto reusing = [](std::uint64_t index, std::uint64_t since) {
+        frame::FrameInputs inputs = tests::frame_at(index, index, 0.0, std::nullopt);
+        inputs.reused_since = since;
+        return inputs;
+    };
+    CHECK(arrays.prepare(reusing(0, 0), {8, 4}) == 0u);  // the history starts
+    const ReuseImages::Addresses even = arrays.addresses(0);
+    CHECK(even.previous_positions != 0u);
+    CHECK(even.working != 0u);
+    CHECK(even.last_records != 0u);
+    CHECK(even.records != even.last_records);
+    CHECK(arrays.prepare(reusing(1, 0), {8, 4}) == 1u);
+    const ReuseImages::Addresses odd = arrays.addresses(1);
+    // Last frame's halves are what the frame before wrote.
+    CHECK(odd.last_records == even.records);
+    CHECK(odd.last_final == even.final_reservoirs);
+    CHECK(odd.records == even.last_records);
+    // A frame skipped is refused by the core's rule, naming it.
+    CHECK(tests::contains(tests::error_of<metal::MetalError>([&] { return arrays.prepare(reusing(3, 0), {8, 4}); }),
+                          "reuse history"));
+    CHECK(arrays.prepare(reusing(2, 0), {8, 4}) == 2u);
 }
 
 TEST_CASE("ReSTIR's passes refuse a frame without what they read and write") {
@@ -1076,7 +1303,10 @@ TEST_CASE("ReSTIR's passes refuse a frame without what they read and write") {
     CHECK(tests::contains(refusal(into_working, full), "no working reservoirs to write"));
     metal::FrameResources temporal = full;
     temporal.previous_positions = somewhere;
-    CHECK(tests::contains(refusal(initial, temporal), "previous positions are written for restir_temporal"));
+    CHECK(tests::contains(refusal(initial, temporal), "without last frame's transforms"));
+
+    const metal::RestirTemporalPass merge(library, metal::ReservoirOutput::final);
+    CHECK(tests::contains(refusal(merge, full), "RestirTemporalPass: the frame lacks"));
 
     const metal::RestirShadePass shade(library);
     CHECK(tests::contains(refusal(shade, metal::FrameResources{}), "RestirShadePass: the frame lacks"));

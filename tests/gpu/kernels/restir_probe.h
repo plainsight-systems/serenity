@@ -13,6 +13,8 @@
 #include "core/contracts/shared_layout.h"
 
 #include "core/contracts/float3.h"
+#include "core/contracts/reservoir.h"
+#include "core/contracts/reuse_settings.h"
 
 namespace serenity {
 namespace tests {
@@ -127,6 +129,34 @@ struct MisResult {
 
 static_assert(sizeof(MisResult) == 32, "MisResult must be the same 32 bytes on the host and in shaders");
 
+// One temporal merge (temporal_merge): the pixel's own reservoir and last
+// frame's, under `settings`, with a number for each choice. The merge asks
+// its targets of a probe's Frame (restir_probe.metal, ProbeFrame), whose
+// target for a light point is `scale` x (1 + its light's index), the same
+// at every surface, both frames.
+struct MergeQuery {
+    contracts::Reservoir own;
+    contracts::Reservoir last;
+    contracts::ReuseSettings settings;
+    uint32_t seed;
+    float scale;
+    uint32_t padding[2];
+};
+
+static_assert(sizeof(MergeQuery) == 112, "MergeQuery must be the same 112 bytes on the host and in shaders");
+
+// What find_last_frame() answered (last_frame_found): whether a pixel
+// passed, its offset from the reprojected pixel, and its index among last
+// frame's 3 x 3.
+struct FoundResult {
+    uint32_t found;
+    int32_t dx;
+    int32_t dy;
+    uint32_t index;
+};
+
+static_assert(sizeof(FoundResult) == 16, "FoundResult must be the same 16 bytes on the host and in shaders");
+
 // The streams of softmax_streams: `streams` reservoirs, each fed the
 // `count` scores, weight exp(scale x score), in an order `order` says,
 // from numbers keyed by its index and `seed`. zero: every weight 0.
@@ -169,6 +199,8 @@ static_assert(std::is_trivially_copyable_v<TargetQuery>, "TargetQuery is copied 
 static_assert(std::is_trivially_copyable_v<TargetResult>, "TargetResult is copied from the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<MisQuery>, "MisQuery is copied to the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<MisResult>, "MisResult is copied from the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<MergeQuery>, "MergeQuery is copied to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<FoundResult>, "FoundResult is copied from the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<SoftmaxQuery>, "SoftmaxQuery is copied to the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<SoftmaxDraw>, "SoftmaxDraw is copied from the GPU as bytes");
 #endif

@@ -5,9 +5,11 @@
 // the accumulated image as the path pass folds its own
 // (passes/path/path.metal), whose mean is the frame's radiance.
 //
-// The final reservoirs are read, not written: the write-back of a traced
-// test is for the next frame's temporal merge, and comes with it
-// (restir_di.metal.h, Shaded).
+// In a graph with a temporal merge (contracts/reuse_settings.h: history is
+// read, and so not 0, exactly there), where the shade traced its
+// survivor's ray, it writes the reservoir back with that test, and W = 0
+// where it was hidden, for the next frame's merge (restir_di.metal.h,
+// Shaded); its own pixel's alone, so in place is safe.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -34,7 +36,7 @@ kernel void restir_shade(constant serenity::contracts::FrameConstants& frame [[b
                          constant serenity::contracts::ReuseConstants& reuse [[buffer(binding::reuse)]],
                          const device serenity::contracts::SurfaceRecord* records [[buffer(binding::records)]],
                          const device serenity::contracts::PathState* path_states [[buffer(binding::path_states)]],
-                         const device serenity::contracts::Reservoir* finals [[buffer(binding::final_reservoirs)]],
+                         device serenity::contracts::Reservoir* finals [[buffer(binding::final_reservoirs)]],
                          device atomic_uint* non_finite [[buffer(binding::non_finite)]],
                          texture2d<float, access::read_write> accumulated [[texture(binding::accumulated)]],
                          uint2 pixel [[thread_position_in_grid]]) {
@@ -49,6 +51,9 @@ kernel void restir_shade(constant serenity::contracts::FrameConstants& frame [[b
         PathNumbers numbers = path_numbers(pixel, frame.frame_index);
         numbers.dimension = state.counts & serenity::contracts::path_counter_mask;  // where step 1 left it
         const restir::Shaded shaded = restir::shade(scene, records[i], state, finals[i], reuse.settings, numbers);
+        if (shaded.traced && reuse.settings.history != 0u) {
+            finals[i] = shaded.reservoir;
+        }
 
         failed = !finite(shaded.radiance);
         const float4 held = accumulate(accumulated.read(pixel), shaded.radiance, frame.accumulated_frames == 0u);

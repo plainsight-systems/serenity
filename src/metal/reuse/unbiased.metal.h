@@ -199,12 +199,16 @@ struct Merging {
 // d_i(y) (above) for `there`, the surface of an input that did not produce
 // `y`, as `frame`, that surface's own frame, saw it, by `mode`: its target
 // at y, and in raytraced mode 0 where y is hidden from it, the ray asked
-// only where the target is positive. Declared, and defined with the merges
-// that call it (restir_temporal, restir_spatial; reservoir.metal.h,
-// stream_reservoir).
+// only where the target is positive.
 template <typename Frame>
 inline float domain_target(Frame frame, serenity::contracts::SurfaceRecord there, serenity::contracts::LightPoint y,
-                           serenity::contracts::BiasCorrection mode);
+                           serenity::contracts::BiasCorrection mode) {
+    const float target = frame.target(there, y);
+    if (mode == serenity::contracts::BiasCorrection::raytraced && target > 0.0f && !frame.visible(there, y)) {
+        return 0.0f;
+    }
+    return target;
+}
 
 // `reservoir` with its sample weighed 0 and its count kept: what a test
 // that finds its sample hidden makes of it, in every pass that tests one

@@ -352,9 +352,10 @@
 // not their independence.
 //
 // ReSTIR's first surface, q, is principle 7's one exception. The shade's
-// direct light there is the reservoir's estimate, weighed against no BSDF
-// sample (a BSDF candidate, as RTXDI draws one, is ReSTIR's Phase B), so it
-// alone counts every firefly's direct light at q. continue_path() therefore
+// direct light there is the reservoir's estimate, its light candidates
+// and BSDF candidates (RTXDI's initial sampling) weighed against each
+// other by MIS (metal/integrator/target.metal.h), so it alone counts every
+// firefly's direct light at q. continue_path() therefore
 // counts no light that the bounce from q strikes off a lobe that is not
 // delta: step 6 at q hands on not_counted in place of what handed_on()
 // gives, decided by the lobe drawn, so a direction on wo's other side is

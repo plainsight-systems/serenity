@@ -73,8 +73,7 @@ struct FrameInputs {
     // the window's and the headless renderer's plans, are the core's
     // (frame/history.h, ReuseHistory). Unread by a graph that does not
     // reuse history. Never after index. Last, after the members callers
-    // name in order; the window and the headless renderer set it with the
-    // ReSTIR implementation, and until then it is 0 and unread.
+    // name in order.
     std::uint64_t reused_since = 0;
 };
 

@@ -26,6 +26,7 @@
 #include "metal/math/hash.metal.h"
 #include "metal/math/warp.metal.h"
 #include "metal/reuse/reservoir.metal.h"
+#include "metal/reuse/temporal.metal.h"
 #include "metal/reuse/visibility.metal.h"
 #include "metal/sampler/sampler.metal.h"
 #include "restir_probe.h"
@@ -35,6 +36,8 @@ using serenity::contracts::Bsdf;
 using serenity::contracts::LightPoint;
 using serenity::tests::LightPointQuery;
 using serenity::tests::LightPointResult;
+using serenity::tests::FoundResult;
+using serenity::tests::MergeQuery;
 using serenity::tests::MisQuery;
 using serenity::tests::MisResult;
 using serenity::tests::SoftmaxDraw;
@@ -210,6 +213,55 @@ kernel void candidate_mis(device MisResult* out [[buffer(0)]],
         }
     }
     out[i] = result;
+}
+
+// A Frame for the merges (metal/reuse/unbiased.metal.h states what one
+// answers), the probe's own and labeled so: a light point's target is
+// `scale` x (1 + its light's index), the same at every surface; every
+// point is visible; a point's depth is its z. What the merge does with the
+// answers is the code under test; the answers are the test's.
+struct ProbeFrame {
+    float scale;
+    float target(serenity::contracts::SurfaceRecord, LightPoint y) const {
+        return serenity::contracts::holds_light(y) ? scale * float(1u + serenity::contracts::light_index(y)) : 0.0f;
+    }
+    bool visible(serenity::contracts::SurfaceRecord, LightPoint) const { return true; }
+    float depth(float3 point) const { return point.z; }
+};
+
+// Query i's temporal merge (merge_temporal()), its two numbers from a
+// stream keyed by i and the query's seed. Input: the queries.
+kernel void temporal_merge(device serenity::contracts::Reservoir* out [[buffer(0)]],
+                           device const MergeQuery* queries [[buffer(1)]],
+                           uint i [[thread_position_in_grid]]) {
+    const MergeQuery query = queries[i];
+    const ProbeFrame frame{query.scale};
+    PathNumbers numbers = PathNumbers{uint2(i, query.seed), 0u};
+    const LastFrame last{float3(0.0f), int2(0), serenity::contracts::SurfaceRecord{}, query.last};
+    out[i] = merge_temporal(frame, frame, Merging{serenity::contracts::SurfaceRecord{}, query.own}, last,
+                            query.settings, numbers);
+}
+
+// find_last_frame() for the pixel `here`, its surface last frame at its
+// own position, reprojected to the middle of last frame's 3 x 3 records,
+// permutation off. Inputs: here's record, the 9 records, the 9 final
+// reservoirs, the settings.
+kernel void last_frame_found(device FoundResult* out [[buffer(0)]],
+                             constant serenity::contracts::SurfaceRecord& here [[buffer(1)]],
+                             device const serenity::contracts::SurfaceRecord* records [[buffer(2)]],
+                             device const serenity::contracts::Reservoir* finals [[buffer(3)]],
+                             constant serenity::contracts::ReuseSettings& settings [[buffer(4)]],
+                             uint i [[thread_position_in_grid]]) {
+    if (i != 0u) {
+        return;
+    }
+    const ProbeFrame then{1.0f};
+    const Found found = find_last_frame(then, Merging{here, serenity::contracts::Reservoir{}},
+                                        Reprojection{to_float3(here.position), uint2(1u)},
+                                        LastArrays{records, finals, uint2(3u)}, BlockPermutation{uint2(0u), 0u}, settings);
+    const int2 at = int2(1) + found.last.offset;
+    out[0] = FoundResult{found.found ? 1u : 0u, found.last.offset.x, found.last.offset.y,
+                         found.found ? uint(at.y * 3 + at.x) : 0u};
 }
 
 // Stream i of query.streams: the scores streamed as candidates, weight and

@@ -32,6 +32,7 @@
 #include "metal/passes/preview/preview.h"
 #include "metal/passes/restir_initial/restir_initial.h"
 #include "metal/passes/restir_shade/restir_shade.h"
+#include "metal/passes/restir_temporal/restir_temporal.h"
 #include "metal/passes/test_pattern/test_pattern.h"
 #include "metal/passes/tone_map/tone_map.h"
 #include "metal/scene/shape_transforms.h"
@@ -170,12 +171,12 @@ namespace serenity::metal {
 //
 // ReSTIR DI. A graph with its passes (core/frame/schedule.h) gets, at
 // construction, everything below and nothing else changes for a graph
-// without them. Implemented so far: restir_initial and restir_shade, the
-// graph with no merge, resampled importance sampling alone. A graph with
-// restir_temporal or restir_spatial is refused at construction by
-// MetalError naming the pass, never run without it; what is below for
-// those passes (the working array, last frame's copies, structure and
-// camera) comes with them. In detail:
+// without them. Implemented: restir_initial, restir_temporal in basic mode
+// and restir_shade. Refused at construction by MetalError, naming what is
+// refused, never run without it: a graph with restir_spatial (Phase C);
+// and one with restir_temporal in raytraced mode, whose merge traces last
+// frame's surface against last frame's structure, which is not yet kept
+// (scene_acceleration.h, Keep::last_too). In detail:
 //
 //   - its passes, each built with where it writes its reservoirs, from the
 //     graph's order (frame_resources.h, ReservoirOutput): the initial pass
@@ -291,7 +292,7 @@ public:
 
 private:
     using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass, RestirInitialPass,
-                              RestirShadePass>;
+                              RestirTemporalPass, RestirShadePass>;
 
     // A pass of the schedule, with its kind (C.1).
     struct Step {
@@ -304,6 +305,7 @@ private:
         std::uint64_t index = 0;
         frame::Extent size;
         std::uint32_t accumulated_frames = 0;
+        std::uint64_t reused_frames = 0;  // the reuse history's frames before this one
     };
 
     Submission& submission_;
@@ -325,6 +327,15 @@ private:
     std::optional<passes::RestirDi> restir_;
     std::unique_ptr<ReuseImages> reuse_;
     std::unique_ptr<FrameArray> reuse_constants_;
+    // A temporal graph's last frame (above): its transforms and glows,
+    // animated at its time each frame, only when the scene changes (a still
+    // scene's one copy is last frame's too); and the camera and time the
+    // frame before was recorded with, none before the first.
+    bool reuses_history_ = false;
+    std::unique_ptr<ShapeTransforms> last_transforms_;
+    std::unique_ptr<LightGlows> last_glows_;
+    std::optional<contracts::Camera> previous_camera_;
+    frame::Seconds previous_time_{0.0};
     std::optional<Prepared> prepared_;
     std::vector<Step> steps_;  // in schedule order
     // The first pass that writes the images between passes, accumulates or

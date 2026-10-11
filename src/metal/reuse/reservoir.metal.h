@@ -150,11 +150,20 @@ inline bool stream_candidate(thread Streaming& reservoir, Candidate candidate, f
     return true;
 }
 
-// Step 3: `input`, kept or not by `u`. Declared, and defined with the
-// merges that call it (temporal.metal.h, spatial.metal.h): restir_temporal
-// and restir_spatial, which the Metal backend refuses by name until then
-// (metal/frame/renderer.h).
-inline void stream_reservoir(thread Streaming& reservoir, MergeInput input, float u);
+// Step 3: `input`, kept or not by `u`. An in-out parameter, as step 2's
+// (F.17); a weight of 0 adds its count and is never kept.
+inline void stream_reservoir(thread Streaming& reservoir, MergeInput input, float u) {
+    const float weight = input.target * input.reservoir.weight * float(input.count);
+    reservoir.weight_sum += weight;
+    reservoir.count += input.count;
+    if (!(weight > 0.0f && u * reservoir.weight_sum < weight)) {
+        return;
+    }
+    reservoir.sample = input.reservoir.sample;
+    reservoir.target = input.target;
+    reservoir.tested = input.reservoir.tested;
+    reservoir.source = input.source;
+}
 
 // Step 4's normalization, by name, so its two numbers cannot be passed in
 // each other's places (I.24): pi and piSum (unbiased.metal.h); {1, M} for
@@ -182,9 +191,25 @@ inline serenity::contracts::Reservoir finish(Streaming reservoir, Normalization 
 // offset plus `offset`, each coordinate clamped to [-127, 127], and its age
 // plus `frames`, saturating at 255 (contracts/reservoir.h, tested). What
 // the merges stream, so a survivor arrives with its test placed relative
-// to the pixel that keeps it. Declared, and defined with the merges, as
-// stream_reservoir() is.
-inline serenity::contracts::Reservoir reused_from(serenity::contracts::Reservoir reservoir, int2 offset, uint frames);
+// to the pixel that keeps it.
+inline serenity::contracts::Reservoir reused_from(serenity::contracts::Reservoir reservoir, int2 offset, uint frames) {
+    namespace c = serenity::contracts;
+    const uint tested = reservoir.tested;
+    // The offset's two signed 8-bit coordinates, their bits taken apart as
+    // unsigned (ES.101) and read back as two's complement, as
+    // visibility.metal.h reads them.
+    const int2 was = int2(int(as_type<char>(uchar((tested >> c::tested_offset_x_shift) & c::tested_field_mask))),
+                          int(as_type<char>(uchar((tested >> c::tested_offset_y_shift) & c::tested_field_mask))));
+    const int2 moved = metal::clamp(was + offset, int2(-c::tested_max_offset), int2(c::tested_max_offset));
+    // At most 255 + 255: no wrap before the saturation (ES.103).
+    const uint age = metal::min(((tested >> c::tested_age_shift) & c::tested_field_mask) +
+                                    metal::min(frames, c::tested_max_age),
+                                c::tested_max_age);
+    reservoir.tested = ((uint(moved.x) & c::tested_field_mask) << c::tested_offset_x_shift) |
+                       ((uint(moved.y) & c::tested_field_mask) << c::tested_offset_y_shift) |
+                       (age << c::tested_age_shift);
+    return reservoir;
+}
 
 }  // namespace shaders
 }  // namespace serenity

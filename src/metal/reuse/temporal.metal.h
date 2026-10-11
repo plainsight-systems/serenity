@@ -35,11 +35,19 @@
 //      permutation of each aligned 4 x 4 block, the same for every pixel of
 //      the frame (step 2's numbers, below), so no two pixels of a block
 //      read the same reservoir. Then, while none has passed, up to 8 more:
-//      the 8 pixels around p, in a fixed order (RTXDI tries up to 9 pixels
-//      in a small neighborhood of the reprojection, the further ones at
-//      random; a fixed ring here draws no numbers). A pixel passes when it
+//      the 8 pixels around p, in ring order from a place the frame draws
+//      (RTXDI tries up to 9 pixels in a small neighborhood of the
+//      reprojection, the further ones at random). Not from a fixed place:
+//      then a pixel whose first try fails takes, frame after frame, the
+//      neighbor on the same side, and its history drifts one way across
+//      the image, which on a grazing floor measurably moved the image's
+//      mean (docs/research/2026-10-11-restir-temporal.md); a start the
+//      frame draws, the same for every pixel, turns that drift into a
+//      walk with no side (its number the frame's, as the permutation's:
+//      GDSA.3). A pixel passes when it
 //      is inside the image and last frame's record q' there has a kind
-//      not none and is similar to q (similar.metal.h, the geometric test):
+//      not none and is similar to q (similar.metal.h, the geometric test
+//      and the material test, as RTXDI's temporal resampling asks both):
 //      q's depth taken at its previous position by last frame's camera, so
 //      a surface that moved is compared where it was. The first that
 //      passes is the input's pixel x'; none: no temporal input
@@ -74,11 +82,11 @@
 //      reservoir, in place, when a spatial merge follows, which reads it at
 //      neighbors; this frame's final reservoir otherwise.
 //
-// The frame's permutation numbers: the Sampler's stream for pixel (0, 0)
-// and the frame, at this pass's purpose for them (restir_di.metal.h,
-// permutation_numbers), which every pixel draws alike, so the permutation
-// is the frame's, a function of its index alone (principle 2), with no
-// value the CPU computes.
+// The frame's permutation numbers, three, the permutation's two and the
+// ring's start: the Sampler's stream for pixel (0, 0) and the frame, at
+// this pass's purpose for them (restir_di.metal.h, permutation_numbers),
+// which every pixel draws alike, so they are the frame's, a function of
+// its index alone (principle 2), with no value the CPU computes.
 //
 // The previous surface is last frame's in every respect: its record from
 // last frame's records, its lights at last frame's transforms and glows,
@@ -108,8 +116,8 @@
 // one (r''s sample at q) and at most one more (piSum's, at q'), r's own
 // target and r''s at q' read from the reservoirs. Rays: none in basic mode;
 // at most one in raytraced. Numbers: two, the choices of step 4, from the
-// pass's own stream (metal/sampler/sampler.metal.h), and the frame's two for
-// the permutation.
+// pass's own stream (metal/sampler/sampler.metal.h), and the frame's three
+// for the permutation and the ring's start.
 
 #include <metal_stdlib>
 
@@ -128,16 +136,26 @@ namespace shaders {
 // the 8 around it.
 constant constexpr uint temporal_tries = 9u;
 
-// The frame's permutation of each aligned 4 x 4 block (step 3): the two
-// numbers in [0, 3] a pixel's x and y have their two low bits
-// exclusive-or'ed with; (0, 0), the identity, with permutation off. A type,
-// not a bare uint2, so it cannot be passed for a pixel (I.24).
+// The frame's order of step 3's tries: its permutation of each aligned
+// 4 x 4 block, the two numbers in [0, 3] a pixel's x and y have their two
+// low bits exclusive-or'ed with, (0, 0), the identity, with permutation
+// off; and where in the ring around p the further tries start, in
+// [0, 7]. A type, not a bare uint2, so it cannot be passed for a pixel
+// (I.24).
 struct BlockPermutation {
     uint2 bits;
+    uint ring_start;
 };
 
 // Step 3's first pixel: `reprojected` under `permutation`.
-inline uint2 permuted_pixel(uint2 reprojected, BlockPermutation permutation);
+inline uint2 permuted_pixel(uint2 reprojected, BlockPermutation permutation) {
+    return reprojected ^ permutation.bits;
+}
+
+// Step 3's further pixels, around the reprojected one, in their fixed
+// order (ES.27's C array: a shader constant table, as the noise tables).
+constant constexpr int2 temporal_ring[temporal_tries - 1u] = {int2(-1, -1), int2(0, -1), int2(1, -1), int2(-1, 0),
+                                                              int2(1, 0),   int2(-1, 1), int2(0, 1),  int2(1, 1)};
 
 // Step 2's result, the caller's: where q was last frame, and the pixel p
 // of last frame's image that point rounds to.
@@ -175,7 +193,26 @@ struct Found {
 // frame's.
 template <typename Frame>
 inline Found find_last_frame(Frame then, Merging pixel, Reprojection reprojection, LastArrays arrays,
-                             BlockPermutation permutation, serenity::contracts::ReuseSettings settings);
+                             BlockPermutation permutation, serenity::contracts::ReuseSettings settings) {
+    const float3 normal_here = decode_unit(pixel.here.bsdf.normal);
+    const float depth_here = then.depth(reprojection.previous_position);
+    const int2 reprojected = int2(reprojection.pixel);
+    for (uint t = 0; t < temporal_tries; ++t) {
+        const int2 x = t == 0u ? int2(permuted_pixel(reprojection.pixel, permutation))
+                               : reprojected + temporal_ring[(t - 1u + permutation.ring_start) % (temporal_tries - 1u)];
+        if (metal::any(x < int2(0)) || metal::any(x >= int2(arrays.size))) {
+            continue;
+        }
+        const uint j = uint(x.y) * arrays.size.x + uint(x.x);
+        const serenity::contracts::SurfaceRecord there = arrays.records[j];
+        if (!similar(depth_here, normal_here, there, then.depth(to_float3(there.position)), settings) ||
+            !similar_material(pixel.here.bsdf, there.bsdf)) {
+            continue;
+        }
+        return Found{true, LastFrame{reprojection.previous_position, x - reprojected, there, arrays.finals[j]}};
+    }
+    return Found{false, LastFrame{}};
+}
 
 // Steps 4 to 6 for `pixel`, given what `last` frame left. `now` and `then`
 // are this frame's and last frame's Frames (unbiased.metal.h states what a
@@ -184,7 +221,40 @@ inline Found find_last_frame(Frame then, Merging pixel, Reprojection reprojectio
 template <typename Frame>
 inline serenity::contracts::Reservoir merge_temporal(Frame now, Frame then, Merging pixel, LastFrame last,
                                                      serenity::contracts::ReuseSettings settings,
-                                                     thread PathNumbers& numbers);
+                                                     thread PathNumbers& numbers) {
+    namespace c = serenity::contracts;
+    // Step 4: the own reservoir, then last frame's, its count capped at H
+    // times the own one's, its sample weighed at q as this frame lights it.
+    const uint own_count = pixel.own.count & c::count_mask;
+    const uint capped = metal::min(last.last_final.count & c::count_mask, settings.history * own_count);
+    const c::LightPoint carried = last.last_final.sample;
+    const float carried_here = c::holds_light(carried) ? now.target(pixel.here, carried) : 0.0f;
+    Streaming reservoir = empty_reservoir();
+    stream_reservoir(reservoir, MergeInput{pixel.own, own_count, pixel.own.target, from_own}, next_number(numbers));
+    stream_reservoir(reservoir,
+                     MergeInput{reused_from(last.last_final, last.offset, 1u), capped, carried_here, from_temporal},
+                     next_number(numbers));
+
+    // Step 5: pi and piSum by the graph's mode (unbiased.metal.h).
+    if (reservoir.source == from_temporal) {
+        const float pi = last.last_final.target;
+        const c::Reservoir merged = finish(
+            reservoir, Normalization{pi, float(own_count) * reservoir.target + float(capped) * pi});
+        // Raytraced: the own domain's ray from q, which is the survivor's
+        // test here and now (unbiased.metal.h).
+        if (settings.bias_correction == c::BiasCorrection::raytraced && merged.weight > 0.0f) {
+            c::Reservoir tested = merged;
+            tested.tested = 0u;
+            return now.visible(pixel.here, merged.sample) ? tested : hide(tested);
+        }
+        return merged;
+    }
+    const float there = c::holds_light(reservoir.sample)
+                            ? domain_target(then, last.there, reservoir.sample, settings.bias_correction)
+                            : 0.0f;
+    return finish(reservoir,
+                  Normalization{reservoir.target, float(own_count) * reservoir.target + float(capped) * there});
+}
 
 }  // namespace shaders
 }  // namespace serenity

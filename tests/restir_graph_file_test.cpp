@@ -66,6 +66,25 @@ TEST_CASE("the RIS graph in graphs/ reads, at RTXDI's candidates") {
     REQUIRE(schedule.tone_map.has_value());
 }
 
+TEST_CASE("the temporal graph in graphs/ reads, at RTXDI's defaults") {
+    const auto schedule = load_schedule(graphs_dir / "restir_temporal.toml");
+    REQUIRE(schedule.passes.size() == 4);
+    CHECK(schedule.passes[1] == PassKind::restir_temporal);
+    REQUIRE(schedule.restir_di.has_value());
+    const auto& s = *schedule.restir_di;
+    CHECK(s.candidates == serenity::passes::written_candidates);
+    CHECK(s.bsdf_candidates == serenity::passes::written_bsdf_candidates);
+    CHECK(s.history == serenity::passes::written_history);
+    CHECK(s.permutation == serenity::passes::written_permutation);
+    CHECK(s.depth_threshold == serenity::passes::written_depth_threshold);
+    CHECK(s.normal_threshold == serenity::passes::written_normal_threshold);
+    CHECK(s.bias_correction == serenity::passes::written_bias_correction);
+    CHECK(s.visibility_reuse == serenity::passes::written_visibility_reuse);
+    CHECK(s.visibility_age == serenity::passes::written_visibility_age);
+    CHECK(s.visibility_distance == serenity::passes::written_visibility_distance);
+    CHECK(s.neighbors == 0u);
+}
+
 TEST_CASE("every key of a graph with both merges is read, as written") {
     const auto schedule = parse_schedule(std::string(both) + std::string(every_key), "graph.toml");
     REQUIRE(schedule.restir_di.has_value());

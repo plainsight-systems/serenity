@@ -110,6 +110,18 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         throw MetalError("Renderer: the frame graph's passes read a scene, and none was given (--scene)");
     }
     const auto pool = scoped_pool();
+    const auto has = [&](frame::PassKind kind) { return std::ranges::find(schedule.passes, kind) != schedule.passes.end(); };
+    const bool temporal = has(frame::PassKind::restir_temporal);
+    const bool spatial = has(frame::PassKind::restir_spatial);
+    // Raytraced mode's temporal merge traces last frame's surface against
+    // last frame's structure, which this backend does not keep yet: refused
+    // by name, never traced against this frame's (renderer.h).
+    if (temporal && schedule.restir_di &&
+        schedule.restir_di->bias_correction == contracts::BiasCorrection::raytraced) {
+        throw MetalError("Renderer: the frame graph's restir_temporal pass with bias_correction = \"raytraced\" is "
+                         "not implemented by the Metal backend yet: it needs last frame's acceleration structure; "
+                         "use \"basic\"");
+    }
 
     // The first pass that writes the images between passes, accumulates,
     // or writes ReSTIR's arrays, which the frame before's shade reads.
@@ -142,17 +154,20 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
                 Step{kind, Pass{std::in_place_type<ToneMapPass>, device, library_, submission, *schedule.tone_map}});
             break;
         case frame::PassKind::restir_initial:
-            // No merge follows yet (the two below are refused): its
-            // reservoirs are the frame's final ones (frame_resources.h).
-            steps_.push_back(
-                Step{kind, Pass{std::in_place_type<RestirInitialPass>, library_, ReservoirOutput::final}});
+            // Into the working array when a merge follows, else the frame's
+            // final one (frame_resources.h).
+            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirInitialPass>, library_,
+                                             temporal || spatial ? ReservoirOutput::working : ReservoirOutput::final}});
             break;
         case frame::PassKind::restir_temporal:
+            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirTemporalPass>, library_,
+                                             spatial ? ReservoirOutput::working : ReservoirOutput::final}});
+            break;
         case frame::PassKind::restir_spatial:
             // Refused by name, never skipped (core/frame/schedule.h).
             throw MetalError("Renderer: the frame graph's " + std::string(frame::name(kind)) +
-                             " pass is not implemented by the Metal backend yet; ReSTIR DI runs here without "
-                             "reuse, as restir_initial then restir_shade");
+                             " pass is not implemented by the Metal backend yet; ReSTIR DI runs here as "
+                             "restir_initial, restir_temporal if given, then restir_shade");
         case frame::PassKind::restir_shade:
             steps_.push_back(Step{kind, Pass{std::in_place_type<RestirShadePass>, library_}});
             break;
@@ -183,8 +198,11 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
             throw MetalError("Renderer: the scene's " + *outside);
         }
         restir_ = schedule.restir_di;
-        reuse_ = std::make_unique<ReuseImages>(device, submission, ReuseImages::Temporal::none,
-                                               ReuseImages::Working::none);
+        reuses_history_ = temporal;
+        reuse_ = std::make_unique<ReuseImages>(device, submission,
+                                               temporal ? ReuseImages::Temporal::merged : ReuseImages::Temporal::none,
+                                               temporal || spatial ? ReuseImages::Working::needed
+                                                                   : ReuseImages::Working::none);
         reuse_constants_ = std::make_unique<FrameArray>(device, submission,
                                                         std::vector<std::byte>(sizeof(contracts::ReuseConstants)),
                                                         FrameArray::Copies::per_frame);
@@ -210,6 +228,14 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         }
         glows_ = std::make_unique<LightGlows>(device, submission, scene->light_counts.spheres,
                                               !animation_.glowers.empty());
+        // Last frame's, for a temporal graph whose scene changes (renderer.h).
+        if (reuses_history_ && animation::changes(animation_)) {
+            last_transforms_ = std::make_unique<ShapeTransforms>(
+                device, submission, scene->shapes.transforms,
+                moves ? FrameArray::Copies::per_frame : FrameArray::Copies::one);
+            last_glows_ = std::make_unique<LightGlows>(device, submission, scene->light_counts.spheres,
+                                                       !animation_.glowers.empty());
+        }
         // Where the families meet: the acceleration structure learns which
         // shapes move, by the movers' targets, and nothing else of them.
         std::vector<std::uint32_t> moving;
@@ -240,14 +266,12 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
     if (images_) {
         images_->prepare(size);
     }
-    if (reuse_) {
-        (void)reuse_->prepare(inputs, size);  // 0: no frame before to merge, without a temporal merge
-    }
+    const std::uint64_t reused = reuse_ ? reuse_->prepare(inputs, size) : 0u;  // 0 without a temporal merge
     const std::uint32_t held =
         accumulation_ ? accumulation_->prepare(inputs, size,
                                        animation::changes(animation_) ? frame::SceneMotion::changing
                                                                       : frame::SceneMotion::still) : 0u;
-    prepared_ = Prepared{inputs.index, size, held};
+    prepared_ = Prepared{inputs.index, size, held, reused};
 }
 
 std::uint64_t Renderer::non_finite_samples() const noexcept {
@@ -294,12 +318,14 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
     }
     check_time(inputs);
     std::uint32_t accumulated_frames = 0;
+    std::uint64_t reused_frames = 0;
     if (accumulation_ || images_ || reuse_) {
         if (!prepared_ || prepared_->index != inputs.index || !(prepared_->size == size)) {
             throw MetalError("Renderer::record: frame " + std::to_string(inputs.index) +
                         " was not prepared at this size (Renderer::prepare)");
         }
         accumulated_frames = prepared_->accumulated_frames;
+        reused_frames = prepared_->reused_frames;
         prepared_.reset();
     }
 
@@ -351,18 +377,34 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         resources.non_finite_counter = non_finite_->address(begun.slot);
     }
 
+    // A temporal graph merges last frame when the history holds it and the
+    // renderer recorded it (its camera kept): never at a history's first.
+    const bool previous = reuses_history_ && reused_frames > 0 && previous_camera_.has_value();
     if (reuse_) {
-        // The reuse constants: the settings, and no frame before to merge
-        // (previous 0, its camera unread) until the temporal merge.
+        // The reuse constants: the settings, and whether there is a frame
+        // before to merge, with its camera framed for this frame's size.
         contracts::ReuseConstants reuse{};
         reuse.settings = *restir_;
-        reuse.previous = 0u;
+        reuse.previous = previous ? 1u : 0u;
+        if (previous) {
+            reuse.previous_camera = camera::shader_form(*previous_camera_, size);
+        }
         std::memcpy(reuse_constants_->bytes(begun.slot).data(), &reuse, sizeof(reuse));
         resources.reuse = reuse_constants_->address(begun.slot);
         const ReuseImages::Addresses arrays = reuse_->addresses(inputs.index);
         resources.records = arrays.records;
         resources.path_states = arrays.path_states;
+        resources.previous_positions = arrays.previous_positions;
+        resources.last_records = arrays.last_records;
+        resources.working_reservoirs = arrays.working;
         resources.final_reservoirs = arrays.final_reservoirs;
+        resources.last_final_reservoirs = arrays.last_final;
+    }
+    if (reuses_history_) {
+        // Last frame's transforms and glows: this frame's own where the
+        // scene is still, else animated below at the previous time.
+        resources.last_transforms = last_transforms_ ? last_transforms_->address(begun.slot) : resources.transforms;
+        resources.last_glows = last_glows_ ? last_glows_->address(begun.slot) : resources.glows;
     }
 
     MTL4::ComputeCommandEncoder* encoder = begun.commands->computeCommandEncoder();
@@ -378,6 +420,11 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         animation::animate(animation_, inputs.time, placed, glows_->glows(begun.slot));
         if (animation::moves(animation_)) {
             acceleration_->update(encoder, begun.slot, placed);
+        }
+        // Last frame's, at its time; unread at a history's first frame.
+        if (last_transforms_ && previous) {
+            animation::animate(animation_, previous_time_, last_transforms_->transforms(begun.slot),
+                               last_glows_->glows(begun.slot));
         }
     }
     encoder->setArgumentTable(resources.arguments);
@@ -408,6 +455,9 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         std::visit([&](const auto& pass) { pass.record(encoder, resources); }, step.pass);
     }
     encoder->endEncoding();
+    // What the next frame's temporal merge asks of this one.
+    previous_camera_ = inputs.camera;
+    previous_time_ = inputs.time;
 }
 
 std::optional<WindowFrame> render_to_window(Submission& submission, Presenter& presenter, Renderer& renderer,
