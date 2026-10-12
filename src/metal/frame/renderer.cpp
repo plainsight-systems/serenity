@@ -14,6 +14,9 @@
 #include "core/camera/thin_lens.h"
 #include "core/contracts/camera.h"
 #include "core/contracts/frame_constants.h"
+#include "core/contracts/light_tile.h"
+#include "core/contracts/path_reuse_settings.h"
+#include "core/contracts/primary_hit.h"
 #include "core/contracts/reuse_constants.h"
 #include "core/contracts/surface_record.h"
 #include "core/sampling/pairing.h"
@@ -54,11 +57,14 @@ static_assert(bindings::tone_map::target < max_textures);
 // restir_temporal's 0 to 15), so every other graph's table keeps the 8 it
 // had (renderer.h).
 constexpr NS::UInteger max_restir_buffers = 16;
+// A ReSTIR PT graph's: its passes bind up to 26 (bindings.h, restir_pt's 0
+// to 25).
+constexpr NS::UInteger max_restir_pt_buffers = 26;
 static_assert(bindings::restir_initial::output < max_restir_buffers);
 static_assert(bindings::restir_temporal::last_transforms < max_restir_buffers);
 static_assert(bindings::restir_spatial::output < max_restir_buffers);
 static_assert(bindings::restir_shade::non_finite < max_restir_buffers);
-static_assert(bindings::restir_pt::non_finite < max_restir_buffers);
+static_assert(bindings::restir_pt::last_glows < max_restir_pt_buffers);
 
 // The reuse textures' seed: fixed, so every run pairs the same pixels
 // (core/sampling/pairing.h).
@@ -107,9 +113,9 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     : submission_(submission),
       library_(device, serenity::metallib::shaders),
       constants_(device, submission, std::vector<std::byte>(ring_slot_size), FrameArray::Copies::per_frame),
-      arguments_(make_argument_table(device.handle(), std::ranges::any_of(schedule.passes, reuses_samples)
-                                                          ? max_restir_buffers
-                                                          : max_buffers)) {
+      arguments_(make_argument_table(device.handle(), schedule.restir_pt                                       ? max_restir_pt_buffers
+                                                      : std::ranges::any_of(schedule.passes, reuses_samples) ? max_restir_buffers
+                                                                                                             : max_buffers)) {
     // The core decides which schedules can be carried out (principle 10).
     if (const std::optional<std::string> reason = frame::invalid(schedule)) {
         throw MetalError("Renderer: " + *reason);
@@ -125,6 +131,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     const auto has = [&](frame::PassKind kind) { return std::ranges::find(schedule.passes, kind) != schedule.passes.end(); };
     const bool temporal = has(frame::PassKind::restir_temporal);
     const bool spatial = has(frame::PassKind::restir_spatial);
+    const bool path_temporal = has(frame::PassKind::restir_pt_temporal);
     // Raytraced mode's temporal merge traces last frame's surface against
     // last frame's structure, which this backend does not keep yet: refused
     // by name, never traced against this frame's (renderer.h).
@@ -192,9 +199,11 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
             steps_.push_back(Step{kind, Pass{std::in_place_type<RestirPtShadePass>, library_}});
             break;
         case frame::PassKind::restir_pt_temporal:
+            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirPtTemporalPass>, library_}});
+            break;
         case frame::PassKind::restir_pt_duplication:
-            // frame::invalid() refuses both by name before this is reached.
-            throw MetalError("Renderer: " + std::string(frame::name(kind)) + " is not built yet");
+            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirPtDuplicationPass>, library_}});
+            break;
         }
     }
     // The pass that accumulates is the one that writes radiance (the core
@@ -234,9 +243,33 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
 
     // ReSTIR PT's arrays, settings and reuse textures, only for its graph.
     if (schedule.restir_pt) {
+        // What the G-buffer and the light tiles pack (contracts/
+        // primary_hit.h, light_tile.h), refused rather than wrapped (I.5).
+        if (scene->media.size() >= contracts::primary_no_medium) {
+            throw MetalError("Renderer: the scene has " + std::to_string(scene->media.size()) +
+                             " media, and ReSTIR PT's G-buffer keeps a medium's index in 16 bits, under " +
+                             std::to_string(contracts::primary_no_medium));
+        }
+        if (const std::optional<std::string> outside = scene::outside_packed_bsdf(*scene)) {
+            throw MetalError("Renderer: the scene's " + *outside);
+        }
+        if (scene->shapes.records.size() > contracts::tile_largest_id + 1u ||
+            scene->light_counts.lights > contracts::tile_largest_id + 1u) {
+            throw MetalError("Renderer: the scene has " + std::to_string(scene->shapes.records.size()) +
+                             " shapes and " + std::to_string(scene->light_counts.lights) +
+                             " lights, and ReSTIR PT's light tiles keep each index in 16 bits, at most " +
+                             std::to_string(contracts::tile_largest_id + 1u) + " of either");
+        }
         const bool merged = has(frame::PassKind::restir_pt_spatial);
+        reuses_history_ = path_temporal;
         path_reuse_ = std::make_unique<PathReuseImages>(
-            device, submission, merged ? PathReuseImages::Spatial::merged : PathReuseImages::Spatial::none);
+            device, submission, merged ? PathReuseImages::Spatial::merged : PathReuseImages::Spatial::none,
+            path_temporal ? PathReuseImages::Temporal::merged : PathReuseImages::Temporal::none);
+        if (path_temporal) {
+            path_constants_ = std::make_unique<FrameArray>(
+                device, submission, std::vector<std::byte>(sizeof(contracts::PathReuseConstants)),
+                FrameArray::Copies::per_frame);
+        }
         const contracts::PathReuseSettings settings = *schedule.restir_pt;
         const std::vector<std::uint16_t> textures =
             merged ? sampling::reuse_textures(static_cast<double>(settings.sigma), pairing_seed)
@@ -304,10 +337,9 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
     if (images_) {
         images_->prepare(size);
     }
-    const std::uint64_t reused = reuse_ ? reuse_->prepare(inputs, size) : 0u;  // 0 without a temporal merge
-    if (path_reuse_) {
-        path_reuse_->prepare(size);
-    }
+    // 0 without a temporal merge, of either family (never both in a graph).
+    const std::uint64_t reused =
+        reuse_ ? reuse_->prepare(inputs, size) : path_reuse_ ? path_reuse_->prepare(inputs, size) : 0u;
     const std::uint32_t held =
         accumulation_ ? accumulation_->prepare(inputs, size,
                                        animation::changes(animation_) ? frame::SceneMotion::changing
@@ -442,7 +474,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         resources.last_final_reservoirs = arrays.last_final;
     }
     if (path_reuse_) {
-        const PathReuseImages::Addresses arrays = path_reuse_->addresses();
+        const PathReuseImages::Addresses arrays = path_reuse_->addresses(inputs.index);
         resources.path_settings = path_static_->address(0);
         resources.pairing = path_static_->address(1);
         resources.path_reservoirs = arrays.reservoirs;
@@ -452,6 +484,24 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         resources.replays = arrays.replays;
         resources.replay_counter = arrays.counter;
         resources.replay_grid = arrays.grid;
+        resources.light_tiles = arrays.light_tiles;
+        resources.last_primaries = arrays.last_primaries;
+        resources.path_finals = arrays.finals;
+        resources.last_path_finals = arrays.last_finals;
+        resources.previous_positions = arrays.previous_positions;
+        resources.previous_pixels = arrays.previous_pixels;
+        resources.duplication = arrays.duplication;
+        if (path_constants_) {
+            // Whether there is a frame before to merge, with its camera
+            // framed for this frame's size.
+            contracts::PathReuseConstants reuse{};
+            reuse.previous = previous ? 1u : 0u;
+            if (previous) {
+                reuse.previous_camera = camera::shader_form(*previous_camera_, size);
+            }
+            std::memcpy(path_constants_->bytes(begun.slot).data(), &reuse, sizeof(reuse));
+            resources.path_constants = path_constants_->address(begun.slot);
+        }
     }
     if (reuses_history_) {
         // Last frame's transforms and glows: this frame's own where the

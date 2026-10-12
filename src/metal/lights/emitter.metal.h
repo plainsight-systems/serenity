@@ -41,6 +41,7 @@
 
 #include "core/contracts/emitter.h"
 #include "core/contracts/light_sample.h"
+#include "core/contracts/light_tile.h"
 #include "core/contracts/transform.h"
 #include "core/lights/light.h"
 #include "core/lights/sphere_light.h"
@@ -217,6 +218,32 @@ inline float light_pdf(PlacedLight light, float3 point, float3 direction) {
         return sphere_light_pdf(light.sphere, point, direction);
     }
     return 0.0f;
+}
+
+
+// Contract 3's presampled form, ReSTIR PT's light tiles (contracts/
+// light_tile.h): light record `index` placed and packed as a tile's entry,
+// and a direction drawn toward an entry's light from `point` with `u`, as
+// sample_light() draws it toward the light the entry was packed from (the
+// same SphereLight, so the same numbers give the same direction, distance,
+// radiance and density).
+inline serenity::contracts::LightTileEntry compact_light(Lights lights, uint index) {
+    const PlacedLight placed = place_light(lights, index);
+    switch (placed.record.kind) {
+    case serenity::lights::LightKind::sphere:
+        return serenity::contracts::LightTileEntry{
+            to_packed(placed.sphere.center), placed.sphere.radius, to_packed(placed.sphere.radiance),
+            (index & serenity::contracts::tile_index_mask) |
+                (placed.sphere.primitive << serenity::contracts::tile_shape_shift)};
+    }
+    return serenity::contracts::LightTileEntry{};
+}
+
+inline serenity::contracts::LightSample sample_tile_light(serenity::contracts::LightTileEntry entry, float3 point,
+                                                          float2 u) {
+    return sphere_sample_light(SphereLight{to_float3(entry.center), entry.radius, to_float3(entry.radiance),
+                                           entry.ids >> serenity::contracts::tile_shape_shift},
+                               point, u);
 }
 
 }  // namespace shaders

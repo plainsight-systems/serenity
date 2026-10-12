@@ -1,4 +1,4 @@
-// ReSTIR PT's shade (restir_pt_shade.h): step 9 of metal/passes/restir_pt/
+// ReSTIR PT's shade (restir_pt_shade.h): step 12 of metal/passes/restir_pt/
 // restir_pt.metal.h, one thread a pixel. The frame's light buffer, plus the
 // initial reservoir's own estimate where no spatial pass merged one in,
 // folded into the accumulated image as the path pass folds its own
@@ -31,10 +31,11 @@ kernel void restir_pt_shade(constant serenity::contracts::FrameConstants& frame 
     bool failed = false;
     if (inside) {
         const uint i = pixel.y * frame.width + pixel.x;
-        // neighbors is 0 exactly in a graph without restir_pt_spatial
-        // (contracts/path_reuse_settings.h).
-        const float3 sample =
-            light[i].xyz + (settings.neighbors == 0u ? restir_pt::estimate(reservoirs[i]) : float3(0.0f));
+        // neighbors and confidence_cap are 0 exactly in a graph without
+        // restir_pt_spatial and restir_pt_temporal, whose merges add their
+        // estimates to the light buffer (contracts/path_reuse_settings.h).
+        const bool merged = settings.neighbors != 0u || settings.confidence_cap > 0.0f;
+        const float3 sample = light[i].xyz + (merged ? float3(0.0f) : restir_pt::estimate(reservoirs[i]));
         failed = !finite(sample);
         const float4 held = accumulate(accumulated.read(pixel), sample, frame.accumulated_frames == 0u);
         accumulated.write(held, pixel);

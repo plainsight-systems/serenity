@@ -41,11 +41,14 @@ constexpr std::string_view initial_keys = "nee_candidates = 32\nmax_surfaces = 9
 
 TEST_CASE("graphs/restir_pt.toml reads as ReSTIR PT Enhanced at its defaults") {
     const auto schedule = load_schedule(graphs_dir / "restir_pt.toml");
-    REQUIRE(schedule.passes.size() == 4);
+    REQUIRE(schedule.passes.size() == 6);
     CHECK(schedule.passes[0] == PassKind::restir_pt_initial);
-    CHECK(schedule.passes[1] == PassKind::restir_pt_spatial);
-    CHECK(schedule.passes[2] == PassKind::restir_pt_shade);
-    CHECK(schedule.passes[3] == PassKind::tone_map);
+    CHECK(schedule.passes[1] == PassKind::restir_pt_temporal);
+    CHECK(schedule.passes[2] == PassKind::restir_pt_spatial);
+    CHECK(schedule.passes[3] == PassKind::restir_pt_shade);
+    CHECK(schedule.passes[4] == PassKind::restir_pt_duplication);
+    CHECK(schedule.passes[5] == PassKind::tone_map);
+    CHECK(serenity::frame::reuses_history(schedule));
     REQUIRE(schedule.restir_pt.has_value());
     CHECK(schedule.restir_pt->nee_candidates == serenity::passes::written_nee_candidates);
     CHECK(schedule.restir_pt->max_surfaces == serenity::passes::written_max_surfaces);
@@ -53,18 +56,56 @@ TEST_CASE("graphs/restir_pt.toml reads as ReSTIR PT Enhanced at its defaults") {
     CHECK(schedule.restir_pt->roughness == serenity::passes::written_roughness);
     CHECK(schedule.restir_pt->neighbors == serenity::passes::written_path_neighbors);
     CHECK(schedule.restir_pt->sigma == serenity::passes::written_sigma);
+    CHECK(schedule.restir_pt->confidence_cap == serenity::passes::written_confidence_cap);
+    CHECK(schedule.restir_pt->cap_floor == serenity::passes::written_cap_floor);
+    CHECK(schedule.restir_pt->cap_exponent == serenity::passes::written_cap_exponent);
     CHECK_FALSE(schedule.restir_di.has_value());
 }
 
-TEST_CASE("ReSTIR PT's Phase 2 passes are refused by name until they are built") {
-    for (const char* pass : {"restir_pt_temporal", "restir_pt_duplication"}) {
-        const std::string text = std::string("passes = [\"restir_pt_initial\", \"") + pass +
-                                 "\", \"restir_pt_shade\", \"display\"]\n[restir_pt]\n" + std::string(initial_keys);
-        const std::string error = error_for(text);
-        INFO(error);
-        CHECK(contains(error, pass));
-        CHECK(contains(error, "not built yet"));
-    }
+TEST_CASE("ReSTIR PT's temporal reuse and duplication map: their order, their settings, and the map only with "
+          "temporal reuse") {
+    constexpr std::string_view temporal_keys = "confidence_cap = 20.0\n";
+    constexpr std::string_view duplication_keys = "cap_floor = 1.0\ncap_exponent = 0.1\n";
+    // Temporal reuse alone reads; it reuses history; the duplication map
+    // after the shade with it reads.
+    const auto alone = parse_schedule("passes = [\"restir_pt_initial\", \"restir_pt_temporal\", \"restir_pt_shade\", "
+                                      "\"display\"]\n[restir_pt]\n" +
+                                          std::string(initial_keys) + std::string(temporal_keys),
+                                      "graph.toml");
+    CHECK(serenity::frame::reuses_history(alone));
+    CHECK(alone.restir_pt->confidence_cap == 20.0f);
+    CHECK(alone.restir_pt->cap_exponent == 0.0f);
+    // The map without temporal reuse, whose cap is all it serves.
+    CHECK(contains(error_for("passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"restir_pt_duplication\", "
+                             "\"display\"]\n[restir_pt]\n" +
+                             std::string(initial_keys) + std::string(duplication_keys)),
+                   "without restir_pt_temporal"));
+    // Temporal reuse after the spatial: out of order.
+    CHECK(contains(error_for("passes = [\"restir_pt_initial\", \"restir_pt_spatial\", \"restir_pt_temporal\", "
+                             "\"restir_pt_shade\", \"display\"]\n[restir_pt]\n" +
+                             std::string(initial_keys) + "neighbors = 3\nsigma = 16.0\n" + std::string(temporal_keys)),
+                   "in the order"));
+    // A cap without temporal reuse, and a floor without the map: keys nobody reads.
+    CHECK(contains(error_for("passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"display\"]\n[restir_pt]\n" +
+                             std::string(initial_keys) + std::string(temporal_keys)),
+                   "read only with restir_pt_temporal"));
+    CHECK(contains(error_for("passes = [\"restir_pt_initial\", \"restir_pt_temporal\", \"restir_pt_shade\", "
+                             "\"display\"]\n[restir_pt]\n" +
+                             std::string(initial_keys) + std::string(temporal_keys) + "cap_floor = 1.0\n"),
+                   "read only with restir_pt_duplication"));
+    // Out of range: a cap past 60, a floor above the cap, an exponent of 0.
+    const std::string with_map = "passes = [\"restir_pt_initial\", \"restir_pt_temporal\", \"restir_pt_shade\", "
+                                 "\"restir_pt_duplication\", \"display\"]\n[restir_pt]\n" +
+                                 std::string(initial_keys);
+    CHECK(contains(error_for(with_map + "confidence_cap = 61.0\n" + std::string(duplication_keys)), "confidence_cap"));
+    CHECK(contains(error_for(with_map + "confidence_cap = 10.0\ncap_floor = 11.0\ncap_exponent = 0.1\n"),
+                   "cap_floor"));
+    CHECK(contains(error_for(with_map + std::string(temporal_keys) + "cap_floor = 1.0\ncap_exponent = 0.0\n"),
+                   "cap_exponent"));
+    // A floor up to a cap the graph raised is taken.
+    const auto raised = parse_schedule(with_map + "confidence_cap = 40.0\ncap_floor = 30.0\ncap_exponent = 0.5\n",
+                                       "graph.toml");
+    CHECK(raised.restir_pt->cap_floor == 30.0f);
 }
 
 TEST_CASE("a graph runs one ReSTIR: ReSTIR PT's passes are refused beside ReSTIR DI's") {

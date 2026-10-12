@@ -33,8 +33,11 @@
 //
 // The shift, step by step, as shift_path() runs it:
 //
-//   1. The destination's primary hit y1 from its camera ray; none, or a
-//      light, fails (the source path had a surface to scatter from).
+//   1. The destination's primary hit y1, read from the G-buffer the
+//      initial pass wrote (contract 5's PrimaryHit, unpacked by
+//      unpack_primary_hit() below); none, or a light, fails (the source
+//      path had a surface to scatter from). Its primary footprint's
+//      threshold is the record's.
 //   2. Replay: at y_j, j from 1 to k - 2 (to d - 1 for k = 0), the source's
 //      step 6 numbers drawn at y_j's BSDF; the ray traced to y_{j+1}. Any
 //      ray that escapes or strikes a light before the end fails.
@@ -77,8 +80,8 @@
 // rough surface sits inside an absorbing medium, which no scene has. The
 // reconnection vertex is the stored point, quantized (contract 15).
 //
-// Cost: one primary ray; a ray, a surface's resolve and a BSDF sample per
-// replayed vertex; then a shadow ray and two BSDF evaluations for the
+// Cost: the destination's 48-byte record, unpacked; a ray, a surface's
+// resolve and a BSDF sample per replayed vertex; then a shadow ray and two BSDF evaluations for the
 // reconnection. Pairs that replay are compacted before they run
 // (metal/passes/restir_pt/restir_pt.metal.h), so a SIMD group that only
 // reconnects does not wait on one that replays (GPU.4).
@@ -89,6 +92,7 @@
 #include "core/contracts/bsdf.h"
 #include "core/contracts/path_reservoir.h"
 #include "core/contracts/path_reuse_settings.h"
+#include "core/contracts/primary_hit.h"
 #include "core/contracts/surface_interaction.h"
 #include "metal/acceleration/trace.metal.h"
 #include "metal/camera/thin_lens.metal.h"
@@ -142,24 +146,83 @@ inline Shifted failed() {
     return Shifted{false, float3(0.0f), 0.0f};
 }
 
-// The primary hit a camera ray finds, as the tree's walk finds it (path.metal.h,
-// steps 1 to 4 at surface 0): whether there is one that scatters, and it.
+// The destination's primary hit y1, as a shift starts from it: whether
+// there is one that scatters, it, and the primary footprint's threshold for
+// the criteria there (reconnection.metal.h).
 struct Primary {
     bool found;
     Shading here;
+    float threshold;
 };
 
-inline Primary primary_hit(path::Scene scene, CameraRay camera) {
+// The primary hit a camera ray finds, as the tree's walk finds it
+// (path.metal.h, steps 1 to 4 at surface 0), traced and resolved: what a
+// shift read before the G-buffer (contract 5's PrimaryHit), kept for the
+// test that holds the G-buffer's shift to it (tests/gpu/restir_pt_test.cpp).
+inline Primary primary_hit(path::Scene scene, CameraRay camera, float footprint) {
     const metal::raytracing::ray along(camera.origin, camera.direction, 0.0f, unbounded);
     const Hit hit = trace(scene.structure, scene.shapes(), along);
     if (!hit.found || light_at(scene.lights(), hit.primitive).is_light) {
-        return Primary{false, Shading{}};
+        return Primary{false, Shading{}, 0.0f};
     }
     const float3 point = along.origin + hit.t * along.direction;
     const serenity::contracts::SurfaceInteraction surface =
         surface_interaction(scene.shapes(), hit.primitive, point, along.direction);
-    return Primary{true, Shading{surface, resolve_bsdf(scene.materials(), scene.textures(), surface), -along.direction,
-                                 serenity::contracts::no_medium}};
+    const Shading here{surface, resolve_bsdf(scene.materials(), scene.textures(), surface), -along.direction,
+                       serenity::contracts::no_medium};
+    return Primary{here.bsdf.kind != serenity::contracts::BsdfKind::none, here,
+                   reconnection::footprint_threshold(footprint, camera.origin, point,
+                                                     to_float3(surface.geometric_normal))};
+}
+
+// contract 5's PrimaryHit, the G-buffer's record of a pixel's primary hit
+// `here` seen from the lens point `lens`, its footprint's `threshold`
+// (core/contracts/primary_hit.h), packed by the initial pass; and back, for
+// a shift. A pixel with no surface
+// a path starts from is no_primary_hit(): distance 0, kind none.
+inline serenity::contracts::PrimaryHit no_primary_hit() {
+    serenity::contracts::PrimaryHit record{};
+    record.sides = serenity::contracts::primary_no_medium << serenity::contracts::primary_interior_shift;
+    return record;
+}
+
+inline serenity::contracts::PrimaryHit pack_primary_hit(Shading here, float3 lens, float threshold) {
+    namespace c = serenity::contracts;
+    if (here.bsdf.kind == c::BsdfKind::none) {
+        return no_primary_hit();
+    }
+    const float3 at = to_float3(here.surface.position);
+    const float3 normal = to_float3(here.surface.geometric_normal);
+    const uint interior = here.surface.interior == c::no_medium ? c::primary_no_medium : here.surface.interior;
+    return c::PrimaryHit{here.surface.position,
+                         encode_unit(normal),
+                         pack_bsdf(here.bsdf),
+                         encode_unit(here.wo),
+                         metal::distance(lens, at),
+                         threshold,
+                         (here.surface.flags & c::primary_flags_mask) | (interior << c::primary_interior_shift)};
+}
+
+// The surface a shift rebuilds of a record: its point, its geometric normal
+// decoded and taken as the shading one too (contract 1: equal for every
+// shape so far), its flags and interior; its material, primitive and own
+// coordinates 0, which no step of a shift reads at y1 (shift_path() below).
+inline Primary unpack_primary_hit(serenity::contracts::PrimaryHit record) {
+    namespace c = serenity::contracts;
+    if (!(record.distance > 0.0f)) {
+        return Primary{false, Shading{}, 0.0f};
+    }
+    const c::Float3 normal = to_packed(decode_unit(record.normal));
+    const uint interior = record.sides >> c::primary_interior_shift;
+    c::SurfaceInteraction surface{};
+    surface.position = record.position;
+    surface.geometric_normal = normal;
+    surface.primitive = c::no_primitive;
+    surface.shading_normal = normal;
+    surface.flags = record.sides & c::primary_flags_mask;
+    surface.interior = interior == c::primary_no_medium ? c::no_medium : interior;
+    return Primary{true, Shading{surface, unpack_bsdf(record.bsdf), decode_unit(record.wo), c::no_medium},
+                   record.threshold};
 }
 
 // The vertex before the current one, as a pair test reads it.
@@ -417,26 +480,22 @@ inline Shifted replay_end(path::Scene scene, Shading here, float3 beta, Before b
     return shifted_to(beta * light_emitted(scene.lights(), glowing.light, point, -wi) * weight, 1.0f);
 }
 
-// The hybrid shift of `source` to the pixel whose camera ray is `camera`
-// (above).
-inline Shifted shift_path(path::Scene scene, CameraRay camera, serenity::contracts::PathReservoir source,
+// The hybrid shift of `source` to the pixel whose primary hit is
+// `destination` (above).
+inline Shifted shift_path(path::Scene scene, Primary destination, serenity::contracts::PathReservoir source,
                           serenity::contracts::PathReuseSettings settings) {
     namespace c = serenity::contracts;
     const uint d = c::path_length(source.flags);
     const uint k = c::path_rc(source.flags);
-    if (c::path_end(source.flags) == c::PathEnd::none || d < 2u || (k != 0u && (k < 2u || k > d))) {
+    if (c::path_end(source.flags) == c::PathEnd::none || d < 2u || (k != 0u && (k < 2u || k > d)) ||
+        !destination.found) {
         return failed();
     }
-    const Primary primary = primary_hit(scene, camera);
-    if (!primary.found) {
-        return failed();
-    }
-    Shading here = primary.here;
-    const float threshold = reconnection::footprint_threshold(
-        settings.footprint, camera.origin, to_float3(here.surface.position), to_float3(here.surface.geometric_normal));
+    Shading here = destination.here;
+    const float threshold = destination.threshold;
     const PathNumbers stream = source_stream(source);
     float3 beta = float3(1.0f);
-    Before before{camera.origin, float3(0.0f), 0.0f, true, 0.0f};  // the camera: never in a pair
+    Before before{float3(0.0f), float3(0.0f), 0.0f, true, 0.0f};  // the camera: never in a pair
     const uint last = k == 0u ? d - 1u : k - 1u;
     for (uint index = 1u; index < last; ++index) {
         // Step 2 at y_vertex, surface vertex - 1.

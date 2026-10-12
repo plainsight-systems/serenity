@@ -32,9 +32,11 @@
 #include "metal/passes/path/path.h"
 #include "metal/passes/preview/preview.h"
 #include "metal/passes/restir_initial/restir_initial.h"
+#include "metal/passes/restir_pt_duplication/restir_pt_duplication.h"
 #include "metal/passes/restir_pt_initial/restir_pt_initial.h"
 #include "metal/passes/restir_pt_shade/restir_pt_shade.h"
 #include "metal/passes/restir_pt_spatial/restir_pt_spatial.h"
+#include "metal/passes/restir_pt_temporal/restir_pt_temporal.h"
 #include "metal/passes/restir_shade/restir_shade.h"
 #include "metal/passes/restir_spatial/restir_spatial.h"
 #include "metal/passes/restir_temporal/restir_temporal.h"
@@ -231,16 +233,22 @@ namespace serenity::metal {
 // 8 it did.
 //
 // ReSTIR PT. A graph with its passes gets, at construction, its passes;
-// PathReuseImages (frame_images.h), made by prepare() at the frame's size;
-// and one static buffer of its settings and, with restir_pt_spatial, the
-// three reuse textures, built once on the CPU from the graph's sigma and a
-// fixed seed (core/sampling/pairing.h; 323 KB). Refused by the core, never
-// here: restir_pt_temporal and restir_pt_duplication, Phase 2's
-// (core/frame/schedule.h). Barriers as ReSTIR DI's: the queue barrier
-// before the initial pass, a dispatch barrier before each later ReSTIR PT
-// pass and, inside the spatial pass, between its four dispatches
-// (metal/passes/restir_pt_spatial/restir_pt_spatial.h). Its argument table
-// holds ReSTIR DI's 16 bindings, its passes' most being 16.
+// PathReuseImages (frame_images.h), made by prepare() at the frame's size
+// and, with restir_pt_temporal, asked whether the frame has a previous one
+// (frame::ReuseHistory, as ReSTIR DI's arrays are); one static buffer of its
+// settings and, with restir_pt_spatial, the three reuse textures, built
+// once on the CPU from the graph's sigma and a fixed seed
+// (core/sampling/pairing.h; 323 KB); and with restir_pt_temporal, a ring of
+// its reuse constants (contracts/path_reuse_settings.h, 80 bytes a frame:
+// the previous camera, whether there is a previous frame) and last frame's
+// transforms and glows, as ReSTIR DI's temporal merge has them. Refused at
+// construction by MetalError, as the G-buffer and the light tiles pack
+// them (I.5): a scene with 0xffff media or more, a material value outside
+// the packed BSDF's range, more than 65536 shapes or lights. Barriers as
+// ReSTIR DI's: the queue barrier before the initial pass, a dispatch
+// barrier before each later ReSTIR PT pass and, inside the passes, between
+// their dispatches (metal/passes/restir_pt_*/). Its argument table holds 26
+// bindings, its passes' most being 26 (passes/bindings.h).
 //
 // Cost of recording a ReSTIR frame, on the CPU, beyond the above: 128 bytes
 // of reuse constants, four pipeline binds and dispatches with their
@@ -311,7 +319,8 @@ public:
 private:
     using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass, RestirInitialPass,
                               RestirTemporalPass, RestirSpatialPass, RestirShadePass, RestirPtInitialPass,
-                              RestirPtSpatialPass, RestirPtShadePass>;
+                              RestirPtTemporalPass, RestirPtSpatialPass, RestirPtShadePass,
+                              RestirPtDuplicationPass>;
 
     // A pass of the schedule, with its kind (C.1).
     struct Step {
@@ -348,6 +357,7 @@ private:
     // None for a graph without its passes.
     std::unique_ptr<PathReuseImages> path_reuse_;
     std::unique_ptr<StaticArrays> path_static_;
+    std::unique_ptr<FrameArray> path_constants_;  // with restir_pt_temporal: contracts::PathReuseConstants
     std::unique_ptr<ReuseImages> reuse_;
     std::unique_ptr<FrameArray> reuse_constants_;
     // A temporal graph's last frame (above): its transforms and glows,

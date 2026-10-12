@@ -33,10 +33,17 @@
 // left; so for every direction both strategies draw, the weights sum to 1.
 // T is the medium's transmittance over the shadow ray (contract 12).
 //
-// Cost per vertex: M candidates of 4 numbers, a light's 76 bytes of loads,
-// a point on its cone, a BSDF evaluation each; one shadow ray. 32 at the
+// ReSTIR PT draws its candidates' lights from the frame's light tiles
+// (contracts/light_tile.h; Enhanced §6.1): draw_tile_candidate(), the same
+// draw from a 32-byte packed entry of the tile its pixel's block holds, in
+// place of four dependent reads of the light's record, sphere, transform
+// and glow (metal/lights/emitter.metal.h, place_light). Measured 4.7% faster for the initial pass on
+// the marbles (docs/research/2026-10-11-restir-pt-phase2.md), so kept.
+//
+// Cost per vertex: M candidates of 4 numbers, a tile entry's 32 bytes, a
+// point on its cone, a BSDF evaluation each; one shadow ray. 32 at the
 // primary hit, so the initial pass's cost is dominated by its first vertex
-// (measured: docs/research/2026-10-11-restir-pt-phase1.md).
+// (measured: docs/research/2026-10-11-restir-pt-phase1.md, phase2.md).
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -46,7 +53,6 @@
 #include "metal/acceleration/trace.metal.h"
 #include "metal/integrator/surface.metal.h"
 #include "metal/integrator/target.metal.h"
-#include "metal/light_selection/uniform_light.metal.h"
 #include "metal/lights/emitter.metal.h"
 #include "metal/materials/bsdf.metal.h"
 
@@ -91,17 +97,16 @@ inline float3 unshadowed(Shading here, serenity::contracts::LightReceived light)
                                   : float3(0.0f);
 }
 
-// A candidate drawn from `origin` with numbers `choose` (the light) and `u`
-// (its direction).
-inline Candidate draw_candidate(Lights lights, UniformLight selection, Shading here, float3 origin, float choose,
-                                float2 u) {
-    const SelectedIndex chosen = select_light_index(selection, choose);
-    const serenity::contracts::LightSample sample =
-        sample_light(lights, selection.records[chosen.index], origin, u);
-    Candidate candidate{chosen.index, sample, chosen.probability * sample.pdf, 0.0f};
+// A candidate drawn from a light tile's entry (contracts/light_tile.h):
+// the draw contract 3's sample_light() makes from the light the entry was
+// packed from, its density the selection's `probability` (1 / N) times the
+// cone's.
+inline Candidate draw_tile_candidate(serenity::contracts::LightTileEntry entry, float probability, Shading here,
+                                     float3 origin, float2 u) {
+    const serenity::contracts::LightSample sample = sample_tile_light(entry, origin, u);
+    Candidate candidate{entry.ids & serenity::contracts::tile_index_mask, sample, probability * sample.pdf, 0.0f};
     if (candidate.density > 0.0f) {
-        candidate.target =
-            luminance(unshadowed(here, to_float3(sample.direction), to_float3(sample.radiance)));
+        candidate.target = luminance(unshadowed(here, to_float3(sample.direction), to_float3(sample.radiance)));
     }
     return candidate;
 }

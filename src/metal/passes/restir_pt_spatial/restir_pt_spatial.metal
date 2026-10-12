@@ -1,14 +1,14 @@
-// ReSTIR PT's paired spatial reuse (restir_pt_spatial.h): steps 5 to 8 of
+// ReSTIR PT's paired spatial reuse (restir_pt_spatial.h): steps 8 to 11 of
 // metal/passes/restir_pt/restir_pt.metal.h, four kernels in order, each
 // behind a barrier.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
 
-#include "core/contracts/camera.h"
 #include "core/contracts/frame_constants.h"
 #include "core/contracts/path_reservoir.h"
 #include "core/contracts/path_reuse_settings.h"
+#include "core/contracts/primary_hit.h"
 #include "core/contracts/transform.h"
 #include "metal/passes/bindings.h"
 #include "metal/passes/restir_pt/restir_pt.metal.h"
@@ -35,12 +35,11 @@ Partner partner_of(constant ushort* pairing, uint2 pixel, uint t, uint frame, ui
 
 }  // namespace
 
-// Step 5: each pixel's path shifted to each similar partner where it
+// Step 8: each pixel's path shifted to each similar partner where it
 // reconnects at x2; the pairs that replay appended to the list, a SIMD
 // group's at once (restir_pt.metal.h). Every thread reaches the group's
 // scan: none returns before it.
 kernel void restir_pt_shift(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
-                            constant serenity::contracts::CameraData& camera [[buffer(binding::camera)]],
                             primitive_acceleration_structure structure [[buffer(binding::structure)]],
                             constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
                             constant float* sphere_glows [[buffer(binding::glows)]],
@@ -48,7 +47,7 @@ kernel void restir_pt_shift(constant serenity::contracts::FrameConstants& frame 
                             constant serenity::contracts::PathReuseSettings& settings [[buffer(binding::settings)]],
                             const device serenity::contracts::PathReservoir* reservoirs
                             [[buffer(binding::reservoirs)]],
-                            const device uint2* primaries [[buffer(binding::primaries)]],
+                            const device serenity::contracts::PrimaryHit* primaries [[buffer(binding::primaries)]],
                             constant ushort* pairing [[buffer(binding::pairing)]],
                             device float4* shifts [[buffer(binding::shifts)]],
                             device uint* replays [[buffer(binding::replays)]],
@@ -63,10 +62,11 @@ kernel void restir_pt_shift(constant serenity::contracts::FrameConstants& frame 
         const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
         const serenity::contracts::PathReservoir reservoir = reservoirs[i];
         const bool held = serenity::contracts::path_end(reservoir.flags) != serenity::contracts::PathEnd::none;
-        const uint2 own = primaries[i];
+        const serenity::contracts::PrimaryHit own = primaries[i];
         for (uint t = 0u; t < settings.neighbors; ++t) {
             const Partner partner = partner_of(pairing, pixel, t, frame.frame_index, size);
-            if (!partner.inside || !restir_pt::similar(own, primaries[partner.pixel.y * size.x + partner.pixel.x])) {
+            const uint j = partner.pixel.y * size.x + partner.pixel.x;
+            if (!partner.inside || !restir_pt::similar(own, primaries[j])) {
                 shifts[i * serenity::contracts::max_path_neighbors + t] = float4(0.0f, 0.0f, 0.0f, restir_pt::not_paired);
             } else if (!held) {
                 shifts[i * serenity::contracts::max_path_neighbors + t] = float4(0.0f);
@@ -74,8 +74,7 @@ kernel void restir_pt_shift(constant serenity::contracts::FrameConstants& frame 
                 appended[count++] = i * 4u + t;
             } else {
                 shifts[i * serenity::contracts::max_path_neighbors + t] = restir_pt::stored_shift(
-                    shift::shift_path(scene, restir_pt::primary_ray(camera, partner.pixel, frame.frame_index, size),
-                                      reservoir, settings));
+                    shift::shift_path(scene, shift::unpack_primary_hit(primaries[j]), reservoir, settings));
             }
         }
     }
@@ -92,30 +91,20 @@ kernel void restir_pt_shift(constant serenity::contracts::FrameConstants& frame 
     }
 }
 
-// The replay's indirect grid, as Metal reads MTLDispatchThreadsIndirectArguments:
-// the grid's size, then the threadgroup's; and the count it was made from.
-struct ReplayGrid {
-    uint grid[3];
-    uint group[3];
-    uint count;
-};
-
-constant constexpr uint replay_group = 64u;
-
-// Step 6, one thread: the list's length as the replay's grid, and the count
-// set back to 0 for the next frame's step 5, which the frame barrier orders
-// after this frame's step 7 reads the grid.
+// Steps 6 and 9, one thread: the list's length as the replay's grid, and
+// the count set back to 0 for the next list (the spatial reuse's, after
+// the temporal's, or the next frame's), which a barrier orders after the
+// replay that reads the grid.
 kernel void restir_pt_replay_grid(device atomic_uint* counter [[buffer(binding::counter)]],
-                                  device ReplayGrid* grid [[buffer(binding::dispatch)]]) {
+                                  device restir_pt::ReplayGrid* grid [[buffer(binding::dispatch)]]) {
     const uint count = atomic_load_explicit(counter, memory_order_relaxed);
     atomic_store_explicit(counter, 0u, memory_order_relaxed);
     // At least one thread: a grid of none is not one Metal takes.
-    *grid = ReplayGrid{{max(count, 1u), 1u, 1u}, {replay_group, 1u, 1u}, count};
+    *grid = restir_pt::ReplayGrid{{max(count, 1u), 1u, 1u}, {restir_pt::replay_group, 1u, 1u}, count};
 }
 
-// Step 7: the pairs that replay, one thread each.
+// Step 10: the pairs that replay, one thread each.
 kernel void restir_pt_replay(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
-                             constant serenity::contracts::CameraData& camera [[buffer(binding::camera)]],
                              primitive_acceleration_structure structure [[buffer(binding::structure)]],
                              constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
                              constant float* sphere_glows [[buffer(binding::glows)]],
@@ -123,10 +112,11 @@ kernel void restir_pt_replay(constant serenity::contracts::FrameConstants& frame
                              constant serenity::contracts::PathReuseSettings& settings [[buffer(binding::settings)]],
                              const device serenity::contracts::PathReservoir* reservoirs
                              [[buffer(binding::reservoirs)]],
+                             const device serenity::contracts::PrimaryHit* primaries [[buffer(binding::primaries)]],
                              constant ushort* pairing [[buffer(binding::pairing)]],
                              device float4* shifts [[buffer(binding::shifts)]],
                              const device uint* replays [[buffer(binding::replays)]],
-                             const device ReplayGrid* grid [[buffer(binding::dispatch)]],
+                             const device restir_pt::ReplayGrid* grid [[buffer(binding::dispatch)]],
                              uint n [[thread_position_in_grid]]) {
     if (n >= grid->count) {
         return;
@@ -139,11 +129,13 @@ kernel void restir_pt_replay(constant serenity::contracts::FrameConstants& frame
     const Partner partner = partner_of(pairing, pixel, t, frame.frame_index, size);
     const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
     shifts[i * serenity::contracts::max_path_neighbors + t] = restir_pt::stored_shift(shift::shift_path(
-        scene, restir_pt::primary_ray(camera, partner.pixel, frame.frame_index, size), reservoirs[i], settings));
+        scene, shift::unpack_primary_hit(primaries[partner.pixel.y * size.x + partner.pixel.x]), reservoirs[i],
+        settings));
 }
 
-// Step 8: the merge, one thread a pixel; its estimate added to the light
-// buffer (its own pixel's alone, so in place).
+// Step 11: the merge, one thread a pixel; its estimate added to the light
+// buffer (its own pixel's alone, so in place); with temporal reuse in the
+// graph, the path it keeps written as the frame's final reservoir.
 kernel void restir_pt_spatial(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
                               constant serenity::contracts::PathReuseSettings& settings [[buffer(binding::settings)]],
                               const device serenity::contracts::PathReservoir* reservoirs
@@ -151,6 +143,7 @@ kernel void restir_pt_spatial(constant serenity::contracts::FrameConstants& fram
                               constant ushort* pairing [[buffer(binding::pairing)]],
                               const device float4* shifts [[buffer(binding::shifts)]],
                               device float4* light [[buffer(binding::light)]],
+                              device serenity::contracts::PathReservoir* finals [[buffer(binding::finals)]],
                               uint2 pixel [[thread_position_in_grid]]) {
     const uint2 size = uint2(frame.width, frame.height);
     if (pixel.x >= size.x || pixel.y >= size.y) {
@@ -166,6 +159,14 @@ kernel void restir_pt_spatial(constant serenity::contracts::FrameConstants& fram
     }
     const float own_target = luminance(to_float3(own.integrand));
     const float own_count = float(serenity::contracts::path_count(own.flags));
+    // The path kept for the next frame (path_merge.metal.h): picked by the
+    // scalar weights, k + 1 times theirs, which the shared factor leaves
+    // the pick's odds alone; only the graph with temporal reuse reads it.
+    const bool keeps = settings.confidence_cap > 0.0f;
+    PathNumbers numbers = purpose_numbers(path_numbers(pixel, frame.frame_index), restir_pt::spatial_pick_first);
+    float weight_sum = 0.0f;
+    float count_sum = own_count;
+    serenity::contracts::PathReservoir kept = own;
     float canonical = 1.0f;
     float3 sum = float3(0.0f);
     for (uint t = 0u; t < settings.neighbors && k > 0u; ++t) {
@@ -177,6 +178,7 @@ kernel void restir_pt_spatial(constant serenity::contracts::FrameConstants& fram
         const uint j = partner.pixel.y * size.x + partner.pixel.x;
         const serenity::contracts::PathReservoir theirs = reservoirs[j];
         const float their_count = float(serenity::contracts::path_count(theirs.flags));
+        count_sum += their_count;
         canonical += path_merge::canonical_share(own_target, own_count, luminance(outward.xyz) * outward.w,
                                                  their_count, k);
         const float4 inward = shifts[j * slots + t];  // the partner's path here
@@ -184,8 +186,23 @@ kernel void restir_pt_spatial(constant serenity::contracts::FrameConstants& fram
             const float m = path_merge::neighbor_weight(luminance(to_float3(theirs.integrand)), their_count,
                                                         luminance(inward.xyz) * inward.w, own_count, k);
             sum += m * inward.xyz * inward.w * theirs.weight;
+            if (keeps && stream_pick(weight_sum, m * luminance(inward.xyz) * inward.w * theirs.weight,
+                                     next_number(numbers))) {
+                kept = path_merge::shifted_reservoir(theirs, inward.xyz, inward.w);
+            }
         }
     }
     sum += canonical * restir_pt::estimate(own);
     light[i] += float4(sum / float(k + 1u), 0.0f);
+    if (!keeps) {
+        return;
+    }
+    // The canonical path last, its own odds the same in any order.
+    if (stream_pick(weight_sum, canonical * own_target * own.weight, next_number(numbers))) {
+        kept = own;
+    }
+    const float target = luminance(to_float3(kept.integrand));
+    kept.weight = target > 0.0f && weight_sum > 0.0f ? weight_sum / (float(k + 1u) * target) : 0.0f;
+    kept.flags = path_merge::with_count(kept.flags, count_sum);
+    finals[i] = kept;
 }

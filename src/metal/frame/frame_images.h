@@ -267,37 +267,66 @@ private:
     std::array<Array, 2> final_reservoirs_;
 };
 
-// ReSTIR PT's arrays between its passes (metal/passes/restir_pt/
-// restir_pt.metal.h states what each pass reads and writes of them), a
-// graph with its passes only, private to the GPU:
+// ReSTIR PT's arrays between its passes and across frames (metal/passes/
+// restir_pt/restir_pt.metal.h states what each pass reads and writes of
+// them), a graph with its passes only, private to the GPU:
 //
-//   reservoirs   a path reservoir a pixel (contract 15), 64 bytes;
-//   primaries    each pixel's primary hit for the merge's similarity test,
-//                8 bytes;
-//   light        the frame's light buffer, a float4 a pixel, 16 bytes;
+//   reservoirs          a path reservoir a pixel (contract 15), 64 bytes:
+//                       the initial pass's, merged in place by the temporal
+//                       reuse where a spatial reuse follows;
+//   primaries           each pixel's primary hit (contract 5's PrimaryHit),
+//                       48 bytes; two, ping-ponged, with temporal reuse:
+//                       this frame's and last frame's (MEM.4);
+//   light               the frame's light buffer, a float4 a pixel, 16 bytes;
+//   light tiles         the frame's (contracts/light_tile.h), 4 MB whatever
+//                       the size;
 //
-// and with restir_pt_spatial:
+// with restir_pt_spatial or restir_pt_temporal:
 //
-//   shifts       each pixel's path shifted to each of its 3 partners, F and
-//                the Jacobian, 48 bytes;
-//   replays      the pairs that replay, at most 3 a pixel, 12 bytes;
-//   counter      their count and the replay's indirect grid, in one small
-//                buffer the CPU zeroes once (shared storage, 128 bytes): the
-//                grid pass sets the count back to 0 each frame.
+//   shifts              each pixel's path shifted to each of its 3 partners,
+//                       or the temporal reuse's two shifts, F and the
+//                       Jacobian, 48 bytes;
+//   replays             the shifts that replay, at most 3 a pixel, 12 bytes;
+//   counter             their count and the replay's indirect grid, in one
+//                       small buffer the CPU zeroes once (shared storage, 128
+//                       bytes): the grid pass sets the count back to 0;
 //
-// 88 bytes a pixel without the spatial pass, 148 with it: 1.14 GB at
-// 3456 x 2234, 286 MB at 1728 x 1117. One set, as ReuseImages: the
-// renderer's queue barrier keeps a frame from writing what the frame before
-// still reads. No history in Phase 1: made at the frame's size, remade when
-// it changes, settled first.
+// and with restir_pt_temporal:
+//
+//   finals              the frame's final reservoirs, 64 bytes, two,
+//                       ping-ponged: what the last merge writes and the next
+//                       frame's temporal reuse reads as last frame's;
+//   previous positions  where each pixel's primary hit was last frame, a
+//                       Float3, 12 bytes;
+//   previous pixels     the temporal input's pixel, 4 bytes;
+//   duplication         the duplication map, a float a pixel: written after
+//                       a frame, read by the next frame's temporal reuse
+//                       before this frame's map is written over it, so one.
+//
+// Which half of a ping-pong is this frame's is the frame's index's parity,
+// as ReuseImages's: the history holds only consecutive frames.
+//
+// The history: as ReuseImages keeps ReSTIR DI's, by frame::ReuseHistory,
+// with temporal reuse only; prepare() returns the frames it holds before
+// this one, 0 where it starts over (the temporal reuse then merges
+// nothing). Made at the frame's size, remade when it changes, settled
+// first; nothing cleared when made, since a frame that starts the history
+// over reads no last frame's half, and every pass writes every pixel of
+// what it writes.
+//
+// Bytes a pixel: 128 for the initial pass alone; 188 with spatial reuse;
+// with both reuses, 64 + 2 x 48 + 16 + 48 + 12 + 2 x 64 + 12 + 4 + 4 = 384,
+// 2.96 GB at 3456 x 2234 and 741 MB at 1728 x 1117.
 //
 // Throws MetalError if the frame's size is not one Metal makes an image of,
-// or the device cannot make a buffer.
+// the device cannot make a buffer, or the core's history rule refuses a
+// frame.
 class PathReuseImages {
 public:
     enum class Spatial { none, merged };
+    enum class Temporal { none, merged };
 
-    PathReuseImages(const Device& device, Submission& submission, Spatial spatial);
+    PathReuseImages(const Device& device, Submission& submission, Spatial spatial, Temporal temporal);
 
     PathReuseImages(const PathReuseImages&) = delete;
     PathReuseImages& operator=(const PathReuseImages&) = delete;
@@ -305,19 +334,30 @@ public:
     PathReuseImages& operator=(PathReuseImages&&) = delete;
     ~PathReuseImages() = default;
 
-    // The arrays at `size`, made or remade.
-    void prepare(frame::Extent size);
+    // Ready for frame `inputs` at `size`: the arrays made or remade, and
+    // the frames the history holds before this one (always 0 without
+    // temporal reuse).
+    std::uint64_t prepare(const frame::FrameInputs& inputs, frame::Extent size);
 
+    // The arrays frame `index` reads and writes: this frame's halves and
+    // last frame's by its parity; 0 for what the graph does not have.
     struct Addresses {
         MTL::GPUAddress reservoirs = 0;
         MTL::GPUAddress primaries = 0;
+        MTL::GPUAddress last_primaries = 0;
         MTL::GPUAddress light = 0;
         MTL::GPUAddress shifts = 0;
         MTL::GPUAddress replays = 0;
         MTL::GPUAddress counter = 0;
         MTL::GPUAddress grid = 0;
+        MTL::GPUAddress light_tiles = 0;
+        MTL::GPUAddress finals = 0;
+        MTL::GPUAddress last_finals = 0;
+        MTL::GPUAddress previous_positions = 0;
+        MTL::GPUAddress previous_pixels = 0;
+        MTL::GPUAddress duplication = 0;
     };
-    Addresses addresses() const noexcept;
+    Addresses addresses(std::uint64_t index) const noexcept;
 
     // Where the indirect grid is in the counter's buffer: past the count,
     // at an alignment any binding takes.
@@ -334,13 +374,20 @@ private:
     NS::SharedPtr<MTL::Device> device_;
     Submission& submission_;
     Spatial spatial_;
+    Temporal temporal_;
     frame::Extent size_;
+    frame::ReuseHistory history_;  // asked only with temporal reuse
     Array reservoirs_;
-    Array primaries_;
+    std::array<Array, 2> primaries_;  // [0] for even frames; [0] alone without temporal reuse
     Array light_;
     Array shifts_;
     Array replays_;
     Array counter_;  // shared storage, zeroed once
+    Array light_tiles_;  // contracts/light_tile.h: a frame's, whatever its size
+    std::array<Array, 2> finals_;
+    Array previous_positions_;
+    Array previous_pixels_;
+    Array duplication_;
 };
 
 }  // namespace serenity::metal

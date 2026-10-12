@@ -160,6 +160,16 @@ enum Buffer : unsigned {
     counter = 13,    // their count
     dispatch = 14,   // the replay's indirect grid
     non_finite = 15, // the frame's count of samples not finite (metal/film/non_finite.h)
+    light_tiles = 16,  // the frame's light tiles (contracts/light_tile.h)
+    path_constants = 17,      // contracts::PathReuseConstants: last frame's camera, whether it is history
+    last_primaries = 18,      // last frame's primary hits
+    finals = 19,              // this frame's final path reservoirs, which the next frame's temporal reuse reads
+    last_finals = 20,         // last frame's
+    previous_positions = 21,  // where each pixel's primary hit was last frame, a Float3
+    previous_pixels = 22,     // the temporal input's pixel, a uint a pixel
+    duplication = 23,         // the duplication map, D a pixel
+    last_transforms = 24,     // last frame's shape transforms
+    last_glows = 25,          // and glows
 };
 enum Texture : unsigned { accumulated = 0 };  // the shade's: also the frame's radiance, as the path pass's
 }  // namespace restir_pt

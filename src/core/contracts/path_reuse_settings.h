@@ -40,9 +40,26 @@
 //                    Finite, within [0.8, 32] with restir_pt_spatial (one
 //                    shuffle is the least; a texture of 210 wraps links past
 //                    105 pixels); 0 without it.
+//   confidence_cap   c_cap, the most a temporal input counts for, as a
+//                    multiple of the pixel's own initial reservoir's count
+//                    (Lin et al. 2022's temporal history length, 20; ReSTIR
+//                    PT Enhanced §5's c_Cap^Default): a path kept for many
+//                    frames weighs as at most this many frames' trees. Finite,
+//                    within [1, 60] with restir_pt_temporal (a reservoir's
+//                    count is 8 bits, and a spatial merge sums four:
+//                    4 (1 + 60) < 256); 0 without it.
+//   cap_floor        c_min, the cap where every pixel of a temporal input's
+//                    17 x 17 neighborhood holds a copy of its path (Enhanced
+//                    §5: the duplication map's D = 1). Finite, within [0,
+//                    confidence_cap] with restir_pt_duplication; 0 without it.
+//   cap_exponent     alpha, how fast the cap falls from confidence_cap to
+//                    cap_floor as D grows: c_cap = lerp(confidence_cap,
+//                    cap_floor, D^alpha) (Enhanced §5). Finite, within (0, 1]
+//                    with restir_pt_duplication; 0 without it.
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
+#include "core/contracts/camera.h"
 #include "core/contracts/shared_layout.h"
 
 namespace serenity {
@@ -54,6 +71,12 @@ SERENITY_CONSTANT float max_footprint = 10.0f;
 SERENITY_CONSTANT uint32_t max_path_neighbors = 3;
 SERENITY_CONSTANT float min_pairing_sigma = 0.8f;
 SERENITY_CONSTANT float max_pairing_sigma = 32.0f;
+SERENITY_CONSTANT float max_confidence_cap = 60.0f;
+
+// The duplication map's threadgroup, pixels on a side (metal/reuse/
+// duplication.metal.h), which its pass dispatches whole: named here, where
+// the host and the shader both read it.
+SERENITY_CONSTANT uint32_t duplication_group = 24u;
 
 // The reuse textures' widths, one per neighbor (Enhanced §3.2: three
 // different sizes, so their repeats do not line up), in the order the
@@ -70,11 +93,30 @@ struct PathReuseSettings {
     float roughness;
     uint32_t neighbors;
     float sigma;
-    uint32_t padding[2];
+    float confidence_cap;
+    float cap_floor;
+    float cap_exponent;
+    uint32_t padding[3];
 };
 
-static_assert(sizeof(PathReuseSettings) == 32,
-              "PathReuseSettings must be the same 32 bytes on the host and in shaders");
+static_assert(sizeof(PathReuseSettings) == 48,
+              "PathReuseSettings must be the same 48 bytes on the host and in shaders");
+
+// What ReSTIR PT's temporal reuse is told each frame, beside its settings,
+// as ReSTIR DI's reuse constants (contracts/reuse_constants.h): the
+// previous frame's camera, framed for this frame's size, and whether that
+// frame is this one's history (1) or the history starts over here (0).
+struct PathReuseConstants {
+    CameraData previous_camera;
+    uint32_t previous;
+    uint32_t padding[3];
+};
+
+static_assert(sizeof(PathReuseConstants) == 80,
+              "PathReuseConstants must be the same 80 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<PathReuseConstants>, "PathReuseConstants is written to the GPU as bytes");
+#endif
 #if !defined(__METAL_VERSION__)
 static_assert(std::is_trivially_copyable_v<PathReuseSettings>, "PathReuseSettings is written to the GPU as bytes");
 #endif

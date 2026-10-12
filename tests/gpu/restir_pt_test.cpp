@@ -1,5 +1,5 @@
-// ReSTIR PT, Phase 1 (metal/passes/restir_pt/restir_pt.metal.h), on the
-// GPU, as the passes run it:
+// ReSTIR PT, Phases 1 and 2 (metal/passes/restir_pt/restir_pt.metal.h), on
+// the GPU, as the passes run it:
 //
 //   - initial sampling alone converges to the closed forms the path tests
 //     hold the path tracer to (tests/gpu/path_test.cpp), within their
@@ -7,8 +7,17 @@
 //     glass furnaces (the sky reached after one bounce, and only through
 //     delta lobes);
 //   - spatial reuse keeps those means: the floor under a firefly, and the
-//     glass furnace, whose paths shift by replay alone;
-//   - the same inputs give the same image, to the bit;
+//     glass furnace, whose paths shift by replay alone; and temporal reuse,
+//     alone and with spatial reuse and the duplication map, as the graph
+//     runs it;
+//   - the same inputs give the same image, to the bit, with each reuse;
+//   - the temporal merge counts last frame's path at most c_cap times the
+//     own tree's count, c_cap lowered by the duplication score as Enhanced
+//     §5 states, and weighs and keeps by Talbot MIS;
+//   - the duplication map counts copies of a pixel's path in its 17 x 17
+//     neighborhood, on constructed images;
+//   - a shift from the G-buffer's record gives the shift from the retraced
+//     primary hit, to the record's packing;
 //   - the reconnection criteria take and refuse the pairs they should: a
 //     mirror before x_k refused, a far diffuse pair taken, a pair a
 //     centimeter apart taken under a near camera and refused under a far
@@ -37,6 +46,7 @@
 
 #include "core/camera/thin_lens.h"
 #include "core/contracts/bsdf.h"
+#include "core/contracts/light_tile.h"
 #include "core/contracts/path_reservoir.h"
 #include "core/contracts/path_reuse_settings.h"
 #include "core/frame/graph_file.h"
@@ -74,6 +84,16 @@ constexpr const char* with_spatial =
     "passes = [\"restir_pt_initial\", \"restir_pt_spatial\", \"restir_pt_shade\", \"display\"]\n"
     "[restir_pt]\nnee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = 0.2\nneighbors = 3\n"
     "sigma = 16.0\n";
+constexpr const char* temporal_alone =
+    "passes = [\"restir_pt_initial\", \"restir_pt_temporal\", \"restir_pt_shade\", \"display\"]\n"
+    "[restir_pt]\nnee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = 0.2\n"
+    "confidence_cap = 20.0\n";
+// graphs/restir_pt.toml's, presenting with display.
+constexpr const char* whole_graph =
+    "passes = [\"restir_pt_initial\", \"restir_pt_temporal\", \"restir_pt_spatial\", \"restir_pt_shade\", "
+    "\"restir_pt_duplication\", \"display\"]\n"
+    "[restir_pt]\nnee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = 0.2\nneighbors = 3\n"
+    "sigma = 16.0\nconfidence_cap = 20.0\ncap_floor = 1.0\ncap_exponent = 0.1\n";
 
 // A renderer of a ReSTIR PT graph over a scene, at a size, its frames
 // accumulating from frame 0 (as path_test.cpp's Rig).
@@ -204,6 +224,16 @@ TEST_CASE("ReSTIR PT's spatial reuse keeps a still lit floor's mean, and the gla
     check_furnace("kind = \"dielectric\"\nior = 1.5\n", 512, with_spatial);
 }
 
+TEST_CASE("ReSTIR PT's temporal reuse keeps a still lit floor's mean, and the glass furnace's") {
+    // As the spatial reuse's test, the same tolerances: temporal reuse
+    // alone, and the whole graph, the duplication map lowering the cap. The
+    // map's bias (Enhanced §5) is where copies crowd, which a floor under
+    // two fireflies, resampled from the start, has few of.
+    check_floor(lit_floor(one_firefly + firefly("[-1.2, 1.5, 0.4]")), 512, temporal_alone);
+    check_floor(lit_floor(one_firefly + firefly("[-1.2, 1.5, 0.4]")), 512, whole_graph);
+    check_furnace("kind = \"dielectric\"\nior = 1.5\n", 512, whole_graph);
+}
+
 TEST_CASE("ReSTIR PT: the same inputs give the same image, to the bit, with its spatial reuse at work") {
     // A floor seen from above under six fireflies and beside a glass ball,
     // so most pixels' partners are similar and merged, and some paths
@@ -237,6 +267,26 @@ TEST_CASE("ReSTIR PT: the same inputs give the same image, to the bit, with its 
     // And the merge is at work: the same frames without it differ.
     INFO(merged << " of " << first.size() << " values changed by the merge");
     CHECK(merged > first.size() / 4);
+
+    // The whole graph, temporal reuse and the duplication map at work over
+    // four frames: the same to the bit, and not spatial reuse's image.
+    Rig c(text, image, whole_graph);
+    Rig d(text, image, whole_graph);
+    (void)c.render(4);
+    (void)d.render(4);
+    (void)a.render(1);
+    const std::vector<float> third = c.accumulated();
+    const std::vector<float> fourth = d.accumulated();
+    const std::vector<float> spatial_only = a.accumulated();
+    std::size_t differ_whole = 0;
+    std::size_t reused = 0;
+    for (std::size_t i = 0; i < third.size(); ++i) {
+        differ_whole += std::memcmp(&third[i], &fourth[i], sizeof(float)) != 0 ? 1u : 0u;
+        reused += third[i] != spatial_only[i] ? 1u : 0u;
+    }
+    CHECK(differ_whole == 0u);
+    INFO(reused << " of " << third.size() << " values changed by temporal reuse");
+    CHECK(reused > third.size() / 4);
 }
 
 namespace {
@@ -377,6 +427,7 @@ std::vector<tests::ShiftResult> shift(const std::string& text, frame::Extent siz
     metal::SceneAcceleration acceleration(device, submission, description.shapes, {});
     metal::Library library(device, metallib::probes);
     const auto pipeline = library.compute_pipeline("pt_shift");
+    const auto fill = library.compute_pipeline("pt_light_tiles");
     const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
     MTL::Device* mtl = device.handle();
     const contracts::CameraData camera = camera::shader_form(description.camera, size);
@@ -401,8 +452,10 @@ std::vector<tests::ShiftResult> shift(const std::string& text, frame::Extent siz
     const auto framed = buffer_of(&camera, sizeof(camera));
     const auto set = buffer_of(&settings, sizeof(settings));
     const auto counted = buffer_of(&count, sizeof(count));
+    constexpr std::size_t tile_entries = std::size_t{contracts::light_tiles} * contracts::light_tile_size;
+    const auto tiles = buffer_of(nullptr, tile_entries * sizeof(contracts::LightTileEntry));
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-    descriptor->setMaxBufferBindCount(9);
+    descriptor->setMaxBufferBindCount(10);
     NS::Error* error = nullptr;
     auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
     REQUIRE(table);
@@ -418,7 +471,11 @@ std::vector<tests::ShiftResult> shift(const std::string& text, frame::Extent siz
     table->setAddress(transforms.address(slot.slot), 6);
     table->setAddress(set->gpuAddress(), 7);
     table->setAddress(counted->gpuAddress(), 8);
+    table->setAddress(tiles->gpuAddress(), 9);
     encoder->setArgumentTable(table.get());
+    encoder->setComputePipelineState(fill.get());
+    encoder->dispatchThreads(MTL::Size(tile_entries, 1, 1), MTL::Size(fill->threadExecutionWidth(), 1, 1));
+    encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
     encoder->setComputePipelineState(pipeline.get());
     encoder->dispatchThreads(MTL::Size(queries.size(), 1, 1), MTL::Size(pipeline->threadExecutionWidth(), 1, 1));
     encoder->endEncoding();
@@ -482,10 +539,13 @@ TEST_CASE("a path shifted to its own pixel keeps its F and has a Jacobian of 1, 
                        : at_light ? (contracts::path_end(r.flags) == contracts::PathEnd::nee ? forced : struck)
                                   : (contracts::path_lobe_at(r.flags) == 0u ? nee_at_k : bsdf_at_k);
         ++held[c];
-        // To the stored point's rounding (contract 15), which a glossy x_k
-        // magnifies in its density: 1%.
-        const bool same = r.succeeded == 1u && std::abs(r.jacobian - 1.0) < 1.0e-2 &&
-                          std::abs(luminance(r.shifted) - luminance(r.stored)) <= 1.0e-2 * luminance(r.stored);
+        // To the stored point's rounding (contract 15) and the G-buffer's
+        // packing of y1 (contract 5: its normal to 10^-4 radians, which
+        // turns every replayed direction after it by as much), which a
+        // glossy x_k magnifies in its density and a deep replay carries
+        // along: 2% (1% before the G-buffer, the retraced y1 exact).
+        const bool same = r.succeeded == 1u && std::abs(r.jacobian - 1.0) < 2.0e-2 &&
+                          std::abs(luminance(r.shifted) - luminance(r.stored)) <= 2.0e-2 * luminance(r.stored);
         off[c] += same ? 0u : 1u;
     }
     for (int c = 0; c < cases; ++c) {
@@ -553,4 +613,249 @@ TEST_CASE("a reconnection's Jacobian is supplemental eq. 4's on a floor under a 
         ++checked;
     }
     CHECK(checked > 500u);
+}
+
+namespace {
+
+// A reservoir holding a path of `luminance` grey F, weight W, count M,
+// drawn at (pixel, frame), ending on NEE's light at x2 (k = d = 2), its
+// cached Jacobian denominator `jacobian`.
+contracts::PathReservoir held_path(float f, float weight, std::uint32_t count, std::uint32_t pixel,
+                                   std::uint32_t frame, float jacobian) {
+    contracts::PathReservoir r{};
+    r.weight = weight;
+    r.integrand = contracts::Float3{f, f, f};
+    r.seed_pixel = pixel;
+    r.seed_frame = frame;
+    r.flags = contracts::pack_path_flags(contracts::PathShape{count, 2u, 2u, contracts::PathEnd::nee, 0u, 0u, 0u});
+    r.jacobian = jacobian;
+    return r;
+}
+
+}  // namespace
+
+TEST_CASE("the temporal merge counts last frame's path at most c_cap times the own tree, c_cap lowered by "
+          "duplication, and weighs by Talbot MIS") {
+    // Grey F, so p-hat is F's value. The own path: F 2, W 0.5, count 1,
+    // shifted there to F 1.5 with J 0.8. Last frame's: F 3, W 0.25, count
+    // 40, shifted here to F 2.5 with J 1.2 (its cached denominator 0.7).
+    const contracts::PathReservoir own = held_path(2.0f, 0.5f, 1u, 11u, 100u, 0.3f);
+    const contracts::PathReservoir last = held_path(3.0f, 0.25f, 40u, 22u, 99u, 0.7f);
+    const auto query = [&](float cap, float floor, float exponent, float duplication, float u1) {
+        tests::PathMergeQuery q{};
+        q.own = own;
+        q.last = last;
+        q.here = contracts::Float3{2.5f, 2.5f, 2.5f};
+        q.here_jacobian = 1.2f;
+        q.there = contracts::Float3{1.5f, 1.5f, 1.5f};
+        q.there_jacobian = 0.8f;
+        q.cap = cap;
+        q.floor = floor;
+        q.exponent = exponent;
+        q.duplication = duplication;
+        q.u0 = 0.5f;
+        q.u1 = u1;
+        return q;
+    };
+    // c_cap with Enhanced's settings at D = 0.25: lerp(20, 1, 0.25^0.1).
+    const double quarter_cap = 20.0 + (1.0 - 20.0) * std::pow(0.25, 0.1);
+    struct Case {
+        tests::PathMergeQuery query;
+        double cap;  // c_cap expected
+    };
+    const std::vector<Case> cases = {
+        {query(20.0f, 0.0f, 0.0f, 0.9f, 0.99f), 20.0},  // no duplication map: the cap itself, D unread
+        {query(20.0f, 1.0f, 0.1f, 0.0f, 0.99f), 20.0},  // D = 0
+        {query(20.0f, 1.0f, 0.1f, 1.0f, 0.99f), 1.0},   // D = 1: the floor
+        {query(20.0f, 1.0f, 0.1f, 0.25f, 0.99f), quarter_cap},
+        {query(20.0f, 1.0f, 0.1f, 0.25f, 0.0f), quarter_cap},  // the second number keeps last's path
+    };
+    std::vector<tests::PathMergeQuery> queries;
+    for (const Case& c : cases) {
+        queries.push_back(c.query);
+    }
+    tests::ProbeRunner probe;
+    const auto results = probe.run<tests::PathMergeResult>(
+        "pt_temporal_merge", queries.size(),
+        {tests::Binding::of(queries), tests::Binding::of(static_cast<std::uint32_t>(queries.size()))});
+    for (std::size_t i = 0; i < cases.size(); ++i) {
+        const double cap = cases[i].cap;
+        const tests::PathMergeResult& r = results[i];
+        INFO("case " << i << ": c_cap " << cap);
+        CHECK(r.cap == doctest::Approx(cap).epsilon(1.0e-5));
+        // Talbot (path_merge.metal.h), in double: c_c = 1, c_t = min(40, c_cap).
+        const double c_own = 1.0;
+        const double c_last = std::min(40.0, cap * c_own);
+        const double m_own = c_own * 2.0 / (c_own * 2.0 + c_last * 1.5 * 0.8);
+        const double m_last = c_last * 3.0 / (c_last * 3.0 + c_own * 2.5 * 1.2);
+        const double w_own = m_own * 2.0 * 0.5;
+        const double w_last = m_last * 2.5 * 1.2 * 0.25;
+        CHECK(r.estimate.x == doctest::Approx(w_own + w_last).epsilon(1.0e-5));
+        // Its count: c_c + c_t, rounded, never last's 40 beside the own 1.
+        CHECK(contracts::path_count(r.kept.flags) == static_cast<std::uint32_t>(std::lround(c_own + c_last)));
+        // The kept path: last's where the second number is under its share
+        // of the sum, its F the shifted one, its denominator times J.
+        const bool last_kept = queries[i].u1 * (w_own + w_last) < w_last;
+        CHECK(r.kept.seed_pixel == (last_kept ? 22u : 11u));
+        const double kept_f = last_kept ? 2.5 : 2.0;
+        CHECK(r.kept.integrand.x == doctest::Approx(kept_f));
+        CHECK(r.kept.jacobian == doctest::Approx(last_kept ? 0.7 * 1.2 : 0.3));
+        // W = the weights' sum over the kept path's p-hat: F W is the sum.
+        CHECK(r.kept.weight * kept_f == doctest::Approx(w_own + w_last).epsilon(1.0e-5));
+    }
+    CHECK(contracts::path_count(results[2].kept.flags) == 2u);  // the floor's: 1 + 1
+}
+
+namespace {
+
+// The duplication map of a `size` image of reservoirs, through the pass's
+// functions, dispatched as the pass dispatches them.
+std::vector<float> duplication_map(const std::vector<contracts::PathReservoir>& image, frame::Extent size) {
+    metal::Device device;
+    metal::Submission submission(device);
+    metal::Library library(device, metallib::probes);
+    const auto pipeline = library.compute_pipeline("pt_duplication");
+    REQUIRE(pipeline->maxTotalThreadsPerThreadgroup() >= contracts::duplication_group * contracts::duplication_group);
+    const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+    MTL::Device* mtl = device.handle();
+    const auto buffer_of = [&](const void* bytes, std::size_t size_of) {
+        auto buffer = NS::TransferPtr(mtl->newBuffer(std::max<std::size_t>(size_of, 16), MTL::ResourceStorageModeShared));
+        REQUIRE(buffer);
+        std::memset(buffer->contents(), 0, std::max<std::size_t>(size_of, 16));
+        if (bytes != nullptr) {
+            std::memcpy(buffer->contents(), bytes, size_of);
+        }
+        submission.make_resident(buffer.get());
+        return buffer;
+    };
+    const std::uint32_t extent[2] = {size.width, size.height};
+    const auto out = buffer_of(nullptr, image.size() * sizeof(float));
+    const auto in = buffer_of(image.data(), image.size() * sizeof(contracts::PathReservoir));
+    const auto sized = buffer_of(extent, sizeof(extent));
+    auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
+    descriptor->setMaxBufferBindCount(3);
+    NS::Error* error = nullptr;
+    auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
+    REQUIRE(table);
+    table->setAddress(out->gpuAddress(), 0);
+    table->setAddress(in->gpuAddress(), 1);
+    table->setAddress(sized->gpuAddress(), 2);
+    const metal::FrameSlot slot = submission.begin();
+    MTL4::ComputeCommandEncoder* encoder = slot.commands->computeCommandEncoder();
+    REQUIRE(encoder != nullptr);
+    encoder->setArgumentTable(table.get());
+    encoder->setComputePipelineState(pipeline.get());
+    constexpr std::uint32_t group = contracts::duplication_group;
+    encoder->dispatchThreadgroups(MTL::Size((size.width + group - 1) / group, (size.height + group - 1) / group, 1),
+                                  MTL::Size(group, group, 1));
+    encoder->endEncoding();
+    submission.commit();
+    (void)submission.wait_until_complete(slot.sequence);
+    std::vector<float> map(image.size());
+    std::memcpy(map.data(), out->contents(), map.size() * sizeof(float));
+    return map;
+}
+
+}  // namespace
+
+TEST_CASE("the duplication map counts the copies of each pixel's path in its 17 x 17 neighborhood") {
+    // 70 x 50, so groups at the right and bottom are cut by the image.
+    constexpr frame::Extent size{70, 50};
+    const auto at = [&](std::uint32_t x, std::uint32_t y) { return std::size_t{y} * size.width + x; };
+    std::vector<contracts::PathReservoir> image(std::size_t{size.width} * size.height);
+    for (std::uint32_t y = 0; y < size.height; ++y) {
+        for (std::uint32_t x = 0; x < size.width; ++x) {
+            image[at(x, y)] = held_path(1.0f, 1.0f, 1u, x + 65536u * y, 7u, 1.0f);  // each its own path
+        }
+    }
+    // A 5 x 5 block of copies of one path.
+    for (std::uint32_t y = 10; y < 15; ++y) {
+        for (std::uint32_t x = 10; x < 15; ++x) {
+            image[at(x, y)] = held_path(1.0f, 1.0f, 1u, 12u + 65536u * 12u, 7u, 1.0f);
+        }
+    }
+    // Beside it, a pixel holding the same stream with a weight of 0: no
+    // path, no one's copy.
+    image[at(16, 12)] = held_path(1.0f, 0.0f, 1u, 12u + 65536u * 12u, 7u, 1.0f);
+    // Three copies in a row 8 apart: the middle sees both, each end the
+    // middle only (17 apart is past the window).
+    for (const std::uint32_t x : {40u, 48u, 56u}) {
+        image[at(x, 30)] = held_path(1.0f, 1.0f, 1u, 3u, 3u, 1.0f);
+    }
+    // The same pixel key, another frame: another path.
+    image[at(44, 30)] = held_path(1.0f, 1.0f, 1u, 3u, 4u, 1.0f);
+    const std::vector<float> map = duplication_map(image, size);
+    for (std::uint32_t y = 0; y < size.height; ++y) {
+        for (std::uint32_t x = 0; x < size.width; ++x) {
+            const bool block = x >= 10 && x < 15 && y >= 10 && y < 15;
+            const bool row = y == 30 && (x == 40 || x == 48 || x == 56);
+            const double expected = block ? 24.0 / 288.0 : row ? (x == 48 ? 2.0 : 1.0) / 288.0 : 0.0;
+            INFO("pixel " << x << ", " << y);
+            CHECK(map[at(x, y)] == doctest::Approx(expected).epsilon(1.0e-6));
+        }
+    }
+
+    // Every pixel one path: 1 where the window is inside the image, the
+    // window's share inside it at the edges and corners.
+    std::vector<contracts::PathReservoir> same(image.size(), held_path(1.0f, 1.0f, 1u, 5u, 5u, 1.0f));
+    const std::vector<float> full = duplication_map(same, size);
+    CHECK(full[at(35, 25)] == doctest::Approx(1.0));
+    CHECK(full[at(0, 0)] == doctest::Approx(80.0 / 288.0));
+    CHECK(full[at(69, 49)] == doctest::Approx(80.0 / 288.0));
+    CHECK(full[at(69, 25)] == doctest::Approx((9.0 * 17.0 - 1.0) / 288.0));
+}
+
+TEST_CASE("a shift from the G-buffer's record gives the shift from the retraced primary hit, to its packing") {
+    // The scene of the self-shift test, each path shifted 3 pixels right and
+    // 2 up: through the record the destination's tree packed (contract 5),
+    // as the passes shift, and from its primary ray traced and resolved
+    // again, as Phase 1 did. They differ by the record's packing (its
+    // normal and wo to 10^-4 radians, its BSDF to a half's precision),
+    // which replay carries along: whether each succeeds the same, and F and
+    // the Jacobian within 2%, for all but 1 in 200.
+    const std::string text = camera_text("[0, 2, 3]", "[0, 0, 0]", 50) + sky("[0, 0, 0]", "[0, 0, 0]") +
+                             "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
+                             "[materials.glow]\nkind = \"emissive\"\nradiance = [200, 200, 200]\n"
+                             "[materials.lamp]\nkind = \"emissive\"\nradiance = [4, 4, 4]\n"
+                             "[[shapes]]\nkind = \"box\"\nmin = [-3, -1, -3]\nmax = [3, 0, 3]\nmaterial = \"floor\"\n" +
+                             one_firefly +
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [-1.2, 1.8, -1.0]\nradius = 0.6\nmaterial = \"lamp\"\n"
+                             "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
+                             "[materials.white]\nkind = \"rough\"\ncolor = [0.7, 0.7, 0.7]\n"
+                             "[materials.brass]\nkind = \"conductor\"\nf0 = [0.9, 0.7, 0.3]\nroughness = 0.05\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.5, 0]\nradius = 0.5\nmaterial = \"glass\"\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [1, 0.4, -0.3]\nradius = 0.4\nmaterial = \"white\"\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [-0.9, 0.4, 0.2]\nradius = 0.4\nmaterial = \"brass\"\n";
+    constexpr frame::Extent size{96, 72};
+    std::vector<tests::ShiftQuery> queries;
+    for (std::uint32_t frame = 0; frame < 8; ++frame) {
+        for (std::uint32_t y = 2; y < size.height; y += 2) {
+            for (std::uint32_t x = 0; x + 3 < size.width; x += 2) {
+                queries.push_back({x, y, x + 3, y - 2, frame, size.width, size.height, 0u});
+            }
+        }
+    }
+    const auto results = shift(text, size, queries, 1u);
+    std::size_t tried = 0;
+    std::size_t succeeded = 0;
+    std::size_t through_glass = 0;
+    std::size_t off = 0;
+    for (const tests::ShiftResult& r : results) {
+        if (contracts::path_end(r.flags) == contracts::PathEnd::none || luminance(r.stored) <= 0.0) {
+            continue;
+        }
+        ++tried;
+        succeeded += r.succeeded;
+        through_glass += r.succeeded == 1u && contracts::path_rc(r.flags) != 2u ? 1u : 0u;
+        const double f = luminance(r.retraced);
+        const bool same = r.succeeded == r.retraced_succeeded &&
+                          (r.succeeded == 0u || (std::abs(r.jacobian - r.retraced_jacobian) <= 2.0e-2 * r.retraced_jacobian &&
+                                                 std::abs(luminance(r.shifted) - f) <= 2.0e-2 * f));
+        off += same ? 0u : 1u;
+    }
+    INFO(tried << " paths, " << succeeded << " shifted, " << through_glass << " replayed or reconnected past y2, "
+               << off << " off");
+    CHECK(succeeded > 1000u);
+    CHECK(through_glass > 100u);
+    CHECK(off * 200u <= tried);
 }

@@ -4,7 +4,7 @@
 //
 // ReSTIR PT (Lin et al. 2022) as ReSTIR PT Enhanced runs it at its defaults
 // (Lin, Kettunen and Wyman 2026; docs/research/2026-10-11-restir-pt-
-// layout.md, the design this implements, Phase 1): every pixel's light by
+// layout.md, the design this implements, Phases 1 and 2): every pixel's light by
 // resampling whole paths, reused across pixels by the hybrid shift, so the
 // reuse reaches through glass and off mirrors, which ReSTIR DI's does not.
 //
@@ -18,20 +18,26 @@
 //                 hybrid shift (shift.metal.h). Sees a path reservoir only
 //                 as contract 15's data.
 //   Sample reuse  the softmax pick (reservoir.metal.h, stream_pick), the
-//                 paired neighbors (pairing.metal.h) and the pairwise MIS
-//                 merge (path_merge.metal.h), on paths already shifted.
+//                 paired neighbors (pairing.metal.h), the pairwise and
+//                 Talbot MIS weights and the cap (path_merge.metal.h), on
+//                 paths already shifted, and the duplication map
+//                 (duplication.metal.h).
 //   Pass          this header and the kernels of restir_pt_initial,
-//                 restir_pt_spatial and restir_pt_shade (metal/passes/
-//                 restir_pt_*/): the order, the numbers, the bindings.
+//                 restir_pt_temporal, restir_pt_spatial, restir_pt_shade
+//                 and restir_pt_duplication (metal/passes/restir_pt_*/):
+//                 the order, the numbers, the bindings.
 //
 // The algorithm, by pass (core/frame/schedule.h):
 //
-// restir_pt_initial, one thread a pixel:
+// restir_pt_initial, a light tiles' dispatch, then one thread a pixel:
 //
-//   1. The camera's ray, its numbers the path tracer's (pixel, frame), and
+//   1. The frame's light tiles (contracts/light_tile.h): 128 tiles of 1024
+//      lights drawn by the light selection, each placed and packed; then
+//      the camera's ray, its numbers the path tracer's (pixel, frame), and
 //      the path tree along it: the path loop (walk_path) with TreeGather
 //      below. At every vertex x1 ... x_n, n at most max_surfaces, NEE by
-//      resampled importance sampling (nee.metal.h), a candidate path ending
+//      resampled importance sampling (nee.metal.h), its candidates drawn
+//      from the tile the pixel's 8 x 8 block draws, a candidate path ending
 //      on its light; every ray a BSDF draws that strikes a light, or the
 //      sky, a candidate path ending there; one lobe sampled per vertex
 //      (contract 2: each kind's sample() draws one), so every path is
@@ -50,12 +56,37 @@
 //      x_k, its direction on, the suffix after it, and the cached Jacobian
 //      denominator (contract 15).
 //   4. The light the camera sees directly (path length 1), not resampled,
-//      into the frame's light buffer; the pixel's primary hit's distance
-//      and normal, for the merge's similarity test.
+//      into the frame's light buffer; the pixel's primary hit packed into
+//      the G-buffer (contract 5's PrimaryHit), which every shift to the
+//      pixel starts from; and, with temporal reuse, where that hit was last
+//      frame (its point on its shape, placed by last frame's transform).
+//
+// restir_pt_temporal, four dispatches (Lin et al. 2022, TemporalReuse and
+// TemporalPathRetrace; Enhanced §5, §7):
+//
+//   5. The temporal input: the primary hit's last-frame point through last
+//      frame's camera, rounded to a pixel, it or the first of the 8 around
+//      it whose last-frame primary hit is similar (previous_pixel(), as
+//      ReSTIR DI's temporal merge searches); none at a history's first
+//      frame, off the image, or where nothing near is the same surface.
+//      Two shifts: last frame's final path there, shifted here in this
+//      frame's scene; this pixel's path, shifted there in last frame's
+//      (last frame's transforms and glows, for the Talbot weight's domain).
+//      Each done here where it reconnects at x2; appended to the list
+//      where it replays, as step 8 appends.
+//   6. The list's length as an indirect grid (step 9's kernel), and the
+//      replaying shifts, one thread each, each lane's frame data.
+//   7. The Talbot merge (path_merge.metal.h): the own reservoir and last
+//      frame's, its confidence capped at c_cap times the own one's, c_cap
+//      lowered by last frame's duplication map at the input's pixel
+//      (Enhanced §5); the path kept by the softmax pick; into the
+//      reservoirs in place where a spatial reuse follows, else into the
+//      frame's final reservoirs, its vector-valued estimate added to the
+//      light buffer.
 //
 // restir_pt_spatial, four dispatches (Enhanced §3, §6.2.2, §7):
 //
-//   5. Pairs: for each of the 3 reuse textures, the pixel's paired
+//   8. Pairs: for each of the 3 reuse textures, the pixel's paired
 //      neighbor (pairing.metal.h); a pair whose primary hits are not
 //      similar (the 2022 code's test: normals within 60 degrees, distances
 //      within 10%, made symmetric so both ends of a pair agree) is not
@@ -65,47 +96,73 @@
 //      and one atomic a group (GDSA.10: the count left on the device,
 //      GDSA.13), so the lanes that only reconnect do not wait on the ones
 //      that replay (GPU.4).
-//   6. The list's length turned into an indirect dispatch's grid, and the
-//      count set back to 0 for the next frame.
-//   7. The replaying pairs, one thread each, from the list.
-//   8. The merge, one thread a pixel: its own path and its partners',
+//   9. The list's length turned into an indirect dispatch's grid, and the
+//      count set back to 0 for the next list.
+//  10. The replaying pairs, one thread each, from the list.
+//  11. The merge, one thread a pixel: its own path and its partners',
 //      each shifted both ways by the dispatches above (one shift per pair
 //      serves both ends: Enhanced §3), weighed by pairwise MIS and summed
 //      vector-valued for shading (path_merge.metal.h, §6.3), added to the
-//      light buffer.
+//      light buffer; with temporal reuse in the graph, the path kept by the
+//      same weights written as the frame's final reservoir.
 //
 // restir_pt_shade, one thread a pixel:
 //
-//   9. The light buffer, plus the initial reservoir's F W where no spatial
-//      pass ran, folded into the accumulated image as the path pass folds
-//      its own (metal/film/accumulate.metal.h).
+//  12. The light buffer, plus the initial reservoir's F W where no reuse
+//      ran, folded into the accumulated image as the path pass folds its
+//      own (metal/film/accumulate.metal.h).
 //
-// What it reads and writes, per pixel: the initial pass writes a 64-byte
-// reservoir, 8 bytes of primary hit and 16 of light; the shift prepass
-// reads the reservoir and 3 partners' primary hits and writes 3 x 16 bytes
-// of shifted paths, and 4 bytes a replaying pair; the merge reads its own
-// and 3 partners' reservoirs and shifted paths (64 + 3 x (64 + 2 x 16)
-// bytes) and adds to its 16 bytes of light; the shade reads them. Some
-// 0.7 KB a pixel a frame, 2.4 GB at 3456 x 2234, a floor of 6 ms at the M3
-// Max's 400 GB/s; the frame time is measured in docs/research/
-// 2026-10-11-restir-pt-phase1.md. Every shift traces its destination's
-// primary ray again rather than reading a stored primary hit: the shift
-// starts from exactly the surface the destination's own tree started from,
-// to the bit, at a ray a shift (queued: a G-buffer in its place).
+// restir_pt_duplication, one thread a pixel in groups of 24 x 24:
+//
+//  13. The duplication map (metal/reuse/duplication.metal.h): each pixel's
+//      share of the final reservoirs within 17 x 17 that hold copies of
+//      its path, for the next frame's step 7.
+//
+// What is approximate, stated. Last frame's domain, where step 5 shifts
+// this pixel's path for its Talbot weight, is last frame's camera, primary
+// hits, transforms and glows, traced against this frame's structure: a ray
+// a firefly crossed last frame and not this one (or the reverse) is
+// answered by this frame's. The structure kept a frame longer would make it
+// exact (scene_acceleration.h, Keep::last_too, as ReSTIR DI's raytraced
+// mode needs; queued). And a reconnection keeps its suffix after x_k as its
+// source frame lit it (contract 15's cached radiance), as the 2022 code
+// does: a path kept across frames carries a moved firefly's last light
+// after x_k until it is resampled away, which the cap bounds; a path whose
+// x_k is the light is lit as it is now.
+//
+// What it reads and writes, per pixel, the whole graph: the initial pass
+// writes a 64-byte reservoir, 48 bytes of primary hit, 12 of previous
+// position and 16 of light; the temporal reuse reads 2 primary hits, 2
+// reservoirs and the previous position, and its shifts' 2 x 16 bytes, and
+// writes 4 bytes of previous pixel and a reservoir; the spatial shift
+// prepass reads the reservoir and 3 partners' primary hits (3 x 48) and
+// writes 3 x 16 bytes of shifted paths, and 4 bytes a replaying pair; the
+// merge reads its own and 3 partners' reservoirs and shifted paths
+// (64 + 3 x (64 + 2 x 16) bytes), adds to its 16 bytes of light and writes
+// a final reservoir; the shade reads the light; the duplication map 2.8
+// reservoirs' first halves and writes 4. Some 1.3 KB a pixel a frame, 10 GB
+// at 3456 x 2234, a floor of 25 ms at the M3 Max's 400 GB/s if none of it
+// stayed in cache; the frame time is measured in docs/research/
+// 2026-10-11-restir-pt-phase2.md, where shifts' shadow rays are most of it.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
 
 #include "core/contracts/camera.h"
 #include "core/contracts/path_reservoir.h"
+#include "core/contracts/light_tile.h"
 #include "core/contracts/path_reuse_settings.h"
+#include "core/contracts/primary_hit.h"
+#include "core/contracts/transform.h"
 #include "metal/camera/thin_lens.metal.h"
 #include "metal/integrator/nee.metal.h"
 #include "metal/integrator/path.metal.h"
 #include "metal/integrator/reconnection.metal.h"
+#include "metal/integrator/restir_di.metal.h"
 #include "metal/integrator/shift.metal.h"
 #include "metal/integrator/target.metal.h"
 #include "metal/math/warp.metal.h"
+#include "metal/reuse/duplication.metal.h"
 #include "metal/reuse/pairing.metal.h"
 #include "metal/reuse/path_merge.metal.h"
 #include "metal/reuse/reservoir.metal.h"
@@ -134,6 +191,41 @@ inline CameraRay primary_ray(constant serenity::contracts::CameraData& camera, u
     return primary_ray(camera, pixel, frame, size, numbers);
 }
 
+// The numbers the passes draw beyond the tree's and the shift's
+// (shift.metal.h, "The numbers"), each a purpose of its own stream, above
+// every dimension a path reaches, as theirs are (metal/sampler/
+// sampler.metal.h): a light tile's entry, at (entry, tile) and the frame;
+// the tile an 8 x 8 block draws, at (block, frame).
+constant constexpr uint tile_fill_first = 8u << 24u;
+constant constexpr uint tile_pick_first = 9u << 24u;
+// The temporal merge's two picks and the spatial merge's, at (pixel,
+// frame); the frame's start of the temporal search's ring, at ((0, 0),
+// frame), the frame's alone.
+constant constexpr uint temporal_pick_first = 10u << 24u;
+constant constexpr uint spatial_pick_first = 11u << 24u;
+constant constexpr uint ring_first = 12u << 24u;
+
+// Entry `n` of frame `frame`'s light tiles, entry n % 1024 of tile
+// n / 1024: a light the selection draws, placed and packed as this frame
+// places and lights it (contracts/light_tile.h). Precondition: the scene
+// has a light (the caller tests it).
+inline serenity::contracts::LightTileEntry tile_entry(Scene scene, uint n, uint frame) {
+    constexpr uint size = serenity::contracts::light_tile_size;
+    PathNumbers numbers = purpose_numbers(path_numbers(uint2(n % size, n / size), frame), tile_fill_first);
+    return compact_light(scene.lights(), select_light_index(scene.selection(), next_number(numbers)).index);
+}
+
+// The light tile the block holding `pixel` draws in frame `frame`, among
+// `tiles` (contracts/light_tile.h).
+inline const device serenity::contracts::LightTileEntry* block_tile(
+    const device serenity::contracts::LightTileEntry* tiles, uint2 pixel, uint frame) {
+    PathNumbers numbers =
+        purpose_numbers(path_numbers(pixel / serenity::contracts::light_tile_block, frame), tile_pick_first);
+    const uint tile = metal::min(uint(next_number(numbers) * float(serenity::contracts::light_tiles)),
+                                 serenity::contracts::light_tiles - 1u);
+    return tiles + tile * serenity::contracts::light_tile_size;
+}
+
 // What the reservoir keeps of a candidate path's shape and reconnection
 // vertex (contract 15), as it is offered.
 struct Stored {
@@ -157,10 +249,14 @@ struct TreeGather {
     serenity::contracts::PathReuseSettings settings;
     PathNumbers stream;  // the tree's: (pixel, frame)
     Shapes shapes;       // where a reconnection vertex's shape is
+    const device serenity::contracts::LightTileEntry* tile;  // the block's light tile (contracts/light_tile.h)
     // What the pass writes.
     float3 seen;  // the light the camera sees directly, step 4
-    float primary_distance;
-    float3 primary_normal;
+    serenity::contracts::PrimaryHit primary;  // y1, for the G-buffer, step 4
+    // Last frame's transforms in a graph with temporal reuse, null
+    // otherwise; where y1's point was last frame by them (step 4).
+    constant serenity::contracts::Transform* last_transforms;
+    float3 previous_position;
     float weight_sum;
     serenity::contracts::PathReservoir chosen;
     uint offered;  // candidates so far, numbering the pick's numbers
@@ -290,10 +386,12 @@ struct TreeGather {
         const float3 normal = to_float3(here.surface.geometric_normal);
         if (surface == 0u) {
             threshold = reconnection::footprint_threshold(settings.footprint, from, at, normal);
-            // A light seen directly is no surface a path starts from.
-            const bool scatters = here.bsdf.kind != serenity::contracts::BsdfKind::none;
-            primary_distance = scatters ? metal::distance(from, at) : 0.0f;
-            primary_normal = normal;
+            // A light seen directly is no surface a path starts from:
+            // pack_primary_hit() records none for it.
+            primary = shift::pack_primary_hit(here, from, threshold);
+            if (last_transforms != nullptr) {
+                previous_position = restir::previous_position(last_transforms, here.surface);
+            }
             forward = 0.0f;
             return;
         }
@@ -310,12 +408,15 @@ struct TreeGather {
         PathNumbers numbers = shift::nee_numbers(stream, surface);
         float sum = 0.0f;
         nee::Candidate kept = nee::no_candidate();
+        const float probability = 1.0f / float(scene.selection().count);
         for (uint i = 0u; i < m; ++i) {
             const float choose = next_number(numbers);
             const float2 u = next_numbers2(numbers);
             const float pick = next_number(numbers);
-            const nee::Candidate candidate =
-                nee::draw_candidate(scene.lights(), scene.selection(), here, origin, choose, u);
+            const nee::Candidate candidate = nee::draw_tile_candidate(
+                tile[metal::min(uint(choose * float(serenity::contracts::light_tile_size)),
+                                serenity::contracts::light_tile_size - 1u)],
+                probability, here, origin, u);
             if (stream_pick(sum, candidate.target > 0.0f ? candidate.target / candidate.density : 0.0f, pick)) {
                 kept = candidate;
             }
@@ -415,12 +516,18 @@ struct TreeGather {
 };
 
 // A tree's gather at its start: nothing found, nothing kept.
-inline TreeGather start_tree(serenity::contracts::PathReuseSettings settings, PathNumbers stream, Shapes shapes) {
+inline TreeGather start_tree(serenity::contracts::PathReuseSettings settings, PathNumbers stream, Shapes shapes,
+                             const device serenity::contracts::LightTileEntry* tile,
+                             constant serenity::contracts::Transform* last_transforms) {
     TreeGather tree{};
     tree.settings = settings;
     tree.stream = stream;
     tree.shapes = shapes;
+    tree.tile = tile;
+    tree.last_transforms = last_transforms;
+    tree.previous_position = float3(0.0f);
     tree.seen = float3(0.0f);
+    tree.primary = shift::no_primary_hit();
     tree.chosen.seed_pixel = stream.key.x;
     tree.chosen.seed_frame = stream.key.y;
     tree.chosen.flags = serenity::contracts::pack_path_flags(
@@ -454,40 +561,141 @@ inline float3 estimate(serenity::contracts::PathReservoir reservoir) {
     return to_float3(reservoir.integrand) * reservoir.weight;
 }
 
-// A pixel's primary hit as the merge's similarity test reads it: its
-// distance from the camera (0: no surface a path starts from) and its
-// geometric normal, octahedral.
-inline uint2 pack_primary(float distance, float3 normal) {
-    return uint2(as_type<uint>(distance), encode_unit(normal));
-}
-
-// The 2022 code's isValidGeometry (above, step 5), made symmetric: normals
+// The 2022 code's isValidGeometry (above, step 8), made symmetric: normals
 // within 60 degrees, and distances within 10% of the larger, so a pair's
-// two ends agree whether to merge.
+// two ends agree whether to merge. Of two primary hits (contract 5), or of
+// one's distance and geometric normal as another frame saw it.
 constant constexpr float similar_cosine = 0.5f;
 constant constexpr float similar_distance = 0.1f;
 
-inline bool similar(uint2 a, uint2 b) {
-    const float da = as_type<float>(a.x);
-    const float db = as_type<float>(b.x);
+inline bool similar(float da, float3 na, serenity::contracts::PrimaryHit b) {
+    const float db = b.distance;
     return da > 0.0f && db > 0.0f && metal::abs(da - db) <= similar_distance * metal::max(da, db) &&
-           metal::dot(decode_unit(a.y), decode_unit(b.y)) >= similar_cosine;
+           metal::dot(na, decode_unit(b.normal)) >= similar_cosine;
 }
 
-// Whether shifting `reservoir`'s path replays any vertex (step 5): no
+inline bool similar(serenity::contracts::PrimaryHit a, serenity::contracts::PrimaryHit b) {
+    return a.distance > 0.0f && similar(a.distance, decode_unit(a.normal), b);
+}
+
+// Whether shifting `reservoir`'s path replays any vertex (steps 5 and 8): no
 // reconnection vertex, or one past x2.
 inline bool replays(serenity::contracts::PathReservoir reservoir) {
     const uint k = serenity::contracts::path_rc(reservoir.flags);
     return k != 2u;
 }
 
-// A shifted path as the shift prepass stores it (step 5): F and the
+// A shifted path as the shift prepasses store it (steps 5 and 8): F and the
 // Jacobian; a Jacobian of -1 for a partner not merged (outside the image, or
 // not similar), told apart from a shift that failed (0).
 constant constexpr float not_paired = -1.0f;
 
 inline float4 stored_shift(shift::Shifted shifted) {
     return float4(shifted.integrand, shifted.jacobian);
+}
+
+// The replay's indirect grid, as Metal reads MTLDispatchThreadsIndirectArguments:
+// the grid's size, then the threadgroup's; and the count it was made from.
+struct ReplayGrid {
+    uint grid[3];
+    uint group[3];
+    uint count;
+};
+
+constant constexpr uint replay_group = 64u;
+
+// Whether a reservoir holds a path worth shifting: one, with a weight.
+inline bool holds_path(serenity::contracts::PathReservoir reservoir) {
+    return serenity::contracts::path_end(reservoir.flags) != serenity::contracts::PathEnd::none &&
+           reservoir.weight > 0.0f;
+}
+
+// A merge's result: the reservoir it keeps, and its estimate for shading,
+// the vector-valued sum (path_merge.metal.h).
+struct Merged {
+    serenity::contracts::PathReservoir reservoir;
+    float3 estimate;
+};
+
+// Step 5's search (the temporal input's pixel), as ReSTIR DI's temporal
+// merge finds its own (metal/reuse/temporal.metal.h, steps 2 and 3): the
+// pixel's primary hit where it was last frame, `previous_position`,
+// through last frame's camera, rounds to a pixel p of last frame's image of
+// `size`; p, then the 8 around it in ring order from the frame's
+// `ring_start`, until one whose last-frame primary hit is similar to this
+// pixel's (above, similar(): its distance from last frame's camera, and
+// `normal`, its geometric normal this frame). That pixel's index, or
+// no_pixel: the surface was out of last frame's image, or nothing near
+// was it.
+constant constexpr uint no_pixel = 0xffffffffu;
+constant constexpr uint temporal_tries = 9u;
+constant constexpr int2 temporal_ring[temporal_tries - 1u] = {int2(-1, -1), int2(0, -1), int2(1, -1), int2(-1, 0),
+                                                              int2(1, 0),   int2(-1, 1), int2(0, 1),  int2(1, 1)};
+
+inline uint previous_pixel(constant serenity::contracts::CameraData& camera, float3 previous_position, float3 normal,
+                           const device serenity::contracts::PrimaryHit* last, uint2 size, uint ring_start) {
+    if (!(camera_depth(camera, previous_position) > 0.0f)) {
+        return no_pixel;
+    }
+    const float2 place = camera_pixel(camera, previous_position, size);
+    if (!(metal::all(place >= 0.0f) && metal::all(place < float2(size)))) {
+        return no_pixel;
+    }
+    const int2 p = int2(metal::min(uint2(place), size - 1u));
+    const float distance = metal::distance(to_float3(camera.origin), previous_position);
+    for (uint t = 0u; t < temporal_tries; ++t) {
+        const int2 x = t == 0u ? p : p + temporal_ring[(t - 1u + ring_start) % (temporal_tries - 1u)];
+        if (metal::any(x < int2(0)) || metal::any(x >= int2(size))) {
+            continue;
+        }
+        const uint j = uint(x.y) * size.x + uint(x.x);
+        if (similar(distance, normal, last[j])) {
+            return j;
+        }
+    }
+    return no_pixel;
+}
+
+// The frame's start of step 5's ring, the same for every pixel: drawn, so a
+// pixel whose first try fails does not take the same side's neighbor frame
+// after frame (temporal.metal.h, step 3, which found that drift).
+inline uint ring_start(uint frame) {
+    PathNumbers numbers = purpose_numbers(path_numbers(uint2(0u), frame), ring_first);
+    return metal::min(uint(next_number(numbers) * float(temporal_tries - 1u)), temporal_tries - 2u);
+}
+
+// Step 7: the Talbot merge of the pixel's own reservoir `own` and last
+// frame's `last` (path_merge.metal.h): `here` last's path shifted to this
+// pixel in this frame, `there` own's shifted to last's pixel in last frame,
+// each F and the Jacobian (stored_shift(); a Jacobian of 0 for a shift that
+// failed or a path not held); `cap` c_cap at last's pixel; `u` the merge's
+// two numbers.
+inline Merged temporal_merge(serenity::contracts::PathReservoir own, serenity::contracts::PathReservoir last,
+                             float4 here, float4 there, float cap, float2 u) {
+    namespace c = serenity::contracts;
+    const float own_count = float(c::path_count(own.flags));
+    const float last_count = path_merge::temporal_confidence(float(c::path_count(last.flags)), own_count, cap);
+    const float3 own_f = to_float3(own.integrand);
+    const float own_target = luminance(own_f);
+    const float last_target = luminance(to_float3(last.integrand));
+    const float last_here = here.w > 0.0f ? luminance(here.xyz) * here.w : 0.0f;
+    const float own_there = there.w > 0.0f ? luminance(there.xyz) * there.w : 0.0f;
+    const float m_own = path_merge::talbot_weight(own_count * own_target, last_count * own_there);
+    const float m_last = path_merge::talbot_weight(last_count * last_target, own_count * last_here);
+    const float w_own = m_own * own_target * own.weight;
+    const float w_last = m_last * last_here * last.weight;
+    const float3 estimate =
+        m_own * own.weight * own_f + (here.w > 0.0f ? m_last * last.weight * here.w * here.xyz : float3(0.0f));
+    float sum = 0.0f;
+    c::PathReservoir kept = own;
+    (void)stream_pick(sum, w_own, u.x);
+    if (stream_pick(sum, w_last, u.y)) {
+        kept = path_merge::shifted_reservoir(last, here.xyz, here.w);
+    }
+    const float target = luminance(to_float3(kept.integrand));
+    kept.weight = target > 0.0f && sum > 0.0f ? sum / target : 0.0f;
+    kept.flags = path_merge::with_count(kept.flags, own_count + last_count);
+    return Merged{kept, estimate};
 }
 
 }  // namespace restir_pt

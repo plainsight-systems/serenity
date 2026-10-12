@@ -92,24 +92,38 @@ namespace serenity::frame {
 //   restir_pt_initial      the path tree at each pixel, NEE at every
 //                          vertex, resampled to one path; writes a path
 //                          reservoir a pixel (contract 15), the pixel's
-//                          primary hit for the merges' similarity test, and
-//                          the light the camera sees directly into the
-//                          frame's light buffer.
-//   restir_pt_temporal     Phase 2's temporal reuse: refused by name until
-//                          it is built.
+//                          primary hit (contract 5's G-buffer, which every
+//                          shift to the pixel starts from), and the light
+//                          the camera sees directly into the frame's light
+//                          buffer.
+//   restir_pt_temporal     the temporal reuse: last frame's final path at
+//                          where the pixel's surface was, shifted here and
+//                          merged by Talbot MIS, its confidence capped;
+//                          reads last frame's primary hits, final
+//                          reservoirs and duplication map; writes a path
+//                          reservoir a pixel, and, with no spatial reuse
+//                          after it, the frame's final ones and its estimate
+//                          into the light buffer.
 //   restir_pt_spatial      the paired spatial reuse: shifts each pixel's
 //                          path to its paired neighbors, then merges by
 //                          pairwise MIS; reads the path reservoirs; adds
-//                          its estimate to the light buffer.
+//                          its estimate to the light buffer, and, with
+//                          temporal reuse, writes the frame's final
+//                          reservoirs.
 //   restir_pt_shade        the light buffer (with the initial reservoir's
-//                          estimate where no spatial reuse ran) folded into
-//                          the accumulated image; accumulates, and so
-//                          writes radiance, as the path pass does.
-//   restir_pt_duplication  Phase 2's duplication map: refused by name.
+//                          estimate where no reuse ran) folded into the
+//                          accumulated image; accumulates, and so writes
+//                          radiance, as the path pass does.
+//   restir_pt_duplication  the duplication map: for each pixel, how many of
+//                          the frame's final reservoirs in its 17 x 17
+//                          neighborhood hold copies of its path, which the
+//                          next frame's temporal reuse lowers its cap by.
 //
-// The order a schedule keeps: restir_pt_initial, restir_pt_spatial if
-// present, restir_pt_shade, each at most once, initial and shade both
-// present if any is; and its settings exactly with its passes.
+// The order a schedule keeps: restir_pt_initial, restir_pt_temporal if
+// present, restir_pt_spatial if present, restir_pt_shade,
+// restir_pt_duplication if present, each at most once; initial and shade
+// both present if any is; the duplication map only with temporal reuse,
+// whose cap is all it serves; and its settings exactly with its passes.
 //
 // An estimator is a graph (logical-overview.md, principle 4: estimators are
 // interchangeable over the same scene):
@@ -140,10 +154,10 @@ enum class PassKind {
     restir_spatial,   // step 5: k neighbors' reservoirs merged in; needs a scene
     restir_shade,     // step 6: the survivor's light and the path's continuation; accumulates; writes radiance
     restir_pt_initial,      // ReSTIR PT: the path tree, resampled to one path a pixel; needs a scene
-    restir_pt_temporal,     // ReSTIR PT's temporal reuse: Phase 2, refused by name
+    restir_pt_temporal,     // ReSTIR PT's temporal reuse; needs a scene
     restir_pt_spatial,      // ReSTIR PT's paired spatial reuse; needs a scene
     restir_pt_shade,        // ReSTIR PT's light into the accumulated image; accumulates; writes radiance
-    restir_pt_duplication,  // ReSTIR PT's duplication map: Phase 2, refused by name
+    restir_pt_duplication,  // ReSTIR PT's duplication map, for the next frame's temporal reuse
     last = restir_pt_duplication,
 };
 
@@ -189,9 +203,10 @@ struct Schedule {
 // the frames before them (frame/history.h).
 bool accumulates(const Schedule& schedule);
 
-// Whether `schedule` has restir_temporal: whether its frames build on the
-// reservoirs and surface records of the frames before them, since its reuse
-// history started (frame/history.h, ReuseHistory). Apart from
+// Whether `schedule` has restir_temporal or restir_pt_temporal: whether its
+// frames build on the reservoirs and surface records (or primary hits) of
+// the frames before them, since its reuse history started (frame/history.h,
+// ReuseHistory). Apart from
 // accumulates(): a changing scene starts the accumulated image over every
 // frame, and keeps its reuse history.
 bool reuses_history(const Schedule& schedule);
@@ -217,9 +232,8 @@ bool reuses_history(const Schedule& schedule);
 //     setting the passes read, as the graph's other settings decide what
 //     they read (bias_correction and visibility_reuse), in its range, and
 //     each they do not read its zero (core/contracts/reuse_settings.h);
-//   - ReSTIR PT's passes likewise (above), never beside ReSTIR DI's, the
-//     two not built yet (restir_pt_temporal, restir_pt_duplication)
-//     refused by name, and its settings exactly with its passes, in range
+//   - ReSTIR PT's passes likewise (above), never beside ReSTIR DI's, and
+//     its settings exactly with its passes, in range
 //     (core/contracts/path_reuse_settings.h).
 //
 // None if `schedule` is valid; otherwise why not, in words a reader of the

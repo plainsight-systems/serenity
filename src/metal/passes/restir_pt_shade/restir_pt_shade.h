@@ -10,8 +10,8 @@ namespace serenity::metal {
 
 // Axis: Pass (ReSTIR PT's shade).
 //
-// Step 9 of metal/passes/restir_pt/restir_pt.metal.h: one thread a pixel,
-// the light buffer (and, with no spatial pass, the initial reservoir's own
+// Step 12 of metal/passes/restir_pt/restir_pt.metal.h: one thread a pixel,
+// the light buffer (and, with no reuse, the initial reservoir's own
 // estimate) folded into the accumulated image, which is the frame's
 // radiance, as the path pass's is.
 //

@@ -13,7 +13,9 @@
 #include "core/contracts/transform.h"
 #include "metal/integrator/reconnection.metal.h"
 #include "metal/passes/restir_pt/restir_pt.metal.h"
+#include "metal/reuse/duplication.metal.h"
 #include "metal/reuse/pairing.metal.h"
+#include "metal/reuse/path_merge.metal.h"
 #include "restir_pt_probe.h"
 
 using namespace metal;
@@ -21,6 +23,8 @@ using namespace metal::raytracing;
 using namespace serenity::shaders;
 using serenity::tests::CriteriaQuery;
 using serenity::tests::CriteriaResult;
+using serenity::tests::PathMergeQuery;
+using serenity::tests::PathMergeResult;
 using serenity::tests::PairingQuery;
 using serenity::tests::PairingResult;
 using serenity::tests::ShiftQuery;
@@ -69,25 +73,37 @@ kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQu
                      constant float* sphere_glows [[buffer(5)]],
                      constant serenity::contracts::Transform* transforms [[buffer(6)]],
                      constant serenity::contracts::PathReuseSettings& settings [[buffer(7)]],
-                     constant uint& count [[buffer(8)]], uint i [[thread_position_in_grid]]) {
+                     constant uint& count [[buffer(8)]],
+                     const device serenity::contracts::LightTileEntry* tiles [[buffer(9)]],
+                     uint i [[thread_position_in_grid]]) {
     if (i >= count) {
         return;
     }
     const ShiftQuery q = queries[i];
     const uint2 size = uint2(q.width, q.height);
     const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
-    PathNumbers numbers;
-    const CameraRay source_ray =
-        restir_pt::primary_ray(camera, uint2(q.source_x, q.source_y), q.frame, size, numbers);
-    restir_pt::TreeGather tree = restir_pt::start_tree(settings, numbers, scene.shapes());
-    (void)path::walk_path<path::Start::camera, path::Stop::at_end>(scene, path::walk_from(source_ray), Shading{}, 0u,
-                                                                   numbers, tree);
-    const serenity::contracts::PathReservoir reservoir = restir_pt::finish_tree(tree);
-    const CameraRay destination_ray =
-        restir_pt::primary_ray(camera, uint2(q.destination_x, q.destination_y), q.frame, size);
-    const shift::Shifted shifted = shift::shift_path(scene, destination_ray, reservoir, settings);
-    const shift::Primary source_hit = shift::primary_hit(scene, source_ray);
-    const shift::Primary destination_hit = shift::primary_hit(scene, destination_ray);
+    // A pixel's tree as the initial pass draws it: its reservoir and its
+    // G-buffer record.
+    const auto tree_at = [&](uint2 pixel) {
+        PathNumbers numbers;
+        const CameraRay ray = restir_pt::primary_ray(camera, pixel, q.frame, size, numbers);
+        restir_pt::TreeGather tree = restir_pt::start_tree(settings, numbers, scene.shapes(),
+                                                           restir_pt::block_tile(tiles, pixel, q.frame), nullptr);
+        (void)path::walk_path<path::Start::camera, path::Stop::at_end>(scene, path::walk_from(ray), Shading{}, 0u,
+                                                                       numbers, tree);
+        return tree;
+    };
+    const uint2 source = uint2(q.source_x, q.source_y);
+    const uint2 destination = uint2(q.destination_x, q.destination_y);
+    const serenity::contracts::PathReservoir reservoir = restir_pt::finish_tree(tree_at(source));
+    const serenity::contracts::PrimaryHit record = tree_at(destination).primary;
+    const CameraRay source_ray = restir_pt::primary_ray(camera, source, q.frame, size);
+    const CameraRay destination_ray = restir_pt::primary_ray(camera, destination, q.frame, size);
+    const shift::Shifted shifted = shift::shift_path(scene, shift::unpack_primary_hit(record), reservoir, settings);
+    const shift::Shifted retraced =
+        shift::shift_path(scene, shift::primary_hit(scene, destination_ray, settings.footprint), reservoir, settings);
+    const shift::Primary source_hit = shift::primary_hit(scene, source_ray, settings.footprint);
+    const shift::Primary destination_hit = shift::primary_hit(scene, destination_ray, settings.footprint);
     const float3 reconnection = serenity::contracts::path_rc(reservoir.flags) != 0u
                               ? decode_shape_point(scene.shapes(), reservoir.primitive,
                                                    serenity::contracts::ShapePoint{
@@ -102,5 +118,54 @@ kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQu
                          destination_hit.here.surface.position,
                          reservoir.weight,
                          to_packed(reconnection),
-                         reservoir.jacobian};
+                         reservoir.jacobian,
+                         to_packed(retraced.integrand),
+                         retraced.jacobian,
+                         retraced.shifted ? 1u : 0u,
+                         {0u, 0u, 0u}};
+}
+
+// The light tiles pt_shift's trees draw from, frame 0's, bound as pt_shift
+// binds the scene, the tiles at 9.
+kernel void pt_light_tiles(primitive_acceleration_structure structure [[buffer(3)]],
+                           constant serenity::gpu::SceneBlock& block [[buffer(4)]],
+                           constant float* sphere_glows [[buffer(5)]],
+                           constant serenity::contracts::Transform* transforms [[buffer(6)]],
+                           device serenity::contracts::LightTileEntry* tiles [[buffer(9)]],
+                           uint n [[thread_position_in_grid]]) {
+    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
+    if (n >= serenity::contracts::light_tiles * serenity::contracts::light_tile_size || scene.selection().count == 0u) {
+        return;
+    }
+    tiles[n] = restir_pt::tile_entry(scene, n, 0u);
+}
+
+// The temporal merge on given inputs, its cap computed as the pass does
+// (restir_pt_temporal.metal, restir_pt_temporal).
+kernel void pt_temporal_merge(device PathMergeResult* out [[buffer(0)]], const device PathMergeQuery* queries [[buffer(1)]],
+                              constant uint& count [[buffer(2)]], uint i [[thread_position_in_grid]]) {
+    if (i >= count) {
+        return;
+    }
+    const PathMergeQuery q = queries[i];
+    const float cap = path_merge::duplication_cap(q.cap, q.floor, q.exponent, q.duplication);
+    const restir_pt::Merged merged =
+        restir_pt::temporal_merge(q.own, q.last, float4(to_float3(q.here), q.here_jacobian),
+                                  float4(to_float3(q.there), q.there_jacobian), cap, float2(q.u0, q.u1));
+    out[i] = PathMergeResult{merged.reservoir, to_packed(merged.estimate), cap};
+}
+
+// The duplication map of an image of reservoirs, as the pass computes it
+// (restir_pt_duplication.metal), dispatched as it is: whole groups.
+kernel void pt_duplication(device float* map [[buffer(0)]],
+                           const device serenity::contracts::PathReservoir* finals [[buffer(1)]],
+                           constant uint2& size [[buffer(2)]], uint2 pixel [[thread_position_in_grid]],
+                           uint2 local [[thread_position_in_threadgroup]],
+                           uint2 group [[threadgroup_position_in_grid]]) {
+    threadgroup uint2 keys[duplication::span * duplication::span];
+    duplication::load_keys(keys, finals, size, group * duplication::group, local.y * duplication::group + local.x);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (pixel.x < size.x && pixel.y < size.y) {
+        map[pixel.y * size.x + pixel.x] = duplication::score(keys, local);
+    }
 }

@@ -343,27 +343,20 @@ std::optional<std::string> restir_broken(const std::vector<PassKind>& passes) {
 // each worded once.
 
 // "an integer in [low, high]".
-// ReSTIR PT's order (schedule.h), its two Phase 2 passes refused by name,
-// and never beside ReSTIR DI's passes.
+// ReSTIR PT's order (schedule.h), never beside ReSTIR DI's passes.
 std::optional<std::string> restir_pt_broken(const std::vector<PassKind>& passes) {
     std::vector<PassKind> pt;
     std::ranges::copy_if(passes, std::back_inserter(pt), [](PassKind kind) { return is_restir_pt(kind); });
     if (pt.empty()) {
         return std::nullopt;
     }
-    for (PassKind kind : {PassKind::restir_pt_temporal, PassKind::restir_pt_duplication}) {
-        if (std::ranges::find(pt, kind) != pt.end()) {
-            return std::string(name(kind)) +
-                   " is ReSTIR PT's Phase 2 (docs/research/2026-10-11-restir-pt-layout.md, \"Phases\") and is not "
-                   "built yet";
-        }
-    }
     if (std::ranges::any_of(passes, [](PassKind kind) { return is_restir(kind); })) {
         return "the frame graph has ReSTIR DI's and ReSTIR PT's passes; ReSTIR PT's reservoir holds the direct light "
                "ReSTIR DI's would, so a graph runs one family";
     }
-    constexpr std::array<PassKind, 3> order = {PassKind::restir_pt_initial, PassKind::restir_pt_spatial,
-                                               PassKind::restir_pt_shade};
+    constexpr std::array<PassKind, 5> order = {PassKind::restir_pt_initial, PassKind::restir_pt_temporal,
+                                               PassKind::restir_pt_spatial, PassKind::restir_pt_shade,
+                                               PassKind::restir_pt_duplication};
     for (PassKind kind : order) {
         if (std::ranges::count(pt, kind) > 1) {
             return "the frame graph has " + std::string(name(kind)) +
@@ -378,9 +371,13 @@ std::optional<std::string> restir_pt_broken(const std::vector<PassKind>& passes)
     }
     const auto rank = [&](PassKind kind) { return std::ranges::find(order, kind) - order.begin(); };
     if (!std::ranges::is_sorted(pt, {}, rank)) {
-        return "ReSTIR PT's passes run in the order restir_pt_initial, restir_pt_spatial, restir_pt_shade; the frame "
-               "graph has " +
+        return "ReSTIR PT's passes run in the order restir_pt_initial, restir_pt_temporal, restir_pt_spatial, "
+               "restir_pt_shade, restir_pt_duplication; the frame graph has " +
                listed(pt);
+    }
+    if (has(PassKind::restir_pt_duplication) && !has(PassKind::restir_pt_temporal)) {
+        return "the frame graph has restir_pt_duplication without restir_pt_temporal; the duplication map lowers "
+               "the temporal reuse's cap, and serves nothing else";
     }
     return std::nullopt;
 }
@@ -598,6 +595,8 @@ std::optional<std::string> invalid(const Schedule& schedule) {
 
 std::optional<std::string> invalid(const passes::RestirPt& settings, std::span<const PassKind> passes) {
     const bool spatial = std::ranges::find(passes, PassKind::restir_pt_spatial) != passes.end();
+    const bool temporal = std::ranges::find(passes, PassKind::restir_pt_temporal) != passes.end();
+    const bool duplication = std::ranges::find(passes, PassKind::restir_pt_duplication) != passes.end();
     const auto setting = [](std::string_view key, const std::string& value) {
         return "ReSTIR PT's " + std::string(key) + ", " + value + ", ";
     };
@@ -633,6 +632,33 @@ std::optional<std::string> invalid(const passes::RestirPt& settings, std::span<c
         return setting("sigma", text(settings.sigma)) +
                "is read only with restir_pt_spatial, and must be its zero (left out of the graph file) otherwise";
     }
+    const auto unread_by = [&](std::string_view key, float value, std::string_view pass) {
+        return setting(key, text(value)) + "is read only with " + std::string(pass) +
+               ", and must be its zero (left out of the graph file) otherwise";
+    };
+    if (temporal && !finite_within(settings.confidence_cap, 1.0f, contracts::max_confidence_cap)) {
+        return setting("confidence_cap", text(settings.confidence_cap)) + "must be finite, within [1, " +
+               text(contracts::max_confidence_cap) + "]";
+    }
+    if (!temporal && settings.confidence_cap != 0.0f) {
+        return unread_by("confidence_cap", settings.confidence_cap, "restir_pt_temporal");
+    }
+    // Bounded by the cap where temporal reuse reads one; a map without it is
+    // the passes' rule's to refuse (restir_pt_broken), by its own words.
+    if (duplication && !finite_within(settings.cap_floor, 0.0f,
+                                      temporal ? settings.confidence_cap : contracts::max_confidence_cap)) {
+        return setting("cap_floor", text(settings.cap_floor)) + "must be finite, within [0, confidence_cap]";
+    }
+    if (!duplication && settings.cap_floor != 0.0f) {
+        return unread_by("cap_floor", settings.cap_floor, "restir_pt_duplication");
+    }
+    if (duplication && !(std::isfinite(settings.cap_exponent) && settings.cap_exponent > 0.0f &&
+                         settings.cap_exponent <= 1.0f)) {
+        return setting("cap_exponent", text(settings.cap_exponent)) + "must be finite, within (0, 1]";
+    }
+    if (!duplication && settings.cap_exponent != 0.0f) {
+        return unread_by("cap_exponent", settings.cap_exponent, "restir_pt_duplication");
+    }
     return std::nullopt;
 }
 
@@ -662,7 +688,9 @@ bool accumulates(const Schedule& schedule) {
 }
 
 bool reuses_history(const Schedule& schedule) {
-    return std::ranges::find(schedule.passes, PassKind::restir_temporal) != schedule.passes.end();
+    return std::ranges::any_of(schedule.passes, [](PassKind kind) {
+        return kind == PassKind::restir_temporal || kind == PassKind::restir_pt_temporal;
+    });
 }
 
 }  // namespace serenity::frame

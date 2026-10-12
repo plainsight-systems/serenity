@@ -86,9 +86,13 @@ struct FrameResources {
 
     // ReSTIR PT's (frame_images.h, PathReuseImages; renderer.h): its
     // settings and reuse textures, static; its path reservoirs, primary
-    // hits and light buffer; and, with its spatial pass, the shifted paths,
-    // the replaying pairs, their count and the replay's indirect grid. 0
-    // without its passes.
+    // hits, light buffer and light tiles; with either reuse, the shifted
+    // paths, the replaying shifts, their count and the replay's indirect
+    // grid; and with temporal reuse its reuse constants, last frame's
+    // primary hits, this frame's and last frame's final reservoirs, the
+    // previous pixels and the duplication map, beside the previous
+    // positions and last frame's transforms and glows above, which the two
+    // families, never in one graph, share. 0 without its passes.
     MTL::GPUAddress path_settings = 0;
     MTL::GPUAddress pairing = 0;
     MTL::GPUAddress path_reservoirs = 0;
@@ -98,6 +102,13 @@ struct FrameResources {
     MTL::GPUAddress replays = 0;
     MTL::GPUAddress replay_counter = 0;
     MTL::GPUAddress replay_grid = 0;
+    MTL::GPUAddress light_tiles = 0;
+    MTL::GPUAddress path_constants = 0;
+    MTL::GPUAddress last_primaries = 0;
+    MTL::GPUAddress path_finals = 0;
+    MTL::GPUAddress last_path_finals = 0;
+    MTL::GPUAddress previous_pixels = 0;
+    MTL::GPUAddress duplication = 0;
 };
 
 }  // namespace serenity::metal

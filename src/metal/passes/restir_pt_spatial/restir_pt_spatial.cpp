@@ -52,6 +52,10 @@ void RestirPtSpatialPass::record(MTL4::ComputeCommandEncoder* encoder, const Fra
     arguments->setAddress(resources.replays, binding::replays);
     arguments->setAddress(resources.replay_counter, binding::counter);
     arguments->setAddress(resources.replay_grid, binding::dispatch);
+    // Unwritten without temporal reuse, where it is 0: bound then to the
+    // reservoirs, since Metal's validation refuses a null binding.
+    arguments->setAddress(resources.path_finals != 0 ? resources.path_finals : resources.path_reservoirs,
+                          binding::finals);
     const auto barrier = [&] {
         encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
     };

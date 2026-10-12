@@ -294,26 +294,41 @@ passes::RestirDi read_restir_di(std::string_view source, const toml::table& tabl
 }
 
 // ReSTIR PT's settings (core/contracts/path_reuse_settings.h): the four
-// every graph with its passes reads, and neighbors and sigma with
-// restir_pt_spatial alone. Each key the passes read must be written, each
+// every graph with its passes reads, neighbors and sigma with
+// restir_pt_spatial alone, confidence_cap with restir_pt_temporal, and
+// cap_floor and cap_exponent with restir_pt_duplication. Each key the passes read must be written, each
 // they do not must not be; each value is checked against its range alone,
 // beside the written defaults (core/passes/restir_pt.h), so a mistake is
 // reported at its own line.
 passes::RestirPt read_restir_pt(std::string_view source, const toml::table& table, std::span<const PassKind> kinds) {
-    const bool spatial = std::ranges::find(kinds, PassKind::restir_pt_spatial) != kinds.end();
-    constexpr std::array<std::string_view, 6> keys = {"nee_candidates", "max_surfaces", "footprint",
-                                                      "roughness",      "neighbors",    "sigma"};
-    const auto reads = [&](std::string_view key) {
-        return key == "neighbors" || key == "sigma" ? spatial : std::ranges::find(keys, key) != keys.end();
+    const auto has = [&](PassKind kind) { return std::ranges::find(kinds, kind) != kinds.end(); };
+    const bool spatial = has(PassKind::restir_pt_spatial);
+    const bool temporal = has(PassKind::restir_pt_temporal);
+    const bool duplication = has(PassKind::restir_pt_duplication);
+    constexpr std::array<std::string_view, 9> keys = {"nee_candidates", "max_surfaces",   "footprint",
+                                                      "roughness",      "neighbors",      "sigma",
+                                                      "confidence_cap", "cap_floor",      "cap_exponent"};
+    // The pass a key is read only with; none for the four every graph reads.
+    const auto reader = [](std::string_view key) -> std::optional<PassKind> {
+        if (key == "neighbors" || key == "sigma") {
+            return PassKind::restir_pt_spatial;
+        }
+        if (key == "confidence_cap") {
+            return PassKind::restir_pt_temporal;
+        }
+        if (key == "cap_floor" || key == "cap_exponent") {
+            return PassKind::restir_pt_duplication;
+        }
+        return std::nullopt;
     };
     for (const auto& [key, value] : table) {
-        if (!reads(key.str())) {
+        if (std::ranges::find(keys, key.str()) == keys.end()) {
+            throw GraphFileError(at(source, key.source(), "unknown key '" + std::string(key.str()) + "' in [restir_pt]"));
+        }
+        if (const std::optional<PassKind> pass = reader(key.str()); pass && !has(*pass)) {
             throw GraphFileError(at(source, key.source(),
-                                    std::ranges::find(keys, key.str()) == keys.end()
-                                        ? "unknown key '" + std::string(key.str()) + "' in [restir_pt]"
-                                        : "'" + std::string(key.str()) +
-                                              "' is read only with restir_pt_spatial "
-                                              "(core/contracts/path_reuse_settings.h): a key nobody reads"));
+                                    "'" + std::string(key.str()) + "' is read only with " + std::string(name(*pass)) +
+                                        " (core/contracts/path_reuse_settings.h): a key nobody reads"));
         }
     }
     passes::RestirPt baseline{};
@@ -324,6 +339,13 @@ passes::RestirPt read_restir_pt(std::string_view source, const toml::table& tabl
     if (spatial) {
         baseline.neighbors = passes::written_path_neighbors;
         baseline.sigma = passes::written_sigma;
+    }
+    if (temporal) {
+        baseline.confidence_cap = passes::written_confidence_cap;
+    }
+    if (duplication) {
+        baseline.cap_floor = passes::written_cap_floor;
+        baseline.cap_exponent = passes::written_cap_exponent;
     }
     passes::RestirPt settings = baseline;
     const auto take = [&]<typename T>(std::string_view key, T passes::RestirPt::*member, auto read) {
@@ -348,6 +370,14 @@ passes::RestirPt read_restir_pt(std::string_view source, const toml::table& tabl
     if (spatial) {
         take("neighbors", &passes::RestirPt::neighbors, as_count("neighbors"));
         take("sigma", &passes::RestirPt::sigma, as_float("sigma"));
+    }
+    if (temporal) {
+        take("confidence_cap", &passes::RestirPt::confidence_cap, as_float("confidence_cap"));
+        baseline.confidence_cap = settings.confidence_cap;  // the floor's bound is the cap written
+    }
+    if (duplication) {
+        take("cap_floor", &passes::RestirPt::cap_floor, as_float("cap_floor"));
+        take("cap_exponent", &passes::RestirPt::cap_exponent, as_float("cap_exponent"));
     }
     return settings;
 }

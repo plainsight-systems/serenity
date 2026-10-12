@@ -10,7 +10,7 @@ namespace serenity::metal {
 
 // Axis: Pass (ReSTIR PT's paired spatial reuse).
 //
-// Steps 5 to 8 of metal/passes/restir_pt/restir_pt.metal.h, four
+// Steps 8 to 11 of metal/passes/restir_pt/restir_pt.metal.h, four
 // dispatches, each behind a barrier on the one before (GPU.8: a write and
 // its reader):
 //
@@ -24,14 +24,14 @@ namespace serenity::metal {
 //   restir_pt_spatial      one thread a pixel: the pairwise MIS merge, its
 //                          estimate added to the light buffer.
 //
-// Reads: the scene, structure, camera, settings, reuse textures, path
-// reservoirs and primary hits. Writes: the shifted paths, the list, its
-// count and grid, and the light buffer.
+// Reads: the scene, structure, settings, reuse textures, path reservoirs
+// and primary hits. Writes: the shifted paths, the list, its count and
+// grid, the light buffer and, with temporal reuse, the final reservoirs.
 //
-// Cost: three shifts a pixel, each a primary ray traced again and a
-// reconnection's shadow ray, more for the pairs that replay; the merge's
-// reads (restir_pt.metal.h counts them). Measured in docs/research/
-// 2026-10-11-restir-pt-phase1.md.
+// Cost: three shifts a pixel, each its destination's 48-byte G-buffer
+// record and a reconnection's shadow ray, more for the pairs that replay;
+// the merge's reads (restir_pt.metal.h counts them). Measured in
+// docs/research/2026-10-11-restir-pt-phase2.md.
 class RestirPtSpatialPass {
 public:
     explicit RestirPtSpatialPass(const Library& library);

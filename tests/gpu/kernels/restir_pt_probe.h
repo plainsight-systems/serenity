@@ -5,6 +5,7 @@
 // contract (core/contracts/frame_constants.h).
 
 #include "core/contracts/float3.h"
+#include "core/contracts/path_reservoir.h"
 #include "core/contracts/shared_layout.h"
 
 namespace serenity {
@@ -76,10 +77,13 @@ struct ShiftQuery {
 
 static_assert(sizeof(ShiftQuery) == 32, "ShiftQuery must be the same 32 bytes on the host and in shaders");
 
+// The shift as the passes run it, from the destination's G-buffer record
+// (the record the destination's own tree packs); and from its primary ray
+// traced and resolved again, as Phase 1 ran it.
 struct ShiftResult {
     contracts::Float3 stored;           // the reservoir's F
     uint32_t flags;                     // its flags
-    contracts::Float3 shifted;          // F at the destination
+    contracts::Float3 shifted;          // F at the destination, from the G-buffer
     float jacobian;                     // the shift's
     contracts::Float3 source_hit;       // x1
     uint32_t succeeded;                 // whether the shift did
@@ -87,11 +91,48 @@ struct ShiftResult {
     float weight;                       // the reservoir's W
     contracts::Float3 reconnection;     // x_k, decoded
     float source_jacobian;              // the reservoir's cached denominator
+    contracts::Float3 retraced;         // F at the destination, its primary ray traced again
+    float retraced_jacobian;
+    uint32_t retraced_succeeded;
+    uint32_t padding[3];
 };
 
-static_assert(sizeof(ShiftResult) == 80, "ShiftResult must be the same 80 bytes on the host and in shaders");
+static_assert(sizeof(ShiftResult) == 112, "ShiftResult must be the same 112 bytes on the host and in shaders");
+
+// One temporal merge (metal/passes/restir_pt/restir_pt.metal.h,
+// temporal_merge): the two reservoirs, the two shifts as the temporal pass
+// stores them (F and the Jacobian), and the cap's inputs, as the pass reads
+// them: the settings' cap, floor and exponent, and the duplication score
+// at last's pixel.
+struct PathMergeQuery {
+    contracts::PathReservoir own;
+    contracts::PathReservoir last;
+    contracts::Float3 here;  // last's path shifted here
+    float here_jacobian;
+    contracts::Float3 there;  // own's path shifted there
+    float there_jacobian;
+    float cap;
+    float floor;
+    float exponent;
+    float duplication;
+    float u0;  // the merge's two numbers
+    float u1;
+    uint32_t padding[2];
+};
+
+static_assert(sizeof(PathMergeQuery) == 192, "PathMergeQuery must be the same 192 bytes on the host and in shaders");
+
+struct PathMergeResult {
+    contracts::PathReservoir kept;
+    contracts::Float3 estimate;
+    float cap;  // c_cap as the pass computes it
+};
+
+static_assert(sizeof(PathMergeResult) == 80, "PathMergeResult must be the same 80 bytes on the host and in shaders");
 
 #if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<PathMergeQuery>);
+static_assert(std::is_trivially_copyable_v<PathMergeResult>);
 static_assert(std::is_trivially_copyable_v<CriteriaQuery>);
 static_assert(std::is_trivially_copyable_v<CriteriaResult>);
 static_assert(std::is_trivially_copyable_v<PairingQuery>);
