@@ -424,10 +424,13 @@ inline Shifted reconnect(path::Scene scene, Shading here, float3 beta, Before be
 // Replay's last step for a path with no reconnection vertex: at y_{d-1},
 // `here`, the source's numbers drawn once more, and whatever the ray finds
 // at y_d counted as the path tracer counts it (the identity in the primary
-// sample space: Jacobian 1).
+// sample space: Jacobian 1). `chain` the replayed path's since its last
+// diffuse bounce (mnee::chain_after()): with MNEE, a light struck at the
+// end of MNEE's chain is not the path's (mnee::covered()), so the shift
+// fails, as the tree at the destination would not have offered it.
 inline Shifted replay_end(path::Scene scene, Shading here, float3 beta, Before before, float threshold,
                           serenity::contracts::PathReservoir source, serenity::contracts::PathReuseSettings settings,
-                          PathNumbers stream) {
+                          PathNumbers stream, uint chain) {
     namespace c = serenity::contracts;
     const uint d = c::path_length(source.flags);
     const c::PathEnd end = c::path_end(source.flags);
@@ -456,7 +459,9 @@ inline Shifted replay_end(path::Scene scene, Shading here, float3 beta, Before b
         return failed();
     }
     const ShapeLight glowing = light_at(scene.lights(), hit.primitive);
-    if (!glowing.is_light) {
+    if (!glowing.is_light ||
+        (settings.mnee != 0u &&
+         mnee::covered(mnee::chain_after(chain, next.lobe, scene.shapes().records[here.surface.primitive].kind)))) {
         return failed();
     }
     const float3 point = along.origin + hit.t * along.direction;
@@ -497,6 +502,7 @@ inline Shifted shift_path(path::Scene scene, Primary destination, serenity::cont
     float3 beta = float3(1.0f);
     Before before{float3(0.0f), float3(0.0f), 0.0f, true, 0.0f};  // the camera: never in a pair
     const uint last = k == 0u ? d - 1u : k - 1u;
+    uint chain = mnee::off_chain;  // replay_end()'s
     for (uint index = 1u; index < last; ++index) {
         // Step 2 at y_vertex, surface vertex - 1.
         PathNumbers numbers = bsdf_numbers(stream, index - 1u);
@@ -506,6 +512,9 @@ inline Shifted shift_path(path::Scene scene, Primary destination, serenity::cont
         }
         const float3 wi = to_float3(next.direction);
         beta *= to_float3(next.value) * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) / next.pdf;
+        if (settings.mnee != 0u) {
+            chain = mnee::chain_after(chain, next.lobe, scene.shapes().records[here.surface.primitive].kind);
+        }
         // Step 3: the pair replay passes must not be one the criteria take.
         if (index >= 2u &&
             reconnection::connectable(full_pair(before, here, next.lobe, next.pdf), threshold, settings.roughness)) {
@@ -528,7 +537,7 @@ inline Shifted shift_path(path::Scene scene, Primary destination, serenity::cont
         const c::SurfaceInteraction surface = surface_interaction(scene.shapes(), hit.primitive, point, wi);
         here = Shading{surface, resolve_bsdf(scene.materials(), scene.textures(), surface), -wi, medium};
     }
-    return k == 0u ? replay_end(scene, here, beta, before, threshold, source, settings, stream)
+    return k == 0u ? replay_end(scene, here, beta, before, threshold, source, settings, stream, chain)
                    : reconnect(scene, here, beta, before, threshold, source, settings);
 }
 

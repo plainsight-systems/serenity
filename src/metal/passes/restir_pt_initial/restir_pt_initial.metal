@@ -10,6 +10,7 @@
 #include "core/contracts/camera.h"
 #include "core/contracts/frame_constants.h"
 #include "core/contracts/light_tile.h"
+#include "core/contracts/mnee_request.h"
 #include "core/contracts/path_reservoir.h"
 #include "core/contracts/path_reuse_settings.h"
 #include "core/contracts/transform.h"
@@ -20,6 +21,44 @@ using namespace metal;
 using namespace metal::raytracing;
 using namespace serenity::shaders;
 namespace binding = serenity::bindings::restir_pt;
+
+// One pixel's tree (steps 1 to 4), with MNEE (`manifold`, the graph's
+// mnee: its requests written on `queue`, whose light the MNEE pass adds to
+// the light buffer after) or without; a kernel for each, below, so the one
+// without compiles the tree it always did and binds what it always bound.
+template <bool manifold>
+inline void initial_pixel(constant serenity::contracts::FrameConstants& frame,
+                          constant serenity::contracts::CameraData& camera, primitive_acceleration_structure structure,
+                          constant serenity::gpu::SceneBlock& block, constant float* sphere_glows,
+                          constant serenity::contracts::Transform* transforms,
+                          constant serenity::contracts::PathReuseSettings& settings,
+                          device serenity::contracts::PathReservoir* reservoirs,
+                          device serenity::contracts::PrimaryHit* primaries, device float4* light,
+                          const device serenity::contracts::LightTileEntry* tiles,
+                          device serenity::contracts::Float3* previous_positions,
+                          constant serenity::contracts::Transform* last_transforms, mnee::Queue queue, uint2 pixel) {
+    if (pixel.x >= frame.width || pixel.y >= frame.height) {
+        return;
+    }
+    const uint i = pixel.y * frame.width + pixel.x;
+    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
+    PathNumbers numbers;
+    const CameraRay ray = restir_pt::primary_ray(camera, pixel, frame.frame_index, uint2(frame.width, frame.height),
+                                                 numbers);
+    // confidence_cap is 0 exactly in a graph without restir_pt_temporal,
+    // where neither array is bound (contracts/path_reuse_settings.h).
+    const bool temporal = settings.confidence_cap > 0.0f;
+    restir_pt::TreeGatherOf<manifold> tree = restir_pt::start_tree<manifold>(
+        settings, numbers, scene.shapes(), restir_pt::block_tile(tiles, pixel, frame.frame_index), queue, i);
+    (void)path::walk_path<path::Start::camera, path::Stop::at_end>(scene, path::walk_from(ray), Shading{}, 0u,
+                                                                   numbers, tree);
+    reservoirs[i] = restir_pt::finish_tree(tree);
+    primaries[i] = tree.primary;
+    if (temporal && tree.primary.distance > 0.0f) {
+        previous_positions[i] = to_packed(restir_pt::previous_position(tree, transforms, last_transforms));
+    }
+    light[i] = float4(tree.seen, 0.0f);
+}
 
 kernel void restir_pt_initial(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
                               constant serenity::contracts::CameraData& camera [[buffer(binding::camera)]],
@@ -37,27 +76,35 @@ kernel void restir_pt_initial(constant serenity::contracts::FrameConstants& fram
                               constant serenity::contracts::Transform* last_transforms
                               [[buffer(binding::last_transforms)]],
                               uint2 pixel [[thread_position_in_grid]]) {
-    if (pixel.x >= frame.width || pixel.y >= frame.height) {
-        return;
-    }
-    const uint i = pixel.y * frame.width + pixel.x;
-    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
-    PathNumbers numbers;
-    const CameraRay ray = restir_pt::primary_ray(camera, pixel, frame.frame_index, uint2(frame.width, frame.height),
-                                                 numbers);
-    // confidence_cap is 0 exactly in a graph without restir_pt_temporal,
-    // where neither array is bound (contracts/path_reuse_settings.h).
-    const bool temporal = settings.confidence_cap > 0.0f;
-    restir_pt::TreeGather tree =
-        restir_pt::start_tree(settings, numbers, scene.shapes(), restir_pt::block_tile(tiles, pixel, frame.frame_index));
-    (void)path::walk_path<path::Start::camera, path::Stop::at_end>(scene, path::walk_from(ray), Shading{}, 0u,
-                                                                   numbers, tree);
-    reservoirs[i] = restir_pt::finish_tree(tree);
-    primaries[i] = tree.primary;
-    if (temporal && tree.primary.distance > 0.0f) {
-        previous_positions[i] = to_packed(restir_pt::previous_position(tree, transforms, last_transforms));
-    }
-    light[i] = float4(tree.seen, 0.0f);
+    initial_pixel<false>(frame, camera, structure, block, sphere_glows, transforms, settings, reservoirs, primaries,
+                         light, tiles, previous_positions, last_transforms, mnee::Queue{nullptr, nullptr}, pixel);
+}
+
+kernel void restir_pt_initial_mnee(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
+                                   constant serenity::contracts::CameraData& camera [[buffer(binding::camera)]],
+                                   primitive_acceleration_structure structure [[buffer(binding::structure)]],
+                                   constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
+                                   constant float* sphere_glows [[buffer(binding::glows)]],
+                                   constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],
+                                   constant serenity::contracts::PathReuseSettings& settings
+                                   [[buffer(binding::settings)]],
+                                   device serenity::contracts::PathReservoir* reservoirs
+                                   [[buffer(binding::reservoirs)]],
+                                   device serenity::contracts::PrimaryHit* primaries [[buffer(binding::primaries)]],
+                                   device float4* light [[buffer(binding::light)]],
+                                   const device serenity::contracts::LightTileEntry* tiles
+                                   [[buffer(binding::light_tiles)]],
+                                   device serenity::contracts::Float3* previous_positions
+                                   [[buffer(binding::previous_positions)]],
+                                   constant serenity::contracts::Transform* last_transforms
+                                   [[buffer(binding::last_transforms)]],
+                                   device serenity::contracts::MneeRequest* mnee_requests
+                                   [[buffer(binding::mnee_requests)]],
+                                   device atomic_uint* mnee_header [[buffer(binding::mnee_header)]],
+                                   uint2 pixel [[thread_position_in_grid]]) {
+    initial_pixel<true>(frame, camera, structure, block, sphere_glows, transforms, settings, reservoirs, primaries,
+                        light, tiles, previous_positions, last_transforms, mnee::Queue{mnee_requests, mnee_header},
+                        pixel);
 }
 
 // The frame's light tiles (contracts/light_tile.h), one thread an entry:

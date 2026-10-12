@@ -1,10 +1,13 @@
 #pragma once
 
+#include <optional>
+
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
 #include "metal/device/library.h"
 #include "metal/frame/frame_resources.h"
+#include "metal/passes/mnee/mnee.h"
 
 namespace serenity::metal {
 
@@ -29,7 +32,9 @@ namespace serenity::metal {
 // pass (docs/research/2026-10-11-restir-pt-phase2.md). Two dispatches.
 class RestirPtInitialPass {
 public:
-    explicit RestirPtInitialPass(const Library& library);
+    // With `mnee`, the tree's MNEE requests are solved after it, their
+    // light added to the light buffer (metal/passes/mnee/mnee.h).
+    RestirPtInitialPass(const Library& library, bool mnee);
 
     // Records the pass. Throws MetalError if `resources` lacks any array or
     // structure it reads or writes above.
@@ -38,6 +43,7 @@ public:
 private:
     NS::SharedPtr<MTL::ComputePipelineState> tiles_;
     NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
+    std::optional<MneePass> mnee_;  // with mnee
 };
 
 }  // namespace serenity::metal

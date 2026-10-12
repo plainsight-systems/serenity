@@ -28,6 +28,7 @@
 #include "metal/film/non_finite.h"
 #include "metal/frame/accumulation.h"
 #include "metal/frame/frame_images.h"
+#include "metal/frame/mnee_list.h"
 #include "metal/passes/display/display.h"
 #include "metal/passes/path/path.h"
 #include "metal/passes/preview/preview.h"
@@ -356,6 +357,7 @@ private:
     // ReSTIR PT's (above): its arrays, and its settings and reuse textures.
     // None for a graph without its passes.
     std::unique_ptr<PathReuseImages> path_reuse_;
+    std::unique_ptr<MneeList> mnee_list_;  // with mnee: MNEE's work list (contract 16)
     std::unique_ptr<StaticArrays> path_static_;
     std::unique_ptr<FrameArray> path_constants_;  // with restir_pt_temporal: contracts::PathReuseConstants
     std::unique_ptr<ReuseImages> reuse_;

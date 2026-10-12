@@ -109,6 +109,15 @@ struct FrameResources {
     MTL::GPUAddress last_path_finals = 0;
     MTL::GPUAddress previous_pixels = 0;
     MTL::GPUAddress duplication = 0;
+
+    // With mnee (core/frame/schedule.h): MNEE's work list (contract 16),
+    // its header and the solve's indirect grid in it, and, for the path
+    // pass, each pixel's MNEE light before it is folded in (mnee_list.h);
+    // 0 otherwise.
+    MTL::GPUAddress mnee_requests = 0;
+    MTL::GPUAddress mnee_header = 0;
+    MTL::GPUAddress mnee_grid = 0;
+    MTL::GPUAddress mnee_light = 0;
 };
 
 }  // namespace serenity::metal

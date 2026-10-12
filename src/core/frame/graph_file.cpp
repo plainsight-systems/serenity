@@ -383,7 +383,7 @@ passes::RestirPt read_restir_pt(std::string_view source, const toml::table& tabl
 }
 
 Schedule read_schedule(std::string_view source, const toml::table& root) {
-    only(source, root, {"passes", "tone_map", "restir_di", "restir_pt"}, "the frame graph");
+    only(source, root, {"passes", "tone_map", "restir_di", "restir_pt", "mnee"}, "the frame graph");
 
     const toml::node* passes_node = root.get("passes");
     if (!passes_node) {
@@ -441,6 +441,21 @@ Schedule read_schedule(std::string_view source, const toml::table& root) {
                 at(source, *restir_pt_node, "the frame graph has [restir_pt] settings and no ReSTIR PT pass"));
         }
         schedule.restir_pt = read_restir_pt(source, *table, schedule.passes);
+    }
+    // Caustics by MNEE: true or false, read by the path pass and ReSTIR
+    // PT's; a graph with neither refused at the key.
+    if (const toml::node* mnee_node = root.get("mnee")) {
+        const std::optional<bool> mnee = mnee_node->value_exact<bool>();
+        if (!mnee) {
+            throw GraphFileError(at(source, *mnee_node, "'mnee' must be true or false"));
+        }
+        schedule.mnee = *mnee;
+        if (schedule.mnee && std::ranges::none_of(schedule.passes, [](PassKind kind) {
+                return kind == PassKind::path || is_restir_pt(kind);
+            })) {
+            throw GraphFileError(at(source, *mnee_node, "the frame graph sets mnee and has no path or ReSTIR PT pass "
+                                                        "to read it"));
+        }
     }
     if (const std::optional<std::string> reason = invalid(schedule)) {
         throw GraphFileError(at(source, *passes_node, *reason));
