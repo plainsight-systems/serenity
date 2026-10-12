@@ -5,12 +5,13 @@ This file tracks active and accepted work.
 ## Active
 
 - **ReSTIR PT** (docs/research/2026-10-11-restir-pt-layout.md). Phase 1
-  built 2026-10-11 on branch restir-pt-phase1 (initial sampling, the
-  hybrid shift, paired spatial reuse; graphs/restir_pt.toml):
-  docs/research/2026-10-11-restir-pt-phase1.md. The gate is not met: at
-  equal frame time it is visibly better on porcelain and not on glass or
-  mirrors. Stopped before Phase 2 (temporal reuse, duplication maps) for
-  the user's decision.
+  built 2026-10-11 (initial sampling, the hybrid shift, paired spatial
+  reuse): docs/research/2026-10-11-restir-pt-phase1.md, its gate not met.
+  Phase 2 built 2026-10-11 by the user's direction (temporal reuse by
+  Talbot MIS, the duplication map, a G-buffer of primary hits, light tiles;
+  graphs/restir_pt.toml is the whole of Enhanced at its defaults):
+  docs/research/2026-10-11-restir-pt-phase2.md. Next: manifold NEE for
+  glass and mirror sparkle (a separate effort), then Phase 3's references.
 
 - **The first frames.** Step (a), done: a frame's whole path, end to end. A
   frame graph file names the passes, the Metal 4 backend records it with two
@@ -122,11 +123,15 @@ Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
 - ReSTIR spatial: graphs/restir.toml in basic mode is -1.45% against the reference's mean at t = 120 (-0.33% at t = 8), each merge alone within 0.16%; check against raytraced once last frame's structure is kept (restir-spatial.md).
 - ReSTIR spatial: the pass costs 3.4 ms at 3456 x 2234; GPU counters against its counted traffic (gathers within the radius; a tiled order if line-bound).
 - bsdf_candidates = 0 is Phase A but for rim points, now weighed where Phase A's direction test dropped them; not bit-identical.
-- ReSTIR PT: every shift traces its destination's primary ray again and resolves its BSDF (3 a pixel, textures twice each); a G-buffer of primary hits in their place.
-- ReSTIR PT: NEE's 32 candidates read 616 lights' records at random (initial sampling 2x the path pass); Enhanced's light tiles, measured.
 - ReSTIR PT: roulette's survival folded into the source density has no test of its own; the marbles' accumulated mean holds it (0.186420 against the reference's 0.186422).
 - ReSTIR PT: the replay's indirect grid is ordered by a dispatch-to-dispatch barrier; confirm Metal 4 counts the indirect-argument read in that stage.
 - ReSTIR PT: a reconnection segment is dimmed by y_{k-1}'s medium, the cached suffix by x's; they differ only for a rough surface inside an absorbing medium (no scene has one).
 - ReSTIR PT: eq. 3's signs read as (+, -, +) from the extracted text, the one reading that meets the paper's footnote (sigma 0.8, one shuffle); check against the PDF.
 - ReSTIR PT: path_merge's weight functions take four floats in a row (I.24); a struct if they grow.
-- ReSTIR PT: the merge's kept path (for Phase 2's temporal reuse) is not drawn yet: Phase 1 shades with the vector-valued sum alone.
+- ReSTIR PT: the tree's gather costs the initial pass 14 ms over the path pass at 3456 x 2234 with one NEE candidate (44 against 30 ms); GPU counters for where (the reservoir's stores, the criteria's footprints, the shape points' encoding).
+- ReSTIR PT: a shift's shadow ray is most of its cost (the spatial pass 30 ms, 13.7 of it the reconnections' visibility, 5.7 the replays); the RT unit on bounding-box shapes, counters.
+- ReSTIR PT: the duplication map costs 4.1 ms at 3456 x 2234 (3%); 32-bit keys in two arrays were slower (130.4 against 128.7 ms); a count shared along rows.
+- ReSTIR PT: the temporal shift of a pixel's path into last frame's domain traces this frame's structure (a firefly that crossed the ray last frame and not this one is missed); keep last frame's structure (scene_acceleration.h, Keep::last_too) and trace it.
+- ReSTIR PT: a reconnection keeps its suffix after x_k as its source frame lit it (contract 15's cached radiance, as the 2022 code); a moved firefly's light lingers after x_k until resampled away, bounded by the cap.
+- ReSTIR PT: the temporal reuse's previous position under a moving primary surface has no test; the marbles' surfaces are still.
+- ReSTIR PT: dual motion vectors (Enhanced §6.4) for disocclusions under camera motion; the marbles' camera is fixed.

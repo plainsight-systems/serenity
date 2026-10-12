@@ -81,7 +81,9 @@ Departures, each with why:
 - **No light tiles.** Enhanced presamples 128 tiles of 1024 lights by power
   for cache coherence (§6.1). The fireflies are chosen uniformly here
   (their power varies only by glow), so tiles would buy coherence only.
-  Queued, measured if NEE's loads show up.
+  Queued, measured if NEE's loads show up. (Built in Phase 2: the
+  packed entries made the initial pass 4.7% faster, so kept;
+  2026-10-11-restir-pt-phase2.md.)
 - **No dual motion vectors.** They cut disocclusion noise under camera
   motion (§6.4). The marbles' camera is fixed; disocclusions are a moving
   firefly's few pixels. Queued.
