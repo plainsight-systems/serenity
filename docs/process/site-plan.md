@@ -1,7 +1,7 @@
 # Serenity project site
 
-Status: site and R2 media complete, 2026-10-12. Pages domain verified with
-HTTPS enforced; deployment workflow ready for the first merge to main.
+Status: published at https://serenity.plainsight-systems.com/ on 2026-10-12.
+R2 media and GitHub Pages delivery are verified; HTTPS is enforced.
 
 ## Purpose and public state
 
@@ -222,3 +222,20 @@ includes a source hash, while Homebrew does not. The version check now accepts
 both forms of the exact pinned release and rejects prereleases; a regression
 test covers both platforms and rejected versions (eight tests total). The
 site-only branch is [PR #1](https://github.com/plainsight-systems/serenity/pull/1).
+
+
+## First publication, 2026-10-12
+
+PR #1 was merged by the user's direction. The [Pages deployment](https://github.com/plainsight-systems/serenity/actions/runs/38281857163)
+passed. All four live pages and the custom 404 match the production build
+byte for byte. HTTP redirects to HTTPS; a missing route returns HTTP 404.
+Browser verification on the public domain confirms the layout, image loading,
+and R2 video playback at 1920 × 1080. Screenshot: `.cache/serenity-live.jpg`.
+
+
+## Navigation amendment, 2026-10-12
+
+The user requested a GitHub link in the header as well as the footer. It follows
+About and links to https://github.com/plainsight-systems/serenity, superseding
+the earlier footer-only decision. The Plainsight hub now links to the published
+Serenity site before the repository link on both Home and Projects.

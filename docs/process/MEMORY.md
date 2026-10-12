@@ -155,11 +155,15 @@ Clarified by the user 2026-10-12:
   build requires their configured HTTPS URLs and contains no local media.
   Public delivery checks passed (sizes, MIME types, byte ranges). GitHub Pages
   workflow is prepared: PRs validate; only main deploys. Actions, Python, and
-  Hugo are pinned; CI needs no R2 credentials. First deployment awaits merging
-  [PR #1](https://github.com/plainsight-systems/serenity/pull/1), based on
-  main without ReSTIR changes.
-- Keep the general GitHub link in the footer; omit duplicate header and
-  homepage build/source actions. Contextual writeup links remain.
+  Hugo are pinned; CI needs no R2 credentials.
+  [PR #1](https://github.com/plainsight-systems/serenity/pull/1) was merged
+  and deployed on 2026-10-12 without ReSTIR changes. The live site is
+  https://serenity.plainsight-systems.com/. All four pages and the custom 404
+  match the validated build; HTTP redirects to HTTPS, and the R2 film plays
+  at 1920 × 1080 on the live domain.
+- Navigation amendment (2026-10-12): by user request, GitHub now appears
+  after About in the header as well as in the footer, linking to the Serenity
+  repository. Homepage build/source actions remain omitted.
 
 ## Research
 
