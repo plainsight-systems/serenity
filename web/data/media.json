@@ -1,0 +1,48 @@
+{
+  "artwork": {
+    "local": "docs/assets/serenity-readme.png",
+    "url": "",
+    "width": 2172,
+    "height": 724,
+    "alt": "Screenprint illustration of glass and brass spheres at night. Scattered fireflies settle into a calm scene and the outline of a small ship.",
+    "provenance": "Project illustration, not a rendered frame."
+  },
+  "poster": {
+    "local": "docs/writeups/images/marbles-opening-10s.jpg",
+    "url": "",
+    "width": 1920,
+    "height": 1080,
+    "alt": "Thirty-six marbles on a walnut table, lit by fireflies ten seconds into the opening.",
+    "provenance": "Milestone 1, 64 samples per pixel, 1920 \u00d7 1080, t = 10 s."
+  },
+  "film": {
+    "local": "media/2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4",
+    "width": 1920,
+    "height": 1080,
+    "type": "video/mp4",
+    "label": "1080p film",
+    "provenance": "Milestone 1 \u00b7 Offline render \u00b7 1920 \u00d7 1080 \u00b7 30 fps playback",
+    "alt": "Thirty-second offline render of the marbles opening as the fireflies wake"
+  },
+  "film_small": {
+    "local": "media/2026-10-10-marbles-opening-v3-540p.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-10-marbles-opening-v3-540p.mp4",
+    "optional": true,
+    "label": "Smaller playback file"
+  },
+  "film_original": {
+    "local": "media/2026-10-10-marbles-opening-v3-master.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-10-marbles-opening-v3-master.mp4",
+    "optional": true,
+    "label": "Open the original render"
+  },
+  "brass": {
+    "local": "media/2026-10-08-brass_sphere-preview-3456x2234.png",
+    "url": "https://media.plainsight-systems.com/2026-10-08-brass_sphere-preview-3456x2234.png",
+    "width": 3456,
+    "height": 2234,
+    "alt": "The first brass sphere on a checkerboard, illuminated by two yellow fireflies.",
+    "provenance": "The first scene \u00b7 8 October 2026 \u00b7 Preview renderer"
+  }
+}

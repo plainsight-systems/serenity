@@ -1,0 +1,17 @@
+# Contract: use the same Hugo as local builds; verify the release bytes before execution.
+name: Install pinned Hugo
+description: Install the same Hugo version used for local builds
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        archive="$RUNNER_TEMP/hugo.tar.gz"
+        curl --fail --location --retry 3 \
+          https://github.com/gohugoio/hugo/releases/download/v0.154.2/hugo_extended_0.154.2_linux-amd64.tar.gz \
+          --output "$archive"
+        echo "a064c1da02dc20d7d7758c966f4f2afe9384924b70d8a1d4925acba528cbfe14  $archive" | sha256sum --check
+        mkdir -p "$RUNNER_TEMP/hugo-bin"
+        tar -xzf "$archive" -C "$RUNNER_TEMP/hugo-bin" hugo
+        echo "$RUNNER_TEMP/hugo-bin" >> "$GITHUB_PATH"

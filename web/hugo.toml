@@ -1,0 +1,15 @@
+# Public pages only; scripts/site.py supplies allowlisted content and media.
+baseURL = 'https://serenity.plainsight-systems.com/'
+title = 'Serenity'
+languageCode = 'en-us'
+timeZone = 'UTC'
+disableKinds = ['taxonomy', 'term', 'RSS']
+enableRobotsTXT = true
+[params]
+description = 'Exploring GPU performance through a path tracer, with moving fireflies and an image at the end.'
+author = 'Andrew Hunter'
+[markup.tableOfContents]
+startLevel = 2
+endLevel = 2
+[markup.highlight]
+style = 'github'

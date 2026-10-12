@@ -104,6 +104,63 @@ Decided 2026-10-08, at the repository's creation:
 - **The architecture documents come before rendering code**: logical
   overview, then change axes, then file mapping (`../architecture/`).
 
+## Project Site Direction
+
+Clarified by the user 2026-10-12:
+
+- The public project is officially at **milestone 1**. ReSTIR is in progress
+  on a branch; implementation notes in the queue do not promote it to a
+  completed public milestone.
+- Add a GitHub Pages project site with Charlotte and Cradle as references.
+  The Hugo site was implemented on 2026-10-12. Pages is configured for
+  `serenity.plainsight-systems.com`, with the domain verified and HTTPS enforced.
+- Selected media will be hosted on Cloudflare R2 through a custom media
+  domain, with GitHub Pages hosting the site (agreed 2026-10-12). Preserve
+  full-quality renders and originals, with smaller playback options for
+  slower connections. The user created `plainsight-public-media`, connected to
+  `media.plainsight-systems.com`. The four public URLs are verified and set in
+  `web/data/media.json`; normal builds no longer need local media.
+  All four selected files are at the bucket root. The master was uploaded
+  through the bucket-scoped local `serenity-r2` profile on 2026-10-12;
+  a complete readback matched the local SHA-256 (416,036,234 bytes).
+- Include the original single brass sphere as a "Where we started" image.
+  Local candidates are `media/2026-10-08-brass_sphere-preview-3456x2234.png`
+  and `media/2026-10-09-brass_sphere-path-1024spp-3456x2234.png`; `media/`
+  is ignored by Git, so publication needs an explicit asset preparation step.
+- The plan is [site-plan.md](site-plan.md); the mockup was approved for implementation on 2026-10-12. The production
+  source is `web/`, built and checked by `scripts/site.py`.
+- Shared visual direction (2026-10-12): match current Cradle and Plainsight
+  Systems, including full-width navy header and footer, ivory surfaces, Plex
+  typography, navigation styling, and a parent-project link. Keep Serenity's
+  own illustration and renderer presentation within that family.
+- Plainsight Systems is the hub and project sites are spokes: no "Other work"
+  or sibling-project lists on Serenity. Link to the hub from About, as Cradle
+  does, and retain the shared parent-project footer link.
+- The footer follows Cradle's exact layout, attribution, and license links,
+  with Serenity as its name. Public prose follows the `andrew-voice` skill and
+  its approved Cradle calibration (confirmed 2026-10-12).
+- Use more screen width throughout: one fluid container with Cradle's
+  responsive gutters, and no separate narrow About column (2026-10-12).
+- Four content pages are implemented: Home, Writing (milestones index),
+  Milestone 1, and About, plus a 404. The milestone article is staged from
+  `docs/writeups/milestone-1.md`, rewritten with `andrew-voice`. Historical
+  results remain October 10 results; the inference connection and reference
+  comparisons no longer claim equivalence or proof of unbiasedness.
+- Editorial correction (2026-10-12): public writeups explain the reasoning for
+  readers; omit opaque commit hashes and bookkeeping from the narrative. The
+  milestone article defines MSE and derives error × time with an equal-time
+  numerical example, interpreting the actual results and the measure’s limits.
+- `web/data/media.json` centralizes publication media. `--local-media` copies
+  only the named film and brass image into ignored preview output. A public
+  build requires their configured HTTPS URLs and contains no local media.
+  Public delivery checks passed (sizes, MIME types, byte ranges). GitHub Pages
+  workflow is prepared: PRs validate; only main deploys. Actions, Python, and
+  Hugo are pinned; CI needs no R2 credentials. First deployment awaits merging
+  [PR #1](https://github.com/plainsight-systems/serenity/pull/1), based on
+  main without ReSTIR changes.
+- Keep the general GitHub link in the footer; omit duplicate header and
+  homepage build/source actions. Contextual writeup links remain.
+
 ## Research
 
 `../research/README.md` is the index.

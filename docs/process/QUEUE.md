@@ -4,6 +4,21 @@ This file tracks active and accepted work.
 
 ## Active
 
+- **Project site hosting** (2026-10-12), next phase after local review.
+  Hugo implementation and milestone-one voice rewrite are complete locally:
+  Home, Writing index, Milestone 1, About, and a 404. `web/README.md` documents
+  the build. Public state remains milestone 1; ReSTIR is branch work.
+  R2 bucket `plainsight-public-media` is live at `media.plainsight-systems.com`. All four selected files are at its root, including the master
+  uploaded via the scoped `serenity-r2` profile and verified by SHA-256 readback.
+  All four URLs are configured in `web/data/media.json`; public sizes, MIME types,
+  and byte ranges match their sources. Public and local-preview builds pass.
+  GitHub Pages is configured at `serenity.plainsight-systems.com`, with HTTPS
+  enforced. The workflow validates PRs and deploys only main. Next: merge the
+  [site-only PR #1](https://github.com/plainsight-systems/serenity/pull/1),
+  then verify the first live deployment.
+  See [site-plan.md](site-plan.md).
+
+
 - **The first frames.** Step (a), done: a frame's whole path, end to end. A
   frame graph file names the passes, the Metal 4 backend records it with two
   frames in flight, and the test pattern reaches an SDL3 window at the
