@@ -49,14 +49,13 @@ kernel void restir_pt_initial(constant serenity::contracts::FrameConstants& fram
     // where neither array is bound (contracts/path_reuse_settings.h).
     const bool temporal = settings.confidence_cap > 0.0f;
     restir_pt::TreeGather tree =
-        restir_pt::start_tree(settings, numbers, scene.shapes(), restir_pt::block_tile(tiles, pixel, frame.frame_index),
-                              temporal ? last_transforms : nullptr);
+        restir_pt::start_tree(settings, numbers, scene.shapes(), restir_pt::block_tile(tiles, pixel, frame.frame_index));
     (void)path::walk_path<path::Start::camera, path::Stop::at_end>(scene, path::walk_from(ray), Shading{}, 0u,
                                                                    numbers, tree);
     reservoirs[i] = restir_pt::finish_tree(tree);
     primaries[i] = tree.primary;
-    if (temporal) {
-        previous_positions[i] = to_packed(tree.previous_position);
+    if (temporal && tree.primary.distance > 0.0f) {
+        previous_positions[i] = to_packed(restir_pt::previous_position(tree, transforms, last_transforms));
     }
     light[i] = float4(tree.seen, 0.0f);
 }

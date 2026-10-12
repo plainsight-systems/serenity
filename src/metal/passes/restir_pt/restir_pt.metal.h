@@ -158,7 +158,6 @@
 #include "metal/integrator/nee.metal.h"
 #include "metal/integrator/path.metal.h"
 #include "metal/integrator/reconnection.metal.h"
-#include "metal/integrator/restir_di.metal.h"
 #include "metal/integrator/shift.metal.h"
 #include "metal/integrator/target.metal.h"
 #include "metal/math/warp.metal.h"
@@ -253,10 +252,10 @@ struct TreeGather {
     // What the pass writes.
     float3 seen;  // the light the camera sees directly, step 4
     serenity::contracts::PrimaryHit primary;  // y1, for the G-buffer, step 4
-    // Last frame's transforms in a graph with temporal reuse, null
-    // otherwise; where y1's point was last frame by them (step 4).
-    constant serenity::contracts::Transform* last_transforms;
-    float3 previous_position;
+    // y1's shape, for where its point was last frame (step 4,
+    // previous_position()): one word carried across the walk's ray queries,
+    // not the point and last frame's transforms (GPU.3).
+    uint primary_shape;
     float weight_sum;
     serenity::contracts::PathReservoir chosen;
     uint offered;  // candidates so far, numbering the pick's numbers
@@ -389,9 +388,7 @@ struct TreeGather {
             // A light seen directly is no surface a path starts from:
             // pack_primary_hit() records none for it.
             primary = shift::pack_primary_hit(here, from, threshold);
-            if (last_transforms != nullptr) {
-                previous_position = restir::previous_position(last_transforms, here.surface);
-            }
+            primary_shape = here.surface.primitive;
             forward = 0.0f;
             return;
         }
@@ -517,15 +514,13 @@ struct TreeGather {
 
 // A tree's gather at its start: nothing found, nothing kept.
 inline TreeGather start_tree(serenity::contracts::PathReuseSettings settings, PathNumbers stream, Shapes shapes,
-                             const device serenity::contracts::LightTileEntry* tile,
-                             constant serenity::contracts::Transform* last_transforms) {
+                             const device serenity::contracts::LightTileEntry* tile) {
     TreeGather tree{};
     tree.settings = settings;
     tree.stream = stream;
     tree.shapes = shapes;
     tree.tile = tile;
-    tree.last_transforms = last_transforms;
-    tree.previous_position = float3(0.0f);
+    tree.primary_shape = 0u;
     tree.seen = float3(0.0f);
     tree.primary = shift::no_primary_hit();
     tree.chosen.seed_pixel = stream.key.x;
@@ -553,6 +548,18 @@ inline serenity::contracts::PathReservoir finish_tree(TreeGather tree) {
     }
     reservoir.weight = tree.weight_sum / target;
     return reservoir;
+}
+
+// Where the tree's primary hit was last frame (step 4): its point taken
+// into its shape's own coordinates by this frame's transform and placed by
+// last frame's (contract 10; as ReSTIR DI's restir::previous_position()
+// places the object-space point its surface carries). Read only where the
+// tree has a primary hit.
+inline float3 previous_position(TreeGather tree, constant serenity::contracts::Transform* transforms,
+                                constant serenity::contracts::Transform* last_transforms) {
+    const float3 object = transform_to_object(transforms[tree.primary_shape], to_float3(tree.primary.position));
+    const serenity::contracts::Transform placed = last_transforms[tree.primary_shape];
+    return transform_translation(placed) + transform_direction(placed, object);
 }
 
 // The reservoir's estimate on its own, F W: what the shade adds where no
