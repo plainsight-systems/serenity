@@ -2,7 +2,7 @@
 
 *2026-10-11. Apple M3 Max, macOS 26.6.2, Xcode 26.2, release builds
 (`-fmetal-math-mode=fast`), `scenes/marbles.toml`. Base is b57e76d (the
-design, `2026-10-11-restir-pt-layout.md`); Phase 1 is da2e357 and 223e257.*
+design, `2026-10-11-restir-pt-layout.md`); Phase 1 is da2e357 and e9fd3a5.*
 
 ## What was built
 
@@ -39,12 +39,12 @@ As the design lists it, ReSTIR PT Enhanced at its defaults:
 The path pass keeps its image to the bit (PFM compared against b57e76d's
 binary at t = 120) and its time: a first version of the gather was 1.4%
 slower with the same bits (the LLVM IR showed a hook's argument built early
-and roulette's division hoisted); 223e257 restores the IR.
+and roulette's division hoisted); e9fd3a5 restores the IR.
 
 | Path pass, 3456 x 2234 | t = 120 (ms) | t = 8 (ms) |
 |---|---|---|
 | b57e76d | 30.39, 30.38, 30.36 | 32.54, 32.58, 32.51 |
-| 223e257 | 30.42, 30.34, 30.33 | 32.49, 32.65, 32.46 |
+| e9fd3a5 | 30.42, 30.34, 30.33 | 32.49, 32.65, 32.46 |
 
 ## Tests, each shown able to fail
 
