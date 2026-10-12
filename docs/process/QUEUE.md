@@ -4,6 +4,14 @@ This file tracks active and accepted work.
 
 ## Active
 
+- **ReSTIR PT** (docs/research/2026-10-11-restir-pt-layout.md). Phase 1
+  built 2026-10-11 on branch restir-pt-phase1 (initial sampling, the
+  hybrid shift, paired spatial reuse; graphs/restir_pt.toml):
+  docs/research/2026-10-11-restir-pt-phase1.md. The gate is not met: at
+  equal frame time it is visibly better on porcelain and not on glass or
+  mirrors. Stopped before Phase 2 (temporal reuse, duplication maps) for
+  the user's decision.
+
 - **The first frames.** Step (a), done: a frame's whole path, end to end. A
   frame graph file names the passes, the Metal 4 backend records it with two
   frames in flight, and the test pattern reaches an SDL3 window at the
@@ -114,3 +122,11 @@ Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
 - ReSTIR spatial: graphs/restir.toml in basic mode is -1.45% against the reference's mean at t = 120 (-0.33% at t = 8), each merge alone within 0.16%; check against raytraced once last frame's structure is kept (restir-spatial.md).
 - ReSTIR spatial: the pass costs 3.4 ms at 3456 x 2234; GPU counters against its counted traffic (gathers within the radius; a tiled order if line-bound).
 - bsdf_candidates = 0 is Phase A but for rim points, now weighed where Phase A's direction test dropped them; not bit-identical.
+- ReSTIR PT: every shift traces its destination's primary ray again and resolves its BSDF (3 a pixel, textures twice each); a G-buffer of primary hits in their place.
+- ReSTIR PT: NEE's 32 candidates read 616 lights' records at random (initial sampling 2x the path pass); Enhanced's light tiles, measured.
+- ReSTIR PT: roulette's survival folded into the source density has no test of its own; the marbles' accumulated mean holds it (0.186420 against the reference's 0.186422).
+- ReSTIR PT: the replay's indirect grid is ordered by a dispatch-to-dispatch barrier; confirm Metal 4 counts the indirect-argument read in that stage.
+- ReSTIR PT: a reconnection segment is dimmed by y_{k-1}'s medium, the cached suffix by x's; they differ only for a rough surface inside an absorbing medium (no scene has one).
+- ReSTIR PT: eq. 3's signs read as (+, -, +) from the extracted text, the one reading that meets the paper's footnote (sigma 0.8, one shuffle); check against the PDF.
+- ReSTIR PT: path_merge's weight functions take four floats in a row (I.24); a struct if they grow.
+- ReSTIR PT: the merge's kept path (for Phase 2's temporal reuse) is not drawn yet: Phase 1 shades with the vector-valued sum alone.
