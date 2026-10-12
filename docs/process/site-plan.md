@@ -216,3 +216,9 @@ needed. Local tests and the production build pass.
 The site is being packaged on a separate branch based on main. Only the site,
 approved writeup, and related records are included; ReSTIR stays on its branch.
 First publication follows merge, then live page and media verification.
+
+The first Linux CI run exposed a version-string difference: official Hugo
+includes a source hash, while Homebrew does not. The version check now accepts
+both forms of the exact pinned release and rejects prereleases; a regression
+test covers both platforms and rejected versions (eight tests total). The
+site-only branch is [PR #1](https://github.com/plainsight-systems/serenity/pull/1).

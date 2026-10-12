@@ -14,7 +14,8 @@ This file tracks active and accepted work.
   and byte ranges match their sources. Public and local-preview builds pass.
   GitHub Pages is configured at `serenity.plainsight-systems.com`, with HTTPS
   enforced. The workflow validates PRs and deploys only main. Next: merge the
-  site-only branch based on main, then verify the first live deployment.
+  [site-only PR #1](https://github.com/plainsight-systems/serenity/pull/1),
+  then verify the first live deployment.
   See [site-plan.md](site-plan.md).
 
 

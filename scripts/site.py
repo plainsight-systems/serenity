@@ -172,11 +172,18 @@ def check_site(output: Path, base: str, local_media: bool) -> None:
         raise ValueError('A public build must not contain local media files.')
 
 
+def check_hugo_version(version: str) -> None:
+    # Official releases include a source commit; Homebrew omits it. Accept both
+    # forms of the exact release, but never a prerelease or another patch.
+    pattern = r'^hugo v' + re.escape(HUGO_VERSION) + r'(?:-[0-9a-f]{40})?(?:\+|\s)'
+    if not re.search(pattern, version):
+        raise ValueError(f'Use Hugo {HUGO_VERSION}; found {version.strip()}')
+
+
 def build(base: str, local_media: bool) -> Path:
     base_url(base)
     result = subprocess.run(['hugo', 'version'], check=True, capture_output=True, text=True)
-    if not re.search(r'v' + re.escape(HUGO_VERSION) + r'(?:\+|\s)', result.stdout):
-        raise ValueError(f'Use Hugo {HUGO_VERSION}; found {result.stdout.strip()}')
+    check_hugo_version(result.stdout)
     destination = ROOT / '.cache/site' / ('preview' if local_media else 'public')
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='serenity-site-', dir=destination.parent) as temp:

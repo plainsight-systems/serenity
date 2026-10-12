@@ -30,6 +30,20 @@ class SiteTests(unittest.TestCase):
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
 
+    def test_pinned_hugo_accepts_release_packaging_only(self):
+        for version in (
+            'hugo v0.154.2+extended+withdeploy darwin/arm64',
+            'hugo v0.154.2-f66d0944461bf32c4e69588bc3e093f14e4e149d+extended linux/amd64',
+            'hugo v0.154.2 linux/amd64',
+        ):
+            with self.subTest(version=version):
+                site.check_hugo_version(version)
+        for version in ('hugo v0.154.20+extended', 'hugo v0.154.3+extended',
+                        'hugo v0.154.2-rc.1+extended', 'hugo v0.154.2-dev+extended'):
+            with self.subTest(version=version):
+                with self.assertRaisesRegex(ValueError, 'Use Hugo'):
+                    site.check_hugo_version(version)
+
     def configure_media(self):
         manifest = self.web / 'data/media.json'
         data = json.loads(manifest.read_text())

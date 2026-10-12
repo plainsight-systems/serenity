@@ -156,7 +156,8 @@ Clarified by the user 2026-10-12:
   Public delivery checks passed (sizes, MIME types, byte ranges). GitHub Pages
   workflow is prepared: PRs validate; only main deploys. Actions, Python, and
   Hugo are pinned; CI needs no R2 credentials. First deployment awaits merging
-  the isolated site branch based on main, without ReSTIR changes.
+  [PR #1](https://github.com/plainsight-systems/serenity/pull/1), based on
+  main without ReSTIR changes.
 - Keep the general GitHub link in the footer; omit duplicate header and
   homepage build/source actions. Contextual writeup links remain.
 
