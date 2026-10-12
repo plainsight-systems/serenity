@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- About-page approval mockup. Project discovery belongs to the Plainsight
+     Systems hub; this page explains Serenity and links to the parent site.
+     Shared header, footer, and reading styles match the homepage prototype. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Why I’m building Serenity, and the GPU questions connecting rendering to inference.">
+  <title>About · Serenity</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="masthead"><div class="wrap masthead-inner">
+    <a class="wordmark" href="index.html">Serenity</a>
+    <nav aria-label="Main navigation"><a href="index.html#film">The render</a><a href="index.html#writing">Writing</a><a href="about.html" aria-current="page">About</a></nav>
+  </div></header>
+  <main id="main" class="about wrap">
+    <div class="about-heading"><p class="eyebrow">About the project</p><h1>Why Serenity?</h1><p class="about-deck">Working through GPU questions,<br> with an image at the end.</p></div>
+    <article class="about-body" aria-label="About Serenity">
+      <p>I’m building Serenity to explore GPU performance from the rendering side. Moving light gives me a way to investigate techniques that also matter to transformer inference: processing data in small pieces, keeping a small amount of running state, and combining partial results or reusing earlier work.</p>
+      <p>The scene is deliberately simple: glass, porcelain, and metal marbles on a walnut table, lit by moving fireflies. That leaves the lighting to carry the image, and gives me something visible to inspect as I work on the kernels underneath.</p>
+      <h2>The first milestone</h2>
+      <p>The naive path tracer is built. It gives me the baseline for the work ahead: a scene, a reference image, and measurements of error and time. ReSTIR is in progress on a branch. The aim is a clean frame at the display’s full resolution and 60 frames a second, traced lower and upscaled.</p>
+      <p>The <a href="https://github.com/plainsight-systems/serenity/blob/main/docs/writeups/milestone-1.md">milestone-one writeup</a> explains what I learned getting the baseline in place. The <a href="https://github.com/plainsight-systems/serenity">repository</a> holds the code, architecture, and experiments.</p>
+      <h2>Why the name</h2>
+      <p>In path tracing, the bright stray pixels in a noisy render are called fireflies. Here they are also, literally, the lights. Serenity is named for the calm, clean frame I’m working toward.</p>
+      <p>If the name brings to mind a small ship that kept flying, that’s not an accident. It’s why the metal spheres are polished: they had to be shiny.</p>
+      <h2>Part of Plainsight Systems</h2>
+      <p>I’m a systems architect and builder. At <a href="https://plainsight-systems.com/about/">Plainsight Systems</a>, I work through questions that interest me by building things I can inspect and measure. Serenity lets me approach the GPU problems I encounter in inference through rendering, where the consequences of a change are visible in the image as well as the frame time.</p>
+      <p>The <a href="https://plainsight-systems.com/">Plainsight Systems site</a> brings that work together, with the other projects, research, and writing.</p>
+    </article>
+  </main>
+  <footer class="footer">
+    <div class="wrap footer-top"><a class="wordmark" href="index.html">Serenity</a><a href="https://plainsight-systems.com/">A Plainsight Systems project <span aria-hidden="true">↗</span></a></div>
+    <div class="wrap footer-bottom"><span>Writing © 2026 <a href="https://andrewphunter.com/">Andrew P Hunter</a></span><span><a href="https://github.com/plainsight-systems/serenity">GitHub <span aria-hidden="true">↗</span></a> · <a href="https://creativecommons.org/licenses/by/4.0/">Writing: CC BY 4.0</a> · <a href="https://www.apache.org/licenses/LICENSE-2.0">Code: Apache 2.0</a></span></div>
+  </footer>
+</body>
+</html>

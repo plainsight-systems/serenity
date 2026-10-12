@@ -1,0 +1,9 @@
+{{/* The renderer links home; Writing lists published milestones. GitHub lives in the footer. */}}
+<header class="masthead"><div class="wrap masthead-inner">
+  <a class="wordmark" href="{{ "" | relURL }}">Serenity</a>
+  <nav aria-label="Main navigation">
+    <a href="{{ "" | relURL }}#film">The render</a>
+    <a href="{{ "writing/" | relURL }}"{{ if eq .Section "writing" }} aria-current="{{ if .IsSection }}page{{ else }}true{{ end }}"{{ end }}>Writing</a>
+    <a href="{{ "about/" | relURL }}"{{ if eq .Section "about" }} aria-current="page"{{ end }}>About</a>
+  </nav>
+</div></header>

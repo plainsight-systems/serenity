@@ -1,0 +1,8 @@
+{{/* The canonical Markdown is staged, never maintained as a second article.
+Wide desktop reading layout uses a contents rail; mobile preserves table scroll. */}}
+{{ define "main" }}
+<article class="wrap writeup">
+  <header class="page-heading"><a class="eyebrow back-link" href="{{ "writing/" | relURL }}">← All writing</a><h1>{{ .Title }}</h1><p class="byline">By Andrew Hunter · {{ .Date.Format "2 January 2006" }} · {{ .ReadingTime }} minute read</p></header>
+  <div class="reading-layout"><aside class="contents" aria-label="In this writeup"><p class="eyebrow">In this writeup</p>{{ .TableOfContents }}</aside><div class="prose">{{ .Content }}<div class="article-end"><a href="{{ "writing/" | relURL }}">← All writing</a><a href="#main">Back to top ↑</a></div></div></div>
+</article>
+{{ end }}

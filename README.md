@@ -24,6 +24,20 @@ one number to judge it by, error x time. What I learned getting there is in
 [the milestone 1 write-up](docs/writeups/milestone-1.md). ReSTIR DI is next.
 The design is in [`docs/architecture/`](docs/architecture/README.md).
 
+## Project site
+
+The [project site](https://serenity.plainsight-systems.com/) includes the renderer,
+milestone writing, and project background.
+To preview it with the hosted media:
+
+```sh
+python3 scripts/site.py serve --port 1314
+```
+
+Open <http://127.0.0.1:1314/>. Requirements, content editing, verification, and
+media configuration are in [web/README.md](web/README.md). Media is hosted on
+R2; GitHub Pages serves the site.
+
 ## Why I built it
 
 Lighting a scene with thousands of moving lights is a sampling problem. You

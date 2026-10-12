@@ -1,0 +1,12 @@
+{{/* List only explicitly published writeups; no internal queue or future stubs. */}}
+{{ define "main" }}
+<section class="wrap writing-index">
+  <header class="page-heading"><p class="eyebrow">From the workbench</p><h1>Writing</h1><div class="index-deck">{{ .Content }}</div></header>
+  {{ range .RegularPages.ByDate.Reverse }}
+  <article class="writing-entry">
+    <a class="entry-image" href="{{ .RelPermalink }}" tabindex="-1" aria-hidden="true"><img src="{{ "images/marbles-opening-10s.jpg" | relURL }}" width="1920" height="1080" alt="" loading="lazy"></a>
+    <div><p class="article-meta">Milestone {{ .Params.milestone }} <span>{{ .Date.Format "January 2006" }}</span></p><h2><a href="{{ .RelPermalink }}">{{ .Title }}</a></h2><p>{{ .Description }}</p><a class="text-link" href="{{ .RelPermalink }}">Read the milestone <span aria-hidden="true">→</span></a></div>
+  </article>
+  {{ end }}
+</section>
+{{ end }}

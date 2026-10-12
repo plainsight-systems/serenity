@@ -1,0 +1,7 @@
+{{/* Standalone About uses the same fluid width as the approved homepage. */}}
+{{ define "main" }}
+<div class="about wrap">
+  <div class="about-heading"><p class="eyebrow">About the project</p><h1>{{ .Title }}</h1><p class="about-deck">Working through GPU questions,<br>with an image at the end.</p></div>
+  <article class="about-body" aria-label="About Serenity">{{ .Content }}</article>
+</div>
+{{ end }}

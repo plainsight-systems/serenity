@@ -1,0 +1,2 @@
+{{- /* Remote media passes through; site-owned paths honor the Pages base path. */ -}}
+{{- if hasPrefix .url "https://" -}}{{- .url -}}{{- else -}}{{- .url | relURL -}}{{- end -}}
