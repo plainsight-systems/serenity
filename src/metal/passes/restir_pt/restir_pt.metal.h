@@ -231,9 +231,12 @@ struct TreeGather {
                        : replayed(length, serenity::contracts::PathEnd::sky));
     }
 
-    [[gnu::always_inline]] void crossed(float3 kept) {
+    // Step 1 of the loop: the medium's share over the stretch crossed,
+    // after x_k the suffix's (asked again here, so the path pass's step 1
+    // stays the line it was).
+    [[gnu::always_inline]] void crossed(Scene scene, uint medium, float stretch) {
         if (rc != 0u) {
-            suffix *= kept;
+            suffix *= transmittance(scene.media(), medium, stretch);
         }
     }
 
@@ -390,6 +393,9 @@ struct TreeGather {
                                reconnection::lobe_roughness(next.lobe, here.bsdf), delta, next.pdf};
         before_lobe = next.lobe;
     }
+
+    static constant constexpr bool divides_by_survival = false;
+    static constant constexpr bool observes_vertices = true;
 
     // Step 7: roulette as the path tracer runs it, its survival kept as the
     // source density's factor, the throughput not divided (Enhanced

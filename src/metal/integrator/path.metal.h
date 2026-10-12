@@ -345,7 +345,7 @@
 // Its hooks, each called where its step is:
 //
 //   escaped(scene, L, beta, ray, surface)        step 2, the sky reached
-//   crossed(kept)                                 step 1, what the medium kept
+//   crossed(scene, medium, stretch)               step 1, the medium crossed
 //   emitted(scene, L, beta, light, point, ray,    step 3, a light struck
 //           emission_pdf, surface, surface_at)
 //   continues_at(surface)                         after step 3: whether the
@@ -356,11 +356,21 @@
 //   bsdf_numbers(numbers, surface)                step 6's three numbers
 //   scattered(here, sample, surface, from,        after step 6's throughput
 //             factor)
-//   survives(beta, eta_scale, surface, numbers)   step 7
+//   survives(beta, eta_scale, surface, numbers)   step 7, unless the gather's
+//                                                 divides_by_survival says the
+//                                                 path tracer's roulette, which
+//                                                 the loop writes out
 //
-// Radiance, below, is the path tracer's: every hook does what the step did
-// before the parameter, in the same order on the same values, so the path
-// pass's loop is the loop it was (its image the same to the bit and its
+// The four hooks that watch the path's vertices (crossed, continues_at,
+// reached, scattered) are asked only of a gather whose observes_vertices
+// is true, and roulette is written in the loop for one whose
+// divides_by_survival is: so the path tracer's gather, Radiance, below,
+// adds nothing to its loop, not even a value built early for a hook that
+// does nothing (one such call moved the loop's blocks and cost 1.4%,
+// measured; its LLVM IR is now the one before the parameter, but for value
+// names). Every hook it has does what the step did before the parameter,
+// in the same order on the same values, so the path pass's loop is the
+// loop it was (its image the same to the bit and its
 // time the same, measured: docs/research/2026-10-11-restir-pt-phase1.md).
 // ReSTIR PT's initial pass gathers a path tree instead, each light found a
 // candidate path streamed into its path reservoir with its density, NEE by
@@ -584,9 +594,6 @@ struct Radiance {
         L += beta * gradient_sky(scene.sky(), along.direction);
     }
 
-    // Step 1's: nothing beside beta.
-    [[gnu::always_inline]] void crossed(float3) const {}
-
     // Step 3.
     [[gnu::always_inline]] void emitted(Scene scene, thread float3& L, float3 beta, serenity::lights::LightRecord light,
                                         float3 point, metal::raytracing::ray along, float emission_pdf, uint,
@@ -594,11 +601,6 @@ struct Radiance {
         L += beta * light_emitted(scene.lights(), light, point, -along.direction) *
              emission_weight(scene.selection(), scene.lights(), light, along.origin, along.direction, emission_pdf);
     }
-
-    // Every surface goes on: the safety stop is the loop's.
-    [[gnu::always_inline]] bool continues_at(uint) const { return true; }
-
-    [[gnu::always_inline]] void reached(Shading, float3, uint) const {}
 
     // Step 5.
     [[gnu::always_inline]] void next_event(Scene scene, thread float3& L, float3 beta, Shading here, uint,
@@ -611,22 +613,14 @@ struct Radiance {
         return next_numbers3(numbers);
     }
 
-    [[gnu::always_inline]] void scattered(Shading, serenity::contracts::BsdfSample, uint, float3, float3) const {}
+    // Step 7: roulette divides a survivor's throughput by its chance,
+    // written in the loop itself (walk_path).
+    static constant constexpr bool divides_by_survival = true;
 
-    // Step 7: whether the path goes on; a survivor's throughput divided by
-    // its chance.
-    [[gnu::always_inline]] bool survives(thread float3& beta, float eta_scale, uint surface,
-                                         thread PathNumbers& numbers) const {
-        if (surface >= roulette_from) {
-            const float energy = metal::max(metal::max(beta.r, beta.g), beta.b) * eta_scale;
-            const float q = metal::min(energy, max_survival);
-            if (next_number(numbers) >= q) {
-                return false;
-            }
-            beta /= q;
-        }
-        return true;
-    }
+    // It watches no vertex: crossed(), continues_at(), reached() and
+    // scattered() are never asked (every surface goes on to the loop's
+    // safety stop).
+    static constant constexpr bool observes_vertices = false;
 };
 
 // Where walk_path() starts and where it stops (above, "The split").
@@ -686,7 +680,9 @@ template <Start start, Stop stop, typename Gather>
         const float3 factor = to_float3(next.value) * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) / next.pdf;
         beta *= factor;
         emission_pdf = handed_on(next, here);
-        gather.scattered(here, next, surface, from, factor);
+        if constexpr (Gather::observes_vertices) {
+            gather.scattered(here, next, surface, from, factor);
+        }
         if ((next.lobe & serenity::contracts::lobe_transmission) != 0u) {
             medium = (here.surface.flags & serenity::contracts::arrived_from_outside) != 0u
                          ? here.surface.interior
@@ -695,8 +691,19 @@ template <Start start, Stop stop, typename Gather>
             eta_scale *= eta * eta;
         }
 
-        // Step 7.
-        if (!gather.survives(beta, eta_scale, surface, numbers)) {
+        // Step 7: the path tracer's roulette written out here, so its
+        // division stays behind its branch (as a hook, the compiler
+        // hoisted it); a gather that folds survival elsewhere is asked.
+        if constexpr (Gather::divides_by_survival) {
+            if (surface >= roulette_from) {
+                const float energy = metal::max(metal::max(beta.r, beta.g), beta.b) * eta_scale;
+                const float q = metal::min(energy, max_survival);
+                if (next_number(numbers) >= q) {
+                    return 0u;
+                }
+                beta /= q;
+            }
+        } else if (!gather.survives(beta, eta_scale, surface, numbers)) {
             return 0u;
         }
 
@@ -727,9 +734,10 @@ template <Start start, Stop stop, typename Gather>
             break;
         }
         const float3 point = along.origin + hit.t * along.direction;
-        const float3 kept = transmittance(scene.media(), medium, metal::distance(from, point));
-        beta *= kept;
-        gather.crossed(kept);
+        beta *= transmittance(scene.media(), medium, metal::distance(from, point));
+        if constexpr (Gather::observes_vertices) {
+            gather.crossed(scene, medium, metal::distance(from, point));
+        }
         const serenity::contracts::SurfaceInteraction surface_at =
             surface_interaction(scene.shapes(), hit.primitive, point, along.direction);
 
@@ -741,14 +749,18 @@ template <Start start, Stop stop, typename Gather>
                 gather.emitted(scene, L, beta, glowing.light, point, along, emission_pdf, surface, surface_at);
             }
         }
-        if (!gather.continues_at(surface)) {
-            break;
+        if constexpr (Gather::observes_vertices) {
+            if (!gather.continues_at(surface)) {
+                break;
+            }
         }
 
         // Step 4.
         const Shading here{surface_at, resolve_bsdf(scene.materials(), scene.textures(), surface_at),
                            -along.direction, medium};
-        gather.reached(here, from, surface);
+        if constexpr (Gather::observes_vertices) {
+            gather.reached(here, from, surface);
+        }
 
         // Step 5, or the stop before it.
         if constexpr (stop == Stop::at_first_aimed) {
