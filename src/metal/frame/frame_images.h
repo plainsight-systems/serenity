@@ -267,4 +267,80 @@ private:
     std::array<Array, 2> final_reservoirs_;
 };
 
+// ReSTIR PT's arrays between its passes (metal/passes/restir_pt/
+// restir_pt.metal.h states what each pass reads and writes of them), a
+// graph with its passes only, private to the GPU:
+//
+//   reservoirs   a path reservoir a pixel (contract 15), 64 bytes;
+//   primaries    each pixel's primary hit for the merge's similarity test,
+//                8 bytes;
+//   light        the frame's light buffer, a float4 a pixel, 16 bytes;
+//
+// and with restir_pt_spatial:
+//
+//   shifts       each pixel's path shifted to each of its 3 partners, F and
+//                the Jacobian, 48 bytes;
+//   replays      the pairs that replay, at most 3 a pixel, 12 bytes;
+//   counter      their count and the replay's indirect grid, in one small
+//                buffer the CPU zeroes once (shared storage, 128 bytes): the
+//                grid pass sets the count back to 0 each frame.
+//
+// 88 bytes a pixel without the spatial pass, 148 with it: 1.14 GB at
+// 3456 x 2234, 286 MB at 1728 x 1117. One set, as ReuseImages: the
+// renderer's queue barrier keeps a frame from writing what the frame before
+// still reads. No history in Phase 1: made at the frame's size, remade when
+// it changes, settled first.
+//
+// Throws MetalError if the frame's size is not one Metal makes an image of,
+// or the device cannot make a buffer.
+class PathReuseImages {
+public:
+    enum class Spatial { none, merged };
+
+    PathReuseImages(const Device& device, Submission& submission, Spatial spatial);
+
+    PathReuseImages(const PathReuseImages&) = delete;
+    PathReuseImages& operator=(const PathReuseImages&) = delete;
+    PathReuseImages(PathReuseImages&&) = delete;
+    PathReuseImages& operator=(PathReuseImages&&) = delete;
+    ~PathReuseImages() = default;
+
+    // The arrays at `size`, made or remade.
+    void prepare(frame::Extent size);
+
+    struct Addresses {
+        MTL::GPUAddress reservoirs = 0;
+        MTL::GPUAddress primaries = 0;
+        MTL::GPUAddress light = 0;
+        MTL::GPUAddress shifts = 0;
+        MTL::GPUAddress replays = 0;
+        MTL::GPUAddress counter = 0;
+        MTL::GPUAddress grid = 0;
+    };
+    Addresses addresses() const noexcept;
+
+    // Where the indirect grid is in the counter's buffer: past the count,
+    // at an alignment any binding takes.
+    static constexpr std::size_t grid_offset = 64;
+
+private:
+    struct Array {
+        NS::SharedPtr<MTL::Buffer> buffer;
+        Resident resident;
+    };
+
+    void make(Array& array, std::size_t bytes, const char* what);
+
+    NS::SharedPtr<MTL::Device> device_;
+    Submission& submission_;
+    Spatial spatial_;
+    frame::Extent size_;
+    Array reservoirs_;
+    Array primaries_;
+    Array light_;
+    Array shifts_;
+    Array replays_;
+    Array counter_;  // shared storage, zeroed once
+};
+
 }  // namespace serenity::metal

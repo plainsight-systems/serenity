@@ -122,6 +122,7 @@ depend on contracts, not on each other.
 | 12 | **Medium**: what fills a shape's inside, and the share of light a stretch through it keeps | Medium | Integrator; named by Shape |
 | 13 | **Linear image**: a rendered image's radiance on the CPU, three floats a pixel, before tone mapping | Film | Output, Measurement |
 | 14 | **Reservoir**: a light sample by identity, its contribution weight, its count, its target at its own surface and where its visibility was last tested, as stored between passes and frames (`reservoir.h`, 24 bytes, RTXDI's packed reservoir) | Sample reuse | Pass, Frame graph |
+| 15 | **Path reservoir**: ReSTIR PT's one path a pixel by its numbers' stream and its reconnection vertex (a primitive and a point in its own coordinates), its F, contribution weight, count and cached Jacobian (`path_reservoir.h`, 64 bytes, ReSTIR PT Enhanced's Algorithm 1); its settings beside it (`path_reuse_settings.h`) | Sample reuse | Pass, Integrator (the shift), Frame graph |
 
 Each is designed on its own, header first, before the code that uses it.
 Contract 7 was the first written: `src/core/contracts/frame_constants.h`.

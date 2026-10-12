@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "core/passes/restir_di.h"
+#include "core/passes/restir_pt.h"
 #include "core/passes/tone_map.h"
 
 namespace serenity::frame {
@@ -82,6 +83,34 @@ namespace serenity::frame {
 // the shade, which writes radiance, before the presenting pass that reads
 // it, as every light pass is.
 //
+// ReSTIR PT (Lin et al. 2022; ReSTIR PT Enhanced, Lin, Kettunen and Wyman
+// 2026) is its own family of passes, never mixed with ReSTIR DI's in one
+// graph: its unified reservoir holds the direct light ReSTIR DI would
+// (docs/research/2026-10-11-restir-pt-layout.md). Its passes
+// (metal/passes/restir_pt/restir_pt.metal.h states the algorithm):
+//
+//   restir_pt_initial      the path tree at each pixel, NEE at every
+//                          vertex, resampled to one path; writes a path
+//                          reservoir a pixel (contract 15), the pixel's
+//                          primary hit for the merges' similarity test, and
+//                          the light the camera sees directly into the
+//                          frame's light buffer.
+//   restir_pt_temporal     Phase 2's temporal reuse: refused by name until
+//                          it is built.
+//   restir_pt_spatial      the paired spatial reuse: shifts each pixel's
+//                          path to its paired neighbors, then merges by
+//                          pairwise MIS; reads the path reservoirs; adds
+//                          its estimate to the light buffer.
+//   restir_pt_shade        the light buffer (with the initial reservoir's
+//                          estimate where no spatial reuse ran) folded into
+//                          the accumulated image; accumulates, and so
+//                          writes radiance, as the path pass does.
+//   restir_pt_duplication  Phase 2's duplication map: refused by name.
+//
+// The order a schedule keeps: restir_pt_initial, restir_pt_spatial if
+// present, restir_pt_shade, each at most once, initial and shade both
+// present if any is; and its settings exactly with its passes.
+//
 // An estimator is a graph (logical-overview.md, principle 4: estimators are
 // interchangeable over the same scene):
 //
@@ -110,7 +139,12 @@ enum class PassKind {
     restir_temporal,  // step 4: last frame's reservoir merged in; needs a scene
     restir_spatial,   // step 5: k neighbors' reservoirs merged in; needs a scene
     restir_shade,     // step 6: the survivor's light and the path's continuation; accumulates; writes radiance
-    last = restir_shade,
+    restir_pt_initial,      // ReSTIR PT: the path tree, resampled to one path a pixel; needs a scene
+    restir_pt_temporal,     // ReSTIR PT's temporal reuse: Phase 2, refused by name
+    restir_pt_spatial,      // ReSTIR PT's paired spatial reuse; needs a scene
+    restir_pt_shade,        // ReSTIR PT's light into the accumulated image; accumulates; writes radiance
+    restir_pt_duplication,  // ReSTIR PT's duplication map: Phase 2, refused by name
+    last = restir_pt_duplication,
 };
 
 // Whether a pass of `kind` reads the scene. A frame graph with such a pass
@@ -132,6 +166,11 @@ bool writes_target(PassKind kind);
 // settings.
 bool is_restir(PassKind kind);
 
+// Whether a pass of `kind` is one of ReSTIR PT's (above): it reads or writes
+// the path reservoirs or the light buffer, and reads the [restir_pt]
+// settings.
+bool is_restir_pt(PassKind kind);
+
 struct Schedule {
     std::vector<PassKind> passes;  // run in this order; at least one
     // The tone-map pass's settings: present exactly when the schedule has
@@ -141,6 +180,9 @@ struct Schedule {
     // passes (graph_file.h, core/contracts/reuse_settings.h). Last, and
     // none unless given, so a schedule written {passes, tone_map} keeps its meaning.
     std::optional<passes::RestirDi> restir_di = std::nullopt;
+    // ReSTIR PT's settings: present exactly when the schedule has its
+    // passes (graph_file.h, core/contracts/path_reuse_settings.h).
+    std::optional<passes::RestirPt> restir_pt = std::nullopt;
 };
 
 // Whether any pass of `schedule` accumulates: whether its frames build on
@@ -174,7 +216,11 @@ bool reuses_history(const Schedule& schedule);
 //     (above); and its settings exactly when its passes are present, each
 //     setting the passes read, as the graph's other settings decide what
 //     they read (bias_correction and visibility_reuse), in its range, and
-//     each they do not read its zero (core/contracts/reuse_settings.h).
+//     each they do not read its zero (core/contracts/reuse_settings.h);
+//   - ReSTIR PT's passes likewise (above), never beside ReSTIR DI's, the
+//     two not built yet (restir_pt_temporal, restir_pt_duplication)
+//     refused by name, and its settings exactly with its passes, in range
+//     (core/contracts/path_reuse_settings.h).
 //
 // None if `schedule` is valid; otherwise why not, in words a reader of the
 // frame graph file can act on. The graph reader refuses an invalid schedule
@@ -192,6 +238,9 @@ std::optional<std::string> invalid(const passes::ToneMap& settings);
 // restir_di.h).
 // For the graph reader, to name the line of the setting.
 std::optional<std::string> invalid(const passes::RestirDi& settings, std::span<const PassKind> passes);
+
+// ReSTIR PT's settings alone, likewise (core/passes/restir_pt.h).
+std::optional<std::string> invalid(const passes::RestirPt& settings, std::span<const PassKind> passes);
 
 // The name each kind is written as in a frame graph file, and back: name()
 // is the one mapping, a switch with no default (-Wswitch), and pass_kind()

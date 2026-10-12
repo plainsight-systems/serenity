@@ -140,5 +140,29 @@ enum Buffer : unsigned {
 enum Texture : unsigned { accumulated = 0 };  // also the frame's radiance, as the path pass's
 }  // namespace restir_shade
 
+// ReSTIR PT's passes (metal/passes/restir_pt/restir_pt.metal.h) share one
+// layout, each kernel binding the part it reads or writes.
+namespace restir_pt {
+enum Buffer : unsigned {
+    constants = 0,
+    camera = 1,
+    structure = 2,
+    scene = 3,
+    glows = 4,
+    transforms = 5,
+    settings = 6,    // contracts::PathReuseSettings
+    reservoirs = 7,  // the path reservoirs, a pixel's each (contract 15)
+    primaries = 8,   // each pixel's primary hit, for the merge's similarity test
+    light = 9,       // the frame's light buffer, a float4 a pixel
+    pairing = 10,    // the reuse textures (core/sampling/pairing.h)
+    shifts = 11,     // the shifted paths, 3 a pixel
+    replays = 12,    // the pairs that replay, compacted
+    counter = 13,    // their count
+    dispatch = 14,   // the replay's indirect grid
+    non_finite = 15, // the frame's count of samples not finite (metal/film/non_finite.h)
+};
+enum Texture : unsigned { accumulated = 0 };  // the shade's: also the frame's radiance, as the path pass's
+}  // namespace restir_pt
+
 }  // namespace bindings
 }  // namespace serenity

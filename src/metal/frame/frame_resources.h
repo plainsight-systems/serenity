@@ -83,6 +83,21 @@ struct FrameResources {
     MTL::GPUAddress last_transforms = 0;
     MTL::GPUAddress last_glows = 0;
     MTL::ResourceID last_acceleration{};
+
+    // ReSTIR PT's (frame_images.h, PathReuseImages; renderer.h): its
+    // settings and reuse textures, static; its path reservoirs, primary
+    // hits and light buffer; and, with its spatial pass, the shifted paths,
+    // the replaying pairs, their count and the replay's indirect grid. 0
+    // without its passes.
+    MTL::GPUAddress path_settings = 0;
+    MTL::GPUAddress pairing = 0;
+    MTL::GPUAddress path_reservoirs = 0;
+    MTL::GPUAddress primaries = 0;
+    MTL::GPUAddress light = 0;
+    MTL::GPUAddress shifts = 0;
+    MTL::GPUAddress replays = 0;
+    MTL::GPUAddress replay_counter = 0;
+    MTL::GPUAddress replay_grid = 0;
 };
 
 }  // namespace serenity::metal

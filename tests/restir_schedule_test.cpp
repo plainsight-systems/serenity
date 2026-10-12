@@ -115,7 +115,7 @@ TEST_CASE("ReSTIR DI's four passes read the scene; the shade alone accumulates a
     }
     CHECK(name(initial) == "restir_initial");
     CHECK(name(shade) == "restir_shade");
-    CHECK_THROWS_AS((void)is_restir(static_cast<PassKind>(9)), std::logic_error);
+    CHECK_THROWS_AS((void)is_restir(static_cast<PassKind>(static_cast<int>(PassKind::last) + 1)), std::logic_error);
 }
 
 TEST_CASE("ReSTIR DI's graphs, in their order, are valid; only the temporal merge reuses history") {

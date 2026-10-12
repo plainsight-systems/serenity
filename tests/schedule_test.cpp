@@ -121,7 +121,7 @@ TEST_CASE("every kind reads back by its name, and a value no kind names is refus
     for (const PassKind kind : all_pass_kinds()) {
         CHECK(pass_kind(name(kind)) == kind);
     }
-    const auto stray = static_cast<PassKind>(9);
+    const auto stray = static_cast<PassKind>(static_cast<int>(PassKind::last) + 1);
     CHECK_THROWS_AS((void)name(stray), std::logic_error);
     CHECK_THROWS_AS((void)needs_scene(stray), std::logic_error);
     CHECK_THROWS_AS((void)accumulates(stray), std::logic_error);

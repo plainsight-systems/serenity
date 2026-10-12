@@ -19,9 +19,12 @@ namespace {
 // through. The switches below cover every kind (-Wswitch); this list is
 // held to the enum's final kind, PassKind::last, so a kind left out of it
 // fails to compile (schedule.h).
-constexpr std::array<PassKind, 9> kinds = {PassKind::test_pattern,    PassKind::preview,        PassKind::path,
-                                           PassKind::display,         PassKind::tone_map,       PassKind::restir_initial,
-                                           PassKind::restir_temporal, PassKind::restir_spatial, PassKind::restir_shade};
+constexpr std::array<PassKind, 14> kinds = {
+    PassKind::test_pattern,      PassKind::preview,           PassKind::path,
+    PassKind::display,           PassKind::tone_map,          PassKind::restir_initial,
+    PassKind::restir_temporal,   PassKind::restir_spatial,    PassKind::restir_shade,
+    PassKind::restir_pt_initial, PassKind::restir_pt_temporal, PassKind::restir_pt_spatial,
+    PassKind::restir_pt_shade,   PassKind::restir_pt_duplication};
 static_assert(kinds.size() == static_cast<std::size_t>(PassKind::last) + 1,
               "every PassKind is in `kinds`, in declaration order");
 static_assert(kinds.back() == PassKind::last, "the last PassKind is last in `kinds`");
@@ -64,6 +67,16 @@ std::string_view name(PassKind kind) {
         return "restir_spatial";
     case PassKind::restir_shade:
         return "restir_shade";
+    case PassKind::restir_pt_initial:
+        return "restir_pt_initial";
+    case PassKind::restir_pt_temporal:
+        return "restir_pt_temporal";
+    case PassKind::restir_pt_spatial:
+        return "restir_pt_spatial";
+    case PassKind::restir_pt_shade:
+        return "restir_pt_shade";
+    case PassKind::restir_pt_duplication:
+        return "restir_pt_duplication";
     }
     no_case("name");
 }
@@ -81,6 +94,11 @@ bool needs_scene(PassKind kind) {
     case PassKind::restir_temporal:
     case PassKind::restir_spatial:
     case PassKind::restir_shade:
+    case PassKind::restir_pt_initial:
+    case PassKind::restir_pt_temporal:
+    case PassKind::restir_pt_spatial:
+    case PassKind::restir_pt_shade:
+    case PassKind::restir_pt_duplication:
         return true;
     }
     no_case("needs_scene");
@@ -96,9 +114,14 @@ bool accumulates(PassKind kind) {
     case PassKind::restir_initial:
     case PassKind::restir_temporal:
     case PassKind::restir_spatial:
+    case PassKind::restir_pt_initial:
+    case PassKind::restir_pt_temporal:
+    case PassKind::restir_pt_spatial:
+    case PassKind::restir_pt_duplication:
         return false;
     case PassKind::path:
-    case PassKind::restir_shade:  // folds its pixels into the accumulated image, as path does
+    case PassKind::restir_shade:     // folds its pixels into the accumulated image, as path does
+    case PassKind::restir_pt_shade:  // likewise
         return true;
     }
     no_case("accumulates");
@@ -113,10 +136,15 @@ bool writes_radiance(PassKind kind) {
     case PassKind::restir_initial:
     case PassKind::restir_temporal:
     case PassKind::restir_spatial:
+    case PassKind::restir_pt_initial:
+    case PassKind::restir_pt_temporal:
+    case PassKind::restir_pt_spatial:
+    case PassKind::restir_pt_duplication:
         return false;
     case PassKind::preview:
     case PassKind::path:
     case PassKind::restir_shade:
+    case PassKind::restir_pt_shade:
         return true;
     }
     no_case("writes_radiance");
@@ -132,6 +160,11 @@ bool reads_radiance(PassKind kind) {
     case PassKind::restir_temporal:
     case PassKind::restir_spatial:
     case PassKind::restir_shade:
+    case PassKind::restir_pt_initial:
+    case PassKind::restir_pt_temporal:
+    case PassKind::restir_pt_spatial:
+    case PassKind::restir_pt_shade:
+    case PassKind::restir_pt_duplication:
         return false;
     case PassKind::display:
     case PassKind::tone_map:
@@ -149,6 +182,11 @@ bool writes_target(PassKind kind) {
     case PassKind::restir_temporal:
     case PassKind::restir_spatial:
     case PassKind::restir_shade:
+    case PassKind::restir_pt_initial:
+    case PassKind::restir_pt_temporal:
+    case PassKind::restir_pt_spatial:
+    case PassKind::restir_pt_shade:
+    case PassKind::restir_pt_duplication:
         return false;
     case PassKind::test_pattern:
     case PassKind::display:
@@ -166,6 +204,11 @@ bool is_restir(PassKind kind) {
     case PassKind::path:
     case PassKind::display:
     case PassKind::tone_map:
+    case PassKind::restir_pt_initial:
+    case PassKind::restir_pt_temporal:
+    case PassKind::restir_pt_spatial:
+    case PassKind::restir_pt_shade:
+    case PassKind::restir_pt_duplication:
         return false;
     case PassKind::restir_initial:
     case PassKind::restir_temporal:
@@ -174,6 +217,28 @@ bool is_restir(PassKind kind) {
         return true;
     }
     no_case("is_restir");
+}
+
+bool is_restir_pt(PassKind kind) {
+    switch (kind) {
+    case PassKind::test_pattern:
+    case PassKind::preview:
+    case PassKind::path:
+    case PassKind::display:
+    case PassKind::tone_map:
+    case PassKind::restir_initial:
+    case PassKind::restir_temporal:
+    case PassKind::restir_spatial:
+    case PassKind::restir_shade:
+        return false;
+    case PassKind::restir_pt_initial:
+    case PassKind::restir_pt_temporal:
+    case PassKind::restir_pt_spatial:
+    case PassKind::restir_pt_shade:
+    case PassKind::restir_pt_duplication:
+        return true;
+    }
+    no_case("is_restir_pt");
 }
 
 namespace {
@@ -278,6 +343,48 @@ std::optional<std::string> restir_broken(const std::vector<PassKind>& passes) {
 // each worded once.
 
 // "an integer in [low, high]".
+// ReSTIR PT's order (schedule.h), its two Phase 2 passes refused by name,
+// and never beside ReSTIR DI's passes.
+std::optional<std::string> restir_pt_broken(const std::vector<PassKind>& passes) {
+    std::vector<PassKind> pt;
+    std::ranges::copy_if(passes, std::back_inserter(pt), [](PassKind kind) { return is_restir_pt(kind); });
+    if (pt.empty()) {
+        return std::nullopt;
+    }
+    for (PassKind kind : {PassKind::restir_pt_temporal, PassKind::restir_pt_duplication}) {
+        if (std::ranges::find(pt, kind) != pt.end()) {
+            return std::string(name(kind)) +
+                   " is ReSTIR PT's Phase 2 (docs/research/2026-10-11-restir-pt-layout.md, \"Phases\") and is not "
+                   "built yet";
+        }
+    }
+    if (std::ranges::any_of(passes, [](PassKind kind) { return is_restir(kind); })) {
+        return "the frame graph has ReSTIR DI's and ReSTIR PT's passes; ReSTIR PT's reservoir holds the direct light "
+               "ReSTIR DI's would, so a graph runs one family";
+    }
+    constexpr std::array<PassKind, 3> order = {PassKind::restir_pt_initial, PassKind::restir_pt_spatial,
+                                               PassKind::restir_pt_shade};
+    for (PassKind kind : order) {
+        if (std::ranges::count(pt, kind) > 1) {
+            return "the frame graph has " + std::string(name(kind)) +
+                   " more than once; ReSTIR PT runs each of its passes at most once";
+        }
+    }
+    const auto has = [&](PassKind kind) { return std::ranges::find(pt, kind) != pt.end(); };
+    if (!has(PassKind::restir_pt_initial) || !has(PassKind::restir_pt_shade)) {
+        return "the frame graph has ReSTIR PT's passes (" + listed(pt) +
+               ") without both restir_pt_initial and restir_pt_shade, which every ReSTIR PT graph begins and ends "
+               "with";
+    }
+    const auto rank = [&](PassKind kind) { return std::ranges::find(order, kind) - order.begin(); };
+    if (!std::ranges::is_sorted(pt, {}, rank)) {
+        return "ReSTIR PT's passes run in the order restir_pt_initial, restir_pt_spatial, restir_pt_shade; the frame "
+               "graph has " +
+               listed(pt);
+    }
+    return std::nullopt;
+}
+
 std::string integer_in(std::uint32_t low, std::uint32_t high) {
     return "an integer in [" + std::to_string(low) + ", " + std::to_string(high) + "]";
 }
@@ -441,7 +548,8 @@ std::optional<std::string> invalid(const Schedule& schedule) {
     if (passes.empty()) {
         return "the frame graph has no passes";
     }
-    for (const auto broken : {accumulation_broken, presentation_broken, radiance_broken, restir_broken}) {
+    for (const auto broken :
+         {accumulation_broken, presentation_broken, radiance_broken, restir_pt_broken, restir_broken}) {
         if (std::optional<std::string> reason = broken(passes)) {
             return reason;
         }
@@ -470,7 +578,60 @@ std::optional<std::string> invalid(const Schedule& schedule) {
         return "the frame graph has [restir_di] settings and no ReSTIR DI pass";
     }
     if (schedule.restir_di) {
-        return invalid(*schedule.restir_di, passes);
+        if (std::optional<std::string> reason = invalid(*schedule.restir_di, passes)) {
+            return reason;
+        }
+    }
+
+    const bool restir_pt = std::ranges::any_of(passes, [](PassKind kind) { return is_restir_pt(kind); });
+    if (restir_pt && !schedule.restir_pt) {
+        return "the frame graph has ReSTIR PT's passes and no [restir_pt] settings";
+    }
+    if (!restir_pt && schedule.restir_pt) {
+        return "the frame graph has [restir_pt] settings and no ReSTIR PT pass";
+    }
+    if (schedule.restir_pt) {
+        return invalid(*schedule.restir_pt, passes);
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> invalid(const passes::RestirPt& settings, std::span<const PassKind> passes) {
+    const bool spatial = std::ranges::find(passes, PassKind::restir_pt_spatial) != passes.end();
+    const auto setting = [](std::string_view key, const std::string& value) {
+        return "ReSTIR PT's " + std::string(key) + ", " + value + ", ";
+    };
+    if (settings.nee_candidates < 1u || settings.nee_candidates > contracts::max_nee_candidates) {
+        return setting("nee_candidates", std::to_string(settings.nee_candidates)) + "must be " +
+               integer_in(1u, contracts::max_nee_candidates);
+    }
+    if (settings.max_surfaces < 1u || settings.max_surfaces > contracts::max_path_surfaces) {
+        return setting("max_surfaces", std::to_string(settings.max_surfaces)) + "must be " +
+               integer_in(1u, contracts::max_path_surfaces);
+    }
+    if (!(std::isfinite(settings.footprint) && settings.footprint > 0.0f &&
+          settings.footprint <= contracts::max_footprint)) {
+        return setting("footprint", text(settings.footprint)) + "must be finite, within (0, " +
+               text(contracts::max_footprint) + "]";
+    }
+    if (!finite_within(settings.roughness, 0.0f, 1.0f)) {
+        return setting("roughness", text(settings.roughness)) + "must be finite, within [0, 1]";
+    }
+    if (spatial && (settings.neighbors < 1u || settings.neighbors > contracts::max_path_neighbors)) {
+        return setting("neighbors", std::to_string(settings.neighbors)) + "must be " +
+               integer_in(1u, contracts::max_path_neighbors);
+    }
+    if (!spatial && settings.neighbors != 0u) {
+        return setting("neighbors", std::to_string(settings.neighbors)) +
+               "is read only with restir_pt_spatial, and must be its zero (left out of the graph file) otherwise";
+    }
+    if (spatial && !finite_within(settings.sigma, contracts::min_pairing_sigma, contracts::max_pairing_sigma)) {
+        return setting("sigma", text(settings.sigma)) + "must be finite, within [" +
+               text(contracts::min_pairing_sigma) + ", " + text(contracts::max_pairing_sigma) + "] pixels";
+    }
+    if (!spatial && settings.sigma != 0.0f) {
+        return setting("sigma", text(settings.sigma)) +
+               "is read only with restir_pt_spatial, and must be its zero (left out of the graph file) otherwise";
     }
     return std::nullopt;
 }

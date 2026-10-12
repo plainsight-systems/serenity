@@ -148,6 +148,7 @@ add_library(serenity_core STATIC
     src/core/scene/packed_range.cpp
     src/core/scene/scene.cpp
     src/core/scene/swarm.cpp
+    src/core/sampling/pairing.cpp
     src/core/shapes/shapes.cpp
 )
 target_include_directories(serenity_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
@@ -180,6 +181,9 @@ add_library(serenity_metal STATIC
     src/metal/passes/path/path.cpp
     src/metal/passes/preview/preview.cpp
     src/metal/passes/restir_initial/restir_initial.cpp
+    src/metal/passes/restir_pt_initial/restir_pt_initial.cpp
+    src/metal/passes/restir_pt_shade/restir_pt_shade.cpp
+    src/metal/passes/restir_pt_spatial/restir_pt_spatial.cpp
     src/metal/passes/restir_shade/restir_shade.cpp
     src/metal/passes/restir_spatial/restir_spatial.cpp
     src/metal/passes/restir_temporal/restir_temporal.cpp
@@ -199,6 +203,9 @@ serenity_add_metallib(
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_shade/restir_shade.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_spatial/restir_spatial.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_temporal/restir_temporal.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_initial/restir_pt_initial.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_spatial/restir_pt_spatial.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_shade/restir_pt_shade.metal"
     INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 # ---------------------------------------------------------------------------

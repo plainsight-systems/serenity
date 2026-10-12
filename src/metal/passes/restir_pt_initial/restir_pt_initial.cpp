@@ -1,0 +1,35 @@
+#include "metal/passes/restir_pt_initial/restir_pt_initial.h"
+
+#include "metal/device/error.h"
+#include "metal/device/support.h"
+#include "metal/passes/bindings.h"
+
+namespace serenity::metal {
+
+RestirPtInitialPass::RestirPtInitialPass(const Library& library)
+    : pipeline_(library.compute_pipeline("restir_pt_initial")) {}
+
+void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
+    if (resources.scene == 0 || resources.transforms == 0 || resources.glows == 0 || resources.camera == 0 ||
+        resources.path_settings == 0 || resources.path_reservoirs == 0 || resources.primaries == 0 ||
+        resources.light == 0) {
+        throw MetalError("RestirPtInitialPass: the frame lacks one of its scene, transforms, glows, camera, ReSTIR "
+                         "PT's settings, path reservoirs, primary hits or light buffer");
+    }
+    namespace binding = bindings::restir_pt;
+    MTL4::ArgumentTable* arguments = resources.arguments;
+    arguments->setAddress(resources.constants, binding::constants);
+    arguments->setAddress(resources.camera, binding::camera);
+    arguments->setResource(resources.acceleration, binding::structure);
+    arguments->setAddress(resources.scene, binding::scene);
+    arguments->setAddress(resources.glows, binding::glows);
+    arguments->setAddress(resources.transforms, binding::transforms);
+    arguments->setAddress(resources.path_settings, binding::settings);
+    arguments->setAddress(resources.path_reservoirs, binding::reservoirs);
+    arguments->setAddress(resources.primaries, binding::primaries);
+    arguments->setAddress(resources.light, binding::light);
+    encoder->setComputePipelineState(pipeline_.get());
+    dispatch_per_pixel(encoder, pipeline_.get(), resources.size);
+}
+
+}  // namespace serenity::metal

@@ -106,8 +106,8 @@ std::uint32_t count(std::string_view source, const toml::node& node, std::string
     }
     if (*value < 0 || *value > std::int64_t{std::numeric_limits<std::uint32_t>::max()}) {
         throw GraphFileError(at(source, node, "'" + std::string(key) + "', " + std::to_string(*value) +
-                                                  ", is no count of [restir_di]'s "
-                                                  "(core/contracts/reuse_settings.h)"));
+                                                  ", is no count a setting takes "
+                                                  "(core/contracts/reuse_settings.h, path_reuse_settings.h)"));
     }
     return static_cast<std::uint32_t>(*value);
 }
@@ -293,8 +293,67 @@ passes::RestirDi read_restir_di(std::string_view source, const toml::table& tabl
     return settings;
 }
 
+// ReSTIR PT's settings (core/contracts/path_reuse_settings.h): the four
+// every graph with its passes reads, and neighbors and sigma with
+// restir_pt_spatial alone. Each key the passes read must be written, each
+// they do not must not be; each value is checked against its range alone,
+// beside the written defaults (core/passes/restir_pt.h), so a mistake is
+// reported at its own line.
+passes::RestirPt read_restir_pt(std::string_view source, const toml::table& table, std::span<const PassKind> kinds) {
+    const bool spatial = std::ranges::find(kinds, PassKind::restir_pt_spatial) != kinds.end();
+    constexpr std::array<std::string_view, 6> keys = {"nee_candidates", "max_surfaces", "footprint",
+                                                      "roughness",      "neighbors",    "sigma"};
+    const auto reads = [&](std::string_view key) {
+        return key == "neighbors" || key == "sigma" ? spatial : std::ranges::find(keys, key) != keys.end();
+    };
+    for (const auto& [key, value] : table) {
+        if (!reads(key.str())) {
+            throw GraphFileError(at(source, key.source(),
+                                    std::ranges::find(keys, key.str()) == keys.end()
+                                        ? "unknown key '" + std::string(key.str()) + "' in [restir_pt]"
+                                        : "'" + std::string(key.str()) +
+                                              "' is read only with restir_pt_spatial "
+                                              "(core/contracts/path_reuse_settings.h): a key nobody reads"));
+        }
+    }
+    passes::RestirPt baseline{};
+    baseline.nee_candidates = passes::written_nee_candidates;
+    baseline.max_surfaces = passes::written_max_surfaces;
+    baseline.footprint = passes::written_footprint;
+    baseline.roughness = passes::written_roughness;
+    if (spatial) {
+        baseline.neighbors = passes::written_path_neighbors;
+        baseline.sigma = passes::written_sigma;
+    }
+    passes::RestirPt settings = baseline;
+    const auto take = [&]<typename T>(std::string_view key, T passes::RestirPt::*member, auto read) {
+        const toml::node& node = required(source, table, key, "[restir_pt]");
+        settings.*member = read(node);
+        passes::RestirPt alone = baseline;
+        alone.*member = settings.*member;
+        if (const std::optional<std::string> reason = invalid(alone, kinds)) {
+            throw GraphFileError(at(source, node, *reason));
+        }
+    };
+    const auto as_count = [&](std::string_view key) {
+        return [&source, key](const toml::node& node) { return count(source, node, key); };
+    };
+    const auto as_float = [&](std::string_view key) {
+        return [&source, key](const toml::node& node) { return finite_float(source, node, key); };
+    };
+    take("nee_candidates", &passes::RestirPt::nee_candidates, as_count("nee_candidates"));
+    take("max_surfaces", &passes::RestirPt::max_surfaces, as_count("max_surfaces"));
+    take("footprint", &passes::RestirPt::footprint, as_float("footprint"));
+    take("roughness", &passes::RestirPt::roughness, as_float("roughness"));
+    if (spatial) {
+        take("neighbors", &passes::RestirPt::neighbors, as_count("neighbors"));
+        take("sigma", &passes::RestirPt::sigma, as_float("sigma"));
+    }
+    return settings;
+}
+
 Schedule read_schedule(std::string_view source, const toml::table& root) {
-    only(source, root, {"passes", "tone_map", "restir_di"}, "the frame graph");
+    only(source, root, {"passes", "tone_map", "restir_di", "restir_pt"}, "the frame graph");
 
     const toml::node* passes_node = root.get("passes");
     if (!passes_node) {
@@ -341,6 +400,17 @@ Schedule read_schedule(std::string_view source, const toml::table& root) {
             throw GraphFileError(at(source, *restir_node, "the frame graph has [restir_di] settings and no ReSTIR DI pass"));
         }
         schedule.restir_di = read_restir_di(source, *table, schedule.passes);
+    }
+    if (const toml::node* restir_pt_node = root.get("restir_pt")) {
+        const toml::table* table = restir_pt_node->as_table();
+        if (!table) {
+            throw GraphFileError(at(source, *restir_pt_node, "'restir_pt' must be a table, [restir_pt]"));
+        }
+        if (std::ranges::none_of(schedule.passes, [](PassKind kind) { return is_restir_pt(kind); })) {
+            throw GraphFileError(
+                at(source, *restir_pt_node, "the frame graph has [restir_pt] settings and no ReSTIR PT pass"));
+        }
+        schedule.restir_pt = read_restir_pt(source, *table, schedule.passes);
     }
     if (const std::optional<std::string> reason = invalid(schedule)) {
         throw GraphFileError(at(source, *passes_node, *reason));

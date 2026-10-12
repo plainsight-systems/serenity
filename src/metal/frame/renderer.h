@@ -22,6 +22,7 @@
 #include "metal/device/library.h"
 #include "metal/device/offscreen.h"
 #include "metal/device/presenter.h"
+#include "metal/device/static_arrays.h"
 #include "metal/device/submission.h"
 #include "metal/frame/frame_resources.h"
 #include "metal/film/non_finite.h"
@@ -31,6 +32,9 @@
 #include "metal/passes/path/path.h"
 #include "metal/passes/preview/preview.h"
 #include "metal/passes/restir_initial/restir_initial.h"
+#include "metal/passes/restir_pt_initial/restir_pt_initial.h"
+#include "metal/passes/restir_pt_shade/restir_pt_shade.h"
+#include "metal/passes/restir_pt_spatial/restir_pt_spatial.h"
 #include "metal/passes/restir_shade/restir_shade.h"
 #include "metal/passes/restir_spatial/restir_spatial.h"
 #include "metal/passes/restir_temporal/restir_temporal.h"
@@ -226,6 +230,18 @@ namespace serenity::metal {
 // passes' most being 12 (passes/bindings.h); every other graph's holds the
 // 8 it did.
 //
+// ReSTIR PT. A graph with its passes gets, at construction, its passes;
+// PathReuseImages (frame_images.h), made by prepare() at the frame's size;
+// and one static buffer of its settings and, with restir_pt_spatial, the
+// three reuse textures, built once on the CPU from the graph's sigma and a
+// fixed seed (core/sampling/pairing.h; 323 KB). Refused by the core, never
+// here: restir_pt_temporal and restir_pt_duplication, Phase 2's
+// (core/frame/schedule.h). Barriers as ReSTIR DI's: the queue barrier
+// before the initial pass, a dispatch barrier before each later ReSTIR PT
+// pass and, inside the spatial pass, between its four dispatches
+// (metal/passes/restir_pt_spatial/restir_pt_spatial.h). Its argument table
+// holds ReSTIR DI's 16 bindings, its passes' most being 16.
+//
 // Cost of recording a ReSTIR frame, on the CPU, beyond the above: 128 bytes
 // of reuse constants, four pipeline binds and dispatches with their
 // argument-table entries (two of each without the merges); with a temporal merge, one more animation of
@@ -294,7 +310,8 @@ public:
 
 private:
     using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass, RestirInitialPass,
-                              RestirTemporalPass, RestirSpatialPass, RestirShadePass>;
+                              RestirTemporalPass, RestirSpatialPass, RestirShadePass, RestirPtInitialPass,
+                              RestirPtSpatialPass, RestirPtShadePass>;
 
     // A pass of the schedule, with its kind (C.1).
     struct Step {
@@ -327,6 +344,10 @@ private:
     // arrays; and the ring of its reuse constants, one copy per frame in
     // flight. None for a graph without its passes.
     std::optional<passes::RestirDi> restir_;
+    // ReSTIR PT's (above): its arrays, and its settings and reuse textures.
+    // None for a graph without its passes.
+    std::unique_ptr<PathReuseImages> path_reuse_;
+    std::unique_ptr<StaticArrays> path_static_;
     std::unique_ptr<ReuseImages> reuse_;
     std::unique_ptr<FrameArray> reuse_constants_;
     // A temporal graph's last frame (above): its transforms and glows,

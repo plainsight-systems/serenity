@@ -1,11 +1,15 @@
 #include "metal/frame/frame_images.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <cstddef>
 #include <initializer_list>
 #include <string>
 
 #include "core/contracts/float3.h"
+#include "core/contracts/path_reservoir.h"
+#include "core/contracts/path_reuse_settings.h"
 #include "core/contracts/reservoir.h"
 #include "core/contracts/surface_record.h"
 
@@ -151,6 +155,65 @@ ReuseImages::Addresses ReuseImages::addresses(std::uint64_t index) const noexcep
         out.last_records = address(records_[then]);
         out.last_final = address(final_reservoirs_[then]);
     }
+    return out;
+}
+
+PathReuseImages::PathReuseImages(const Device& device, Submission& submission, Spatial spatial)
+    : device_(NS::RetainPtr(device.handle())), submission_(submission), spatial_(spatial) {
+    // The count starts at 0, and the grid pass keeps setting it back.
+    const auto pool = scoped_pool();
+    counter_.buffer = NS::TransferPtr(device_->newBuffer(grid_offset * 2, MTL::ResourceStorageModeShared));
+    if (!counter_.buffer) {
+        throw MetalError("PathReuseImages: the device made no buffer for the replay count");
+    }
+    std::memset(counter_.buffer->contents(), 0, grid_offset * 2);
+    counter_.resident = submission_.keep_resident(counter_.buffer.get());
+}
+
+void PathReuseImages::make(Array& array, std::size_t bytes, const char* what) {
+    array.buffer = NS::TransferPtr(device_->newBuffer(bytes, MTL::ResourceStorageModePrivate));
+    if (!array.buffer) {
+        throw MetalError(std::string("PathReuseImages: the device made no buffer for the ") + what);
+    }
+    array.resident = submission_.keep_resident(array.buffer.get());
+}
+
+void PathReuseImages::prepare(frame::Extent size) {
+    check_texture_size(size, "ReSTIR PT's arrays");
+    if (size == size_) {
+        return;
+    }
+    size_ = {};
+    const auto all = {&reservoirs_, &primaries_, &light_, &shifts_, &replays_};
+    if (std::ranges::any_of(all, [](const Array* array) { return static_cast<bool>(array->buffer); })) {
+        submission_.drain();
+    }
+    for (Array* array : all) {
+        array->resident.reset();
+        array->buffer.reset();
+    }
+    const auto pool = scoped_pool();
+    const std::size_t pixels = std::size_t{size.width} * size.height;
+    make(reservoirs_, pixels * sizeof(contracts::PathReservoir), "path reservoirs");
+    make(primaries_, pixels * 2 * sizeof(std::uint32_t), "primary hits");
+    make(light_, pixels * 4 * sizeof(float), "light buffer");
+    if (spatial_ == Spatial::merged) {
+        make(shifts_, pixels * contracts::max_path_neighbors * 4 * sizeof(float), "shifted paths");
+        make(replays_, pixels * contracts::max_path_neighbors * sizeof(std::uint32_t), "replaying pairs");
+    }
+    size_ = size;
+}
+
+PathReuseImages::Addresses PathReuseImages::addresses() const noexcept {
+    const auto address = [](const Array& array) { return array.buffer ? array.buffer->gpuAddress() : 0; };
+    Addresses out;
+    out.reservoirs = address(reservoirs_);
+    out.primaries = address(primaries_);
+    out.light = address(light_);
+    out.shifts = address(shifts_);
+    out.replays = address(replays_);
+    out.counter = address(counter_);
+    out.grid = out.counter + grid_offset;
     return out;
 }
 

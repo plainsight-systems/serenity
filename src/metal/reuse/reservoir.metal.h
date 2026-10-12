@@ -127,6 +127,17 @@ struct MergeInput {
     uint source;                               // from_own, from_temporal, or a neighbor's index
 };
 
+// The pick itself, steps 2 and 3's shared line, and the one softmax pick
+// for both ReSTIRs (ES.3): `weight` added to the running `weight_sum`, and
+// whether the new sample replaces the kept one, with probability weight /
+// weight_sum by `u` in [0, 1). A weight of 0 is never kept. ReSTIR PT's
+// path tree streams its paths through it (metal/passes/restir_pt/
+// restir_pt.metal.h), whose kept sample is a path, not a light.
+inline bool stream_pick(thread float& weight_sum, float weight, float u) {
+    weight_sum += weight;
+    return weight > 0.0f && u * weight_sum < weight;
+}
+
 // Step 1.
 inline Streaming empty_reservoir() {
     return Streaming{serenity::contracts::LightPoint{0u, 0u}, 0.0f, 0u, 0.0f, 0u, from_own};
@@ -138,9 +149,8 @@ inline Streaming empty_reservoir() {
 // An in-out parameter, the state streamed into (F.17); a weight of 0 adds
 // to M and is never kept.
 inline bool stream_candidate(thread Streaming& reservoir, Candidate candidate, float u) {
-    reservoir.weight_sum += candidate.weight;
     reservoir.count += 1u;
-    if (!(candidate.weight > 0.0f && u * reservoir.weight_sum < candidate.weight)) {
+    if (!stream_pick(reservoir.weight_sum, candidate.weight, u)) {
         return false;
     }
     reservoir.sample = candidate.sample;
@@ -154,9 +164,8 @@ inline bool stream_candidate(thread Streaming& reservoir, Candidate candidate, f
 // (F.17); a weight of 0 adds its count and is never kept.
 inline void stream_reservoir(thread Streaming& reservoir, MergeInput input, float u) {
     const float weight = input.target * input.reservoir.weight * float(input.count);
-    reservoir.weight_sum += weight;
     reservoir.count += input.count;
-    if (!(weight > 0.0f && u * reservoir.weight_sum < weight)) {
+    if (!stream_pick(reservoir.weight_sum, weight, u)) {
         return;
     }
     reservoir.sample = input.reservoir.sample;

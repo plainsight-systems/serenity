@@ -16,6 +16,7 @@
 #include "core/contracts/frame_constants.h"
 #include "core/contracts/reuse_constants.h"
 #include "core/contracts/surface_record.h"
+#include "core/sampling/pairing.h"
 #include "core/scene/packed_range.h"
 #include "metal/device/error.h"
 #include "metal/device/support.h"
@@ -57,6 +58,16 @@ static_assert(bindings::restir_initial::output < max_restir_buffers);
 static_assert(bindings::restir_temporal::last_transforms < max_restir_buffers);
 static_assert(bindings::restir_spatial::output < max_restir_buffers);
 static_assert(bindings::restir_shade::non_finite < max_restir_buffers);
+static_assert(bindings::restir_pt::non_finite < max_restir_buffers);
+
+// The reuse textures' seed: fixed, so every run pairs the same pixels
+// (core/sampling/pairing.h).
+constexpr std::uint64_t pairing_seed = 0x5e2e417f;
+
+// Whether `kind` is a pass of either ReSTIR, whose arrays the frames share.
+bool reuses_samples(frame::PassKind kind) {
+    return frame::is_restir(kind) || frame::is_restir_pt(kind);
+}
 
 // The reuse constants are written into their ring as their bytes.
 static_assert(std::is_trivially_copyable_v<contracts::ReuseConstants>);
@@ -96,7 +107,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     : submission_(submission),
       library_(device, serenity::metallib::shaders),
       constants_(device, submission, std::vector<std::byte>(ring_slot_size), FrameArray::Copies::per_frame),
-      arguments_(make_argument_table(device.handle(), std::ranges::any_of(schedule.passes, frame::is_restir)
+      arguments_(make_argument_table(device.handle(), std::ranges::any_of(schedule.passes, reuses_samples)
                                                           ? max_restir_buffers
                                                           : max_buffers)) {
     // The core decides which schedules can be carried out (principle 10).
@@ -127,7 +138,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     // The first pass that writes the images between passes, accumulates,
     // or writes ReSTIR's arrays, which the frame before's shade reads.
     const auto crosses_frames = [](frame::PassKind kind) {
-        return frame::writes_radiance(kind) || frame::accumulates(kind) || frame::is_restir(kind);
+        return frame::writes_radiance(kind) || frame::accumulates(kind) || reuses_samples(kind);
     };
     if (const auto first = std::ranges::find_if(schedule.passes, crosses_frames); first != schedule.passes.end()) {
         first_cross_frame_ = static_cast<std::size_t>(first - schedule.passes.begin());
@@ -171,6 +182,19 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         case frame::PassKind::restir_shade:
             steps_.push_back(Step{kind, Pass{std::in_place_type<RestirShadePass>, library_}});
             break;
+        case frame::PassKind::restir_pt_initial:
+            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirPtInitialPass>, library_}});
+            break;
+        case frame::PassKind::restir_pt_spatial:
+            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirPtSpatialPass>, library_}});
+            break;
+        case frame::PassKind::restir_pt_shade:
+            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirPtShadePass>, library_}});
+            break;
+        case frame::PassKind::restir_pt_temporal:
+        case frame::PassKind::restir_pt_duplication:
+            // frame::invalid() refuses both by name before this is reached.
+            throw MetalError("Renderer: " + std::string(frame::name(kind)) + " is not built yet");
         }
     }
     // The pass that accumulates is the one that writes radiance (the core
@@ -206,6 +230,20 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         reuse_constants_ = std::make_unique<FrameArray>(device, submission,
                                                         std::vector<std::byte>(sizeof(contracts::ReuseConstants)),
                                                         FrameArray::Copies::per_frame);
+    }
+
+    // ReSTIR PT's arrays, settings and reuse textures, only for its graph.
+    if (schedule.restir_pt) {
+        const bool merged = has(frame::PassKind::restir_pt_spatial);
+        path_reuse_ = std::make_unique<PathReuseImages>(
+            device, submission, merged ? PathReuseImages::Spatial::merged : PathReuseImages::Spatial::none);
+        const contracts::PathReuseSettings settings = *schedule.restir_pt;
+        const std::vector<std::uint16_t> textures =
+            merged ? sampling::reuse_textures(static_cast<double>(settings.sigma), pairing_seed)
+                   : std::vector<std::uint16_t>(1, 0u);
+        const std::array<std::span<const std::byte>, 2> arrays = {std::as_bytes(std::span(&settings, 1)),
+                                                                  std::as_bytes(std::span(textures))};
+        path_static_ = std::make_unique<StaticArrays>(device, submission, arrays);
     }
 
     // Only a graph that reads the scene has it put on the GPU, and only its
@@ -259,7 +297,7 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
         throw MetalError("Renderer: frame " + std::to_string(inputs.index) +
                     ": the frame graph reads a scene, and the frame has no camera");
     }
-    if (!accumulation_ && !images_ && !reuse_) {
+    if (!accumulation_ && !images_ && !reuse_ && !path_reuse_) {
         return;
     }
     prepared_.reset();
@@ -267,6 +305,9 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
         images_->prepare(size);
     }
     const std::uint64_t reused = reuse_ ? reuse_->prepare(inputs, size) : 0u;  // 0 without a temporal merge
+    if (path_reuse_) {
+        path_reuse_->prepare(size);
+    }
     const std::uint32_t held =
         accumulation_ ? accumulation_->prepare(inputs, size,
                                        animation::changes(animation_) ? frame::SceneMotion::changing
@@ -319,7 +360,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
     check_time(inputs);
     std::uint32_t accumulated_frames = 0;
     std::uint64_t reused_frames = 0;
-    if (accumulation_ || images_ || reuse_) {
+    if (accumulation_ || images_ || reuse_ || path_reuse_) {
         if (!prepared_ || prepared_->index != inputs.index || !(prepared_->size == size)) {
             throw MetalError("Renderer::record: frame " + std::to_string(inputs.index) +
                         " was not prepared at this size (Renderer::prepare)");
@@ -400,6 +441,18 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         resources.final_reservoirs = arrays.final_reservoirs;
         resources.last_final_reservoirs = arrays.last_final;
     }
+    if (path_reuse_) {
+        const PathReuseImages::Addresses arrays = path_reuse_->addresses();
+        resources.path_settings = path_static_->address(0);
+        resources.pairing = path_static_->address(1);
+        resources.path_reservoirs = arrays.reservoirs;
+        resources.primaries = arrays.primaries;
+        resources.light = arrays.light;
+        resources.shifts = arrays.shifts;
+        resources.replays = arrays.replays;
+        resources.replay_counter = arrays.counter;
+        resources.replay_grid = arrays.grid;
+    }
     if (reuses_history_) {
         // Last frame's transforms and glows: this frame's own where the
         // scene is still, else animated below at the previous time.
@@ -440,13 +493,13 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
             // touches any (GPU.8).
             encoder->barrierAfterQueueStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
         }
-        if (frame::is_restir(step.kind) && restir_before) {
+        if (reuses_samples(step.kind) && restir_before) {
             // What the ReSTIR pass before it wrote this frame: the records,
             // path states and reservoirs (GPU.8: a write and its reader).
             encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch,
                                                MTL4::VisibilityOptionDevice);
         }
-        restir_before = restir_before || frame::is_restir(step.kind);
+        restir_before = restir_before || reuses_samples(step.kind);
         if (frame::reads_radiance(step.kind)) {
             // The radiance image an earlier pass of this frame wrote.
             encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch,
