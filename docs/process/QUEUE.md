@@ -10,12 +10,12 @@ This file tracks active and accepted work.
   Phase 2 built 2026-10-11 by the user's direction (temporal reuse by
   Talbot MIS, the duplication map, a G-buffer of primary hits, light tiles;
   graphs/restir_pt.toml is the whole of Enhanced at its defaults):
-  docs/research/2026-10-11-restir-pt-phase2.md. Manifold NEE in progress
-  on branch worktree-agent-ad078beb1e1bfef2f (2026-10-12, by the user's
-  direction): built and tested behind a graph's `mnee`, off by default;
-  the equal-time comparison, the clip, the debug and sanitize presets and
-  whether ReSTIR PT's graph turns it on are left: docs/research/
-  2026-10-12-mnee.md, "Next steps". Then Phase 3's references.
+  docs/research/2026-10-11-restir-pt-phase2.md. Manifold NEE done
+  (2026-10-12/13, by the user's direction; branch mnee-wip): behind a
+  graph's `mnee`; graphs/restir_pt.toml sets it, by the equal-time
+  comparison (glass and metal displayed error -16% at t = 120, -5% at
+  t = 8); graphs/path.toml does not and stays the reference:
+  docs/research/2026-10-12-mnee.md. Then Phase 3's references.
 
 - **The first frames.** Step (a), done: a frame's whole path, end to end. A
   frame graph file names the passes, the Metal 4 backend records it with two
@@ -139,8 +139,9 @@ Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
 - ReSTIR PT: a reconnection keeps its suffix after x_k as its source frame lit it (contract 15's cached radiance, as the 2022 code); a moved firefly's light lingers after x_k until resampled away, bounded by the cap.
 - ReSTIR PT: the temporal reuse's previous position under a moving primary surface has no test; the marbles' surfaces are still.
 - ReSTIR PT: dual motion vectors (Enhanced §6.4) for disocclusions under camera motion; the marbles' camera is fixed.
-- MNEE: from the straight seed Newton diverges over most of a ball's caustic rim (18 of 65 floor points converge; -6.5% of the light in a glass sphere's shadow); Cycles' algorithm, a seed nearer the rim's path if it shows.
-- MNEE: G is not clamped (Cycles' clamp at 2 is in meters); caustic folds give fireflies; a clamp relative to the straight segment's G if they show.
+- MNEE: from the straight seed Newton diverges over most of a ball's caustic rim (18 of 65 floor points converge; -6.5% of the light in a glass sphere's shadow; glass and metal's mean 0.94 of the reference at t = 120 in ReSTIR PT's graph, 0.98 without MNEE); Cycles' algorithm, a seed nearer the rim's path if it shows.
+- MNEE: G is not clamped (Cycles' clamp at 2 is in meters); caustic folds give fireflies (glass and metal's linear MSE at t = 8 3.7 -> 13.3 with MNEE, displayed level); a clamp relative to the straight segment's G if they show.
 - MNEE: `shift_path()` checks `settings.mnee` at run time: +1.2% to ReSTIR PT without MNEE at 3456 x 2234; a template parameter, as the tree has.
 - MNEE: the MNEE pass costs the path graph +28 ms at 3456 x 2234 (30.4 -> 58.7); GPU counters on mnee_solve (iterations, registers).
+- MNEE: the path tracer + MNEE at 1 sample loses to the path tracer at 2 at equal time (displayed 0.82 to 1.01); graphs/path_mnee.toml stays opt-in.
 - MNEE: conductors are not receivers (near-mirror lobes with no MIS); their caustics through glass stay the path tracer's.

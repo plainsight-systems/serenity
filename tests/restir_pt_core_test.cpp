@@ -39,7 +39,7 @@ constexpr std::string_view initial_keys = "nee_candidates = 32\nmax_surfaces = 9
 
 }  // namespace
 
-TEST_CASE("graphs/restir_pt.toml reads as ReSTIR PT Enhanced at its defaults") {
+TEST_CASE("graphs/restir_pt.toml reads as ReSTIR PT Enhanced at its defaults, with MNEE") {
     const auto schedule = load_schedule(graphs_dir / "restir_pt.toml");
     REQUIRE(schedule.passes.size() == 6);
     CHECK(schedule.passes[0] == PassKind::restir_pt_initial);
@@ -59,6 +59,7 @@ TEST_CASE("graphs/restir_pt.toml reads as ReSTIR PT Enhanced at its defaults") {
     CHECK(schedule.restir_pt->confidence_cap == serenity::passes::written_confidence_cap);
     CHECK(schedule.restir_pt->cap_floor == serenity::passes::written_cap_floor);
     CHECK(schedule.restir_pt->cap_exponent == serenity::passes::written_cap_exponent);
+    CHECK(schedule.mnee);
     CHECK_FALSE(schedule.restir_di.has_value());
 }
 
