@@ -42,9 +42,33 @@ enum Buffer : unsigned {
     glows = 4,
     transforms = 5,
     non_finite = 6,  // the frame's count of samples not finite (metal/film/non_finite.h)
+    mnee_requests = 7,  // with mnee: MNEE's work list (contract 16)
+    mnee_header = 8,    // its count and capacity
 };
 enum Texture : unsigned { accumulated = 0 };  // also the frame's radiance (path/path.h)
 }  // namespace path
+
+// The MNEE pass's three kernels (passes/mnee/mnee.h), recorded by the path
+// pass and ReSTIR PT's initial pass after their own: the scene at the path
+// tracer's indices, then the work list, its header, its indirect grid, and
+// the light each request adds to its pixel (a float4 a pixel: the path
+// pass's MNEE light, folded into the accumulated image at texture 0, or
+// ReSTIR PT's light buffer).
+namespace mnee {
+enum Buffer : unsigned {
+    constants = 0,
+    structure = 2,
+    scene = 3,
+    glows = 4,
+    transforms = 5,
+    non_finite = 6,
+    requests = 7,
+    header = 8,
+    grid = 9,
+    light = 10,
+};
+enum Texture : unsigned { accumulated = 0 };
+}  // namespace mnee
 
 namespace display {
 enum Buffer : unsigned { constants = 0 };
@@ -170,6 +194,8 @@ enum Buffer : unsigned {
     duplication = 23,         // the duplication map, D a pixel
     last_transforms = 24,     // last frame's shape transforms
     last_glows = 25,          // and glows
+    mnee_requests = 26,       // with mnee: MNEE's work list (contract 16), the initial pass's
+    mnee_header = 27,         // its count and capacity
 };
 enum Texture : unsigned { accumulated = 0 };  // the shade's: also the frame's radiance, as the path pass's
 }  // namespace restir_pt

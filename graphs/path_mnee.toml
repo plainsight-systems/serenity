@@ -1,0 +1,14 @@
+# The naive path tracer with caustics by manifold next event estimation
+# (src/metal/integrator/mnee.metal.h): at each rough surface, light through
+# smooth glass found by solving for its path, and not counted again when a
+# bounce happens on it (src/metal/integrator/path.metal.h, "Manifold next
+# event estimation"); then exposed, bloomed and rolled off as the path
+# graph's is. Biased as Cycles' MNEE is (docs/research/2026-10-12-mnee.md);
+# graphs/path.toml, without it, stays the reference. Needs a scene.
+
+passes = ["path", "tone_map"]
+mnee = true
+
+[tone_map]
+exposure = 0.0  # stops
+bloom = 0.04    # the fraction of light spread into glare

@@ -118,6 +118,30 @@
 //      share of the final reservoirs within 17 x 17 that hold copies of
 //      its path, for the next frame's step 7.
 //
+// Manifold next event estimation (decided 2026-10-11, by the user's
+// direction; settings.mnee, the graph's: metal/integrator/mnee.metal.h
+// states the algorithm, docs/research/2026-10-12-mnee.md the measurements).
+// MNEE's paths are taken out of ReSTIR PT's path space and estimated per
+// pixel each frame, not resampled or reused: at each receiver of the tree's
+// main path (step 1), NEE's kept candidate's segment is visited whole in
+// place of its shadow ray; where it crosses casters, a request goes on
+// MNEE's work list (contract 16), its weight the path's throughput over its
+// survival times the candidate's W_RIS, and no candidate path is offered;
+// the MNEE pass, recorded by the initial pass after its kernel, solves the
+// requests and adds their light to the light buffer, which the shade folds
+// in (metal/passes/mnee/mnee.h); where it is clear, the candidate is
+// offered as before. The tree with MNEE is TreeGatherOf<true>, a kernel of
+// its own (restir_pt_initial_mnee), so the tree without it compiles and
+// costs what it did. A light a BSDF ray strikes at the end of MNEE's
+// chain (mnee::covered()) is offered by no tree (step 3 of the loop) and
+// found by no shift (shift.metal.h, replay_end()), so the path space every
+// pixel resamples and every shift maps into is the same one, MNEE's paths
+// out of it. Reconnection keeps a path's chain as the source's (x_k is
+// rough, so the chain after it is the suffix's), so only replay is asked.
+// Considered and not taken: MNEE's chains as candidate paths of the tree,
+// resampled and shifted (no production system shifts a manifold walk; its
+// Jacobian under a shift is the solve's own, not built here).
+//
 // What is approximate, stated. Last frame's domain, where step 5 shifts
 // this pixel's path for its Talbot weight, is last frame's camera, primary
 // hits, transforms and glows, traced against this frame's structure: a ray
@@ -244,7 +268,11 @@ struct Stored {
 // Steps 1 to 4's state: the path loop's gather (path.metal.h, "What the
 // loop does with the light it finds"). Its hooks are the step's; its state
 // the caller's local, so the loop and it are one kernel's registers.
-struct TreeGather {
+// `manifold`, the graph's mnee (above, "Manifold next event estimation"),
+// a template parameter, so the tree without MNEE compiles what it did
+// (ES.3; GPU.3): the initial pass has a kernel for each.
+template <bool manifold>
+struct TreeGatherOf {
     serenity::contracts::PathReuseSettings settings;
     PathNumbers stream;  // the tree's: (pixel, frame)
     Shapes shapes;       // where a reconnection vertex's shape is
@@ -277,6 +305,12 @@ struct TreeGather {
     uint rc_lobe_at;
     float rc_jacobian;
     float3 suffix;
+    // The main path's chain since its last diffuse bounce, with MNEE
+    // (mnee::chain_after(); above, "Manifold next event estimation"); MNEE's
+    // work list and the pixel its requests are for.
+    uint chain;
+    mnee::Queue queue;
+    uint pixel;
 
     // Step 2: a candidate, kept or not by the pick (reservoir.metal.h).
     [[gnu::always_inline]] void offer(float3 integrand, float contribution_weight, Stored stored) {
@@ -344,6 +378,9 @@ struct TreeGather {
         if (surface == 0u) {
             seen += beta * emitted;
             return;
+        }
+        if (manifold && mnee::covered(chain)) {
+            return;  // MNEE's, counted at the receiver (next_event())
         }
         const uint length = surface + 1u;
         const bool weighed = emission_pdf != path::counted_in_full;
@@ -419,8 +456,30 @@ struct TreeGather {
             }
         }
         const float3 wi = to_float3(kept.sample.direction);
-        if (!(kept.target > 0.0f) ||
-            !nee::visible(scene.structure, scene.shapes(), origin, wi, kept.sample.distance, kept.sample.primitive)) {
+        if (!(kept.target > 0.0f)) {
+            return;
+        }
+        if (manifold && mnee::receives(here.bsdf)) {
+            // With MNEE: the kept candidate's segment visited whole, in
+            // place of its shadow ray; crossing casters, MNEE's light
+            // along the solved chain, weighed by W_RIS, into the pixel's
+            // light, not resampled (above, "Manifold next event
+            // estimation").
+            const mnee::Seed seed =
+                mnee::seed_segment(scene, origin, wi, kept.sample.distance, kept.sample.primitive);
+            if (seed.count != 0u) {
+                if (seed.usable &&
+                    !mnee::enqueue(queue, mnee::request(here, origin, kept.sample, seed,
+                                                        beta / survival * (sum / (float(m) * kept.target)), pixel))) {
+                    seen += float3(NAN);  // the list full: counted, not lost silently (contract 16)
+                }
+                return;
+            }
+            if (seed.blocked) {
+                return;
+            }
+        } else if (!nee::visible(scene.structure, scene.shapes(), origin, wi, kept.sample.distance,
+                                 kept.sample.primitive)) {
             return;
         }
         const float3 kept_light = nee::unshadowed(here, wi, to_float3(kept.sample.radiance)) *
@@ -468,6 +527,9 @@ struct TreeGather {
         const uint index = surface + 1u;
         const float3 at = to_float3(here.surface.position);
         const bool delta = (next.lobe & serenity::contracts::lobe_delta) != 0u;
+        if constexpr (manifold) {
+            chain = mnee::chain_after(chain, next.lobe, shapes.records[here.surface.primitive].kind);
+        }
         if (rc != 0u) {
             suffix *= factor;
         } else if (index >= 2u) {
@@ -512,11 +574,18 @@ struct TreeGather {
     }
 };
 
+// The tree without MNEE, as the probes ask it.
+using TreeGather = TreeGatherOf<false>;
+
 // A tree's gather at its start: nothing found, nothing kept.
-inline TreeGather start_tree(serenity::contracts::PathReuseSettings settings, PathNumbers stream, Shapes shapes,
-                             const device serenity::contracts::LightTileEntry* tile) {
-    TreeGather tree{};
+template <bool manifold>
+inline TreeGatherOf<manifold> start_tree(serenity::contracts::PathReuseSettings settings, PathNumbers stream,
+                                         Shapes shapes, const device serenity::contracts::LightTileEntry* tile,
+                                         mnee::Queue queue, uint pixel) {
+    TreeGatherOf<manifold> tree{};
     tree.settings = settings;
+    tree.queue = queue;
+    tree.pixel = pixel;
     tree.stream = stream;
     tree.shapes = shapes;
     tree.tile = tile;
@@ -534,7 +603,8 @@ inline TreeGather start_tree(serenity::contracts::PathReuseSettings settings, Pa
 
 // Step 2's end: the kept path's W = w_sum / p̂(F); an empty reservoir, its
 // count 1 (one tree was drawn), where nothing was kept.
-inline serenity::contracts::PathReservoir finish_tree(TreeGather tree) {
+template <bool manifold>
+inline serenity::contracts::PathReservoir finish_tree(TreeGatherOf<manifold> tree) {
     serenity::contracts::PathReservoir reservoir = tree.chosen;
     const float target = luminance(to_float3(reservoir.integrand));
     if (!(target > 0.0f && tree.weight_sum > 0.0f) ||
@@ -555,7 +625,8 @@ inline serenity::contracts::PathReservoir finish_tree(TreeGather tree) {
 // last frame's (contract 10; as ReSTIR DI's restir::previous_position()
 // places the object-space point its surface carries). Read only where the
 // tree has a primary hit.
-inline float3 previous_position(TreeGather tree, constant serenity::contracts::Transform* transforms,
+template <bool manifold>
+inline float3 previous_position(TreeGatherOf<manifold> tree, constant serenity::contracts::Transform* transforms,
                                 constant serenity::contracts::Transform* last_transforms) {
     const float3 object = transform_to_object(transforms[tree.primary_shape], to_float3(tree.primary.position));
     const serenity::contracts::Transform placed = last_transforms[tree.primary_shape];

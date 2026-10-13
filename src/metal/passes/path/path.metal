@@ -7,6 +7,7 @@
 
 #include "core/contracts/camera.h"
 #include "core/contracts/frame_constants.h"
+#include "core/contracts/mnee_request.h"
 #include "core/contracts/transform.h"
 #include "metal/camera/thin_lens.metal.h"
 #include "metal/film/accumulate.metal.h"
@@ -19,18 +20,17 @@ using namespace metal;
 using namespace metal::raytracing;
 using namespace serenity::shaders;
 
-kernel void path_trace(constant serenity::contracts::FrameConstants& frame
-                       [[buffer(serenity::bindings::path::constants)]],
-                       constant serenity::contracts::CameraData& camera [[buffer(serenity::bindings::path::camera)]],
-                       primitive_acceleration_structure structure [[buffer(serenity::bindings::path::structure)]],
-                       constant serenity::gpu::SceneBlock& block [[buffer(serenity::bindings::path::scene)]],
-                       constant float* sphere_glows [[buffer(serenity::bindings::path::glows)]],
-                       constant serenity::contracts::Transform* transforms
-                       [[buffer(serenity::bindings::path::transforms)]],
-                       device atomic_uint* non_finite [[buffer(serenity::bindings::path::non_finite)]],
-                       texture2d<float, access::read_write> accumulated
-                       [[texture(serenity::bindings::path::accumulated)]],
-                       uint2 pixel [[thread_position_in_grid]]) {
+// One pixel's path, folded in: the radiance by the path tracer, or with
+// MNEE (`manifold`, the graph's mnee setting), its requests written on
+// `queue`, whose light the MNEE pass adds after (metal/passes/mnee/mnee.h).
+// A kernel for each, below, so the one without compiles the loop it always
+// did (path.metal.h) and binds what it always bound.
+template <bool manifold>
+inline void trace_pixel(constant serenity::contracts::FrameConstants& frame,
+                        constant serenity::contracts::CameraData& camera, primitive_acceleration_structure structure,
+                        constant serenity::gpu::SceneBlock& block, constant float* sphere_glows,
+                        constant serenity::contracts::Transform* transforms, device atomic_uint* non_finite,
+                        texture2d<float, access::read_write> accumulated, mnee::Queue queue, uint2 pixel) {
     // Every thread reaches count_non_finite() below, which sums over its
     // SIMD group: none returns early.
     const bool inside = pixel.x < frame.width && pixel.y < frame.height;
@@ -47,11 +47,49 @@ kernel void path_trace(constant serenity::contracts::FrameConstants& frame
         const float2 lens = has_lens(camera) ? next_numbers2(numbers) : float2(0.0f);
         const CameraRay ray =
             camera_ray(camera, float2(pixel) + within, lens, uint2(frame.width, frame.height));
-        const float3 sample = path::radiance(scene, ray, numbers);
+        const float3 sample = manifold ? path::radiance_manifold(scene, ray, numbers, queue,
+                                                                 pixel.y * frame.width + pixel.x)
+                                       : path::radiance(scene, ray, numbers);
 
         failed = !finite(sample);
         const float4 held = accumulate(accumulated.read(pixel), sample, frame.accumulated_frames == 0u);
         accumulated.write(held, pixel);
     }
     count_non_finite(failed, non_finite);
+}
+
+kernel void path_trace(constant serenity::contracts::FrameConstants& frame
+                       [[buffer(serenity::bindings::path::constants)]],
+                       constant serenity::contracts::CameraData& camera [[buffer(serenity::bindings::path::camera)]],
+                       primitive_acceleration_structure structure [[buffer(serenity::bindings::path::structure)]],
+                       constant serenity::gpu::SceneBlock& block [[buffer(serenity::bindings::path::scene)]],
+                       constant float* sphere_glows [[buffer(serenity::bindings::path::glows)]],
+                       constant serenity::contracts::Transform* transforms
+                       [[buffer(serenity::bindings::path::transforms)]],
+                       device atomic_uint* non_finite [[buffer(serenity::bindings::path::non_finite)]],
+                       texture2d<float, access::read_write> accumulated
+                       [[texture(serenity::bindings::path::accumulated)]],
+                       uint2 pixel [[thread_position_in_grid]]) {
+    trace_pixel<false>(frame, camera, structure, block, sphere_glows, transforms, non_finite, accumulated,
+                       mnee::Queue{nullptr, nullptr}, pixel);
+}
+
+kernel void path_trace_mnee(constant serenity::contracts::FrameConstants& frame
+                            [[buffer(serenity::bindings::path::constants)]],
+                            constant serenity::contracts::CameraData& camera
+                            [[buffer(serenity::bindings::path::camera)]],
+                            primitive_acceleration_structure structure [[buffer(serenity::bindings::path::structure)]],
+                            constant serenity::gpu::SceneBlock& block [[buffer(serenity::bindings::path::scene)]],
+                            constant float* sphere_glows [[buffer(serenity::bindings::path::glows)]],
+                            constant serenity::contracts::Transform* transforms
+                            [[buffer(serenity::bindings::path::transforms)]],
+                            device atomic_uint* non_finite [[buffer(serenity::bindings::path::non_finite)]],
+                            device serenity::contracts::MneeRequest* requests
+                            [[buffer(serenity::bindings::path::mnee_requests)]],
+                            device atomic_uint* header [[buffer(serenity::bindings::path::mnee_header)]],
+                            texture2d<float, access::read_write> accumulated
+                            [[texture(serenity::bindings::path::accumulated)]],
+                            uint2 pixel [[thread_position_in_grid]]) {
+    trace_pixel<true>(frame, camera, structure, block, sphere_glows, transforms, non_finite, accumulated,
+                      mnee::Queue{requests, header}, pixel);
 }

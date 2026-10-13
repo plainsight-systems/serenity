@@ -10,8 +10,14 @@
 # next frame's temporal reuse (src/metal/passes/restir_pt/restir_pt.metal.h,
 # steps 1 to 13); then exposed, bloomed and rolled off as the path graph's
 # is. ReSTIR PT Enhanced's defaults throughout (src/core/passes/restir_pt.h).
-# Needs a scene.
+# Caustics through glass by manifold next event estimation
+# (src/metal/integrator/mnee.metal.h), per pixel each frame, not reused: on
+# by its equal-time comparison against the path tracer (lower displayed
+# error on glass and metal at t = 120 and t = 8,
+# docs/research/2026-10-12-mnee.md). Biased as Cycles' MNEE is;
+# graphs/path.toml, without it, stays the reference. Needs a scene.
 
+mnee = true
 passes = ["restir_pt_initial", "restir_pt_temporal", "restir_pt_spatial", "restir_pt_shade",
           "restir_pt_duplication", "tone_map"]
 

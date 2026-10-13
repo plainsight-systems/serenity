@@ -87,8 +87,9 @@ kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQu
     const auto tree_at = [&](uint2 pixel) {
         PathNumbers numbers;
         const CameraRay ray = restir_pt::primary_ray(camera, pixel, q.frame, size, numbers);
-        restir_pt::TreeGather tree = restir_pt::start_tree(settings, numbers, scene.shapes(),
-                                                           restir_pt::block_tile(tiles, pixel, q.frame));
+        restir_pt::TreeGather tree = restir_pt::start_tree<false>(settings, numbers, scene.shapes(),
+                                                           restir_pt::block_tile(tiles, pixel, q.frame),
+                                                           mnee::Queue{nullptr, nullptr}, 0u);  // settings.mnee 0
         (void)path::walk_path<path::Start::camera, path::Stop::at_end>(scene, path::walk_from(ray), Shading{}, 0u,
                                                                        numbers, tree);
         return tree;

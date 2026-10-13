@@ -58,6 +58,19 @@ TEST_CASE("a key nobody reads is an error, not ignored") {
     CHECK(contains(error_for("passes = [\"test_pattern\"]\n[camera]\n"), "unknown key 'camera'"));
 }
 
+TEST_CASE("mnee is read where a pass reads it, off unless written, and refused anywhere else") {
+    CHECK_FALSE(parse_schedule("passes = [\"path\", \"display\"]\n", "graph.toml").mnee);
+    CHECK(parse_schedule("passes = [\"path\", \"display\"]\nmnee = true\n", "graph.toml").mnee);
+    CHECK_FALSE(parse_schedule("passes = [\"path\", \"display\"]\nmnee = false\n", "graph.toml").mnee);
+    CHECK(parse_schedule("passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"display\"]\nmnee = true\n"
+                         "[restir_pt]\nnee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = 0.2\n",
+                         "graph.toml")
+              .mnee);
+    CHECK(contains(error_for("passes = [\"preview\", \"display\"]\nmnee = true\n"),
+                   "graph.toml:2: the frame graph sets mnee and has no path or ReSTIR PT pass"));
+    CHECK(contains(error_for("passes = [\"path\", \"display\"]\nmnee = 1\n"), "graph.toml:2: 'mnee' must be true or false"));
+}
+
 TEST_CASE("malformed TOML is an error with its line") {
     CHECK(contains(error_for("passes = [\"test_pattern\"\n"), "graph.toml:"));
 }

@@ -197,6 +197,11 @@ struct Schedule {
     // ReSTIR PT's settings: present exactly when the schedule has its
     // passes (graph_file.h, core/contracts/path_reuse_settings.h).
     std::optional<passes::RestirPt> restir_pt = std::nullopt;
+    // Caustics by manifold next event estimation (metal/integrator/
+    // mnee.metal.h), read by the path pass and by ReSTIR PT's passes, one of
+    // which a graph that sets it must have; off unless written, so the path
+    // tracer every estimator is measured against stays the one it was.
+    bool mnee = false;
 };
 
 // Whether any pass of `schedule` accumulates: whether its frames build on
@@ -234,7 +239,8 @@ bool reuses_history(const Schedule& schedule);
 //     each they do not read its zero (core/contracts/reuse_settings.h);
 //   - ReSTIR PT's passes likewise (above), never beside ReSTIR DI's, and
 //     its settings exactly with its passes, in range
-//     (core/contracts/path_reuse_settings.h).
+//     (core/contracts/path_reuse_settings.h);
+//   - mnee set only beside a pass that reads it: path, or ReSTIR PT's.
 //
 // None if `schedule` is valid; otherwise why not, in words a reader of the
 // frame graph file can act on. The graph reader refuses an invalid schedule

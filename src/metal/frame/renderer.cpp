@@ -15,6 +15,7 @@
 #include "core/contracts/camera.h"
 #include "core/contracts/frame_constants.h"
 #include "core/contracts/light_tile.h"
+#include "core/contracts/mnee_request.h"
 #include "core/contracts/path_reuse_settings.h"
 #include "core/contracts/primary_hit.h"
 #include "core/contracts/reuse_constants.h"
@@ -59,12 +60,17 @@ static_assert(bindings::tone_map::target < max_textures);
 constexpr NS::UInteger max_restir_buffers = 16;
 // A ReSTIR PT graph's: its passes bind up to 26 (bindings.h, restir_pt's 0
 // to 25).
-constexpr NS::UInteger max_restir_pt_buffers = 26;
+constexpr NS::UInteger max_restir_pt_buffers = 28;
+// A path graph with mnee: the MNEE pass binds up to 11 (bindings.h, mnee's
+// 0 to 10).
+constexpr NS::UInteger max_mnee_buffers = 11;
+static_assert(bindings::mnee::light < max_mnee_buffers);
+static_assert(bindings::restir_pt::mnee_header < max_restir_pt_buffers);
 static_assert(bindings::restir_initial::output < max_restir_buffers);
 static_assert(bindings::restir_temporal::last_transforms < max_restir_buffers);
 static_assert(bindings::restir_spatial::output < max_restir_buffers);
 static_assert(bindings::restir_shade::non_finite < max_restir_buffers);
-static_assert(bindings::restir_pt::last_glows < max_restir_pt_buffers);
+
 
 // The reuse textures' seed: fixed, so every run pairs the same pixels
 // (core/sampling/pairing.h).
@@ -115,6 +121,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
       constants_(device, submission, std::vector<std::byte>(ring_slot_size), FrameArray::Copies::per_frame),
       arguments_(make_argument_table(device.handle(), schedule.restir_pt                                       ? max_restir_pt_buffers
                                                       : std::ranges::any_of(schedule.passes, reuses_samples) ? max_restir_buffers
+                                                      : schedule.mnee                                        ? max_mnee_buffers
                                                                                                              : max_buffers)) {
     // The core decides which schedules can be carried out (principle 10).
     if (const std::optional<std::string> reason = frame::invalid(schedule)) {
@@ -162,7 +169,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
             steps_.push_back(Step{kind, Pass{std::in_place_type<PreviewPass>, library_}});
             break;
         case frame::PassKind::path:
-            steps_.push_back(Step{kind, Pass{std::in_place_type<PathPass>, library_}});
+            steps_.push_back(Step{kind, Pass{std::in_place_type<PathPass>, library_, schedule.mnee}});
             break;
         case frame::PassKind::display:
             steps_.push_back(Step{kind, Pass{std::in_place_type<DisplayPass>, library_}});
@@ -190,7 +197,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
             steps_.push_back(Step{kind, Pass{std::in_place_type<RestirShadePass>, library_}});
             break;
         case frame::PassKind::restir_pt_initial:
-            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirPtInitialPass>, library_}});
+            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirPtInitialPass>, library_, schedule.mnee}});
             break;
         case frame::PassKind::restir_pt_spatial:
             steps_.push_back(Step{kind, Pass{std::in_place_type<RestirPtSpatialPass>, library_}});
@@ -270,13 +277,27 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
                 device, submission, std::vector<std::byte>(sizeof(contracts::PathReuseConstants)),
                 FrameArray::Copies::per_frame);
         }
-        const contracts::PathReuseSettings settings = *schedule.restir_pt;
+        contracts::PathReuseSettings settings = *schedule.restir_pt;
+        settings.mnee = schedule.mnee ? 1u : 0u;  // the graph's, for every pass of the family
         const std::vector<std::uint16_t> textures =
             merged ? sampling::reuse_textures(static_cast<double>(settings.sigma), pairing_seed)
                    : std::vector<std::uint16_t>(1, 0u);
         const std::array<std::span<const std::byte>, 2> arrays = {std::as_bytes(std::span(&settings, 1)),
                                                                   std::as_bytes(std::span(textures))};
         path_static_ = std::make_unique<StaticArrays>(device, submission, arrays);
+    }
+
+    // MNEE's work list, with mnee; the path pass's own light buffer before
+    // its fold (ReSTIR PT's requests add to its light buffer). Its requests
+    // keep a shape in 16 bits (contract 16), refused rather than wrapped (I.5).
+    if (schedule.mnee) {
+        if (scene->shapes.records.size() > contracts::mnee_largest_shape + 1u) {
+            throw MetalError("Renderer: the scene has " + std::to_string(scene->shapes.records.size()) +
+                             " shapes, and MNEE's requests keep a shape's index in 16 bits, at most " +
+                             std::to_string(contracts::mnee_largest_shape + 1u));
+        }
+        mnee_list_ = std::make_unique<MneeList>(device, submission, schedule.restir_pt ? MneeList::Light::none
+                                                                                       : MneeList::Light::own);
     }
 
     // Only a graph that reads the scene has it put on the GPU, and only its
@@ -336,6 +357,9 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
     prepared_.reset();
     if (images_) {
         images_->prepare(size);
+    }
+    if (mnee_list_) {
+        mnee_list_->prepare(size);
     }
     // 0 without a temporal merge, of either family (never both in a graph).
     const std::uint64_t reused =
@@ -472,6 +496,13 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         resources.working_reservoirs = arrays.working;
         resources.final_reservoirs = arrays.final_reservoirs;
         resources.last_final_reservoirs = arrays.last_final;
+    }
+    if (mnee_list_) {
+        const MneeList::Addresses list = mnee_list_->addresses();
+        resources.mnee_requests = list.requests;
+        resources.mnee_header = list.header;
+        resources.mnee_grid = list.grid;
+        resources.mnee_light = list.light;
     }
     if (path_reuse_) {
         const PathReuseImages::Addresses arrays = path_reuse_->addresses(inputs.index);

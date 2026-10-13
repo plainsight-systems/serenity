@@ -56,6 +56,13 @@
 //                    cap_floor as D grows: c_cap = lerp(confidence_cap,
 //                    cap_floor, D^alpha) (Enhanced §5). Finite, within (0, 1]
 //                    with restir_pt_duplication; 0 without it.
+//   mnee             1 where the graph sets mnee (core/frame/schedule.h,
+//                    Schedule::mnee), else 0: caustics by manifold next
+//                    event estimation at every receiver of the path tree,
+//                    added to the pixel's light and not resampled, and the
+//                    paths it counts left out of the tree and of every shift
+//                    (metal/passes/restir_pt/restir_pt.metal.h). Not a key of
+//                    [restir_pt]: the renderer copies it from the schedule.
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
@@ -96,7 +103,8 @@ struct PathReuseSettings {
     float confidence_cap;
     float cap_floor;
     float cap_exponent;
-    uint32_t padding[3];
+    uint32_t mnee;
+    uint32_t padding[2];
 };
 
 static_assert(sizeof(PathReuseSettings) == 48,
