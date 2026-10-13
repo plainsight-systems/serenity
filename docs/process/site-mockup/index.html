@@ -1,0 +1,60 @@
+<!doctype html>
+<!-- Local homepage approval mockup. Public milestone: 1. Real render assets
+     remain unaltered; local media URLs stand in for the planned R2 manifest.
+     Native video controls and ordinary anchors keep the page usable without JS.
+     Shared framing follows current Cradle and Plainsight: navy header/footer,
+     ivory reading surfaces, Plex type and brass interaction states.
+     No production publishing configuration is implied by this prototype. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Serenity: exploring GPU performance through a path tracer, with moving fireflies and an image at the end.">
+  <title>Serenity — a study in light and computation</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="masthead"><div class="wrap masthead-inner">
+    <a class="wordmark" href="#">Serenity</a>
+    <nav aria-label="Main navigation"><a href="#film">The render</a><a href="#writing">Writing</a><a href="about.html">About</a></nav>
+  </div></header>
+  <main id="main">
+    <section class="intro wrap" aria-labelledby="title">
+      <div class="intro-heading"><p class="eyebrow">A Plainsight Systems project</p><h1 id="title">Serenity</h1><p class="subtitle">A study in light<br> and computation.</p></div>
+      <div class="intro-copy"><p>I’m exploring GPU performance from the rendering side: how to process data in small pieces, carry less state, and reuse work. The same questions turn up in transformer inference, and the moving lights give me a way to see what the kernel work makes possible.</p><div class="intro-meta"><a href="https://andrewphunter.com/">By Andrew Hunter</a><span>Milestone 1</span></div></div>
+    </section>
+    <figure class="artwork wrap"><img src="../../assets/serenity-readme.png" width="2172" height="724" alt="Screenprint illustration of glass and brass spheres at night. Scattered fireflies settle into a calm scene and the outline of a small ship." fetchpriority="high"><figcaption><span>Noise in, serenity out.</span><a href="#film">See the renderer <span aria-hidden="true">↓</span></a></figcaption></figure>
+
+    <section id="film" class="screening" aria-labelledby="film-title">
+      <div class="wrap">
+        <div class="section-top"><p class="eyebrow">01 / The scene</p><p class="small-note">C++20 · Metal 4 · Apple silicon</p></div>
+        <div class="film-heading"><h2 id="film-title">When the fireflies wake.</h2><p>Thirty-six marbles on a walnut table at night. The light comes from 616 fireflies, waking one by one and moving among the glass, porcelain, and metal.</p></div>
+        <figure class="film"><video controls playsinline preload="none" poster="../../writeups/images/marbles-opening-10s.jpg" aria-label="Thirty-second offline render of the marbles opening as the fireflies wake"><source src="../../../media/2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4" type="video/mp4">Your browser cannot play this video. <a href="../../../media/2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4">Open the film</a>.</video><figcaption><span>Milestone 1 · Offline render · 1920 × 1080 · 30 fps playback</span><span>Playback rate is not rendering speed.</span></figcaption></figure>
+        <div class="film-after"><p>The naive path tracer gives me an image to judge and a frame whose cost I can measure. I’ll use that baseline to find out whether better sampling reduces the error enough to justify the work it adds.</p><a class="text-link" href="#writing">Read what it took <span aria-hidden="true">↗</span></a></div>
+      </div>
+    </section>
+
+    <section id="beginnings" class="beginnings wrap" aria-labelledby="beginnings-title">
+      <div class="begin-copy"><p class="eyebrow">02 / Where we started</p><h2 id="beginnings-title">The first brass sphere.</h2><p>The first scene was a brass sphere on a checkerboard. Before the marbles and the swarms, there was light falling on one curved surface, a reflection, and a shadow.</p><p>I kept the geometry simple as the scene grew. The interesting part is what the light does, and what it costs to work that out.</p><a class="text-link" href="../../../media/2026-10-08-brass_sphere-preview-3456x2234.png">Open the original image <span aria-hidden="true">↗</span></a></div>
+      <figure class="first-frame"><a href="../../../media/2026-10-08-brass_sphere-preview-3456x2234.png"><img src="../../../media/2026-10-08-brass_sphere-preview-3456x2234.png" alt="The first brass sphere on a checkerboard, illuminated by two yellow fireflies." width="3456" height="2234" loading="lazy"></a><figcaption>The first scene · 8 October 2026 · Preview renderer</figcaption></figure>
+    </section>
+
+    <section class="investigation wrap" aria-labelledby="question-title">
+      <p class="eyebrow">03 / The question underneath</p>
+      <div class="essay"><h2 id="question-title">What does rendering<br> teach us about inference?</h2><p>A renderer has more possible light paths than it can afford to trace. An inference engine has more intermediate data than it wants to move through memory. Both make you think carefully about what to keep, what to combine, and when to reuse earlier work.</p><p>Those are the connections I’m here to explore. ReSTIR’s reservoirs carry a small amount of running state; attention kernels also combine partial results without keeping every intermediate. The operations differ, but the questions about memory, scheduling, and GPU occupancy are familiar.</p><p>Serenity gives me a way to investigate them with something visible at the end. For now, the path tracer is built. ReSTIR is the next piece, in progress on a branch.</p></div>
+    </section>
+
+    <section id="writing" class="writing" aria-labelledby="writing-title"><div class="wrap writing-grid">
+      <div><p class="eyebrow">04 / From the workbench</p><h2 id="writing-title">Notes from building Serenity.</h2></div>
+      <article class="article"><p class="article-meta">Milestone 1 <span>October 2026</span></p><h3><a href="https://github.com/plainsight-systems/serenity/blob/main/docs/writeups/milestone-1.md">A path tracer that tells<br class="desktop">  the truth about itself.</a></h3><p>The scene, the reference image, and the measurements behind the first milestone. Along the way: plausible images hiding real bugs, production designs that made this scene slower, and why a frame time needs its method beside it.</p><a class="text-link" href="https://github.com/plainsight-systems/serenity/blob/main/docs/writeups/milestone-1.md">Read the milestone <span aria-hidden="true">↗</span></a><div class="next"><span>In progress</span><p>ReSTIR: choosing and reusing light samples.</p></div></article>
+    </div></section>
+
+
+  </main>
+  <footer class="footer">
+    <div class="wrap footer-top"><a class="wordmark" href="index.html">Serenity</a><a href="https://plainsight-systems.com/">A Plainsight Systems project <span aria-hidden="true">↗</span></a></div>
+    <div class="wrap footer-bottom"><span>Writing © 2026 <a href="https://andrewphunter.com/">Andrew P Hunter</a></span><span><a href="https://github.com/plainsight-systems/serenity">GitHub <span aria-hidden="true">↗</span></a> · <a href="https://creativecommons.org/licenses/by/4.0/">Writing: CC BY 4.0</a> · <a href="https://www.apache.org/licenses/LICENSE-2.0">Code: Apache 2.0</a></span></div>
+  </footer>
+</body>
+</html>

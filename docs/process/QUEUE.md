@@ -27,6 +27,15 @@ This file tracks active and accepted work.
 
 ## Accepted
 
+- **Project site published** (2026-10-12). [PR #1](https://github.com/plainsight-systems/serenity/pull/1)
+  merged by the user's direction. Pages deployment passed; the site is live at
+  https://serenity.plainsight-systems.com/ with HTTPS enforced. Home, Writing,
+  Milestone 1, About, and custom 404 match the checked production build;
+  HTTP redirects to HTTPS and the R2 film plays at 1920 × 1080. Eight tests
+  pass in GitHub CI. Public state remains milestone 1; ReSTIR stays separate.
+  The header also links to GitHub after About, by user request.
+  See [site-plan.md](site-plan.md) and `web/README.md`.
+
 - **Repository skeleton** (2026-10-08). Process documents, the build, the
   toolchain pin and its check, the boundary check, the Metal backend's
   device and library loading.
