@@ -1,0 +1,5 @@
+{{/* Labelled focusable overflow only for tables; the page itself never scrolls sideways. */}}
+<div class="table-scroll" role="region" aria-label="Measurement table" tabindex="0"><table>
+<thead>{{ range .THead }}<tr>{{ range . }}<th scope="col">{{ .Text }}</th>{{ end }}</tr>{{ end }}</thead>
+<tbody>{{ range .TBody }}<tr>{{ range . }}<td>{{ .Text }}</td>{{ end }}</tr>{{ end }}</tbody>
+</table></div>

@@ -48,6 +48,7 @@ This file tracks active and accepted work.
   The header also links to GitHub after About, by user request.
   See [site-plan.md](site-plan.md) and `web/README.md`.
 
+
 - **Repository skeleton** (2026-10-08). Process documents, the build, the
   toolchain pin and its check, the boundary check, the Metal backend's
   device and library loading.
