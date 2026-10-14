@@ -199,6 +199,23 @@ Clarified by the user 2026-10-12:
   after About in the header as well as in the footer, linking to the Serenity
   repository. Homepage build/source actions remain omitted.
 
+- Milestone-two editorial pass (2026-10-13): `docs/writeups/milestone-2.md`
+  revised with `andrew-voice`, pending Andrew's review on `restir-di`.
+  Explain decisions and mechanisms in connected prose. Displayed
+  error uses a 2,048-sample reference; linear error uses 65,536 samples.
+  Andrew's follow-up: keep this a project account, not a rendering tutorial.
+  Organize around the image, decisions, and measured outcomes; omit unrelated
+  test evidence. The table reports displayed MSE at approximately equal frame
+  cost, not MSE × time. Explain both the cost comparison and the change from
+  linear to displayed error. Use a concrete example for the attention link.
+  Further direction: develop the broader inference pipeline connection,
+  including KV-cache reuse, GPU work scheduling, and conditioning intermediate
+  results. Weave those connections through the decisions rather than append
+  an attention comparison or recite rendering measurements. RMSNorm/QKNorm
+  control scale; denoising reconstructs a signal from noisy samples. Explain
+  their roles without claiming identical operations or repeatedly fencing off
+  the analogy. Public milestone status is unchanged by the draft revision.
+
 ## Research
 
 `../research/README.md` is the index.

@@ -4,6 +4,14 @@ This file tracks active and accepted work.
 
 ## Active
 
+- **Milestone 2 writeup voice revision** (2026-10-13). Rewritten on
+  `restir-di` using `andrew-voice`, with measurements checked against the
+  ReSTIR PT and MNEE notes. Revised after Andrew's feedback around retaining
+  useful work, scheduling it, and preparing results for the next stage, with
+  Charlotte's KV cache, kernel fusion, and normalization connections woven
+  through the narrative. Keeps the explicit displayed-MSE comparison and
+  its frame costs. Awaiting editorial review; not published.
+
 - **ReSTIR PT** (docs/research/2026-10-11-restir-pt-layout.md). Phase 1
   built 2026-10-11 (initial sampling, the hybrid shift, paired spatial
   reuse): docs/research/2026-10-11-restir-pt-phase1.md, its gate not met.
