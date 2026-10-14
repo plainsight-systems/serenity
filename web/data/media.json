@@ -8,32 +8,32 @@
     "provenance": "Project illustration, not a rendered frame."
   },
   "poster": {
-    "local": "docs/writeups/images/marbles-opening-10s.jpg",
+    "local": "docs/writeups/images/marbles-restir-pt-mnee-10s.jpg",
     "url": "",
     "width": 1920,
     "height": 1080,
     "alt": "Thirty-six marbles on a walnut table, lit by fireflies ten seconds into the opening.",
-    "provenance": "Milestone 1, 64 samples per pixel, 1920 \u00d7 1080, t = 10 s."
+    "provenance": "Milestone 2 · ReSTIR PT + MNEE · t = 10 s"
   },
   "film": {
-    "local": "media/2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4",
-    "url": "https://media.plainsight-systems.com/2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4",
+    "local": "media/2026-10-13-marbles-opening-restir-pt-mnee-1080p30-16mbps.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-13-marbles-opening-restir-pt-mnee-1080p30-16mbps.mp4",
     "width": 1920,
     "height": 1080,
     "type": "video/mp4",
     "label": "1080p film",
-    "provenance": "Milestone 1 \u00b7 Offline render \u00b7 1920 \u00d7 1080 \u00b7 30 fps playback",
-    "alt": "Thirty-second offline render of the marbles opening as the fireflies wake"
+    "provenance": "Milestone 2 · ReSTIR PT + MNEE · Offline render · 1920 × 1080 · 30 fps playback",
+    "alt": "Thirty-second ReSTIR PT render of the marbles opening, with caustics through the glass"
   },
   "film_small": {
-    "local": "media/2026-10-10-marbles-opening-v3-540p.mp4",
-    "url": "https://media.plainsight-systems.com/2026-10-10-marbles-opening-v3-540p.mp4",
+    "local": "media/2026-10-13-marbles-opening-restir-pt-mnee-540p.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-13-marbles-opening-restir-pt-mnee-540p.mp4",
     "optional": true,
     "label": "Smaller playback file"
   },
   "film_original": {
-    "local": "media/2026-10-10-marbles-opening-v3-master.mp4",
-    "url": "https://media.plainsight-systems.com/2026-10-10-marbles-opening-v3-master.mp4",
+    "local": "media/2026-10-13-marbles-opening-restir-pt-mnee-master.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-13-marbles-opening-restir-pt-mnee-master.mp4",
     "optional": true,
     "label": "Open the original render"
   },
@@ -43,6 +43,67 @@
     "width": 3456,
     "height": 2234,
     "alt": "The first brass sphere on a checkerboard, illuminated by two yellow fireflies.",
-    "provenance": "The first scene \u00b7 8 October 2026 \u00b7 Preview renderer"
+    "provenance": "The first scene · 8 October 2026 · Preview renderer"
+  },
+  "baseline_poster": {
+    "local": "docs/writeups/images/marbles-opening-10s.jpg",
+    "url": "",
+    "width": 1920,
+    "height": 1080,
+    "alt": "Thirty-six marbles on a walnut table, lit by fireflies ten seconds into the opening.",
+    "provenance": "Milestone 1, 64 samples per pixel, 1920 × 1080, t = 10 s."
+  },
+  "baseline": {
+    "local": "media/2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4",
+    "width": 1920,
+    "height": 1080,
+    "type": "video/mp4",
+    "label": "1080p film",
+    "provenance": "Milestone 1 · Offline render · 1920 × 1080 · 30 fps playback",
+    "alt": "Thirty-second offline render of the marbles opening as the fireflies wake"
+  },
+  "baseline_small": {
+    "local": "media/2026-10-10-marbles-opening-v3-540p.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-10-marbles-opening-v3-540p.mp4",
+    "optional": true,
+    "label": "Smaller playback file"
+  },
+  "baseline_original": {
+    "local": "media/2026-10-10-marbles-opening-v3-master.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-10-marbles-opening-v3-master.mp4",
+    "optional": true,
+    "label": "Open the original render"
+  },
+  "comparison_poster": {
+    "local": "docs/writeups/images/marbles-path-vs-restir-pt-10s.jpg",
+    "url": "",
+    "width": 2400,
+    "height": 676,
+    "alt": "Path tracer with five samples on the left; ReSTIR PT with MNEE on the right.",
+    "provenance": "Milestone 2 · Comparison at t = 10 s"
+  },
+  "comparison": {
+    "local": "media/2026-10-13-marbles-opening-path-vs-restir-pt-1080p30-16mbps.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-13-marbles-opening-path-vs-restir-pt-1080p30-16mbps.mp4",
+    "label": "Comparison film (1920 × 540)",
+    "width": 1920,
+    "height": 540,
+    "type": "video/mp4",
+    "alt": "Thirty-second comparison: path tracer with five samples on the left, ReSTIR PT with MNEE on the right",
+    "provenance": "Path tracer, 5 samples (left) · ReSTIR PT + MNEE (right) · Offline render · 30 fps playback",
+    "note": "The timing labels use the fully lit benchmark. The writeup gives the frame costs for both that scene and the dark opening."
+  },
+  "comparison_small": {
+    "local": "media/2026-10-13-marbles-opening-path-vs-restir-pt-540p.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-13-marbles-opening-path-vs-restir-pt-540p.mp4",
+    "label": "Smaller comparison (960 × 270)",
+    "optional": true
+  },
+  "comparison_original": {
+    "local": "media/2026-10-13-marbles-opening-path-vs-restir-pt-master.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-13-marbles-opening-path-vs-restir-pt-master.mp4",
+    "label": "Full-resolution comparison (3840 × 1080)",
+    "optional": true
   }
 }

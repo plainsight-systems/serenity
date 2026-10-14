@@ -8,11 +8,13 @@ I’m building Serenity to explore GPU performance from the rendering side. Movi
 
 The scene is deliberately simple: glass, porcelain, and metal marbles on a walnut table, lit by moving fireflies. That leaves the lighting to carry the image, and gives me something visible to inspect as I work on the kernels underneath.
 
-## The first milestone
+## Where it is now
 
-The naive path tracer is built. It gives me the baseline for the work ahead: a scene, a reference image, and measurements of error and time. ReSTIR is in progress on a branch. The aim is a clean frame at the display’s full resolution and 60 frames a second, traced lower and upscaled.
+Milestone 2 adds ReSTIR path reuse and a search for light focused through glass. Reusing earlier work makes much of the displayed image cleaner for a similar frame cost, especially the table and porcelain. The glass remains the harder part.
 
-The [milestone-one writeup]({{< relref "/writing/milestone-1" >}}) explains what I learned getting the baseline in place.
+The current renderer takes around 40 ms at 1920 × 1080 on my M3 Max. Next are denoising and tracing at a lower resolution with upscaling, working toward a clean image at the display’s full resolution and 60 frames a second.
+
+The [second milestone]({{< relref "/writing/milestone-2" >}}) follows those decisions and their connections to inference. The [first milestone]({{< relref "/writing/milestone-1" >}}) records how I built the baseline.
 
 ## Why the name
 

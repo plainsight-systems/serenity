@@ -13,7 +13,7 @@ fonts, metadata, Cradle-family navigation/footer. No JavaScript or tracking. */}
   <meta property="og:description" content="{{ .Description | default .Site.Params.description }}">
   <meta property="og:type" content="{{ if and .IsPage (eq .Section "writing") }}article{{ else }}website{{ end }}">
   <meta property="og:url" content="{{ .Permalink }}">
-  <meta property="og:image" content="{{ "images/marbles-opening-10s.jpg" | absURL }}">
+  <meta property="og:image" content="{{ .Params.image | default (partial "media-url.html" .Site.Data.media.poster) | absURL }}">
   <meta name="twitter:card" content="summary_large_image">
   {{ $css := resources.Get "site.css" | minify | fingerprint }}
   <link rel="stylesheet" href="{{ $css.RelPermalink }}" integrity="{{ $css.Data.Integrity }}">

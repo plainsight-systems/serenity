@@ -47,8 +47,9 @@ class SiteTests(unittest.TestCase):
     def configure_media(self):
         manifest = self.web / 'data/media.json'
         data = json.loads(manifest.read_text())
-        for name in ('film', 'brass', 'film_small', 'film_original'):
-            data[name]['url'] = 'https://media.example.invalid/' + Path(data[name]['local']).name
+        for name, entry in data.items():
+            if name not in site.IMAGE_KEYS:
+                entry['url'] = 'https://media.example.invalid/' + Path(entry['local']).name
         manifest.write_text(json.dumps(data))
 
     def render(self):
@@ -81,7 +82,9 @@ class SiteTests(unittest.TestCase):
         self.assertFalse((project / 'content/process').exists())
         self.assertFalse((project / 'content/research').exists())
         self.assertEqual(set((project / 'content/writing').rglob('*.md')),
-                         {project / 'content/writing/_index.md', project / 'content/writing/milestone-1/index.md'})
+                         {project / 'content/writing/_index.md',
+                          project / 'content/writing/milestone-1/index.md',
+                          project / 'content/writing/milestone-2/index.md'})
         html = (output / 'index.html').read_text()
         self.assertIn('https://media.example.invalid/', html)
         self.assertIn('Smaller playback file', html)
@@ -89,6 +92,24 @@ class SiteTests(unittest.TestCase):
         article = (output / 'writing/milestone-1/index.html').read_text()
         self.assertIn('role="region"', article)
         self.assertIn('scope="col"', article)
+
+    def test_milestones_keep_their_media_and_repository_links(self):
+        _, output, _ = self.render()
+        first = (output / 'writing/milestone-1/index.html').read_text()
+        second = (output / 'writing/milestone-2/index.html').read_text()
+        home = (output / 'index.html').read_text()
+        index = (output / 'writing/index.html').read_text()
+        self.assertIn('2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4', first)
+        self.assertIn('2026-10-13-marbles-opening-restir-pt-mnee-1080p30-16mbps.mp4', home)
+        self.assertNotIn('2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4', home)
+        self.assertIn('2026-10-13-marbles-opening-path-vs-restir-pt-1080p30-16mbps.mp4', second)
+        self.assertIn('width="1920" height="540"', second)
+        self.assertIn('href="/serenity/writing/milestone-1/"', second)
+        self.assertIn('https://github.com/plainsight-systems/serenity/blob/main/docs/research/'
+                      '2026-10-12-mnee.md#equal-frame-time-one-displayed-frame-each', second)
+        self.assertIn('https://example.invalid/serenity/images/marbles-restir-pt-mnee-10s.jpg', second)
+        self.assertIn('https://example.invalid/serenity/images/marbles-opening-10s.jpg', first)
+        self.assertLess(index.index('writing/milestone-2/'), index.index('writing/milestone-1/'))
 
     def test_unselected_article_cannot_be_published(self):
         _, output, base = self.render()

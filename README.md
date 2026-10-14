@@ -4,24 +4,30 @@
 
 # Serenity
 
-Serenity is a real-time path tracer I'm writing for one scene: 36 glass,
-porcelain and metal marbles on a walnut table at night, lit only by 616
-fireflies that never stop moving. The geometry is deliberately simple and
-there are no art assets. Everything you see comes from the light, and the
-light stays correct as it moves.
+Serenity is a GPU path tracer I’m building to explore techniques that also
+matter to inference: processing work in small pieces, retaining useful state,
+and deciding how to arrange it on the GPU. The scene gives me something
+visible to judge: 36 glass, porcelain, and metal marbles on a walnut table,
+lit by 616 moving fireflies.
 
-It runs natively on Apple silicon through Metal 4, in C++. The aim is the
-display's full resolution at 60 frames a second, traced lower and upscaled;
-the naive path tracer runs at full resolution at about 33 today. A second
-backend, Vulkan on an AMD Strix Halo, comes later.
+It runs natively on Apple silicon through Metal 4, in C++20. The target is a
+clean moving image at the display’s full resolution and 60 frames a second,
+traced lower and upscaled. Denoising and upscaling are next; a Vulkan backend
+for the AMD Strix Halo is planned after that.
 
-![The marbles, ten seconds into the opening: fireflies resting among them](docs/writeups/images/marbles-opening-10s.jpg)
+[![The marbles rendered with ReSTIR PT and MNEE, ten seconds into the opening](docs/writeups/images/marbles-restir-pt-mnee-10s.jpg)](https://serenity.plainsight-systems.com/#film)
 
-**Status: milestone 1 is done.** The naive path tracer renders the marbles,
-opening in the dark as the fireflies wake one by one, at 29.9 ms a frame at
-3456 x 2234 on an M3 Max. There is a reference image to judge it against and
-one number to judge it by, error x time. What I learned getting there is in
-[the milestone 1 write-up](docs/writeups/milestone-1.md). ReSTIR DI is next.
+**Current state: milestone 2.** ReSTIR PT reuses paths across pixels and
+frames, with manifold next event estimation (MNEE) to find light focused
+through glass. On my M3 Max, the fully lit scene takes 39.8 ms at
+1920 × 1080, compared with an estimated 40.6 ms for five path-traced samples.
+At that similar frame cost, ReSTIR roughly halves whole-frame error after
+tone mapping and bloom. The path tracer still wins on linear error; bright
+outliers and missing light around the glass remain work to do.
+
+[Milestone 2: reusing work with ReSTIR](docs/writeups/milestone-2.md) follows
+the decisions, measurements, and connections to inference.
+[Milestone 1](docs/writeups/milestone-1.md) records the original baseline.
 The design is in [`docs/architecture/`](docs/architecture/README.md).
 
 ## Project site
@@ -55,22 +61,16 @@ across neighbors and across time. Those are the same problems I work on in
 inference, met from the other side. Serenity is where I get to work on them
 with a picture at the end.
 
-The plan, in order:
+The renderer now includes the MIS path tracer, ReSTIR DI, ReSTIR PT with
+spatial and temporal reuse, and MNEE for caustics. Direct-light reuse did not
+pay off in this scene at equal time, so the work moved to whole paths
+through the marbles. `graphs/restir_pt.toml` is the current renderer;
+`graphs/path.toml` remains the reference and comparison baseline.
 
-1. A full path tracer with many moving fireflies, sampled naively. Noisy, on
-   purpose: it shows the problem.
-2. ReSTIR DI, with spatial and temporal reuse, for the direct light.
-3. ReSTIR GI, for the light bouncing between surfaces.
-4. Caustics: firefly light focused through the glass onto the table, by
-   manifold next event estimation.
-5. Reservoir reuse as kernels: what it costs, and where the bytes go.
-6. A denoiser of my own, inside the frame budget, compared with Intel Open
-   Image Denoise and MetalFX, and against a reference rendered at thousands
-   of samples per pixel.
-7. The second machine: the same scene on AMD, through Vulkan, and what
-   differed.
-
-The first is built; the rest is what I'm aiming at, not what exists.
+Next I want to turn the reused samples into a stable moving image with a
+denoiser, then measure lower-resolution tracing with upscaling. The planned
+denoiser will be compared with Open Image Denoise and MetalFX. The second
+backend will let me investigate the same scene on AMD through Vulkan.
 
 Serenity is R&D under Plainsight Systems LLC.
 
@@ -103,12 +103,22 @@ make run      # the window, running graphs/test_pattern.toml
 make headless # the same frames, as 60 PNGs in frames/
 ```
 
-The scene itself, through the naive path tracer, at half the window's
-resolution each way for speed:
+The current scene, with ReSTIR PT and MNEE, at half the window’s resolution
+each way:
+
+```bash
+make run GRAPH=graphs/restir_pt.toml SCENE=scenes/marbles.toml SCALE=0.5
+```
+
+To compare with the MIS path tracer:
 
 ```bash
 make run GRAPH=graphs/path.toml SCENE=scenes/marbles.toml SCALE=0.5
 ```
+
+`graphs/restir.toml` runs ReSTIR DI. `graphs/path_mnee.toml` enables the
+optional glass solver on the plain path tracer; it stays off in the baseline
+because more ordinary samples worked better at equal time.
 
 `serenity-headless` writes into its `--out` directory only if it is new or
 empty, and refuses one that holds anything, so no earlier run's frame sits
@@ -124,7 +134,7 @@ night lit by two fireflies:
 make run GRAPH=graphs/preview.toml SCENE=scenes/brass_sphere.toml
 ```
 
-The naive path tracer, milestone 1, converges while the image holds still:
+The path tracer converges while the image holds still:
 
 ```bash
 make run GRAPH=graphs/path.toml SCENE=scenes/brass_sphere.toml
@@ -132,7 +142,7 @@ make run GRAPH=graphs/path.toml SCENE=scenes/brass_sphere.toml
 
 The fireflies awake, each drifting about where it hung. Through the path
 tracer the window starts over every frame while they move, so it shows one
-noisy sample of each instant, which is what the naive estimator gives:
+noisy sample of each instant, without accumulating earlier instants:
 
 ```bash
 make run GRAPH=graphs/path.toml SCENE=scenes/brass_sphere_wander.toml
@@ -144,7 +154,7 @@ Escape or closing the window ends it. `make movie` with the same `GRAPH` and
 instant (64 unless given), and encodes them with ffmpeg into `media/`, which
 git ignores.
 
-A reference image, and how far the naive path tracer is from it:
+A reference image, and the path tracer’s convergence toward it:
 
 ```bash
 make reference SCENE=scenes/marbles.toml TIME=120    # some ten minutes of GPU
@@ -177,7 +187,8 @@ stb_image_write and doctest, each pinned by commit or by checksum.
 | `cmake/` | the toolchain pin, and how shaders are compiled into the binary |
 | `tests/` | tests; `tests/gpu/` runs on this machine's GPU |
 | `tools/` | the toolchain and boundary checks |
-| `scripts/` | the marbles scene's generator, and an independent review of a commit |
+| `scripts/` | scene generation, the project-site build, and independent review of a commit |
+| `web/` | the Hugo site’s templates, styles, and hosted-media manifest |
 | `docs/architecture/` | the design, written before the code it describes: start with the [logical overview](docs/architecture/logical-overview.md) |
 | `docs/research/` | measurements and investigations, each dated, with the machine and toolchain it ran on |
 | `docs/writeups/` | what each milestone taught me, for the interested engineer |
@@ -195,9 +206,12 @@ it.
   real-time ray tracing with dynamic direct lighting," SIGGRAPH 2020.
 - *Marbles at Night*, NVIDIA's 2020 RTX demo, for showing what many moving
   lights on simple geometry can look like.
-- pbrt-v4, by Matt Pharr, Wenzel Jakob and Greg Humphreys: the naive path
-  tracer follows its PathIntegrator, and the error measure its
-  relative MSE.
+- pbrt-v4, by Matt Pharr, Wenzel Jakob and Greg Humphreys: the MIS path
+  tracer follows its PathIntegrator.
+- Lin, Kettunen, and Wyman’s *ReSTIR PT Enhanced*, for the path-reuse
+  implementation.
+- Blender Cycles’ manifold next event estimation, for the approach to
+  finding caustic paths through glass.
 
 ## License
 

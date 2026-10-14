@@ -205,7 +205,6 @@ h1 {
   line-height:1.8}
 .film video {
   width:100%;
-  aspect-ratio:16/9;
   background:oklch(12% .012 70)}
 .film figcaption {
   display:flex;
@@ -554,6 +553,8 @@ th { font-weight: 400; color: var(--copper); }
 .article-end { display: flex; justify-content: space-between; gap: 20px; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--rule); font-size: 16px; }
 .media-links { display: flex; flex-wrap: wrap; gap: 12px 28px; font: 12px/1.8 PlexMono, monospace; margin-top: 18px; }
 .media-links:empty { display: none; }
+.article-film .film figcaption { color: var(--muted); }
+.prose .film-note { font-size: 14px; color: var(--muted); margin-top: 18px; }
 .screening a:hover { color: var(--gold); }
 .error-title { font-size: clamp(44px, 6vw, 76px); }
 @media (max-width: 900px) {

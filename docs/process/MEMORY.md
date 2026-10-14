@@ -142,9 +142,10 @@ Amended 2026-10-11, by the user's direction:
 
 Clarified by the user 2026-10-12:
 
-- The public project is officially at **milestone 1**. ReSTIR is in progress
-  on a branch; implementation notes in the queue do not promote it to a
-  completed public milestone.
+- The initial site published **milestone 1**. On 2026-10-13 Andrew accepted
+  the milestone-two writeup, committed the renderer and article to `main`,
+  and requested the site and README advance to **milestone 2**. This explicit
+  publication decision supersedes the initial branch-only ReSTIR status.
 - Add a GitHub Pages project site with Charlotte and Cradle as references.
   The Hugo site was implemented on 2026-10-12. Pages is configured for
   `serenity.plainsight-systems.com`, with the domain verified and HTTPS enforced.
@@ -200,7 +201,7 @@ Clarified by the user 2026-10-12:
   repository. Homepage build/source actions remain omitted.
 
 - Milestone-two editorial pass (2026-10-13): `docs/writeups/milestone-2.md`
-  revised with `andrew-voice`, pending Andrew's review on `restir-di`.
+  revised with `andrew-voice`, accepted by Andrew and merged to `main`.
   Explain decisions and mechanisms in connected prose. Displayed
   error uses a 2,048-sample reference; linear error uses 65,536 samples.
   Andrew's follow-up: keep this a project account, not a rendering tutorial.
@@ -214,7 +215,29 @@ Clarified by the user 2026-10-12:
   an attention comparison or recite rendering measurements. RMSNorm/QKNorm
   control scale; denoising reconstructs a signal from noisy samples. Explain
   their roles without claiming identical operations or repeatedly fencing off
-  the analogy. Public milestone status is unchanged by the draft revision.
+  the analogy.
+
+- Milestone-two site update (2026-10-13): homepage features the ReSTIR PT +
+  MNEE film; Writing lists milestone 2 before milestone 1. Both articles use
+  their accepted source Markdown. Milestone 2 adds the side-by-side film,
+  and milestone 1 retains its original film and preview. README and About
+  explain the current renderer, measured ~40 ms at 1080p on M3 Max, and
+  denoising/upscaling as next work. Andrew approved the site and requested
+  commit/push for publication through the main-branch Pages workflow. The
+  original navy framing, width, navigation and footer stay.
+- R2 now also holds six dated October 13 videos: playback, small, and master
+  versions of `marbles-opening-restir-pt-mnee` and
+  `marbles-opening-path-vs-restir-pt`. Each is selected explicitly in
+  `web/data/media.json`. New objects use immutable one-year caching and
+  video/mp4; no existing objects were replaced. Comparison playback is
+  1920 × 540 despite its filename; the master is 3840 × 1080. Masters are
+  the original local files, without another encoding pass. All six public
+  downloads match the local SHA-256 hashes; MIME types, lengths, and cache
+  headers checked. Playback-file byte ranges and both new browser players
+  work. The 892 MB comparison master bypasses the standard CDN cache; its
+  initial range responses varied between full 200 and partial 206 responses,
+  while the full download matched. It stays a separate original-file link.
+  Site build, nine tests, local links, and desktop/narrow-screen review pass.
 
 ## Research
 

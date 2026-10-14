@@ -4,14 +4,6 @@ This file tracks active and accepted work.
 
 ## Active
 
-- **Milestone 2 writeup voice revision** (2026-10-13). Rewritten on
-  `restir-di` using `andrew-voice`, with measurements checked against the
-  ReSTIR PT and MNEE notes. Revised after Andrew's feedback around retaining
-  useful work, scheduling it, and preparing results for the next stage, with
-  Charlotte's KV cache, kernel fusion, and normalization connections woven
-  through the narrative. Keeps the explicit displayed-MSE comparison and
-  its frame costs. Awaiting editorial review; not published.
-
 - **ReSTIR PT** (docs/research/2026-10-11-restir-pt-layout.md). Phase 1
   built 2026-10-11 (initial sampling, the hybrid shift, paired spatial
   reuse): docs/research/2026-10-11-restir-pt-phase1.md, its gate not met.
@@ -38,6 +30,20 @@ This file tracks active and accepted work.
   is what brings it to 60 frames a second.
 
 ## Accepted
+
+- **Milestone 2 site and README update** (2026-10-13). Current homepage film,
+  article publication, both milestone entries, per-article previews, archived
+  milestone-one film, and current run instructions approved by Andrew. Six
+  new R2 videos uploaded and verified byte for byte. Site build and nine
+  tests pass; desktop/narrow-screen review and both new film playback checks
+  passed. Andrew requested commit/push; main publishes through GitHub Pages.
+
+- **Milestone 2 writeup** (2026-10-13). Andrew approved the voice revision
+  and committed it with the renderer work to `main`. The narrative follows
+  retaining useful work, scheduling it, and preparing results for the next
+  stage, with Charlotte’s KV cache, kernel fusion, and normalization woven
+  through the decisions. The table reports displayed MSE at similar frame
+  costs. The site update is accepted above.
 
 - **Project site published** (2026-10-12). [PR #1](https://github.com/plainsight-systems/serenity/pull/1)
   merged by the user's direction. Pages deployment passed; the site is live at

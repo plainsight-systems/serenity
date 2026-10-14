@@ -1,0 +1,14 @@
+{{/* Keep canonical Markdown usable in GitHub and on the site: published
+milestones link to their bundles; research stays in the repository. */}}
+{{ $destination := .Destination }}
+{{ if hasPrefix $destination "../research/" }}
+  {{ $destination = printf "https://github.com/plainsight-systems/serenity/blob/main/docs/research/%s" (strings.TrimPrefix "../research/" $destination) }}
+{{ else if hasPrefix $destination "milestone-" }}
+  {{ $parts := split $destination "#" }}
+  {{ $slug := strings.TrimSuffix ".md" (index $parts 0) }}
+  {{ with .Page.Site.GetPage (printf "/writing/%s" $slug) }}
+    {{ $destination = .RelPermalink }}
+    {{ if gt (len $parts) 1 }}{{ $destination = printf "%s#%s" $destination (index $parts 1) }}{{ end }}
+  {{ end }}
+{{ end }}
+<a href="{{ $destination | safeURL }}"{{ with .Title }} title="{{ . }}"{{ end }}>{{ .Text | safeHTML }}</a>

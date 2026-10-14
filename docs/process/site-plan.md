@@ -2,6 +2,8 @@
 
 Status: published at https://serenity.plainsight-systems.com/ on 2026-10-12.
 R2 media and GitHub Pages delivery are verified; HTTPS is enforced.
+Milestone-two update approved on 2026-10-13 for publication through the
+main-branch GitHub Pages workflow.
 
 ## Purpose and public state
 
@@ -10,8 +12,10 @@ path into its GPU work and milestone writeups. Explain the motivation: rendering
 offers another way to investigate streaming computation, small running state,
 and reuse, techniques that also matter to inference.
 
-The official public state is milestone 1. ReSTIR is in progress on a branch.
-Internal implementation notes do not imply a publicly completed milestone.
+The first release covered milestone 1. Andrew approved the milestone-two
+writeup and requested the site advance on 2026-10-13, after the renderer and
+article reached `main`. The update features ReSTIR PT and MNEE, adds the
+second article and comparison film, and retains milestone one and its film.
 The 60 fps goal remains a goal. Historical measurements retain their source,
 machine, configuration, and date; video playback rate is not render throughput.
 
@@ -21,7 +25,8 @@ machine, configuration, and date; video playback rate is not render throughput.
   Hugo adapts Cradle's article presentation and build validation.
 - Cloudflare R2 hosts selected renders, video, and originals in
   `plainsight-public-media`, served at `media.plainsight-systems.com`.
-  All four public URLs are verified and configured in the media manifest.
+  The media manifest selects the original four objects and six milestone-two
+  video objects. It also records the actual dimensions of the wide comparison.
 - Render at the quality and resolution the work requires. Preserve original
   stills and masters. Offer a high-quality full-resolution video, a smaller
   playback option, and original downloads where useful.

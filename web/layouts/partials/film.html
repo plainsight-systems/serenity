@@ -1,0 +1,18 @@
+{{/* One native player for a manifest-selected film and its explicit alternatives.
+Dimensions come from the actual file, including the wide comparison. */}}
+{{ $media := .Site.Data.media }}
+{{ $film := index $media .Key }}
+{{ $posterKey := cond (eq .Key "film") "poster" (printf "%s_poster" .Key) }}
+<figure class="film">
+  <video controls playsinline preload="none" width="{{ $film.width }}" height="{{ $film.height }}" poster="{{ partial "media-url.html" (index $media $posterKey) }}" aria-label="{{ $film.alt }}">
+    <source src="{{ partial "media-url.html" $film }}" type="video/mp4">
+    Your browser cannot play this video. <a href="{{ partial "media-url.html" $film }}">Open the film</a>.
+  </video>
+  <figcaption><span>{{ $film.provenance }}</span><span>Playback rate is not rendering speed.</span></figcaption>
+</figure>
+<div class="media-links" aria-label="Film files">
+  {{ range slice (printf "%s_small" .Key) (printf "%s_original" .Key) }}
+    {{ with index $media . }}{{ if .url }}<a href="{{ partial "media-url.html" . }}">{{ .label }} <span aria-hidden="true">↗</span></a>{{ end }}{{ end }}
+  {{ end }}
+</div>
+{{ with $film.note }}<p class="film-note">{{ . }}</p>{{ end }}

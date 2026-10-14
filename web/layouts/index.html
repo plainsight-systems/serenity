@@ -3,7 +3,7 @@
 
     <section class="intro wrap" aria-labelledby="title">
       <div class="intro-heading"><p class="eyebrow">A Plainsight Systems project</p><h1 id="title">Serenity</h1><p class="subtitle">A study in light<br> and computation.</p></div>
-      <div class="intro-copy"><p>I’m exploring GPU performance from the rendering side: how to process data in small pieces, carry less state, and reuse work. The same questions turn up in transformer inference, and the moving lights give me a way to see what the kernel work makes possible.</p><div class="intro-meta"><a href="https://andrewphunter.com/">By Andrew Hunter</a><span>Milestone 1</span></div></div>
+      <div class="intro-copy"><p>I’m exploring GPU performance from the rendering side: how to process data in small pieces, carry less state, and reuse work. The same questions turn up in transformer inference, and the moving lights give me a way to see what the kernel work makes possible.</p><div class="intro-meta"><a href="https://andrewphunter.com/">By Andrew Hunter</a><span>Milestone 2</span></div></div>
     </section>
     <figure class="artwork wrap"><img src="{{ partial "media-url.html" .Site.Data.media.artwork }}" width="{{ .Site.Data.media.artwork.width }}" height="{{ .Site.Data.media.artwork.height }}" alt="{{ .Site.Data.media.artwork.alt }}" fetchpriority="high"><figcaption><span>Noise in, serenity out.</span><a href="#film">See the renderer <span aria-hidden="true">↓</span></a></figcaption></figure>
 
@@ -11,11 +11,8 @@
       <div class="wrap">
         <div class="section-top"><p class="eyebrow">01 / The scene</p><p class="small-note">C++20 · Metal 4 · Apple silicon</p></div>
         <div class="film-heading"><h2 id="film-title">When the fireflies wake.</h2><p>Thirty-six marbles on a walnut table at night. The light comes from 616 fireflies, waking one by one and moving among the glass, porcelain, and metal.</p></div>
-        <figure class="film"><video controls playsinline preload="none" poster="{{ partial "media-url.html" .Site.Data.media.poster }}" aria-label="{{ .Site.Data.media.film.alt }}"><source src="{{ partial "media-url.html" .Site.Data.media.film }}" type="video/mp4">Your browser cannot play this video. <a href="{{ partial "media-url.html" .Site.Data.media.film }}">Open the film</a>.</video><figcaption><span>{{ .Site.Data.media.film.provenance }}</span><span>Playback rate is not rendering speed.</span></figcaption></figure>
-        {{ if or .Site.Data.media.film_small.url .Site.Data.media.film_original.url }}<div class="media-links" aria-label="Film files">
-          {{ range slice .Site.Data.media.film_small .Site.Data.media.film_original }}{{ if .url }}<a href="{{ partial "media-url.html" . }}">{{ .label }} <span aria-hidden="true">↗</span></a>{{ end }}{{ end }}
-        </div>{{ end }}
-        <div class="film-after"><p>The naive path tracer gives me an image to judge and a frame whose cost I can measure. I’ll use that baseline to find out whether better sampling reduces the error enough to justify the work it adds.</p><a class="text-link" href="{{ "writing/milestone-1/" | relURL }}">Read what it took <span aria-hidden="true">↗</span></a></div>
+        {{ partial "film.html" (dict "Site" .Site "Key" "film") }}
+        <div class="film-after"><p>ReSTIR now reuses paths across pixels and frames, with an additional search for light focused through glass. The table and porcelain are clearer for a similar frame cost; the glass still gives me plenty to work on.</p><a class="text-link" href="{{ "writing/milestone-2/" | relURL }}">Read the second milestone <span aria-hidden="true">↗</span></a></div>
       </div>
     </section>
 
@@ -26,12 +23,12 @@
 
     <section class="investigation wrap" aria-labelledby="question-title">
       <p class="eyebrow">03 / The question underneath</p>
-      <div class="essay"><h2 id="question-title">What does rendering<br> teach us about inference?</h2><p>A renderer has more possible light paths than it can afford to trace. An inference engine has more intermediate data than it wants to move through memory. Both make you think carefully about what to keep, what to combine, and when to reuse earlier work.</p><p>Those are the connections I’m here to explore. ReSTIR’s reservoirs carry a small amount of running state; attention kernels also combine partial results without keeping every intermediate. The operations differ, but the questions about memory, scheduling, and GPU occupancy are familiar.</p><p>Serenity gives me a way to investigate them with something visible at the end. For now, the path tracer is built. ReSTIR is the next piece, in progress on a branch.</p></div>
+      <div class="essay"><h2 id="question-title">What does rendering<br> teach us about inference?</h2><p>A renderer has more possible light paths than it can afford to trace. An inference engine has more intermediate data than it wants to move through memory. Both make you think carefully about what to keep, what to combine, and when to reuse earlier work.</p><p>Those connections run through the pipeline. Reservoirs and attention kernels combine work while carrying a small amount of state. A KV cache retains earlier inference results; ReSTIR retains useful paths. Both make the cost of storing and reading that work part of the next calculation.</p><p>Serenity gives me a way to investigate those choices with something visible at the end. The next step is to turn the reused samples into a stable moving image, using denoising and a lower traced resolution with upscaling.</p></div>
     </section>
 
     <section id="writing" class="writing" aria-labelledby="writing-title"><div class="wrap writing-grid">
       <div><p class="eyebrow">04 / From the workbench</p><h2 id="writing-title">Notes from building Serenity.</h2><a class="text-link" href="{{ "writing/" | relURL }}">All writing <span aria-hidden="true">→</span></a></div>
-      <article class="article"><p class="article-meta">Milestone 1 <span>October 2026</span></p><h3><a href="{{ "writing/milestone-1/" | relURL }}">Building the baseline.</a></h3><p>The scene, the reference image, and the measurements behind the first milestone. Along the way: plausible images hiding real bugs, production designs that made this scene slower, and why a frame time needs its method beside it.</p><a class="text-link" href="{{ "writing/milestone-1/" | relURL }}">Read the milestone <span aria-hidden="true">↗</span></a><div class="next"><span>In progress</span><p>ReSTIR: choosing and reusing light samples.</p></div></article>
+      <article class="article"><p class="article-meta">Milestone 2 <span>October 2026</span></p><h3><a href="{{ "writing/milestone-2/" | relURL }}">Reusing work with ReSTIR.</a></h3><p>What was worth keeping from one frame to the next, why the glass needed its own work, and what reuse bought for the frame time. Along the way, the connections to inference reach beyond attention into caching and how the GPU work is arranged.</p><a class="text-link" href="{{ "writing/milestone-2/" | relURL }}">Read the milestone <span aria-hidden="true">↗</span></a><div class="next"><span>Previously</span><p><a href="{{ "writing/milestone-1/" | relURL }}">Milestone 1: building the baseline.</a></p></div></article>
     </div></section>
 
 

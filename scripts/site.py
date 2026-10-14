@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Build Serenity's explicitly selected public pages with pinned Hugo.
 
-Contract: docs/writeups is authoritative; only the named milestone article and
+Contract: docs/writeups is authoritative; only the named milestone articles and
 selected media enter staging. Process documents, private planning, and the rest
 of media/ never enter Hugo's content or static roots. Public builds require real
 HTTPS media URLs; explicit local previews copy only the manifest's named files.
 
-Design: stage content and assets in a temporary directory, invoke Hugo, validate
+Design: an explicit article registry supplies each bundle's metadata, images,
+and optional film. Keep historical media distinct from the current homepage
+film. Resolve writeup links to published bundles and research links to GitHub.
+Stage content and assets in a temporary directory, invoke Hugo, validate
 local links/fragments and publication boundaries, then replace a fixed output
 directory under .cache/site. A failed build preserves the previous output.
 Serve only that output on loopback. No renderer dependencies or third-party
@@ -30,13 +33,33 @@ from urllib.parse import unquote, urljoin, urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / 'web'
 HUGO_VERSION = '0.154.2'
-ARTICLE = 'docs/writeups/milestone-1.md'
-ARTICLE_TITLE = 'Milestone 1: building the baseline'
-ARTICLE_DESCRIPTION = ('The scene, the reference image, and the measurements behind the first '
-                       'milestone, including the bugs that plausible images did not reveal.')
-MEDIA_KEYS = {'artwork', 'poster', 'film', 'film_small', 'film_original', 'brass'}
-PUBLIC_PAGES = {'index.html', 'about/index.html', 'writing/index.html',
-                'writing/milestone-1/index.html', '404.html'}
+ARTICLES = {
+    'milestone-1': {
+        'title': 'Milestone 1: building the baseline',
+        'description': 'The scene, the reference image, and the measurements behind the first '
+                       'milestone, including the bugs that plausible images did not reveal.',
+        'date': '2026-10-10', 'milestone': 1,
+        'image': 'images/marbles-opening-10s.jpg',
+        'images': ['marbles-opening-10s.jpg'],
+        'film': 'baseline', 'film_title': 'The first milestone in motion',
+    },
+    'milestone-2': {
+        'title': 'Milestone 2: reusing work with ReSTIR',
+        'description': 'Keeping useful paths, giving the glass its own work, and measuring '
+                       'what reuse buys. The connections to inference run through the pipeline.',
+        'date': '2026-10-13', 'milestone': 2,
+        'image': 'images/marbles-restir-pt-mnee-10s.jpg',
+        'images': ['marbles-restir-pt-mnee-10s.jpg', 'marbles-path-vs-restir-pt-10s.jpg'],
+        'film': 'comparison', 'film_title': 'The comparison in motion',
+    },
+}
+IMAGE_KEYS = {'artwork', 'poster', 'baseline_poster', 'comparison_poster'}
+MEDIA_KEYS = IMAGE_KEYS | {'film', 'film_small', 'film_original', 'brass',
+                          'baseline', 'baseline_small', 'baseline_original',
+                          'comparison', 'comparison_small', 'comparison_original'}
+PUBLIC_PAGES = {'index.html', 'about/index.html', 'writing/index.html', '404.html'} | {
+    f'writing/{slug}/index.html' for slug in ARTICLES
+}
 
 
 def base_url(value: str) -> str:
@@ -77,9 +100,9 @@ def stage(stage_root: Path, local_media: bool) -> None:
         elif entry.get('optional'):
             # Optional originals/playback alternatives are shown only after explicit URL configuration.
             pass
-        elif key in {'artwork', 'poster'} or local_media:
+        elif key in IMAGE_KEYS or local_media:
             source = repository_file(entry['local'])
-            asset_name = f'images/{source.name}' if key in {'artwork', 'poster'} else f'media/{source.name}'
+            asset_name = f'images/{source.name}' if key in IMAGE_KEYS else f'media/{source.name}'
             copy_to(source, stage_root / 'static' / asset_name)
             entry['url'] = asset_name
         else:
@@ -91,20 +114,20 @@ def stage(stage_root: Path, local_media: bool) -> None:
                          '. Set web/data/media.json after hosting setup; use --local-media for review.')
     (stage_root / 'data').mkdir()
     (stage_root / 'data/media.json').write_text(json.dumps(media))
-    copy_to(repository_file('docs/writeups/images/marbles-opening-10s.jpg'),
-            stage_root / 'static/images/marbles-opening-10s.jpg')
-    source = repository_file(ARTICLE).read_text()
-    heading, body = source.split('\n', 1)
-    if heading != '# ' + ARTICLE_TITLE:
-        raise ValueError('Article title changed: update its publication metadata in scripts/site.py.')
-    bundle = stage_root / 'content/writing/milestone-1'
-    bundle.mkdir(parents=True)
-    metadata = {'title': ARTICLE_TITLE, 'description': ARTICLE_DESCRIPTION,
-                'date': '2026-10-10', 'milestone': 1}
-    # JSON is valid Hugo frontmatter and avoids escaping YAML by hand.
-    (bundle / 'index.md').write_text(json.dumps(metadata, indent=2) + '\n' + body)
-    copy_to(repository_file('docs/writeups/images/marbles-opening-10s.jpg'),
-            bundle / 'images/marbles-opening-10s.jpg')
+    for slug, article in ARTICLES.items():
+        source = repository_file(f'docs/writeups/{slug}.md').read_text()
+        heading, body = source.split('\n', 1)
+        if heading != '# ' + article['title']:
+            raise ValueError(f'{slug}: article title changed; update its metadata in scripts/site.py.')
+        bundle = stage_root / 'content/writing' / slug
+        bundle.mkdir(parents=True)
+        metadata = {key: value for key, value in article.items() if key != 'images'}
+        # JSON is valid Hugo frontmatter and avoids escaping YAML by hand.
+        (bundle / 'index.md').write_text(json.dumps(metadata, indent=2) + '\n' + body)
+        for name in article['images']:
+            source_image = repository_file(f'docs/writeups/images/{name}')
+            copy_to(source_image, bundle / 'images' / name)
+            copy_to(source_image, stage_root / 'static/images' / name)
 
 
 class Page(HTMLParser):
@@ -203,7 +226,7 @@ def build(base: str, local_media: bool) -> Path:
             if previous.exists():
                 previous.rename(destination)
             raise
-    print(f'Built and checked 4 content pages + 404: {destination}', flush=True)
+    print(f'Built and checked {len(PUBLIC_PAGES) - 1} content pages + 404: {destination}', flush=True)
     return destination
 
 
