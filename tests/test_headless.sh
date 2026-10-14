@@ -180,6 +180,53 @@ grep -q 'frame 0: [1-9][0-9]* samples were not finite' "${SCRATCH}/stderr" ||
     fail "samples not finite: '$(cat "${SCRATCH}/stderr")'"
 [ -z "$(names "${SCRATCH}/blinding")" ] || fail "a frame with samples not finite was written"
 
+# --features: the feature images beside each frame written (contract 17,
+# headless/options.h), four PFMs a frame, named after it, at the run's size.
+# The features graph alone shows nothing and writes only them, at a size of
+# their own; a light graph with the features pass writes its frame and its
+# features, each at the run's size. What the images hold is
+# tests/gpu/features_test.cpp's.
+FEATURES="${SCRATCH}/features"
+"${BIN}" --graph "${GRAPHS}/features.toml" --scene "${SCRATCH}/lit.toml" --out "${FEATURES}" --size 12x8 \
+    --frames 2 --features >"${SCRATCH}/stdout" || fail "a features run exited with $?"
+FEATURES_EXPECTED=""
+for n in 0 1; do
+    for f in albedo depth motion normal; do
+        FEATURES_EXPECTED="${FEATURES_EXPECTED} $(printf 'frame-%06d-%s.pfm' "${n}" "${f}")"
+    done
+done
+FEATURES_EXPECTED="${FEATURES_EXPECTED# }"
+[ "$(names "${FEATURES}")" = "${FEATURES_EXPECTED}" ] ||
+    fail "a features run wrote '$(names "${FEATURES}")', not '${FEATURES_EXPECTED}'"
+for n in 0 1; do
+    for f in albedo normal depth motion; do printf '%s/frame-%06d-%s.pfm\n' "${FEATURES}" "${n}" "${f}"; done
+done >"${SCRATCH}/expected"
+cmp -s "${SCRATCH}/stdout" "${SCRATCH}/expected" || fail "a features run printed '$(cat "${SCRATCH}/stdout")'"
+printf 'PF\n12 8\n-1.0\n' >"${SCRATCH}/features_header"
+for f in "${FEATURES}"/*.pfm; do
+    # The header, 13 bytes, and 12 x 8 x 3 floats, 1152.
+    [ "$(wc -c <"${f}" | tr -d ' ')" = "1165" ] || fail "${f} is $(wc -c <"${f}") bytes, not 1165"
+    head -c 13 "${f}" | cmp -s - "${SCRATCH}/features_header" || fail "${f}'s header is not 'PF 12 8 -1.0'"
+done
+LIGHT="${SCRATCH}/light-features"
+"${BIN}" --graph "${GRAPHS}/restir_pt_features.toml" --scene "${SCRATCH}/lit.toml" --out "${LIGHT}" --size 6x4 \
+    --format pfm --features >/dev/null || fail "a light graph's features run exited with $?"
+LIGHT_EXPECTED="frame-000000-albedo.pfm frame-000000-depth.pfm frame-000000-motion.pfm frame-000000-normal.pfm frame-000000.pfm"
+[ "$(names "${LIGHT}")" = "${LIGHT_EXPECTED}" ] ||
+    fail "a light graph's features run wrote '$(names "${LIGHT}")', not '${LIGHT_EXPECTED}'"
+for f in "${LIGHT}"/*.pfm; do
+    head -c 12 "${f}" | cmp -s - "${SCRATCH}/pfm_header" || fail "${f}'s header is not 'PF 6 4 -1.0'"
+done
+expect_refusal "features of a graph without them" --graph "${GRAPHS}/path.toml" --scene "${SCRATCH}/lit.toml" \
+    --out "${SCRATCH}/no-features" --features
+grep -q "has no features pass" "${SCRATCH}/stderr" || fail "features of the path graph: '$(cat "${SCRATCH}/stderr")'"
+[ ! -e "${SCRATCH}/no-features" ] || fail "features of a graph without them made its output directory"
+expect_refusal "the features graph without --features" --graph "${GRAPHS}/features.toml" \
+    --scene "${SCRATCH}/lit.toml" --out "${SCRATCH}/nothing"
+grep -q "shows no image, only features" "${SCRATCH}/stderr" ||
+    fail "the features graph without --features: '$(cat "${SCRATCH}/stderr")'"
+[ ! -e "${SCRATCH}/nothing" ] || fail "the features graph without --features made its output directory"
+
 # An output directory holding an earlier run's frame: refused, the frame
 # left as it was.
 expect_refusal "a directory holding a frame" --graph "${GRAPHS}/test_pattern.toml" --out "${OUT}" --size 16x8

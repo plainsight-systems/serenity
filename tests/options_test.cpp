@@ -62,6 +62,9 @@ TEST_CASE("headless: defaults, and every option read") {
     CHECK(defaults.graph == "s.toml");
     CHECK(defaults.out == "o");
 
+    CHECK_FALSE(defaults.features);
+    CHECK(headless({"--features"}).features);
+
     const auto all = headless({"--frames", "120", "--first", "7", "--step", "0.5", "--size", "640x360"});
     CHECK(all.frames == 120);
     CHECK(all.first == 7);

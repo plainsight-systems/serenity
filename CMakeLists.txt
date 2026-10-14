@@ -175,10 +175,12 @@ add_library(serenity_metal STATIC
     src/metal/scene/shape_transforms.cpp
     src/metal/film/non_finite.cpp
     src/metal/frame/accumulation.cpp
+    src/metal/frame/feature_images.cpp
     src/metal/frame/frame_images.cpp
     src/metal/frame/mnee_list.cpp
     src/metal/frame/renderer.cpp
     src/metal/passes/display/display.cpp
+    src/metal/passes/features/features.cpp
     src/metal/passes/mnee/mnee.cpp
     src/metal/passes/path/path.cpp
     src/metal/passes/preview/preview.cpp
@@ -213,6 +215,7 @@ serenity_add_metallib(
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_spatial/restir_pt_spatial.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_shade/restir_pt_shade.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_duplication/restir_pt_duplication.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/features/features.metal"
     INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 # ---------------------------------------------------------------------------

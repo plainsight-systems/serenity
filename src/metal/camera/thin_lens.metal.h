@@ -62,8 +62,13 @@ inline float camera_depth(constant serenity::contracts::CameraData& camera, floa
     return metal::dot(point - to_float3(camera.origin), to_float3(camera.forward));
 }
 
-inline float2 camera_pixel(constant serenity::contracts::CameraData& camera, float3 point, uint2 size) {
-    const float3 v = point - to_float3(camera.origin);
+// direction_pixel: where the pinhole ray along direction `v` (any length,
+// pointing in front of the camera) crosses the image: camera_pixel's
+// formula on a direction, so a point at infinity, the sky, is placed by
+// the camera's orientation alone (the features' motion, core/contracts/
+// features.h). camera_pixel is direction_pixel of the point less the
+// origin.
+inline float2 direction_pixel(constant serenity::contracts::CameraData& camera, float3 v, uint2 size) {
     // d = v / depth has dot(d, forward) = 1, as the ray formula's d, whose
     // right and up parts are sx right and sy up; right, up and forward are
     // square to one another (contracts/camera.h).
@@ -73,6 +78,10 @@ inline float2 camera_pixel(constant serenity::contracts::CameraData& camera, flo
     const float sx = metal::dot(d, right) / metal::dot(right, right);
     const float sy = metal::dot(d, up) / metal::dot(up, up);
     return float2((sx + 1.0f) * 0.5f * float(size.x), (1.0f - sy) * 0.5f * float(size.y));
+}
+
+inline float2 camera_pixel(constant serenity::contracts::CameraData& camera, float3 point, uint2 size) {
+    return direction_pixel(camera, point - to_float3(camera.origin), size);
 }
 
 }  // namespace shaders

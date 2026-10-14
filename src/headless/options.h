@@ -21,7 +21,7 @@ namespace serenity::headless {
 //                     [--frames N] [--first I]
 //                     [--step SECONDS | --time SECONDS]
 //                     [--size WIDTHxHEIGHT] [--write all|last|doubling]
-//                     [--samples N] [--format KIND]
+//                     [--samples N] [--format KIND] [--features]
 //
 // DIRECTORY must be new or empty (prepare_output, below). It renders the
 // frame graph in FILE (core/frame/graph_file.h), over the scene in
@@ -76,6 +76,22 @@ namespace serenity::headless {
 // is refused by OptionsError naming the graph, after the graph is read and
 // before anything renders or the directory is made, rather than at the
 // first frame written.
+//
+// --features: beside each frame written, the denoiser's feature images
+// (contract 17, core/contracts/features.h) as the frame's features pass
+// wrote them, each a PFM of three channels (core/output/pfm.h):
+// frame-NNNNNN-albedo.pfm, -normal.pfm, -depth.pfm (the depth in all three
+// channels) and -motion.pfm ((dx, dy, dz), NRD's 2.5D motion). The graph
+// must have the features pass, else the run is refused by OptionsError,
+// after the graph is read and before anything renders. The graph of the
+// features pass alone (graphs/features.toml) shows nothing, and so writes
+// no frame-NNNNNN image, only the features: it is how they are rendered at
+// a size of their own, the training targets' 1920 x 1080 beside a light
+// graph's 960 x 540 in a second run. Such a graph without --features would
+// write nothing, and is refused likewise. Each frame's motion points back
+// to the frame before it on the timeline, at time (i - 1) x step, or to the
+// same instant under --time (frame::FrameInputs::previous); frame 0 has
+// none, and its motion is 0.
 //
 // parse() checks everything it can before anything renders and throws
 // OptionsError naming the argument (E.2, E.14): an unknown option, a
@@ -139,6 +155,7 @@ struct Options {
     Write write = Write::all;
     std::uint64_t samples = 1;  // rendered per frame, at its instant
     output::ImageFormat format = output::default_format;
+    bool features = false;  // --features: the feature images beside each frame written
 };
 
 // Which of a run's frames: the one `after_first` frames after its first, of

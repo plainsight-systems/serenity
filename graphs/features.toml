@@ -1,0 +1,10 @@
+# The denoiser's features alone: per pixel, the albedo and normal of the
+# first surface seen that is not glass or a mirror, the primary surface's
+# depth and its motion since the frame before (src/core/contracts/
+# features.h). Shows no image: the headless renderer writes the features
+# with --features, at whatever --size asks, as the training data's are
+# rendered at 1920 x 1080 beside graphs/restir_pt_features.toml's
+# 960 x 540 (docs/research/2026-10-14-denoiser-training-design.md). Needs a
+# scene.
+
+passes = ["features"]

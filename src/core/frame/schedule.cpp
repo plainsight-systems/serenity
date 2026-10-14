@@ -19,12 +19,12 @@ namespace {
 // through. The switches below cover every kind (-Wswitch); this list is
 // held to the enum's final kind, PassKind::last, so a kind left out of it
 // fails to compile (schedule.h).
-constexpr std::array<PassKind, 14> kinds = {
+constexpr std::array<PassKind, 15> kinds = {
     PassKind::test_pattern,      PassKind::preview,           PassKind::path,
     PassKind::display,           PassKind::tone_map,          PassKind::restir_initial,
     PassKind::restir_temporal,   PassKind::restir_spatial,    PassKind::restir_shade,
     PassKind::restir_pt_initial, PassKind::restir_pt_temporal, PassKind::restir_pt_spatial,
-    PassKind::restir_pt_shade,   PassKind::restir_pt_duplication};
+    PassKind::restir_pt_shade,   PassKind::restir_pt_duplication, PassKind::features};
 static_assert(kinds.size() == static_cast<std::size_t>(PassKind::last) + 1,
               "every PassKind is in `kinds`, in declaration order");
 static_assert(kinds.back() == PassKind::last, "the last PassKind is last in `kinds`");
@@ -77,6 +77,8 @@ std::string_view name(PassKind kind) {
         return "restir_pt_shade";
     case PassKind::restir_pt_duplication:
         return "restir_pt_duplication";
+    case PassKind::features:
+        return "features";
     }
     no_case("name");
 }
@@ -99,6 +101,7 @@ bool needs_scene(PassKind kind) {
     case PassKind::restir_pt_spatial:
     case PassKind::restir_pt_shade:
     case PassKind::restir_pt_duplication:
+    case PassKind::features:
         return true;
     }
     no_case("needs_scene");
@@ -118,6 +121,7 @@ bool accumulates(PassKind kind) {
     case PassKind::restir_pt_temporal:
     case PassKind::restir_pt_spatial:
     case PassKind::restir_pt_duplication:
+    case PassKind::features:
         return false;
     case PassKind::path:
     case PassKind::restir_shade:     // folds its pixels into the accumulated image, as path does
@@ -140,6 +144,7 @@ bool writes_radiance(PassKind kind) {
     case PassKind::restir_pt_temporal:
     case PassKind::restir_pt_spatial:
     case PassKind::restir_pt_duplication:
+    case PassKind::features:
         return false;
     case PassKind::preview:
     case PassKind::path:
@@ -165,6 +170,7 @@ bool reads_radiance(PassKind kind) {
     case PassKind::restir_pt_spatial:
     case PassKind::restir_pt_shade:
     case PassKind::restir_pt_duplication:
+    case PassKind::features:
         return false;
     case PassKind::display:
     case PassKind::tone_map:
@@ -187,6 +193,7 @@ bool writes_target(PassKind kind) {
     case PassKind::restir_pt_spatial:
     case PassKind::restir_pt_shade:
     case PassKind::restir_pt_duplication:
+    case PassKind::features:
         return false;
     case PassKind::test_pattern:
     case PassKind::display:
@@ -194,6 +201,10 @@ bool writes_target(PassKind kind) {
         return true;
     }
     no_case("writes_target");
+}
+
+bool writes_features(PassKind kind) {
+    return kind == PassKind::features;
 }
 
 bool is_restir(PassKind kind) {
@@ -209,6 +220,7 @@ bool is_restir(PassKind kind) {
     case PassKind::restir_pt_spatial:
     case PassKind::restir_pt_shade:
     case PassKind::restir_pt_duplication:
+    case PassKind::features:
         return false;
     case PassKind::restir_initial:
     case PassKind::restir_temporal:
@@ -230,6 +242,7 @@ bool is_restir_pt(PassKind kind) {
     case PassKind::restir_temporal:
     case PassKind::restir_spatial:
     case PassKind::restir_shade:
+    case PassKind::features:
         return false;
     case PassKind::restir_pt_initial:
     case PassKind::restir_pt_temporal:
@@ -258,13 +271,20 @@ std::optional<std::string> accumulation_broken(const std::vector<PassKind>& pass
     return std::nullopt;
 }
 
-// One pass writes the target, the last.
+// One pass writes the target, the last; or the graph is the features pass
+// alone. The features pass at most once.
 std::optional<std::string> presentation_broken(const std::vector<PassKind>& passes) {
+    if (std::ranges::count(passes, PassKind::features) > 1) {
+        return "the frame graph has features more than once; a frame has one set of feature images";
+    }
     std::vector<PassKind> presenting;
     std::ranges::copy_if(passes, std::back_inserter(presenting), [](PassKind kind) { return writes_target(kind); });
+    if (presenting.empty() && passes.size() == 1 && passes.front() == PassKind::features) {
+        return std::nullopt;  // the features alone, at a size of their own (schedule.h)
+    }
     if (presenting.empty()) {
         return "no pass in the frame graph writes the image shown (" + listed(passes) +
-               "); end it with display or tone_map";
+               "); end it with display or tone_map (only the features pass alone shows nothing)";
     }
     if (presenting.size() > 1) {
         return "the frame graph has " + std::to_string(presenting.size()) + " passes that write the image shown (" +
@@ -688,6 +708,14 @@ std::span<const PassKind> all_pass_kinds() {
 
 bool accumulates(const Schedule& schedule) {
     return std::ranges::any_of(schedule.passes, [](PassKind kind) { return accumulates(kind); });
+}
+
+bool presents(const Schedule& schedule) {
+    return std::ranges::any_of(schedule.passes, [](PassKind kind) { return writes_target(kind); });
+}
+
+bool writes_features(const Schedule& schedule) {
+    return std::ranges::any_of(schedule.passes, [](PassKind kind) { return writes_features(kind); });
 }
 
 bool reuses_history(const Schedule& schedule) {

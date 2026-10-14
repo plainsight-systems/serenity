@@ -9,6 +9,11 @@
 // frames rendered, and the scene's camera, still until the camera moves; all
 // three are handed to the renderer (principle 1). The loop is paced by the
 // display: render_to_window() waits for a drawable (metal/device/presenter.h).
+// Each frame is also told the frame before it, its time and camera, which a
+// graph with the denoiser's features measures motion from (core/frame/
+// frame_inputs.h, previous); the first has none. A graph that shows no image
+// (the features pass alone, core/frame/schedule.h) is refused before the
+// window opens.
 //
 // The title shows the frames' GPU time once a second (core/measurement/
 // frame_times.h): each frame is counted once, when the submission that
@@ -40,6 +45,7 @@
 #include <iostream>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 
 #include "app/clock.h"
@@ -93,6 +99,11 @@ int main(int argc, char** argv) {
     try {
         const app::Options options = app::parse(arguments(argc, argv));
         const frame::Schedule schedule = frame::load_schedule(options.graph);
+        if (!frame::presents(schedule)) {
+            throw std::runtime_error("the graph " + options.graph.string() +
+                                     " shows no image (it renders features alone, for serenity-headless "
+                                     "--features); a window needs one that does");
+        }
         const std::optional<scene::SceneDescription> loaded =
             options.scene.empty() ? std::nullopt : std::optional{scene::load(options.scene)};
 
@@ -111,6 +122,7 @@ int main(int argc, char** argv) {
         frame::LiveHistory history(loaded && scene::changes(*loaded) ? frame::SceneMotion::changing
                                                                    : frame::SceneMotion::still);
         frame::LiveReuse reuse;
+        std::optional<frame::PreviousFrame> previous;  // the last frame rendered, none before the first
         for (app::Window::Events events = window.poll(); !events.quit; events = window.poll()) {
             if (events.resized) {
                 presenter.resize(app::render_size(window.size_in_pixels(), options.scale));
@@ -121,9 +133,13 @@ int main(int argc, char** argv) {
                 .accumulated_since = history.since(index, events.resized ? frame::View::changed : frame::View::same),
                 .camera = loaded ? std::optional{loaded->camera} : std::nullopt,
                 .reused_since = reuse.since(index, events.resized ? frame::View::changed : frame::View::same),
+                .previous = previous,
             };
             if (const auto rendered = metal::render_to_window(submission, presenter, renderer, inputs)) {
                 ++index;
+                if (inputs.camera) {
+                    previous = frame::PreviousFrame{.time = inputs.time, .camera = *inputs.camera};
+                }
                 if (rendered->settled && rendered->settled->sequence >= first_frame) {
                     frame_times.add(rendered->settled->gpu_start, rendered->settled->gpu_end);
                 }

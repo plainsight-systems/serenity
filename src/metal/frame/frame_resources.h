@@ -118,6 +118,17 @@ struct FrameResources {
     MTL::GPUAddress mnee_header = 0;
     MTL::GPUAddress mnee_grid = 0;
     MTL::GPUAddress mnee_light = 0;
+
+    // With the features pass (contract 17, feature_images.h): its constants
+    // (the previous camera), the shapes' transforms as the frame before
+    // placed them (this frame's own where nothing moves), and the four
+    // feature images it writes; 0 and null otherwise.
+    MTL::GPUAddress feature_constants = 0;
+    MTL::GPUAddress feature_last_transforms = 0;
+    MTL::Texture* albedo = nullptr;
+    MTL::Texture* normal = nullptr;
+    MTL::Texture* depth = nullptr;
+    MTL::Texture* motion = nullptr;
 };
 
 }  // namespace serenity::metal

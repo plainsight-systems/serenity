@@ -94,6 +94,28 @@ TEST_CASE("one pass writes the image shown, and it is the last") {
     CHECK(refused_for(Schedule{{PassKind::test_pattern, PassKind::path}, std::nullopt}, "last pass, path"));
 }
 
+TEST_CASE("the features pass: at most once, before the image shown, or alone, showing nothing") {
+    CHECK(needs_scene(PassKind::features));
+    CHECK(writes_features(PassKind::features));
+    CHECK_FALSE(writes_target(PassKind::features));
+    CHECK_FALSE(writes_radiance(PassKind::features));
+    CHECK_FALSE(accumulates(PassKind::features));
+    const Schedule alone{{PassKind::features}, std::nullopt};
+    CHECK(refusal(alone).empty());
+    CHECK_FALSE(presents(alone));
+    CHECK(writes_features(alone));
+    const Schedule beside{{PassKind::path, PassKind::features, PassKind::display}, std::nullopt};
+    CHECK(refusal(beside).empty());
+    CHECK(presents(beside));
+    CHECK(writes_features(beside));
+    CHECK_FALSE(writes_features(Schedule{{PassKind::path, PassKind::display}, std::nullopt}));
+    CHECK(refused_for(Schedule{{PassKind::features, PassKind::features}, std::nullopt}, "features more than once"));
+    CHECK(refused_for(Schedule{{PassKind::path, PassKind::display, PassKind::features}, std::nullopt},
+                      "last pass, features"));
+    CHECK(refused_for(Schedule{{PassKind::path, PassKind::features}, std::nullopt},
+                      "no pass in the frame graph writes the image shown"));
+}
+
 TEST_CASE("light is computed once, before it is shown, and is shown") {
     CHECK(refused_for(Schedule{{PassKind::display}, std::nullopt}, "no pass before it computes light"));
     CHECK(refused_for(Schedule{{PassKind::preview, PassKind::path, PassKind::display}, std::nullopt},

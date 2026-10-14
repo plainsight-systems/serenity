@@ -10,7 +10,8 @@
 //
 // Frames are rendered one at a time: each frame's samples are committed, the
 // last waited for, and those --write selects are read back and written,
-// before the next frame begins.
+// before the next frame begins. With --features, a written frame's feature
+// images are read back and written beside it (headless/options.h).
 // Readback is the point of this program, and it is not held to the frame
 // budget (GPU.1). A frame that left out samples for not being finite
 // (metal/film/non_finite.h) fails the run once it has completed, naming the
@@ -18,6 +19,7 @@
 // the renderer and its target wait for the frames in flight before they are
 // released (metal/device/submission.h, Lifetime).
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -29,6 +31,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "core/contracts/linear_image.h"
@@ -37,6 +40,7 @@
 #include "core/frame/history.h"
 #include "core/frame/schedule.h"
 #include "core/output/image_format.h"
+#include "core/output/pfm.h"
 #include "core/scene/scene.h"
 #include "headless/options.h"
 #include "metal/device/device.h"
@@ -71,6 +75,17 @@ int main(int argc, char** argv) {
             throw headless::OptionsError("--format " + std::string{output::extension(options.format)} +
                                          " is written from the accumulated image, and the graph " +
                                          options.graph.string() + " accumulates nothing");
+        }
+        // Features from a graph that writes them, and a graph that shows
+        // nothing only with them: refused before anything renders
+        // (headless/options.h, --features).
+        if (options.features && !frame::writes_features(schedule)) {
+            throw headless::OptionsError("--features writes the feature images, and the graph " +
+                                         options.graph.string() + " has no features pass");
+        }
+        if (!frame::presents(schedule) && !options.features) {
+            throw headless::OptionsError("the graph " + options.graph.string() +
+                                         " shows no image, only features: ask for them with --features");
         }
         const std::optional<scene::SceneDescription> loaded =
             options.scene.empty() ? std::nullopt : std::optional{scene::load(options.scene)};
@@ -118,7 +133,10 @@ int main(int argc, char** argv) {
         // each (read_accumulated), then its radiance into a new image, 12
         // (from_rgba): 33, 33 and 25 MB at 1920 x 1080, once a written frame
         // (GPU.1; docs/research/2026-10-10-reference.md).
-        const auto write_frame = [&](std::uint64_t index) {
+        const auto write_frame = [&](std::uint64_t index) -> std::optional<std::filesystem::path> {
+            if (!frame::presents(schedule)) {
+                return std::nullopt;  // nothing shown to write
+            }
             const std::filesystem::path path = options.out / std::format("frame-{:06}.{}", index, extension);
             switch (source) {
             case output::ImageSource::displayed:
@@ -131,6 +149,33 @@ int main(int argc, char** argv) {
                 break;
             }
             return path;
+        };
+
+        // Frame `index`'s feature images, read back and written beside it;
+        // their paths. Copied as read_features() says (metal/frame/
+        // feature_images.h), once a written frame (GPU.1).
+        const auto write_features = [&](std::uint64_t index) {
+            const metal::FeatureImages::Read read = renderer.read_features();
+            const std::array<std::pair<const char*, const contracts::LinearImage*>, 4> images = {
+                std::pair{"albedo", &read.albedo}, std::pair{"normal", &read.normal},
+                std::pair{"depth", &read.depth}, std::pair{"motion", &read.motion}};
+            std::vector<std::filesystem::path> paths;
+            for (const auto& [feature, image] : images) {
+                paths.push_back(options.out / std::format("frame-{:06}-{}.pfm", index, feature));
+                output::write_pfm(paths.back(), *image);
+            }
+            return paths;
+        };
+
+        // The frame before frame `index` on the timeline, which its features'
+        // motion points back to (headless/options.h, --features): the same
+        // instant under --time, none before frame 0.
+        const auto previous = [&](std::uint64_t index) -> std::optional<frame::PreviousFrame> {
+            if (!loaded || (!options.time && index == 0)) {
+                return std::nullopt;
+            }
+            const frame::Seconds time = options.time ? *options.time : options.step * static_cast<double>(index - 1);
+            return frame::PreviousFrame{.time = time, .camera = loaded->camera};
         };
 
         // Frame `index`'s samples, each committed; the last one's sequence.
@@ -146,6 +191,7 @@ int main(int argc, char** argv) {
                     .accumulated_since = sample.accumulated_since,
                     .camera = loaded ? std::optional{loaded->camera} : std::nullopt,
                     .reused_since = sample.reused_since,
+                    .previous = previous(index),
                 };
                 last = metal::render_to_offscreen(submission, target, renderer, inputs);
             }
@@ -170,7 +216,14 @@ int main(int argc, char** argv) {
                                                      index, failed));
             }
             if (headless::written(options.write, {.after_first = n, .frames = options.frames})) {
-                std::cout << write_frame(index).string() << '\n';
+                if (const std::optional<std::filesystem::path> path = write_frame(index)) {
+                    std::cout << path->string() << '\n';
+                }
+                if (options.features) {
+                    for (const std::filesystem::path& path : write_features(index)) {
+                        std::cout << path.string() << '\n';
+                    }
+                }
             }
         }
         submission.finish();

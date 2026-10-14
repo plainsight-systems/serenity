@@ -200,5 +200,22 @@ enum Buffer : unsigned {
 enum Texture : unsigned { accumulated = 0 };  // the shade's: also the frame's radiance, as the path pass's
 }  // namespace restir_pt
 
+// The features pass (passes/features/features.h): the scene at the path
+// tracer's indices, its constants (contract 17's FeatureConstants) and last
+// frame's transforms; the four feature images it writes.
+namespace features {
+enum Buffer : unsigned {
+    constants = 0,
+    camera = 1,
+    structure = 2,
+    scene = 3,
+    glows = 4,
+    transforms = 5,
+    feature_constants = 6,
+    last_transforms = 7,
+};
+enum Texture : unsigned { albedo = 0, normal = 1, depth = 2, motion = 3 };
+}  // namespace features
+
 }  // namespace bindings
 }  // namespace serenity

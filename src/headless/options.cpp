@@ -18,7 +18,7 @@ namespace {
 constexpr std::string_view usage =
     "usage: serenity-headless --graph FILE [--scene FILE] --out DIRECTORY [--frames N] [--first I] "
     "[--step SECONDS | --time SECONDS] [--size WIDTHxHEIGHT] [--write all|last|doubling] [--samples N] "
-    "[--format KIND]; "
+    "[--format KIND] [--features]; "
     "DIRECTORY must be new or empty";
 
 // Whether a run of `frames` frames from `first`, `n` samples a frame, has
@@ -152,6 +152,8 @@ Options parse(std::span<const char* const> args) {
                                    "'");
             }
             options.format = *format;
+        } else if (option == "--features") {
+            options.features = true;
         } else if (option == "--size") {
             const std::string_view text = value();
             const std::size_t x = text.find('x');

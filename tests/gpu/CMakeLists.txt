@@ -13,6 +13,7 @@ add_executable(serenity_gpu_tests
     path_test.cpp
     mnee_test.cpp
     restir_pt_test.cpp
+    features_test.cpp
     restir_test.cpp
     film_test.cpp
     acceleration_test.cpp

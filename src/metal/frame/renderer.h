@@ -27,9 +27,11 @@
 #include "metal/frame/frame_resources.h"
 #include "metal/film/non_finite.h"
 #include "metal/frame/accumulation.h"
+#include "metal/frame/feature_images.h"
 #include "metal/frame/frame_images.h"
 #include "metal/frame/mnee_list.h"
 #include "metal/passes/display/display.h"
+#include "metal/passes/features/features.h"
 #include "metal/passes/path/path.h"
 #include "metal/passes/preview/preview.h"
 #include "metal/passes/restir_initial/restir_initial.h"
@@ -251,6 +253,22 @@ namespace serenity::metal {
 // their dispatches (metal/passes/restir_pt_*/). Its argument table holds 26
 // bindings, its passes' most being 26 (passes/bindings.h).
 //
+// The features pass (contract 17, core/contracts/features.h). A graph with
+// it gets, at construction, its pass; FeatureImages (feature_images.h),
+// made by prepare() at the frame's size; a ring of its constants, 80 bytes
+// a frame: whether the frame has one before it (its inputs' previous,
+// core/frame/frame_inputs.h) and that frame's camera framed for this
+// frame's size; and, for a scene whose shapes move, a third ShapeTransforms,
+// which recording a frame fills by animating what moves at the previous
+// frame's time, the motion's other end (a still scene binds this frame's).
+// Apart from a temporal graph's last transforms, which are at the time the
+// renderer last recorded, a sample of this frame's own instant when a
+// frame is several (frame_inputs.h, previous). Nothing else changes for a
+// graph without it. Its images are shared by the frames in flight, so the
+// pass counts among those the queue barrier waits before; no barrier in the
+// frame, since no pass reads what it writes. read_features() copies them
+// back.
+//
 // Cost of recording a ReSTIR frame, on the CPU, beyond the above: 128 bytes
 // of reuse constants, four pipeline binds and dispatches with their
 // argument-table entries (two of each without the merges); with a temporal merge, one more animation of
@@ -285,8 +303,10 @@ public:
     // graph that reads a scene needs the frame's camera; the accumulated
     // image, if the graph has one (accumulation.h), must hold what the
     // inputs claim; and the images between passes, if the graph has any
-    // (frame_images.h), are made at `size`. Called before the frame's
-    // submission begins, for every graph; throws MetalError if any fails.
+    // (frame_images.h), are made at `size`; and, for a graph with the
+    // features pass, the frame before, if given, must have a finite time and
+    // a camera that can be framed. Called before the frame's submission
+    // begins, for every graph; throws MetalError if any fails.
     //
     // Everything a frame's inputs or the scene can get wrong is checked here
     // or at construction, before the submission begins (E.4): an exception
@@ -317,11 +337,18 @@ public:
     // yet, or `out` is not its size.
     void read_accumulated(std::span<float> out);
 
+    // The feature images (contract 17) as the last frame wrote them, read
+    // back (feature_images.h, FeatureImages::read): a readback (GPU.1), not
+    // for a frame loop. The frames it reads must have completed. Throws
+    // MetalError if the graph has no features pass or no frame has made its
+    // images yet.
+    FeatureImages::Read read_features() const;
+
 private:
     using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass, RestirInitialPass,
                               RestirTemporalPass, RestirSpatialPass, RestirShadePass, RestirPtInitialPass,
                               RestirPtTemporalPass, RestirPtSpatialPass, RestirPtShadePass,
-                              RestirPtDuplicationPass>;
+                              RestirPtDuplicationPass, FeaturesPass>;
 
     // A pass of the schedule, with its kind (C.1).
     struct Step {
@@ -362,6 +389,12 @@ private:
     std::unique_ptr<FrameArray> path_constants_;  // with restir_pt_temporal: contracts::PathReuseConstants
     std::unique_ptr<ReuseImages> reuse_;
     std::unique_ptr<FrameArray> reuse_constants_;
+    // The features pass's (above): its images, its constants' ring, and the
+    // shapes as the previous frame placed them, when shapes move. None
+    // without the pass.
+    std::unique_ptr<FeatureImages> features_;
+    std::unique_ptr<FrameArray> feature_constants_;
+    std::unique_ptr<ShapeTransforms> feature_transforms_;
     // A temporal graph's last frame (above): its transforms and glows,
     // animated at its time each frame, only when the scene changes (a still
     // scene's one copy is last frame's too); and the camera and time the

@@ -141,7 +141,8 @@ time:
 
 1. **Renderer outputs.** Motion vectors; surface color, normal and depth
    images; the headless renderer writing them beside each frame; the scene
-   generator's seed option. Each output tested.
+   generator's seed option. Each output tested. Built 2026-10-14
+   (2026-10-14-denoiser-features.md).
 2. **The data set.** The overnight render, its manifest and checksums.
 3. **Training.** The `training/` toolkit, the run, the validation curve.
 4. **The Metal pass.** Its own note: the network as Metal kernels, its

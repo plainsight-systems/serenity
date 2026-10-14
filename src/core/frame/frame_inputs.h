@@ -30,6 +30,14 @@ using Seconds = std::chrono::duration<double>;
 // accumulated_since would pass it.
 inline constexpr std::uint64_t max_accumulated_frames = (std::uint64_t{1} << 24) - 1;
 
+// The frame before a frame, as the frame's motion is measured from it
+// (contract 17, the features' motion): its time and the camera it was seen
+// through. A struct, so the two are named where they are given (I.24).
+struct PreviousFrame {
+    Seconds time{0.0};
+    contracts::Camera camera;
+};
+
 struct FrameInputs {
     // Since the run began. The window measures it from a monotonic clock, the
     // headless renderer computes it as index times a fixed step. Double here;
@@ -75,6 +83,18 @@ struct FrameInputs {
     // reuse history. Never after index. Last, after the members callers
     // name in order.
     std::uint64_t reused_since = 0;
+
+    // The frame before this one, which the features' motion vectors point
+    // back to (core/contracts/features.h): where the camera and the moving
+    // shapes were then. An input, not the renderer's memory of the last
+    // frame it recorded, because a frame of N samples is N recordings at one
+    // instant, and a headless run that starts at frame f has recorded none
+    // before it: the caller knows which frame came before, the renderer
+    // does not (principle 1). None at the first frame of a window or of a
+    // timeline, where the motion is 0 (as DLSS's reset). Read only by a
+    // graph with the features pass; none needed by any other. Last, after
+    // the members callers name in order.
+    std::optional<PreviousFrame> previous;
 };
 
 }  // namespace serenity::frame

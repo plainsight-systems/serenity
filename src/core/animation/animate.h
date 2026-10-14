@@ -80,4 +80,10 @@ inline bool changes(const Animation& animation) noexcept {
 void animate(const Animation& animation, frame::Seconds t, std::span<contracts::Transform> transforms,
              std::span<float> glows);
 
+// Places every mover at `t`, and lights nothing: animate()'s first half,
+// for what reads where the shapes were and not how bright (the features'
+// motion, core/contracts/features.h). Throws as animate() does for a
+// mover's target.
+void place(const Animation& animation, frame::Seconds t, std::span<contracts::Transform> transforms);
+
 }  // namespace serenity::animation

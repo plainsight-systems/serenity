@@ -4,6 +4,13 @@ This file tracks active and accepted work.
 
 ## Active
 
+- **The denoiser, Milestone 3** (docs/research/2026-10-14-denoiser-training-design.md).
+  Phase 1 built 2026-10-14 (docs/research/2026-10-14-denoiser-features.md): the
+  `features` pass (contract 17: albedo and normal through glass and mirrors by
+  primary surface replacement, depth, NRD/DLSS motion vectors), graphs/features.toml
+  and graphs/restir_pt_features.toml, serenity-headless --features, and
+  scripts/make_marbles.py --seed N [--out FILE]. Next: Phase 2, the data set.
+
 - **ReSTIR PT** (docs/research/2026-10-11-restir-pt-layout.md). Phase 1
   built 2026-10-11 (initial sampling, the hybrid shift, paired spatial
   reuse): docs/research/2026-10-11-restir-pt-phase1.md, its gate not met.
@@ -174,3 +181,8 @@ Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
 - MNEE: the MNEE pass costs the path graph +28 ms at 3456 x 2234 (30.4 -> 58.7); GPU counters on mnee_solve (iterations, registers).
 - MNEE: the path tracer + MNEE at 1 sample loses to the path tracer at 2 at equal time (displayed 0.82 to 1.01); graphs/path_mnee.toml stays opt-in.
 - MNEE: conductors are not receivers (near-mirror lobes with no MIS); their caustics through glass stay the path tracer's.
+- Features: motion is the primary surface's; what glass and mirrors show behind or in them moves differently (production's specular motion vectors, NRD's virtual motion under PSR): not given.
+- Features: one ray a pixel a frame, as the noisy input's own; the 1920 x 1080 target's albedo is not averaged over its 4,096 samples (Open Image Denoise: aux images "should use the same pixel reconstruction filter as the beauty"): average it if the network's output shows edge or depth-of-field artifacts.
+- Features: glass beyond the first hit follows one branch by Fresnel's larger weight; a marble seen through another at near-grazing angles snaps between branches (Open Image Denoise suggests albedo 1 there if it is noisy).
+- Features: the pass costs ReSTIR PT 1.2 ms at 960 x 540 (12.5 -> 13.7, +10%); written by the initial pass from its primary hit, it would save the camera ray; Phase 4 measures it in the denoised frame.
+- Features: the window passes the frame before but no window graph has the features pass yet.

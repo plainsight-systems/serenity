@@ -125,6 +125,28 @@ namespace serenity::frame {
 // both present if any is; the duplication map only with temporal reuse,
 // whose cap is all it serves; and its settings exactly with its passes.
 //
+// The denoiser's features (contract 17, core/contracts/features.h; docs/
+// research/2026-10-14-denoiser-features.md) are one pass:
+//
+//   features  per pixel, at the frame's size, along the camera's ray the
+//             light passes trace there: the albedo and normal of the first
+//             surface that is not glass or a mirror, the primary surface's
+//             depth and its motion since the frame before; writes the four
+//             feature images, which no other pass of the frame reads.
+//
+// A pass of its own, not a part of ReSTIR PT's initial pass, which finds the
+// primary hit anyway: so a graph that does not ask for features runs the
+// kernels it ran, at their cost and to their bits; any light graph, or none,
+// can have them; and they render at a size of their own. It traces its own
+// camera ray and the delta surfaces behind it, a few rays a pixel, which a
+// light graph that asks for them pays (measured in the note). At most once,
+// and before the presenting pass, the last. A graph of the features pass
+// alone writes no target, the one graph that may: it is how features are
+// rendered at another size than the light, as the training data's are, at
+// the full resolution beside a half-resolution light graph
+// (headless/options.h, --features). A window refuses it, having nothing to
+// show (app/main.cpp).
+//
 // An estimator is a graph (logical-overview.md, principle 4: estimators are
 // interchangeable over the same scene):
 //
@@ -158,7 +180,8 @@ enum class PassKind {
     restir_pt_spatial,      // ReSTIR PT's paired spatial reuse; needs a scene
     restir_pt_shade,        // ReSTIR PT's light into the accumulated image; accumulates; writes radiance
     restir_pt_duplication,  // ReSTIR PT's duplication map, for the next frame's temporal reuse
-    last = restir_pt_duplication,
+    features,               // the denoiser's albedo, normal, depth and motion (contract 17); needs a scene
+    last = features,
 };
 
 // Whether a pass of `kind` reads the scene. A frame graph with such a pass
@@ -174,6 +197,7 @@ bool accumulates(PassKind kind);
 bool writes_radiance(PassKind kind);
 bool reads_radiance(PassKind kind);
 bool writes_target(PassKind kind);
+bool writes_features(PassKind kind);
 
 // Whether a pass of `kind` is one of ReSTIR DI's four (above): it reads or
 // writes the surface records or the reservoirs, and reads the [restir_di]
@@ -216,6 +240,13 @@ bool accumulates(const Schedule& schedule);
 // frame, and keeps its reuse history.
 bool reuses_history(const Schedule& schedule);
 
+// Whether `schedule` has a pass that writes the target: every graph but
+// the features pass alone (above), which a window refuses.
+bool presents(const Schedule& schedule);
+
+// Whether `schedule` has the features pass.
+bool writes_features(const Schedule& schedule);
+
 // What makes a schedule one a backend can carry out, decided here, in the
 // core, so that every backend refuses the same schedules (principle 10):
 //
@@ -224,7 +255,9 @@ bool reuses_history(const Schedule& schedule);
 //     image holds one pass's history, so two such passes, the same kind
 //     twice included, would each fold a frame into the other's mean;
 //   - one pass writes the target, and it is the last: a frame shows one
-//     image, finished by one pass;
+//     image, finished by one pass; or, the one exception, the graph is the
+//     features pass alone, which shows none (above);
+//   - the features pass at most once;
 //   - at most one pass writes radiance, every pass that reads it comes after
 //     it, and a pass that writes it is followed by one that reads it: light
 //     computed and never shown is a mistake, not a frame;

@@ -8,11 +8,13 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
 #include "core/camera/thin_lens.h"
 #include "core/contracts/camera.h"
+#include "core/contracts/features.h"
 #include "core/contracts/frame_constants.h"
 #include "core/contracts/light_tile.h"
 #include "core/contracts/mnee_request.h"
@@ -83,6 +85,8 @@ bool reuses_samples(frame::PassKind kind) {
 
 // The reuse constants are written into their ring as their bytes.
 static_assert(std::is_trivially_copyable_v<contracts::ReuseConstants>);
+static_assert(bindings::features::last_transforms < max_buffers);
+static_assert(bindings::features::motion < max_textures);
 
 // What the path state keeps of a medium's index: 16 bits, 0xffff for none
 // (core/contracts/surface_record.h). A ReSTIR graph refuses a scene with
@@ -150,9 +154,11 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     }
 
     // The first pass that writes the images between passes, accumulates,
-    // or writes ReSTIR's arrays, which the frame before's shade reads.
+    // or writes ReSTIR's arrays, which the frame before's shade reads, or the
+    // feature images, which the frame before's readers read.
     const auto crosses_frames = [](frame::PassKind kind) {
-        return frame::writes_radiance(kind) || frame::accumulates(kind) || reuses_samples(kind);
+        return frame::writes_radiance(kind) || frame::accumulates(kind) || reuses_samples(kind) ||
+               frame::writes_features(kind);
     };
     if (const auto first = std::ranges::find_if(schedule.passes, crosses_frames); first != schedule.passes.end()) {
         first_cross_frame_ = static_cast<std::size_t>(first - schedule.passes.begin());
@@ -210,6 +216,9 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
             break;
         case frame::PassKind::restir_pt_duplication:
             steps_.push_back(Step{kind, Pass{std::in_place_type<RestirPtDuplicationPass>, library_}});
+            break;
+        case frame::PassKind::features:
+            steps_.push_back(Step{kind, Pass{std::in_place_type<FeaturesPass>, library_}});
             break;
         }
     }
@@ -337,6 +346,20 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         }
         acceleration_ = std::make_unique<SceneAcceleration>(device, submission, scene->shapes, moving);
     }
+
+    // The features pass's images, constants and, when shapes move, the
+    // previous frame's placing of them (renderer.h). Its pass reads a scene,
+    // which the check above has made sure of.
+    if (frame::writes_features(schedule)) {
+        features_ = std::make_unique<FeatureImages>(device, submission);
+        feature_constants_ = std::make_unique<FrameArray>(
+            device, submission, std::vector<std::byte>(sizeof(contracts::FeatureConstants)),
+            FrameArray::Copies::per_frame);
+        if (animation::moves(animation_)) {
+            feature_transforms_ = std::make_unique<ShapeTransforms>(device, submission, scene->shapes.transforms,
+                                                                    FrameArray::Copies::per_frame);
+        }
+    }
 }
 
 Renderer::~Renderer() {
@@ -351,12 +374,29 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
         throw MetalError("Renderer: frame " + std::to_string(inputs.index) +
                     ": the frame graph reads a scene, and the frame has no camera");
     }
-    if (!accumulation_ && !images_ && !reuse_ && !path_reuse_) {
+    // The frame before, which the features' motion is measured from: its
+    // camera framed and its time placing the shapes in record(), so both are
+    // checked here, before the submission begins.
+    if (features_ && inputs.previous) {
+        const double before = inputs.previous->time.count();
+        if (!std::isfinite(before) || std::abs(before) > std::numeric_limits<float>::max()) {
+            throw MetalError("Renderer: frame " + std::to_string(inputs.index) + ": the frame before's time, " +
+                             std::to_string(before) + " s, is not a finite time");
+        }
+        if (const std::optional<std::string_view> reason = camera::invalid(inputs.previous->camera)) {
+            throw MetalError("Renderer: frame " + std::to_string(inputs.index) +
+                             ": the frame before's camera cannot be framed: " + std::string(*reason));
+        }
+    }
+    if (!accumulation_ && !images_ && !reuse_ && !path_reuse_ && !features_) {
         return;
     }
     prepared_.reset();
     if (images_) {
         images_->prepare(size);
+    }
+    if (features_) {
+        features_->prepare(size);
     }
     if (mnee_list_) {
         mnee_list_->prepare(size);
@@ -407,6 +447,13 @@ void Renderer::read_accumulated(std::span<float> out) {
     std::memcpy(out.data(), buffer->contents(), floats * sizeof(float));
 }
 
+FeatureImages::Read Renderer::read_features() const {
+    if (!features_ || features_->albedo() == nullptr) {
+        throw MetalError("read_features: the frame graph has no features pass, or no frame has made its images");
+    }
+    return features_->read();
+}
+
 void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, MTL::Texture* target,
                       frame::Extent size) {
     if (begun.commands == nullptr || begun.slot >= frames_in_flight || target == nullptr || size.width == 0 ||
@@ -416,7 +463,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
     check_time(inputs);
     std::uint32_t accumulated_frames = 0;
     std::uint64_t reused_frames = 0;
-    if (accumulation_ || images_ || reuse_ || path_reuse_) {
+    if (accumulation_ || images_ || reuse_ || path_reuse_ || features_) {
         if (!prepared_ || prepared_->index != inputs.index || !(prepared_->size == size)) {
             throw MetalError("Renderer::record: frame " + std::to_string(inputs.index) +
                         " was not prepared at this size (Renderer::prepare)");
@@ -534,6 +581,23 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
             resources.path_constants = path_constants_->address(begun.slot);
         }
     }
+    if (features_) {
+        // Whether there is a frame before, and its camera framed for this
+        // frame's size; its shapes, animated below where they move.
+        contracts::FeatureConstants features{};
+        features.previous = inputs.previous ? 1u : 0u;
+        if (inputs.previous) {
+            features.previous_camera = camera::shader_form(inputs.previous->camera, size);
+        }
+        std::memcpy(feature_constants_->bytes(begun.slot).data(), &features, sizeof(features));
+        resources.feature_constants = feature_constants_->address(begun.slot);
+        resources.feature_last_transforms =
+            feature_transforms_ ? feature_transforms_->address(begun.slot) : resources.transforms;
+        resources.albedo = features_->albedo();
+        resources.normal = features_->normal();
+        resources.depth = features_->depth();
+        resources.motion = features_->motion();
+    }
     if (reuses_history_) {
         // Last frame's transforms and glows: this frame's own where the
         // scene is still, else animated below at the previous time.
@@ -559,6 +623,11 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         if (last_transforms_ && previous) {
             animation::animate(animation_, previous_time_, last_transforms_->transforms(begun.slot),
                                last_glows_->glows(begun.slot));
+        }
+        // The features' frame before, at its time; unread without one. Its
+        // shapes alone: a glow does not move a surface.
+        if (feature_transforms_ && inputs.previous) {
+            animation::place(animation_, inputs.previous->time, feature_transforms_->transforms(begun.slot));
         }
     }
     encoder->setArgumentTable(resources.arguments);
