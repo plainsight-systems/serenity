@@ -73,6 +73,10 @@ add_test(NAME boundaries_fire COMMAND sh "${PROJECT_SOURCE_DIR}/tests/test_check
 add_test(NAME toolchain_fires COMMAND sh "${PROJECT_SOURCE_DIR}/tests/test_check_toolchain.sh")
 set_tests_properties(boundaries boundaries_fire PROPERTIES RESOURCE_LOCK source_tree)
 
+# The marbles' scene generator as its user runs it: the real scene byte for
+# byte by default, and generated scenes reproducible by seed.
+add_test(NAME make_marbles COMMAND python3 "${PROJECT_SOURCE_DIR}/tests/test_make_marbles.py")
+
 # The headless renderer as its user runs it: the frames it writes, their
 # names and sizes, what it prints, and its failures' status and messages.
 # On the GPU, under Metal's validation as the GPU tests are (tests/gpu).

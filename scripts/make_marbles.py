@@ -2,34 +2,103 @@
 """Writes scenes/marbles.toml: a cluster of marbles lit by fireflies.
 
     python3 scripts/make_marbles.py > scenes/marbles.toml
+    python3 scripts/make_marbles.py --seed N [--out FILE]
 
 The marbles are placed at random, none touching, from a fixed seed, so the
 same script writes the same file on any machine (Python's random.Random is
 specified to give the same sequence for the same seed). Edit the scene here,
 not in the file it writes.
+
+With no options it writes the real marbles, scenes/marbles.toml, byte for
+byte. --seed N writes generated scene N instead, for the denoiser's training
+data (docs/research/2026-10-14-denoiser-training-design.md, "The data"),
+which never trains on the real marbles: from N alone, the marbles' kinds,
+counts, sizes, colors and layout, the firefly swarms' seeds, and the
+camera's place and focus, moved about the real framing and drawn again
+until every marble is in frame. The same N writes the same file. --out FILE
+writes to FILE rather than to standard output.
 """
+import argparse
 import math
 import random
 import sys
-rng = random.Random(7)
+
+parser = argparse.ArgumentParser(description="Writes the marbles scene, or a generated one (--seed).")
+parser.add_argument("--seed", type=int, help="write generated scene SEED rather than the real marbles")
+parser.add_argument("--out", help="the file to write (default: standard output)")
+args = parser.parse_args()
+generated = args.seed is not None
+
+# The real marbles' layout seed, 7; a generated scene's own stream, keyed
+# by its seed (a string seed is hashed by SHA-512, the same on any machine).
+rng = random.Random(7 if not generated else f"marbles-{args.seed}")
 TABLE = 0.75
 CAM_Z = 0.32
 
-# (kind, count): each kind's radius range in meters
-kinds = (["clear"] * 4 + ["tint"] * 9 + ["cats"] * 9 + ["porcelain"] * 10 + ["metal"] * 4)
+# The kinds and how many of each, and the radii drawn from, in meters: the
+# real marbles' 36; a generated scene's 28 to 40, every kind present, its
+# radii scaled by 0.85 to 1.2, and its layout's spread (the mean and spread
+# in z, and the spread in x as a share of the view) moved about the real
+# one's.
+counts = {"clear": 4, "tint": 9, "cats": 9, "porcelain": 10, "metal": 4}
+radii = [0.006, 0.007, 0.008, 0.008, 0.008, 0.009, 0.0095, 0.0105, 0.0125]
+spread = (-0.06, 0.085, 0.33)
+if generated:
+    while True:
+        counts = {"clear": rng.randint(2, 6), "tint": rng.randint(4, 12), "cats": rng.randint(4, 12),
+                  "porcelain": rng.randint(5, 13), "metal": rng.randint(2, 6)}
+        if 28 <= sum(counts.values()) <= 40:
+            break
+    scale = rng.uniform(0.85, 1.2)
+    radii = [round(r * scale, 5) for r in radii]
+    spread = (rng.uniform(-0.09, -0.03), rng.uniform(0.07, 0.095), rng.uniform(0.28, 0.36))
+kinds = [kind for kind, n in counts.items() for _ in range(n)]
 rng.shuffle(kinds)
-radius_of = lambda: rng.choice([0.006, 0.007, 0.008, 0.008, 0.008, 0.009, 0.0095, 0.0105, 0.0125])
+radius_of = lambda: rng.choice(radii)
+
+# The frame a camera sees (16:9, 28 degrees high), for a generated scene's
+# marbles, each kept inside the real camera's as it is placed, and its
+# camera, drawn until it frames them all.
+FOV = 28.0
+AIM = (0.0, 0.757, -0.07)
+EYE = (0.0, 0.88, 0.3)
+
+
+def framed(position, look_at, marbles):
+    """Whether every (x, z, r) of `marbles`, whole, is inside the frame of a camera at `position` aimed at `look_at`."""
+    forward = [a - b for a, b in zip(look_at, position)]
+    forward = [v / math.hypot(*forward) for v in forward]
+    right = [-forward[2], 0.0, forward[0]]  # forward x (0, 1, 0)
+    right = [v / math.hypot(*right) for v in right]
+    up = [right[1] * forward[2] - right[2] * forward[1], right[2] * forward[0] - right[0] * forward[2],
+          right[0] * forward[1] - right[1] * forward[0]]
+    half_h = math.tan(math.radians(FOV / 2))
+    half_w = half_h * 16 / 9
+    for x, z, r in marbles:
+        v = [x - position[0], TABLE + r - position[1], z - position[2]]
+        depth = sum(a * b for a, b in zip(v, forward))
+        if depth <= 0.05:
+            return False
+        # Its center's place, and its radius seen from there, with a margin.
+        if abs(sum(a * b for a, b in zip(v, right))) + 1.2 * r > 0.92 * half_w * depth:
+            return False
+        if abs(sum(a * b for a, b in zip(v, up))) + 1.2 * r > 0.92 * half_h * depth:
+            return False
+    return True
+
 
 placed = []
 for kind in kinds:
     for attempt in range(20000):
-        r = 0.0125 if (kind == "clear" and not any(k == "clear" and rr == 0.0125 for k, _, _, rr in placed)) else radius_of()
-        z = rng.gauss(-0.06, 0.085)
+        r = radii[-1] if (kind == "clear" and not any(k == "clear" and rr == radii[-1] for k, _, _, rr in placed)) else radius_of()
+        z = rng.gauss(spread[0], spread[1])
         if not (-0.30 < z < 0.16):
             continue
         d = CAM_Z - z
-        x = rng.gauss(0.0, 0.33 * d * 0.386)
+        x = rng.gauss(0.0, spread[2] * d * 0.386)
         if abs(x) > 0.36 * d:
+            continue
+        if generated and not framed(EYE, AIM, [(x, z, r)]):
             continue
         if all(math.hypot(x - px, z - pz) > r + pr + 0.0015 for _, px, pz, pr in placed):
             placed.append((kind, x, z, r))
@@ -49,10 +118,39 @@ porcelains = [("red_porcelain", [0.6, 0.04, 0.03]), ("white_porcelain", [0.8, 0.
               ("coral_porcelain", [0.88, 0.38, 0.28]), ("black_porcelain", [0.015, 0.015, 0.018]),
               ("yellow_porcelain", [0.88, 0.7, 0.08])]
 metals = [("brass", [0.91, 0.78, 0.42], 0.05), ("steel", [0.56, 0.57, 0.58], 0.03), ("copper", [0.95, 0.64, 0.54], 0.06)]
+if generated:
+    # Which colors a scene's marbles of each kind wear, in its own order.
+    for palette in (tints, swirls, porcelains, metals):
+        rng.shuffle(palette)
 
+# The camera: the real marbles', or, for a generated scene, moved about it
+# (up to 12 degrees around its aim, 10% nearer or farther, 2 cm higher or
+# lower, the aim moved up to 2 cm on the table) and focused on its aim;
+# drawn again until every marble is inside its frame. The real camera
+# frames them all (each was placed so), so a draw near it always does.
+position, look_at, focus = list(EYE), list(AIM), 0.39
+if generated:
+    back = [e - a for e, a in zip(EYE, AIM)]
+    for attempt in range(1000):
+        turn = math.radians(rng.uniform(-12.0, 12.0))
+        reach = rng.uniform(0.9, 1.1)
+        lift = rng.uniform(-0.02, 0.02)
+        aim = [AIM[0] + rng.uniform(-0.02, 0.02), AIM[1], AIM[2] + rng.uniform(-0.02, 0.02)]
+        eye = [aim[0] + reach * (back[0] * math.cos(turn) + back[2] * math.sin(turn)),
+               aim[1] + reach * back[1] + lift,
+               aim[2] + reach * (-back[0] * math.sin(turn) + back[2] * math.cos(turn))]
+        eye, aim = [round(v, 4) for v in eye], [round(v, 4) for v in aim]
+        if framed(eye, aim, [(x, z, r) for _, x, z, r in placed]):
+            position, look_at, focus = eye, aim, round(math.dist(eye, aim), 4)
+            break
+    else:
+        sys.exit("no camera frames every marble")
+swarm_seeds = (1, 2) if not generated else (rng.randrange(1, 2 ** 31), rng.randrange(1, 2 ** 31))
+
+f = lambda v: f"{v:.4f}".rstrip("0").rstrip(".") if v != 0 else "0.0"
 out = []
 w = out.append
-w('''# The marbles at night: the scene the renderer is for (docs/process/
+real = '''# The marbles at night: the scene the renderer is for (docs/process/
 # MEMORY.md, brief: the look of NVIDIA's Marbles at Night). A cluster of
 # real marbles, 1.2 to 2.5 cm across, on a plank table, seen from 13 cm above
 # it through a lens focused on them, under a black sky, lit by fireflies
@@ -101,7 +199,24 @@ vertical_fov_degrees = 28
 # nearest and farthest soft, the fireflies beyond them soft discs.
 lens = { radius = 0.003, focus = 0.39 }
 
-[environment]
+'''
+made = f'''# Generated marbles, scene {args.seed}: written by scripts/make_marbles.py
+# --seed {args.seed}, for the denoiser's training data (docs/research/
+# 2026-10-14-denoiser-training-design.md, "The data"); never the real
+# marbles (scenes/marbles.toml), which the network is tested on. The real
+# scene's materials, table, sky and fireflies; {sum(counts.values())} marbles ({counts["clear"]} clear,
+# {counts["tint"]} tinted, {counts["cats"]} cat's-eyes, {counts["porcelain"]} porcelain, {counts["metal"]} metal); their sizes,
+# colors and layout, the swarms' seeds and the camera drawn from the seed.
+
+[camera]
+position = [{f(position[0])}, {f(position[1])}, {f(position[2])}]
+look_at = [{f(look_at[0])}, {f(look_at[1])}, {f(look_at[2])}]
+vertical_fov_degrees = 28
+# Focused on its aim, the cluster's middle.
+lens = {{ radius = 0.003, focus = {f(focus)} }}
+
+'''
+w((made if generated else real) + '''[environment]
 kind = "gradient"
 # Black: the fireflies are the only light, so the frame is black until the
 # first wakes.
@@ -208,7 +323,6 @@ material = "grass"
 ''')
 names = []
 counters = {"tint": 0, "cats": 0, "porcelain": 0, "metal": 0, "clear": 0}
-f = lambda v: f"{v:.4f}".rstrip("0").rstrip(".") if v != 0 else "0.0"
 for i, (kind, x, z, r) in enumerate(placed):
     y = TABLE + r
     c = f"[{f(x)}, {f(y)}, {f(z)}]"
@@ -244,7 +358,7 @@ openings = {
                       'linger = [10, 20] }',
                       "wake = { from = 0.5, to = 8, power = 2, ramp = 1 }"),
 }
-for material, count, seed in (("firefly_gold", 480, 1), ("firefly_white", 136, 2)):
+for (material, count), seed in zip((("firefly_gold", 480), ("firefly_white", 136)), swarm_seeds):
     start, wake = openings[material]
     w(f'''[[swarms]]
 count = {count}
@@ -268,4 +382,8 @@ seed = {seed}
 {start}
 {wake}
 ''')
-sys.stdout.write("\n".join(out))
+if args.out:
+    with open(args.out, "w", encoding="utf-8", newline="") as file:
+        file.write("\n".join(out))
+else:
+    sys.stdout.write("\n".join(out))
