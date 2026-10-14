@@ -89,6 +89,21 @@ default and provides the master separately. See
 
 ## Build and verify
 
+### Article feed
+
+`/writing/index.xml` is a complete RSS feed of the published milestone articles.
+It contains titles, short descriptions, publication dates and article URLs;
+article bodies and private source metadata are excluded. Drafts and future
+publication dates are excluded even when Hugo is run with preview flags. The
+feed comes from the same explicitly staged pages as Writing, with no second
+article registry and no item limit. The HTML shell advertises it for readers.
+
+Plainsight Systems registers this URL once and refreshes its combined writing
+index automatically. Publishing an allowlisted milestone here makes it available
+to the hub on its next refresh; do not add a separate hub entry by hand.
+
+### Commands
+
 ```sh
 # Build with hosted media for https://serenity.plainsight-systems.com/.
 python3 scripts/site.py build

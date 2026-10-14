@@ -1,0 +1,25 @@
+{{- /* Publication contract: a complete metadata-only feed of this section's
+published articles, newest first. Explicit filtering also applies to preview
+builds. Link to this edition; use its canonical URL as identity so the hub can
+deduplicate syndicated editions. No article bodies or private source metadata. */ -}}
+{{- printf "<?xml version=\"1.0\" encoding=\"utf-8\"?>" | safeHTML }}
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>{{ .Site.Title | htmlEscape | safeHTML }} · {{ .Title | htmlEscape | safeHTML }}</title>
+    <link>{{ .Permalink | htmlEscape | safeHTML }}</link>
+    <description>{{ .Description | default .Site.Params.description | htmlEscape | safeHTML }}</description>
+    <language>{{ .Site.Language.LanguageCode | htmlEscape | safeHTML }}</language>
+    {{ with .OutputFormats.Get "rss" }}<atom:link href="{{ .Permalink | htmlEscape | safeHTML }}" rel="self" type="application/rss+xml" />{{ end }}
+    {{ range .RegularPages.ByPublishDate.Reverse }}
+    {{ if and (not .Draft) (le .PublishDate now) }}
+    <item>
+      <title>{{ .Title | htmlEscape | safeHTML }}</title>
+      <link>{{ .Permalink | htmlEscape | safeHTML }}</link>
+      <guid isPermaLink="true">{{ .Params.canonicalURL | default .Permalink | htmlEscape | safeHTML }}</guid>
+      <pubDate>{{ .PublishDate.Format "Mon, 02 Jan 2006 15:04:05 -0700" }}</pubDate>
+      <description>{{ .Description | plainify | htmlEscape | safeHTML }}</description>
+    </item>
+    {{ end }}
+    {{ end }}
+  </channel>
+</rss>

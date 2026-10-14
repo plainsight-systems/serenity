@@ -239,6 +239,17 @@ Clarified by the user 2026-10-12:
   while the full download matched. It stays a separate original-file link.
   Site build, nine tests, local links, and desktop/narrow-screen review pass.
 
+## Publication feed
+
+- On 2026-10-13 Andrew approved automatic aggregation of project writing by
+  the Plainsight Systems hub. `/writing/index.xml` derives complete published
+  article metadata from the existing staged Writing pages, with no body text,
+  internal notes, drafts or future articles. RSS is advertised in the HTML head.
+  Tests exercise XML escaping, more than twenty entries, preview exclusions and
+  deployment subpaths. This adds no renderer changes or separate article list.
+  Publication uses the main-branch Pages workflow; the hub reads the public
+  feed and retains its previous article list during a source outage.
+
 ## Research
 
 `../research/README.md` is the index.

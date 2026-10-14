@@ -31,6 +31,12 @@ This file tracks active and accepted work.
 
 ## Accepted
 
+- **Publication feed for the Plainsight hub** (2026-10-13). Implemented
+  `/writing/index.xml` from staged public articles, following Andrew's approval
+  of automatic aggregation. Production build, ten site tests and independent
+  publication QA pass. Draft/future exclusion, complete archive, XML escaping
+  and deployment subpaths checked. The main-branch Pages workflow publishes it.
+
 - **Milestone 2 site and README update** (2026-10-13). Current homepage film,
   article publication, both milestone entries, per-article previews, archived
   milestone-one film, and current run instructions approved by Andrew. Six

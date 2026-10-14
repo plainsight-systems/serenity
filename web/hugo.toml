@@ -3,7 +3,7 @@ baseURL = 'https://serenity.plainsight-systems.com/'
 title = 'Serenity'
 languageCode = 'en-us'
 timeZone = 'UTC'
-disableKinds = ['taxonomy', 'term', 'RSS']
+disableKinds = ['taxonomy', 'term']
 enableRobotsTXT = true
 [params]
 description = 'Exploring GPU performance through a path tracer, with moving fireflies and an image at the end.'
@@ -13,3 +13,8 @@ startLevel = 2
 endLevel = 2
 [markup.highlight]
 style = 'github'
+
+# Only the published article section emits a feed; no About or preview pages.
+[outputs]
+home = ["HTML"]
+section = ["HTML"]

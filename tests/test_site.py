@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location('serenity_site', Path(__file__).resolve().parents[1] / 'scripts/site.py')
@@ -110,6 +111,38 @@ class SiteTests(unittest.TestCase):
         self.assertIn('https://example.invalid/serenity/images/marbles-restir-pt-mnee-10s.jpg', second)
         self.assertIn('https://example.invalid/serenity/images/marbles-opening-10s.jpg', first)
         self.assertLess(index.index('writing/milestone-2/'), index.index('writing/milestone-1/'))
+
+    def test_feed_is_complete_public_metadata_even_in_preview(self):
+        project, output, base = self.render()
+        # More than a typical feed page, plus private/future entries. These are
+        # preview-only fixtures, never publication-registry changes.
+        for number in range(25):
+            target = project / 'content/writing' / f'fixture-{number}.md'
+            target.write_text(json.dumps({'title': f'Fixture {number} & <GPU>',
+                                         'date': '2020-01-01',
+                                         'description': 'A & B < C'}) + '\nPRIVATE BODY')
+        for slug, metadata in [('draft', {'draft': True, 'date': '2020-01-01'}),
+                               ('future', {'date': '2099-01-01'}),
+                               ('scheduled', {'date': '2020-01-01', 'publishDate': '2099-01-01'})]:
+            (project / f'content/writing/{slug}.md').write_text(
+                json.dumps({'title': slug, **metadata}) + '\nPRIVATE BODY')
+        subprocess.run(['hugo', '--source', str(project), '--destination', str(output),
+                        '--baseURL', base, '--buildDrafts', '--buildFuture',
+                        '--panicOnWarning'], check=True, capture_output=True)
+        xml = (output / 'writing/index.xml').read_text()
+        entries = ET.fromstring(xml).findall('./channel/item')
+        self.assertEqual(len(entries), 27)
+        self.assertEqual(entries[0].findtext('title'), site.ARTICLES['milestone-2']['title'])
+        self.assertIn('Fixture 0 & <GPU>', [item.findtext('title') for item in entries])
+        self.assertNotIn('PRIVATE BODY', xml)
+        self.assertNotIn('/writing/draft/', xml)
+        self.assertNotIn('/writing/future/', xml)
+        self.assertNotIn('/writing/scheduled/', xml)
+        self.assertFalse((output / 'about/index.xml').exists())
+        for item in entries:
+            self.assertTrue(item.findtext('link').startswith(base + 'writing/'))
+            self.assertEqual(item.findtext('guid'), item.findtext('link'))
+        self.assertIn(base + 'writing/index.xml', (output / 'index.html').read_text())
 
     def test_unselected_article_cannot_be_published(self):
         _, output, base = self.render()

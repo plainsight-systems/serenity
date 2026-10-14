@@ -1,4 +1,5 @@
 ---
+outputs: [HTML, RSS]
 title: Writing
 description: Milestones and notes from building Serenity, a study in light and computation.
 ---

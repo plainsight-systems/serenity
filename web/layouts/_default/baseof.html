@@ -7,6 +7,7 @@ fonts, metadata, Cradle-family navigation/footer. No JavaScript or tracking. */}
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ if .IsHome }}Serenity · A study in light and computation{{ else }}{{ .Title }} · Serenity{{ end }}</title>
   <meta name="description" content="{{ .Description | default .Site.Params.description }}">
+  <link rel="alternate" type="application/rss+xml" title="Serenity articles" href="{{ "writing/index.xml" | absURL }}">
   <meta name="author" content="{{ .Site.Params.author }}">
   <link rel="canonical" href="{{ .Permalink }}">
   <meta property="og:title" content="{{ .Title }}">
