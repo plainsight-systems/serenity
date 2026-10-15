@@ -1,0 +1,244 @@
+"""Training, and OIDN's learning-rate finder.
+
+    uv run python train.py find-lr --config config.json --out RUN_DIR
+    uv run python train.py train   --config config.json --out RUN_DIR
+
+Open Image Denoise's schedule (training/train.py, config.py), where the
+design does not say otherwise: Adam; batch 16; a one-cycle learning rate,
+cosine, 15% warm-up, from max_lr / 25 up to max_lr and down to max_lr / 25e4
+(PyTorch's OneCycleLR with OIDN's div_factor and final_div_factor), stepped
+once an epoch as OIDN steps it; float32 (OIDN's default off CUDA). An epoch
+here is `crops_per_sequence` random crops of every training sequence (32 x
+39 = 1,248 sequences of 8 frames, 78 steps of 16): about the training
+frames' area once (a 1920 x 1080 target holds 31.6 crops of 256 x 256).
+
+The validation loss is computed every epoch on OIDN's fixed tiling of the
+validation sequences (data.validation_tiles: 28 tiles a sequence, 112 in
+all, no augmentation), with the same loss. The checkpoint with the lowest
+validation loss is kept as best.pt; the run's every epoch is in log.csv.
+
+Reproducible: one seed (config.json) seeds PyTorch, and each epoch's crops
+and augmentations come from numpy's generator seeded by (seed, epoch), so a
+resumed run draws what an unbroken one would. The MPS backend's own
+reductions are not promised bit-exact by PyTorch; how far two runs from
+one seed agree is measured, not assumed (docs/research/
+2026-10-15-denoiser-training.md). Each checkpoint records the config, the
+data set's manifest SHA-256, the git commit of this code and whether the
+training/ folder had uncommitted changes, and the versions.
+
+A run directory is new or a run's own: `train` resumes from last.pt if one
+is there, and refuses a directory whose config differs.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import math
+import platform
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from data import (FRAMES, Augmentation, Manifest, SplitOnDevice, augment, epoch_crops, validation_tiles)
+from loss import sequence_loss
+from model import Denoiser, Widths, macs_per_input_pixel, parameter_count
+
+HERE = Path(__file__).resolve().parent
+
+
+def load_config(path: Path) -> dict:
+    return json.loads(Path(path).read_text())
+
+
+def provenance(config: dict, manifest: Manifest) -> dict:
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=HERE, capture_output=True, text=True, check=True).stdout.strip()
+
+    return {
+        "config": config,
+        "manifest_sha256": manifest.sha256,
+        "dataset": manifest.data["dataset"],
+        "git_commit": git("rev-parse", "HEAD"),
+        "training_dir_uncommitted": git("status", "--porcelain", "--", ".").splitlines(),
+        "torch": torch.__version__,
+        "numpy": np.__version__,
+        "python": platform.python_version(),
+        "machine": platform.platform(),
+    }
+
+
+def make_batch(split: SplitOnDevice, picks, augmentations) -> tuple[torch.Tensor, torch.Tensor]:
+    inputs, targets = [], []
+    for (s, oy, ox), a in zip(picks, augmentations):
+        i, t = split.crop(s, oy, ox)
+        i, t = augment(i, t, a)
+        inputs.append(i)
+        targets.append(t)
+    return torch.stack(inputs), torch.stack(targets)
+
+
+def run_batch(model: Denoiser, inputs: torch.Tensor, targets: torch.Tensor):
+    outputs, _ = model(inputs, targets[:, :, 3:6])
+    return sequence_loss(outputs, targets[:, :, 0:3])
+
+
+def validate(model: Denoiser, split: SplitOnDevice, batch_size: int) -> tuple[float, float, float]:
+    tiles = validation_tiles(len(split))
+    model.eval()
+    totals = torch.zeros(3, device=split.inputs.device)
+    with torch.no_grad():
+        for b in range(0, len(tiles), batch_size):
+            picks = tiles[b:b + batch_size]
+            inputs, targets = make_batch(split, picks, [Augmentation.none()] * len(picks))
+            loss, parts = run_batch(model, inputs, targets)
+            totals += torch.stack((loss, parts["spatial"], parts["temporal"])) * len(picks)
+    model.train()
+    return tuple((totals / len(tiles)).tolist())
+
+
+def setup(config: dict, need_validation: bool):
+    device = torch.device(config["device"])
+    torch.manual_seed(config["seed"])
+    manifest = Manifest(Path(config["data"]))
+    t0 = time.time()
+    train = SplitOnDevice(manifest, "train", device)
+    valid = SplitOnDevice(manifest, "validation", device) if need_validation else None
+    print(f"data: {len(train)} training sequences"
+          + (f", {len(valid)} validation" if valid else "") + f", read and checked in {time.time() - t0:.0f} s",
+          flush=True)
+    model = Denoiser(Widths(**config["widths"])).to(device)
+    print(f"network: {parameter_count(model):,} parameters, "
+          f"{macs_per_input_pixel(model.widths):,.0f} multiply-adds per input pixel", flush=True)
+    return device, manifest, train, valid, model
+
+
+def find_lr(config: dict, out: Path) -> None:
+    """OIDN's find_lr.py: Adam, the learning rate raised exponentially each step from lr_min to lr_max,
+    the loss smoothed (beta 0.98, bias-corrected), stopped once it passes 4x its best."""
+    out.mkdir(parents=True, exist_ok=False)
+    device, manifest, train, _, model = setup(config, need_validation=False)
+    f = config["find_lr"]
+    steps = f["steps"]
+    optimizer = torch.optim.Adam(model.parameters(), lr=f["lr_min"])
+    gamma = (f["lr_max"] / f["lr_min"]) ** (1.0 / (steps - 1))
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
+    rng = np.random.default_rng([config["seed"], 999_999])
+    picks = epoch_crops(len(train), math.ceil(steps * config["batch_size"] / len(train)), rng)
+    rows = [("step", "learning_rate", "smoothed_loss", "loss")]
+    avg, best, beta = 0.0, math.inf, 0.98
+    bs = config["batch_size"]
+    for step in range(steps):
+        batch = picks[step * bs:(step + 1) * bs]
+        inputs, targets = make_batch(train, batch, [Augmentation.draw(rng) for _ in batch])
+        optimizer.zero_grad()
+        loss, _ = run_batch(model, inputs, targets)
+        loss.backward()
+        value = loss.item()
+        avg = beta * avg + (1 - beta) * value
+        smoothed = avg / (1 - beta ** (step + 1))
+        lr = scheduler.get_last_lr()[0]
+        rows.append((step, lr, smoothed, value))
+        print(f"find-lr {step:4d} lr {lr:.3e} loss {value:.5f} smoothed {smoothed:.5f}", flush=True)
+        if smoothed < best:
+            best = smoothed
+        elif smoothed > 4 * best or not math.isfinite(value):
+            break
+        optimizer.step()
+        scheduler.step()
+    with open(out / "find_lr.csv", "w", newline="") as fh:
+        csv.writer(fh).writerows(rows)
+    (out / "provenance.json").write_text(json.dumps(provenance(config, manifest), indent=1))
+
+
+def train(config: dict, out: Path) -> None:
+    out.mkdir(parents=True, exist_ok=True)
+    config_file = out / "config.json"
+    if config_file.exists() and load_config(config_file) != config:
+        raise SystemExit(f"{out} holds a run of another config; name a new directory")
+    config_file.write_text(json.dumps(config, indent=1))
+
+    device, manifest, train_split, valid_split, model = setup(config, need_validation=True)
+    epochs, bs = config["epochs"], config["batch_size"]
+    optimizer = torch.optim.Adam(model.parameters(), lr=1.0)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer, max_lr=config["max_lr"], total_steps=epochs, pct_start=config["lr_warmup"],
+        anneal_strategy="cos", div_factor=config["div_factor"], final_div_factor=config["final_div_factor"])
+    meta = provenance(config, manifest)
+    start, best = 1, math.inf
+    last = out / "last.pt"
+    if last.exists():
+        state = torch.load(last, map_location=device, weights_only=False)
+        model.load_state_dict(state["model"])
+        optimizer.load_state_dict(state["optimizer"])
+        scheduler.load_state_dict(state["scheduler"])
+        start, best = state["epoch"] + 1, state["best_valid"]
+        torch.manual_seed(config["seed"] + start)
+        print(f"resumed after epoch {state['epoch']}", flush=True)
+
+    log = out / "log.csv"
+    if not log.exists():
+        with open(log, "w", newline="") as fh:
+            csv.writer(fh).writerow(["epoch", "learning_rate", "train_loss", "train_spatial", "train_temporal",
+                                     "valid_loss", "valid_spatial", "valid_temporal", "seconds"])
+    for epoch in range(start, epochs + 1):
+        t0 = time.time()
+        rng = np.random.default_rng([config["seed"], epoch])
+        picks = epoch_crops(len(train_split), config["crops_per_sequence"], rng)
+        steps = len(picks) // bs
+        totals = torch.zeros(3, device=device)
+        lr = scheduler.get_last_lr()[0]
+        for step in range(steps):
+            batch = picks[step * bs:(step + 1) * bs]
+            inputs, targets = make_batch(train_split, batch, [Augmentation.draw(rng) for _ in batch])
+            optimizer.zero_grad()
+            loss, parts = run_batch(model, inputs, targets)
+            loss.backward()
+            optimizer.step()
+            totals += torch.stack((loss.detach(), parts["spatial"], parts["temporal"]))
+        scheduler.step()
+        train_loss, train_spatial, train_temporal = (totals / steps).tolist()
+        if not math.isfinite(train_loss):
+            raise SystemExit(f"epoch {epoch}: the training loss is {train_loss}; stopped")
+        valid_loss, valid_spatial, valid_temporal = validate(model, valid_split, bs)
+        seconds = time.time() - t0
+        with open(log, "a", newline="") as fh:
+            csv.writer(fh).writerow([epoch, lr, train_loss, train_spatial, train_temporal,
+                                     valid_loss, valid_spatial, valid_temporal, round(seconds, 1)])
+        improved = valid_loss < best
+        if improved:
+            best = valid_loss
+            torch.save({"model": model.state_dict(), "epoch": epoch, "valid_loss": valid_loss,
+                        "train_loss": train_loss, **meta}, out / "best.pt")
+        torch.save({"model": model.state_dict(), "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(), "epoch": epoch, "best_valid": best, **meta}, last)
+        print(f"epoch {epoch:4d}/{epochs} lr {lr:.3e} train {train_loss:.5f} valid {valid_loss:.5f} "
+              f"gap {valid_loss - train_loss:+.5f}{' best' if improved else ''} ({seconds:.0f} s)", flush=True)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Trains Serenity's denoiser (training/README.md).")
+    parser.add_argument("command", choices=["find-lr", "train"])
+    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--data", type=Path,
+                        help="the data set, if not where the config's path (relative to the config file) puts it")
+    args = parser.parse_args()
+    config = load_config(args.config)
+    # The data set's absolute path is recorded with the run; its identity is the manifest's SHA-256.
+    data = args.data if args.data else (args.config.resolve().parent / config["data"])
+    config["data"] = str(data.resolve())
+    if args.command == "find-lr":
+        find_lr(config, args.out)
+    else:
+        train(config, args.out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

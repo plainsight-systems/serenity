@@ -1,0 +1,21 @@
+# The denoiser's training toolkit (training/README.md): its own environment,
+# outside the C++ build. Nothing the renderer builds or runs depends on it.
+#
+# Pinned twice: the Python version by .python-version and requires-python,
+# every package (direct and transitive) by uv.lock, exact versions with their
+# hashes. `uv sync --locked` installs exactly the lock and refuses a lock that
+# no longer matches this file.
+
+[project]
+name = "serenity-denoiser-training"
+version = "1.0.0"
+description = "Trains Serenity's kernel-predicting denoiser on the denoiser-v1 data set"
+requires-python = "==3.12.*"
+dependencies = [
+    "torch==2.14.1",
+    "numpy==2.5.4",
+    "pillow==12.3.0",
+]
+
+[tool.uv]
+package = false
