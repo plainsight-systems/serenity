@@ -1,0 +1,14 @@
+{
+ "data": "../../serenity-data/denoiser-v1",
+ "device": "mps",
+ "seed": 20261015,
+ "widths": {"enc": [32, 48, 64, 80], "bottleneck": 96, "dec": [80, 64, 48, 32]},
+ "batch_size": 16,
+ "crops_per_sequence": 32,
+ "epochs": 300,
+ "max_lr": 0.005,
+ "lr_warmup": 0.15,
+ "div_factor": 25.0,
+ "final_div_factor": 10000.0,
+ "find_lr": {"lr_min": 1e-8, "lr_max": 0.1, "steps": 400}
+}

@@ -6,7 +6,7 @@
  "batch_size": 16,
  "crops_per_sequence": 32,
  "epochs": 300,
- "max_lr": null,
+ "max_lr": 0.005,
  "lr_warmup": 0.15,
  "div_factor": 25.0,
  "final_div_factor": 10000.0,
