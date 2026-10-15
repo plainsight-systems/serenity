@@ -29,6 +29,7 @@ target_compile_options(serenity_test_support INTERFACE
 # The tests that need no GPU: the core, and the three programs' command lines.
 add_executable(serenity_tests
     schedule_test.cpp
+    denoise_core_test.cpp
     graph_file_test.cpp
     restir_schedule_test.cpp
     restir_graph_file_test.cpp

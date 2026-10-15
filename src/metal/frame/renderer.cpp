@@ -10,10 +10,12 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "core/camera/thin_lens.h"
 #include "core/contracts/camera.h"
+#include "core/contracts/denoise.h"
 #include "core/contracts/features.h"
 #include "core/contracts/frame_constants.h"
 #include "core/contracts/light_tile.h"
@@ -22,6 +24,7 @@
 #include "core/contracts/primary_hit.h"
 #include "core/contracts/reuse_constants.h"
 #include "core/contracts/surface_record.h"
+#include "core/denoise/network.h"
 #include "core/sampling/pairing.h"
 #include "core/scene/packed_range.h"
 #include "metal/device/error.h"
@@ -54,6 +57,9 @@ static_assert(std::is_trivially_copyable_v<contracts::CameraData>);
 // to the block, not here.
 constexpr NS::UInteger max_buffers = 8;
 constexpr NS::UInteger max_textures = 4;
+// A graph with the denoise pass: it binds 7 (bindings.h, denoise's 0 to 6).
+constexpr NS::UInteger max_denoise_textures = 8;
+static_assert(bindings::denoise::radiance < max_denoise_textures);
 static_assert(bindings::path::non_finite < max_buffers);
 static_assert(bindings::tone_map::target < max_textures);
 // A ReSTIR graph's table: its passes bind up to 16 buffers (bindings.h,
@@ -67,6 +73,9 @@ constexpr NS::UInteger max_restir_pt_buffers = 28;
 // 0 to 10).
 constexpr NS::UInteger max_mnee_buffers = 11;
 static_assert(bindings::mnee::light < max_mnee_buffers);
+// A graph with the denoise pass and no ReSTIR: at least the 11 its kernels
+// bind (bindings.h, denoise's 0 to 10), as a graph with mnee has.
+static_assert(bindings::denoise::next_history < max_mnee_buffers);
 static_assert(bindings::restir_pt::mnee_header < max_restir_pt_buffers);
 static_assert(bindings::restir_initial::output < max_restir_buffers);
 static_assert(bindings::restir_temporal::last_transforms < max_restir_buffers);
@@ -103,11 +112,12 @@ void check_time(const frame::FrameInputs& inputs) {
     }
 }
 
-NS::SharedPtr<MTL4::ArgumentTable> make_argument_table(MTL::Device* device, NS::UInteger buffers) {
+NS::SharedPtr<MTL4::ArgumentTable> make_argument_table(MTL::Device* device, NS::UInteger buffers,
+                                                      NS::UInteger textures) {
     const auto pool = scoped_pool();  // Metal's error, if any, is autoreleased
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
     descriptor->setMaxBufferBindCount(buffers);
-    descriptor->setMaxTextureBindCount(max_textures);
+    descriptor->setMaxTextureBindCount(textures);
     NS::Error* error = nullptr;
     auto table = NS::TransferPtr(device->newArgumentTable(descriptor.get(), &error));
     if (!table) {
@@ -125,8 +135,11 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
       constants_(device, submission, std::vector<std::byte>(ring_slot_size), FrameArray::Copies::per_frame),
       arguments_(make_argument_table(device.handle(), schedule.restir_pt                                       ? max_restir_pt_buffers
                                                       : std::ranges::any_of(schedule.passes, reuses_samples) ? max_restir_buffers
-                                                      : schedule.mnee                                        ? max_mnee_buffers
-                                                                                                             : max_buffers)) {
+                                                      : schedule.mnee || frame::denoises(schedule)       ? max_mnee_buffers
+                                                                                                             : max_buffers,
+                                      frame::denoises(schedule) ? max_denoise_textures : max_textures)),
+      denoises_(frame::denoises(schedule)),
+      schedule_(schedule) {
     // The core decides which schedules can be carried out (principle 10).
     if (const std::optional<std::string> reason = frame::invalid(schedule)) {
         throw MetalError("Renderer: " + *reason);
@@ -158,10 +171,16 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     // feature images, which the frame before's readers read.
     const auto crosses_frames = [](frame::PassKind kind) {
         return frame::writes_radiance(kind) || frame::accumulates(kind) || reuses_samples(kind) ||
-               frame::writes_features(kind);
+               frame::writes_features(kind) || kind == frame::PassKind::denoise;
     };
     if (const auto first = std::ranges::find_if(schedule.passes, crosses_frames); first != schedule.passes.end()) {
         first_cross_frame_ = static_cast<std::size_t>(first - schedule.passes.begin());
+    }
+    // The network, read once (core/denoise/network.h); its weights go to the
+    // GPU with its pass, its widths size its buffers.
+    std::optional<denoise::Network> network;
+    if (schedule.denoise) {
+        network = denoise::load_network(schedule.denoise->weights);
     }
     steps_.reserve(schedule.passes.size());
     for (frame::PassKind kind : schedule.passes) {
@@ -220,13 +239,19 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         case frame::PassKind::features:
             steps_.push_back(Step{kind, Pass{std::in_place_type<FeaturesPass>, library_}});
             break;
+        case frame::PassKind::denoise:
+            // The schedule has its settings with its pass (frame::invalid).
+            steps_.push_back(Step{kind, Pass{std::in_place_type<DenoisePass>, device, library_, submission, *network}});
+            break;
         }
     }
     // The pass that accumulates is the one that writes radiance (the core
     // allows one of each, and path is both), and its accumulated image is
     // the frame's radiance (passes/path/path.h): no image of its own then.
+    // In a denoised graph the radiance is the denoise pass's, at the target's
+    // size, and the accumulated image the light's, at the light size.
     const FrameImages::Radiance own =
-        accumulates ? FrameImages::Radiance::accumulated : FrameImages::Radiance::image;
+        accumulates && !denoises_ ? FrameImages::Radiance::accumulated : FrameImages::Radiance::image;
     const FrameImages::Bloom bloom = schedule.tone_map ? FrameImages::Bloom::pyramid : FrameImages::Bloom::none;
     if (radiance && (own == FrameImages::Radiance::image || bloom == FrameImages::Bloom::pyramid)) {
         images_ = std::make_unique<FrameImages>(device, submission, own, bloom);
@@ -360,6 +385,23 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
                                                                     FrameArray::Copies::per_frame);
         }
     }
+
+    // The denoise pass's (renderer.h). The core has made sure the graph has
+    // the features pass and a light pass before it (frame::invalid).
+    if (denoises_) {
+        denoise_features_ = network->widths.dec[3];
+        denoise_images_ = std::make_unique<DenoiseImages>(device, submission, network->widths);
+        output_constants_ = std::make_unique<FrameArray>(device, submission, std::vector<std::byte>(ring_slot_size),
+                                                         FrameArray::Copies::per_frame);
+        denoise_constants_ = std::make_unique<FrameArray>(
+            device, submission, std::vector<std::byte>(sizeof(contracts::DenoiseConstants)),
+            FrameArray::Copies::per_frame);
+        full_features_ = std::make_unique<FeatureImages>(device, submission);
+        full_feature_constants_ = std::make_unique<FrameArray>(
+            device, submission, std::vector<std::byte>(sizeof(contracts::FeatureConstants)),
+            FrameArray::Copies::per_frame);
+        full_features_pass_ = std::make_unique<FeaturesPass>(library_);
+    }
 }
 
 Renderer::~Renderer() {
@@ -392,23 +434,30 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
         return;
     }
     prepared_.reset();
+    // Every image before the denoise pass at the light size; the target's
+    // own in a graph without it (frame::light_size).
+    const frame::Extent light = frame::light_size(schedule_, size);
     if (images_) {
         images_->prepare(size);
     }
     if (features_) {
-        features_->prepare(size);
+        features_->prepare(light);
+    }
+    if (full_features_) {
+        full_features_->prepare(size);
     }
     if (mnee_list_) {
-        mnee_list_->prepare(size);
+        mnee_list_->prepare(light);
     }
     // 0 without a temporal merge, of either family (never both in a graph).
     const std::uint64_t reused =
-        reuse_ ? reuse_->prepare(inputs, size) : path_reuse_ ? path_reuse_->prepare(inputs, size) : 0u;
+        reuse_ ? reuse_->prepare(inputs, light) : path_reuse_ ? path_reuse_->prepare(inputs, light) : 0u;
     const std::uint32_t held =
-        accumulation_ ? accumulation_->prepare(inputs, size,
+        accumulation_ ? accumulation_->prepare(inputs, light,
                                        animation::changes(animation_) ? frame::SceneMotion::changing
                                                                       : frame::SceneMotion::still) : 0u;
-    prepared_ = Prepared{inputs.index, size, held, reused};
+    const bool denoise_history = denoise_images_ ? denoise_images_->prepare(inputs, light) : false;
+    prepared_ = Prepared{inputs.index, size, held, reused, denoise_history};
 }
 
 std::uint64_t Renderer::non_finite_samples() const noexcept {
@@ -416,7 +465,8 @@ std::uint64_t Renderer::non_finite_samples() const noexcept {
 }
 
 void Renderer::read_accumulated(std::span<float> out) {
-    MTL::Texture* const image = accumulation_ ? accumulation_->texture() : nullptr;
+    MTL::Texture* const image = denoises_ ? (images_ ? images_->radiance() : nullptr)
+                                          : accumulation_ ? accumulation_->texture() : nullptr;
     if (image == nullptr) {
         throw MetalError("read_accumulated: the frame graph accumulates nothing, or no frame has made its image");
     }
@@ -463,6 +513,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
     check_time(inputs);
     std::uint32_t accumulated_frames = 0;
     std::uint64_t reused_frames = 0;
+    bool denoise_history = false;
     if (accumulation_ || images_ || reuse_ || path_reuse_ || features_) {
         if (!prepared_ || prepared_->index != inputs.index || !(prepared_->size == size)) {
             throw MetalError("Renderer::record: frame " + std::to_string(inputs.index) +
@@ -470,6 +521,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         }
         accumulated_frames = prepared_->accumulated_frames;
         reused_frames = prepared_->reused_frames;
+        denoise_history = prepared_->denoise_history;
         prepared_.reset();
     }
 
@@ -477,29 +529,40 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         throw MetalError("Renderer::record: the frame graph reads a scene, and the frame has no camera");
     }
 
-    const contracts::FrameConstants constants{
-        static_cast<float>(inputs.time.count()),
-        static_cast<std::uint32_t>(inputs.index),
-        size.width,
-        size.height,
-        accumulated_frames,
-        {0u, 0u, 0u},
+    // The passes before the denoise pass render at the light size, the
+    // target's own in a graph without it (renderer.h).
+    const frame::Extent light = frame::light_size(schedule_, size);
+    // The frame's constants and its camera framed for `at`, into `ring`'s
+    // slot; their addresses.
+    const auto write_constants = [&](FrameArray& ring, frame::Extent at) {
+        const contracts::FrameConstants constants{
+            static_cast<float>(inputs.time.count()),
+            static_cast<std::uint32_t>(inputs.index),
+            at.width,
+            at.height,
+            accumulated_frames,
+            {0u, 0u, 0u},
+        };
+        const std::span<std::byte> bytes = ring.bytes(begun.slot);
+        const MTL::GPUAddress address = ring.address(begun.slot);
+        std::memcpy(bytes.data() + constants_offset, &constants, sizeof(constants));
+        MTL::GPUAddress camera_address = 0;
+        if (inputs.camera) {
+            const contracts::CameraData camera = camera::shader_form(*inputs.camera, at);
+            std::memcpy(bytes.data() + camera_offset, &camera, sizeof(camera));
+            camera_address = address + camera_offset;
+        }
+        return std::pair{address + constants_offset, camera_address};
     };
-    const std::span<std::byte> ring = constants_.bytes(begun.slot);
-    const MTL::GPUAddress ring_address = constants_.address(begun.slot);
-    std::memcpy(ring.data() + constants_offset, &constants, sizeof(constants));
+    const auto [constants_address, camera_address] = write_constants(constants_, light);
 
     FrameResources resources{
         .arguments = arguments_.get(),
-        .constants = ring_address + constants_offset,
+        .constants = constants_address,
         .target = target,
-        .size = size,
+        .size = light,
     };
-    if (inputs.camera) {
-        const contracts::CameraData camera = camera::shader_form(*inputs.camera, size);
-        std::memcpy(ring.data() + camera_offset, &camera, sizeof(camera));
-        resources.camera = ring_address + camera_offset;
-    }
+    resources.camera = camera_address;
     if (scene_) {
         resources.scene = scene_->block_address();
         resources.transforms = transforms_->address(begun.slot);
@@ -531,7 +594,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         reuse.settings = *restir_;
         reuse.previous = previous ? 1u : 0u;
         if (previous) {
-            reuse.previous_camera = camera::shader_form(*previous_camera_, size);
+            reuse.previous_camera = camera::shader_form(*previous_camera_, light);
         }
         std::memcpy(reuse_constants_->bytes(begun.slot).data(), &reuse, sizeof(reuse));
         resources.reuse = reuse_constants_->address(begun.slot);
@@ -575,7 +638,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
             contracts::PathReuseConstants reuse{};
             reuse.previous = previous ? 1u : 0u;
             if (previous) {
-                reuse.previous_camera = camera::shader_form(*previous_camera_, size);
+                reuse.previous_camera = camera::shader_form(*previous_camera_, light);
             }
             std::memcpy(path_constants_->bytes(begun.slot).data(), &reuse, sizeof(reuse));
             resources.path_constants = path_constants_->address(begun.slot);
@@ -587,7 +650,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         contracts::FeatureConstants features{};
         features.previous = inputs.previous ? 1u : 0u;
         if (inputs.previous) {
-            features.previous_camera = camera::shader_form(inputs.previous->camera, size);
+            features.previous_camera = camera::shader_form(inputs.previous->camera, light);
         }
         std::memcpy(feature_constants_->bytes(begun.slot).data(), &features, sizeof(features));
         resources.feature_constants = feature_constants_->address(begun.slot);
@@ -630,8 +693,64 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
             animation::place(animation_, inputs.previous->time, feature_transforms_->transforms(begun.slot));
         }
     }
+    // A denoised graph's passes from the denoise pass on: at the target's
+    // size, with its constants and camera, the radiance image the denoise
+    // pass writes and the presenting pass reads; the denoise pass's own
+    // inputs; and the full-size albedo's features dispatch (renderer.h).
+    FrameResources output = resources;
+    FrameResources denoising = resources;
+    FrameResources full_features = resources;
+    if (denoises_) {
+        const auto [output_constants, output_camera] = write_constants(*output_constants_, size);
+        output.constants = output_constants;
+        output.camera = output_camera;
+        output.size = size;
+        output.radiance = images_->radiance();
+        output.accumulation = nullptr;
+
+        full_features = output;
+        contracts::FeatureConstants full{};
+        full.previous = inputs.previous ? 1u : 0u;
+        if (inputs.previous) {
+            full.previous_camera = camera::shader_form(inputs.previous->camera, size);
+        }
+        std::memcpy(full_feature_constants_->bytes(begun.slot).data(), &full, sizeof(full));
+        full_features.feature_constants = full_feature_constants_->address(begun.slot);
+        full_features.albedo = full_features_->albedo();
+        full_features.normal = full_features_->normal();
+        full_features.depth = full_features_->depth();
+        full_features.motion = full_features_->motion();
+
+        // Its constants: the view axes, the sizes, whether there is a history.
+        const camera::ViewAxes axes = camera::view_axes(*inputs.camera);
+        contracts::DenoiseConstants k{};
+        k.right = axes.right;
+        k.up = axes.up;
+        k.backward = axes.backward;
+        k.light_width = light.width;
+        k.light_height = light.height;
+        k.history = denoise_history ? 1u : 0u;
+        k.padded_width = denoise_images_->padded().width;
+        k.padded_height = denoise_images_->padded().height;
+        k.output_width = size.width;
+        k.output_height = size.height;
+        k.features = denoise_features_;
+        std::memcpy(denoise_constants_->bytes(begun.slot).data(), &k, sizeof(k));
+
+        denoising = output;
+        denoising.light_radiance = accumulation_->texture();
+        denoising.albedo = resources.albedo;
+        denoising.normal = resources.normal;
+        denoising.depth = resources.depth;
+        denoising.motion = resources.motion;
+        denoising.full_albedo = full_features_->albedo();
+        denoising.denoise_constants = denoise_constants_->address(begun.slot);
+        denoising.denoise = denoise_images_.get();
+    }
+
     encoder->setArgumentTable(resources.arguments);
     bool restir_before = false;  // whether a ReSTIR pass came before, in this frame
+    bool denoised = false;       // whether the denoise pass came before, in this frame
     for (std::size_t i = 0; i < steps_.size(); ++i) {
         const Step& step = steps_[i];
         if (i == first_cross_frame_) {
@@ -655,7 +774,15 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
             encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch,
                                                MTL4::VisibilityOptionDevice);
         }
-        std::visit([&](const auto& pass) { pass.record(encoder, resources); }, step.pass);
+        if (step.kind == frame::PassKind::denoise) {
+            // The full-size albedo first; the denoise pass's first dispatch
+            // is after a barrier of its own, as each of its dispatches is.
+            full_features_pass_->record(encoder, full_features);
+            std::visit([&](const auto& pass) { pass.record(encoder, denoising); }, step.pass);
+            denoised = true;
+            continue;
+        }
+        std::visit([&](const auto& pass) { pass.record(encoder, denoised ? output : resources); }, step.pass);
     }
     encoder->endEncoding();
     // What the next frame's temporal merge asks of this one.

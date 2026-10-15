@@ -3,7 +3,9 @@
 // Escape is pressed.
 //
 // Frames are rendered at --scale of the window's pixels, and the window's
-// layer stretches them to fill it (app/options.h).
+// layer stretches them to fill it (app/options.h). A denoised graph's light
+// is traced at half that size each way and its network, not the layer,
+// upscales it (core/frame/schedule.h, light_size).
 //
 // Each frame's inputs are the measured clock (app/clock.h), the count of
 // frames rendered, and the scene's camera, still until the camera moves; all

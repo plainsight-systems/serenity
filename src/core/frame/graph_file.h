@@ -40,6 +40,12 @@ namespace serenity::frame {
 //   visibility_age = 4            # frames, an integer in [0, 255]; (B), if reused
 //   visibility_distance = 16.0    # pixels, in [0, 127]; (B), if reused
 //
+//   [denoise]                     # exactly when a pass is denoise
+//   weights = "../../serenity-data/denoiser-v1-model/wide"
+//                                 # the exported network's directory; a
+//                                 # relative path is relative to the graph
+//                                 # file's (core/passes/denoise.h)
+//
 // (T): only in a graph with restir_temporal; (S): only with restir_spatial;
 // (B): only in a graph with either, in basic mode. The values shown are
 // the ones the graphs are written with, RTXDI's defaults.

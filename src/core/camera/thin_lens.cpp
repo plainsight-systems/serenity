@@ -112,4 +112,14 @@ contracts::CameraData shader_form(const contracts::Camera& camera, frame::Extent
     return data;
 }
 
+ViewAxes view_axes(const contracts::Camera& camera) {
+    if (const std::optional<std::string_view> reason = invalid(camera)) {
+        throw std::invalid_argument("view_axes: the camera cannot be framed: " + std::string(*reason));
+    }
+    const Vec3 forward = normalized(minus(widened(camera.look_at), widened(camera.position)));
+    const Vec3 right = normalized(cross(forward, widened(camera.up)));
+    const Vec3 up = normalized(cross(right, forward));
+    return {narrowed(right), narrowed(up), narrowed(scaled(forward, -1.0))};
+}
+
 }  // namespace serenity::camera

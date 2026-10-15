@@ -75,7 +75,10 @@ namespace serenity::headless {
 // (core/frame/history.h, accumulates): asked of one that does not, the run
 // is refused by OptionsError naming the graph, after the graph is read and
 // before anything renders or the directory is made, rather than at the
-// first frame written.
+// first frame written. In a graph with the denoise pass, that source is the
+// denoised radiance the presenting pass reads, at --size, not the light's
+// accumulated image at half of it (metal/frame/renderer.h,
+// read_accumulated).
 //
 // --features: beside each frame written, the denoiser's feature images
 // (contract 17, core/contracts/features.h) as the frame's features pass

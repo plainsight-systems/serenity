@@ -39,4 +39,15 @@ std::optional<std::string_view> invalid(const contracts::Camera& camera);
 // std::invalid_argument otherwise.
 contracts::CameraData shader_form(const contracts::Camera& camera, frame::Extent size);
 
+// The camera's view axes, each unit length: right, up, and backward
+// (toward the viewer, -forward), the axes the denoiser's network reads
+// normals in (core/contracts/denoise.h; training/regions.py, view_axes,
+// the same construction). Precondition as shader_form()'s, checked.
+struct ViewAxes {
+    contracts::Float3 right;
+    contracts::Float3 up;
+    contracts::Float3 backward;
+};
+ViewAxes view_axes(const contracts::Camera& camera);
+
 }  // namespace serenity::camera

@@ -27,9 +27,11 @@
 #include "metal/frame/frame_resources.h"
 #include "metal/film/non_finite.h"
 #include "metal/frame/accumulation.h"
+#include "metal/frame/denoise_images.h"
 #include "metal/frame/feature_images.h"
 #include "metal/frame/frame_images.h"
 #include "metal/frame/mnee_list.h"
+#include "metal/passes/denoise/denoise.h"
 #include "metal/passes/display/display.h"
 #include "metal/passes/features/features.h"
 #include "metal/passes/path/path.h"
@@ -269,6 +271,27 @@ namespace serenity::metal {
 // frame, since no pass reads what it writes. read_features() copies them
 // back.
 //
+// The denoise pass (core/frame/schedule.h; passes/denoise/denoise.h). A
+// graph with it renders at two sizes (frame::light_size): every pass before
+// it at the light size, half the target's each way, rounded up, and the
+// denoise and presenting passes at the target's. At construction it gets
+// the network, read from the graph's weights (core/denoise/network.h);
+// DenoiseImages, made by prepare() at the light size and asked whether the
+// frame has a history (denoise_images.h); a second ring of frame constants
+// and camera, framed at the target's size, beside the first, which is then
+// framed at the light size; a ring of its constants (contract 18, 80
+// bytes a frame: the camera's view axes, the sizes, whether there is a
+// history); and the full-size albedo it remodulates by: a second
+// FeatureImages at the target's size and a second ring of feature
+// constants, written by the features kernel dispatched again at the
+// target's size, as the training's full-size albedo was rendered (docs/
+// research/2026-10-14-denoiser-features.md), recorded as part of the
+// denoise step. Its accumulated image, ReSTIR's arrays, MNEE's list and
+// the features are at the light size; the radiance image and the bloom
+// pyramid at the target's, the radiance image the denoise pass's output,
+// not the accumulated image. Its argument table holds 8 textures. A graph
+// without it renders as it did: one size, one ring, the same bindings.
+//
 // Cost of recording a ReSTIR frame, on the CPU, beyond the above: 128 bytes
 // of reuse constants, four pipeline binds and dispatches with their
 // argument-table entries (two of each without the merges); with a temporal merge, one more animation of
@@ -330,7 +353,9 @@ public:
 
     // The accumulated image's floats into `out`, RGBA a pixel, rows top to
     // bottom: what the passes read, at full precision, for a test or tool
-    // that compares images below what 8 bits a channel can show. A readback
+    // that compares images below what 8 bits a channel can show. In a graph
+    // with the denoise pass, its radiance image instead: what the
+    // presenting pass reads, at the target's size. A readback
     // (GPU.1), not for a frame loop: it waits for its copy. The frames it
     // reads must have completed (Submission::wait_until_complete). Throws
     // MetalError if the graph has no accumulated image, no frame has made it
@@ -348,7 +373,7 @@ private:
     using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass, RestirInitialPass,
                               RestirTemporalPass, RestirSpatialPass, RestirShadePass, RestirPtInitialPass,
                               RestirPtTemporalPass, RestirPtSpatialPass, RestirPtShadePass,
-                              RestirPtDuplicationPass, FeaturesPass>;
+                              RestirPtDuplicationPass, FeaturesPass, DenoisePass>;
 
     // A pass of the schedule, with its kind (C.1).
     struct Step {
@@ -362,6 +387,7 @@ private:
         frame::Extent size;
         std::uint32_t accumulated_frames = 0;
         std::uint64_t reused_frames = 0;  // the reuse history's frames before this one
+        bool denoise_history = false;     // the denoiser reads last frame's output
     };
 
     Submission& submission_;
@@ -395,6 +421,18 @@ private:
     std::unique_ptr<FeatureImages> features_;
     std::unique_ptr<FrameArray> feature_constants_;
     std::unique_ptr<ShapeTransforms> feature_transforms_;
+    // The denoise pass's (above): the light size's rule, its buffers, the
+    // target-size ring, its constants' ring, and the full-size albedo's
+    // images, constants and kernel. None without the pass.
+    bool denoises_ = false;
+    frame::Schedule schedule_;  // for light_size()
+    std::uint32_t denoise_features_ = 0;  // the network's last width
+    std::unique_ptr<DenoiseImages> denoise_images_;
+    std::unique_ptr<FrameArray> output_constants_;
+    std::unique_ptr<FrameArray> denoise_constants_;
+    std::unique_ptr<FeatureImages> full_features_;
+    std::unique_ptr<FrameArray> full_feature_constants_;
+    std::unique_ptr<FeaturesPass> full_features_pass_;
     // A temporal graph's last frame (above): its transforms and glows,
     // animated at its time each frame, only when the scene changes (a still
     // scene's one copy is last frame's too); and the camera and time the

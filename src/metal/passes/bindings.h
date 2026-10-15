@@ -217,5 +217,30 @@ enum Buffer : unsigned {
 enum Texture : unsigned { albedo = 0, normal = 1, depth = 2, motion = 3 };
 }  // namespace features
 
+// The denoise pass's kernels (passes/denoise/denoise.h), one layout for all
+// of them, each taking what it reads: its constants (contract 18's
+// DenoiseConstants) and a dispatch's ConvParams or ResampleParams; the
+// buffer it reads, the weights and biases, and the buffer it writes; the
+// depth median's histogram and state; the demodulated light; last frame's
+// output and this frame's. Its textures: the light pass's accumulated
+// image and the four features at the light size, the full-size albedo, and
+// the radiance image it writes.
+namespace denoise {
+enum Buffer : unsigned {
+    constants = 0,
+    params = 1,
+    input = 2,
+    weights = 3,
+    bias = 4,
+    output = 5,
+    histogram = 6,
+    median = 7,
+    demod = 8,
+    history = 9,
+    next_history = 10,
+};
+enum Texture : unsigned { light = 0, albedo = 1, normal = 2, depth = 3, motion = 4, full_albedo = 5, radiance = 6 };
+}  // namespace denoise
+
 }  // namespace bindings
 }  // namespace serenity

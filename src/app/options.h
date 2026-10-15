@@ -26,7 +26,12 @@ namespace serenity::app {
 // fewer pixels to render, for interactivity, and nothing else. It is not
 // upscaling in the frame graph's sense: no pass runs and no history is
 // kept. The GPU time the title shows is the frame's, at the size rendered;
-// the stretch is the layer's, outside it.
+// the stretch is the layer's, outside it. A graph with the denoise pass
+// (graphs/restir_pt_denoised.toml) needs no scale to render fewer pixels:
+// at the default 1 its light is traced at half the window's size each way
+// and its network upscales to every pixel of the window (core/frame/
+// schedule.h, light_size); a scale below 1 applies on top, the network
+// then upscaling to the scaled size and the layer stretching that.
 //
 // parse() throws OptionsError naming the argument for an unknown option, a
 // missing or malformed value, a scale outside (0, 1], or a missing --graph

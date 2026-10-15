@@ -11,6 +11,8 @@
 #include <string>
 #include <string_view>
 
+#include "core/contracts/denoise.h"
+
 namespace serenity::frame {
 
 namespace {
@@ -19,12 +21,13 @@ namespace {
 // through. The switches below cover every kind (-Wswitch); this list is
 // held to the enum's final kind, PassKind::last, so a kind left out of it
 // fails to compile (schedule.h).
-constexpr std::array<PassKind, 15> kinds = {
+constexpr std::array<PassKind, 16> kinds = {
     PassKind::test_pattern,      PassKind::preview,           PassKind::path,
     PassKind::display,           PassKind::tone_map,          PassKind::restir_initial,
     PassKind::restir_temporal,   PassKind::restir_spatial,    PassKind::restir_shade,
     PassKind::restir_pt_initial, PassKind::restir_pt_temporal, PassKind::restir_pt_spatial,
-    PassKind::restir_pt_shade,   PassKind::restir_pt_duplication, PassKind::features};
+    PassKind::restir_pt_shade,   PassKind::restir_pt_duplication, PassKind::features,
+    PassKind::denoise};
 static_assert(kinds.size() == static_cast<std::size_t>(PassKind::last) + 1,
               "every PassKind is in `kinds`, in declaration order");
 static_assert(kinds.back() == PassKind::last, "the last PassKind is last in `kinds`");
@@ -79,6 +82,8 @@ std::string_view name(PassKind kind) {
         return "restir_pt_duplication";
     case PassKind::features:
         return "features";
+    case PassKind::denoise:
+        return "denoise";
     }
     no_case("name");
 }
@@ -102,6 +107,7 @@ bool needs_scene(PassKind kind) {
     case PassKind::restir_pt_shade:
     case PassKind::restir_pt_duplication:
     case PassKind::features:
+    case PassKind::denoise:  // traces the full-size albedo it remodulates by (metal/frame/renderer.h)
         return true;
     }
     no_case("needs_scene");
@@ -122,6 +128,7 @@ bool accumulates(PassKind kind) {
     case PassKind::restir_pt_spatial:
     case PassKind::restir_pt_duplication:
     case PassKind::features:
+    case PassKind::denoise:
         return false;
     case PassKind::path:
     case PassKind::restir_shade:     // folds its pixels into the accumulated image, as path does
@@ -145,6 +152,7 @@ bool writes_radiance(PassKind kind) {
     case PassKind::restir_pt_spatial:
     case PassKind::restir_pt_duplication:
     case PassKind::features:
+    case PassKind::denoise:  // the frame's radiance at the output size, not a light pass's (schedule.h)
         return false;
     case PassKind::preview:
     case PassKind::path:
@@ -174,6 +182,7 @@ bool reads_radiance(PassKind kind) {
         return false;
     case PassKind::display:
     case PassKind::tone_map:
+    case PassKind::denoise:
         return true;
     }
     no_case("reads_radiance");
@@ -194,6 +203,7 @@ bool writes_target(PassKind kind) {
     case PassKind::restir_pt_shade:
     case PassKind::restir_pt_duplication:
     case PassKind::features:
+    case PassKind::denoise:
         return false;
     case PassKind::test_pattern:
     case PassKind::display:
@@ -221,6 +231,7 @@ bool is_restir(PassKind kind) {
     case PassKind::restir_pt_shade:
     case PassKind::restir_pt_duplication:
     case PassKind::features:
+    case PassKind::denoise:
         return false;
     case PassKind::restir_initial:
     case PassKind::restir_temporal:
@@ -243,6 +254,7 @@ bool is_restir_pt(PassKind kind) {
     case PassKind::restir_spatial:
     case PassKind::restir_shade:
     case PassKind::features:
+    case PassKind::denoise:
         return false;
     case PassKind::restir_pt_initial:
     case PassKind::restir_pt_temporal:
@@ -398,6 +410,33 @@ std::optional<std::string> restir_pt_broken(const std::vector<PassKind>& passes)
     if (has(PassKind::restir_pt_duplication) && !has(PassKind::restir_pt_temporal)) {
         return "the frame graph has restir_pt_duplication without restir_pt_temporal; the duplication map lowers "
                "the temporal reuse's cap, and serves nothing else";
+    }
+    return std::nullopt;
+}
+
+// The denoise pass at most once, after the features pass and an
+// accumulating light pass, and directly before the presenting pass, the
+// last (schedule.h). That a light pass computes radiance before any pass
+// reads it is radiance_broken()'s.
+std::optional<std::string> denoise_broken(const std::vector<PassKind>& passes) {
+    const auto at = std::ranges::find(passes, PassKind::denoise);
+    if (at == passes.end()) {
+        return std::nullopt;
+    }
+    if (std::ranges::count(passes, PassKind::denoise) > 1) {
+        return "the frame graph has denoise more than once; a frame is denoised once";
+    }
+    const auto before = [&](auto is) { return std::any_of(passes.begin(), at, is); };
+    if (!before([](PassKind kind) { return writes_features(kind); })) {
+        return "the frame graph's denoise pass reads the feature images, and no features pass comes before it";
+    }
+    if (!before([](PassKind kind) { return writes_radiance(kind) && accumulates(kind); })) {
+        return "the frame graph's denoise pass reads the light as an accumulated image, and no light pass that "
+               "accumulates (path, restir_shade, restir_pt_shade) comes before it";
+    }
+    if (passes.end() - at != 2 || !writes_target(passes.back())) {
+        return "the frame graph's denoise pass writes the radiance its presenting pass shows at the output size, "
+               "so it must come directly before that pass, the last";
     }
     return std::nullopt;
 }
@@ -566,7 +605,8 @@ std::optional<std::string> invalid(const Schedule& schedule) {
         return "the frame graph has no passes";
     }
     for (const auto broken :
-         {accumulation_broken, presentation_broken, radiance_broken, restir_pt_broken, restir_broken}) {
+         {accumulation_broken, presentation_broken, radiance_broken, restir_pt_broken, restir_broken,
+          denoise_broken}) {
         if (std::optional<std::string> reason = broken(passes)) {
             return reason;
         }
@@ -598,6 +638,17 @@ std::optional<std::string> invalid(const Schedule& schedule) {
         if (std::optional<std::string> reason = invalid(*schedule.restir_di, passes)) {
             return reason;
         }
+    }
+
+    const bool denoising = std::ranges::find(passes, PassKind::denoise) != passes.end();
+    if (denoising && !schedule.denoise) {
+        return "the frame graph has a denoise pass and no [denoise] settings";
+    }
+    if (!denoising && schedule.denoise) {
+        return "the frame graph has [denoise] settings and no denoise pass";
+    }
+    if (schedule.denoise && schedule.denoise->weights.empty()) {
+        return "the denoiser's weights name no directory";
     }
 
     const bool restir_pt = std::ranges::any_of(passes, [](PassKind kind) { return is_restir_pt(kind); });
@@ -720,8 +771,22 @@ bool writes_features(const Schedule& schedule) {
 
 bool reuses_history(const Schedule& schedule) {
     return std::ranges::any_of(schedule.passes, [](PassKind kind) {
-        return kind == PassKind::restir_temporal || kind == PassKind::restir_pt_temporal;
+        return kind == PassKind::restir_temporal || kind == PassKind::restir_pt_temporal || kind == PassKind::denoise;
     });
+}
+
+bool denoises(const Schedule& schedule) {
+    return std::ranges::find(schedule.passes, PassKind::denoise) != schedule.passes.end();
+}
+
+Extent light_size(const Schedule& schedule, Extent output) {
+    if (!denoises(schedule)) {
+        return output;
+    }
+    const auto halved = [](std::uint32_t side) {
+        return side / contracts::denoise_scale + (side % contracts::denoise_scale != 0 ? 1u : 0u);
+    };
+    return {halved(output.width), halved(output.height)};
 }
 
 }  // namespace serenity::frame

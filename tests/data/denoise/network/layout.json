@@ -1,0 +1,511 @@
+{
+ "format": "serenity-denoiser-weights/1",
+ "dtype": "float32",
+ "byte_order": "little",
+ "tensor_order": "PyTorch: conv weight [out][in][ky][kx], bias [out]",
+ "tensors": [
+  {
+   "name": "unet.enc.0.weight",
+   "shape": [
+    8,
+    28,
+    3,
+    3
+   ],
+   "offset": 0,
+   "count": 2016
+  },
+  {
+   "name": "unet.enc.0.bias",
+   "shape": [
+    8
+   ],
+   "offset": 8064,
+   "count": 8
+  },
+  {
+   "name": "unet.enc.1.weight",
+   "shape": [
+    16,
+    8,
+    3,
+    3
+   ],
+   "offset": 8096,
+   "count": 1152
+  },
+  {
+   "name": "unet.enc.1.bias",
+   "shape": [
+    16
+   ],
+   "offset": 12704,
+   "count": 16
+  },
+  {
+   "name": "unet.enc.2.weight",
+   "shape": [
+    24,
+    16,
+    3,
+    3
+   ],
+   "offset": 12768,
+   "count": 3456
+  },
+  {
+   "name": "unet.enc.2.bias",
+   "shape": [
+    24
+   ],
+   "offset": 26592,
+   "count": 24
+  },
+  {
+   "name": "unet.enc.3.weight",
+   "shape": [
+    32,
+    24,
+    3,
+    3
+   ],
+   "offset": 26688,
+   "count": 6912
+  },
+  {
+   "name": "unet.enc.3.bias",
+   "shape": [
+    32
+   ],
+   "offset": 54336,
+   "count": 32
+  },
+  {
+   "name": "unet.bottleneck_a.weight",
+   "shape": [
+    40,
+    32,
+    3,
+    3
+   ],
+   "offset": 54464,
+   "count": 11520
+  },
+  {
+   "name": "unet.bottleneck_a.bias",
+   "shape": [
+    40
+   ],
+   "offset": 100544,
+   "count": 40
+  },
+  {
+   "name": "unet.bottleneck_b.weight",
+   "shape": [
+    40,
+    40,
+    3,
+    3
+   ],
+   "offset": 100704,
+   "count": 14400
+  },
+  {
+   "name": "unet.bottleneck_b.bias",
+   "shape": [
+    40
+   ],
+   "offset": 158304,
+   "count": 40
+  },
+  {
+   "name": "unet.dec.0.weight",
+   "shape": [
+    32,
+    72,
+    3,
+    3
+   ],
+   "offset": 158464,
+   "count": 20736
+  },
+  {
+   "name": "unet.dec.0.bias",
+   "shape": [
+    32
+   ],
+   "offset": 241408,
+   "count": 32
+  },
+  {
+   "name": "unet.dec.1.weight",
+   "shape": [
+    24,
+    56,
+    3,
+    3
+   ],
+   "offset": 241536,
+   "count": 12096
+  },
+  {
+   "name": "unet.dec.1.bias",
+   "shape": [
+    24
+   ],
+   "offset": 289920,
+   "count": 24
+  },
+  {
+   "name": "unet.dec.2.weight",
+   "shape": [
+    16,
+    40,
+    3,
+    3
+   ],
+   "offset": 290016,
+   "count": 5760
+  },
+  {
+   "name": "unet.dec.2.bias",
+   "shape": [
+    16
+   ],
+   "offset": 313056,
+   "count": 16
+  },
+  {
+   "name": "unet.dec.3.weight",
+   "shape": [
+    8,
+    24,
+    3,
+    3
+   ],
+   "offset": 313120,
+   "count": 1728
+  },
+  {
+   "name": "unet.dec.3.bias",
+   "shape": [
+    8
+   ],
+   "offset": 320032,
+   "count": 8
+  },
+  {
+   "name": "unet.dec_final.weight",
+   "shape": [
+    8,
+    8,
+    3,
+    3
+   ],
+   "offset": 320064,
+   "count": 576
+  },
+  {
+   "name": "unet.dec_final.bias",
+   "shape": [
+    8
+   ],
+   "offset": 322368,
+   "count": 8
+  },
+  {
+   "name": "unet.head.weight",
+   "shape": [
+    124,
+    8,
+    1,
+    1
+   ],
+   "offset": 322400,
+   "count": 992
+  },
+  {
+   "name": "unet.head.bias",
+   "shape": [
+    124
+   ],
+   "offset": 326368,
+   "count": 124
+  }
+ ],
+ "padding": "3x3 convolutions zero-pad by 1; levels are 1, 1/2, 1/4, 1/8, 1/16 of the input size each way; the input is zero-padded to a multiple of 16 (960 x 540 -> 960 x 544)",
+ "structure": [
+  {
+   "op": "conv3x3_relu",
+   "weights": "unet.enc.0",
+   "level": 0,
+   "in": 28,
+   "out": 8,
+   "keep_as_skip": 0
+  },
+  {
+   "op": "maxpool2x2",
+   "level": 0
+  },
+  {
+   "op": "conv3x3_relu",
+   "weights": "unet.enc.1",
+   "level": 1,
+   "in": 8,
+   "out": 16,
+   "keep_as_skip": 1
+  },
+  {
+   "op": "maxpool2x2",
+   "level": 1
+  },
+  {
+   "op": "conv3x3_relu",
+   "weights": "unet.enc.2",
+   "level": 2,
+   "in": 16,
+   "out": 24,
+   "keep_as_skip": 2
+  },
+  {
+   "op": "maxpool2x2",
+   "level": 2
+  },
+  {
+   "op": "conv3x3_relu",
+   "weights": "unet.enc.3",
+   "level": 3,
+   "in": 24,
+   "out": 32,
+   "keep_as_skip": 3
+  },
+  {
+   "op": "maxpool2x2",
+   "level": 3
+  },
+  {
+   "op": "conv3x3_relu",
+   "weights": "unet.bottleneck_a",
+   "level": 4,
+   "in": 32,
+   "out": 40
+  },
+  {
+   "op": "conv3x3_relu",
+   "weights": "unet.bottleneck_b",
+   "level": 4,
+   "in": 40,
+   "out": 40
+  },
+  {
+   "op": "upsample_nearest2x",
+   "level": 3
+  },
+  {
+   "op": "concat",
+   "order": [
+    "upsampled",
+    "skip 3"
+   ],
+   "channels": 72
+  },
+  {
+   "op": "conv3x3_relu",
+   "weights": "unet.dec.0",
+   "level": 3,
+   "in": 72,
+   "out": 32
+  },
+  {
+   "op": "upsample_nearest2x",
+   "level": 2
+  },
+  {
+   "op": "concat",
+   "order": [
+    "upsampled",
+    "skip 2"
+   ],
+   "channels": 56
+  },
+  {
+   "op": "conv3x3_relu",
+   "weights": "unet.dec.1",
+   "level": 2,
+   "in": 56,
+   "out": 24
+  },
+  {
+   "op": "upsample_nearest2x",
+   "level": 1
+  },
+  {
+   "op": "concat",
+   "order": [
+    "upsampled",
+    "skip 1"
+   ],
+   "channels": 40
+  },
+  {
+   "op": "conv3x3_relu",
+   "weights": "unet.dec.2",
+   "level": 1,
+   "in": 40,
+   "out": 16
+  },
+  {
+   "op": "upsample_nearest2x",
+   "level": 0
+  },
+  {
+   "op": "concat",
+   "order": [
+    "upsampled",
+    "skip 0"
+   ],
+   "channels": 24
+  },
+  {
+   "op": "conv3x3_relu",
+   "weights": "unet.dec.3",
+   "level": 0,
+   "in": 24,
+   "out": 8
+  },
+  {
+   "op": "conv3x3_relu",
+   "weights": "unet.dec_final",
+   "level": 0,
+   "in": 8,
+   "out": 8
+  },
+  {
+   "op": "conv1x1",
+   "weights": "unet.head",
+   "level": 0,
+   "in": 8,
+   "out": 124,
+   "no_relu": true
+  }
+ ],
+ "input_size": [
+  960,
+  540
+ ],
+ "output_scale": 2,
+ "inputs": {
+  "channels": 28,
+  "order": [
+   {
+    "channels": [
+     0,
+     3
+    ],
+    "what": "pu(demod)",
+    "demod": "radiance / (floor + (1 - floor) clamp(albedo, 0, 1))"
+   },
+   {
+    "channels": [
+     3,
+     6
+    ],
+    "what": "albedo, clamped to [0, 1]"
+   },
+   {
+    "channels": [
+     6,
+     9
+    ],
+    "what": "shading normal in view space (right, up, backward): dot(n, axis) for the camera's unit right, up and -forward axes; sky (0, 0, 0)"
+   },
+   {
+    "channels": [
+     9,
+     10
+    ],
+    "what": "log(1 + z / median z over the frame's pixels with z > 0); 0 where z = 0"
+   },
+   {
+    "channels": [
+     10,
+     12
+    ],
+    "what": "motion dx, dy in input pixels, NRD IN_MV (old = new + MV)"
+   },
+   {
+    "channels": [
+     12,
+     24
+    ],
+    "what": "pixel_unshuffle(pu(moved history), 2): channel 12 + c * 4 + dy * 2 + dx is color c of output pixel (2y + dy, 2x + dx)"
+   },
+   {
+    "channels": [
+     24,
+     28
+    ],
+    "what": "pixel_unshuffle(history validity, 2), same order"
+   }
+  ],
+  "albedo_floor": 0.02,
+  "pu": {
+   "y0": 1.5794576e-06,
+   "y1": 0.0322087631,
+   "a": 1412.83765,
+   "b": 1.64593172,
+   "c": 0.431384981,
+   "d": -0.00294139609,
+   "e": 0.192653254,
+   "f": 0.00626026094,
+   "g": 0.998620152,
+   "norm_scale": 0.31896715517604124,
+   "hdr_y_max": 65504.0,
+   "formula": "y <= y0: a y; y <= y1: b y^c + d; else: e log(y + f) + g; times norm_scale; y clamped >= 0"
+  }
+ },
+ "scores": {
+  "channels": 124,
+  "order": "head channel k * 4 + dy * 2 + dx is score k of output pixel (2y + dy, 2x + dx)",
+  "k": {
+   "0..26": "taps: k = spacing_index * 9 + (j + 1) * 3 + (i + 1) for the tap at input pixel (x + s i, y + s j), s in spacings, i, j in -1, 0, 1",
+   "27..29": "one weight per spacing",
+   "30": "history blend"
+  },
+  "spacings": [
+   1,
+   2,
+   4
+  ],
+  "masked_tap_score": -10000.0
+ },
+ "output": [
+  "per spacing: softmax over its 9 tap scores (a tap outside the image scored as masked_tap_score); filtered_s = sum of weight x demod at the tap",
+  "filtered = sum over spacings of softmax(spacing scores)_s x filtered_s",
+  "history: last frame's demod_out read bilinearly (clamped to edge) at the output pixel's center + 2 MV of input pixel (x / 2, y / 2); valid = that point inside the frame; on the first frame valid = 0, history 0",
+  "alpha = sigmoid(history score) x valid; demod_out = alpha history + (1 - alpha) filtered (kept for the next frame)",
+  "radiance = demod_out x (floor + (1 - floor) clamp(full-size albedo, 0, 1))"
+ ],
+ "provenance": {
+  "epoch": 0,
+  "valid_loss": 0.0,
+  "git_commit": "none"
+ },
+ "config": {
+  "widths": {
+   "enc": [
+    8,
+    16,
+    24,
+    32
+   ],
+   "bottleneck": 40,
+   "dec": [
+    32,
+    24,
+    16,
+    8
+   ]
+  }
+ }
+}

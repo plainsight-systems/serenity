@@ -7,6 +7,8 @@
 #include <string_view>
 #include <vector>
 
+#include "core/frame/extent.h"
+#include "core/passes/denoise.h"
 #include "core/passes/restir_di.h"
 #include "core/passes/restir_pt.h"
 #include "core/passes/tone_map.h"
@@ -147,6 +149,27 @@ namespace serenity::frame {
 // (headless/options.h, --features). A window refuses it, having nothing to
 // show (app/main.cpp).
 //
+// The denoiser (contract 18, core/contracts/denoise.h; docs/research/
+// 2026-10-15-denoiser-live.md) is one pass:
+//
+//   denoise  Milestone 3's trained network: reads the radiance the light
+//            pass wrote and the feature images, at the light size, and
+//            writes the frame's radiance at the output size, which the
+//            presenting pass after it reads. Keeps its own output as the
+//            next frame's history.
+//
+// A graph with it renders at two sizes: every pass before it at the light
+// size, the output's halved each way and rounded up (light_size()), the
+// denoise pass and the presenting pass at the output's. So the window's
+// light is traced at a quarter of its pixels and the network, not the
+// window's layer, upscales it. Its rules (invalid()): at most once; after
+// the features pass and after a light pass that accumulates (its light is
+// the accumulated image, the frame's mean); followed by the presenting
+// pass alone, directly; and [denoise] settings exactly with it. Its output
+// feeds the next frame, so a graph with it reuses history (reuses_history),
+// started over as ReSTIR's is: at a history's first frame and when the
+// size changes.
+//
 // An estimator is a graph (logical-overview.md, principle 4: estimators are
 // interchangeable over the same scene):
 //
@@ -181,7 +204,8 @@ enum class PassKind {
     restir_pt_shade,        // ReSTIR PT's light into the accumulated image; accumulates; writes radiance
     restir_pt_duplication,  // ReSTIR PT's duplication map, for the next frame's temporal reuse
     features,               // the denoiser's albedo, normal, depth and motion (contract 17); needs a scene
-    last = features,
+    denoise,                // the trained network: light and features in, radiance at twice the size out
+    last = denoise,
 };
 
 // Whether a pass of `kind` reads the scene. A frame graph with such a pass
@@ -226,19 +250,33 @@ struct Schedule {
     // which a graph that sets it must have; off unless written, so the path
     // tracer every estimator is measured against stays the one it was.
     bool mnee = false;
+    // The denoiser's settings: present exactly when the schedule has its
+    // pass (core/passes/denoise.h). Last, so the members before keep their
+    // places.
+    std::optional<passes::Denoise> denoise = std::nullopt;
 };
 
 // Whether any pass of `schedule` accumulates: whether its frames build on
 // the frames before them (frame/history.h).
 bool accumulates(const Schedule& schedule);
 
-// Whether `schedule` has restir_temporal or restir_pt_temporal: whether its
+// Whether `schedule` has restir_temporal, restir_pt_temporal or denoise: whether its
 // frames build on the reservoirs and surface records (or primary hits) of
 // the frames before them, since its reuse history started (frame/history.h,
 // ReuseHistory). Apart from
 // accumulates(): a changing scene starts the accumulated image over every
 // frame, and keeps its reuse history.
 bool reuses_history(const Schedule& schedule);
+
+// Whether `schedule` has the denoise pass, and so renders its light at
+// light_size().
+bool denoises(const Schedule& schedule);
+
+// The size every pass before the denoise pass renders at, for a frame whose
+// output is `output`: the output's, halved each way and rounded up
+// (contracts::denoise_scale), in a graph with the denoise pass; the
+// output's own in every other graph.
+Extent light_size(const Schedule& schedule, Extent output);
 
 // Whether `schedule` has a pass that writes the target: every graph but
 // the features pass alone (above), which a window refuses.
@@ -273,7 +311,8 @@ bool writes_features(const Schedule& schedule);
 //   - ReSTIR PT's passes likewise (above), never beside ReSTIR DI's, and
 //     its settings exactly with its passes, in range
 //     (core/contracts/path_reuse_settings.h);
-//   - mnee set only beside a pass that reads it: path, or ReSTIR PT's.
+//   - mnee set only beside a pass that reads it: path, or ReSTIR PT's;
+//   - the denoise pass's rules (above), and its settings exactly with it.
 //
 // None if `schedule` is valid; otherwise why not, in words a reader of the
 // frame graph file can act on. The graph reader refuses an invalid schedule

@@ -30,6 +30,7 @@ add_executable(serenity_gpu_tests
     lifetime_test.cpp
     frame_errors_test.cpp
     headless_pfm_test.cpp
+    denoise_test.cpp
     ../main_test.cpp
 )
 target_link_libraries(serenity_gpu_tests PRIVATE serenity_metal serenity_test_support)
@@ -66,3 +67,10 @@ serenity_add_metallib(
 add_test(NAME serenity_gpu_tests COMMAND serenity_gpu_tests)
 set_tests_properties(serenity_gpu_tests PROPERTIES
     ENVIRONMENT "MTL_DEBUG_LAYER=1;MTL_SHADER_VALIDATION=1;MTL_DEBUG_LAYER_ERROR_MODE=assert")
+
+# The denoiser against PyTorch on a real network's frames, beside the checkout
+# (denoise_check.cpp says how): a tool, not a ctest test.
+add_executable(denoise_check denoise_check.cpp)
+target_link_libraries(denoise_check PRIVATE serenity_metal serenity_test_support)
+# The shaders' library header, generated beside the probes' (cmake/MetalLibrary.cmake).
+target_include_directories(denoise_check PRIVATE "${CMAKE_BINARY_DIR}/generated")

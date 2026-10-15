@@ -10,5 +10,7 @@ namespace serenity::tests {
 
 inline const std::filesystem::path scenes_dir{"@PROJECT_SOURCE_DIR@/scenes"};
 inline const std::filesystem::path graphs_dir{"@PROJECT_SOURCE_DIR@/graphs"};
+// Fixtures the tests read, each saying what made it (tests/data/).
+inline const std::filesystem::path data_dir{"@PROJECT_SOURCE_DIR@/tests/data"};
 
 }  // namespace serenity::tests

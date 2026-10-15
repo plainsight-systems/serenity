@@ -28,6 +28,8 @@ namespace serenity::metal {
 // (I.4).
 enum class ReservoirOutput { working, final };
 
+class DenoiseImages;  // denoise_images.h
+
 struct FrameResources {
     MTL4::ArgumentTable* arguments = nullptr;
     MTL::GPUAddress constants = 0;  // the frame's contracts::FrameConstants
@@ -129,6 +131,18 @@ struct FrameResources {
     MTL::Texture* normal = nullptr;
     MTL::Texture* depth = nullptr;
     MTL::Texture* motion = nullptr;
+
+    // With the denoise pass (core/frame/schedule.h; passes/denoise/
+    // denoise.h), given to it alone: the light pass's accumulated image, at
+    // the light size, beside the feature images above, at the same size;
+    // the full-size albedo it remodulates by; its constants (contract 18's
+    // DenoiseConstants) and its buffers (denoise_images.h). The radiance
+    // image above is then the one it writes, at the output size. Null and 0
+    // otherwise.
+    MTL::Texture* light_radiance = nullptr;
+    MTL::Texture* full_albedo = nullptr;
+    MTL::GPUAddress denoise_constants = 0;
+    const DenoiseImages* denoise = nullptr;
 };
 
 }  // namespace serenity::metal

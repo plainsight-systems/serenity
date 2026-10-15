@@ -383,7 +383,7 @@ passes::RestirPt read_restir_pt(std::string_view source, const toml::table& tabl
 }
 
 Schedule read_schedule(std::string_view source, const toml::table& root) {
-    only(source, root, {"passes", "tone_map", "restir_di", "restir_pt", "mnee"}, "the frame graph");
+    only(source, root, {"passes", "tone_map", "restir_di", "restir_pt", "mnee", "denoise"}, "the frame graph");
 
     const toml::node* passes_node = root.get("passes");
     if (!passes_node) {
@@ -457,6 +457,22 @@ Schedule read_schedule(std::string_view source, const toml::table& root) {
                                                         "to read it"));
         }
     }
+    if (const toml::node* denoise_node = root.get("denoise")) {
+        const toml::table* table = denoise_node->as_table();
+        if (!table) {
+            throw GraphFileError(at(source, *denoise_node, "'denoise' must be a table, [denoise]"));
+        }
+        if (std::ranges::find(schedule.passes, PassKind::denoise) == schedule.passes.end()) {
+            throw GraphFileError(at(source, *denoise_node, "the frame graph has [denoise] settings and no denoise pass"));
+        }
+        only(source, *table, {"weights"}, "[denoise]");
+        const toml::node& weights = required(source, *table, "weights", "[denoise]");
+        const std::optional<std::string_view> text = weights.value_exact<std::string_view>();
+        if (!text || text->empty()) {
+            throw GraphFileError(at(source, weights, "'weights' must name the exported network's directory, in quotes"));
+        }
+        schedule.denoise = passes::Denoise{std::filesystem::path(*text)};
+    }
     if (const std::optional<std::string> reason = invalid(schedule)) {
         throw GraphFileError(at(source, *passes_node, *reason));
     }
@@ -490,7 +506,13 @@ Schedule load_schedule(const std::filesystem::path& path) {
     if (!file || file.gcount() != static_cast<std::streamsize>(size)) {
         throw GraphFileError("cannot read frame graph file " + path.string());
     }
-    return parse_schedule(text, path.string());
+    Schedule schedule = parse_schedule(text, path.string());
+    // The denoiser's weights, relative to the graph file's directory
+    // (core/passes/denoise.h).
+    if (schedule.denoise && schedule.denoise->weights.is_relative()) {
+        schedule.denoise->weights = path.parent_path() / schedule.denoise->weights;
+    }
+    return schedule;
 }
 
 }  // namespace serenity::frame
