@@ -77,6 +77,10 @@ set_tests_properties(boundaries boundaries_fire PROPERTIES RESOURCE_LOCK source_
 # byte by default, and generated scenes reproducible by seed.
 add_test(NAME make_marbles COMMAND python3 "${PROJECT_SOURCE_DIR}/tests/test_make_marbles.py")
 
+# The denoiser data set's plan: the same seeds, times and splits every run,
+# pinned; the real marbles only the test.
+add_test(NAME make_denoiser_dataset COMMAND python3 "${PROJECT_SOURCE_DIR}/tests/test_make_denoiser_dataset.py")
+
 # The headless renderer as its user runs it: the frames it writes, their
 # names and sizes, what it prints, and its failures' status and messages.
 # On the GPU, under Metal's validation as the GPU tests are (tests/gpu).
