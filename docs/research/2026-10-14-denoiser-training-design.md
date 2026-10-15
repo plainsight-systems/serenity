@@ -83,6 +83,17 @@ after 30 frames of warm-up so ReSTIR's history is full. For each frame:
 - the noisy input: ReSTIR PT + MNEE at 960 × 540, with its features;
 - the target: the path tracer at 1920 × 1080, 4,096 samples a pixel.
 
+**The targets' sample count, decided 2026-10-15 by the user.** 4,096
+samples was first chosen to fit one overnight render, without checking
+convergence where the scene is hardest; at that count the glass and the
+cat's-eye cores are still speckled (docs/research/2026-10-14-denoiser-
+dataset.md), so in those pixels the network is trained toward a speckled
+answer. The user's decision: the first training run (denoiser-v1) uses
+these targets; heavier sampling of the targets is the planned investment
+for the next training round, once the denoiser is in the pipeline and its
+results are positive. The test report states the glass's target error
+beside the network's.
+
 **Cost.** 40 × 8 = 320 targets at about 8 ms a sample is about 33 s each,
 about 3 hours in all. Inputs are a few minutes. One overnight render.
 
