@@ -5,6 +5,10 @@
 
 The design's "Test once" (docs/research/2026-10-14-denoiser-training-design.md):
 this reads the test split, and refuses an --out that already holds results.
+`--dry-run-on-validation` runs the same code on the validation split
+instead (no warm-up frames, no references: each sequence's first frame has
+no history), to check the script itself before the test; its numbers are
+validation numbers, labeled so in results.json ("split").
 
 For each test sequence, the network runs over 16 frames: the 8 warm-up
 frames rendered before it (render_warmup.py; their outputs are only
@@ -135,14 +139,21 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--checkpoint", type=Path, required=True)
     p.add_argument("--data", type=Path, required=True)
-    p.add_argument("--warmup", type=Path, required=True)
-    p.add_argument("--references", type=Path, required=True)
+    p.add_argument("--warmup", type=Path, help="the test sequences' warm-up frames (render_warmup.py)")
+    p.add_argument("--references", type=Path, help="the 65,536-sample references")
+    p.add_argument("--dry-run-on-validation", action="store_true",
+                   help="run this script on the validation split instead, without warm-up or references: "
+                        "a check of the script before the test, not a result")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--images", type=Path, help="where the side-by-side PNGs and the MP4 go")
     p.add_argument("--oidn", type=Path, help="oidnDenoise, to compare with Open Image Denoise")
     p.add_argument("--device", default="mps")
     args = p.parse_args()
 
+    split = "validation" if args.dry_run_on_validation else "test"
+    if split == "test" and (args.warmup is None or args.references is None):
+        print("the test needs --warmup and --references", file=sys.stderr)
+        return 1
     if args.out.exists() and any(args.out.iterdir()):
         print(f"{args.out} already holds results: the test is run once", file=sys.stderr)
         return 1
@@ -153,22 +164,21 @@ def main() -> int:
     if manifest.sha256 != state["manifest_sha256"]:
         print("the checkpoint was trained on another data set", file=sys.stderr)
         return 1
-    warmup_record = json.loads((args.warmup / "warmup.json").read_text())
-    region_masks = {k: torch.from_numpy(v) for k, v in
-                    masks(manifest.scene_file("marbles"), INPUT_SIZE[1] * SCALE, INPUT_SIZE[0] * SCALE).items()}
+    warmup_record = json.loads((args.warmup / "warmup.json").read_text()) if split == "test" else None
     kinds = ["network", "input_bilinear"] + (["oidn_bilinear"] if args.oidn else [])
     results: dict = {"checkpoint": str(args.checkpoint), "checkpoint_sha256": file_sha256(args.checkpoint),
                      "epoch": state["epoch"], "valid_loss": state["valid_loss"], "git_commit": state["git_commit"],
-                     "manifest_sha256": manifest.sha256, "region_pixels": {r: int(m.sum()) for r, m in
-                                                                           region_masks.items()},
-                     "sequences": {}}
+                     "manifest_sha256": manifest.sha256, "split": split, "sequences": {}}
     if args.images:
         args.images.mkdir(parents=True, exist_ok=True)
 
-    for seq in manifest.sequences("test"):
-        axes = view_axes(manifest.scene_file(seq.scene))
+    for seq in manifest.sequences(split):
+        scene = manifest.scene_file(seq.scene)
+        axes = view_axes(scene)
+        region_masks = {k: torch.from_numpy(v) for k, v in
+                        masks(scene, INPUT_SIZE[1] * SCALE, INPUT_SIZE[0] * SCALE).items()}
         inputs, targets = manifest.load_sequence(seq)
-        warm = warmup_inputs(args.warmup, warmup_record, seq.name, axes)
+        warm = warmup_inputs(args.warmup, warmup_record, seq.name, axes) if warmup_record else []
         # Warm-up frames have no full-size albedo; their radiance output is not used, only their
         # demodulated output (the history), which the albedo does not enter.
         warm_albedo = [bilinear(np.ascontiguousarray(f[3:6].transpose(1, 2, 0))) for f in warm]
@@ -188,7 +198,8 @@ def main() -> int:
         shown = {k: [to_display(x, device) for x in v] for k, v in images.items()}
         shown_target = [to_display(t, device) for t in target_rad]
 
-        entry: dict = {"frames": seq.frames, "vs_targets": {}, "flicker": {}}
+        entry: dict = {"frames": seq.frames, "warmup_frames": len(warm), "vs_targets": {}, "flicker": {},
+                       "region_pixels": {r: int(m.sum()) for r, m in region_masks.items()}}
         for k in kinds:
             per_frame = [region_mse(a, b, region_masks) for a, b in zip(shown[k], shown_target)]
             entry["vs_targets"][k] = {r: float(np.mean([f[r] for f in per_frame])) for r in REGIONS}
@@ -196,7 +207,7 @@ def main() -> int:
             entry["flicker"][k] = region_flicker(shown[k], region_masks)
         entry["flicker"]["targets"] = region_flicker(shown_target, region_masks)
 
-        if seq.name in REFERENCE_FRAMES:
+        if split == "test" and seq.name in REFERENCE_FRAMES:
             tag, ref_name = REFERENCE_FRAMES[seq.name]
             reference = torch.from_numpy(read_pfm(args.references / ref_name).transpose(2, 0, 1).copy())
             ref_shown = to_display(reference, device)
