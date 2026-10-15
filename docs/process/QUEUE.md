@@ -9,7 +9,10 @@ This file tracks active and accepted work.
   `features` pass (contract 17: albedo and normal through glass and mirrors by
   primary surface replacement, depth, NRD/DLSS motion vectors), graphs/features.toml
   and graphs/restir_pt_features.toml, serenity-headless --features, and
-  scripts/make_marbles.py --seed N [--out FILE]. Next: Phase 2, the data set.
+  scripts/make_marbles.py --seed N [--out FILE]. Phase 2 rendered 2026-10-14
+  (docs/research/2026-10-14-denoiser-dataset.md): denoiser-v1 by
+  scripts/make_denoiser_dataset.py, 400 frames in 50 sequences, 4.0 h, 32.3 GB,
+  at ../serenity-data/denoiser-v1 beside the checkout. Next: Phase 3, training.
 
 - **ReSTIR PT** (docs/research/2026-10-11-restir-pt-layout.md). Phase 1
   built 2026-10-11 (initial sampling, the hybrid shift, paired spatial
@@ -186,3 +189,6 @@ Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
 - Features: glass beyond the first hit follows one branch by Fresnel's larger weight; a marble seen through another at near-grazing angles snaps between branches (Open Image Denoise suggests albedo 1 there if it is noisy).
 - Features: the pass costs ReSTIR PT 1.2 ms at 960 x 540 (12.5 -> 13.7, +10%); written by the initial pass from its primary hit, it would save the camera ray; Phase 4 measures it in the denoised frame.
 - Features: the window passes the frame before but no window graph has the features pass yet.
+- Data set: no training sequence starts before 3 s (the opening's draws, 2.97 to 6.97 s); the test's t = 2 is earlier than any; add earlier sequences if Phase 3's validation shows the first fireflies waking poorly.
+- Data set: 4,096-sample targets still sparkle inside glass and cat's-eye cores (path tracer, no MNEE); denoise or deepen those targets if the network learns the speckle.
+- Data set: the test inputs use frame indices 0 to 7,207; Phase 4's 65,536-sample references for scoring must start past them (make reference batches from index 0).

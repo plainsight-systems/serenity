@@ -144,6 +144,8 @@ time:
    generator's seed option. Each output tested. Built 2026-10-14
    (2026-10-14-denoiser-features.md).
 2. **The data set.** The overnight render, its manifest and checksums.
+   Rendered 2026-10-14 (2026-10-14-denoiser-dataset.md): 400 frames,
+   4,096-sample targets, 4.0 h, 32.3 GB.
 3. **Training.** The `training/` toolkit, the run, the validation curve.
 4. **The Metal pass.** Its own note: the network as Metal kernels, its
    cost, the demo graph `graphs/restir_pt_denoised.toml`, and the test
