@@ -29,13 +29,13 @@ namespace serenity::metal {
 //    2. the network's 28 input channels a pixel, last frame's output moved
 //       by the motion vectors among them, and the demodulated light (1);
 //    3. the U-Net: 11 convolutions, 3 x 3 with ReLU, on simdgroup matrices
-//       (half in, float sums), 4 max pools and 4 nearest upsamplings
-//       written into the concatenation the next convolution reads (19);
+//       (half in, float sums), each decoder's reading the level below,
+//       upsampled, and its skip where they are; and 4 max pools (15);
 //    4. the output: the 1 x 1 head, the three softmax kernels over the
 //       demodulated light, the spacings' softmax, the history blend, the
 //       remodulation by the full-size albedo (1).
 //
-// 27 dispatches, each after a barrier on the one before it (GPU.8: each
+// 23 dispatches, each after a barrier on the one before it (GPU.8: each
 // reads what the one before wrote). The weights are the network's,
 // converted once at construction: each 3 x 3 convolution's to half floats
 // laid out [tap][input channel][output channel], the input's 28 channels
@@ -70,7 +70,6 @@ private:
     NS::SharedPtr<MTL::ComputePipelineState> input_;
     std::array<NS::SharedPtr<MTL::ComputePipelineState>, 4> conv_;  // conv3x3_n1 .. n4
     NS::SharedPtr<MTL::ComputePipelineState> maxpool_;
-    NS::SharedPtr<MTL::ComputePipelineState> upsample_;
     NS::SharedPtr<MTL::ComputePipelineState> output_;
     // Each convolution's weights and bias, then the head's (above).
     std::unique_ptr<StaticArrays> weights_;

@@ -87,23 +87,30 @@ static_assert(sizeof(DenoiseConstants) == 80, "DenoiseConstants must be the same
 // One 3 x 3 convolution's dispatch (metal/passes/denoise/denoise.metal,
 // conv3x3): its level's size, where it reads and writes in its buffers
 // (half floats, channels innermost, rows `pitch` pixels apart with a
-// one-pixel zero border), and its widths in blocks of channel_block.
+// one-pixel zero border), and its widths in blocks of channel_block. A
+// decoder's reads its first up_blocks blocks from the level below,
+// upsampled by nearest neighbor as it reads them (its own pitch and
+// stride), and the rest from `input`, the skip: the concatenation
+// [upsampled | skip] is never written.
 struct ConvParams {
     uint32_t width;
     uint32_t height;
     uint32_t in_pitch;     // pixels a row of the input, borders included
     uint32_t in_stride;    // channels a pixel of the input
-    uint32_t in_blocks;    // input channels read, / channel_block
+    uint32_t in_blocks;    // input channels read, / channel_block: the upsampled ones and the skip's
     uint32_t out_pitch;
     uint32_t out_stride;   // channels a pixel of the output buffer
     uint32_t out_offset;   // the first output channel written
     uint32_t out_blocks;   // output channels, / channel_block
     uint32_t chunk_blocks; // output blocks one threadgroup computes
     uint32_t relu;         // 1: ReLU after the bias
-    uint32_t padding;
+    uint32_t up_blocks;    // of in_blocks, read upsampled from the level below; 0 but in a decoder
+    uint32_t up_pitch;     // that level's pitch and stride
+    uint32_t up_stride;
+    uint32_t padding[2];
 };
 
-static_assert(sizeof(ConvParams) == 48, "ConvParams must be the same 48 bytes on the host and in shaders");
+static_assert(sizeof(ConvParams) == 64, "ConvParams must be the same 64 bytes on the host and in shaders");
 
 // One max pool's or nearest upsample's dispatch: the destination's size,
 // and each buffer's pitch, stride and first channel; `channels` copied.

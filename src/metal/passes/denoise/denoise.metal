@@ -7,8 +7,8 @@
 //       normalization's median (training/data.py, input_frame), exactly;
 //   denoise_input       steps 1 and 2's input: the 28 channels a pixel;
 //   conv3x3_n<NT>       step 2's 3 x 3 convolutions, with ReLU;
-//   denoise_maxpool, denoise_upsample   the U-Net's 2 x 2 max pool and
-//                       nearest upsampling into the concatenation;
+//   denoise_maxpool     the U-Net's 2 x 2 max pool (its nearest upsampling
+//                       is conv3x3's, as a decoder reads the level below);
 //   denoise_output      the head (1 x 1), step 3's kernels, step 4's blend
 //                       and step 5's remodulation, one output pixel a thread.
 //
@@ -298,6 +298,7 @@ kernel void conv3x3(constant contracts::ConvParams& p [[buffer(binding::params)]
                     device const half* weights [[buffer(binding::weights)]],
                     device const float* bias [[buffer(binding::bias)]],
                     device half* output [[buffer(binding::output)]],
+                    device const half* coarse [[buffer(binding::coarse)]],
                     uint3 group [[threadgroup_position_in_grid]],
                     uint sg [[simdgroup_index_in_threadgroup]],
                     uint lane [[thread_index_in_simdgroup]]) {
@@ -327,9 +328,17 @@ kernel void conv3x3(constant contracts::ConvParams& p [[buffer(binding::params)]
             const uint row = y0 + pixel / halo_pixels;
             const uint column = x0 + pixel % halo_pixels;
             half4 v = half4(0.0h);
-            if (row <= p.height + 1u && column <= p.width + 1u) {
+            if (kb < p.up_blocks) {
+                // Upsampled: input pixel (column - 1, row - 1) reads the level
+                // below's at half its coordinates; the border stays zero.
+                if (row >= 1u && row <= p.height && column >= 1u && column <= p.width) {
+                    v = *reinterpret_cast<device const half4*>(
+                        coarse + (((row - 1u) / 2u + 1u) * p.up_pitch + (column - 1u) / 2u + 1u) * p.up_stride +
+                        kb * 8u + (i % 2u) * 4u);
+                }
+            } else if (row <= p.height + 1u && column <= p.width + 1u) {
                 v = *reinterpret_cast<device const half4*>(input + (row * p.in_pitch + column) * p.in_stride +
-                                                           kb * 8u + (i % 2u) * 4u);
+                                                           (kb - p.up_blocks) * 8u + (i % 2u) * 4u);
             }
             *reinterpret_cast<threadgroup half4*>(halo + pixel * 8u + (i % 2u) * 4u) = v;
         }
@@ -396,7 +405,7 @@ kernel void conv3x3(constant contracts::ConvParams& p [[buffer(binding::params)]
 #define SERENITY_CONV3X3(NT)                                                                                        \
     template [[host_name("conv3x3_n" #NT)]] kernel void conv3x3<NT>(                                                \
         constant contracts::ConvParams&, device const half*, device const half*, device const float*, device half*, \
-        uint3, uint, uint);
+        device const half*, uint3, uint, uint);
 SERENITY_CONV3X3(1)
 SERENITY_CONV3X3(2)
 SERENITY_CONV3X3(3)
@@ -404,8 +413,8 @@ SERENITY_CONV3X3(4)
 #undef SERENITY_CONV3X3
 
 // ---------------------------------------------------------------------------
-// 2 x 2 max pool and nearest upsampling, four channels a thread, each
-// between bordered buffers (the destination's size in the params). One
+// 2 x 2 max pool, four channels a thread, between bordered buffers (the
+// destination's size in the params). One
 // dimension of threads, channels fastest, so a SIMD group's writes are one
 // run of memory (GPU.2).
 // ---------------------------------------------------------------------------
@@ -432,53 +441,33 @@ kernel void denoise_maxpool(constant contracts::ResampleParams& p [[buffer(bindi
                                      q * 4u) = v;
 }
 
-kernel void denoise_upsample(constant contracts::ResampleParams& p [[buffer(binding::params)]],
-                             device const half* input [[buffer(binding::input)]],
-                             device half* output [[buffer(binding::output)]],
-                             uint i [[thread_position_in_grid]]) {
-    const uint quads = p.channels / 4u;
-    const uint q = i % quads;
-    const uint pixel = i / quads;
-    const uint x = pixel % p.width;
-    const uint y = pixel / p.width;
-    if (y >= p.height) {
-        return;
-    }
-    const half4 v = *reinterpret_cast<device const half4*>(
-        input + ((y / 2u + 1u) * p.in_pitch + x / 2u + 1u) * p.in_stride + p.in_offset + q * 4u);
-    *reinterpret_cast<device half4*>(output + ((y + 1u) * p.out_pitch + x + 1u) * p.out_stride + p.out_offset +
-                                     q * 4u) = v;
-}
-
 // ---------------------------------------------------------------------------
 // The output, over twice the padded grid (training/evaluate.py runs the
 // head and kernels over the padding too, and the history it keeps is that
-// size). A threadgroup is two simdgroups, one row of 16 input pixels and
-// their 4 x 16 output pixels (so its staging stays within 12 KB). First the
-// head, a 1 x 1 convolution, as a matrix product on simdgroup matrices in
-// float: the 16 pixels' last features (staged in threadgroup memory as
-// floats) times the head's weights (laid out [feature][output], 124 padded
-// to head_columns), each simdgroup 64 of the outputs; the scores stay in threadgroup memory, never in device memory
-// (GDSA.16). Then a thread an output pixel X, p = X / 2 its input pixel:
-// per spacing, the softmax of its 9 taps' scores, a tap outside the
-// light's extent masked, over the demodulated light; the softmax of the 3
-// spacing scores mixing the three; the blend with the moved history by
-// sigmoid(score 30) x valid; the blend kept as the next frame's history
-// and, inside the output, multiplied by the full-size albedo's factor into
-// the radiance image.
+// size). A threadgroup is four simdgroups and a row of 32 input pixels.
+// First the head, a 1 x 1 convolution, as a matrix product on simdgroup
+// matrices: the 32 pixels' last features (half, read straight from their
+// buffer) times the head's weights (half, laid out [feature][output], 124
+// padded to head_columns), float sums, each simdgroup 32 of the outputs;
+// the scores stored transposed in threadgroup memory, an output's 32
+// pixels side by side, so the lanes reading them hit different banks, and
+// never in device memory (GDSA.16). Half weights, as the convolutions':
+// float weights made the pass 9 ms slower at a 1728 x 1117 light and its
+// output no closer to PyTorch's (docs/research/2026-10-15-denoiser-live.md). Then a thread an output pixel X, its
+// subpixel q its simdgroup, p = X / 2 its input pixel: per spacing, the
+// softmax of its 9 taps' scores, a tap outside the light's extent masked,
+// over the demodulated light; the softmax of the 3 spacing scores mixing
+// the three; the blend with the moved history by sigmoid(score 30) x
+// valid; the blend kept as the next frame's history and, inside the
+// output, multiplied by the full-size albedo's factor into the radiance
+// image.
 // ---------------------------------------------------------------------------
 
-constant constexpr uint head_columns = 128u;  // contracts::head_outputs, padded to the simdgroups' 2 x 64
-constant constexpr uint output_pixels = 16u;  // input pixels a threadgroup
-constant constexpr uint score_stride = head_columns + 1u;  // a row of scores: odd, so rows fall in other banks
-constant constexpr int reach = 4;  // the widest spacing: the demodulated light a threadgroup's taps read
-constant constexpr uint reach_rows = 2u * uint(reach) + 1u;
-constant constexpr uint reach_pixels = output_pixels + 2u * uint(reach);
-constant constexpr uint max_features = 64u;   // the head's widest input the staging holds (denoise.cpp checks)
+constant constexpr uint head_columns = 128u;  // contracts::head_outputs, padded to the simdgroups' 4 x 32
 
 kernel void denoise_output(constant contracts::DenoiseConstants& k [[buffer(binding::constants)]],
                            device const half* features [[buffer(binding::input)]],
-                           device const float* head [[buffer(binding::weights)]],
+                           device const half* head [[buffer(binding::weights)]],
                            device const float* head_bias [[buffer(binding::bias)]],
                            device const float4* demod [[buffer(binding::demod)]],
                            device const float4* history [[buffer(binding::history)]],
@@ -489,70 +478,53 @@ kernel void denoise_output(constant contracts::DenoiseConstants& k [[buffer(bind
                            uint2 group [[threadgroup_position_in_grid]],
                            uint sg [[simdgroup_index_in_threadgroup]],
                            uint lane [[thread_index_in_simdgroup]]) {
-    threadgroup float staged[output_pixels * max_features];
-    threadgroup float scores_of[output_pixels * score_stride];
-    threadgroup float4 light[reach_rows * reach_pixels];
-    const uint tid = sg * 32u + lane;
+    threadgroup float scores_of[head_columns * conv_pixels];  // [output][pixel]
     const uint y = group.y;
-    const uint x0 = group.x * output_pixels;
-    const uint c_count = k.features;
+    const uint x0 = group.x * conv_pixels;
+    const uint width = contracts::denoise_scale * k.padded_width;
 
-    // The head's inputs, past the grid's right edge zeros.
-    // The demodulated light every tap of the row reads, zero outside the
-    // light's extent (where every tap is masked).
-    for (uint i = tid; i < reach_rows * reach_pixels; i += 64u) {
-        const int2 at = int2(int(x0) - reach + int(i % reach_pixels), int(y) - reach + int(i / reach_pixels));
-        light[i] = inside_light(k, at) ? demod[uint(at.y) * k.padded_width + uint(at.x)] : float4(0.0f);
-    }
-    for (uint i = tid; i < output_pixels * c_count; i += 64u) {
-        const uint px = i / c_count;
-        const uint c = i % c_count;
-        staged[i] = x0 + px < k.padded_width
-                        ? float(features[((y + 1u) * (k.padded_width + 2u) + x0 + px + 1u) * c_count + c])
-                        : 0.0f;
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
+    // The head: the features of pixels x0 .. x0 + 31 of row y, bordered
+    // (past the grid's right edge read and never used), times its weights.
     {
-        simdgroup_float8x8 acc[2][8];
-        for (uint m = 0; m < 2u; ++m) {
-            for (uint n = 0; n < 8u; ++n) {
+        device const half* row = features + ((y + 1u) * (k.padded_width + 2u) + x0 + 1u) * k.features;
+        simdgroup_float8x8 acc[4][4];
+        for (uint m = 0; m < 4u; ++m) {
+            for (uint n = 0; n < 4u; ++n) {
                 acc[m][n] = simdgroup_float8x8(0.0f);
             }
         }
-        for (uint kb = 0; kb < c_count / 8u; ++kb) {
-            simdgroup_float8x8 a[2];
-            for (uint m = 0; m < 2u; ++m) {
-                simdgroup_load(a[m], staged + m * 8u * c_count + kb * 8u, c_count);
+        for (uint kb = 0; kb < k.features / 8u; ++kb) {
+            simdgroup_half8x8 b[4];
+            for (uint n = 0; n < 4u; ++n) {
+                simdgroup_load(b[n], head + kb * 8u * head_columns + sg * 32u + n * 8u, head_columns);
             }
-            for (uint n = 0; n < 8u; ++n) {
-                simdgroup_float8x8 b;
-                simdgroup_load(b, head + kb * 8u * head_columns + sg * 64u + n * 8u, head_columns);
-                for (uint m = 0; m < 2u; ++m) {
-                    simdgroup_multiply_accumulate(acc[m][n], a[m], b, acc[m][n]);
+            for (uint m = 0; m < 4u; ++m) {
+                simdgroup_half8x8 a;
+                simdgroup_load(a, row + m * 8u * k.features + kb * 8u, k.features);
+                for (uint n = 0; n < 4u; ++n) {
+                    simdgroup_multiply_accumulate(acc[m][n], a, b[n], acc[m][n]);
                 }
             }
         }
-        for (uint m = 0; m < 2u; ++m) {
-            for (uint n = 0; n < 8u; ++n) {
-                simdgroup_store(acc[m][n], scores_of + m * 8u * score_stride + sg * 64u + n * 8u, score_stride);
+        for (uint m = 0; m < 4u; ++m) {
+            for (uint n = 0; n < 4u; ++n) {
+                simdgroup_store(acc[m][n], scores_of + (sg * 32u + n * 8u) * conv_pixels + m * 8u, conv_pixels,
+                                ulong2(0), true);
             }
         }
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-    // A thread an output pixel: subpixel q, input pixel x0 + i.
-    const uint q = tid / output_pixels;
-    const uint i = tid % output_pixels;
-    const uint2 p = uint2(x0 + i, y);
+    const uint q = sg;
+    const uint2 p = uint2(x0 + lane, y);
     if (p.x >= k.padded_width) {
         return;
     }
     const uint2 x = contracts::denoise_scale * p + uint2(q & 1u, q >> 1);
-    const uint width = contracts::denoise_scale * k.padded_width;
     float scores[contracts::denoise_scores];
     for (uint s = 0; s < contracts::denoise_scores; ++s) {
         const uint o = s * contracts::denoise_subpixels + q;
-        scores[s] = scores_of[i * score_stride + o] + head_bias[o];
+        scores[s] = scores_of[o * conv_pixels + lane] + head_bias[o];
     }
 
     // The kernels: taps at p + s (i, j), k = spacing * 9 + (j + 1) * 3 + (i + 1).
@@ -572,8 +544,9 @@ kernel void denoise_output(constant contracts::DenoiseConstants& k [[buffer(bind
             const int2 at = int2(p) + spacing[si] * int2(int(t % 3u) - 1, int(t / 3u) - 1);
             const float e = exp(logits[t] - largest);
             total += e;
-            const int2 local = at - int2(int(x0) - reach, int(y) - reach);
-            sum += e * light[uint(local.y) * reach_pixels + uint(local.x)].rgb;
+            if (inside_light(k, at)) {
+                sum += e * demod[uint(at.y) * k.padded_width + uint(at.x)].rgb;
+            }
         }
         filtered[si] = sum / total;
     }

@@ -183,7 +183,7 @@ inline std::vector<contracts::LinearImage> run_denoise_fixture(
         resident.push_back(submission.keep_resident(a));
     }
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-    descriptor->setMaxBufferBindCount(11);
+    descriptor->setMaxBufferBindCount(12);
     descriptor->setMaxTextureBindCount(8);
     NS::Error* error = nullptr;
     auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));

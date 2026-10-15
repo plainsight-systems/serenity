@@ -83,13 +83,13 @@ bool DenoiseImages::prepare(const frame::FrameInputs& inputs, frame::Extent ligh
 void DenoiseImages::layout() {
     const denoise::Widths& w = widths_;
     const auto level = [&](std::uint32_t l) { return frame::Extent{padded_.width >> l, padded_.height >> l}; };
-    // The channels upsampled into level l's concatenation: the bottleneck's
-    // at level 3, the decoder's below it otherwise.
+    // The channels upsampled into level l's decoder: the bottleneck's at
+    // level 3, the decoder's below it otherwise.
     const auto up = [&](std::uint32_t l) { return l == 3 ? w.bottleneck : w.dec[2 - l]; };
 
     make(input_, level(0), contracts::input_channels, "network's input");
     for (std::uint32_t l = 0; l < 4; ++l) {
-        make(cat_[l], level(l), up(l) + w.enc[l], "concatenation");
+        make(skip_[l], level(l), w.enc[l], "skip");
         make(pooled_[l], level(l + 1), w.enc[l], "max pool");
         make(decoded_[l], level(l), w.dec[3 - l], "decoder's output");
     }
@@ -121,6 +121,7 @@ void DenoiseImages::layout() {
         c.params.relu = 1u;
         c.input = address(in);
         c.output = address(out);
+        c.coarse = address(in);
         return c;
     };
     const auto resample = [&](const Activations& in, std::uint32_t in_offset, const Activations& out,
@@ -139,13 +140,13 @@ void DenoiseImages::layout() {
         r.output = address(out);
         return r;
     };
-    // Encoders: each into its level's concatenation, after the upsampled half.
-    convs_[0] = conv(input_, contracts::input_channels, cat_[0], up(0), w.enc[0]);
+    // Encoders: each into its skip.
+    convs_[0] = conv(input_, contracts::input_channels, skip_[0], 0, w.enc[0]);
     for (std::uint32_t l = 1; l < 4; ++l) {
-        convs_[l] = conv(pooled_[l - 1], w.enc[l - 1], cat_[l], up(l), w.enc[l]);
+        convs_[l] = conv(pooled_[l - 1], w.enc[l - 1], skip_[l], 0, w.enc[l]);
     }
     for (std::uint32_t l = 0; l < 4; ++l) {
-        pools_[l] = resample(cat_[l], up(l), pooled_[l], 0, w.enc[l]);
+        pools_[l] = resample(skip_[l], 0, pooled_[l], 0, w.enc[l]);
     }
     convs_[4] = conv(pooled_[3], w.enc[3], bottleneck_a_, 0, w.bottleneck);
     convs_[5] = conv(bottleneck_a_, w.bottleneck, bottleneck_b_, 0, w.bottleneck);
@@ -153,15 +154,19 @@ void DenoiseImages::layout() {
     for (std::uint32_t i = 0; i < 4; ++i) {
         const std::uint32_t l = 3 - i;
         const Activations& below = i == 0 ? bottleneck_b_ : decoded_[l + 1];
-        upsamples_[i] = resample(below, 0, cat_[l], 0, up(l));
-        convs_[6 + i] = conv(cat_[l], up(l) + w.enc[l], decoded_[l], 0, w.dec[i]);
+        Conv& c = convs_[6 + i];
+        c = conv(skip_[l], up(l) + w.enc[l], decoded_[l], 0, w.dec[i]);
+        c.params.up_blocks = up(l) / contracts::channel_block;
+        c.params.up_pitch = below.pitch;
+        c.params.up_stride = below.stride;
+        c.coarse = address(below);
     }
     convs_[10] = conv(decoded_[0], w.dec[3], final_, 0, w.dec[3]);
 
     // Every dispatch's parameters, in one buffer, each at an aligned place.
     constexpr std::size_t slot = 64;
     static_assert(sizeof(contracts::ConvParams) <= slot && sizeof(contracts::ResampleParams) <= slot);
-    make(params_, slot * (convolutions + 2 * resamplings), "dispatch parameters");
+    make(params_, slot * (convolutions + resamplings), "dispatch parameters");
     std::byte* bytes = static_cast<std::byte*>(params_.buffer->contents());
     std::size_t at = 0;
     const auto place = [&](auto& dispatch) {
@@ -173,9 +178,6 @@ void DenoiseImages::layout() {
         place(c);
     }
     for (Resample& r : pools_) {
-        place(r);
-    }
-    for (Resample& r : upsamples_) {
         place(r);
     }
 }

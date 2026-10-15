@@ -26,12 +26,11 @@ namespace serenity::metal {
 //
 //   - each U-Net level's activations, half floats, channels innermost, a
 //     one-pixel zero border around each level (contracts::ConvParams): the
-//     network's input (contracts::input_channels); at each level 0..3 the
-//     concatenation a decoder convolution reads, [upsampled | skip], which
-//     the encoder convolution writes its half of directly, so the
-//     concatenation costs only the upsampling's copy; the max pools'
-//     outputs, the bottleneck's two, the decoders' outputs and the last
-//     convolution's. The padded grid is the light's size rounded up to
+//     network's input (contracts::input_channels); the encoders' outputs,
+//     each a skip; the max pools', the bottleneck's two, the decoders' and
+//     the last convolution's. No concatenation and no upsampled copy: a
+//     decoder convolution reads the level below, upsampled, and the skip,
+//     each where it is (conv3x3). The padded grid is the light's size rounded up to
 //     contracts::unet_alignment, as training/evaluate.py pads;
 //   - the demodulated light, a float4 an input pixel of the padded grid;
 //   - the history, last frame's output and this frame's, a float4 an output
@@ -70,8 +69,7 @@ public:
     bool prepare(const frame::FrameInputs& inputs, frame::Extent light);
 
     // The conv3x3 dispatches, in order: enc 0..3, bottleneck a and b,
-    // dec 0..3, dec_final. The pools, levels 1..4; the upsamplings into
-    // levels 3..0.
+    // dec 0..3, dec_final. The pools, levels 1..4.
     static constexpr std::size_t convolutions = 11;
     static constexpr std::size_t resamplings = 4;
 
@@ -80,6 +78,7 @@ public:
         MTL::GPUAddress params_address = 0;
         MTL::GPUAddress input = 0;
         MTL::GPUAddress output = 0;
+        MTL::GPUAddress coarse = 0;  // a decoder's level below; else its input again, unread
     };
     struct Resample {
         contracts::ResampleParams params;
@@ -91,7 +90,6 @@ public:
     // Each valid after the first prepare().
     const Conv& conv(std::size_t i) const { return convs_.at(i); }
     const Resample& pool(std::size_t i) const { return pools_.at(i); }
-    const Resample& upsample(std::size_t i) const { return upsamples_.at(i); }
     frame::Extent light() const noexcept { return light_; }
     frame::Extent padded() const noexcept { return padded_; }
     MTL::GPUAddress input() const noexcept;
@@ -129,7 +127,7 @@ private:
     std::uint64_t index_ = 0;  // the prepared frame's: its parity picks the history
 
     Activations input_;
-    std::array<Activations, 4> cat_;    // levels 0..3
+    std::array<Activations, 4> skip_;   // levels 0..3, the encoders' outputs
     std::array<Activations, 4> pooled_;  // levels 1..4
     Activations bottleneck_a_;
     Activations bottleneck_b_;
@@ -142,7 +140,6 @@ private:
     Buffer params_;
     std::array<Conv, convolutions> convs_{};
     std::array<Resample, resamplings> pools_{};
-    std::array<Resample, resamplings> upsamples_{};
 };
 
 // The output channel blocks one conv3x3 threadgroup computes for a

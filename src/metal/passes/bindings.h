@@ -222,7 +222,7 @@ enum Texture : unsigned { albedo = 0, normal = 1, depth = 2, motion = 3 };
 // DenoiseConstants) and a dispatch's ConvParams or ResampleParams; the
 // buffer it reads, the weights and biases, and the buffer it writes; the
 // depth median's histogram and state; the demodulated light; last frame's
-// output and this frame's. Its textures: the light pass's accumulated
+// output and this frame's; a decoder's level below. Its textures: the light pass's accumulated
 // image and the four features at the light size, the full-size albedo, and
 // the radiance image it writes.
 namespace denoise {
@@ -238,6 +238,7 @@ enum Buffer : unsigned {
     demod = 8,
     history = 9,
     next_history = 10,
+    coarse = 11,  // a decoder convolution's level below, upsampled as read
 };
 enum Texture : unsigned { light = 0, albedo = 1, normal = 2, depth = 3, motion = 4, full_albedo = 5, radiance = 6 };
 }  // namespace denoise

@@ -42,9 +42,9 @@ std::vector<Half> laid_out(const denoise::Convolution& c) {
 }
 
 // The output kernel's (denoise.metal): the head's outputs padded to its
-// two simdgroups of 64, and the widest last feature width it stages.
+// four simdgroups of 32, and the input pixels of a threadgroup.
 constexpr std::uint32_t head_columns = 128;
-constexpr std::uint32_t max_head_features = 64;
+constexpr std::uint32_t output_row = 32;
 static_assert(contracts::head_outputs <= head_columns);
 
 void barrier(MTL4::ComputeCommandEncoder* encoder) {
@@ -64,7 +64,6 @@ DenoisePass::DenoisePass(const Device& device, const Library& library, Submissio
       conv_{library.compute_pipeline("conv3x3_n1"), library.compute_pipeline("conv3x3_n2"),
             library.compute_pipeline("conv3x3_n3"), library.compute_pipeline("conv3x3_n4")},
       maxpool_(library.compute_pipeline("denoise_maxpool")),
-      upsample_(library.compute_pipeline("denoise_upsample")),
       output_(library.compute_pipeline("denoise_output")) {
     // The convolutions in DenoiseImages' order (denoise_images.h).
     const std::array<const denoise::Convolution*, DenoiseImages::convolutions> convs = {
@@ -82,16 +81,12 @@ DenoisePass::DenoisePass(const Device& device, const Library& library, Submissio
         arrays.push_back(std::as_bytes(std::span(convs[i]->bias)));
     }
     // The head as the output kernel's matrix product reads it: [feature]
-    // [output], the 124 outputs padded to 128 with zeros, floats.
+    // [output], the 124 outputs padded to 128 with zeros, half floats.
     const denoise::Convolution& h = network.head;
-    if (h.inputs > max_head_features) {
-        throw MetalError("DenoisePass: the network's last width, " + std::to_string(h.inputs) +
-                         ", is past the " + std::to_string(max_head_features) + " the output kernel stages");
-    }
-    std::vector<float> head(std::size_t{h.inputs} * head_columns, 0.0f);
+    std::vector<Half> head(std::size_t{h.inputs} * head_columns, Half{0});
     for (std::uint32_t o = 0; o < h.outputs; ++o) {
         for (std::uint32_t c = 0; c < h.inputs; ++c) {
-            head[std::size_t{c} * head_columns + o] = h.weight[std::size_t{o} * h.inputs + c];
+            head[std::size_t{c} * head_columns + o] = static_cast<Half>(h.weight[std::size_t{o} * h.inputs + c]);
         }
     }
     arrays.push_back(std::as_bytes(std::span(head)));
@@ -146,8 +141,9 @@ void DenoisePass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
     encoder->setComputePipelineState(input_.get());
     dispatch_per_pixel(encoder, input_.get(), grid);
 
-    // 3. The U-Net: encoders and pools, the bottleneck, upsamplings and
-    // decoders, the last convolution (denoise_images.h's order).
+    // 3. The U-Net: encoders and pools, the bottleneck, the decoders (each
+    // upsampling as it reads), the last convolution (denoise_images.h's
+    // order).
     const auto convolve = [&](std::size_t i) {
         const DenoiseImages::Conv& c = images->conv(i);
         barrier(encoder);
@@ -156,6 +152,7 @@ void DenoisePass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
         arguments->setAddress(weights_->address(2 * i), binding::weights);
         arguments->setAddress(weights_->address(2 * i + 1), binding::bias);
         arguments->setAddress(c.output, binding::output);
+        arguments->setAddress(c.coarse, binding::coarse);
         const NS::SharedPtr<MTL::ComputePipelineState> conv = pipeline(c.params.chunk_blocks);
         encoder->setComputePipelineState(conv.get());
         encoder->dispatchThreadgroups(MTL::Size{(c.params.width + 31) / 32, (c.params.height + 3) / 4,
@@ -179,12 +176,11 @@ void DenoisePass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
     convolve(4);
     convolve(5);
     for (std::size_t i = 0; i < 4; ++i) {
-        resample(images->upsample(i), upsample_.get());
         convolve(6 + i);
     }
     convolve(10);
 
-    // 4. The output: a threadgroup a row of 16 input pixels, a thread an
+    // 4. The output: a threadgroup a row of 128 input pixels, a thread an
     // output pixel of twice the padded grid.
     barrier(encoder);
     arguments->setAddress(images->features(), binding::input);
@@ -196,7 +192,8 @@ void DenoisePass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
     arguments->setTexture(resources.full_albedo->gpuResourceID(), binding::full_albedo);
     arguments->setTexture(resources.radiance->gpuResourceID(), binding::radiance);
     encoder->setComputePipelineState(output_.get());
-    encoder->dispatchThreadgroups(MTL::Size{(grid.width + 15) / 16, grid.height, 1}, MTL::Size{64, 1, 1});
+    encoder->dispatchThreadgroups(MTL::Size{(grid.width + output_row - 1) / output_row, grid.height, 1},
+                                  MTL::Size{128, 1, 1});
 }
 
 }  // namespace serenity::metal

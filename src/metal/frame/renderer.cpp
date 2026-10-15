@@ -73,9 +73,11 @@ constexpr NS::UInteger max_restir_pt_buffers = 28;
 // 0 to 10).
 constexpr NS::UInteger max_mnee_buffers = 11;
 static_assert(bindings::mnee::light < max_mnee_buffers);
-// A graph with the denoise pass and no ReSTIR: at least the 11 its kernels
-// bind (bindings.h, denoise's 0 to 10), as a graph with mnee has.
-static_assert(bindings::denoise::next_history < max_mnee_buffers);
+// A graph with the denoise pass and no ReSTIR: the 12 its kernels bind
+// (bindings.h, denoise's 0 to 11); with ReSTIR, ReSTIR's table holds them.
+constexpr NS::UInteger max_denoise_buffers = 12;
+static_assert(bindings::denoise::coarse < max_denoise_buffers);
+static_assert(max_denoise_buffers <= max_restir_buffers);
 static_assert(bindings::restir_pt::mnee_header < max_restir_pt_buffers);
 static_assert(bindings::restir_initial::output < max_restir_buffers);
 static_assert(bindings::restir_temporal::last_transforms < max_restir_buffers);
@@ -135,7 +137,8 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
       constants_(device, submission, std::vector<std::byte>(ring_slot_size), FrameArray::Copies::per_frame),
       arguments_(make_argument_table(device.handle(), schedule.restir_pt                                       ? max_restir_pt_buffers
                                                       : std::ranges::any_of(schedule.passes, reuses_samples) ? max_restir_buffers
-                                                      : schedule.mnee || frame::denoises(schedule)       ? max_mnee_buffers
+                                                      : frame::denoises(schedule)                            ? max_denoise_buffers
+                                                      : schedule.mnee                                        ? max_mnee_buffers
                                                                                                              : max_buffers,
                                       frame::denoises(schedule) ? max_denoise_textures : max_textures)),
       denoises_(frame::denoises(schedule)),
