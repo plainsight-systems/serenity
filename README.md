@@ -14,7 +14,7 @@ It runs natively on Apple silicon through Metal 4, in C++20. The goal is a
 clean moving image at the display’s full resolution and 60 frames a second,
 with the light traced at a lower resolution and brought up to the display’s.
 
-[![The marbles rendered with ReSTIR PT and MNEE, ten seconds into the opening](docs/writeups/images/marbles-restir-pt-mnee-10s.jpg)](https://serenity.plainsight-systems.com/#film)
+[![The marbles twenty seconds into the opening, the swarm perched among them and the first fireflies rising: ReSTIR PT and MNEE, denoised and upscaled to 1920 × 1080 by the network](docs/writeups/images/marbles-denoised-20s.jpg)](https://serenity.plainsight-systems.com/#film)
 
 **Current state: milestone 3, at its close.** The renderer now traces the
 light at a quarter of the output’s pixels and hands it to a small neural
