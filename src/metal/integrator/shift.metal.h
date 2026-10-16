@@ -311,87 +311,86 @@ inline Shifted shifted_to(float3 integrand, float jacobian) {
     return finite && jacobian > 0.0f ? Shifted{true, integrand, jacobian} : failed();
 }
 
-// Steps 3 to 6 (above): y_{k-1} at `here`, its throughput `beta` and the
-// vertex before it, joined to the source's x_k.
-inline Shifted reconnect(path::Scene scene, Shading here, float3 beta, Before before, float threshold,
-                         serenity::contracts::PathReservoir source, serenity::contracts::PathReuseSettings settings) {
+// What reconnect()'s steps 3 to 6 share, once its prologue has found it
+// (below): the source's vertex x_k, the direction from y_{k-1} toward it
+// and the squared distance, the density y_{k-1}'s BSDF draws that direction
+// with, the roughness of the lobe the source drew there, whether NEE drew
+// it, forced, and the candidate count at y_{k-1}.
+struct Reconnecting {
+    serenity::contracts::SurfaceInteraction at_k;
+    float3 x_k;
+    float3 w;
+    float distance2;
+    float density;
+    float roughness;
+    bool forced;
+    uint m_before;
+};
+
+// Steps 4 to 6 where x_k = x_d, a light: struck by y_{k-1}'s BSDF, or NEE's,
+// forced (above).
+[[gnu::always_inline]] inline Shifted reconnect_to_light(path::Scene scene, Shading here, float3 beta, float threshold,
+                                                         serenity::contracts::PathReservoir source,
+                                                         serenity::contracts::PathReuseSettings settings,
+                                                         Reconnecting r) {
+    const float3 w = r.w;
+    const float density = r.density;
+    const float roughness = r.roughness;
+    const bool forced = r.forced;
+    const uint m_before = r.m_before;
+    const float3 origin = leaving_point(here.surface, w);
+    const StoredLight stored = stored_light(scene, source.primitive, source.point, origin);
+    if (!stored.is_light || stored.light.cos_light <= 0.0f) {
+        return failed();
+    }
+    const float geometry = stored.light.cos_light / (stored.light.distance * stored.light.distance);
+    const float forward = density > 0.0f ? 1.0f / (density * geometry) : 0.0f;
+    if (!forced && !reconnection::connectable(reconnection::Pair{roughness, forward, reconnection::largest},
+                                              threshold, settings.roughness)) {
+        return failed();
+    }
+    if (!nee::visible(scene.structure, scene.shapes(), origin, stored.light)) {
+        return failed();
+    }
+    const float3 kept = transmittance(scene.media(), here.medium, stored.light.distance);
+    if (forced) {
+        const float3 unshadowed = nee::unshadowed(here, stored.light);
+        const float bsdf_density = bsdf_pdf(here.bsdf, here.wo, to_float3(stored.light.direction));
+        if (!(stored.density > 0.0f)) {
+            return failed();
+        }
+        return shifted_to(beta * nee::light_weight(m_before, stored.density, bsdf_density) * unshadowed * kept /
+                              stored.density,
+                          stored.density * geometry / source.jacobian);
+    }
+    if (!(density > 0.0f)) {
+        return failed();
+    }
+    const float3 f = bsdf_evaluate(here.bsdf, here.wo, w) * metal::abs(metal::dot(w, to_float3(here.bsdf.normal)));
+    return shifted_to(beta * f / density * kept * to_float3(stored.light.radiance) *
+                          nee::bsdf_weight(m_before, stored.density, density),
+                      density * geometry / source.jacobian);
+}
+
+// Steps 4 to 6 where x_k is a surface, whose direction toward x_{k+1} the
+// source keeps (above).
+[[gnu::always_inline]] inline Shifted reconnect_to_surface(path::Scene scene, Shading here, float3 beta, float threshold,
+                                                           serenity::contracts::PathReservoir source,
+                                                           serenity::contracts::PathReuseSettings settings,
+                                                           Reconnecting r) {
     namespace c = serenity::contracts;
     const uint d = c::path_length(source.flags);
     const uint k = c::path_rc(source.flags);
     const c::PathEnd end = c::path_end(source.flags);
-    const uint lobe_before = c::path_lobe_before(source.flags);
     const uint lobe_at = c::path_lobe_at(source.flags);
-    const bool to_light = k == d;
-    const bool forced = to_light && end == c::PathEnd::nee;
-    if (!(source.jacobian > 0.0f) || !c::aims_at_lights(bsdf_lobes(here.bsdf))) {
-        return failed();
-    }
-    const float3 y = to_float3(here.surface.position);
     const float3 y_normal = to_float3(here.surface.geometric_normal);
-    const float3 decoded = decode_shape_point(scene.shapes(), source.primitive,
-                                              c::ShapePoint{source.point, c::path_face(source.flags)});
-    const c::SurfaceInteraction at_k = surface_interaction(scene.shapes(), source.primitive, decoded, decoded - y);
-    const float3 x_k = to_float3(at_k.position);
-    const float3 toward = x_k - y;
-    const float distance2 = metal::dot(toward, toward);
-    if (!(distance2 > 0.0f)) {
-        return failed();
-    }
-    const float3 w = toward * metal::rsqrt(distance2);
-    if (!leave_alike(here.surface, w, here.wo)) {
-        return failed();  // every lobe that is not delta reflects (contract 2)
-    }
-    const float density = bsdf_pdf(here.bsdf, here.wo, w);
-    const float roughness = reconnection::lobe_roughness(lobe_before, here.bsdf);
-
-    // Step 3 at (y_{k-2}, y_{k-1}): y_{k-1}'s direction is the one to x_k,
-    // drawn by the lobe the source drew there, or by NEE where forced.
-    if (k >= 3u) {
-        const reconnection::Pair pair =
-            forced ? forward_pair(before, y, y_normal) : full_pair(before, here, lobe_before, density);
-        if (reconnection::connectable(pair, threshold, settings.roughness)) {
-            return failed();
-        }
-    }
-    const uint m_before = nee::candidate_count(settings.nee_candidates, k - 1u);
-
-    if (to_light) {
-        // x_k = x_d, a light: struck by y_{k-1}'s BSDF, or NEE's, forced.
-        const float3 origin = leaving_point(here.surface, w);
-        const StoredLight stored = stored_light(scene, source.primitive, source.point, origin);
-        if (!stored.is_light || stored.light.cos_light <= 0.0f) {
-            return failed();
-        }
-        const float geometry = stored.light.cos_light / (stored.light.distance * stored.light.distance);
-        const float forward = density > 0.0f ? 1.0f / (density * geometry) : 0.0f;
-        if (!forced && !reconnection::connectable(reconnection::Pair{roughness, forward, reconnection::largest},
-                                                  threshold, settings.roughness)) {
-            return failed();
-        }
-        if (!nee::visible(scene.structure, scene.shapes(), origin, stored.light)) {
-            return failed();
-        }
-        const float3 kept = transmittance(scene.media(), here.medium, stored.light.distance);
-        if (forced) {
-            const float3 unshadowed = nee::unshadowed(here, stored.light);
-            const float bsdf_density = bsdf_pdf(here.bsdf, here.wo, to_float3(stored.light.direction));
-            if (!(stored.density > 0.0f)) {
-                return failed();
-            }
-            return shifted_to(beta * nee::light_weight(m_before, stored.density, bsdf_density) * unshadowed * kept /
-                                  stored.density,
-                              stored.density * geometry / source.jacobian);
-        }
-        if (!(density > 0.0f)) {
-            return failed();
-        }
-        const float3 f = bsdf_evaluate(here.bsdf, here.wo, w) * metal::abs(metal::dot(w, to_float3(here.bsdf.normal)));
-        return shifted_to(beta * f / density * kept * to_float3(stored.light.radiance) *
-                              nee::bsdf_weight(m_before, stored.density, density),
-                          density * geometry / source.jacobian);
-    }
-
-    // x_k a surface, whose direction toward x_{k+1} the source keeps.
+    const c::SurfaceInteraction at_k = r.at_k;
+    const float3 x_k = r.x_k;
+    const float3 y = to_float3(here.surface.position);
+    const float3 w = r.w;
+    const float distance2 = r.distance2;
+    const float density = r.density;
+    const float roughness = r.roughness;
     if (light_at(scene.lights(), source.primitive).is_light || !(density > 0.0f)) {
         return failed();
     }
@@ -428,6 +427,54 @@ inline Shifted reconnect(path::Scene scene, Shading here, float3 beta, Before be
     const float weight = reweighed ? nee::bsdf_weight(m_k, source.light_density, density_k) : 1.0f;
     return shifted_to(prefix * f_k / density_k * to_float3(source.radiance) * weight,
                       density * geometry * density_k / source.jacobian);
+}
+
+// Steps 3 to 6 (above): y_{k-1} at `here`, its throughput `beta` and the
+// vertex before it, joined to the source's x_k.
+inline Shifted reconnect(path::Scene scene, Shading here, float3 beta, Before before, float threshold,
+                         serenity::contracts::PathReservoir source, serenity::contracts::PathReuseSettings settings) {
+    namespace c = serenity::contracts;
+    const uint d = c::path_length(source.flags);
+    const uint k = c::path_rc(source.flags);
+    const c::PathEnd end = c::path_end(source.flags);
+    const uint lobe_before = c::path_lobe_before(source.flags);
+    const bool to_light = k == d;
+    const bool forced = to_light && end == c::PathEnd::nee;
+    if (!(source.jacobian > 0.0f) || !c::aims_at_lights(bsdf_lobes(here.bsdf))) {
+        return failed();
+    }
+    const float3 y = to_float3(here.surface.position);
+    const float3 y_normal = to_float3(here.surface.geometric_normal);
+    const float3 decoded = decode_shape_point(scene.shapes(), source.primitive,
+                                              c::ShapePoint{source.point, c::path_face(source.flags)});
+    const c::SurfaceInteraction at_k = surface_interaction(scene.shapes(), source.primitive, decoded, decoded - y);
+    const float3 x_k = to_float3(at_k.position);
+    const float3 toward = x_k - y;
+    const float distance2 = metal::dot(toward, toward);
+    if (!(distance2 > 0.0f)) {
+        return failed();
+    }
+    const float3 w = toward * metal::rsqrt(distance2);
+    if (!leave_alike(here.surface, w, here.wo)) {
+        return failed();  // every lobe that is not delta reflects (contract 2)
+    }
+    const float density = bsdf_pdf(here.bsdf, here.wo, w);
+    const float roughness = reconnection::lobe_roughness(lobe_before, here.bsdf);
+
+    // Step 3 at (y_{k-2}, y_{k-1}): y_{k-1}'s direction is the one to x_k,
+    // drawn by the lobe the source drew there, or by NEE where forced.
+    if (k >= 3u) {
+        const reconnection::Pair pair =
+            forced ? forward_pair(before, y, y_normal) : full_pair(before, here, lobe_before, density);
+        if (reconnection::connectable(pair, threshold, settings.roughness)) {
+            return failed();
+        }
+    }
+    const uint m_before = nee::candidate_count(settings.nee_candidates, k - 1u);
+
+    const Reconnecting r{at_k, x_k, w, distance2, density, roughness, forced, m_before};
+    return to_light ? reconnect_to_light(scene, here, beta, threshold, source, settings, r)
+                    : reconnect_to_surface(scene, here, beta, threshold, source, settings, r);
 }
 
 // Replay's last step for a path with no reconnection vertex: at y_{d-1},
