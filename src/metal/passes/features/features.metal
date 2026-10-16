@@ -135,6 +135,30 @@ inline Found follow(Scene scene, metal::raytracing::ray along, uint medium, floa
     return Found{weight, float3(0.0f)};
 }
 
+// What the camera's ray along `direction` settles on, from the primary
+// surface `at` it reached (contract 17): `at` itself unless it is delta; a
+// mirror's reflection, weighed by its f0; glass's path split in two, each
+// half followed on and blended by Fresnel (Open Image Denoise's rule).
+inline Found replaced(Scene scene, Reached at, float3 direction) {
+    if (at.light || !delta(at.bsdf)) {
+        return settled(at);
+    }
+    if (mirror(at.bsdf)) {
+        const Found seen = follow(scene, leave(at.surface, metal::reflect(direction, to_float3(at.bsdf.normal))),
+                                  contracts::no_medium, at.point);
+        return Found{metal::saturate(to_float3(at.bsdf.color)) * seen.albedo, seen.normal};
+    }
+    const Boundary boundary = dielectric_boundary(at.bsdf.ior, direction, to_float3(at.bsdf.normal));
+    const Found reflected = follow(scene, leave(at.surface, boundary.reflected), contracts::no_medium, at.point);
+    const Found transmitted =
+        boundary.total_internal
+            ? reflected
+            : follow(scene, leave(at.surface, boundary.refracted), medium_beyond(at.surface), at.point);
+    const float f = boundary.reflectance;
+    return Found{f * reflected.albedo + (1.0f - f) * transmitted.albedo,
+                 f * reflected.normal + (1.0f - f) * transmitted.normal};
+}
+
 }  // namespace
 
 kernel void features(constant contracts::FrameConstants& frame [[buffer(binding::constants)]],
@@ -197,26 +221,7 @@ kernel void features(constant contracts::FrameConstants& frame [[buffer(binding:
         moved = float4(offset, view_z_before - view_z, 0.0f);
     }
 
-    Found found;
-    if (at.light || !delta(at.bsdf)) {
-        found = settled(at);
-    } else if (mirror(at.bsdf)) {
-        const Found seen = follow(scene, leave(at.surface, metal::reflect(ray.direction, to_float3(at.bsdf.normal))),
-                                  contracts::no_medium, at.point);
-        found = Found{metal::saturate(to_float3(at.bsdf.color)) * seen.albedo, seen.normal};
-    } else {
-        // Glass: the path split in two, each half followed on, and blended
-        // by Fresnel (Open Image Denoise's rule, contract 17).
-        const Boundary boundary = dielectric_boundary(at.bsdf.ior, ray.direction, to_float3(at.bsdf.normal));
-        const Found reflected = follow(scene, leave(at.surface, boundary.reflected), contracts::no_medium, at.point);
-        const Found transmitted =
-            boundary.total_internal
-                ? reflected
-                : follow(scene, leave(at.surface, boundary.refracted), medium_beyond(at.surface), at.point);
-        const float f = boundary.reflectance;
-        found = Found{f * reflected.albedo + (1.0f - f) * transmitted.albedo,
-                      f * reflected.normal + (1.0f - f) * transmitted.normal};
-    }
+    const Found found = replaced(scene, at, ray.direction);
     albedo.write(float4(found.albedo, 1.0f), pixel);
     normal.write(float4(found.normal, 0.0f), pixel);
     depth.write(float4(view_z), pixel);

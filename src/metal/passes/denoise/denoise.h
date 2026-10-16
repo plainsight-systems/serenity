@@ -36,7 +36,8 @@ namespace serenity::metal {
 //       remodulation by the full-size albedo (1).
 //
 // 23 dispatches, each after a barrier on the one before it (GPU.8: each
-// reads what the one before wrote). The weights are the network's,
+// reads what the one before wrote), the first after the renderer's barrier
+// before the pass (metal/frame/renderer.cpp). The weights are the network's,
 // converted once at construction: each 3 x 3 convolution's to half floats
 // laid out [tap][input channel][output channel], the input's 28 channels
 // padded to 32 with zeros; biases and the head in float (StaticArrays).
@@ -63,7 +64,15 @@ public:
     void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
 
 private:
-    NS::SharedPtr<MTL::ComputePipelineState> pipeline(std::uint32_t chunk) const;
+    // The convolution kernel that computes `chunk` output blocks a
+    // threadgroup; owned by this pass.
+    MTL::ComputePipelineState* pipeline(std::uint32_t chunk) const;
+
+    // The four steps above, in order; record() checks `resources` first.
+    void record_median(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+    void record_input(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+    void record_unet(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+    void record_output(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
 
     std::array<NS::SharedPtr<MTL::ComputePipelineState>, 3> histogram_;
     std::array<NS::SharedPtr<MTL::ComputePipelineState>, 3> select_;

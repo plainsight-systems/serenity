@@ -8,6 +8,7 @@
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <utility>
 
@@ -23,6 +24,13 @@ static_assert(std::numeric_limits<float>::is_iec559, "weights.bin's float32 is I
 
 constexpr std::string_view format = "serenity-denoiser-weights/1";
 
+// The largest count a double holds with every integer below it exact, 2^53.
+constexpr double largest_exact_count = 9007199254740992.0;
+
+// The widest layer the loader takes: far past both trained networks' 96,
+// low enough that no shape's product can overflow.
+constexpr std::uint64_t max_width = 4096;
+
 [[noreturn]] void refuse(const std::string& source, const std::string& what) {
     throw NetworkError("the denoiser's network " + source + ": " + what);
 }
@@ -30,7 +38,7 @@ constexpr std::string_view format = "serenity-denoiser-weights/1";
 // A count the layout writes: a non-negative integer a double holds exactly.
 std::uint64_t whole(const Json& node, std::string_view what, const std::string& source) {
     const double n = node.number(what);
-    if (!(n >= 0.0 && n <= 9007199254740992.0 && std::floor(n) == n)) {
+    if (!(n >= 0.0 && n <= largest_exact_count && std::floor(n) == n)) {
         refuse(source, std::string(what) + " is not a count");
     }
     return static_cast<std::uint64_t>(n);
@@ -38,10 +46,10 @@ std::uint64_t whole(const Json& node, std::string_view what, const std::string& 
 
 std::uint32_t width(const Json& node, std::string_view what, const std::string& source) {
     const std::uint64_t n = whole(node, what, source);
-    if (n == 0 || n > 4096 || n % contracts::channel_block != 0) {
+    if (n == 0 || n > max_width || n % contracts::channel_block != 0) {
         refuse(source, std::string(what) + ", " + std::to_string(n) + ", is not a positive multiple of " +
-                           std::to_string(contracts::channel_block) +
-                           " up to 4096, which the kernels' blocks of channels need");
+                           std::to_string(contracts::channel_block) + " up to " + std::to_string(max_width) +
+                           ", which the kernels' blocks of channels need");
     }
     return static_cast<std::uint32_t>(n);
 }
@@ -94,9 +102,12 @@ void check_constants(const Json& layout, const std::string& source) {
     same(scores.at("channels"), static_cast<float>(contracts::head_outputs), "scores.channels");
     same(scores.at("masked_tap_score"), contracts::masked_score, "scores.masked_tap_score");
     const JsonArray& spacings = scores.at("spacings").array("scores.spacings");
-    if (spacings.size() != contracts::denoise_spacings || spacings[0].number("a spacing") != 1.0 ||
-        spacings[1].number("a spacing") != 2.0 || spacings[2].number("a spacing") != 4.0) {
-        refuse(source, "its spacings are not 1, 2 and 4");
+    bool same_spacings = spacings.size() == contracts::denoise_spacings;
+    for (std::size_t s = 0; same_spacings && s < spacings.size(); ++s) {
+        same_spacings = spacings[s].number("a spacing") == static_cast<double>(contracts::spacing_pixels[s]);
+    }
+    if (!same_spacings) {
+        refuse(source, "its spacings are not contract 18's 1, 2 and 4");
     }
 }
 
@@ -132,7 +143,7 @@ std::vector<Needed> needed(Network& n) {
 // The tensor `name` of `tensors`, read from `weights`, its shape checked
 // against `shape`; each tensor is taken once.
 std::vector<float> tensor(const JsonArray& tensors, std::vector<bool>& taken, const std::string& name,
-                          const std::vector<std::uint64_t>& shape, const std::vector<std::byte>& weights,
+                          const std::vector<std::uint64_t>& shape, std::span<const std::byte> weights,
                           const std::string& source) {
     for (std::size_t t = 0; t < tensors.size(); ++t) {
         if (tensors[t].at("name").string("a tensor's name") != name) {
@@ -169,23 +180,23 @@ std::vector<float> tensor(const JsonArray& tensors, std::vector<bool>& taken, co
     refuse(source, "it has no tensor " + name);
 }
 
-std::vector<std::byte> read_bytes(const std::filesystem::path& path, const std::string& source) {
+// The file's bytes, read once; the weights are viewed as bytes where they
+// are (std::as_bytes), not copied again.
+std::string read_file(const std::filesystem::path& path, const std::string& source) {
     std::ifstream file{path, std::ios::binary};
     if (!file) {
         refuse(source, "cannot read " + path.filename().string());
     }
-    std::vector<char> chars{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    std::string bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
     if (file.bad()) {
         refuse(source, "cannot read " + path.filename().string());
     }
-    std::vector<std::byte> bytes(chars.size());
-    std::memcpy(bytes.data(), chars.data(), chars.size());
     return bytes;
 }
 
 }  // namespace
 
-Network parse_network(const std::string& layout_json, const std::vector<std::byte>& weights,
+Network parse_network(const std::string& layout_json, std::span<const std::byte> weights,
                       const std::string& source) {
     Json layout;
     try {
@@ -229,10 +240,9 @@ Network parse_network(const std::string& layout_json, const std::vector<std::byt
 
 Network load_network(const std::filesystem::path& directory) {
     const std::string source = directory.string();
-    const std::vector<std::byte> layout = read_bytes(directory / "layout.json", source);
-    std::string text(layout.size(), '\0');
-    std::memcpy(text.data(), layout.data(), layout.size());
-    return parse_network(text, read_bytes(directory / "weights.bin", source), source);
+    const std::string layout = read_file(directory / "layout.json", source);
+    const std::string weights = read_file(directory / "weights.bin", source);
+    return parse_network(layout, std::as_bytes(std::span(weights)), source);
 }
 
 }  // namespace serenity::denoise

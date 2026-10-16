@@ -1,7 +1,6 @@
 #include "metal/frame/feature_images.h"
 
 #include <array>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -15,11 +14,6 @@
 namespace serenity::metal {
 
 namespace {
-
-// A half float, three of the images' storage: _Float16, a compiler
-// extension (P.2), until the toolchain's C++ has std::float16_t (C++23).
-using Half = _Float16;
-static_assert(sizeof(Half) == 2);
 
 constexpr std::size_t rgba = 4;  // channels a texel of the RGBA16Float images
 

@@ -17,7 +17,14 @@ namespace serenity::metal {
 // scoped, how buffer offsets are aligned, how a private image is made, and
 // how a pass dispatches a thread per pixel. Each was written out where it was
 // used, four or five times over; a change to one (a texture's usage, the
-// dispatch's shape) is now made here.
+// dispatch's shape) is now made here. And the half float, the storage of
+// the RGBA16Float images and the denoiser's weights, as the host writes and
+// reads it.
+
+// A half float: _Float16, a compiler extension (P.2), until the
+// toolchain's C++ has std::float16_t (C++23).
+using Half = _Float16;
+static_assert(sizeof(Half) == 2, "a half float is two bytes, as Metal's half");
 
 // Metal's description of `error`, or a fixed text when it gave none. Called
 // inside the pool that owns `error`, so the text is copied out before the

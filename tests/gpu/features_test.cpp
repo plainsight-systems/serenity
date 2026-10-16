@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <vector>
@@ -49,7 +50,7 @@ constexpr frame::Extent size{64, 48};
 // So x runs right and z down the image, and a point at view depth z is
 // f / z pixels from the middle per meter, f = H / (2 tan 20 degrees).
 constexpr double height = 2.0;
-const double focal = size.height / (2.0 * std::tan(20.0 * 3.14159265358979323846 / 180.0));
+const double focal = size.height / (2.0 * std::tan(20.0 * std::numbers::pi / 180.0));
 
 std::string above() {
     return "[camera]\nposition = [0, 2, 0]\nlook_at = [0, 0, 0]\nup = [0, 0, -1]\nvertical_fov_degrees = 40\n";

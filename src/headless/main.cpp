@@ -156,7 +156,7 @@ int main(int argc, char** argv) {
         // feature_images.h), once a written frame (GPU.1).
         const auto write_features = [&](std::uint64_t index) {
             const metal::FeatureImages::Read read = renderer.read_features();
-            const std::array<std::pair<const char*, const contracts::LinearImage*>, 4> images = {
+            const std::array<std::pair<std::string_view, const contracts::LinearImage*>, 4> images = {
                 std::pair{"albedo", &read.albedo}, std::pair{"normal", &read.normal},
                 std::pair{"depth", &read.depth}, std::pair{"motion", &read.motion}};
             std::vector<std::filesystem::path> paths;

@@ -128,6 +128,21 @@ NS::SharedPtr<MTL4::ArgumentTable> make_argument_table(MTL::Device* device, NS::
     return table;
 }
 
+// The features pass's constants for a frame of `size` (contract 17) into
+// `ring`'s `slot`: whether there is a frame before, and its camera framed
+// for `size`. Their address. For the features at the light size and the
+// denoiser's full-size albedo alike.
+MTL::GPUAddress write_feature_constants(FrameArray& ring, std::uint32_t slot,
+                                        const std::optional<frame::PreviousFrame>& previous, frame::Extent size) {
+    contracts::FeatureConstants features{};
+    features.previous = previous ? 1u : 0u;
+    if (previous) {
+        features.previous_camera = camera::shader_form(previous->camera, size);
+    }
+    std::memcpy(ring.bytes(slot).data(), &features, sizeof(features));
+    return ring.address(slot);
+}
+
 }  // namespace
 
 Renderer::Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
@@ -650,13 +665,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
     if (features_) {
         // Whether there is a frame before, and its camera framed for this
         // frame's size; its shapes, animated below where they move.
-        contracts::FeatureConstants features{};
-        features.previous = inputs.previous ? 1u : 0u;
-        if (inputs.previous) {
-            features.previous_camera = camera::shader_form(inputs.previous->camera, light);
-        }
-        std::memcpy(feature_constants_->bytes(begun.slot).data(), &features, sizeof(features));
-        resources.feature_constants = feature_constants_->address(begun.slot);
+        resources.feature_constants = write_feature_constants(*feature_constants_, begun.slot, inputs.previous, light);
         resources.feature_last_transforms =
             feature_transforms_ ? feature_transforms_->address(begun.slot) : resources.transforms;
         resources.albedo = features_->albedo();
@@ -712,13 +721,8 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         output.accumulation = nullptr;
 
         full_features = output;
-        contracts::FeatureConstants full{};
-        full.previous = inputs.previous ? 1u : 0u;
-        if (inputs.previous) {
-            full.previous_camera = camera::shader_form(inputs.previous->camera, size);
-        }
-        std::memcpy(full_feature_constants_->bytes(begun.slot).data(), &full, sizeof(full));
-        full_features.feature_constants = full_feature_constants_->address(begun.slot);
+        full_features.feature_constants =
+            write_feature_constants(*full_feature_constants_, begun.slot, inputs.previous, size);
         full_features.albedo = full_features_->albedo();
         full_features.normal = full_features_->normal();
         full_features.depth = full_features_->depth();
@@ -778,8 +782,10 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
                                                MTL4::VisibilityOptionDevice);
         }
         if (step.kind == frame::PassKind::denoise) {
-            // The full-size albedo first; the denoise pass's first dispatch
-            // is after a barrier of its own, as each of its dispatches is.
+            // The full-size albedo first, then the pass, both after the
+            // barrier above. Only the pass's last dispatch reads the
+            // full-size albedo, after barriers of its own (passes/denoise/
+            // denoise.h), so its first dispatches overlap this one.
             full_features_pass_->record(encoder, full_features);
             std::visit([&](const auto& pass) { pass.record(encoder, denoising); }, step.pass);
             denoised = true;

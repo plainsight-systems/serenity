@@ -5,13 +5,16 @@
 // (tests/data/denoise/network, training/denoise_check.py) and on copies
 // of it broken one way at a time.
 
+#include <array>
 #include <cstddef>
-#include <cstring>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <optional>
+#include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -55,13 +58,6 @@ std::string file_text(const std::filesystem::path& path) {
     return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
 }
 
-std::vector<std::byte> file_bytes(const std::filesystem::path& path) {
-    const std::string text = file_text(path);
-    std::vector<std::byte> bytes(text.size());
-    std::memcpy(bytes.data(), text.data(), text.size());
-    return bytes;
-}
-
 const std::filesystem::path fixture_network = tests::data_dir / "denoise" / "network";
 
 // The fixture network's layout with `from` replaced by `to` once, parsed
@@ -72,12 +68,12 @@ std::string network_refusal(const std::string& from, const std::string& to,
     const std::size_t at = layout.find(from);
     REQUIRE(at != std::string::npos);
     layout.replace(at, from.size(), to);
-    std::vector<std::byte> weights = file_bytes(fixture_network / "weights.bin");
+    std::string weights = file_text(fixture_network / "weights.bin");
     if (weights_size) {
         weights.resize(*weights_size);
     }
     return tests::error_of<denoise::NetworkError>(
-        [&] { return denoise::parse_network(layout, weights, "fixture"); });
+        [&] { return denoise::parse_network(layout, std::as_bytes(std::span(weights)), "fixture"); });
 }
 
 }  // namespace
@@ -179,8 +175,8 @@ TEST_CASE("the fixture's exported network reads, its widths and tensors as the s
 }
 
 TEST_CASE("a network export that is not what the renderer runs is refused, naming what") {
-    CHECK(network_refusal("\"format\": \"serenity-denoiser-weights/1\"", "\"format\": \"other\"").find("format") !=
-          std::string::npos);
+    CHECK(tests::contains(network_refusal("\"format\": \"serenity-denoiser-weights/1\"", "\"format\": \"other\""),
+                          "format"));
     CHECK(tests::contains(network_refusal("\"albedo_floor\": 0.02", "\"albedo_floor\": 0.03"), "albedo_floor"));
     CHECK(tests::contains(network_refusal("\"masked_tap_score\": -10000.0", "\"masked_tap_score\": -1000.0"),
                           "masked_tap_score"));

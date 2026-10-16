@@ -50,6 +50,38 @@ SERENITY_CONSTANT uint32_t head_outputs = 124u;  // denoise_scores x denoise_sub
 SERENITY_CONSTANT float masked_score = -1.0e4f;
 SERENITY_CONSTANT float albedo_floor = 0.02f;
 
+// Each kernel's tap spacing, in input pixels (training/model.py, SPACINGS):
+// the shaders' taps and the loader's check read this one list.
+SERENITY_CONSTANT uint32_t spacing_pixels[denoise_spacings] = {1u, 2u, 4u};
+
+// Where each input lies among the network_inputs channels (above): the
+// history's channel c of subpixel q at input_history + c x
+// denoise_subpixels + q, its validity at input_validity + q.
+SERENITY_CONSTANT uint32_t input_radiance = 0u;
+SERENITY_CONSTANT uint32_t input_albedo = 3u;
+SERENITY_CONSTANT uint32_t input_normal = 6u;
+SERENITY_CONSTANT uint32_t input_depth = 9u;
+SERENITY_CONSTANT uint32_t input_motion = 10u;
+SERENITY_CONSTANT uint32_t input_history = 12u;
+SERENITY_CONSTANT uint32_t input_validity = 24u;
+static_assert(input_validity + denoise_subpixels == network_inputs, "the inputs fill network_inputs channels");
+
+// The threadgroups the host dispatches and the kernels are written for
+// (metal/passes/denoise/denoise.{h,cpp,metal}): denoise_threads threads, four
+// simdgroups of simd_width. A convolution's covers conv_rows rows of
+// conv_pixels pixels, one row a simdgroup; the output kernel's one row of
+// conv_pixels input pixels, one subpixel a simdgroup, the head's outputs
+// padded to head_columns, simd_width of them a simdgroup.
+SERENITY_CONSTANT uint32_t simd_width = 32u;
+SERENITY_CONSTANT uint32_t conv_rows = 4u;
+SERENITY_CONSTANT uint32_t conv_pixels = 32u;
+SERENITY_CONSTANT uint32_t denoise_threads = conv_rows * simd_width;
+SERENITY_CONSTANT uint32_t head_columns = 128u;
+static_assert(conv_pixels == simd_width, "a row's pixels are its simdgroup's lanes");
+static_assert(denoise_threads / simd_width == denoise_subpixels, "the output kernel's simdgroups are the subpixels");
+static_assert(head_columns == denoise_subpixels * simd_width && head_outputs <= head_columns,
+              "the head's outputs, padded, are simd_width a simdgroup");
+
 // OIDN's PU2 fit, as training/loss.py has it; pu_norm_scale is 1 / pu(65504).
 SERENITY_CONSTANT float pu_a = 1.41283765e03f;
 SERENITY_CONSTANT float pu_b = 1.64593172e00f;

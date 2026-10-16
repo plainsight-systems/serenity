@@ -15,6 +15,7 @@
 //   - a network one weight off is not: one of the last convolution's
 //     weights a tenth off gives 4.0e-3, four times the tolerance.
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>

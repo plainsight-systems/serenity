@@ -37,9 +37,11 @@
 #include <metal_stdlib>
 
 #include "core/contracts/denoise.h"
+#include "metal/device/layout.metal.h"
 #include "metal/passes/bindings.h"
 
 using namespace metal;
+using serenity::shaders::to_float3;
 namespace binding = serenity::bindings::denoise;
 namespace contracts = serenity::contracts;
 
@@ -102,6 +104,21 @@ inline bool inside_light(constant contracts::DenoiseConstants& k, int2 p) {
     return p.x >= 0 && p.y >= 0 && uint(p.x) < k.light_width && uint(p.y) < k.light_height;
 }
 
+// Tap t of the kernel at `spacing` around input pixel p: p + spacing (i, j),
+// t = (j + 1) * 3 + (i + 1).
+inline int2 tap_at(uint2 p, uint spacing, uint t) {
+    return int2(p) + int(spacing) * int2(int(t % 3u) - 1, int(t / 3u) - 1);
+}
+
+// The depth median's radix selection (below): level 0 selects by a depth's
+// bits from top_shift up, levels 1 and 2 by level_bits more each, each
+// middle rank in its own half of the bins.
+constant constexpr uint top_shift = 20u;
+constant constexpr uint level_bits = 10u;
+constant constexpr uint level_bins = 1u << level_bits;
+constant constexpr uint level_mask = level_bins - 1u;
+static_assert(2u * level_bins == contracts::median_bins, "levels 1 and 2 hold both ranks' bins");
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -133,13 +150,13 @@ kernel void denoise_depth_histogram(constant contracts::DenoiseConstants& k [[bu
         if (z > 0.0f) {
             const uint bits = as_type<uint>(z);
             if (Level == 0u) {
-                atomic_fetch_add_explicit(&bins[bits >> 20], 1u, memory_order_relaxed);
+                atomic_fetch_add_explicit(&bins[bits >> top_shift], 1u, memory_order_relaxed);
             } else {
-                const uint shift = Level == 1u ? 20u : 10u;
-                const uint bin = (bits >> (shift - 10u)) & 1023u;
+                const uint shift = Level == 1u ? top_shift : top_shift - level_bits;
+                const uint bin = (bits >> (shift - level_bits)) & level_mask;
                 for (uint r = 0; r < 2u; ++r) {
                     if (state.count != 0u && (bits >> shift) == state.prefix[r]) {
-                        atomic_fetch_add_explicit(&bins[r * 1024u + bin], 1u, memory_order_relaxed);
+                        atomic_fetch_add_explicit(&bins[r * level_bins + bin], 1u, memory_order_relaxed);
                     }
                 }
             }
@@ -175,15 +192,15 @@ kernel void denoise_depth_select(device uint* histogram [[buffer(binding::histog
             state.median = 1.0f;
         } else {
             for (uint r = 0; r < 2u; ++r) {
-                const uint first = Level == 0u ? 0u : r * 1024u;
-                const uint bins = Level == 0u ? contracts::median_bins : 1024u;
+                const uint first = Level == 0u ? 0u : r * level_bins;
+                const uint bins = Level == 0u ? contracts::median_bins : level_bins;
                 uint below = 0u;
                 uint b = 0u;
                 for (; b + 1u < bins && below + histogram[first + b] <= state.rank[r]; ++b) {
                     below += histogram[first + b];
                 }
                 state.rank[r] -= below;
-                state.prefix[r] = Level == 0u ? b : (state.prefix[r] << 10) | b;
+                state.prefix[r] = Level == 0u ? b : (state.prefix[r] << level_bits) | b;
             }
             if (Level == 2u) {
                 state.median = (as_type<float>(state.prefix[0]) + as_type<float>(state.prefix[1])) * 0.5f;
@@ -222,7 +239,7 @@ template [[host_name("denoise_depth_select2")]] kernel void denoise_depth_select
 kernel void denoise_input(constant contracts::DenoiseConstants& k [[buffer(binding::constants)]],
                           device const contracts::MedianState& state [[buffer(binding::median)]],
                           device const float4* history [[buffer(binding::history)]],
-                          device half* input [[buffer(binding::output)]],
+                          device half4* input [[buffer(binding::output)]],
                           device float4* demod [[buffer(binding::demod)]],
                           texture2d<float, access::read> light [[texture(binding::light)]],
                           texture2d<float, access::read> albedo [[texture(binding::albedo)]],
@@ -234,7 +251,9 @@ kernel void denoise_input(constant contracts::DenoiseConstants& k [[buffer(bindi
         return;
     }
     const uint pitch = k.padded_width + 2u;
-    device half* out = input + ((p.y + 1u) * pitch + p.x + 1u) * contracts::input_channels;
+    // A pixel's channels as half4s, a run of 64 bytes (GPU.2).
+    constexpr uint quads = contracts::input_channels / 4u;
+    device half4* out = input + ((p.y + 1u) * pitch + p.x + 1u) * quads;
     float values[contracts::input_channels];
     for (uint c = 0; c < contracts::input_channels; ++c) {
         values[c] = 0.0f;
@@ -246,30 +265,32 @@ kernel void denoise_input(constant contracts::DenoiseConstants& k [[buffer(bindi
         const float3 n = normal.read(p).xyz;
         const float z = depth.read(p).r;
         const float2 mv = motion.read(p).xy;
-        values[0] = pu(d.r);
-        values[1] = pu(d.g);
-        values[2] = pu(d.b);
-        values[3] = a.r;
-        values[4] = a.g;
-        values[5] = a.b;
-        values[6] = dot(n, float3(k.right.x, k.right.y, k.right.z));
-        values[7] = dot(n, float3(k.up.x, k.up.y, k.up.z));
-        values[8] = dot(n, float3(k.backward.x, k.backward.y, k.backward.z));
-        values[9] = z > 0.0f ? log(1.0f + z / state.median) : 0.0f;
-        values[10] = mv.x;
-        values[11] = mv.y;
-        // pixel_unshuffle: channel 12 + c * 4 + dy * 2 + dx, and 24 + dy * 2 + dx.
-        for (uint q = 0; q < contracts::denoise_subpixels; ++q) {
+        values[contracts::input_radiance + 0u] = pu(d.r);
+        values[contracts::input_radiance + 1u] = pu(d.g);
+        values[contracts::input_radiance + 2u] = pu(d.b);
+        values[contracts::input_albedo + 0u] = a.r;
+        values[contracts::input_albedo + 1u] = a.g;
+        values[contracts::input_albedo + 2u] = a.b;
+        values[contracts::input_normal + 0u] = dot(n, to_float3(k.right));
+        values[contracts::input_normal + 1u] = dot(n, to_float3(k.up));
+        values[contracts::input_normal + 2u] = dot(n, to_float3(k.backward));
+        values[contracts::input_depth] = z > 0.0f ? log(1.0f + z / state.median) : 0.0f;
+        values[contracts::input_motion + 0u] = mv.x;
+        values[contracts::input_motion + 1u] = mv.y;
+        // pixel_unshuffle: subpixel q = dy * 2 + dx of each history channel c
+        // (contract 18), and its validity.
+        constexpr uint subpixels = contracts::denoise_subpixels;
+        for (uint q = 0; q < subpixels; ++q) {
             const uint2 x = contracts::denoise_scale * p + uint2(q & 1u, q >> 1);
             const Moved m = moved(k, history, x, mv);
-            values[12 + q] = pu(m.color.r);
-            values[16 + q] = pu(m.color.g);
-            values[20 + q] = pu(m.color.b);
-            values[24 + q] = m.valid;
+            values[contracts::input_history + 0u * subpixels + q] = pu(m.color.r);
+            values[contracts::input_history + 1u * subpixels + q] = pu(m.color.g);
+            values[contracts::input_history + 2u * subpixels + q] = pu(m.color.b);
+            values[contracts::input_validity + q] = m.valid;
         }
     }
-    for (uint c = 0; c < contracts::input_channels; ++c) {
-        out[c] = half(values[c]);
+    for (uint c = 0; c < quads; ++c) {
+        out[c] = half4(float4(values[4u * c], values[4u * c + 1u], values[4u * c + 2u], values[4u * c + 3u]));
     }
     demod[p.y * k.padded_width + p.x] = float4(d, 0.0f);
 }
@@ -294,45 +315,65 @@ kernel void denoise_input(constant contracts::DenoiseConstants& k [[buffer(bindi
 // time, to be biased, rectified and narrowed to half.
 // ---------------------------------------------------------------------------
 
-constant constexpr uint conv_rows = 4u;
-constant constexpr uint conv_pixels = 32u;
+// The tile (contract 18): conv_rows rows of conv_pixels, one a simdgroup,
+// with the border its taps reach; blocks of `block` channels (contract
+// 18's channel_block), a simdgroup matrix's side, two half4s a pixel.
+constant constexpr uint conv_rows = contracts::conv_rows;
+constant constexpr uint conv_pixels = contracts::conv_pixels;
 constant constexpr uint halo_rows = conv_rows + 2u;
 constant constexpr uint halo_pixels = conv_pixels + 2u;
-constant constexpr uint conv_threads = conv_rows * 32u;
+constant constexpr uint conv_threads = contracts::denoise_threads;
+constant constexpr uint conv_taps = 9u;
+constant constexpr uint block = contracts::channel_block;
+constant constexpr uint block_quads = block / 4u;
+static_assert(block == 8u, "a block is a simdgroup matrix's 8 channels");
 
+// Device buffers of half floats are read and written here a half4 at a
+// time, typed so (ES.48: no cast of device pointers); their channel offsets
+// and strides, counted in halves, are multiples of 4. The threadgroup tiles
+// are written a half4 at a time and read by simdgroup_load, which takes
+// halves: that one reinterpretation, of the tiles, is the kernel's.
 template <uint NT>
 kernel void conv3x3(constant contracts::ConvParams& p [[buffer(binding::params)]],
-                    device const half* input [[buffer(binding::input)]],
-                    device const half* weights [[buffer(binding::weights)]],
+                    device const half4* input [[buffer(binding::input)]],
+                    device const half4* weights [[buffer(binding::weights)]],
                     device const float* bias [[buffer(binding::bias)]],
-                    device half* output [[buffer(binding::output)]],
-                    device const half* coarse [[buffer(binding::coarse)]],
+                    device half4* output [[buffer(binding::output)]],
+                    device const half4* coarse [[buffer(binding::coarse)]],
                     uint3 group [[threadgroup_position_in_grid]],
                     uint sg [[simdgroup_index_in_threadgroup]],
                     uint lane [[thread_index_in_simdgroup]]) {
-    constexpr uint channels = NT * 8u;
-    threadgroup half halo[halo_rows * halo_pixels * 8u];
-    threadgroup half taps[9u * 8u * channels];
-    threadgroup float stage[conv_rows * conv_pixels * 8u];
-    const uint tid = sg * 32u + lane;
+    constexpr uint channels = NT * block;
+    threadgroup half halo[halo_rows * halo_pixels * block];
+    threadgroup half taps[conv_taps * block * channels];
+    threadgroup float stage[conv_rows * conv_pixels * block];
+    threadgroup half4* const halo4 = reinterpret_cast<threadgroup half4*>(halo);
+    threadgroup half4* const taps4 = reinterpret_cast<threadgroup half4*>(taps);
+    const uint tid = sg * contracts::simd_width + lane;
     const uint y0 = group.y * conv_rows;
     const uint x0 = group.x * conv_pixels;
     const uint y = y0 + sg;
     const bool active = y < p.height;  // every thread still copies and waits
     const uint first_out = group.z * channels;
-    const uint out_width = p.out_blocks * 8u;  // the weights' row: every output channel
+    const uint out_width = p.out_blocks * block;  // the weights' row: every output channel
 
-    simdgroup_float8x8 acc[4][NT];
-    for (uint m = 0; m < 4u; ++m) {
+    // A row's conv_pixels pixels as pixel_blocks matrices of `block` pixels.
+    constexpr uint pixel_blocks = conv_pixels / block;
+    simdgroup_float8x8 acc[pixel_blocks][NT];
+    for (uint m = 0; m < pixel_blocks; ++m) {
         for (uint n = 0; n < NT; ++n) {
             acc[m][n] = simdgroup_float8x8(0.0f);
         }
     }
+    const uint in_stride = p.in_stride / 4u;  // in half4s, as the reads below
+    const uint up_stride = p.up_stride / 4u;
     for (uint kb = 0; kb < p.in_blocks; ++kb) {
-        // The block's input, bordered rows y0 .. y0 + 5 and columns x0 ..
-        // x0 + 33 (input pixels y0 - 1 .. and x0 - 1 ..), two half4 a pixel.
-        for (uint i = tid; i < halo_rows * halo_pixels * 2u; i += conv_threads) {
-            const uint pixel = i / 2u;
+        // The block's input, bordered rows y0 .. y0 + conv_rows + 1 and
+        // columns x0 .. x0 + conv_pixels + 1 (input pixels y0 - 1 .. and
+        // x0 - 1 ..), block_quads half4s a pixel.
+        for (uint i = tid; i < halo_rows * halo_pixels * block_quads; i += conv_threads) {
+            const uint pixel = i / block_quads;
+            const uint quad = i % block_quads;
             const uint row = y0 + pixel / halo_pixels;
             const uint column = x0 + pixel % halo_pixels;
             half4 v = half4(0.0h);
@@ -340,41 +381,39 @@ kernel void conv3x3(constant contracts::ConvParams& p [[buffer(binding::params)]
                 // Upsampled: input pixel (column - 1, row - 1) reads the level
                 // below's at half its coordinates; the border stays zero.
                 if (row >= 1u && row <= p.height && column >= 1u && column <= p.width) {
-                    v = *reinterpret_cast<device const half4*>(
-                        coarse + (((row - 1u) / 2u + 1u) * p.up_pitch + (column - 1u) / 2u + 1u) * p.up_stride +
-                        kb * 8u + (i % 2u) * 4u);
+                    v = coarse[(((row - 1u) / 2u + 1u) * p.up_pitch + (column - 1u) / 2u + 1u) * up_stride +
+                               kb * block_quads + quad];
                 }
             } else if (row <= p.height + 1u && column <= p.width + 1u) {
-                v = *reinterpret_cast<device const half4*>(input + (row * p.in_pitch + column) * p.in_stride +
-                                                           (kb - p.up_blocks) * 8u + (i % 2u) * 4u);
+                v = input[(row * p.in_pitch + column) * in_stride + (kb - p.up_blocks) * block_quads + quad];
             }
-            *reinterpret_cast<threadgroup half4*>(halo + pixel * 8u + (i % 2u) * 4u) = v;
+            halo4[pixel * block_quads + quad] = v;
         }
         // Its weights: rows (tap, input channel), this chunk's outputs.
         constexpr uint quads = channels / 4u;
-        for (uint i = tid; i < 72u * quads; i += conv_threads) {
+        const uint weight_quads = out_width / 4u;
+        for (uint i = tid; i < conv_taps * block * quads; i += conv_threads) {
             const uint row = i / quads;
             const uint q = i % quads;
-            const uint tap = row / 8u;
-            const uint k = row % 8u;
-            *reinterpret_cast<threadgroup half4*>(taps + row * channels + q * 4u) =
-                *reinterpret_cast<device const half4*>(weights + ((tap * p.in_blocks + kb) * 8u + k) * out_width +
-                                                       first_out + q * 4u);
+            const uint tap = row / block;
+            const uint k = row % block;
+            taps4[row * quads + q] =
+                weights[((tap * p.in_blocks + kb) * block + k) * weight_quads + first_out / 4u + q];
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
         if (active) {
-            for (uint tap = 0; tap < 9u; ++tap) {
+            for (uint tap = 0; tap < conv_taps; ++tap) {
                 const uint dy = tap / 3u;
                 const uint dx = tap % 3u;
-                simdgroup_half8x8 a[4];
+                simdgroup_half8x8 a[pixel_blocks];
                 simdgroup_half8x8 b[NT];
-                for (uint m = 0; m < 4u; ++m) {
-                    simdgroup_load(a[m], halo + ((sg + dy) * halo_pixels + m * 8u + dx) * 8u, 8u);
+                for (uint m = 0; m < pixel_blocks; ++m) {
+                    simdgroup_load(a[m], halo + ((sg + dy) * halo_pixels + m * block + dx) * block, block);
                 }
                 for (uint n = 0; n < NT; ++n) {
-                    simdgroup_load(b[n], taps + tap * 8u * channels + n * 8u, channels);
+                    simdgroup_load(b[n], taps + tap * block * channels + n * block, channels);
                 }
-                for (uint m = 0; m < 4u; ++m) {
+                for (uint m = 0; m < pixel_blocks; ++m) {
                     for (uint n = 0; n < NT; ++n) {
                         simdgroup_multiply_accumulate(acc[m][n], a[m], b[n], acc[m][n]);
                     }
@@ -386,39 +425,46 @@ kernel void conv3x3(constant contracts::ConvParams& p [[buffer(binding::params)]
     if (!active) {
         return;
     }
-    threadgroup float* mine = stage + sg * conv_pixels * 8u;
+    threadgroup float* mine = stage + sg * conv_pixels * block;
     const uint x = x0 + lane;
-    device half* out = output + ((y + 1u) * p.out_pitch + x + 1u) * p.out_stride + p.out_offset + first_out;
-    // A block of 8 channels at a time through the staging, each lane then
-    // writing its pixel's 8, inside the level only.
+    device half4* out = output + (((y + 1u) * p.out_pitch + x + 1u) * p.out_stride + p.out_offset + first_out) / 4u;
+    // A block of channels at a time through the staging, each lane then
+    // writing its own pixel's block, block_quads half4s, inside the level
+    // only.
     for (uint n = 0; n < NT; ++n) {
-        for (uint m = 0; m < 4u; ++m) {
-            simdgroup_store(acc[m][n], mine + m * 8u * 8u, 8u);
+        for (uint m = 0; m < pixel_blocks; ++m) {
+            simdgroup_store(acc[m][n], mine + m * block * block, block);
         }
         simdgroup_barrier(mem_flags::mem_threadgroup);
         if (x < p.width) {
-            threadgroup const float* values = mine + lane * 8u;
-            for (uint c = 0; c < 8u; ++c) {
-                float v = values[c] + bias[first_out + n * 8u + c];
+            threadgroup const float* values = mine + lane * block;
+            device const float* b = bias + first_out + n * block;
+            for (uint c = 0; c < block_quads; ++c) {
+                const uint at = 4u * c;
+                float4 v = float4(values[at], values[at + 1u], values[at + 2u], values[at + 3u]) +
+                           float4(b[at], b[at + 1u], b[at + 2u], b[at + 3u]);
                 if (p.relu != 0u) {
                     v = max(v, 0.0f);
                 }
-                out[n * 8u + c] = half(v);
+                out[n * block_quads + c] = half4(v);
             }
         }
         simdgroup_barrier(mem_flags::mem_threadgroup);
     }
 }
 
-#define SERENITY_CONV3X3(NT)                                                                                        \
-    template [[host_name("conv3x3_n" #NT)]] kernel void conv3x3<NT>(                                                \
-        constant contracts::ConvParams&, device const half*, device const half*, device const float*, device half*, \
-        device const half*, uint3, uint, uint);
-SERENITY_CONV3X3(1)
-SERENITY_CONV3X3(2)
-SERENITY_CONV3X3(3)
-SERENITY_CONV3X3(4)
-#undef SERENITY_CONV3X3
+template [[host_name("conv3x3_n1")]] kernel void conv3x3<1>(constant contracts::ConvParams&, device const half4*,
+                                                             device const half4*, device const float*, device half4*,
+                                                             device const half4*, uint3, uint, uint);
+template [[host_name("conv3x3_n2")]] kernel void conv3x3<2>(constant contracts::ConvParams&, device const half4*,
+                                                             device const half4*, device const float*, device half4*,
+                                                             device const half4*, uint3, uint, uint);
+template [[host_name("conv3x3_n3")]] kernel void conv3x3<3>(constant contracts::ConvParams&, device const half4*,
+                                                             device const half4*, device const float*, device half4*,
+                                                             device const half4*, uint3, uint, uint);
+template [[host_name("conv3x3_n4")]] kernel void conv3x3<4>(constant contracts::ConvParams&, device const half4*,
+                                                             device const half4*, device const float*, device half4*,
+                                                             device const half4*, uint3, uint, uint);
 
 // ---------------------------------------------------------------------------
 // 2 x 2 max pool, four channels a thread, between bordered buffers (the
@@ -427,9 +473,11 @@ SERENITY_CONV3X3(4)
 // run of memory (GPU.2).
 // ---------------------------------------------------------------------------
 
+// Its buffers typed half4, as conv3x3's: every stride and offset a multiple
+// of 4 halves.
 kernel void denoise_maxpool(constant contracts::ResampleParams& p [[buffer(binding::params)]],
-                            device const half* input [[buffer(binding::input)]],
-                            device half* output [[buffer(binding::output)]],
+                            device const half4* input [[buffer(binding::input)]],
+                            device half4* output [[buffer(binding::output)]],
                             uint i [[thread_position_in_grid]]) {
     const uint quads = p.channels / 4u;
     const uint q = i % quads;
@@ -439,14 +487,12 @@ kernel void denoise_maxpool(constant contracts::ResampleParams& p [[buffer(bindi
     if (y >= p.height) {
         return;
     }
-    const uint c = p.in_offset + q * 4u;
-    const auto read = [&](uint sx, uint sy) {
-        return *reinterpret_cast<device const half4*>(input + ((sy + 1u) * p.in_pitch + sx + 1u) * p.in_stride + c);
-    };
+    const uint in_stride = p.in_stride / 4u;
+    const uint c = p.in_offset / 4u + q;
+    const auto read = [&](uint sx, uint sy) { return input[((sy + 1u) * p.in_pitch + sx + 1u) * in_stride + c]; };
     const half4 v = max(max(read(2u * x, 2u * y), read(2u * x + 1u, 2u * y)),
                         max(read(2u * x, 2u * y + 1u), read(2u * x + 1u, 2u * y + 1u)));
-    *reinterpret_cast<device half4*>(output + ((y + 1u) * p.out_pitch + x + 1u) * p.out_stride + p.out_offset +
-                                     q * 4u) = v;
+    output[((y + 1u) * p.out_pitch + x + 1u) * (p.out_stride / 4u) + p.out_offset / 4u + q] = v;
 }
 
 // ---------------------------------------------------------------------------
@@ -471,7 +517,7 @@ kernel void denoise_maxpool(constant contracts::ResampleParams& p [[buffer(bindi
 // image.
 // ---------------------------------------------------------------------------
 
-constant constexpr uint head_columns = 128u;  // contracts::head_outputs, padded to the simdgroups' 4 x 32
+constant constexpr uint head_columns = contracts::head_columns;
 
 kernel void denoise_output(constant contracts::DenoiseConstants& k [[buffer(binding::constants)]],
                            device const half* features [[buffer(binding::input)]],
@@ -495,29 +541,34 @@ kernel void denoise_output(constant contracts::DenoiseConstants& k [[buffer(bind
     // (past the grid's right edge read and never used), times its weights.
     {
         device const half* row = features + ((y + 1u) * (k.padded_width + 2u) + x0 + 1u) * k.features;
-        simdgroup_float8x8 acc[4][4];
-        for (uint m = 0; m < 4u; ++m) {
-            for (uint n = 0; n < 4u; ++n) {
+        // pixel_blocks blocks of `block` pixels by output_blocks blocks of
+        // `block` of the simdgroup's simd_width outputs.
+        constexpr uint pixel_blocks = conv_pixels / block;
+        constexpr uint output_blocks = contracts::simd_width / block;
+        const uint first_output = sg * contracts::simd_width;
+        simdgroup_float8x8 acc[pixel_blocks][output_blocks];
+        for (uint m = 0; m < pixel_blocks; ++m) {
+            for (uint n = 0; n < output_blocks; ++n) {
                 acc[m][n] = simdgroup_float8x8(0.0f);
             }
         }
-        for (uint kb = 0; kb < k.features / 8u; ++kb) {
-            simdgroup_half8x8 b[4];
-            for (uint n = 0; n < 4u; ++n) {
-                simdgroup_load(b[n], head + kb * 8u * head_columns + sg * 32u + n * 8u, head_columns);
+        for (uint kb = 0; kb < k.features / block; ++kb) {
+            simdgroup_half8x8 b[output_blocks];
+            for (uint n = 0; n < output_blocks; ++n) {
+                simdgroup_load(b[n], head + kb * block * head_columns + first_output + n * block, head_columns);
             }
-            for (uint m = 0; m < 4u; ++m) {
+            for (uint m = 0; m < pixel_blocks; ++m) {
                 simdgroup_half8x8 a;
-                simdgroup_load(a, row + m * 8u * k.features + kb * 8u, k.features);
-                for (uint n = 0; n < 4u; ++n) {
+                simdgroup_load(a, row + m * block * k.features + kb * block, k.features);
+                for (uint n = 0; n < output_blocks; ++n) {
                     simdgroup_multiply_accumulate(acc[m][n], a, b[n], acc[m][n]);
                 }
             }
         }
-        for (uint m = 0; m < 4u; ++m) {
-            for (uint n = 0; n < 4u; ++n) {
-                simdgroup_store(acc[m][n], scores_of + (sg * 32u + n * 8u) * conv_pixels + m * 8u, conv_pixels,
-                                ulong2(0), true);
+        for (uint m = 0; m < pixel_blocks; ++m) {
+            for (uint n = 0; n < output_blocks; ++n) {
+                simdgroup_store(acc[m][n], scores_of + (first_output + n * block) * conv_pixels + m * block,
+                                conv_pixels, ulong2(0), true);
             }
         }
     }
@@ -535,21 +586,21 @@ kernel void denoise_output(constant contracts::DenoiseConstants& k [[buffer(bind
         scores[s] = scores_of[o * conv_pixels + lane] + head_bias[o];
     }
 
-    // The kernels: taps at p + s (i, j), k = spacing * 9 + (j + 1) * 3 + (i + 1).
-    constexpr int spacing[contracts::denoise_spacings] = {1, 2, 4};
+    // The kernels: score si * 9 + t for tap t at spacing si (tap_at).
     float3 filtered[contracts::denoise_spacings];
     for (uint si = 0; si < contracts::denoise_spacings; ++si) {
+        const uint spacing = contracts::spacing_pixels[si];
         float logits[contracts::denoise_taps];
         float largest = -INFINITY;
         for (uint t = 0; t < contracts::denoise_taps; ++t) {
-            const int2 at = int2(p) + spacing[si] * int2(int(t % 3u) - 1, int(t / 3u) - 1);
+            const int2 at = tap_at(p, spacing, t);
             logits[t] = inside_light(k, at) ? scores[si * contracts::denoise_taps + t] : contracts::masked_score;
             largest = max(largest, logits[t]);
         }
         float total = 0.0f;
         float3 sum = float3(0.0f);
         for (uint t = 0; t < contracts::denoise_taps; ++t) {
-            const int2 at = int2(p) + spacing[si] * int2(int(t % 3u) - 1, int(t / 3u) - 1);
+            const int2 at = tap_at(p, spacing, t);
             const float e = exp(logits[t] - largest);
             total += e;
             if (inside_light(k, at)) {

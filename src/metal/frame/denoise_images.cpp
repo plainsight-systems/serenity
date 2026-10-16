@@ -75,34 +75,42 @@ bool DenoiseImages::prepare(const frame::FrameInputs& inputs, frame::Extent ligh
     light_ = {};
     const auto pool = scoped_pool();
     padded_ = {align(light.width), align(light.height)};
-    layout();
+    allocate();
+    plan();
     light_ = light;
     return held > 0;
 }
 
-void DenoiseImages::layout() {
+void DenoiseImages::allocate() {
     const denoise::Widths& w = widths_;
     const auto level = [&](std::uint32_t l) { return frame::Extent{padded_.width >> l, padded_.height >> l}; };
-    // The channels upsampled into level l's decoder: the bottleneck's at
-    // level 3, the decoder's below it otherwise.
-    const auto up = [&](std::uint32_t l) { return l == 3 ? w.bottleneck : w.dec[2 - l]; };
+    constexpr std::uint32_t bottom = contracts::unet_levels - 1u;  // the lowest level with a skip
 
     make(input_, level(0), contracts::input_channels, "network's input");
-    for (std::uint32_t l = 0; l < 4; ++l) {
+    for (std::uint32_t l = 0; l < levels; ++l) {
         make(skip_[l], level(l), w.enc[l], "skip");
         make(pooled_[l], level(l + 1), w.enc[l], "max pool");
-        make(decoded_[l], level(l), w.dec[3 - l], "decoder's output");
+        make(decoded_[l], level(l), w.dec[bottom - l], "decoder's output");
     }
-    make(bottleneck_a_, level(4), w.bottleneck, "bottleneck");
-    make(bottleneck_b_, level(4), w.bottleneck, "bottleneck");
-    make(final_, level(0), w.dec[3], "last features");
+    make(bottleneck_a_, level(contracts::unet_levels), w.bottleneck, "bottleneck");
+    make(bottleneck_b_, level(contracts::unet_levels), w.bottleneck, "bottleneck");
+    make(final_, level(0), w.dec[bottom], "last features");
+    // The demodulated light and the histories: a float4 a pixel.
     const std::size_t input_pixels = std::size_t{padded_.width} * padded_.height;
-    make(demod_, input_pixels * 4 * sizeof(float), "demodulated light");
+    make(demod_, input_pixels * sizeof(float[4]), "demodulated light");
     for (Buffer& h : history_buffers_) {
-        make(h, input_pixels * contracts::denoise_subpixels * 4 * sizeof(float), "history");
+        make(h, input_pixels * contracts::denoise_subpixels * sizeof(float[4]), "history");
     }
     make(histogram_, contracts::median_bins * sizeof(std::uint32_t), "depth histogram");
     make(median_, sizeof(contracts::MedianState), "depth median");
+}
+
+void DenoiseImages::plan() {
+    const denoise::Widths& w = widths_;
+    constexpr std::uint32_t bottom = contracts::unet_levels - 1u;
+    // The channels upsampled into level l's decoder: the bottleneck's at
+    // the bottom level, the decoder's below it otherwise.
+    const auto up = [&](std::uint32_t l) { return l == bottom ? w.bottleneck : w.dec[bottom - 1 - l]; };
 
     const auto address = [](const Activations& a) { return a.memory.buffer->gpuAddress(); };
     const auto conv = [&](const Activations& in, std::uint32_t in_channels, const Activations& out,
@@ -142,26 +150,26 @@ void DenoiseImages::layout() {
     };
     // Encoders: each into its skip.
     convs_[0] = conv(input_, contracts::input_channels, skip_[0], 0, w.enc[0]);
-    for (std::uint32_t l = 1; l < 4; ++l) {
+    for (std::uint32_t l = 1; l < levels; ++l) {
         convs_[l] = conv(pooled_[l - 1], w.enc[l - 1], skip_[l], 0, w.enc[l]);
     }
-    for (std::uint32_t l = 0; l < 4; ++l) {
+    for (std::uint32_t l = 0; l < levels; ++l) {
         pools_[l] = resample(skip_[l], 0, pooled_[l], 0, w.enc[l]);
     }
-    convs_[4] = conv(pooled_[3], w.enc[3], bottleneck_a_, 0, w.bottleneck);
-    convs_[5] = conv(bottleneck_a_, w.bottleneck, bottleneck_b_, 0, w.bottleneck);
-    // Decoders: dec i at level 3 - i, from the level below's output.
-    for (std::uint32_t i = 0; i < 4; ++i) {
-        const std::uint32_t l = 3 - i;
+    convs_[first_bottleneck] = conv(pooled_[bottom], w.enc[bottom], bottleneck_a_, 0, w.bottleneck);
+    convs_[first_bottleneck + 1] = conv(bottleneck_a_, w.bottleneck, bottleneck_b_, 0, w.bottleneck);
+    // Decoders: dec i at level bottom - i, from the level below's output.
+    for (std::uint32_t i = 0; i < levels; ++i) {
+        const std::uint32_t l = bottom - i;
         const Activations& below = i == 0 ? bottleneck_b_ : decoded_[l + 1];
-        Conv& c = convs_[6 + i];
+        Conv& c = convs_[first_decoder + i];
         c = conv(skip_[l], up(l) + w.enc[l], decoded_[l], 0, w.dec[i]);
         c.params.up_blocks = up(l) / contracts::channel_block;
         c.params.up_pitch = below.pitch;
         c.params.up_stride = below.stride;
         c.coarse = address(below);
     }
-    convs_[10] = conv(decoded_[0], w.dec[3], final_, 0, w.dec[3]);
+    convs_[last_convolution] = conv(decoded_[0], w.dec[bottom], final_, 0, w.dec[bottom]);
 
     // Every dispatch's parameters, in one buffer, each at an aligned place.
     constexpr std::size_t slot = 64;

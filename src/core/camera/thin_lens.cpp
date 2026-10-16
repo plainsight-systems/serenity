@@ -57,6 +57,18 @@ constexpr double tiny = 1e-6;
 // Half a field of view's angle in radians, per degree of the whole.
 constexpr double half_radians_per_degree = std::numbers::pi / 360.0;
 
+// The camera's forward and right axes, unit length, for a camera invalid()
+// passes: the two the framing and the view axes each build their up from.
+struct Basis {
+    Vec3 forward;
+    Vec3 right;
+};
+
+Basis basis(const contracts::Camera& camera) noexcept {
+    const Vec3 forward = normalized(minus(widened(camera.look_at), widened(camera.position)));
+    return {forward, normalized(cross(forward, widened(camera.up)))};
+}
+
 }  // namespace
 
 std::optional<std::string_view> invalid(const contracts::Camera& camera) {
@@ -95,8 +107,7 @@ contracts::CameraData shader_form(const contracts::Camera& camera, frame::Extent
     if (const std::optional<std::string_view> reason = invalid(camera)) {
         throw std::invalid_argument("shader_form: the camera cannot be framed: " + std::string(*reason));
     }
-    const Vec3 forward = normalized(minus(widened(camera.look_at), widened(camera.position)));
-    const Vec3 right_unit = normalized(cross(forward, widened(camera.up)));
+    const auto [forward, right_unit] = basis(camera);
     const Vec3 up_unit = cross(right_unit, forward);  // unit: the two are orthonormal
 
     const double half_height = std::tan(static_cast<double>(camera.vertical_fov_degrees) * half_radians_per_degree);
@@ -116,8 +127,7 @@ ViewAxes view_axes(const contracts::Camera& camera) {
     if (const std::optional<std::string_view> reason = invalid(camera)) {
         throw std::invalid_argument("view_axes: the camera cannot be framed: " + std::string(*reason));
     }
-    const Vec3 forward = normalized(minus(widened(camera.look_at), widened(camera.position)));
-    const Vec3 right = normalized(cross(forward, widened(camera.up)));
+    const auto [forward, right] = basis(camera);
     const Vec3 up = normalized(cross(right, forward));
     return {narrowed(right), narrowed(up), narrowed(scaled(forward, -1.0))};
 }

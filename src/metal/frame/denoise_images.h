@@ -72,8 +72,12 @@ public:
 
     // The conv3x3 dispatches, in order: enc 0..3, bottleneck a and b,
     // dec 0..3, dec_final. The pools, levels 1..4.
-    static constexpr std::size_t convolutions = 11;
-    static constexpr std::size_t resamplings = 4;
+    static constexpr std::size_t levels = contracts::unet_levels;
+    static constexpr std::size_t first_bottleneck = levels;
+    static constexpr std::size_t first_decoder = first_bottleneck + 2;
+    static constexpr std::size_t last_convolution = first_decoder + levels;
+    static constexpr std::size_t convolutions = last_convolution + 1;
+    static constexpr std::size_t resamplings = levels;
 
     struct Conv {
         contracts::ConvParams params;
@@ -118,7 +122,10 @@ private:
 
     void make(Buffer& buffer, std::size_t bytes, const char* what);
     void make(Activations& a, frame::Extent size, std::uint32_t stride, const char* what);
-    void layout();
+    // At a new size: every buffer made (allocate), then every dispatch's
+    // parameters planned and written once (plan).
+    void allocate();
+    void plan();
 
     NS::SharedPtr<MTL::Device> device_;
     Submission& submission_;
@@ -129,11 +136,11 @@ private:
     std::uint64_t index_ = 0;  // the prepared frame's: its parity picks the history
 
     Activations input_;
-    std::array<Activations, 4> skip_;   // levels 0..3, the encoders' outputs
-    std::array<Activations, 4> pooled_;  // levels 1..4
+    std::array<Activations, levels> skip_;    // levels 0..3, the encoders' outputs
+    std::array<Activations, levels> pooled_;  // levels 1..4
     Activations bottleneck_a_;
     Activations bottleneck_b_;
-    std::array<Activations, 4> decoded_;  // levels 0..3, dec 3..0's outputs
+    std::array<Activations, levels> decoded_;  // levels 0..3, dec 3..0's outputs
     Activations final_;
     Buffer demod_;
     std::array<Buffer, 2> history_buffers_;

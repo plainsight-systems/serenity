@@ -36,6 +36,7 @@
 #include "metal/device/support.h"
 #include "metal/frame/denoise_images.h"
 #include "metal/frame/frame_resources.h"
+#include "metal/passes/bindings.h"
 #include "metal/passes/denoise/denoise.h"
 #include "serenity/metallib/shaders.h"
 
@@ -80,7 +81,7 @@ inline DenoiseFixture read_denoise_fixture(const std::filesystem::path& dir) {
 
 namespace detail {
 
-using Half = _Float16;
+using metal::Half;
 
 inline NS::SharedPtr<MTL::Texture> shared_texture(MTL::Device* device, MTL::PixelFormat format, frame::Extent size) {
     auto descriptor = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
@@ -183,8 +184,9 @@ inline std::vector<contracts::LinearImage> run_denoise_fixture(
         resident.push_back(submission.keep_resident(a));
     }
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-    descriptor->setMaxBufferBindCount(12);
-    descriptor->setMaxTextureBindCount(8);
+    // Every binding of the pass's kernels (passes/bindings.h, denoise).
+    descriptor->setMaxBufferBindCount(bindings::denoise::coarse + 1);
+    descriptor->setMaxTextureBindCount(bindings::denoise::radiance + 1);
     NS::Error* error = nullptr;
     auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
     if (!table) {

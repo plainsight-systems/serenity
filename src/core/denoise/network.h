@@ -1,8 +1,10 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -86,6 +88,6 @@ Network load_network(const std::filesystem::path& directory);
 
 // Reads a network from the two files' contents, naming it `source` in
 // errors: for tests, and for load_network() itself.
-Network parse_network(const std::string& layout_json, const std::vector<std::byte>& weights, const std::string& source);
+Network parse_network(const std::string& layout_json, std::span<const std::byte> weights, const std::string& source);
 
 }  // namespace serenity::denoise
