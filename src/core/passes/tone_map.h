@@ -101,7 +101,7 @@
 namespace serenity {
 namespace passes {
 
-SERENITY_CONSTANT unsigned int bloom_levels = 6;
+SERENITY_CONSTANT uint32_t bloom_levels = 6u;
 SERENITY_CONSTANT float bloom_ceiling = 65504.0f;  // the largest half float (step 1)
 SERENITY_CONSTANT float down_middle = 0.5f;        // step 2's weights: the middle box,
 SERENITY_CONSTANT float down_corner = 0.125f;      // and each corner box

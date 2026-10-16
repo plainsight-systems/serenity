@@ -89,8 +89,9 @@
 //   C = H M, still counts, shows M / (M + C) of its light the first frame
 //   (1/21 at H = 20), recovering as the history follows it. A firefly
 //   waking is not that case: asleep last frame (glow 0), it gave last
-//   frame's surface nothing, so history does not count it. Second, a merged reservoir may keep a sample hidden from q with W
-//   > 0, which q's shade zeroes (its ray, or a test it reuses), but which
+//   frame's surface nothing, so history does not count it. Second, a
+//   merged reservoir may keep a sample hidden from q with W > 0, which
+//   q's shade zeroes (its ray, or a test it reuses), but which
 //   the next frame's merges and this frame's spatial merge read as q's: a
 //   sample outside the domain they weigh q for, more of the same darkening
 //   at edges. Production ships this (RTXDI's default): the bias is confined

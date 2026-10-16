@@ -28,8 +28,7 @@ NS::SharedPtr<MTL::Texture> make_private_texture(MTL::Device* device, MTL::Pixel
     descriptor->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
     auto texture = NS::TransferPtr(device->newTexture(descriptor.get()));
     if (!texture) {
-        throw MetalError(std::string{"the device made no "} + std::to_string(size.width) + " x " +
-                    std::to_string(size.height) + " " + std::string(what));
+        throw MetalError("the device made no " + frame::to_string(size) + " " + std::string(what));
     }
     return texture;
 }

@@ -68,9 +68,9 @@ struct CameraData {
     Float3 forward;        // unit length
     float focus_distance;  // meters along forward to the plane of focus; > 0
     Float3 right;
-    float padding2;
+    float padding0;
     Float3 up;
-    float padding3;
+    float padding1;
 };
 
 static_assert(sizeof(CameraData) == 64, "CameraData must be the same 64 bytes on the host and in shaders");

@@ -112,8 +112,8 @@ public:
             break;
         case output::ImageSource::accumulated: {
             // RGBA32Float a pixel (metal/frame/renderer.h, read_accumulated).
-            constexpr std::size_t accumulated_channels = 4;
-            accumulated_.resize(std::size_t{options.size.width} * options.size.height * accumulated_channels);
+            accumulated_.resize(std::size_t{options.size.width} * options.size.height *
+                                contracts::accumulated_image_channels);
             break;
         }
         }

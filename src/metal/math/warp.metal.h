@@ -120,7 +120,8 @@ inline float3 decode_unit(uint encoded) {
     const float phi = (r == 0.0f ? 1.0f : (vp - up) / r + 1.0f) * (M_PI_F / 4.0f);
     const float z = metal::copysign(1.0f - r * r, signed_distance);
     const float s = r * metal::sqrt(metal::max(0.0f, 2.0f - r * r));
-    return metal::normalize(float3(metal::copysign(metal::cos(phi), u) * s, metal::copysign(metal::sin(phi), v) * s, z));
+    return metal::normalize(
+        float3(metal::copysign(metal::cos(phi), u) * s, metal::copysign(metal::sin(phi), v) * s, z));
 }
 
 }  // namespace shaders

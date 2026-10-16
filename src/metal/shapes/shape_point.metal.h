@@ -78,7 +78,9 @@ inline float3 decode_shape_point(Shapes shapes, uint shape, serenity::contracts:
         const float side = (point.face & 1u) != 0u ? high[axis] : low[axis];
         const float3 at = metal::mix(low, high, axis == 0u ? float3(0.0f, uv) : (axis == 1u ? float3(uv.x, 0.0f, uv.y)
                                                                                            : float3(uv, 0.0f)));
-        object = axis == 0u ? float3(side, at.y, at.z) : (axis == 1u ? float3(at.x, side, at.z) : float3(at.x, at.y, side));
+        object = axis == 0u   ? float3(side, at.y, at.z)
+                 : axis == 1u ? float3(at.x, side, at.z)
+                              : float3(at.x, at.y, side);
         break;
     }
     }

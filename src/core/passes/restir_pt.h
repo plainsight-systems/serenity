@@ -21,15 +21,15 @@ namespace passes {
 
 using RestirPt = contracts::PathReuseSettings;
 
-SERENITY_CONSTANT uint32_t written_nee_candidates = 32;  // Enhanced §7: 32 at the primary hit, 32 / B^2 deeper
-SERENITY_CONSTANT uint32_t written_max_surfaces = 9;     // the 2022 code's maxSurfaceBounces
-SERENITY_CONSTANT float written_footprint = 0.02f;       // Enhanced §4: c, "to work well in diverse scenes"
-SERENITY_CONSTANT float written_roughness = 0.2f;        // the 2022 code's specularRoughnessThreshold
-SERENITY_CONSTANT uint32_t written_path_neighbors = 3;   // Enhanced §7: ReSTIR PT's 3 spatial neighbors
-SERENITY_CONSTANT float written_sigma = 16.0f;           // Enhanced §7: sigma = sqrt(8 / (9 pi)) R, R = 30
-SERENITY_CONSTANT float written_confidence_cap = 20.0f;  // Lin et al. 2022's history; Enhanced §5's c_Cap^Default
-SERENITY_CONSTANT float written_cap_floor = 1.0f;        // Enhanced §5: c_Cap^min = 1
-SERENITY_CONSTANT float written_cap_exponent = 0.1f;     // Enhanced §5: alpha = 0.1
+SERENITY_CONSTANT uint32_t written_nee_candidates = 32u;  // Enhanced §7: 32 at the primary hit, 32 / B^2 deeper
+SERENITY_CONSTANT uint32_t written_max_surfaces = 9u;     // the 2022 code's maxSurfaceBounces
+SERENITY_CONSTANT float written_footprint = 0.02f;        // Enhanced §4: c, "to work well in diverse scenes"
+SERENITY_CONSTANT float written_roughness = 0.2f;         // the 2022 code's specularRoughnessThreshold
+SERENITY_CONSTANT uint32_t written_path_neighbors = 3u;   // Enhanced §7: ReSTIR PT's 3 spatial neighbors
+SERENITY_CONSTANT float written_sigma = 16.0f;            // Enhanced §7: sigma = sqrt(8 / (9 pi)) R, R = 30
+SERENITY_CONSTANT float written_confidence_cap = 20.0f;   // Lin et al. 2022's history; Enhanced §5's c_Cap^Default
+SERENITY_CONSTANT float written_cap_floor = 1.0f;         // Enhanced §5: c_Cap^min = 1
+SERENITY_CONSTANT float written_cap_exponent = 0.1f;      // Enhanced §5: alpha = 0.1
 
 }  // namespace passes
 }  // namespace serenity

@@ -13,8 +13,8 @@ namespace serenity::contracts {
 
 namespace {
 
-constexpr std::size_t rgb_channels = 3;   // what a LinearImage keeps a pixel
-constexpr std::size_t rgba_channels = 4;  // what the GPU's accumulated image holds a pixel
+constexpr std::size_t rgb_channels = contracts::linear_image_channels;
+constexpr std::size_t rgba_channels = contracts::accumulated_image_channels;
 
 // The extent's pixels; throws std::invalid_argument, starting with `what`,
 // for a side of 0 or past max_image_side.

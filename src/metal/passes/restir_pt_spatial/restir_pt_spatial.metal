@@ -67,7 +67,8 @@ kernel void restir_pt_shift(constant serenity::contracts::FrameConstants& frame 
             const Partner partner = partner_of(pairing, pixel, t, frame.frame_index, size);
             const uint j = partner.pixel.y * size.x + partner.pixel.x;
             if (!partner.inside || !restir_pt::similar(own, primaries[j])) {
-                shifts[i * serenity::contracts::max_path_neighbors + t] = float4(0.0f, 0.0f, 0.0f, restir_pt::not_paired);
+                shifts[i * serenity::contracts::max_path_neighbors + t] =
+                    float4(0.0f, 0.0f, 0.0f, restir_pt::not_paired);
             } else if (!held) {
                 shifts[i * serenity::contracts::max_path_neighbors + t] = float4(0.0f);
             } else if (restir_pt::replays(reservoir)) {

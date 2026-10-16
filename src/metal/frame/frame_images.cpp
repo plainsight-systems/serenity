@@ -173,7 +173,8 @@ PathReuseImages::PathReuseImages(const Device& device, Submission& submission, S
     const auto pool = scoped_pool();
     counter_ = make_resident_buffer(device_.get(), submission_, counter_bytes, MTL::ResourceStorageModeShared,
                                     "ReSTIR PT's replay count", Zeroed::yes);
-    make(light_tiles_, std::size_t{contracts::light_tiles} * contracts::light_tile_size * sizeof(contracts::LightTileEntry),
+    make(light_tiles_,
+         std::size_t{contracts::light_tiles} * contracts::light_tile_size * sizeof(contracts::LightTileEntry),
          "light tiles");
 }
 

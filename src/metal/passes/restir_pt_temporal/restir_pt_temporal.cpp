@@ -7,7 +7,8 @@
 namespace serenity::metal {
 
 RestirPtTemporalPass::RestirPtTemporalPass(const Library& library)
-    : reuse_(library, "restir_pt_temporal_shift", "restir_pt_temporal_replay", "restir_pt_temporal", "RestirPtTemporalPass") {}
+    : reuse_(library, "restir_pt_temporal_shift", "restir_pt_temporal_replay", "restir_pt_temporal",
+             "RestirPtTemporalPass") {}
 
 void RestirPtTemporalPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
     if (resources.path_settings == 0 || resources.path_constants == 0 || resources.path_reservoirs == 0 ||

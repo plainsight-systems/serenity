@@ -30,7 +30,8 @@
 namespace serenity {
 namespace contracts {
 
-// An axis-aligned box in the world, min below max on every axis.
+// An axis-aligned box, min below max on every axis: in the world, or a
+// geometry's in object space (shapes::Bounds, core/shapes/primitive.h).
 struct Box {
     Float3 min;
     Float3 max;

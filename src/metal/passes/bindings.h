@@ -266,13 +266,19 @@ constexpr bool camera_at(unsigned camera) {
 }
 static_assert(scene_at(preview::constants, preview::structure, preview::scene, preview::glows, preview::transforms));
 static_assert(scene_at(path::constants, path::structure, path::scene, path::glows, path::transforms));
-static_assert(scene_at(features::constants, features::structure, features::scene, features::glows, features::transforms));
-static_assert(scene_at(restir_initial::constants, restir_initial::structure, restir_initial::scene, restir_initial::glows, restir_initial::transforms));
-static_assert(scene_at(restir_temporal::constants, restir_temporal::structure, restir_temporal::scene, restir_temporal::glows, restir_temporal::transforms));
-static_assert(scene_at(restir_spatial::constants, restir_spatial::structure, restir_spatial::scene, restir_spatial::glows, restir_spatial::transforms));
-static_assert(scene_at(restir_pt::constants, restir_pt::structure, restir_pt::scene, restir_pt::glows, restir_pt::transforms));
+static_assert(scene_at(features::constants, features::structure, features::scene,
+                       features::glows, features::transforms));
+static_assert(scene_at(restir_initial::constants, restir_initial::structure, restir_initial::scene,
+                       restir_initial::glows, restir_initial::transforms));
+static_assert(scene_at(restir_temporal::constants, restir_temporal::structure, restir_temporal::scene,
+                       restir_temporal::glows, restir_temporal::transforms));
+static_assert(scene_at(restir_spatial::constants, restir_spatial::structure, restir_spatial::scene,
+                       restir_spatial::glows, restir_spatial::transforms));
+static_assert(scene_at(restir_pt::constants, restir_pt::structure, restir_pt::scene,
+                       restir_pt::glows, restir_pt::transforms));
 static_assert(scene_at(mnee::constants, mnee::structure, mnee::scene, mnee::glows, mnee::transforms));
-static_assert(scene_at(restir_shade::constants, restir_shade::structure, restir_shade::scene, restir_shade::glows, restir_shade::transforms));
+static_assert(scene_at(restir_shade::constants, restir_shade::structure, restir_shade::scene,
+                       restir_shade::glows, restir_shade::transforms));
 static_assert(camera_at(preview::camera));
 static_assert(camera_at(path::camera));
 static_assert(camera_at(features::camera));

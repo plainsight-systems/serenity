@@ -495,7 +495,9 @@ using Scene = SceneView<UniformLight>;
 
 // emission_pdf's two named values (above): how the next surface counts a
 // light it is, where that is not by a density.
-constant constexpr float counted_in_full = 0.0f;  // the camera's ray, a delta lobe's, and one step 5 does not draw: w_b = 1
+// counted_in_full: the camera's ray, a delta lobe's, and one step 5 does
+// not draw: w_b = 1.
+constant constexpr float counted_in_full = 0.0f;
 constant constexpr float not_counted = -1.0f;     // ReSTIR's bounce from q off a lobe that is not delta
 
 // The power heuristic (above): the weight of a sample drawn with density
@@ -802,7 +804,8 @@ template <Start start, Stop stop, typename Gather>
             return 0u;
         }
         const float3 wi = to_float3(next.direction);
-        const float3 factor = to_float3(next.value) * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) / next.pdf;
+        const float3 factor =
+            to_float3(next.value) * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) / next.pdf;
         beta *= factor;
         emission_pdf = handed_on(next, here);
         if constexpr (Gather::observes_vertices) {
@@ -951,7 +954,7 @@ inline float3 continue_path(Scene scene, Segment segment, thread PathNumbers& nu
     const Walk walk{segment.L,
                     segment.beta,
                     segment.eta_scale,
-                    counted_in_full,  // unread: step 6 at the segment's surface sets it before the next surface reads it
+                    counted_in_full,  // unread: step 6 at the segment's surface sets it before the next reads it
                     segment.here.medium,
                     metal::raytracing::ray(),  // unread: step 8 at the segment's surface sets it
                     float3(0.0f)};             // unread: step 8 at the segment's surface sets it

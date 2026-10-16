@@ -44,9 +44,13 @@ SERENITY_CONSTANT uint32_t channel_block = 8u;  // a simdgroup matrix's side: ev
 SERENITY_CONSTANT uint32_t input_channels = 32u;  // network_inputs, padded to channel_block
 SERENITY_CONSTANT uint32_t denoise_taps = 9u;
 SERENITY_CONSTANT uint32_t denoise_spacings = 3u;  // 1, 2 and 4
-SERENITY_CONSTANT uint32_t denoise_scores = 31u;   // 27 taps, 3 spacing weights, 1 history blend
+// Each spacing's taps, a weight per spacing and the history blend: 31.
+SERENITY_CONSTANT uint32_t denoise_scores = denoise_taps * denoise_spacings + denoise_spacings + 1u;
 SERENITY_CONSTANT uint32_t denoise_subpixels = 4u;
-SERENITY_CONSTANT uint32_t head_outputs = 124u;  // denoise_scores x denoise_subpixels
+SERENITY_CONSTANT uint32_t head_outputs = denoise_scores * denoise_subpixels;  // 124
+static_assert(input_channels % channel_block == 0u && input_channels >= network_inputs &&
+                  input_channels - network_inputs < channel_block,
+              "input_channels is network_inputs padded to the next channel_block");
 SERENITY_CONSTANT float masked_score = -1.0e4f;
 SERENITY_CONSTANT float albedo_floor = 0.02f;
 
@@ -182,6 +186,7 @@ static_assert(sizeof(MedianState) == 32, "MedianState must be the same 32 bytes 
 static_assert(std::is_trivially_copyable_v<DenoiseConstants>, "DenoiseConstants is written to the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<ConvParams>, "ConvParams is written to the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<ResampleParams>, "ResampleParams is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<MedianState>, "MedianState is written to the GPU as bytes");
 #endif
 
 }  // namespace contracts

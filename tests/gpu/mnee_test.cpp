@@ -394,8 +394,8 @@ TEST_CASE("MNEE: a request the full work list has no room for is counted lost, a
         metal::Renderer renderer(device, submission, frame::parse_schedule(graph, "graph"), &description);
         std::uint64_t sequence = 0;
         for (std::uint64_t i = 0; i < 2; ++i) {
-            sequence =
-                metal::render_to_offscreen(submission, target, renderer, tests::frame_at(i, 0, 0.0, description.camera));
+            const frame::FrameInputs inputs = tests::frame_at(i, 0, 0.0, description.camera);
+            sequence = metal::render_to_offscreen(submission, target, renderer, inputs);
         }
         (void)submission.wait_until_complete(sequence);
         MESSAGE("lost requests: " << renderer.mnee_lost_requests());

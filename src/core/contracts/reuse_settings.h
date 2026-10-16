@@ -151,10 +151,10 @@
 namespace serenity {
 namespace contracts {
 
-SERENITY_CONSTANT uint32_t max_candidates = 32;
-SERENITY_CONSTANT uint32_t max_bsdf_candidates = 32;
-SERENITY_CONSTANT uint32_t max_history = 64;
-SERENITY_CONSTANT uint32_t max_neighbors = 32;  // a 32-bit mask (above)
+SERENITY_CONSTANT uint32_t max_candidates = 32u;
+SERENITY_CONSTANT uint32_t max_bsdf_candidates = 32u;
+SERENITY_CONSTANT uint32_t max_history = 64u;
+SERENITY_CONSTANT uint32_t max_neighbors = 32u;  // a 32-bit mask (above)
 SERENITY_CONSTANT float min_radius = 1.0f;
 SERENITY_CONSTANT float max_radius = 1024.0f;
 // The most a reservoir's test records (contracts/reservoir.h), one

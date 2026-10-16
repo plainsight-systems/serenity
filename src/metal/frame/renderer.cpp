@@ -208,7 +208,9 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         throw MetalError("Renderer: the frame graph's passes read a scene, and none was given (--scene)");
     }
     const auto pool = scoped_pool();
-    const auto has = [&](frame::PassKind kind) { return std::ranges::find(schedule.passes, kind) != schedule.passes.end(); };
+    const auto has = [&](frame::PassKind kind) {
+        return std::ranges::find(schedule.passes, kind) != schedule.passes.end();
+    };
     const bool temporal = has(frame::PassKind::restir_temporal);
     const bool spatial = has(frame::PassKind::restir_spatial);
     const bool path_temporal = has(frame::PassKind::restir_pt_temporal);
@@ -538,7 +540,8 @@ void Renderer::read_accumulated(std::span<float> out) {
     }
     const frame::Extent size{static_cast<std::uint32_t>(image->width()), static_cast<std::uint32_t>(image->height())};
     const std::array<ImageCopy, 1> copy = {ImageCopy{image, 0, row_bytes}};
-    const auto buffer = read_back(image->device(), submission_, size, row_bytes * size.height, copy, "read_accumulated");
+    const auto buffer =
+        read_back(image->device(), submission_, size, row_bytes * size.height, copy, "read_accumulated");
     std::memcpy(out.data(), buffer->contents(), floats * sizeof(float));
 }
 
@@ -839,8 +842,8 @@ std::optional<WindowFrame> render_to_window(Submission& submission, Presenter& p
     const frame::Extent size = presenter.size();
     MTL::Texture* texture = drawable->texture();
     if (texture == nullptr || texture->width() != size.width || texture->height() != size.height) {
-        throw MetalError("render_to_window: the drawable is not the " + std::to_string(size.width) + " x " +
-                    std::to_string(size.height) + " the layer was given");
+        throw MetalError("render_to_window: the drawable is not the " + frame::to_string(size) +
+                         " the layer was given");
     }
     renderer.prepare(inputs, size);
     const FrameSlot begun = submission.begin();

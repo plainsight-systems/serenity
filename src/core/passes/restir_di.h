@@ -55,17 +55,17 @@ namespace passes {
 using RestirDi = contracts::ReuseSettings;
 
 // The values the graphs are written with (above).
-SERENITY_CONSTANT uint32_t written_candidates = 8;
-SERENITY_CONSTANT uint32_t written_bsdf_candidates = 1;
-SERENITY_CONSTANT uint32_t written_history = 20;
+SERENITY_CONSTANT uint32_t written_candidates = 8u;
+SERENITY_CONSTANT uint32_t written_bsdf_candidates = 1u;
+SERENITY_CONSTANT uint32_t written_history = 20u;
 SERENITY_CONSTANT contracts::Permutation written_permutation = contracts::Permutation::on;
-SERENITY_CONSTANT uint32_t written_neighbors = 1;
+SERENITY_CONSTANT uint32_t written_neighbors = 1u;
 SERENITY_CONSTANT float written_radius = 32.0f;
 SERENITY_CONSTANT float written_depth_threshold = 0.1f;
 SERENITY_CONSTANT float written_normal_threshold = 0.5f;
 SERENITY_CONSTANT contracts::BiasCorrection written_bias_correction = contracts::BiasCorrection::basic;
 SERENITY_CONSTANT contracts::VisibilityReuse written_visibility_reuse = contracts::VisibilityReuse::on;
-SERENITY_CONSTANT uint32_t written_visibility_age = 4;
+SERENITY_CONSTANT uint32_t written_visibility_age = 4u;
 SERENITY_CONSTANT float written_visibility_distance = 16.0f;
 
 }  // namespace passes

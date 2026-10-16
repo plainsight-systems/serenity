@@ -178,7 +178,8 @@ inline serenity::contracts::Bsdf unpack_bsdf(serenity::contracts::PackedBsdf pac
     serenity::contracts::Bsdf bsdf{};
     bsdf.normal = to_packed(decode_unit(packed.normal));
     bsdf.kind = packed_kind(packed);
-    bsdf.color = serenity::contracts::Float3{unpack_half(packed.color_rg), unpack_half(packed.color_rg >> serenity::contracts::packed_high_shift),
+    bsdf.color = serenity::contracts::Float3{unpack_half(packed.color_rg),
+                                             unpack_half(packed.color_rg >> serenity::contracts::packed_high_shift),
                                              unpack_half(packed.color_b_scalar)};
     const float scalar = unpack_half(packed.color_b_scalar >> serenity::contracts::packed_high_shift);
     switch (bsdf.kind) {

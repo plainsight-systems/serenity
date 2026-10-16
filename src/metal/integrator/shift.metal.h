@@ -363,10 +363,9 @@ inline Shifted reconnect(path::Scene scene, Shading here, float3 beta, Before be
             return failed();
         }
         const float geometry = stored.light.cos_light / (stored.light.distance * stored.light.distance);
-        if (!forced &&
-            !reconnection::connectable(reconnection::Pair{roughness, density > 0.0f ? 1.0f / (density * geometry) : 0.0f,
-                                                          reconnection::largest},
-                                       threshold, settings.roughness)) {
+        const float forward = density > 0.0f ? 1.0f / (density * geometry) : 0.0f;
+        if (!forced && !reconnection::connectable(reconnection::Pair{roughness, forward, reconnection::largest},
+                                                  threshold, settings.roughness)) {
             return failed();
         }
         if (!nee::visible(scene.structure, scene.shapes(), origin, stored.light)) {

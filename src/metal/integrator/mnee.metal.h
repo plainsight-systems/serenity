@@ -891,8 +891,8 @@ inline serenity::contracts::MneeRequest request(Shading here, float3 origin, ser
 // once reported, is not one under fast math, which may assume none.
 inline void enqueue(Queue queue, serenity::contracts::MneeRequest r) {
     const uint slot = simd_reserve(queue.header + serenity::contracts::mnee_count_word, 1u);
-    const uint capacity =
-        metal::atomic_load_explicit(queue.header + serenity::contracts::mnee_capacity_word, metal::memory_order_relaxed);
+    device metal::atomic_uint* const capacity_word = queue.header + serenity::contracts::mnee_capacity_word;
+    const uint capacity = metal::atomic_load_explicit(capacity_word, metal::memory_order_relaxed);
     if (slot < capacity) {
         queue.requests[slot] = r;
     }

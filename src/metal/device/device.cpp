@@ -55,8 +55,8 @@ DeviceInfo describe_device(MTL::Device* device) {
 
 void check_texture_size(frame::Extent size, std::string_view what) {
     if (size.width == 0 || size.height == 0 || size.width > max_texture_side || size.height > max_texture_side) {
-        throw MetalError(std::string(what) + ": " + std::to_string(size.width) + " x " + std::to_string(size.height) +
-                    " is not an image Metal makes (each side from 1 to " + std::to_string(max_texture_side) + ")");
+        throw MetalError(std::string(what) + ": " + frame::to_string(size) +
+                         " is not an image Metal makes (each side from 1 to " + std::to_string(max_texture_side) + ")");
     }
 }
 

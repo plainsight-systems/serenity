@@ -23,8 +23,7 @@ Offscreen::Offscreen(const Device& device, Submission& submission, frame::Extent
     descriptor->setUsage(MTL::TextureUsageShaderWrite | MTL::TextureUsageShaderRead);
     texture_ = NS::TransferPtr(device.handle()->newTexture(descriptor));
     if (!texture_) {
-        throw MetalError("Offscreen: the device made no " + std::to_string(size.width) + " x " +
-                    std::to_string(size.height) + " texture");
+        throw MetalError("Offscreen: the device made no " + frame::to_string(size) + " texture");
     }
     resident_ = submission.keep_resident(texture_.get());
 }

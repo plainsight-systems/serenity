@@ -40,6 +40,12 @@ namespace serenity::contracts {
 
 inline constexpr std::size_t max_image_side = 16384;
 
+// The floats a pixel holds (above): three here; four in the GPU's
+// accumulated image, the count after them. Named once, for Film, Output and
+// the programs that read either (ES.45).
+inline constexpr std::size_t linear_image_channels = 3;
+inline constexpr std::size_t accumulated_image_channels = 4;
+
 struct LinearImage {
     frame::Extent extent;
     std::vector<float> rgb;  // 3 x width x height, rows from the top

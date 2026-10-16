@@ -142,16 +142,17 @@
 // resampled and shifted (no production system shifts a manifold walk; its
 // Jacobian under a shift is the solve's own, not built here).
 //
-// What is approximate, stated. Last frame's domain, where step 5 shifts
-// this pixel's path for its Talbot weight, is last frame's camera, primary
-// hits, transforms and glows, traced against this frame's structure: a ray
-// a firefly crossed last frame and not this one (or the reverse) is
-// answered by this frame's. The structure kept a frame longer would make it
-// exact, as ReSTIR DI's raytraced mode needs (docs/process/QUEUE.md). And a reconnection keeps its suffix after x_k as its
-// source frame lit it (contract 15's cached radiance), as the 2022 code
-// does: a path kept across frames carries a moved firefly's last light
-// after x_k until it is resampled away, which the cap bounds; a path whose
-// x_k is the light is lit as it is now.
+// What is approximate, stated. Last frame's domain, where step 5 shifts this
+// pixel's path for its Talbot weight, is last frame's camera, primary hits,
+// transforms and glows, traced against this frame's structure: a ray a
+// firefly crossed last frame and not this one (or the reverse) is answered by
+// this frame's. The structure kept a frame longer would make it exact, as
+// ReSTIR DI's raytraced mode needs (docs/process/QUEUE.md). And a
+// reconnection keeps its suffix after x_k as its source frame lit it
+// (contract 15's cached radiance), as the 2022 code does: a path kept across
+// frames carries a moved firefly's last light after x_k until it is resampled
+// away, which the cap bounds; a path whose x_k is the light is lit as it is
+// now.
 //
 // What it reads and writes, per pixel, the whole graph: the initial pass
 // writes a 64-byte reservoir, 48 bytes of primary hit, 12 of previous
