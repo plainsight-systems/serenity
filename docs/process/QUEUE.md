@@ -17,14 +17,17 @@ This file tracks active and accepted work.
   (its own pinned environment, a new dependency, declared there), two sizes
   (small 294k parameters, wide 543k), tested once on the real marbles:
   displayed error 0.29 to 0.39 of the input's, below Open Image Denoise's;
-  both exported to ../serenity-data/denoiser-v1-model. Waiting on the user:
-  the temporal weight (the table flickers 36 to 47% more than the targets).
+  both exported to ../serenity-data/denoiser-v1-model. Decided by the user
+  2026-10-15 after watching both live: the wide network is the demo's
+  (graphs/restir_pt_denoised.toml; the small one stays as
+  graphs/restir_pt_denoised_small.toml), and no retrain for now, the
+  improvement being visible; the heavier temporal weight (the table flickers
+  36 to 47% more than the targets) waits for the next training round.
   Phase 4 built
   2026-10-15 (docs/research/2026-10-15-denoiser-live.md): the `denoise` pass
   on our own Metal kernels (contract 18), two resolutions in one frame
   (frame::light_size), graphs/restir_pt_denoised.toml with the weights as a
-  setting, the match against PyTorch in ctest. Next: the network's quality
-  in the window, the small network against the wide at equal time.
+  setting, the match against PyTorch in ctest. Next: the milestone's close.
 
 - **ReSTIR PT** (docs/research/2026-10-11-restir-pt-layout.md). Phase 1
   built 2026-10-11 (initial sampling, the hybrid shift, paired spatial
