@@ -19,6 +19,60 @@ namespace serenity::metal {
 
 // Axis: GPU backend.
 //
+// How a frame's work reaches the GPU: Submission, below, and what it hands
+// out. First the few names everything else uses.
+
+// The frames in flight: two (Submission, below, "The frames in flight").
+inline constexpr std::uint32_t frames_in_flight = 2;
+
+// A submission settled (Submission, below, "Settling").
+struct Completed {
+    std::uint64_t sequence = 0;
+    frame::Seconds gpu_start{0.0};  // host time
+    frame::Seconds gpu_end{0.0};    // host time
+};
+
+// A submission begun: the command buffer to record into, its slot, and its
+// sequence number, for wait_until_complete(). `settled` is the earlier
+// submission that begin() settled to free the slot, if it was not settled
+// already.
+struct FrameSlot {
+    MTL4::CommandBuffer* commands = nullptr;
+    std::uint32_t slot = 0;
+    std::uint64_t sequence = 0;
+    std::optional<Completed> settled;
+};
+
+class Submission;
+
+// An allocation resident through a Submission for as long as this object
+// lives (R.1, C.31; Submission, below, "Residency" and "Lifetime").
+// Move-only. Holds its own reference to the allocation, so the memory
+// outlives the wait however the owner orders its members. The Submission
+// must outlive it.
+class Resident {
+public:
+    Resident() = default;
+    Resident(const Resident&) = delete;
+    Resident& operator=(const Resident&) = delete;
+    Resident(Resident&& other) noexcept;
+    Resident& operator=(Resident&& other) noexcept;
+    ~Resident();
+
+    // Takes the allocation out of the set now, after waiting for the GPU,
+    // as destruction does; nothing is held after.
+    void reset() noexcept;
+
+private:
+    friend class Submission;
+    Resident(Submission& submission, MTL::Allocation* allocation);
+
+    Submission* submission_ = nullptr;
+    NS::SharedPtr<MTL::Allocation> allocation_;
+};
+
+// Submission.
+//
 // How a frame's work reaches the GPU, through Metal 4: one command queue,
 // and the per-frame resources that let the CPU record frame N + 1 while the
 // GPU runs frame N (GPU.7).
@@ -120,53 +174,6 @@ namespace serenity::metal {
 // shed a handler once added, so it cannot be reused for the next commit
 // with a new one, and a few allocations against a frame of milliseconds are
 // not worth a design of their own (Per.1, Per.6: no measured cost).
-inline constexpr std::uint32_t frames_in_flight = 2;
-
-// A submission settled (see Settling, above).
-struct Completed {
-    std::uint64_t sequence = 0;
-    frame::Seconds gpu_start{0.0};  // host time
-    frame::Seconds gpu_end{0.0};    // host time
-};
-
-// A submission begun: the command buffer to record into, its slot, and its
-// sequence number, for wait_until_complete(). `settled` is the earlier
-// submission that begin() settled to free the slot, if it was not settled
-// already.
-struct FrameSlot {
-    MTL4::CommandBuffer* commands = nullptr;
-    std::uint32_t slot = 0;
-    std::uint64_t sequence = 0;
-    std::optional<Completed> settled;
-};
-
-class Submission;
-
-// An allocation resident through a Submission for as long as this object
-// lives (R.1, C.31; see Residency and Lifetime, above). Move-only. Holds its
-// own reference to the allocation, so the memory outlives the wait however
-// the owner orders its members. The Submission must outlive it.
-class Resident {
-public:
-    Resident() = default;
-    Resident(const Resident&) = delete;
-    Resident& operator=(const Resident&) = delete;
-    Resident(Resident&& other) noexcept;
-    Resident& operator=(Resident&& other) noexcept;
-    ~Resident();
-
-    // Takes the allocation out of the set now, after waiting for the GPU,
-    // as destruction does; nothing is held after.
-    void reset() noexcept;
-
-private:
-    friend class Submission;
-    Resident(Submission& submission, MTL::Allocation* allocation);
-
-    Submission* submission_ = nullptr;
-    NS::SharedPtr<MTL::Allocation> allocation_;
-};
-
 class Submission {
 public:
     explicit Submission(const Device& device);

@@ -392,11 +392,11 @@ struct FrameView {
 // permutation off; and the ring's start (temporal.metal.h, step 3).
 inline BlockPermutation frame_permutation(PathNumbers frame_numbers, serenity::contracts::ReuseSettings settings) {
     const float2 u = next_numbers2(frame_numbers);
-    const uint start = metal::min(uint(next_number(frame_numbers) * 8.0f), 7u);
+    const uint start = draw_ring_start(next_number(frame_numbers));
     if (settings.permutation == serenity::contracts::Permutation::off) {
         return BlockPermutation{uint2(0u), start};
     }
-    return BlockPermutation{metal::min(uint2(u * 4.0f), uint2(3u)), start};
+    return BlockPermutation{metal::min(uint2(u * float(permutation_range)), uint2(permutation_range - 1u)), start};
 }
 
 // Step 4 at one pixel, the temporal merge's kernel's whole work: `pixel`'s

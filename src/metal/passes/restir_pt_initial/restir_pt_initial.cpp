@@ -6,8 +6,18 @@
 #include "metal/device/error.h"
 #include "metal/device/support.h"
 #include "metal/passes/bindings.h"
+#include "metal/passes/scene_binding.h"
 
 namespace serenity::metal {
+
+namespace {
+
+// The light tiles' threadgroup, a thread an entry, as many as the pipeline
+// takes up to this: the host's choice alone, which the kernel, reading
+// only its grid position, does not assume.
+constexpr NS::UInteger tiles_group = 256;
+
+}  // namespace
 
 RestirPtInitialPass::RestirPtInitialPass(const Library& library, bool mnee)
     : tiles_(library.compute_pipeline("restir_pt_light_tiles")),
@@ -18,20 +28,14 @@ RestirPtInitialPass::RestirPtInitialPass(const Library& library, bool mnee)
 }
 
 void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
-    if (resources.scene == 0 || resources.transforms == 0 || resources.glows == 0 || resources.camera == 0 ||
-        resources.path_settings == 0 || resources.path_reservoirs == 0 || resources.primaries == 0 ||
+    if (resources.path_settings == 0 || resources.path_reservoirs == 0 || resources.primaries == 0 ||
         resources.light == 0 || resources.light_tiles == 0) {
-        throw MetalError("RestirPtInitialPass: the frame lacks one of its scene, transforms, glows, camera, ReSTIR "
-                         "PT's settings, path reservoirs, primary hits, light buffer or light tiles");
+        throw MetalError("RestirPtInitialPass: the frame lacks one of its ReSTIR PT's settings, path reservoirs, "
+                         "primary hits, light buffer or light tiles");
     }
     namespace binding = bindings::restir_pt;
     MTL4::ArgumentTable* arguments = resources.arguments;
-    arguments->setAddress(resources.constants, binding::constants);
-    arguments->setAddress(resources.camera, binding::camera);
-    arguments->setResource(resources.acceleration, binding::structure);
-    arguments->setAddress(resources.scene, binding::scene);
-    arguments->setAddress(resources.glows, binding::glows);
-    arguments->setAddress(resources.transforms, binding::transforms);
+    bind_scene(resources, SceneCamera::bound, "RestirPtInitialPass");
     arguments->setAddress(resources.path_settings, binding::settings);
     arguments->setAddress(resources.path_reservoirs, binding::reservoirs);
     arguments->setAddress(resources.primaries, binding::primaries);
@@ -53,10 +57,11 @@ void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder, const Fra
         arguments->setAddress(resources.mnee_header, binding::mnee_header);
     }
     encoder->setComputePipelineState(tiles_.get());
-    encoder->dispatchThreads(MTL::Size{contracts::light_tiles * contracts::light_tile_size, 1, 1},
-                             MTL::Size{std::min<NS::UInteger>(tiles_->maxTotalThreadsPerThreadgroup(), 256), 1, 1});
+    encoder->dispatchThreads(
+        MTL::Size{contracts::light_tiles * contracts::light_tile_size, 1, 1},
+        MTL::Size{std::min<NS::UInteger>(tiles_->maxTotalThreadsPerThreadgroup(), tiles_group), 1, 1});
     // The tiles, which the tree's candidates read (GPU.8: a write and its reader).
-    encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+    barrier_after_dispatch(encoder);
     encoder->setComputePipelineState(pipeline_.get());
     dispatch_per_pixel(encoder, pipeline_.get(), resources.size);
     if (mnee_) {

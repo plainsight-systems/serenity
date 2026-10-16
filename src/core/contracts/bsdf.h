@@ -228,6 +228,14 @@ static_assert(sizeof(PackedBsdf) == 16, "PackedBsdf must be the same 16 bytes on
 static_assert(std::is_trivially_copyable_v<PackedBsdf>, "PackedBsdf is written to the GPU as bytes");
 #endif
 
+// The kind alone, read without unpacking the rest: whether a stored surface
+// is one at all (kind none: contracts/surface_record.h). Here, with the
+// layout, so the Integrator and Sample reuse, which meet at contracts
+// alone, read it one way.
+constexpr BsdfKind packed_kind(PackedBsdf packed) {
+    return static_cast<BsdfKind>((packed.escape_kind >> packed_kind_shift) & packed_kind_mask);
+}
+
 // What sample() returns.
 struct BsdfSample {
     Float3 direction;  // wi, unit

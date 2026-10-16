@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "metal/device/error.h"
+#include "metal/device/readback.h"
 #include "metal/device/support.h"
 
 namespace serenity::metal {
@@ -45,15 +46,13 @@ void FeatureImages::prepare(frame::Extent size) {
     // Frames in flight may still read the old images (frame_images.h,
     // FrameImages::prepare, the same reasons).
     size_ = {};
-    if (albedo_.texture) {
+    if (albedo_) {
         submission_.drain();
     }
     const auto pool = scoped_pool();
-    const auto make = [&](Image& image, MTL::PixelFormat format, const char* what) {
-        image.resident.reset();
-        image.texture.reset();
-        image.texture = make_private_texture(device_.get(), format, size, what);
-        image.resident = submission_.keep_resident(image.texture.get());
+    const auto make = [&](ResidentTexture& image, MTL::PixelFormat format, std::string_view what) {
+        image.reset();
+        image = make_resident_texture(device_.get(), submission_, format, size, what);
     };
     make(albedo_, MTL::PixelFormatRGBA16Float, "albedo image");
     make(normal_, MTL::PixelFormatRGBA16Float, "normal image");
@@ -73,28 +72,10 @@ FeatureImages::Read FeatureImages::read() const {
     // Albedo, normal and motion, then depth, in one shared buffer.
     const std::array<std::size_t, 4> offsets = {0, half_bytes, 2 * half_bytes, 3 * half_bytes};
     const std::size_t total = 3 * half_bytes + float_row * size_.height;
-    const auto pool = scoped_pool();
-    auto buffer = NS::TransferPtr(device_->newBuffer(total, MTL::ResourceStorageModeShared));
-    if (!buffer) {
-        throw MetalError("FeatureImages::read: the device made no buffer to read into");
-    }
-    const Resident resident = submission_.keep_resident(buffer.get());
-    const FrameSlot begun = submission_.begin();
-    MTL4::ComputeCommandEncoder* const encoder = begun.commands->computeCommandEncoder();
-    if (encoder == nullptr) {
-        throw MetalError("FeatureImages::read: the command buffer made no encoder");
-    }
-    const MTL::Size extent{size_.width, size_.height, 1};
-    const std::array<std::pair<MTL::Texture*, std::size_t>, 4> copies = {
-        std::pair{albedo_.texture.get(), half_row}, std::pair{normal_.texture.get(), half_row},
-        std::pair{motion_.texture.get(), half_row}, std::pair{depth_.texture.get(), float_row}};
-    for (std::size_t i = 0; i < copies.size(); ++i) {
-        encoder->copyFromTexture(copies[i].first, 0, 0, MTL::Origin{0, 0, 0}, extent, buffer.get(), offsets[i],
-                                 copies[i].second, copies[i].second * size_.height);
-    }
-    encoder->endEncoding();
-    submission_.commit();
-    (void)submission_.wait_until_complete(begun.sequence);
+    const std::array<ImageCopy, 4> copies = {
+        ImageCopy{albedo_.texture.get(), offsets[0], half_row}, ImageCopy{normal_.texture.get(), offsets[1], half_row},
+        ImageCopy{motion_.texture.get(), offsets[2], half_row}, ImageCopy{depth_.texture.get(), offsets[3], float_row}};
+    const auto buffer = read_back(device_.get(), submission_, size_, total, copies, "FeatureImages::read");
 
     // Copied out of the buffer as the values they are (ES.48: no cast of its
     // bytes to another type).

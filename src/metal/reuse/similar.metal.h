@@ -57,6 +57,7 @@
 #include "core/contracts/bsdf.h"
 #include "core/contracts/surface_record.h"
 #include "core/contracts/reuse_settings.h"
+#include "metal/math/srgb.metal.h"
 #include "metal/math/warp.metal.h"
 
 namespace serenity {
@@ -67,12 +68,10 @@ namespace shaders {
 constant constexpr float material_color_tolerance = 0.5f;
 constant constexpr float material_scalar_tolerance = 0.5f;
 
-// A record's kind, read from contract 2's packed word as that contract
-// lays it out; none for a pixel with no surface (contracts/
-// surface_record.h).
+// A record's kind (contracts/bsdf.h, packed_kind); none for a pixel with
+// no surface (contracts/surface_record.h).
 inline serenity::contracts::BsdfKind record_kind(serenity::contracts::SurfaceRecord record) {
-    return serenity::contracts::BsdfKind((record.bsdf.escape_kind >> serenity::contracts::packed_kind_shift) &
-                                         serenity::contracts::packed_kind_mask);
+    return serenity::contracts::packed_kind(record.bsdf);
 }
 
 // The geometric test; `normal_here` decoded once by the caller, who tests
@@ -94,7 +93,8 @@ struct MaterialLook {
 inline MaterialLook material_look(serenity::contracts::PackedBsdf packed) {
     const half2 rg = as_type<half2>(packed.color_rg);
     const half2 b_scalar = as_type<half2>(packed.color_b_scalar);
-    return MaterialLook{0.2126f * float(rg.x) + 0.7152f * float(rg.y) + 0.0722f * float(b_scalar.x),
+    return MaterialLook{rec709_luminance.x * float(rg.x) + rec709_luminance.y * float(rg.y) +
+                            rec709_luminance.z * float(b_scalar.x),
                         float(b_scalar.y)};
 }
 

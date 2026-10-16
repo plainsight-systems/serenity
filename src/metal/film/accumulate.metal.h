@@ -23,7 +23,7 @@
 // poison the pixel for every frame after. It is left out: the pixel keeps
 // its mean and its count, so the samples it does hold are weighed right
 // (frame 0 failing and frame 1 radiance L gives L, not L / 2). And it is
-// counted, in a counter Film keeps (metal/film/non_finite.h), which the
+// counted, in a counter Film keeps (metal/film/failure_count.h), which the
 // headless renderer fails a run on and the window shows. It is not hidden,
 // and it is not averaged in.
 //

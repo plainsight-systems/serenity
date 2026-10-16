@@ -1,12 +1,14 @@
 #pragma once
 
 #include <cstddef>
+#include <string_view>
 
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
 #include "core/frame/extent.h"
 #include "metal/device/device.h"
+#include "metal/device/resident.h"
 #include "metal/device/submission.h"
 
 namespace serenity::metal {
@@ -54,20 +56,15 @@ public:
     Addresses addresses() const noexcept;
 
 private:
-    struct Array {
-        NS::SharedPtr<MTL::Buffer> buffer;
-        Resident resident;
-    };
-
-    void make(Array& array, std::size_t bytes, MTL::ResourceOptions storage, const char* what);
+    void make(ResidentBuffer& array, std::size_t bytes, MTL::ResourceOptions storage, std::string_view what);
 
     NS::SharedPtr<MTL::Device> device_;
     Submission& submission_;
     Light light_kind_;
     frame::Extent size_;
-    Array requests_;
-    Array header_;
-    Array light_;
+    ResidentBuffer requests_;
+    ResidentBuffer header_;
+    ResidentBuffer light_;
 };
 
 }  // namespace serenity::metal

@@ -16,6 +16,8 @@
 #include "core/contracts/surface_record.h"
 
 #include "metal/device/error.h"
+#include "metal/device/indirect_grid.h"
+#include "metal/device/resident.h"
 #include "metal/device/support.h"
 
 namespace serenity::metal {
@@ -50,8 +52,8 @@ void FrameImages::prepare(frame::Extent size) {
     // resize's frame or two.
     size_ = {};
     bool settled_in_flight = false;
-    const auto release = [&](Image& image) {
-        if (!image.texture) {
+    const auto release = [&](ResidentTexture& image) {
+        if (!image) {
             return;
         }
         if (!settled_in_flight) {
@@ -59,17 +61,15 @@ void FrameImages::prepare(frame::Extent size) {
             submission_.drain();
             settled_in_flight = true;
         }
-        image.resident.reset();
-        image.texture.reset();
+        image.reset();
     };
     release(radiance_);
     for (auto& level : pyramid_) {
         release(level);
     }
     const auto pool = scoped_pool();
-    const auto make = [&](Image& image, MTL::PixelFormat format, frame::Extent at, const char* what) {
-        image.texture = make_private_texture(device_.get(), format, at, what);
-        image.resident = submission_.keep_resident(image.texture.get());
+    const auto make = [&](ResidentTexture& image, MTL::PixelFormat format, frame::Extent at, std::string_view what) {
+        image = make_resident_texture(device_.get(), submission_, format, at, what);
     };
     if (radiance_kind_ == Radiance::image) {
         make(radiance_, MTL::PixelFormatRGBA32Float, size, "radiance image");
@@ -87,26 +87,28 @@ void FrameImages::prepare(frame::Extent size) {
 ReuseImages::ReuseImages(const Device& device, Submission& submission, Temporal temporal, Working working)
     : device_(NS::RetainPtr(device.handle())), submission_(submission), temporal_(temporal), working_kind_(working) {}
 
-void ReuseImages::make(Array& array, std::size_t bytes, const char* what) {
-    array.buffer = NS::TransferPtr(device_->newBuffer(bytes, MTL::ResourceStorageModePrivate));
-    if (!array.buffer) {
-        throw MetalError(std::string("ReuseImages: the device made no buffer for the ") + what);
-    }
-    array.resident = submission_.keep_resident(array.buffer.get());
+void ReuseImages::make(Array& array, std::size_t bytes, std::string_view what) {
+    array = make_resident_buffer(device_.get(), submission_, bytes, MTL::ResourceStorageModePrivate,
+                                 "ReSTIR DI's " + std::string(what));
 }
 
 std::uint64_t ReuseImages::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
     check_texture_size(size, "ReSTIR DI's arrays");
     const bool temporal = temporal_ == Temporal::merged;
+    // The history joined on a copy, kept only once the arrays that hold
+    // the frame exist: a throw below leaves it claiming nothing they never
+    // held (E.4), as Accumulation's (accumulation.cpp).
+    frame::ReuseHistory joined = history_;
     std::uint64_t held = 0;
     if (temporal) {
         try {
-            held = history_.join(inputs, size).held;
+            held = joined.join(inputs, size).held;
         } catch (const frame::HistoryError& refused) {
             throw MetalError(std::string("ReSTIR DI's reuse history: ") + refused.what());
         }
     }
     if (size == size_) {
+        history_ = joined;
         return held;
     }
     // A new size starts the history over (the rule refuses one that does
@@ -116,19 +118,18 @@ std::uint64_t ReuseImages::prepare(const frame::FrameInputs& inputs, frame::Exte
     size_ = {};
     const auto all = {&records_[0], &records_[1], &path_states_, &previous_positions_, &working_,
                       &final_reservoirs_[0], &final_reservoirs_[1]};
-    if (std::ranges::any_of(all, [](const Array* array) { return static_cast<bool>(array->buffer); })) {
+    if (std::ranges::any_of(all, [](const Array* array) { return static_cast<bool>(*array); })) {
         submission_.drain();
     }
     for (Array* array : all) {
-        array->resident.reset();
-        array->buffer.reset();
+        array->reset();
     }
     const auto pool = scoped_pool();
     const std::size_t pixels = std::size_t{size.width} * size.height;
     const std::size_t halves = temporal ? 2 : 1;
-    for (std::size_t half = 0; half < halves; ++half) {
-        make(records_[half], pixels * sizeof(contracts::SurfaceRecord), "surface records");
-        make(final_reservoirs_[half], pixels * sizeof(contracts::Reservoir), "final reservoirs");
+    for (std::size_t h = 0; h < halves; ++h) {
+        make(records_[h], pixels * sizeof(contracts::SurfaceRecord), "surface records");
+        make(final_reservoirs_[h], pixels * sizeof(contracts::Reservoir), "final reservoirs");
     }
     make(path_states_, pixels * sizeof(contracts::PathState), "path states");
     if (temporal) {
@@ -138,11 +139,12 @@ std::uint64_t ReuseImages::prepare(const frame::FrameInputs& inputs, frame::Exte
         make(working_, pixels * sizeof(contracts::Reservoir), "working reservoirs");
     }
     size_ = size;
+    history_ = joined;
     return held;
 }
 
 ReuseImages::Addresses ReuseImages::addresses(std::uint64_t index) const noexcept {
-    const auto address = [](const Array& array) { return array.buffer ? array.buffer->gpuAddress() : 0; };
+    const auto address = [](const Array& array) { return array.address(); };
     // This frame's half by its parity, last frame's the other; one half
     // without a temporal merge.
     const std::size_t now = temporal_ == Temporal::merged ? index % 2 : 0;
@@ -160,40 +162,41 @@ ReuseImages::Addresses ReuseImages::addresses(std::uint64_t index) const noexcep
     return out;
 }
 
+static_assert(PathReuseImages::grid_offset >= sizeof(std::uint32_t) &&
+              PathReuseImages::grid_offset + sizeof(gpu::IndirectGrid) <= PathReuseImages::counter_bytes);
+static_assert(PathReuseImages::grid_offset % alignof(gpu::IndirectGrid) == 0 &&
+              PathReuseImages::grid_offset % constant_offset_alignment == 0);
+
 PathReuseImages::PathReuseImages(const Device& device, Submission& submission, Spatial spatial, Temporal temporal)
     : device_(NS::RetainPtr(device.handle())), submission_(submission), spatial_(spatial), temporal_(temporal) {
     // The count starts at 0, and the grid pass keeps setting it back.
     const auto pool = scoped_pool();
-    counter_.buffer = NS::TransferPtr(device_->newBuffer(grid_offset * 2, MTL::ResourceStorageModeShared));
-    if (!counter_.buffer) {
-        throw MetalError("PathReuseImages: the device made no buffer for the replay count");
-    }
-    std::memset(counter_.buffer->contents(), 0, grid_offset * 2);
-    counter_.resident = submission_.keep_resident(counter_.buffer.get());
+    counter_ = make_resident_buffer(device_.get(), submission_, counter_bytes, MTL::ResourceStorageModeShared,
+                                    "ReSTIR PT's replay count", Zeroed::yes);
     make(light_tiles_, std::size_t{contracts::light_tiles} * contracts::light_tile_size * sizeof(contracts::LightTileEntry),
          "light tiles");
 }
 
-void PathReuseImages::make(Array& array, std::size_t bytes, const char* what) {
-    array.buffer = NS::TransferPtr(device_->newBuffer(bytes, MTL::ResourceStorageModePrivate));
-    if (!array.buffer) {
-        throw MetalError(std::string("PathReuseImages: the device made no buffer for the ") + what);
-    }
-    array.resident = submission_.keep_resident(array.buffer.get());
+void PathReuseImages::make(Array& array, std::size_t bytes, std::string_view what) {
+    array = make_resident_buffer(device_.get(), submission_, bytes, MTL::ResourceStorageModePrivate,
+                                 "ReSTIR PT's " + std::string(what));
 }
 
 std::uint64_t PathReuseImages::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
     check_texture_size(size, "ReSTIR PT's arrays");
     const bool temporal = temporal_ == Temporal::merged;
+    // Joined on a copy, kept once the arrays exist (ReuseImages::prepare).
+    frame::ReuseHistory joined = history_;
     std::uint64_t held = 0;
     if (temporal) {
         try {
-            held = history_.join(inputs, size).held;
+            held = joined.join(inputs, size).held;
         } catch (const frame::HistoryError& refused) {
             throw MetalError(std::string("ReSTIR PT's reuse history: ") + refused.what());
         }
     }
     if (size == size_) {
+        history_ = joined;
         return held;
     }
     // A new size starts the history over (the rule refuses one that does
@@ -203,19 +206,18 @@ std::uint64_t PathReuseImages::prepare(const frame::FrameInputs& inputs, frame::
     const auto all = {&reservoirs_, &primaries_[0], &primaries_[1], &light_,           &shifts_,
                       &replays_,    &finals_[0],    &finals_[1],    &previous_positions_, &previous_pixels_,
                       &duplication_};
-    if (std::ranges::any_of(all, [](const Array* array) { return static_cast<bool>(array->buffer); })) {
+    if (std::ranges::any_of(all, [](const Array* array) { return static_cast<bool>(*array); })) {
         submission_.drain();
     }
     for (Array* array : all) {
-        array->resident.reset();
-        array->buffer.reset();
+        array->reset();
     }
     const auto pool = scoped_pool();
     const std::size_t pixels = std::size_t{size.width} * size.height;
     const std::size_t halves = temporal ? 2 : 1;
     make(reservoirs_, pixels * sizeof(contracts::PathReservoir), "path reservoirs");
-    for (std::size_t half = 0; half < halves; ++half) {
-        make(primaries_[half], pixels * sizeof(contracts::PrimaryHit), "primary hits");
+    for (std::size_t h = 0; h < halves; ++h) {
+        make(primaries_[h], pixels * sizeof(contracts::PrimaryHit), "primary hits");
     }
     make(light_, pixels * 4 * sizeof(float), "light buffer");
     if (spatial_ == Spatial::merged || temporal) {
@@ -223,19 +225,20 @@ std::uint64_t PathReuseImages::prepare(const frame::FrameInputs& inputs, frame::
         make(replays_, pixels * contracts::max_path_neighbors * sizeof(std::uint32_t), "replaying shifts");
     }
     if (temporal) {
-        for (Array& half : finals_) {
-            make(half, pixels * sizeof(contracts::PathReservoir), "final path reservoirs");
+        for (Array& copy : finals_) {
+            make(copy, pixels * sizeof(contracts::PathReservoir), "final path reservoirs");
         }
         make(previous_positions_, pixels * sizeof(contracts::Float3), "previous positions");
         make(previous_pixels_, pixels * sizeof(std::uint32_t), "previous pixels");
         make(duplication_, pixels * sizeof(float), "duplication map");
     }
     size_ = size;
+    history_ = joined;
     return held;
 }
 
 PathReuseImages::Addresses PathReuseImages::addresses(std::uint64_t index) const noexcept {
-    const auto address = [](const Array& array) { return array.buffer ? array.buffer->gpuAddress() : 0; };
+    const auto address = [](const Array& array) { return array.address(); };
     const bool temporal = temporal_ == Temporal::merged;
     const std::size_t now = temporal ? index % 2 : 0;
     const std::size_t then = 1 - now;

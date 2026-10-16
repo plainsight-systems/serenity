@@ -92,6 +92,7 @@
 
 #include "core/contracts/light_sample.h"
 #include "core/contracts/reservoir.h"
+#include "metal/device/layout.metal.h"
 
 namespace serenity {
 namespace shaders {
@@ -194,6 +195,14 @@ inline serenity::contracts::Reservoir finish(Streaming reservoir, Normalization 
                                           reservoir.tested, kept ? reservoir.target : 0.0f, weight};
 }
 
+// The offset of a test word's pixel (contracts/reservoir.h): its two signed
+// 8-bit coordinates. Read here for the merges and by visibility.metal.h's
+// takes_test().
+inline int2 tested_offset(uint tested) {
+    namespace c = serenity::contracts;
+    return int2(signed_byte(tested, c::tested_offset_x_shift), signed_byte(tested, c::tested_offset_y_shift));
+}
+
 // `reservoir` as reused `offset` pixels from where it was stored (the
 // reused pixel minus the reusing one, so a test's offset is always where
 // it was made minus the pixel holding it) and `frames` later: its test's
@@ -204,11 +213,7 @@ inline serenity::contracts::Reservoir finish(Streaming reservoir, Normalization 
 inline serenity::contracts::Reservoir reused_from(serenity::contracts::Reservoir reservoir, int2 offset, uint frames) {
     namespace c = serenity::contracts;
     const uint tested = reservoir.tested;
-    // The offset's two signed 8-bit coordinates, their bits taken apart as
-    // unsigned (ES.101) and read back as two's complement, as
-    // visibility.metal.h reads them.
-    const int2 was = int2(int(as_type<char>(uchar((tested >> c::tested_offset_x_shift) & c::tested_field_mask))),
-                          int(as_type<char>(uchar((tested >> c::tested_offset_y_shift) & c::tested_field_mask))));
+    const int2 was = tested_offset(tested);
     const int2 moved = metal::clamp(was + offset, int2(-c::tested_max_offset), int2(c::tested_max_offset));
     // At most 255 + 255: no wrap before the saturation (ES.103).
     const uint age = metal::min(((tested >> c::tested_age_shift) & c::tested_field_mask) +

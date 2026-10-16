@@ -29,7 +29,7 @@ Offscreen::Offscreen(const Device& device, Submission& submission, frame::Extent
     resident_ = submission.keep_resident(texture_.get());
 }
 
-std::size_t Offscreen::rgba_size() const {
+std::size_t Offscreen::rgba_size() const noexcept {
     return std::size_t{size_.width} * size_.height * bytes_per_pixel;
 }
 

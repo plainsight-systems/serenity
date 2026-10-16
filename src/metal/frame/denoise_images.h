@@ -13,6 +13,7 @@
 #include "core/frame/frame_inputs.h"
 #include "core/frame/history.h"
 #include "metal/device/device.h"
+#include "metal/device/resident.h"
 #include "metal/device/submission.h"
 
 namespace serenity::metal {
@@ -108,10 +109,7 @@ public:
     MTL::GPUAddress next_history() const noexcept;
 
 private:
-    struct Buffer {
-        NS::SharedPtr<MTL::Buffer> buffer;
-        Resident resident;  // released after the GPU is done with it (submission.h, Lifetime)
-    };
+    using Buffer = ResidentBuffer;  // metal/device/resident.h
     // A level's activations, bordered (above): its size, pitch and stride.
     struct Activations {
         Buffer memory;
@@ -120,8 +118,8 @@ private:
         std::uint32_t stride = 0;
     };
 
-    void make(Buffer& buffer, std::size_t bytes, const char* what);
-    void make(Activations& a, frame::Extent size, std::uint32_t stride, const char* what);
+    void make(Buffer& buffer, std::size_t bytes, std::string_view what);
+    void make(Activations& a, frame::Extent size, std::uint32_t stride, std::string_view what);
     // At a new size: every buffer made (allocate), then every dispatch's
     // parameters planned and written once (plan).
     void allocate();

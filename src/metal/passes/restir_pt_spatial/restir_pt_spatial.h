@@ -5,6 +5,7 @@
 
 #include "metal/device/library.h"
 #include "metal/frame/frame_resources.h"
+#include "metal/passes/restir_pt/shift_replay.h"
 
 namespace serenity::metal {
 
@@ -36,13 +37,12 @@ class RestirPtSpatialPass {
 public:
     explicit RestirPtSpatialPass(const Library& library);
 
+    // Records the pass. Throws MetalError if `resources` lacks anything it
+    // reads or writes above.
     void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
 
 private:
-    NS::SharedPtr<MTL::ComputePipelineState> shift_;
-    NS::SharedPtr<MTL::ComputePipelineState> grid_;
-    NS::SharedPtr<MTL::ComputePipelineState> replay_;
-    NS::SharedPtr<MTL::ComputePipelineState> merge_;
+    ShiftReplay reuse_;  // its four dispatches (restir_pt/shift_replay.h)
 };
 
 }  // namespace serenity::metal

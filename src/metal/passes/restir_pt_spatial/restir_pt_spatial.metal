@@ -71,7 +71,7 @@ kernel void restir_pt_shift(constant serenity::contracts::FrameConstants& frame 
             } else if (!held) {
                 shifts[i * serenity::contracts::max_path_neighbors + t] = float4(0.0f);
             } else if (restir_pt::replays(reservoir)) {
-                appended[count++] = i * 4u + t;
+                appended[count++] = restir_pt::replay_item(i, t);
             } else {
                 shifts[i * serenity::contracts::max_path_neighbors + t] = restir_pt::stored_shift(
                     shift::shift_path(scene, shift::unpack_primary_hit(primaries[j]), reservoir, settings));
@@ -79,15 +79,9 @@ kernel void restir_pt_shift(constant serenity::contracts::FrameConstants& frame 
         }
     }
     // The group's appended pairs, one atomic for all (GDSA.10).
-    const uint before = simd_prefix_exclusive_sum(count);
-    const uint total = simd_sum(count);
-    uint base = 0u;
-    if (simd_is_first() && total > 0u) {
-        base = atomic_fetch_add_explicit(counter, total, memory_order_relaxed);
-    }
-    base = simd_broadcast_first(base);
+    const uint first = simd_reserve(counter, count);
     for (uint n = 0u; n < count; ++n) {
-        replays[base + before + n] = appended[n];
+        replays[first + n] = appended[n];
     }
 }
 
@@ -96,11 +90,10 @@ kernel void restir_pt_shift(constant serenity::contracts::FrameConstants& frame 
 // the temporal's, or the next frame's), which a barrier orders after the
 // replay that reads the grid.
 kernel void restir_pt_replay_grid(device atomic_uint* counter [[buffer(binding::counter)]],
-                                  device restir_pt::ReplayGrid* grid [[buffer(binding::dispatch)]]) {
+                                  device serenity::gpu::IndirectGrid* grid [[buffer(binding::dispatch)]]) {
     const uint count = atomic_load_explicit(counter, memory_order_relaxed);
     atomic_store_explicit(counter, 0u, memory_order_relaxed);
-    // At least one thread: a grid of none is not one Metal takes.
-    *grid = restir_pt::ReplayGrid{{max(count, 1u), 1u, 1u}, {restir_pt::replay_group, 1u, 1u}, count};
+    *grid = indirect_grid(count, serenity::contracts::replay_group);
 }
 
 // Step 10: the pairs that replay, one thread each.
@@ -116,15 +109,15 @@ kernel void restir_pt_replay(constant serenity::contracts::FrameConstants& frame
                              constant ushort* pairing [[buffer(binding::pairing)]],
                              device float4* shifts [[buffer(binding::shifts)]],
                              const device uint* replays [[buffer(binding::replays)]],
-                             const device restir_pt::ReplayGrid* grid [[buffer(binding::dispatch)]],
+                             const device serenity::gpu::IndirectGrid* grid [[buffer(binding::dispatch)]],
                              uint n [[thread_position_in_grid]]) {
     if (n >= grid->count) {
         return;
     }
     const uint2 size = uint2(frame.width, frame.height);
     const uint item = replays[n];
-    const uint i = item / 4u;
-    const uint t = item % 4u;
+    const uint i = restir_pt::replay_pixel(item);
+    const uint t = restir_pt::replay_slot(item);
     const uint2 pixel = uint2(i % size.x, i / size.x);
     const Partner partner = partner_of(pairing, pixel, t, frame.frame_index, size);
     const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};

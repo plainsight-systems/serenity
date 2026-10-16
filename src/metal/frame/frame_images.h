@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
@@ -12,6 +13,7 @@
 #include "core/frame/history.h"
 #include "core/passes/tone_map.h"
 #include "metal/device/device.h"
+#include "metal/device/resident.h"
 #include "metal/device/submission.h"
 
 namespace serenity::metal {
@@ -116,12 +118,8 @@ private:
     frame::Extent size_;
     // Each image with its residency, released after the GPU is done with it
     // (submission.h, Lifetime).
-    struct Image {
-        NS::SharedPtr<MTL::Texture> texture;
-        Resident resident;
-    };
-    Image radiance_;
-    std::array<Image, passes::bloom_levels> pyramid_;
+    ResidentTexture radiance_;
+    std::array<ResidentTexture, passes::bloom_levels> pyramid_;
 };
 
 // Axis: Frame graph (ReSTIR DI's images between passes and across frames:
@@ -244,13 +242,11 @@ public:
     Addresses addresses(std::uint64_t index) const noexcept;
 
 private:
-    struct Array {
-        NS::SharedPtr<MTL::Buffer> buffer;
-        Resident resident;  // released after the GPU is done with it (submission.h, Lifetime)
-    };
+    // Each array with its residency (metal/device/resident.h).
+    using Array = ResidentBuffer;
 
     // Makes `array` of `bytes` in private storage, resident (GPU.9, MEM.9).
-    void make(Array& array, std::size_t bytes, const char* what);
+    void make(Array& array, std::size_t bytes, std::string_view what);
 
     NS::SharedPtr<MTL::Device> device_;
     Submission& submission_;
@@ -360,16 +356,16 @@ public:
     Addresses addresses(std::uint64_t index) const noexcept;
 
     // Where the indirect grid is in the counter's buffer: past the count,
-    // at an alignment any binding takes.
+    // at its own alignment (metal/device/indirect_grid.h) and the constant
+    // offset alignment (support.h), which every binding meets; the buffer's
+    // bytes, the grid within them.
     static constexpr std::size_t grid_offset = 64;
+    static constexpr std::size_t counter_bytes = 128;
 
 private:
-    struct Array {
-        NS::SharedPtr<MTL::Buffer> buffer;
-        Resident resident;
-    };
+    using Array = ResidentBuffer;  // metal/device/resident.h
 
-    void make(Array& array, std::size_t bytes, const char* what);
+    void make(Array& array, std::size_t bytes, std::string_view what);
 
     NS::SharedPtr<MTL::Device> device_;
     Submission& submission_;

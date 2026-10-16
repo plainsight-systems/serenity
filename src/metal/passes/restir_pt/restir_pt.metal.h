@@ -147,8 +147,7 @@
 // hits, transforms and glows, traced against this frame's structure: a ray
 // a firefly crossed last frame and not this one (or the reverse) is
 // answered by this frame's. The structure kept a frame longer would make it
-// exact (scene_acceleration.h, Keep::last_too, as ReSTIR DI's raytraced
-// mode needs; queued). And a reconnection keeps its suffix after x_k as its
+// exact, as ReSTIR DI's raytraced mode needs (docs/process/QUEUE.md). And a reconnection keeps its suffix after x_k as its
 // source frame lit it (contract 15's cached radiance), as the 2022 code
 // does: a path kept across frames carries a moved firefly's last light
 // after x_k until it is resampled away, which the cap bounds; a path whose
@@ -179,6 +178,8 @@
 #include "core/contracts/primary_hit.h"
 #include "core/contracts/transform.h"
 #include "metal/camera/thin_lens.metal.h"
+#include "metal/device/append.metal.h"
+#include "metal/device/indirect_grid.h"
 #include "metal/integrator/nee.metal.h"
 #include "metal/integrator/path.metal.h"
 #include "metal/integrator/reconnection.metal.h"
@@ -189,6 +190,7 @@
 #include "metal/reuse/pairing.metal.h"
 #include "metal/reuse/path_merge.metal.h"
 #include "metal/reuse/reservoir.metal.h"
+#include "metal/reuse/temporal.metal.h"
 #include "metal/sampler/sampler.metal.h"
 #include "metal/shapes/shape_point.metal.h"
 
@@ -204,9 +206,7 @@ using Scene = path::Scene;
 inline CameraRay primary_ray(constant serenity::contracts::CameraData& camera, uint2 pixel, uint frame, uint2 size,
                              thread PathNumbers& numbers) {
     numbers = path_numbers(pixel, frame);
-    const float2 within = next_numbers2(numbers);
-    const float2 lens = has_lens(camera) ? next_numbers2(numbers) : float2(0.0f);
-    return camera_ray(camera, float2(pixel) + within, lens, size);
+    return pixel_ray(camera, pixel, size, numbers);
 }
 
 inline CameraRay primary_ray(constant serenity::contracts::CameraData& camera, uint2 pixel, uint frame, uint2 size) {
@@ -468,10 +468,11 @@ struct TreeGatherOf {
             const mnee::Seed seed =
                 mnee::seed_segment(scene, origin, wi, kept.sample.distance, kept.sample.primitive);
             if (seed.count != 0u) {
-                if (seed.usable &&
-                    !mnee::enqueue(queue, mnee::request(here, origin, kept.sample, seed,
-                                                        beta / survival * (sum / (float(m) * kept.target)), pixel))) {
-                    seen += float3(NAN);  // the list full: counted, not lost silently (contract 16)
+                if (seed.usable) {
+                    // Where the list is full, counted lost by the MNEE pass
+                    // (mnee::enqueue()).
+                    mnee::enqueue(queue, mnee::request(here, origin, kept.sample, seed,
+                                                       beta / survival * (sum / (float(m) * kept.target)), pixel));
                 }
                 return;
             }
@@ -528,7 +529,7 @@ struct TreeGatherOf {
         const float3 at = to_float3(here.surface.position);
         const bool delta = (next.lobe & serenity::contracts::lobe_delta) != 0u;
         if constexpr (manifold) {
-            chain = mnee::chain_after(chain, next.lobe, shapes.records[here.surface.primitive].kind);
+            chain = mnee::chain_after(chain, next.lobe, shapes.records, here.surface.primitive);
         }
         if (rc != 0u) {
             suffix *= factor;
@@ -672,15 +673,24 @@ inline float4 stored_shift(shift::Shifted shifted) {
     return float4(shifted.integrand, shifted.jacobian);
 }
 
-// The replay's indirect grid, as Metal reads MTLDispatchThreadsIndirectArguments:
-// the grid's size, then the threadgroup's; and the count it was made from.
-struct ReplayGrid {
-    uint grid[3];
-    uint group[3];
-    uint count;
-};
+// A replaying shift as the replay list holds it (steps 5, 6, 8 and 10): the
+// pixel whose shifted paths it writes and the slot among them, one word,
+// replay_slots to a pixel; its grid one of metal/device/indirect_grid.h's,
+// in threadgroups of contract 15's replay_group. The spatial reuse's slots
+// are its partners, the temporal reuse's its two shifts (last frame's path
+// here, this pixel's there), each fewer than replay_slots.
+constant constexpr uint replay_slots = 4u;
+static_assert(serenity::contracts::max_path_neighbors <= replay_slots, "a pixel's partners fit its replay slots");
 
-constant constexpr uint replay_group = 64u;
+inline uint replay_item(uint pixel, uint slot) {
+    return pixel * replay_slots + slot;
+}
+inline uint replay_pixel(uint item) {
+    return item / replay_slots;
+}
+inline uint replay_slot(uint item) {
+    return item % replay_slots;
+}
 
 // Whether a reservoir holds a path worth shifting: one, with a weight.
 inline bool holds_path(serenity::contracts::PathReservoir reservoir) {
@@ -706,9 +716,6 @@ struct Merged {
 // no_pixel: the surface was out of last frame's image, or nothing near
 // was it.
 constant constexpr uint no_pixel = 0xffffffffu;
-constant constexpr uint temporal_tries = 9u;
-constant constexpr int2 temporal_ring[temporal_tries - 1u] = {int2(-1, -1), int2(0, -1), int2(1, -1), int2(-1, 0),
-                                                              int2(1, 0),   int2(-1, 1), int2(0, 1),  int2(1, 1)};
 
 inline uint previous_pixel(constant serenity::contracts::CameraData& camera, float3 previous_position, float3 normal,
                            const device serenity::contracts::PrimaryHit* last, uint2 size, uint ring_start) {
@@ -722,7 +729,7 @@ inline uint previous_pixel(constant serenity::contracts::CameraData& camera, flo
     const int2 p = int2(metal::min(uint2(place), size - 1u));
     const float distance = metal::distance(to_float3(camera.origin), previous_position);
     for (uint t = 0u; t < temporal_tries; ++t) {
-        const int2 x = t == 0u ? p : p + temporal_ring[(t - 1u + ring_start) % (temporal_tries - 1u)];
+        const int2 x = t == 0u ? p : ring_neighbor(p, t, ring_start);
         if (metal::any(x < int2(0)) || metal::any(x >= int2(size))) {
             continue;
         }
@@ -739,7 +746,7 @@ inline uint previous_pixel(constant serenity::contracts::CameraData& camera, flo
 // after frame (temporal.metal.h, step 3, which found that drift).
 inline uint ring_start(uint frame) {
     PathNumbers numbers = purpose_numbers(path_numbers(uint2(0u), frame), ring_first);
-    return metal::min(uint(next_number(numbers) * float(temporal_tries - 1u)), temporal_tries - 2u);
+    return draw_ring_start(next_number(numbers));
 }
 
 // Step 7: the Talbot merge of the pixel's own reservoir `own` and last

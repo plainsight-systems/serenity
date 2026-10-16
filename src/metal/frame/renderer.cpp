@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/animation/animate.h"
 #include "core/camera/thin_lens.h"
 #include "core/contracts/camera.h"
 #include "core/contracts/denoise.h"
@@ -28,6 +29,7 @@
 #include "core/sampling/pairing.h"
 #include "core/scene/packed_range.h"
 #include "metal/device/error.h"
+#include "metal/device/readback.h"
 #include "metal/device/support.h"
 #include "metal/passes/bindings.h"
 #include "serenity/metallib/shaders.h"
@@ -36,54 +38,57 @@ namespace serenity::metal {
 
 namespace {
 
-// Where in a slot of the ring each contract is (renderer.h): each aligned
-// for any buffer binding Metal takes, with room to grow. A slot is one
-// FrameArray copy, buffer_alignment bytes.
+// Where in a slot of the ring each contract is (renderer.h): each bound as
+// `constant`, so on Metal's constant offset alignment (support.h) and its
+// type's, with room to grow. A slot is one FrameArray copy,
+// buffer_alignment bytes.
 constexpr std::size_t constants_offset = 0;
 constexpr std::size_t camera_offset = 128;
 constexpr std::size_t ring_slot_size = buffer_alignment;
 static_assert(constants_offset + sizeof(contracts::FrameConstants) <= camera_offset);
 static_assert(camera_offset + sizeof(contracts::CameraData) <= ring_slot_size);
+static_assert(constants_offset % constant_offset_alignment == 0 && camera_offset % constant_offset_alignment == 0);
 static_assert(camera_offset % alignof(contracts::CameraData) == 0);
 // Both are written into the ring as their bytes (SL.con.4, COPY.6).
 static_assert(std::is_trivially_copyable_v<contracts::FrameConstants>);
 static_assert(std::is_trivially_copyable_v<contracts::CameraData>);
 
-// Every pass binds at most this many buffers and textures through the table
-// (metal/passes/bindings.h): the path pass binds the most buffers, 0 to 6
-// (the constants, the camera, the structure, the scene's block, the frame's
-// glows and transforms, and its image's counter), the tone map the most
-// textures, 0 to 2. A new kind of material, texture, medium or light adds
-// to the block, not here.
+// The argument table's sizes (renderer.h). Each family of passes binds at
+// most its constant's buffers and textures through the table
+// (metal/passes/bindings.h), each the index past its passes' last, asserted
+// below rather than restated in words; a graph's table holds the most of
+// the families it has (buffer_bindings()). A new kind of material,
+// texture, medium or light adds to the scene's block, not here.
+//
+// Every graph: the path pass without mnee, the preview, the features pass,
+// the presenting passes.
 constexpr NS::UInteger max_buffers = 8;
 constexpr NS::UInteger max_textures = 4;
-// A graph with the denoise pass: it binds 7 (bindings.h, denoise's 0 to 6).
-constexpr NS::UInteger max_denoise_textures = 8;
-static_assert(bindings::denoise::radiance < max_denoise_textures);
 static_assert(bindings::path::non_finite < max_buffers);
+static_assert(bindings::preview::transforms < max_buffers);
+static_assert(bindings::features::last_transforms < max_buffers);
 static_assert(bindings::tone_map::target < max_textures);
-// A ReSTIR graph's table: its passes bind up to 16 buffers (bindings.h,
-// restir_temporal's 0 to 15), so every other graph's table keeps the 8 it
-// had (renderer.h).
-constexpr NS::UInteger max_restir_buffers = 16;
-// A ReSTIR PT graph's: its passes bind up to 26 (bindings.h, restir_pt's 0
-// to 25).
-constexpr NS::UInteger max_restir_pt_buffers = 28;
-// A path graph with mnee: the MNEE pass binds up to 11 (bindings.h, mnee's
-// 0 to 10).
-constexpr NS::UInteger max_mnee_buffers = 11;
-static_assert(bindings::mnee::light < max_mnee_buffers);
-// A graph with the denoise pass and no ReSTIR: the 12 its kernels bind
-// (bindings.h, denoise's 0 to 11); with ReSTIR, ReSTIR's table holds them.
+static_assert(bindings::features::motion < max_textures);
+// A graph with mnee: the path pass's work list and the MNEE pass.
+constexpr NS::UInteger max_mnee_buffers = 12;
+static_assert(bindings::path::mnee_header < max_mnee_buffers);
+static_assert(bindings::mnee::lost < max_mnee_buffers);
+// A graph with the denoise pass.
 constexpr NS::UInteger max_denoise_buffers = 12;
+constexpr NS::UInteger max_denoise_textures = 8;
 static_assert(bindings::denoise::coarse < max_denoise_buffers);
-static_assert(max_denoise_buffers <= max_restir_buffers);
-static_assert(bindings::restir_pt::mnee_header < max_restir_pt_buffers);
+static_assert(bindings::denoise::radiance < max_denoise_textures);
+// A ReSTIR DI graph.
+constexpr NS::UInteger max_restir_buffers = 15;
 static_assert(bindings::restir_initial::output < max_restir_buffers);
 static_assert(bindings::restir_temporal::last_transforms < max_restir_buffers);
 static_assert(bindings::restir_spatial::output < max_restir_buffers);
 static_assert(bindings::restir_shade::non_finite < max_restir_buffers);
-
+// A ReSTIR PT graph, with or without mnee (its initial pass's work list and
+// the MNEE pass bind within it).
+constexpr NS::UInteger max_restir_pt_buffers = 28;
+static_assert(bindings::restir_pt::mnee_header < max_restir_pt_buffers);
+static_assert(bindings::mnee::lost < max_restir_pt_buffers);
 
 // The reuse textures' seed: fixed, so every run pairs the same pixels
 // (core/sampling/pairing.h).
@@ -96,21 +101,59 @@ bool reuses_samples(frame::PassKind kind) {
 
 // The reuse constants are written into their ring as their bytes.
 static_assert(std::is_trivially_copyable_v<contracts::ReuseConstants>);
-static_assert(bindings::features::last_transforms < max_buffers);
-static_assert(bindings::features::motion < max_textures);
+
+// The buffers `schedule`'s table holds: the most of its families' (above).
+NS::UInteger buffer_bindings(const frame::Schedule& schedule) {
+    NS::UInteger most = max_buffers;
+    if (schedule.mnee) {
+        most = std::max(most, max_mnee_buffers);
+    }
+    if (frame::denoises(schedule)) {
+        most = std::max(most, max_denoise_buffers);
+    }
+    if (std::ranges::any_of(schedule.passes, frame::is_restir)) {
+        most = std::max(most, max_restir_buffers);
+    }
+    if (std::ranges::any_of(schedule.passes, frame::is_restir_pt)) {
+        most = std::max(most, max_restir_pt_buffers);
+    }
+    return most;
+}
+
+// The textures it holds.
+NS::UInteger texture_bindings(const frame::Schedule& schedule) {
+    return frame::denoises(schedule) ? max_denoise_textures : max_textures;
+}
 
 // What the path state keeps of a medium's index: 16 bits, 0xffff for none
 // (core/contracts/surface_record.h). A ReSTIR graph refuses a scene with
 // that many media or more (I.5).
 constexpr std::size_t max_restir_media = contracts::path_no_medium;
 
-// Shaders read the time as a float (contracts/frame_constants.h): a double
-// past float's range would reach them as infinity.
-void check_time(const frame::FrameInputs& inputs) {
-    const double seconds = inputs.time.count();
+// Shaders read a time as a float (contracts/frame_constants.h): a double
+// past float's range would reach them as infinity. `which` names the time
+// for the error: frame `index`'s own, or the frame before's.
+void check_time(frame::Seconds time, std::uint64_t index, std::string_view which) {
+    const double seconds = time.count();
     if (!std::isfinite(seconds) || std::abs(seconds) > std::numeric_limits<float>::max()) {
-        throw MetalError("frame " + std::to_string(inputs.index) + ": its time, " + std::to_string(seconds) +
-                    " s, is past what the shaders' float holds");
+        throw MetalError("frame " + std::to_string(index) + ": " + std::string(which) + ", " +
+                         std::to_string(seconds) + " s, is past what the shaders' float holds");
+    }
+}
+
+// What a reuse family's G-buffer or path state packs of `scene`
+// (contracts/surface_record.h, primary_hit.h; core/scene/packed_range.h),
+// refused rather than wrapped (I.5): fewer media than `media_limit`, which
+// a medium's 16-bit index holds with its "none", and every material value
+// within the packed BSDF's range. `family` names the reuse in the error.
+void check_packable(const scene::SceneDescription& scene, std::size_t media_limit, std::string_view family) {
+    if (scene.media.size() >= media_limit) {
+        throw MetalError("Renderer: the scene has " + std::to_string(scene.media.size()) + " media, and " +
+                         std::string(family) + " keeps a medium's index in 16 bits, under " +
+                         std::to_string(media_limit));
+    }
+    if (const std::optional<std::string> outside = scene::outside_packed_bsdf(scene)) {
+        throw MetalError("Renderer: the scene's " + *outside);
     }
 }
 
@@ -150,12 +193,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     : submission_(submission),
       library_(device, serenity::metallib::shaders),
       constants_(device, submission, std::vector<std::byte>(ring_slot_size), FrameArray::Copies::per_frame),
-      arguments_(make_argument_table(device.handle(), schedule.restir_pt                                       ? max_restir_pt_buffers
-                                                      : std::ranges::any_of(schedule.passes, reuses_samples) ? max_restir_buffers
-                                                      : frame::denoises(schedule)                            ? max_denoise_buffers
-                                                      : schedule.mnee                                        ? max_mnee_buffers
-                                                                                                             : max_buffers,
-                                      frame::denoises(schedule) ? max_denoise_textures : max_textures)),
+      arguments_(make_argument_table(device.handle(), buffer_bindings(schedule), texture_bindings(schedule))),
       denoises_(frame::denoises(schedule)),
       schedule_(schedule) {
     // The core decides which schedules can be carried out (principle 10).
@@ -175,8 +213,9 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     const bool spatial = has(frame::PassKind::restir_spatial);
     const bool path_temporal = has(frame::PassKind::restir_pt_temporal);
     // Raytraced mode's temporal merge traces last frame's surface against
-    // last frame's structure, which this backend does not keep yet: refused
-    // by name, never traced against this frame's (renderer.h).
+    // last frame's structure, which this backend does not keep: refused by
+    // name, never traced against this frame's (renderer.h; the design for
+    // keeping it waits in docs/process/QUEUE.md).
     if (temporal && schedule.restir_di &&
         schedule.restir_di->bias_correction == contracts::BiasCorrection::raytraced) {
         throw MetalError("Renderer: the frame graph's restir_temporal pass with bias_correction = \"raytraced\" is "
@@ -276,19 +315,12 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     }
     if (accumulates) {
         accumulation_ = std::make_unique<Accumulation>(device, submission);
-        non_finite_ = std::make_unique<NonFinite>(device, submission);
+        non_finite_ = std::make_unique<FailureCount>(device, submission, "samples not finite");
     }
     // ReSTIR's arrays and constants, only for its graph (renderer.h). Its
     // passes read a scene, which the check above has made sure of.
     if (schedule.restir_di) {
-        if (scene->media.size() >= max_restir_media) {
-            throw MetalError("Renderer: the scene has " + std::to_string(scene->media.size()) +
-                             " media, and ReSTIR DI's path state keeps a medium's index in 16 bits, under " +
-                             std::to_string(max_restir_media));
-        }
-        if (const std::optional<std::string> outside = scene::outside_packed_bsdf(*scene)) {
-            throw MetalError("Renderer: the scene's " + *outside);
-        }
+        check_packable(*scene, max_restir_media, "ReSTIR DI's path state");
         restir_ = schedule.restir_di;
         reuses_history_ = temporal;
         reuse_ = std::make_unique<ReuseImages>(device, submission,
@@ -304,14 +336,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     if (schedule.restir_pt) {
         // What the G-buffer and the light tiles pack (contracts/
         // primary_hit.h, light_tile.h), refused rather than wrapped (I.5).
-        if (scene->media.size() >= contracts::primary_no_medium) {
-            throw MetalError("Renderer: the scene has " + std::to_string(scene->media.size()) +
-                             " media, and ReSTIR PT's G-buffer keeps a medium's index in 16 bits, under " +
-                             std::to_string(contracts::primary_no_medium));
-        }
-        if (const std::optional<std::string> outside = scene::outside_packed_bsdf(*scene)) {
-            throw MetalError("Renderer: the scene's " + *outside);
-        }
+        check_packable(*scene, contracts::primary_no_medium, "ReSTIR PT's G-buffer");
         if (scene->shapes.records.size() > contracts::tile_largest_id + 1u ||
             scene->light_counts.lights > contracts::tile_largest_id + 1u) {
             throw MetalError("Renderer: the scene has " + std::to_string(scene->shapes.records.size()) +
@@ -350,6 +375,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         }
         mnee_list_ = std::make_unique<MneeList>(device, submission, schedule.restir_pt ? MneeList::Light::none
                                                                                        : MneeList::Light::own);
+        mnee_lost_ = std::make_unique<FailureCount>(device, submission, "MNEE requests lost to a full work list");
     }
 
     // Only a graph that reads the scene has it put on the GPU, and only its
@@ -407,7 +433,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     // The denoise pass's (renderer.h). The core has made sure the graph has
     // the features pass and a light pass before it (frame::invalid).
     if (denoises_) {
-        denoise_features_ = network->widths.dec[3];
+        denoise_features_ = network->widths.dec.back();
         denoise_images_ = std::make_unique<DenoiseImages>(device, submission, network->widths);
         output_constants_ = std::make_unique<FrameArray>(device, submission, std::vector<std::byte>(ring_slot_size),
                                                          FrameArray::Copies::per_frame);
@@ -429,7 +455,7 @@ Renderer::~Renderer() {
 }
 
 void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
-    check_time(inputs);
+    check_time(inputs.time, inputs.index, "its time");
     if (needs_scene_ && !inputs.camera) {
         throw MetalError("Renderer: frame " + std::to_string(inputs.index) +
                     ": the frame graph reads a scene, and the frame has no camera");
@@ -438,17 +464,13 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
     // camera framed and its time placing the shapes in record(), so both are
     // checked here, before the submission begins.
     if (features_ && inputs.previous) {
-        const double before = inputs.previous->time.count();
-        if (!std::isfinite(before) || std::abs(before) > std::numeric_limits<float>::max()) {
-            throw MetalError("Renderer: frame " + std::to_string(inputs.index) + ": the frame before's time, " +
-                             std::to_string(before) + " s, is not a finite time");
-        }
+        check_time(inputs.previous->time, inputs.index, "the frame before's time");
         if (const std::optional<std::string_view> reason = camera::invalid(inputs.previous->camera)) {
             throw MetalError("Renderer: frame " + std::to_string(inputs.index) +
                              ": the frame before's camera cannot be framed: " + std::string(*reason));
         }
     }
-    if (!accumulation_ && !images_ && !reuse_ && !path_reuse_ && !features_) {
+    if (!prepares()) {
         return;
     }
     prepared_.reset();
@@ -468,23 +490,42 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
         mnee_list_->prepare(light);
     }
     // 0 without a temporal merge, of either family (never both in a graph).
-    const std::uint64_t reused =
-        reuse_ ? reuse_->prepare(inputs, light) : path_reuse_ ? path_reuse_->prepare(inputs, light) : 0u;
-    const std::uint32_t held =
-        accumulation_ ? accumulation_->prepare(inputs, light,
-                                       animation::changes(animation_) ? frame::SceneMotion::changing
-                                                                      : frame::SceneMotion::still) : 0u;
+    std::uint64_t reused = 0;
+    if (reuse_) {
+        reused = reuse_->prepare(inputs, light);
+    } else if (path_reuse_) {
+        reused = path_reuse_->prepare(inputs, light);
+    }
+    std::uint32_t held = 0;
+    if (accumulation_) {
+        const frame::SceneMotion motion =
+            animation::changes(animation_) ? frame::SceneMotion::changing : frame::SceneMotion::still;
+        held = accumulation_->prepare(inputs, light, motion);
+    }
     const bool denoise_history = denoise_images_ ? denoise_images_->prepare(inputs, light) : false;
     prepared_ = Prepared{inputs.index, size, held, reused, denoise_history};
+}
+
+bool Renderer::prepares() const noexcept {
+    return accumulation_ || images_ || reuse_ || path_reuse_ || mnee_list_ || features_ || denoise_images_ ||
+           full_features_;
 }
 
 std::uint64_t Renderer::non_finite_samples() const noexcept {
     return non_finite_ ? non_finite_->count() : 0u;
 }
 
+std::uint64_t Renderer::mnee_lost_requests() const noexcept {
+    return mnee_lost_ ? mnee_lost_->count() : 0u;
+}
+
 void Renderer::read_accumulated(std::span<float> out) {
-    MTL::Texture* const image = denoises_ ? (images_ ? images_->radiance() : nullptr)
-                                          : accumulation_ ? accumulation_->texture() : nullptr;
+    MTL::Texture* image = nullptr;
+    if (denoises_) {
+        image = images_ ? images_->radiance() : nullptr;  // the denoised radiance, at the target's size
+    } else if (accumulation_) {
+        image = accumulation_->texture();
+    }
     if (image == nullptr) {
         throw MetalError("read_accumulated: the frame graph accumulates nothing, or no frame has made its image");
     }
@@ -495,23 +536,9 @@ void Renderer::read_accumulated(std::span<float> out) {
         throw MetalError("read_accumulated: " + std::to_string(out.size()) + " floats given for an image of " +
                          std::to_string(floats));
     }
-    const auto pool = scoped_pool();
-    auto buffer = NS::TransferPtr(image->device()->newBuffer(row_bytes * image->height(),
-                                                             MTL::ResourceStorageModeShared));
-    if (!buffer) {
-        throw MetalError("read_accumulated: the device made no buffer to read into");
-    }
-    const Resident resident = submission_.keep_resident(buffer.get());
-    const FrameSlot begun = submission_.begin();
-    MTL4::ComputeCommandEncoder* const encoder = begun.commands->computeCommandEncoder();
-    if (encoder == nullptr) {
-        throw MetalError("read_accumulated: the command buffer made no encoder");
-    }
-    encoder->copyFromTexture(image, 0, 0, MTL::Origin{0, 0, 0}, MTL::Size{image->width(), image->height(), 1},
-                             buffer.get(), 0, row_bytes, row_bytes * image->height());
-    encoder->endEncoding();
-    submission_.commit();
-    (void)submission_.wait_until_complete(begun.sequence);
+    const frame::Extent size{static_cast<std::uint32_t>(image->width()), static_cast<std::uint32_t>(image->height())};
+    const std::array<ImageCopy, 1> copy = {ImageCopy{image, 0, row_bytes}};
+    const auto buffer = read_back(image->device(), submission_, size, row_bytes * size.height, copy, "read_accumulated");
     std::memcpy(out.data(), buffer->contents(), floats * sizeof(float));
 }
 
@@ -528,11 +555,11 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         size.height == 0) {
         throw MetalError("Renderer::record: no command buffer, no frame slot, no target, or an empty image");
     }
-    check_time(inputs);
+    check_time(inputs.time, inputs.index, "its time");
     std::uint32_t accumulated_frames = 0;
     std::uint64_t reused_frames = 0;
     bool denoise_history = false;
-    if (accumulation_ || images_ || reuse_ || path_reuse_ || features_) {
+    if (prepares()) {
         if (!prepared_ || prepared_->index != inputs.index || !(prepared_->size == size)) {
             throw MetalError("Renderer::record: frame " + std::to_string(inputs.index) +
                         " was not prepared at this size (Renderer::prepare)");
@@ -631,6 +658,8 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         resources.mnee_header = list.header;
         resources.mnee_grid = list.grid;
         resources.mnee_light = list.light;
+        mnee_lost_->begin_frame(begun.slot, begun.sequence);
+        resources.mnee_lost_counter = mnee_lost_->address(begun.slot);
     }
     if (path_reuse_) {
         const PathReuseImages::Addresses arrays = path_reuse_->addresses(inputs.index);
@@ -772,14 +801,12 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         if (reuses_samples(step.kind) && restir_before) {
             // What the ReSTIR pass before it wrote this frame: the records,
             // path states and reservoirs (GPU.8: a write and its reader).
-            encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch,
-                                               MTL4::VisibilityOptionDevice);
+            barrier_after_dispatch(encoder);
         }
         restir_before = restir_before || reuses_samples(step.kind);
         if (frame::reads_radiance(step.kind)) {
             // The radiance image an earlier pass of this frame wrote.
-            encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch,
-                                               MTL4::VisibilityOptionDevice);
+            barrier_after_dispatch(encoder);
         }
         if (step.kind == frame::PassKind::denoise) {
             // The full-size albedo first, then the pass, both after the

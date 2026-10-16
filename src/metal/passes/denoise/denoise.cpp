@@ -49,13 +49,20 @@ constexpr NS::UInteger select_threads = 256;
 constexpr NS::UInteger pool_threads = 256;
 constexpr std::uint32_t pool_channels = 4;  // a half4 a thread
 
+// Where each convolution's weights and bias are among the static arrays,
+// convolution i's at 2i and 2i + 1, and the head's after the last
+// convolution's (the constructor lays them out so).
+constexpr std::size_t weights_index(std::size_t i) {
+    return 2 * i;
+}
+constexpr std::size_t bias_index(std::size_t i) {
+    return 2 * i + 1;
+}
+constexpr std::size_t head_index = 2 * DenoiseImages::convolutions;  // and its bias after it
+
 // Threadgroups of `per_group` covering `threads`.
 constexpr NS::UInteger groups(std::uint32_t threads, NS::UInteger per_group) {
     return (threads + per_group - 1) / per_group;
-}
-
-void barrier(MTL4::ComputeCommandEncoder* encoder) {
-    encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
 }
 
 }  // namespace
@@ -72,16 +79,22 @@ DenoisePass::DenoisePass(const Device& device, const Library& library, Submissio
             library.compute_pipeline("conv3x3_n3"), library.compute_pipeline("conv3x3_n4")},
       maxpool_(library.compute_pipeline("denoise_maxpool")),
       output_(library.compute_pipeline("denoise_output")) {
-    // The convolutions in DenoiseImages' order (denoise_images.h).
-    const std::array<const denoise::Convolution*, DenoiseImages::convolutions> convs = {
-        &network.enc[0], &network.enc[1], &network.enc[2], &network.enc[3], &network.bottleneck_a,
-        &network.bottleneck_b, &network.dec[0], &network.dec[1], &network.dec[2], &network.dec[3],
-        &network.dec_final};
+    // The convolutions in DenoiseImages' order (denoise_images.h): the
+    // encoders, the bottleneck's two, the decoders, the last.
+    std::array<const denoise::Convolution*, DenoiseImages::convolutions> convs{};
+    for (std::size_t l = 0; l < DenoiseImages::levels; ++l) {
+        convs[l] = &network.enc[l];
+        convs[DenoiseImages::first_decoder + l] = &network.dec[l];
+    }
+    convs[DenoiseImages::first_bottleneck] = &network.bottleneck_a;
+    convs[DenoiseImages::first_bottleneck + 1] = &network.bottleneck_b;
+    convs[DenoiseImages::last_convolution] = &network.dec_final;
     std::vector<std::vector<Half>> weights;
     weights.reserve(convs.size());
     for (const denoise::Convolution* c : convs) {
         weights.push_back(laid_out(*c));
     }
+    // In weights_index(), bias_index() and head_index()'s order (above).
     std::vector<std::span<const std::byte>> arrays;
     for (std::size_t i = 0; i < convs.size(); ++i) {
         arrays.push_back(std::as_bytes(std::span(weights[i])));
@@ -143,10 +156,10 @@ void DenoisePass::record_median(MTL4::ComputeCommandEncoder* encoder, const Fram
         encoder->dispatchThreadgroups(
             MTL::Size{groups(light.width, median_side), groups(light.height, median_side), 1},
             MTL::Size{median_side, median_side, 1});
-        barrier(encoder);
+        barrier_after_dispatch(encoder);
         encoder->setComputePipelineState(select_[level].get());
         encoder->dispatchThreadgroups(MTL::Size{1, 1, 1}, MTL::Size{select_threads, 1, 1});
-        barrier(encoder);
+        barrier_after_dispatch(encoder);
     }
 }
 
@@ -175,11 +188,11 @@ void DenoisePass::record_unet(MTL4::ComputeCommandEncoder* encoder, const FrameR
     const DenoiseImages& images = *resources.denoise;
     const auto convolve = [&](std::size_t i) {
         const DenoiseImages::Conv& c = images.conv(i);
-        barrier(encoder);
+        barrier_after_dispatch(encoder);
         arguments->setAddress(c.params_address, binding::params);
         arguments->setAddress(c.input, binding::input);
-        arguments->setAddress(weights_->address(2 * i), binding::weights);
-        arguments->setAddress(weights_->address(2 * i + 1), binding::bias);
+        arguments->setAddress(weights_->address(weights_index(i)), binding::weights);
+        arguments->setAddress(weights_->address(bias_index(i)), binding::bias);
         arguments->setAddress(c.output, binding::output);
         arguments->setAddress(c.coarse, binding::coarse);
         encoder->setComputePipelineState(pipeline(c.params.chunk_blocks));
@@ -188,8 +201,8 @@ void DenoisePass::record_unet(MTL4::ComputeCommandEncoder* encoder, const FrameR
                                                 c.params.out_blocks / c.params.chunk_blocks},
                                       MTL::Size{contracts::denoise_threads, 1, 1});
     };
-    const auto pool = [&](const DenoiseImages::Resample& r) {
-        barrier(encoder);
+    const auto max_pool = [&](const DenoiseImages::Resample& r) {
+        barrier_after_dispatch(encoder);
         arguments->setAddress(r.params_address, binding::params);
         arguments->setAddress(r.input, binding::input);
         arguments->setAddress(r.output, binding::output);
@@ -200,7 +213,7 @@ void DenoisePass::record_unet(MTL4::ComputeCommandEncoder* encoder, const FrameR
     };
     for (std::size_t l = 0; l < DenoiseImages::levels; ++l) {
         convolve(l);
-        pool(images.pool(l));
+        max_pool(images.pool(l));
     }
     for (std::size_t i = DenoiseImages::first_bottleneck; i < DenoiseImages::convolutions; ++i) {
         convolve(i);
@@ -214,10 +227,10 @@ void DenoisePass::record_output(MTL4::ComputeCommandEncoder* encoder, const Fram
     MTL4::ArgumentTable* arguments = resources.arguments;
     const DenoiseImages& images = *resources.denoise;
     const frame::Extent grid = images.padded();
-    barrier(encoder);
+    barrier_after_dispatch(encoder);
     arguments->setAddress(images.features(), binding::input);
-    arguments->setAddress(weights_->address(2 * DenoiseImages::convolutions), binding::weights);
-    arguments->setAddress(weights_->address(2 * DenoiseImages::convolutions + 1), binding::bias);
+    arguments->setAddress(weights_->address(head_index), binding::weights);
+    arguments->setAddress(weights_->address(head_index + 1), binding::bias);
     arguments->setAddress(images.demod(), binding::demod);
     arguments->setAddress(images.history(), binding::history);
     arguments->setAddress(images.next_history(), binding::next_history);

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
@@ -34,7 +35,7 @@ inline constexpr std::uint32_t max_texture_side = 16384;
 
 // Throws MetalError, naming `what`, if `size` has a zero side or one longer than
 // max_texture_side.
-void check_texture_size(frame::Extent size, const char* what);
+void check_texture_size(frame::Extent size, std::string_view what);
 
 // The system's default Metal device, required to support ray tracing.
 //

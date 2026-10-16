@@ -5,6 +5,7 @@
 
 #include "metal/device/library.h"
 #include "metal/frame/frame_resources.h"
+#include "metal/passes/restir_pt/shift_replay.h"
 
 namespace serenity::metal {
 
@@ -53,10 +54,7 @@ public:
     void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
 
 private:
-    NS::SharedPtr<MTL::ComputePipelineState> shift_;
-    NS::SharedPtr<MTL::ComputePipelineState> grid_;
-    NS::SharedPtr<MTL::ComputePipelineState> replay_;
-    NS::SharedPtr<MTL::ComputePipelineState> merge_;
+    ShiftReplay reuse_;  // its four dispatches (restir_pt/shift_replay.h)
 };
 
 }  // namespace serenity::metal

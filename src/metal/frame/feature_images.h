@@ -6,6 +6,7 @@
 #include "core/contracts/linear_image.h"
 #include "core/frame/extent.h"
 #include "metal/device/device.h"
+#include "metal/device/resident.h"
 #include "metal/device/submission.h"
 
 namespace serenity::metal {
@@ -61,9 +62,9 @@ public:
         contracts::LinearImage motion;
     };
 
-    // Reads the images back, through the submission. The frames that
-    // wrote them must have completed (Submission::wait_until_complete).
-    // Throws MetalError before the first prepare().
+    // Reads the images back, through the submission, as every frame
+    // committed before wrote them (metal/device/readback.h). Throws
+    // MetalError before the first prepare().
     Read read() const;
 
 private:
@@ -71,15 +72,11 @@ private:
     Submission& submission_;
     frame::Extent size_;
     // Each image with its residency, released after the GPU is done with it
-    // (submission.h, Lifetime).
-    struct Image {
-        NS::SharedPtr<MTL::Texture> texture;
-        Resident resident;
-    };
-    Image albedo_;
-    Image normal_;
-    Image depth_;
-    Image motion_;
+    // (metal/device/resident.h).
+    ResidentTexture albedo_;
+    ResidentTexture normal_;
+    ResidentTexture depth_;
+    ResidentTexture motion_;
 };
 
 }  // namespace serenity::metal

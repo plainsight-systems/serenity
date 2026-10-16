@@ -35,7 +35,7 @@
 //     alone is frame k rendered after others.
 //
 // Every converged render also checks that no sample was left out for not
-// being finite (metal/film/non_finite.h): such a sample is dropped from its
+// being finite (metal/film/failure_count.h): such a sample is dropped from its
 // pixel's mean, so a bug that made some paths NaN would still converge near
 // the expected value, biased by the survivors.
 

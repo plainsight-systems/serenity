@@ -27,7 +27,7 @@
 #include "metal/device/presenter.h"
 #include "metal/device/static_arrays.h"
 #include "metal/device/submission.h"
-#include "metal/film/non_finite.h"
+#include "metal/film/failure_count.h"
 #include "metal/frame/accumulation.h"
 #include "metal/frame/renderer.h"
 #include "test_paths.h"
@@ -133,7 +133,7 @@ TEST_CASE("an array of no bytes, a frame slot or an array that is not one, is re
         CHECK_THROWS_AS((void)array.bytes(metal::frames_in_flight), metal::MetalError);
         CHECK_THROWS_AS((void)array.address(metal::frames_in_flight), metal::MetalError);
     }
-    metal::NonFinite counters(device, submission);
+    metal::FailureCount counters(device, submission, "samples not finite");
     CHECK_THROWS_AS((void)counters.address(metal::frames_in_flight), metal::MetalError);
     const std::span<const std::byte> one = bytes;
     const metal::StaticArrays arrays(device, submission, std::span(&one, 1));

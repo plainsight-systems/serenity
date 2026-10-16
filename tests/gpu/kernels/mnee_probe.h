@@ -45,7 +45,21 @@ struct MneeChain {
 
 static_assert(sizeof(MneeChain) == 32, "MneeChain must be the same 32 bytes on the host and in shaders");
 
+// A bounce for mnee::chain_after(): the chain before it, the lobe it drew,
+// and the shape it drew it at (an index into the records bound beside the
+// queries, or contracts::no_primitive, as a replayed shift's first surface
+// has).
+struct ChainQuery {
+    uint32_t chain;
+    uint32_t lobe;
+    uint32_t primitive;
+    uint32_t padding;
+};
+
+static_assert(sizeof(ChainQuery) == 16, "ChainQuery must be the same 16 bytes on the host and in shaders");
+
 #if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<ChainQuery>, "ChainQuery is copied to the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<MneeQuery>, "MneeQuery is copied to the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<MneeChain>, "MneeChain is copied from the GPU as bytes");
 #endif

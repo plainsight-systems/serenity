@@ -72,10 +72,10 @@
 namespace serenity {
 namespace contracts {
 
-SERENITY_CONSTANT uint32_t max_nee_candidates = 32;
-SERENITY_CONSTANT uint32_t max_path_surfaces = 14;
+SERENITY_CONSTANT uint32_t max_nee_candidates = 32u;
+SERENITY_CONSTANT uint32_t max_path_surfaces = 14u;
 SERENITY_CONSTANT float max_footprint = 10.0f;
-SERENITY_CONSTANT uint32_t max_path_neighbors = 3;
+SERENITY_CONSTANT uint32_t max_path_neighbors = 3u;
 SERENITY_CONSTANT float min_pairing_sigma = 0.8f;
 SERENITY_CONSTANT float max_pairing_sigma = 32.0f;
 SERENITY_CONSTANT float max_confidence_cap = 60.0f;
@@ -85,13 +85,23 @@ SERENITY_CONSTANT float max_confidence_cap = 60.0f;
 // the host and the shader both read it.
 SERENITY_CONSTANT uint32_t duplication_group = 24u;
 
+// The replays' threadgroup (metal/passes/restir_pt/restir_pt.metal.h, the
+// replay grid), which the host checks the replay pipelines take: named
+// here, where both read it.
+SERENITY_CONSTANT uint32_t replay_group = 64u;
+
 // The reuse textures' widths, one per neighbor (Enhanced §3.2: three
 // different sizes, so their repeats do not line up), in the order the
 // shaders and the host read them, and where each starts in the one array
 // that holds them all, row by row.
 SERENITY_CONSTANT uint32_t pairing_widths[max_path_neighbors] = {254u, 230u, 210u};
-SERENITY_CONSTANT uint32_t pairing_starts[max_path_neighbors] = {0u, 254u * 254u, 254u * 254u + 230u * 230u};
-SERENITY_CONSTANT uint32_t pairing_entries = 254u * 254u + 230u * 230u + 210u * 210u;
+SERENITY_CONSTANT uint32_t pairing_starts[max_path_neighbors] = {
+    0u,
+    pairing_widths[0] * pairing_widths[0],
+    pairing_widths[0] * pairing_widths[0] + pairing_widths[1] * pairing_widths[1],
+};
+SERENITY_CONSTANT uint32_t pairing_entries = pairing_starts[2] + pairing_widths[2] * pairing_widths[2];
+static_assert(max_path_neighbors == 3u, "pairing_starts is written out for three textures");
 
 struct PathReuseSettings {
     uint32_t nee_candidates;
@@ -109,6 +119,9 @@ struct PathReuseSettings {
 
 static_assert(sizeof(PathReuseSettings) == 48,
               "PathReuseSettings must be the same 48 bytes on the host and in shaders");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<PathReuseSettings>, "PathReuseSettings is written to the GPU as bytes");
+#endif
 
 // What ReSTIR PT's temporal reuse is told each frame, beside its settings,
 // as ReSTIR DI's reuse constants (contracts/reuse_constants.h): the
@@ -124,9 +137,6 @@ static_assert(sizeof(PathReuseConstants) == 80,
               "PathReuseConstants must be the same 80 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
 static_assert(std::is_trivially_copyable_v<PathReuseConstants>, "PathReuseConstants is written to the GPU as bytes");
-#endif
-#if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<PathReuseSettings>, "PathReuseSettings is written to the GPU as bytes");
 #endif
 
 }  // namespace contracts

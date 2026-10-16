@@ -57,6 +57,9 @@ public:
     // (submission.h, Lifetime).
     ~Presenter();
 
+    // Follows the window to `size`; a side of 0 (a minimized window) keeps
+    // the last size. Throws MetalError for a size Metal makes no image of
+    // (device.h, check_texture_size), as the constructor does.
     void resize(frame::Extent size);
     frame::Extent size() const noexcept { return size_; }
 

@@ -11,6 +11,7 @@
 #include "core/contracts/camera.h"
 #include "metal/device/layout.metal.h"
 #include "metal/math/warp.metal.h"
+#include "metal/sampler/sampler.metal.h"
 
 namespace serenity {
 namespace shaders {
@@ -47,6 +48,20 @@ inline CameraRay camera_ray(constant serenity::contracts::CameraData& camera, fl
     const float2 on_disk = concentric_disk(lens) * camera.lens_radius;
     const float3 start = origin + on_disk.x * metal::normalize(right) + on_disk.y * metal::normalize(up);
     return CameraRay{start, metal::normalize(focus - start)};
+}
+
+// The camera's ray through pixel `pixel` of an image of `size`, drawn from
+// `numbers`, a pixel's path numbers at their start (sampler.metal.h,
+// path_numbers): the point in the pixel, then the point on the lens, drawn
+// only through one, so a pinhole's paths draw what they drew before lenses.
+// The one ray every light pass, every shift's destination and the features
+// take a pixel's path from (ES.3: they must agree to the bit); `numbers` is
+// left after what it drew, for the path to go on drawing.
+inline CameraRay pixel_ray(constant serenity::contracts::CameraData& camera, uint2 pixel, uint2 size,
+                           thread PathNumbers& numbers) {
+    const float2 within = next_numbers2(numbers);  // the point in the pixel
+    const float2 lens = has_lens(camera) ? next_numbers2(numbers) : float2(0.0f);
+    return camera_ray(camera, float2(pixel) + within, lens, size);
 }
 
 // The inverse, for ReSTIR DI's reuse (metal/reuse/temporal.metal.h,

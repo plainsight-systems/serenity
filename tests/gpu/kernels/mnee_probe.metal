@@ -1,8 +1,10 @@
 // Runs manifold next event estimation's solve (metal/integrator/
 // mnee.metal.h, newton() and transfer()) for tests/gpu/mnee_test.cpp, on one
 // glass sphere between a receiver's point and a light's, seeded as
-// seed_segment() seeds it, by the straight segment's two crossings.
-// Bindings: the output at 0, the queries at 1 (mnee_probe.h).
+// seed_segment() seeds it, by the straight segment's two crossings; and
+// mnee::chain_after() alone, on bounces whose shape may be no_primitive.
+// Bindings: the output at 0, the queries at 1 (mnee_probe.h); for
+// mnee_chain_after, the shape records at 2.
 
 #include <metal_stdlib>
 
@@ -11,6 +13,7 @@
 #include "mnee_probe.h"
 
 using namespace serenity::shaders;
+using serenity::tests::ChainQuery;
 using serenity::tests::MneeChain;
 using serenity::tests::MneeQuery;
 
@@ -40,4 +43,11 @@ kernel void mnee_solve(device MneeChain* out [[buffer(0)]], constant MneeQuery* 
         chain.geometry = mnee::geometry_term(2u, p, casters, blocks, x0, y, to_float3(q.light_normal));
     }
     out[i] = chain;
+}
+
+kernel void mnee_chain_after(device uint* out [[buffer(0)]], constant ChainQuery* queries [[buffer(1)]],
+                             constant serenity::shapes::ShapeRecord* records [[buffer(2)]],
+                             uint i [[thread_position_in_grid]]) {
+    const ChainQuery q = queries[i];
+    out[i] = mnee::chain_after(q.chain, q.lobe, records, q.primitive);
 }

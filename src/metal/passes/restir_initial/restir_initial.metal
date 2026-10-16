@@ -52,9 +52,7 @@ kernel void restir_initial(constant serenity::contracts::FrameConstants& frame [
     // Step 1, the path's own numbers from 0, as the path pass draws them.
     const PathNumbers stream = path_numbers(pixel, frame.frame_index);
     PathNumbers numbers = stream;
-    const float2 within = next_numbers2(numbers);  // the point in the pixel
-    const float2 lens = has_lens(camera) ? next_numbers2(numbers) : float2(0.0f);
-    const CameraRay ray = camera_ray(camera, float2(pixel) + within, lens, uint2(frame.width, frame.height));
+    const CameraRay ray = pixel_ray(camera, pixel, uint2(frame.width, frame.height), numbers);
     const bool temporal = reuse.settings.history != 0u;  // the graph has restir_temporal
     const restir::Surfaces surfaces = restir::first_surface(scene, ray, temporal ? last_transforms : nullptr, numbers);
     records[i] = surfaces.record;

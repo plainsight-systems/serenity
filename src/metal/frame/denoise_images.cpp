@@ -38,16 +38,12 @@ std::uint32_t chunk_blocks(std::uint32_t out_blocks) {
 DenoiseImages::DenoiseImages(const Device& device, Submission& submission, const denoise::Widths& widths)
     : device_(NS::RetainPtr(device.handle())), submission_(submission), widths_(widths) {}
 
-void DenoiseImages::make(Buffer& buffer, std::size_t bytes, const char* what) {
-    buffer.buffer = NS::TransferPtr(device_->newBuffer(bytes, MTL::ResourceStorageModeShared));
-    if (!buffer.buffer) {
-        throw MetalError(std::string("DenoiseImages: the device made no buffer for the ") + what);
-    }
-    std::memset(buffer.buffer->contents(), 0, bytes);
-    buffer.resident = submission_.keep_resident(buffer.buffer.get());
+void DenoiseImages::make(Buffer& buffer, std::size_t bytes, std::string_view what) {
+    buffer = make_resident_buffer(device_.get(), submission_, bytes, MTL::ResourceStorageModeShared,
+                                  "the denoiser's " + std::string(what), Zeroed::yes);
 }
 
-void DenoiseImages::make(Activations& a, frame::Extent size, std::uint32_t stride, const char* what) {
+void DenoiseImages::make(Activations& a, frame::Extent size, std::uint32_t stride, std::string_view what) {
     a.size = size;
     a.pitch = size.width + 2u;
     a.stride = stride;
@@ -57,19 +53,23 @@ void DenoiseImages::make(Activations& a, frame::Extent size, std::uint32_t strid
 
 bool DenoiseImages::prepare(const frame::FrameInputs& inputs, frame::Extent light) {
     check_texture_size(light, "the denoiser's buffers");
+    // Joined on a copy, kept once the buffers exist (E.4; frame_images.cpp,
+    // ReuseImages::prepare).
+    frame::ReuseHistory joined = history_;
     std::uint64_t held = 0;
     try {
-        held = history_.join(inputs, light).held;
+        held = joined.join(inputs, light).held;
     } catch (const frame::HistoryError& refused) {
         throw MetalError(std::string("the denoiser's history: ") + refused.what());
     }
-    index_ = inputs.index;
     if (light == light_) {
+        history_ = joined;
+        index_ = inputs.index;
         return held > 0;
     }
     // A new size starts the history over (the rule refuses one that does
     // not); frames in flight may still read the old buffers.
-    if (params_.buffer) {
+    if (params_) {
         submission_.drain();
     }
     light_ = {};
@@ -78,6 +78,8 @@ bool DenoiseImages::prepare(const frame::FrameInputs& inputs, frame::Extent ligh
     allocate();
     plan();
     light_ = light;
+    history_ = joined;
+    index_ = inputs.index;
     return held > 0;
 }
 
@@ -112,9 +114,11 @@ void DenoiseImages::plan() {
     // the bottom level, the decoder's below it otherwise.
     const auto up = [&](std::uint32_t l) { return l == bottom ? w.bottleneck : w.dec[bottom - 1 - l]; };
 
-    const auto address = [](const Activations& a) { return a.memory.buffer->gpuAddress(); };
-    const auto conv = [&](const Activations& in, std::uint32_t in_channels, const Activations& out,
-                          std::uint32_t offset, std::uint32_t outputs) {
+    const auto address = [](const Activations& a) { return a.memory.address(); };
+    // No concatenation (denoise_images.h): every input and output from its channel 0,
+    // the parameters' offsets left 0.
+    const auto make_conv = [&](const Activations& in, std::uint32_t in_channels, const Activations& out,
+                               std::uint32_t outputs) {
         Conv c{};
         c.params.width = in.size.width;
         c.params.height = in.size.height;
@@ -123,7 +127,6 @@ void DenoiseImages::plan() {
         c.params.in_blocks = in_channels / contracts::channel_block;
         c.params.out_pitch = out.pitch;
         c.params.out_stride = out.stride;
-        c.params.out_offset = offset;
         c.params.out_blocks = outputs / contracts::channel_block;
         c.params.chunk_blocks = chunk_blocks(c.params.out_blocks);
         c.params.relu = 1u;
@@ -132,55 +135,55 @@ void DenoiseImages::plan() {
         c.coarse = address(in);
         return c;
     };
-    const auto resample = [&](const Activations& in, std::uint32_t in_offset, const Activations& out,
-                              std::uint32_t out_offset, std::uint32_t channels) {
+    const auto make_pool = [&](const Activations& in, const Activations& out, std::uint32_t channels) {
         Resample r{};
         r.params.width = out.size.width;
         r.params.height = out.size.height;
         r.params.channels = channels;
         r.params.in_pitch = in.pitch;
         r.params.in_stride = in.stride;
-        r.params.in_offset = in_offset;
         r.params.out_pitch = out.pitch;
         r.params.out_stride = out.stride;
-        r.params.out_offset = out_offset;
         r.input = address(in);
         r.output = address(out);
         return r;
     };
     // Encoders: each into its skip.
-    convs_[0] = conv(input_, contracts::input_channels, skip_[0], 0, w.enc[0]);
+    convs_[0] = make_conv(input_, contracts::input_channels, skip_[0], w.enc[0]);
     for (std::uint32_t l = 1; l < levels; ++l) {
-        convs_[l] = conv(pooled_[l - 1], w.enc[l - 1], skip_[l], 0, w.enc[l]);
+        convs_[l] = make_conv(pooled_[l - 1], w.enc[l - 1], skip_[l], w.enc[l]);
     }
     for (std::uint32_t l = 0; l < levels; ++l) {
-        pools_[l] = resample(skip_[l], 0, pooled_[l], 0, w.enc[l]);
+        pools_[l] = make_pool(skip_[l], pooled_[l], w.enc[l]);
     }
-    convs_[first_bottleneck] = conv(pooled_[bottom], w.enc[bottom], bottleneck_a_, 0, w.bottleneck);
-    convs_[first_bottleneck + 1] = conv(bottleneck_a_, w.bottleneck, bottleneck_b_, 0, w.bottleneck);
+    convs_[first_bottleneck] = make_conv(pooled_[bottom], w.enc[bottom], bottleneck_a_, w.bottleneck);
+    convs_[first_bottleneck + 1] = make_conv(bottleneck_a_, w.bottleneck, bottleneck_b_, w.bottleneck);
     // Decoders: dec i at level bottom - i, from the level below's output.
     for (std::uint32_t i = 0; i < levels; ++i) {
         const std::uint32_t l = bottom - i;
         const Activations& below = i == 0 ? bottleneck_b_ : decoded_[l + 1];
         Conv& c = convs_[first_decoder + i];
-        c = conv(skip_[l], up(l) + w.enc[l], decoded_[l], 0, w.dec[i]);
+        c = make_conv(skip_[l], up(l) + w.enc[l], decoded_[l], w.dec[i]);
         c.params.up_blocks = up(l) / contracts::channel_block;
         c.params.up_pitch = below.pitch;
         c.params.up_stride = below.stride;
         c.coarse = address(below);
     }
-    convs_[last_convolution] = conv(decoded_[0], w.dec[bottom], final_, 0, w.dec[bottom]);
+    convs_[last_convolution] = make_conv(decoded_[0], w.dec[bottom], final_, w.dec[bottom]);
 
-    // Every dispatch's parameters, in one buffer, each at an aligned place.
-    constexpr std::size_t slot = 64;
-    static_assert(sizeof(contracts::ConvParams) <= slot && sizeof(contracts::ResampleParams) <= slot);
-    make(params_, slot * (convolutions + resamplings), "dispatch parameters");
+    // Every dispatch's parameters, in one buffer, each at a stride bound as
+    // `constant` (Metal's constant offset alignment, support.h).
+    constexpr std::size_t param_stride = 64;
+    static_assert(sizeof(contracts::ConvParams) <= param_stride && sizeof(contracts::ResampleParams) <= param_stride);
+    static_assert(param_stride % constant_offset_alignment == 0 && param_stride % alignof(contracts::ConvParams) == 0 &&
+                  param_stride % alignof(contracts::ResampleParams) == 0);
+    make(params_, param_stride * (convolutions + resamplings), "dispatch parameters");
     std::byte* bytes = static_cast<std::byte*>(params_.buffer->contents());
     std::size_t at = 0;
     const auto place = [&](auto& dispatch) {
         std::memcpy(bytes + at, &dispatch.params, sizeof(dispatch.params));
         dispatch.params_address = params_.buffer->gpuAddress() + at;
-        at += slot;
+        at += param_stride;
     };
     for (Conv& c : convs_) {
         place(c);
@@ -191,27 +194,25 @@ void DenoiseImages::plan() {
 }
 
 MTL::GPUAddress DenoiseImages::input() const noexcept {
-    return input_.memory.buffer ? input_.memory.buffer->gpuAddress() : 0;
+    return input_.memory.address();
 }
 MTL::GPUAddress DenoiseImages::features() const noexcept {
-    return final_.memory.buffer ? final_.memory.buffer->gpuAddress() : 0;
+    return final_.memory.address();
 }
 MTL::GPUAddress DenoiseImages::demod() const noexcept {
-    return demod_.buffer ? demod_.buffer->gpuAddress() : 0;
+    return demod_.address();
 }
 MTL::GPUAddress DenoiseImages::histogram() const noexcept {
-    return histogram_.buffer ? histogram_.buffer->gpuAddress() : 0;
+    return histogram_.address();
 }
 MTL::GPUAddress DenoiseImages::median() const noexcept {
-    return median_.buffer ? median_.buffer->gpuAddress() : 0;
+    return median_.address();
 }
 MTL::GPUAddress DenoiseImages::history() const noexcept {
-    const Buffer& b = history_buffers_[(index_ + 1) % 2];
-    return b.buffer ? b.buffer->gpuAddress() : 0;
+    return history_buffers_[(index_ + 1) % 2].address();
 }
 MTL::GPUAddress DenoiseImages::next_history() const noexcept {
-    const Buffer& b = history_buffers_[index_ % 2];
-    return b.buffer ? b.buffer->gpuAddress() : 0;
+    return history_buffers_[index_ % 2].address();
 }
 
 }  // namespace serenity::metal

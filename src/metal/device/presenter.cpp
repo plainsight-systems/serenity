@@ -49,6 +49,9 @@ void Presenter::resize(frame::Extent size) {
     if (size.width == 0 || size.height == 0) {
         return;  // a minimized window: keep the last size, render nothing new
     }
+    // As the constructor checks: past it Metal stops the program rather
+    // than failing (device.h).
+    check_texture_size(size, "the window's drawable");
     layer_->setDrawableSize(CGSize{static_cast<CGFloat>(size.width), static_cast<CGFloat>(size.height)});
     size_ = size;
 }

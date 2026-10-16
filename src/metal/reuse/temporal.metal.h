@@ -133,14 +133,20 @@ namespace serenity {
 namespace shaders {
 
 // Pixels tried for the temporal input (step 3): the reprojected one and
-// the 8 around it.
+// the ring_size around it. ReSTIR PT's temporal reuse searches the same
+// way, by these (metal/passes/restir_pt/restir_pt.metal.h, step 5).
 constant constexpr uint temporal_tries = 9u;
+constant constexpr uint ring_size = temporal_tries - 1u;
+
+// RTXDI's permutation: of each aligned permutation_range x
+// permutation_range block (below).
+constant constexpr uint permutation_range = 4u;
 
 // The frame's order of step 3's tries: its permutation of each aligned
-// 4 x 4 block, the two numbers in [0, 3] a pixel's x and y have their two
-// low bits exclusive-or'ed with, (0, 0), the identity, with permutation
-// off; and where in the ring around p the further tries start, in
-// [0, 7]. A type, not a bare uint2, so it cannot be passed for a pixel
+// 4 x 4 block (permutation_range), the two numbers in [0, 3] a pixel's x
+// and y have their two low bits exclusive-or'ed with, (0, 0), the
+// identity, with permutation off; and where in the ring around p the
+// further tries start, in [0, ring_size - 1]. A type, not a bare uint2, so it cannot be passed for a pixel
 // (I.24).
 struct BlockPermutation {
     uint2 bits;
@@ -154,8 +160,18 @@ inline uint2 permuted_pixel(uint2 reprojected, BlockPermutation permutation) {
 
 // Step 3's further pixels, around the reprojected one, in their fixed
 // order (ES.27's C array: a shader constant table, as the noise tables).
-constant constexpr int2 temporal_ring[temporal_tries - 1u] = {int2(-1, -1), int2(0, -1), int2(1, -1), int2(-1, 0),
-                                                              int2(1, 0),   int2(-1, 1), int2(0, 1),  int2(1, 1)};
+constant constexpr int2 temporal_ring[ring_size] = {int2(-1, -1), int2(0, -1), int2(1, -1), int2(-1, 0),
+                                                    int2(1, 0),   int2(-1, 1), int2(0, 1),  int2(1, 1)};
+
+// Try t > 0's pixel: the ring's (t - 1 + start)th place around `p`.
+inline int2 ring_neighbor(int2 p, uint t, uint start) {
+    return p + temporal_ring[(t - 1u + start) % ring_size];
+}
+
+// Where the ring's tries start, from `u` in [0, 1): each place alike.
+inline uint draw_ring_start(float u) {
+    return metal::min(uint(u * float(ring_size)), ring_size - 1u);
+}
 
 // Step 2's result, the caller's: where q was last frame, and the pixel p
 // of last frame's image that point rounds to.
@@ -199,7 +215,7 @@ inline Found find_last_frame(Frame then, Merging pixel, Reprojection reprojectio
     const int2 reprojected = int2(reprojection.pixel);
     for (uint t = 0; t < temporal_tries; ++t) {
         const int2 x = t == 0u ? int2(permuted_pixel(reprojection.pixel, permutation))
-                               : reprojected + temporal_ring[(t - 1u + permutation.ring_start) % (temporal_tries - 1u)];
+                               : ring_neighbor(reprojected, t, permutation.ring_start);
         if (metal::any(x < int2(0)) || metal::any(x >= int2(arrays.size))) {
             continue;
         }

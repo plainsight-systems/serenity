@@ -6,6 +6,7 @@
 
 #include "core/contracts/mnee_request.h"
 #include "metal/device/error.h"
+#include "metal/device/indirect_grid.h"
 #include "metal/device/support.h"
 
 namespace serenity::metal {
@@ -14,19 +15,18 @@ namespace {
 
 // The header's bytes: the count and capacity, then the grid at
 // mnee_grid_offset (contract 16).
-constexpr std::size_t header_bytes = contracts::mnee_grid_offset * 2;
+constexpr std::size_t header_bytes = contracts::mnee_header_bytes;
+static_assert(contracts::mnee_grid_offset + sizeof(gpu::IndirectGrid) <= header_bytes);
+static_assert(contracts::mnee_grid_offset % alignof(gpu::IndirectGrid) == 0 &&
+              contracts::mnee_grid_offset % constant_offset_alignment == 0);
 
 }  // namespace
 
 MneeList::MneeList(const Device& device, Submission& submission, Light light)
     : device_(NS::RetainPtr(device.handle())), submission_(submission), light_kind_(light) {}
 
-void MneeList::make(Array& array, std::size_t bytes, MTL::ResourceOptions storage, const char* what) {
-    array.buffer = NS::TransferPtr(device_->newBuffer(bytes, storage));
-    if (!array.buffer) {
-        throw MetalError(std::string("MneeList: the device made no buffer for the ") + what);
-    }
-    array.resident = submission_.keep_resident(array.buffer.get());
+void MneeList::make(ResidentBuffer& array, std::size_t bytes, MTL::ResourceOptions storage, std::string_view what) {
+    array = make_resident_buffer(device_.get(), submission_, bytes, storage, "MNEE's " + std::string(what));
 }
 
 void MneeList::prepare(frame::Extent size) {
@@ -35,12 +35,11 @@ void MneeList::prepare(frame::Extent size) {
         return;
     }
     size_ = {};
-    if (requests_.buffer) {
+    if (requests_) {
         submission_.drain();  // frames in flight may still read the old arrays
     }
-    for (Array* array : {&requests_, &header_, &light_}) {
-        array->resident.reset();
-        array->buffer.reset();
+    for (ResidentBuffer* array : {&requests_, &header_, &light_}) {
+        array->reset();
     }
     const auto pool = scoped_pool();
     const std::size_t pixels = std::size_t{size.width} * size.height;
@@ -49,7 +48,7 @@ void MneeList::prepare(frame::Extent size) {
     make(header_, header_bytes, MTL::ResourceStorageModeShared, "header");
     std::memset(header_.buffer->contents(), 0, header_bytes);
     const auto words = static_cast<std::uint32_t*>(header_.buffer->contents());
-    words[1] = static_cast<std::uint32_t>(capacity);
+    words[contracts::mnee_capacity_word] = static_cast<std::uint32_t>(capacity);
     if (light_kind_ == Light::own) {
         make(light_, pixels * 4 * sizeof(float), MTL::ResourceStorageModeShared, "MNEE light");
         std::memset(light_.buffer->contents(), 0, pixels * 4 * sizeof(float));
@@ -58,12 +57,11 @@ void MneeList::prepare(frame::Extent size) {
 }
 
 MneeList::Addresses MneeList::addresses() const noexcept {
-    const auto address = [](const Array& array) { return array.buffer ? array.buffer->gpuAddress() : 0; };
     Addresses out;
-    out.requests = address(requests_);
-    out.header = address(header_);
+    out.requests = requests_.address();
+    out.header = header_.address();
     out.grid = out.header != 0 ? out.header + contracts::mnee_grid_offset : 0;
-    out.light = address(light_);
+    out.light = light_.address();
     return out;
 }
 

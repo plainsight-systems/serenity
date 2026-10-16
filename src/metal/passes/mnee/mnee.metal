@@ -1,6 +1,7 @@
 // The MNEE pass's kernels (mnee.h): the work list's length as an indirect
-// grid, its requests solved one thread each, and, for the path pass, the
-// light they found folded into the accumulated image.
+// grid, and the requests it had no room for counted; its requests solved
+// one thread each; and, for the path pass, the light they found folded into
+// the accumulated image.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -8,6 +9,8 @@
 #include "core/contracts/frame_constants.h"
 #include "core/contracts/mnee_request.h"
 #include "core/contracts/transform.h"
+#include "metal/device/append.metal.h"
+#include "metal/device/indirect_grid.h"
 #include "metal/film/accumulate.metal.h"
 #include "metal/integrator/mnee.metal.h"
 #include "metal/integrator/path.metal.h"
@@ -19,33 +22,34 @@ using namespace metal::raytracing;
 using namespace serenity::shaders;
 namespace binding = serenity::bindings::mnee;
 
-// The solve's indirect grid, as Metal reads MTLDispatchThreadsIndirectArguments,
-// and the count it was made from (contract 16's header, at
-// mnee_grid_offset).
-struct SolveGrid {
-    uint grid[3];
-    uint group[3];
-    uint count;
-};
+// The solve's indirect grid sits in contract 16's header, at
+// mnee_grid_offset.
+static_assert(serenity::contracts::mnee_grid_offset + sizeof(serenity::gpu::IndirectGrid) <=
+                  serenity::contracts::mnee_header_bytes,
+              "the solve's grid fits in the list's header");
 
-constant constexpr uint solve_group = 64u;  // mnee.h's
-
-// One thread: the list's length as the solve's grid, and the count set back
-// to 0 for the next frame's list, which a barrier orders after the solve
-// that reads the grid.
+// One thread: the list's length as the solve's grid; the requests that
+// found no room, by which the count passes the capacity (contract 16),
+// added to the frame's count of lost requests; and the count set back to 0
+// for the next frame's list, which a barrier orders after the solve that
+// reads the grid.
 kernel void mnee_grid(device atomic_uint* header [[buffer(binding::header)]],
-                      device SolveGrid* grid [[buffer(binding::grid)]]) {
-    const uint written = atomic_load_explicit(header, memory_order_relaxed);
-    const uint capacity = atomic_load_explicit(header + 1, memory_order_relaxed);
-    atomic_store_explicit(header, 0u, memory_order_relaxed);
-    const uint count = min(written, capacity);  // past it, none was written (contract 16)
-    // At least one thread: a grid of none is not one Metal takes.
-    *grid = SolveGrid{{max(count, 1u), 1u, 1u}, {solve_group, 1u, 1u}, count};
+                      device serenity::gpu::IndirectGrid* grid [[buffer(binding::grid)]],
+                      device atomic_uint* lost [[buffer(binding::lost)]]) {
+    namespace c = serenity::contracts;
+    const uint written = atomic_load_explicit(header + c::mnee_count_word, memory_order_relaxed);
+    const uint capacity = atomic_load_explicit(header + c::mnee_capacity_word, memory_order_relaxed);
+    atomic_store_explicit(header + c::mnee_count_word, 0u, memory_order_relaxed);
+    const uint count = min(written, capacity);  // past it, none was written
+    if (written > capacity) {
+        atomic_fetch_add_explicit(lost, written - capacity, memory_order_relaxed);
+    }
+    *grid = indirect_grid(count, c::mnee_solve_group);
 }
 
 // Each request solved, its light added to its pixel's: three atomic adds,
 // since the requests of one path's vertices share a pixel. A light not
-// finite is counted (metal/film/non_finite.h) and left out, as the path
+// finite is counted (metal/film/failure_count.h) and left out, as the path
 // pass leaves out a sample.
 kernel void mnee_solve(primitive_acceleration_structure structure [[buffer(binding::structure)]],
                        constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
@@ -53,7 +57,7 @@ kernel void mnee_solve(primitive_acceleration_structure structure [[buffer(bindi
                        constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],
                        device atomic_uint* non_finite [[buffer(binding::non_finite)]],
                        const device serenity::contracts::MneeRequest* requests [[buffer(binding::requests)]],
-                       const device SolveGrid* grid [[buffer(binding::grid)]],
+                       const device serenity::gpu::IndirectGrid* grid [[buffer(binding::grid)]],
                        device atomic_float* light [[buffer(binding::light)]],
                        uint n [[thread_position_in_grid]]) {
     bool failed = false;

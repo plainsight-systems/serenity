@@ -13,8 +13,9 @@ namespace serenity::metal {
 
 // Axis: Pass (path tracing).
 //
-// The pass that runs the naive path tracer (metal/integrator/path.metal.h,
-// which states the algorithm) once per pixel per frame and folds the result
+// The pass that runs the path tracer without reuse, next event estimation
+// weighed against BSDF sampling by MIS (metal/integrator/path.metal.h,
+// which states the algorithm), once per pixel per frame, and folds the result
 // into the accumulated image (metal/film/accumulate.metal.h), so a still
 // image converges toward the scene's full light transport.
 //

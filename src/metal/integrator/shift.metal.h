@@ -461,7 +461,7 @@ inline Shifted replay_end(path::Scene scene, Shading here, float3 beta, Before b
     const ShapeLight glowing = light_at(scene.lights(), hit.primitive);
     if (!glowing.is_light ||
         (settings.mnee != 0u &&
-         mnee::covered(mnee::chain_after(chain, next.lobe, scene.shapes().records[here.surface.primitive].kind)))) {
+         mnee::covered(mnee::chain_after(chain, next.lobe, scene.shapes().records, here.surface.primitive)))) {
         return failed();
     }
     const float3 point = along.origin + hit.t * along.direction;
@@ -513,7 +513,7 @@ inline Shifted shift_path(path::Scene scene, Primary destination, serenity::cont
         const float3 wi = to_float3(next.direction);
         beta *= to_float3(next.value) * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) / next.pdf;
         if (settings.mnee != 0u) {
-            chain = mnee::chain_after(chain, next.lobe, scene.shapes().records[here.surface.primitive].kind);
+            chain = mnee::chain_after(chain, next.lobe, scene.shapes().records, here.surface.primitive);
         }
         // Step 3: the pair replay passes must not be one the criteria take.
         if (index >= 2u &&

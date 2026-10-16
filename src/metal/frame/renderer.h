@@ -12,9 +12,12 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
+#include "core/animation/animate.h"
+#include "core/contracts/camera.h"
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
 #include "core/frame/schedule.h"
+#include "core/passes/restir_di.h"
 #include "core/scene/scene.h"
 #include "metal/acceleration/scene_acceleration.h"
 #include "metal/device/device.h"
@@ -25,7 +28,7 @@
 #include "metal/device/static_arrays.h"
 #include "metal/device/submission.h"
 #include "metal/frame/frame_resources.h"
-#include "metal/film/non_finite.h"
+#include "metal/film/failure_count.h"
 #include "metal/frame/accumulation.h"
 #include "metal/frame/denoise_images.h"
 #include "metal/frame/feature_images.h"
@@ -117,7 +120,7 @@ namespace serenity::metal {
 // waits for the frames in flight; record() then gives the pass the image and
 // the count of frames it holds, through the frame constants, and Film's
 // counter of samples left out for not being finite (metal/film/
-// non_finite.h), which non_finite_samples() reads. A frame whose inputs
+// failure_count.h), which non_finite_samples() reads. A frame whose inputs
 // claim an image the history does not hold is refused, by MetalError, and so is a
 // frame recorded without being prepared, and, when the scene changes, a
 // frame at another time than the frames the image holds (accumulation.h).
@@ -187,9 +190,9 @@ namespace serenity::metal {
 // restir_spatial in either mode (its rays are this frame's) and
 // restir_shade. Refused at construction by MetalError, naming what is
 // refused, never run without it: a graph with restir_temporal in raytraced
-// mode, whose merge traces last
-// frame's surface against last frame's structure, which is not yet kept
-// (scene_acceleration.h, Keep::last_too). In detail:
+// mode, whose merge traces last frame's surface against last frame's
+// structure, which is not kept (scene_acceleration.h; its design waits in
+// docs/process/QUEUE.md). In detail:
 //
 //   - its passes, each built with where it writes its reservoirs, from the
 //     graph's order (frame_resources.h, ReservoirOutput): the initial pass
@@ -209,10 +212,8 @@ namespace serenity::metal {
 //     a second ShapeTransforms and LightGlows, which recording a frame fills
 //     by animating at the previous frame's time, kept from the frame before
 //     as its camera is (metal/scene/shape_transforms.h, light_glows.h), and
-//     only what moves or glows, as for this frame's; and, in raytraced
-//     mode only (core/contracts/reuse_settings.h), the acceleration
-//     structure kept a frame longer (scene_acceleration.h, Keep::last_too), which basic
-//     mode's temporal merge, tracing no ray, never reads. At the first
+//     only what moves or glows, as for this frame's (basic mode's merge
+//     traces no ray, so needs no structure of last frame's). At the first
 //     frame of a history there is no previous frame, and none of it is
 //     read;
 //   - the scene's media counted: a scene with 0xffff media or more is
@@ -233,9 +234,10 @@ namespace serenity::metal {
 // accumulated image. Four dispatches and four barriers for the light, where
 // the path graph has one dispatch and one barrier.
 //
-// The argument table of a ReSTIR graph holds 16 buffer bindings, the
-// passes' most being 12 (passes/bindings.h); every other graph's holds the
-// 8 it did.
+// The argument table of a ReSTIR graph holds its passes' most buffer
+// bindings (passes/bindings.h), as every graph's holds its families' most
+// (renderer.cpp, buffer_bindings(), each family's count asserted against
+// its bindings there).
 //
 // ReSTIR PT. A graph with its passes gets, at construction, its passes;
 // PathReuseImages (frame_images.h), made by prepare() at the frame's size
@@ -252,8 +254,8 @@ namespace serenity::metal {
 // the packed BSDF's range, more than 65536 shapes or lights. Barriers as
 // ReSTIR DI's: the queue barrier before the initial pass, a dispatch
 // barrier before each later ReSTIR PT pass and, inside the passes, between
-// their dispatches (metal/passes/restir_pt_*/). Its argument table holds 26
-// bindings, its passes' most being 26 (passes/bindings.h).
+// their dispatches (metal/passes/restir_pt_*/). Its argument table holds
+// its passes' most bindings, as ReSTIR DI's does.
 //
 // The features pass (contract 17, core/contracts/features.h). A graph with
 // it gets, at construction, its pass; FeatureImages (feature_images.h),
@@ -290,7 +292,8 @@ namespace serenity::metal {
 // denoise step. Its accumulated image, ReSTIR's arrays, MNEE's list and
 // the features are at the light size; the radiance image and the bloom
 // pyramid at the target's, the radiance image the denoise pass's output,
-// not the accumulated image. Its argument table holds 8 textures. A graph
+// not the accumulated image. Its argument table holds the denoiser's
+// textures (renderer.cpp, texture_bindings()). A graph
 // without it renders as it did: one size, one ring, the same bindings.
 //
 // Cost of recording a ReSTIR frame, on the CPU, beyond the above: 128 bytes
@@ -347,30 +350,40 @@ public:
     void record(const FrameSlot& begun, const frame::FrameInputs& inputs, MTL::Texture* target,
                 frame::Extent size);
 
-    // Samples left out for not being finite (metal/film/non_finite.h), over
-    // every completed frame; 0 for a graph that accumulates nothing. Reads
-    // no counter a frame in flight may be writing.
+    // Samples left out for not being finite (metal/film/failure_count.h),
+    // over every completed frame; 0 for a graph that accumulates nothing.
+    // Reads no counter a frame in flight may be writing.
     std::uint64_t non_finite_samples() const noexcept;
+
+    // MNEE requests the work list had no room for, their light lost
+    // (contract 16), over every completed frame, as non_finite_samples()
+    // counts; 0 for a graph without mnee.
+    std::uint64_t mnee_lost_requests() const noexcept;
 
     // The accumulated image's floats into `out`, RGBA a pixel, rows top to
     // bottom: what the passes read, at full precision, for a test or tool
     // that compares images below what 8 bits a channel can show. In a graph
     // with the denoise pass, its radiance image instead: what the
     // presenting pass reads, at the target's size. A readback
-    // (GPU.1), not for a frame loop: it waits for its copy. The frames it
-    // reads must have completed (Submission::wait_until_complete). Throws
+    // (GPU.1), not for a frame loop: it waits for every frame committed
+    // before it and then for its copy (metal/device/readback.h). Throws
     // MetalError if the graph has no accumulated image, no frame has made it
     // yet, or `out` is not its size.
     void read_accumulated(std::span<float> out);
 
     // The feature images (contract 17) as the last frame wrote them, read
     // back (feature_images.h, FeatureImages::read): a readback (GPU.1), not
-    // for a frame loop. The frames it reads must have completed. Throws
+    // for a frame loop, as read_accumulated() is. Throws
     // MetalError if the graph has no features pass or no frame has made its
     // images yet.
     FeatureImages::Read read_features() const;
 
 private:
+    // Whether the graph has anything prepare() readies, so record() asks
+    // that it was: every member prepare() prepares (I.5; one test, so the
+    // two cannot disagree).
+    bool prepares() const noexcept;
+
     using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass, RestirInitialPass,
                               RestirTemporalPass, RestirSpatialPass, RestirShadePass, RestirPtInitialPass,
                               RestirPtTemporalPass, RestirPtSpatialPass, RestirPtShadePass,
@@ -403,7 +416,7 @@ private:
     animation::Animation animation_;  // empty unless the scene changes
     std::unique_ptr<FrameImages> images_;         // when a pass writes radiance, unless into the accumulated image
     std::unique_ptr<Accumulation> accumulation_;  // when a pass accumulates
-    std::unique_ptr<NonFinite> non_finite_;       // with it
+    std::unique_ptr<FailureCount> non_finite_;    // with it: samples not finite
     // ReSTIR DI's (above): its settings, as the graph gives them; its
     // arrays; and the ring of its reuse constants, one copy per frame in
     // flight. None for a graph without its passes.
@@ -412,6 +425,7 @@ private:
     // None for a graph without its passes.
     std::unique_ptr<PathReuseImages> path_reuse_;
     std::unique_ptr<MneeList> mnee_list_;  // with mnee: MNEE's work list (contract 16)
+    std::unique_ptr<FailureCount> mnee_lost_;  // with it: the requests it had no room for
     std::unique_ptr<StaticArrays> path_static_;
     std::unique_ptr<FrameArray> path_constants_;  // with restir_pt_temporal: contracts::PathReuseConstants
     std::unique_ptr<ReuseImages> reuse_;

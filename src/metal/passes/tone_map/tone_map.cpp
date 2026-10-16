@@ -1,5 +1,6 @@
 #include "metal/passes/tone_map/tone_map.h"
 
+#include <cstdint>
 #include <cstring>
 #include <optional>
 #include <string>
@@ -7,6 +8,7 @@
 
 #include "core/frame/schedule.h"
 #include "metal/device/error.h"
+#include "metal/device/resident.h"
 #include "metal/device/support.h"
 #include "metal/passes/bindings.h"
 
@@ -17,11 +19,6 @@ namespace {
 // A texture's size, as the dispatch over it takes it.
 frame::Extent extent(const MTL::Texture* texture) {
     return {static_cast<std::uint32_t>(texture->width()), static_cast<std::uint32_t>(texture->height())};
-}
-
-// Each dispatch reads what the one before wrote (tone_map.h).
-void barrier(MTL4::ComputeCommandEncoder* encoder) {
-    encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
 }
 
 }  // namespace
@@ -39,13 +36,10 @@ ToneMapPass::ToneMapPass(const Device& device, const Library& library, Submissio
         throw MetalError(
             "ToneMapPass: the device cannot filter the 32-bit radiance image (supports32BitFloatFiltering)");
     }
-    settings_ = NS::TransferPtr(device.handle()->newBuffer(sizeof(passes::ToneMap), MTL::ResourceStorageModeShared));
-    if (!settings_) {
-        throw MetalError("ToneMapPass: the device made no buffer for the settings");
-    }
+    settings_ = make_resident_buffer(device.handle(), submission, sizeof(passes::ToneMap),
+                                     MTL::ResourceStorageModeShared, "the tone map's settings");
     static_assert(std::is_trivially_copyable_v<passes::ToneMap>, "the settings are copied as their bytes");
-    std::memcpy(settings_->contents(), &settings, sizeof(settings));
-    resident_ = submission.keep_resident(settings_.get());
+    std::memcpy(settings_.buffer->contents(), &settings, sizeof(settings));
 }
 
 void ToneMapPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
@@ -63,7 +57,7 @@ void ToneMapPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
     const auto& bloom = resources.bloom;
 
     // Steps 1 and 2 for B_0.
-    arguments->setAddress(settings_->gpuAddress(), binding::settings);
+    arguments->setAddress(settings_.address(), binding::settings);
     arguments->setTexture(resources.radiance->gpuResourceID(), binding::input);
     arguments->setTexture(bloom[0]->gpuResourceID(), binding::level);
     encoder->setComputePipelineState(down_first_.get());
@@ -72,7 +66,7 @@ void ToneMapPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
     // Step 2 for B_1 .. B_5, each from the level before.
     encoder->setComputePipelineState(down_.get());
     for (std::size_t k = 1; k < bloom.size(); ++k) {
-        barrier(encoder);
+        barrier_after_dispatch(encoder);  // each dispatch reads what the one before wrote (tone_map.h)
         arguments->setTexture(bloom[k - 1]->gpuResourceID(), binding::input);
         arguments->setTexture(bloom[k]->gpuResourceID(), binding::level);
         dispatch_per_pixel(encoder, down_.get(), extent(bloom[k]));
@@ -83,14 +77,14 @@ void ToneMapPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
     encoder->setComputePipelineState(up_.get());
     for (std::size_t below = bloom.size() - 1; below > 0; --below) {
         const std::size_t k = below - 1;
-        barrier(encoder);
+        barrier_after_dispatch(encoder);  // each dispatch reads what the one before wrote (tone_map.h)
         arguments->setTexture(bloom[below]->gpuResourceID(), binding::input);
         arguments->setTexture(bloom[k]->gpuResourceID(), binding::level);
         dispatch_per_pixel(encoder, up_.get(), extent(bloom[k]));
     }
 
     // Steps 1 and 4 to 6, into the target.
-    barrier(encoder);
+    barrier_after_dispatch(encoder);
     arguments->setTexture(resources.radiance->gpuResourceID(), binding::input);
     arguments->setTexture(bloom[0]->gpuResourceID(), binding::bloom);
     arguments->setTexture(resources.target->gpuResourceID(), binding::target);

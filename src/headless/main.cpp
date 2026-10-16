@@ -13,9 +13,9 @@
 // before the next frame begins. With --features, a written frame's feature
 // images are read back and written beside it (headless/options.h).
 // Readback is the point of this program, and it is not held to the frame
-// budget (GPU.1). A frame that left out samples for not being finite
-// (metal/film/non_finite.h) fails the run once it has completed, naming the
-// count. Any failure ends the run with its message and a non-zero status;
+// budget (GPU.1). A frame that left out samples for not being finite, or
+// lost MNEE requests to a full work list (metal/film/failure_count.h), fails
+// the run once it has completed, naming the count. Any failure ends the run with its message and a non-zero status;
 // the renderer and its target wait for the frames in flight before they are
 // released (metal/device/submission.h, Lifetime).
 
@@ -214,6 +214,11 @@ int main(int argc, char** argv) {
             if (const std::uint64_t failed = renderer.non_finite_samples(); failed != 0) {
                 throw std::runtime_error(std::format("frame {}: {} samples were not finite, and were left out (a bug)",
                                                      index, failed));
+            }
+            if (const std::uint64_t lost = renderer.mnee_lost_requests(); lost != 0) {
+                throw std::runtime_error(std::format(
+                    "frame {}: {} MNEE requests found the work list full, and their light was lost (a bug)", index,
+                    lost));
             }
             if (headless::written(options.write, {.after_first = n, .frames = options.frames})) {
                 if (const std::optional<std::filesystem::path> path = write_frame(index)) {

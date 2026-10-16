@@ -172,12 +172,7 @@ inline serenity::contracts::PackedBsdf pack_bsdf(serenity::contracts::Bsdf bsdf)
     };
 }
 
-// The kind alone, read without unpacking the rest: whether a stored surface
-// is one at all (kind none: contracts/surface_record.h).
-inline serenity::contracts::BsdfKind packed_kind(serenity::contracts::PackedBsdf packed) {
-    return serenity::contracts::BsdfKind((packed.escape_kind >> serenity::contracts::packed_kind_shift) &
-                                         serenity::contracts::packed_kind_mask);
-}
+using serenity::contracts::packed_kind;  // contracts/bsdf.h
 
 inline serenity::contracts::Bsdf unpack_bsdf(serenity::contracts::PackedBsdf packed) {
     serenity::contracts::Bsdf bsdf{};

@@ -182,9 +182,7 @@ kernel void features(constant contracts::FrameConstants& frame [[buffer(binding:
     // The light passes' ray at this pixel and frame: their numbers, drawn in
     // their order (metal/passes/path/path.metal).
     PathNumbers numbers = path_numbers(pixel, frame.frame_index);
-    const float2 within = next_numbers2(numbers);
-    const float2 lens = has_lens(camera) ? next_numbers2(numbers) : float2(0.0f);
-    const CameraRay ray = camera_ray(camera, float2(pixel) + within, lens, size);
+    const CameraRay ray = pixel_ray(camera, pixel, size, numbers);
     const metal::raytracing::ray along(ray.origin, ray.direction, 0.0f, unbounded);
     const bool previous = constants.previous != 0u;
 

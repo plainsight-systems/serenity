@@ -51,7 +51,7 @@ public:
     NS::SharedPtr<MTL::ComputePipelineState> compute_pipeline(const char* function) const;
 
     // Valid for the Library's lifetime; not retained for the caller.
-    MTL::Library* handle() const { return library_.get(); }
+    MTL::Library* handle() const noexcept { return library_.get(); }
 
 private:
     NS::SharedPtr<MTL::Device> device_;

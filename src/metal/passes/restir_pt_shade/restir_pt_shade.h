@@ -22,6 +22,8 @@ class RestirPtShadePass {
 public:
     explicit RestirPtShadePass(const Library& library);
 
+    // Records the pass. Throws MetalError if `resources` lacks anything it
+    // reads or writes above.
     void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
 
 private:

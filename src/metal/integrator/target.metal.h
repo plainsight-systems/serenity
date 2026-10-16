@@ -126,6 +126,7 @@
 #include "core/contracts/surface_record.h"
 #include "metal/integrator/surface.metal.h"
 #include "metal/materials/bsdf.metal.h"
+#include "metal/math/srgb.metal.h"
 #include "metal/math/warp.metal.h"
 
 namespace serenity {
@@ -152,7 +153,7 @@ inline RecordedSurface unpack_record(serenity::contracts::SurfaceRecord record) 
 
 // Rec. 709 luminance of a linear sRGB radiance.
 inline float luminance(float3 radiance) {
-    return metal::dot(radiance, float3(0.2126f, 0.7152f, 0.0722f));
+    return metal::dot(radiance, rec709_luminance);
 }
 
 // f(wo, wi) |cos θ_x| L_e at `surface` for `light`: the factor the target,

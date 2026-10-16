@@ -39,6 +39,7 @@
 
 #include "core/contracts/reservoir.h"
 #include "core/contracts/reuse_settings.h"
+#include "metal/reuse/reservoir.metal.h"
 
 namespace serenity {
 namespace shaders {
@@ -46,13 +47,9 @@ namespace shaders {
 // Whether `tested`, a reservoir's test word (contracts/reservoir.h), is
 // taken for its pixel's surface now by `settings` (above).
 inline bool takes_test(uint tested, serenity::contracts::ReuseSettings settings) {
-    // The offset's two signed 8-bit coordinates, their bits taken apart as
-    // unsigned (ES.101) and read back as two's complement, and the age.
-    const uint mask = serenity::contracts::tested_field_mask;
-    const int2 offset =
-        int2(int(as_type<char>(uchar((tested >> serenity::contracts::tested_offset_x_shift) & mask))),
-             int(as_type<char>(uchar((tested >> serenity::contracts::tested_offset_y_shift) & mask))));
-    const uint age = (tested >> serenity::contracts::tested_age_shift) & mask;
+    // The offset (reservoir.metal.h) and the age.
+    const int2 offset = tested_offset(tested);
+    const uint age = (tested >> serenity::contracts::tested_age_shift) & serenity::contracts::tested_field_mask;
     if (age == 0u && offset.x == 0 && offset.y == 0) {
         return true;
     }

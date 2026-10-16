@@ -168,6 +168,8 @@ add_library(serenity_metal STATIC
     src/metal/device/offscreen.cpp
     src/metal/device/presenter.cpp
     src/metal/device/frame_array.cpp
+    src/metal/device/readback.cpp
+    src/metal/device/resident.cpp
     src/metal/device/static_arrays.cpp
     src/metal/device/submission.cpp
     src/metal/device/support.cpp
@@ -175,7 +177,7 @@ add_library(serenity_metal STATIC
     src/metal/scene/light_glows.cpp
     src/metal/scene/scene_buffers.cpp
     src/metal/scene/shape_transforms.cpp
-    src/metal/film/non_finite.cpp
+    src/metal/film/failure_count.cpp
     src/metal/frame/accumulation.cpp
     src/metal/frame/denoise_images.cpp
     src/metal/frame/feature_images.cpp
@@ -183,6 +185,7 @@ add_library(serenity_metal STATIC
     src/metal/frame/mnee_list.cpp
     src/metal/frame/renderer.cpp
     src/metal/passes/denoise/denoise.cpp
+    src/metal/passes/restir_pt/shift_replay.cpp
     src/metal/passes/display/display.cpp
     src/metal/passes/features/features.cpp
     src/metal/passes/mnee/mnee.cpp

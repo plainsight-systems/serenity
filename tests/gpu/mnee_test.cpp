@@ -14,6 +14,7 @@
 //     measured here and stated; and the caustic is counted once, so a build
 //     that counted it both ways (MNEE's and the bounce's) fails.
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -24,8 +25,13 @@
 
 #include <doctest/doctest.h>
 
+#include "core/contracts/bsdf.h"
+#include "core/contracts/emitter.h"
+#include "core/contracts/medium.h"
+#include "core/contracts/mnee_request.h"
 #include "core/frame/graph_file.h"
 #include "core/scene/scene.h"
+#include "core/shapes/primitive.h"
 #include "gpu/kernels/mnee_probe.h"
 #include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"
@@ -209,6 +215,54 @@ TEST_CASE("MNEE's solve: through a glass sphere on a floor, the refraction path 
     }
 }
 
+TEST_CASE("MNEE's chain: a bounce reads its shape's kind only on a chain at a refraction, never at no_primitive") {
+    // A replayed shift's first surface is the destination's primary hit,
+    // whose primitive is no_primitive (shift.metal.h, unpack_primary_hit());
+    // reading its record there indexes 64 GiB past the records. Until
+    // 2026-10-16 every replayed shift did, its kind unused
+    // (docs/research/2026-10-16-codebase-guidelines-pass.md, C1). Neither
+    // Metal's shader validation (tests/gpu/CMakeLists.txt) nor the GPU
+    // stops on that read on this machine: through an argument table's
+    // address it reads 0, unseen. So this checks chain_after()'s every
+    // case, the no_primitive ones among them, under validation; that the
+    // record is read only behind the refraction's test is the source's,
+    // and the compiled kernels' (that note).
+    namespace c = contracts;
+    const std::vector<shapes::ShapeRecord> records = {
+        shapes::ShapeRecord{shapes::ShapeKind::sphere, 0u, 0u, c::no_medium},
+        shapes::ShapeRecord{shapes::ShapeKind::box, 0u, 0u, c::no_medium}};
+    constexpr std::uint32_t refraction = c::lobe_transmission | c::lobe_delta;
+    constexpr std::uint32_t reflection = c::lobe_reflection | c::lobe_delta;
+    constexpr std::uint32_t off = 0u;
+    constexpr std::uint32_t most = c::mnee_most_crossings;
+    struct Case {
+        const char* name;
+        tests::ChainQuery query;
+        std::uint32_t expected;
+    };
+    const std::array<Case, 8> cases = {
+        Case{"a refraction at no_primitive, off the chain", {off, refraction, c::no_primitive, 0u}, off},
+        Case{"a diffuse bounce at no_primitive", {off, c::lobe_diffuse, c::no_primitive, 0u}, 1u},
+        Case{"a reflection at no_primitive, off the chain", {off, reflection, c::no_primitive, 0u}, off},
+        Case{"a reflection on the chain", {1u, reflection, 0u, 0u}, off},
+        Case{"a refraction at a sphere, on the chain", {1u, refraction, 0u, 0u}, 2u},
+        Case{"a refraction at a box, on the chain", {1u, refraction, 1u, 0u}, off},
+        Case{"the last refraction the chain holds", {most, refraction, 0u, 0u}, most + 1u},
+        Case{"a refraction past the chain's most", {most + 1u, refraction, 0u, 0u}, off}};
+    std::vector<tests::ChainQuery> queries;
+    for (const Case& k : cases) {
+        queries.push_back(k.query);
+    }
+    tests::ProbeRunner gpu;
+    const std::vector<std::uint32_t> chains =
+        gpu.run<std::uint32_t>("mnee_chain_after", queries.size(), {Binding::of(queries), Binding::of(records)});
+    REQUIRE(chains.size() == cases.size());
+    for (std::size_t i = 0; i < cases.size(); ++i) {
+        INFO(cases[i].name);
+        CHECK(chains[i] == cases[i].expected);
+    }
+}
+
 namespace {
 
 // The caustic: the sphere above, its floor 0.8 diffuse, a light of radius
@@ -305,6 +359,53 @@ void check_caustic(const char* graph, std::uint64_t frames, const std::vector<fl
 }
 
 }  // namespace
+
+namespace {
+
+// A light inside a glass sphere, inside a closed white cavity, the camera
+// between them: every light sample from the wall crosses the glass, so
+// every bounce off the wall writes MNEE a request, and a path, bouncing
+// among walls that keep 95% of the light, writes several. The work list
+// holds one a pixel (contract 16), so it fills.
+std::string light_in_glass_in_a_cavity() {
+    return tests::camera_text("[0, 0, 1.5]", "[0, 0, 0]", 60) + tests::sky("[0, 0, 0]", "[0, 0, 0]") +
+           "[materials.wall]\nkind = \"rough\"\ncolor = [0.95, 0.95, 0.95]\n"
+           "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
+           "[materials.glow]\nkind = \"emissive\"\nradiance = [5, 5, 5]\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 2\nmaterial = \"wall\"\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.6\nmaterial = \"glass\"\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.2\nmaterial = \"glow\"\n";
+}
+
+}  // namespace
+
+TEST_CASE("MNEE: a request the full work list has no room for is counted lost, apart from samples not finite") {
+    // Until 2026-10-16 a lost request made its path's sample a NaN, under
+    // fast math, which need not keep one (docs/research/
+    // 2026-10-16-codebase-guidelines-pass.md, C14). Now the MNEE pass's grid
+    // kernel counts it; the path's sample keeps its other light, finite.
+    const scene::SceneDescription description = scene::parse(light_in_glass_in_a_cavity(), "cavity");
+    constexpr frame::Extent size{32, 32};
+    for (const char* graph : {path_mnee_graph, restir_pt_mnee_graph}) {
+        INFO(graph);
+        metal::Device device;
+        metal::Submission submission(device);
+        metal::Offscreen target(device, submission, size);
+        metal::Renderer renderer(device, submission, frame::parse_schedule(graph, "graph"), &description);
+        std::uint64_t sequence = 0;
+        for (std::uint64_t i = 0; i < 2; ++i) {
+            sequence =
+                metal::render_to_offscreen(submission, target, renderer, tests::frame_at(i, 0, 0.0, description.camera));
+        }
+        (void)submission.wait_until_complete(sequence);
+        MESSAGE("lost requests: " << renderer.mnee_lost_requests());
+        CHECK(renderer.mnee_lost_requests() > 0);
+        CHECK(renderer.non_finite_samples() == 0);
+        std::vector<float> rgba(std::size_t{size.width} * size.height * 4);
+        renderer.read_accumulated(rgba);
+        CHECK(std::ranges::all_of(rgba, [](float v) { return std::isfinite(v); }));
+    }
+}
 
 TEST_CASE("MNEE: the path tracer with it converges to the caustic the path tracer finds, counting it once") {
     const std::vector<float> reference = render_caustic(path_graph, 8192);

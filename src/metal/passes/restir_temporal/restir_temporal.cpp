@@ -3,6 +3,7 @@
 #include "metal/device/error.h"
 #include "metal/device/support.h"
 #include "metal/passes/bindings.h"
+#include "metal/passes/scene_binding.h"
 
 namespace serenity::metal {
 
@@ -10,13 +11,12 @@ RestirTemporalPass::RestirTemporalPass(const Library& library, ReservoirOutput o
     : pipeline_(library.compute_pipeline("restir_temporal")), output_(output) {}
 
 void RestirTemporalPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
-    if (resources.scene == 0 || resources.transforms == 0 || resources.glows == 0 || resources.camera == 0 ||
-        resources.reuse == 0 || resources.records == 0 || resources.previous_positions == 0 ||
+    if (resources.reuse == 0 || resources.records == 0 || resources.previous_positions == 0 ||
         resources.last_records == 0 || resources.last_final_reservoirs == 0 || resources.working_reservoirs == 0 ||
         resources.last_transforms == 0 || resources.last_glows == 0) {
-        throw MetalError("RestirTemporalPass: the frame lacks one of its scene, transforms, glows, camera, reuse "
-                         "constants, surface records, previous positions, last frame's records, final reservoirs, "
-                         "transforms or glows, or the initial reservoirs");
+        throw MetalError("RestirTemporalPass: the frame lacks one of its reuse constants, surface records, previous "
+                         "positions, last frame's records, final reservoirs, transforms or glows, or the initial "
+                         "reservoirs");
     }
     // Where the graph says the merged reservoirs go (frame_resources.h): in
     // place when a spatial merge follows.
@@ -28,12 +28,7 @@ void RestirTemporalPass::record(MTL4::ComputeCommandEncoder* encoder, const Fram
     // Bindings: passes/bindings.h, as restir_temporal.metal declares them.
     namespace binding = bindings::restir_temporal;
     MTL4::ArgumentTable* arguments = resources.arguments;
-    arguments->setAddress(resources.constants, binding::constants);
-    arguments->setAddress(resources.camera, binding::camera);
-    arguments->setResource(resources.acceleration, binding::structure);
-    arguments->setAddress(resources.scene, binding::scene);
-    arguments->setAddress(resources.glows, binding::glows);
-    arguments->setAddress(resources.transforms, binding::transforms);
+    bind_scene(resources, SceneCamera::bound, "RestirTemporalPass");
     arguments->setAddress(resources.reuse, binding::reuse);
     arguments->setAddress(resources.records, binding::records);
     arguments->setAddress(resources.previous_positions, binding::previous_positions);

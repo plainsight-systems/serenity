@@ -153,6 +153,7 @@
 #include "core/materials/material.h"
 #include "core/shapes/primitive.h"
 #include "metal/acceleration/trace.metal.h"
+#include "metal/device/append.metal.h"
 #include "metal/integrator/surface.metal.h"
 #include "metal/materials/bsdf.metal.h"
 #include "metal/materials/dielectric.metal.h"
@@ -230,18 +231,20 @@ inline CasterAt caster_at(Shapes shapes, Materials materials, uint shape) {
 // estimators' loops from surface to surface, one word.
 constant constexpr uint off_chain = 0u;
 
-// The chain after the bounce that drew `lobe` at a surface of shape kind
-// `kind`.
-inline uint chain_after(uint chain, uint lobe, serenity::shapes::ShapeKind kind) {
+// The chain after the bounce that drew `lobe` at shape `primitive`. The
+// shape's record is read only on a chain, at a refraction, the one case its
+// kind decides: a replayed shift's first surface is the destination's primary
+// hit, whose primitive is no_primitive (unpack_primary_hit(), shift.metal.h),
+// always off the chain, and must not be used as an index.
+inline uint chain_after(uint chain, uint lobe, constant serenity::shapes::ShapeRecord* records, uint primitive) {
     if ((lobe & serenity::contracts::lobe_diffuse) != 0u) {
         return 1u;
     }
     const uint refraction = serenity::contracts::lobe_transmission | serenity::contracts::lobe_delta;
-    if (chain != off_chain && (lobe & refraction) == refraction && kind == serenity::shapes::ShapeKind::sphere &&
-        chain <= max_interfaces) {
-        return chain + 1u;
+    if (chain == off_chain || (lobe & refraction) != refraction || chain > max_interfaces) {
+        return off_chain;
     }
-    return off_chain;
+    return records[primitive].kind == serenity::shapes::ShapeKind::sphere ? chain + 1u : off_chain;
 }
 
 // Whether a light a BSDF-sampled ray strikes at the end of `chain` is MNEE's
@@ -850,7 +853,7 @@ inline float3 manifold_light(SceneT scene, Shading here, float3 origin, float3 l
 // capacity.
 struct Queue {
     device serenity::contracts::MneeRequest* requests;
-    device metal::atomic_uint* header;  // word 0 the count, word 1 the capacity (contract 16)
+    device metal::atomic_uint* header;  // the count and the capacity (contract 16)
 };
 
 // The request for the light sample `sample`, drawn from `origin` at `here`,
@@ -858,7 +861,8 @@ struct Queue {
 // multiplied by `weight`. Precondition: seed.usable, seed.count > 0.
 inline serenity::contracts::MneeRequest request(Shading here, float3 origin, serenity::contracts::LightSample sample,
                                                 Seed seed, float3 weight, uint pixel) {
-    serenity::contracts::MneeRequest r{};
+    namespace c = serenity::contracts;
+    c::MneeRequest r{};
     r.origin = to_packed(origin);
     r.pixel = pixel;
     r.weight = to_packed(weight);
@@ -872,32 +876,26 @@ inline serenity::contracts::MneeRequest request(Shading here, float3 origin, ser
     #pragma unroll
     for (uint i = 0u; i < max_interfaces; ++i) {
         r.t[i] = seed.t[i];
+        r.shapes[i / c::mnee_shapes_a_word] |= seed.shape[i] << (c::mnee_shape_bits * (i % c::mnee_shapes_a_word));
     }
-    r.shapes[0] = seed.shape[0] | (seed.shape[1] << 16u);
-    r.shapes[1] = seed.shape[2] | (seed.shape[3] << 16u);
     r.bsdf = pack_bsdf(here.bsdf);
     return r;
 }
 
 // `r` appended to the list, one atomic for the SIMD group's lanes that
 // append together (GDSA.10; the lanes here are those active at the call).
-// False where the list is full: the caller makes the path's sample not
-// finite, so the frame counts it (contract 16).
-inline bool enqueue(Queue queue, serenity::contracts::MneeRequest r) {
-    const uint before = metal::simd_prefix_exclusive_sum(1u);
-    const uint total = metal::simd_sum(1u);
-    uint base = 0u;
-    if (metal::simd_is_first()) {
-        base = metal::atomic_fetch_add_explicit(queue.header, total, metal::memory_order_relaxed);
+// Where the list is full it is not written, and its light is lost: not
+// silently, for the count it added to the header passes the capacity by
+// it, and the MNEE pass's grid kernel counts what passes (contract 16).
+// Nothing travels back through the path's light: a NaN, as the loss was
+// once reported, is not one under fast math, which may assume none.
+inline void enqueue(Queue queue, serenity::contracts::MneeRequest r) {
+    const uint slot = simd_reserve(queue.header + serenity::contracts::mnee_count_word, 1u);
+    const uint capacity =
+        metal::atomic_load_explicit(queue.header + serenity::contracts::mnee_capacity_word, metal::memory_order_relaxed);
+    if (slot < capacity) {
+        queue.requests[slot] = r;
     }
-    base = metal::simd_broadcast_first(base);
-    const uint slot = base + before;
-    const uint capacity = metal::atomic_load_explicit(queue.header + 1, metal::memory_order_relaxed);
-    if (slot >= capacity) {
-        return false;
-    }
-    queue.requests[slot] = r;
-    return true;
 }
 
 // The light of request `r` (steps 2 to 4), X times its weight: the
@@ -906,13 +904,15 @@ inline bool enqueue(Queue queue, serenity::contracts::MneeRequest r) {
 // geometric normal, the BSDF's: contract 16).
 template <typename SceneT>
 inline float3 solve_request(SceneT scene, serenity::contracts::MneeRequest r) {
+    namespace c = serenity::contracts;
     Seed seed{};
     seed.count = r.crossings;
     seed.usable = true;
     #pragma unroll
     for (uint i = 0u; i < max_interfaces; ++i) {
         seed.t[i] = r.t[i];
-        seed.shape[i] = (r.shapes[i / 2u] >> (16u * (i % 2u))) & serenity::contracts::mnee_largest_shape;
+        seed.shape[i] = (r.shapes[i / c::mnee_shapes_a_word] >> (c::mnee_shape_bits * (i % c::mnee_shapes_a_word))) &
+                        c::mnee_largest_shape;
     }
     Shading here{};
     here.bsdf = unpack_bsdf(r.bsdf);

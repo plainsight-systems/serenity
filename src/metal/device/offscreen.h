@@ -55,7 +55,7 @@ public:
 
     // The bytes read_rgba() fills: width x height x 4. The one place that
     // size is computed (ES.3).
-    std::size_t rgba_size() const;
+    std::size_t rgba_size() const noexcept;
 
     void read_rgba(std::span<std::uint8_t> out) const;
 

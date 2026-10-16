@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "metal/device/error.h"
+#include "metal/device/resident.h"
 
 namespace serenity::metal {
 
@@ -100,12 +101,9 @@ SceneBuffers::SceneBuffers(const Device& device, Submission& submission, const s
     }
     // The block itself, written once (scene_block.h); shared storage, which
     // Apple silicon's unified memory lets the GPU read where the CPU wrote.
-    block_buffer_ = NS::TransferPtr(device.handle()->newBuffer(sizeof(block_), MTL::ResourceStorageModeShared));
-    if (!block_buffer_) {
-        throw MetalError("SceneBuffers: the device made no buffer for the scene's block");
-    }
-    std::memcpy(block_buffer_->contents(), &block_, sizeof(block_));
-    resident_ = submission.keep_resident(block_buffer_.get());
+    block_buffer_ = make_resident_buffer(device.handle(), submission, sizeof(block_), MTL::ResourceStorageModeShared,
+                                         "the scene's block");
+    std::memcpy(block_buffer_.buffer->contents(), &block_, sizeof(block_));
 }
 
 }  // namespace serenity::metal

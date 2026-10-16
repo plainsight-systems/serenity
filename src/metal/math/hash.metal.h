@@ -17,6 +17,11 @@
 namespace serenity {
 namespace shaders {
 
+// 2^32 / phi, its integer part (odd): a multiplier that spreads consecutive
+// integers across the word before they are hashed together (Knuth's
+// multiplicative hashing).
+constant constexpr uint golden_ratio_32 = 0x9e3779b9u;
+
 // PCG's (O'Neill 2014): the 32-bit LCG step, and the output permutation's
 // multiplier.
 constant constexpr uint pcg_multiplier = 747796405u;

@@ -71,9 +71,7 @@ struct FrameResources {
     // path states and previous positions (contract 5) and last frame's
     // records; the working reservoirs, and this frame's and last frame's
     // final ones (contract 14); and, for the temporal merge, last frame's
-    // transforms and glows, and in raytraced mode its structure
-    // (metal/scene/shape_transforms.h, light_glows.h,
-    // metal/acceleration/scene_acceleration.h; empty in basic mode).
+    // transforms and glows (metal/scene/shape_transforms.h, light_glows.h).
     MTL::GPUAddress reuse = 0;
     MTL::GPUAddress records = 0;
     MTL::GPUAddress path_states = 0;
@@ -84,7 +82,6 @@ struct FrameResources {
     MTL::GPUAddress last_final_reservoirs = 0;
     MTL::GPUAddress last_transforms = 0;
     MTL::GPUAddress last_glows = 0;
-    MTL::ResourceID last_acceleration{};
 
     // ReSTIR PT's (frame_images.h, PathReuseImages; renderer.h): its
     // settings and reuse textures, static; its path reservoirs, primary
@@ -115,11 +112,13 @@ struct FrameResources {
     // With mnee (core/frame/schedule.h): MNEE's work list (contract 16),
     // its header and the solve's indirect grid in it, and, for the path
     // pass, each pixel's MNEE light before it is folded in (mnee_list.h);
-    // 0 otherwise.
+    // the frame's counter of requests the list had no room for
+    // (metal/film/failure_count.h); 0 otherwise.
     MTL::GPUAddress mnee_requests = 0;
     MTL::GPUAddress mnee_header = 0;
     MTL::GPUAddress mnee_grid = 0;
     MTL::GPUAddress mnee_light = 0;
+    MTL::GPUAddress mnee_lost_counter = 0;
 
     // With the features pass (contract 17, feature_images.h): its constants
     // (the previous camera), the shapes' transforms as the frame before

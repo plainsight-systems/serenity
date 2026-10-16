@@ -28,6 +28,7 @@
 #include <metal_stdlib>
 
 #include "core/contracts/path_reuse_settings.h"
+#include "metal/device/layout.metal.h"
 #include "metal/math/hash.metal.h"
 
 namespace serenity {
@@ -43,7 +44,7 @@ struct Framing {
 };
 
 inline Framing framing(uint frame, uint texture) {
-    const uint h = pcg_hash(pcg_hash(frame) ^ (texture * 0x9e3779b9u));
+    const uint h = pcg_hash(pcg_hash(frame) ^ (texture * golden_ratio_32));
     const int width = int(serenity::contracts::pairing_widths[texture]);
     const uint g = pcg_hash(h);
     return Framing{(h & 1u) != 0u, (h & 2u) != 0u, (h & 4u) != 0u,
@@ -62,7 +63,7 @@ inline int2 partner(constant ushort* textures, int2 pixel, uint texture, Framing
     const uint packed = textures[serenity::contracts::pairing_starts[texture] + uint(t.y * width + t.x)];
     // Two signed 8-bit offsets, read as two's complement (core/sampling/
     // pairing.h).
-    int2 d = int2(int(as_type<char>(uchar(packed & 0xffu))), int(as_type<char>(uchar(packed >> 8u))));
+    int2 d = int2(signed_byte(packed, 0u), signed_byte(packed, 8u));
     d.y = map.flip_y ? -d.y : d.y;
     d.x = map.flip_x ? -d.x : d.x;
     return pixel + (map.transpose ? d.yx : d);

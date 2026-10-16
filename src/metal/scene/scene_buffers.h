@@ -5,6 +5,7 @@
 #include "core/scene/scene.h"
 #include "metal/scene/scene_block.h"
 #include "metal/device/device.h"
+#include "metal/device/resident.h"
 #include "metal/device/static_arrays.h"
 #include "metal/device/submission.h"
 
@@ -43,16 +44,15 @@ public:
     ~SceneBuffers() = default;
 
     // The address of each array (scene_block.h), as the host sees it.
-    const gpu::SceneBlock& block() const { return block_; }
+    const gpu::SceneBlock& block() const noexcept { return block_; }
 
     // The block on the GPU, which a pass binds whole (scene_block.h).
-    MTL::GPUAddress block_address() const { return block_buffer_->gpuAddress(); }
+    MTL::GPUAddress block_address() const noexcept { return block_buffer_.address(); }
 
 private:
     StaticArrays arrays_;
     gpu::SceneBlock block_{};
-    NS::SharedPtr<MTL::Buffer> block_buffer_;
-    Resident resident_;
+    ResidentBuffer block_buffer_;
 };
 
 }  // namespace serenity::metal

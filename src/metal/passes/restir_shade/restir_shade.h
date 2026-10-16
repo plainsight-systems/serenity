@@ -19,7 +19,7 @@ namespace serenity::metal {
 // plus the path's continuation from the surface for the indirect light
 // (metal/integrator/path.metal.h, continue_path()); folded into the
 // accumulated image (metal/film/accumulate.metal.h), as the path pass folds
-// its own, and counted where it is not finite (metal/film/non_finite.h).
+// its own, and counted where it is not finite (metal/film/failure_count.h).
 //
 // Reads: the scene and structure, the reuse constants, the records, path
 // states and final reservoirs, and the accumulated image. Writes: the

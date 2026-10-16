@@ -27,6 +27,7 @@ constant constexpr uint slots = serenity::contracts::max_path_neighbors;
 // frame's path here, and this pixel's path there, last frame.
 constant constexpr uint last_here = 0u;
 constant constexpr uint own_there = 1u;
+static_assert(own_there < restir_pt::replay_slots, "the temporal shifts fit a pixel's replay slots");
 
 }  // namespace
 
@@ -74,7 +75,7 @@ kernel void restir_pt_temporal_shift(
             if (!restir_pt::holds_path(last)) {
                 shifts[i * slots + last_here] = float4(0.0f);
             } else if (restir_pt::replays(last)) {
-                appended[count++] = i * 4u + last_here;
+                appended[count++] = restir_pt::replay_item(i, last_here);
             } else {
                 shifts[i * slots + last_here] = restir_pt::stored_shift(
                     shift::shift_path(now, shift::unpack_primary_hit(own_hit), last, settings));
@@ -82,7 +83,7 @@ kernel void restir_pt_temporal_shift(
             if (!restir_pt::holds_path(own)) {
                 shifts[i * slots + own_there] = float4(0.0f);
             } else if (restir_pt::replays(own)) {
-                appended[count++] = i * 4u + own_there;
+                appended[count++] = restir_pt::replay_item(i, own_there);
             } else {
                 shifts[i * slots + own_there] = restir_pt::stored_shift(
                     shift::shift_path(then, shift::unpack_primary_hit(last_primaries[j]), own, settings));
@@ -90,15 +91,9 @@ kernel void restir_pt_temporal_shift(
         }
     }
     // The group's appended pairs, one atomic for all (GDSA.10).
-    const uint before = simd_prefix_exclusive_sum(count);
-    const uint total = simd_sum(count);
-    uint base = 0u;
-    if (simd_is_first() && total > 0u) {
-        base = atomic_fetch_add_explicit(counter, total, memory_order_relaxed);
-    }
-    base = simd_broadcast_first(base);
+    const uint first = simd_reserve(counter, count);
     for (uint n = 0u; n < count; ++n) {
-        replays[base + before + n] = appended[n];
+        replays[first + n] = appended[n];
     }
 }
 
@@ -115,7 +110,7 @@ kernel void restir_pt_temporal_replay(
     const device serenity::contracts::PathReservoir* reservoirs [[buffer(binding::reservoirs)]],
     const device serenity::contracts::PrimaryHit* primaries [[buffer(binding::primaries)]],
     device float4* shifts [[buffer(binding::shifts)]], const device uint* replays [[buffer(binding::replays)]],
-    const device restir_pt::ReplayGrid* grid [[buffer(binding::dispatch)]],
+    const device serenity::gpu::IndirectGrid* grid [[buffer(binding::dispatch)]],
     const device serenity::contracts::PrimaryHit* last_primaries [[buffer(binding::last_primaries)]],
     const device serenity::contracts::PathReservoir* last_finals [[buffer(binding::last_finals)]],
     const device uint* previous_pixels [[buffer(binding::previous_pixels)]],
@@ -125,8 +120,8 @@ kernel void restir_pt_temporal_replay(
         return;
     }
     const uint item = replays[n];
-    const uint i = item / 4u;
-    const uint slot = item % 4u;
+    const uint i = restir_pt::replay_pixel(item);
+    const uint slot = restir_pt::replay_slot(item);
     const uint j = previous_pixels[i];
     const bool here = slot == last_here;
     const restir_pt::Scene scene{structure, &block, here ? transforms : last_transforms,

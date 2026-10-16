@@ -63,5 +63,9 @@ so a review does not raise them file by file:
   in `constant` layouts shared with the host.
 - **Enum.7 and Enum.8 on enums shared with Metal.** Their fixed underlying
   type and values are the layout the shaders read.
+- **Enum.3 for the binding indices** (`src/metal/passes/bindings.h`):
+  plain enumerations, one namespace per kernel, since the shading
+  language's attributes and Metal's setters both take an index as an
+  integer, which a scoped enumeration would need a cast for at every use.
 - **ES.100, ES.102 and ES.107: `uint` loop indices in shaders,** the GPU
   idiom.

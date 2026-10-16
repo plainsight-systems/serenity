@@ -83,7 +83,8 @@ std::span<const char* const> arguments(int argc, char** argv) {
     return {argv + 1, static_cast<std::size_t>(argc - 1)};
 }
 
-std::string title(frame::Extent size, const measurement::Summary& summary, std::uint64_t non_finite) {
+std::string title(frame::Extent size, const measurement::Summary& summary, std::uint64_t non_finite,
+                  std::uint64_t mnee_lost) {
     using Milliseconds = std::chrono::duration<double, std::milli>;
     std::string result = std::format(
         "Serenity  |  {} x {}  |  GPU {:.2f} ms mean, {:.2f} to {:.2f}, over {} frames (live window, not a benchmark)",
@@ -91,6 +92,9 @@ std::string title(frame::Extent size, const measurement::Summary& summary, std::
         Milliseconds{summary.longest}.count(), summary.frames);
     if (non_finite != 0) {
         result += std::format("  |  {} SAMPLES NOT FINITE (a bug)", non_finite);
+    }
+    if (mnee_lost != 0) {
+        result += std::format("  |  {} MNEE REQUESTS LOST (a bug)", mnee_lost);
     }
     return result;
 }
@@ -147,7 +151,8 @@ int main(int argc, char** argv) {
                 }
             }
             if (const auto summary = frame_times.take(app_clock.elapsed())) {
-                window.set_title(title(presenter.size(), *summary, renderer.non_finite_samples()));
+                window.set_title(
+                    title(presenter.size(), *summary, renderer.non_finite_samples(), renderer.mnee_lost_requests()));
             }
         }
         // What finish() settles comes after the last title: the run reports

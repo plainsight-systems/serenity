@@ -27,7 +27,8 @@
 // The constant address space, as in Apple's example: every array here is
 // small, fixed once loaded, and read by every thread at every bounce, the
 // reuse that address space is for (WWDC16 606); each starts 256-byte
-// aligned (static_arrays.h), as a constant buffer's offset must. Read as
+// aligned (static_arrays.h), past the 4 bytes a constant buffer's offset
+// needs (metal/device/support.h, constant_offset_alignment). Read as
 // device memory instead, the block made frames slower than binding each
 // array on its own; read as constant, nearly as fast. The
 // measurements, and how Falcor and Unreal bind their scenes:

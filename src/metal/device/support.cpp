@@ -17,7 +17,7 @@ NS::SharedPtr<NS::AutoreleasePool> scoped_pool() {
 }
 
 NS::SharedPtr<MTL::Texture> make_private_texture(MTL::Device* device, MTL::PixelFormat format, frame::Extent size,
-                                                 const char* what) {
+                                                 std::string_view what) {
     check_texture_size(size, what);
     auto descriptor = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
     descriptor->setTextureType(MTL::TextureType2D);
@@ -29,7 +29,7 @@ NS::SharedPtr<MTL::Texture> make_private_texture(MTL::Device* device, MTL::Pixel
     auto texture = NS::TransferPtr(device->newTexture(descriptor.get()));
     if (!texture) {
         throw MetalError(std::string{"the device made no "} + std::to_string(size.width) + " x " +
-                    std::to_string(size.height) + " " + what);
+                    std::to_string(size.height) + " " + std::string(what));
     }
     return texture;
 }

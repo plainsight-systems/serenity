@@ -6,6 +6,7 @@
 #include "core/passes/tone_map.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
+#include "metal/device/resident.h"
 #include "metal/device/submission.h"
 #include "metal/frame/frame_resources.h"
 
@@ -71,8 +72,7 @@ private:
     NS::SharedPtr<MTL::ComputePipelineState> down_;        // step 2, from a level
     NS::SharedPtr<MTL::ComputePipelineState> up_;          // step 3
     NS::SharedPtr<MTL::ComputePipelineState> finish_;      // steps 4 to 6
-    NS::SharedPtr<MTL::Buffer> settings_;
-    Resident resident_;
+    ResidentBuffer settings_;
 };
 
 }  // namespace serenity::metal

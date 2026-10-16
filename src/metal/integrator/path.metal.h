@@ -1,6 +1,6 @@
 #pragma once
 
-// Axis: Integrator (the naive path tracer).
+// Axis: Integrator (the path tracer, without reuse).
 //
 // The radiance arriving along one camera ray, by the path tracer with next
 // event estimation and multiple importance sampling (MIS): pbrt-v4's
@@ -657,9 +657,9 @@ struct Radiance {
 // draws it; at a receiver, its segment visited whole, the ordinary term
 // where it is clear; where it crosses casters, a request on `queue` for the
 // MNEE pass to solve (contract 16), its weight beta / (P p_l), and nothing
-// here, or not a finite number where the list is full (so the frame counts
-// it). At any other surface, next_event() itself. Returns what L gains
-// over beta.
+// here (where the list is full, the MNEE pass counts the request lost:
+// mnee::enqueue()). At any other surface, next_event() itself. Returns what
+// L gains over beta.
 inline float3 next_event_manifold(Scene scene, Shading here, thread PathNumbers& numbers, float3 beta,
                                   mnee::Queue queue, uint pixel) {
     if (!mnee::receives(here.bsdf)) {
@@ -689,9 +689,7 @@ inline float3 next_event_manifold(Scene scene, Shading here, thread PathNumbers&
     if (!seed.usable) {
         return float3(0.0f);
     }
-    if (!mnee::enqueue(queue, mnee::request(here, origin, sample, seed, beta / light_density, pixel))) {
-        return float3(NAN);  // the list full: counted, not lost silently (contract 16)
-    }
+    mnee::enqueue(queue, mnee::request(here, origin, sample, seed, beta / light_density, pixel));
     return float3(0.0f);
 }
 
@@ -736,7 +734,7 @@ struct Manifold {
 
     // After step 6: the chain carried on.
     [[gnu::always_inline]] void scattered(Shading here, serenity::contracts::BsdfSample next, uint, float3, float3) {
-        chain = mnee::chain_after(chain, next.lobe, shapes[here.surface.primitive].kind);
+        chain = mnee::chain_after(chain, next.lobe, shapes, here.surface.primitive);
     }
     [[gnu::always_inline]] void crossed(Scene, uint, float) const {}
     [[gnu::always_inline]] bool continues_at(uint) const { return true; }

@@ -22,8 +22,10 @@ namespace serenity::metal {
 // no hazards; GPU.8):
 //
 //   mnee_grid   one thread: the list's count as the solve's indirect grid
-//               (MTLDispatchThreadsIndirectArguments, groups of 64), the
-//               count set back to 0 for the next frame;
+//               (metal/device/indirect_grid.h, groups of contract 16's
+//               mnee_solve_group), the requests that found the list full
+//               added to the frame's count of lost requests, and the count
+//               set back to 0 for the next frame;
 //   mnee_solve  a thread a request: the walk, its contribution, its
 //               visibility (mnee.metal.h, steps 2 to 4), times the
 //               request's weight, added to its pixel's float4 by three
@@ -52,8 +54,8 @@ public:
     enum class Into { accumulated_image, light_buffer };
 
     // Records the three dispatches (two for the light buffer). Throws
-    // MetalError if `resources` has no scene, work list or the light it
-    // adds to, or, folding, no accumulated image.
+    // MetalError if `resources` has no scene, work list, counters or the
+    // light it adds to, or, folding, no accumulated image.
     void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources, Into into) const;
 
 private:

@@ -5,11 +5,10 @@
 // lights and last frame's (`now`, `then`), and written to `output`, the
 // array the renderer binds by the graph.
 //
-// Bound here: what basic mode reads. Raytraced mode's last frame's
-// structure (bindings.h, last_structure) is not: the renderer refuses a
-// raytraced graph with a temporal merge until it keeps last frame's
-// structure (metal/frame/renderer.h), so `then` is given this frame's,
-// which basic mode never traces.
+// Bound here: what basic mode reads. The renderer refuses a raytraced
+// graph with a temporal merge until last frame's structure is kept
+// (metal/frame/renderer.h), so `then` is given this frame's, which basic
+// mode never traces.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
