@@ -42,11 +42,9 @@ tone mapping.
 
 [Milestone 2: reusing work with ReSTIR](docs/writeups/milestone-2.md) follows
 the decisions, measurements, and connections to inference.
-Milestone 3’s write-up comes with the milestone’s close; until then the
-denoiser’s record is in its research notes: the
-[design](docs/research/2026-10-14-denoiser-training-design.md), the
-[training](docs/research/2026-10-15-denoiser-training.md) and the
-[network in the renderer](docs/research/2026-10-15-denoiser-live.md).
+[Milestone 3: turning samples into an image](docs/writeups/milestone-3.md)
+covers the denoiser: what it learned from, how it runs in the frame, and
+what it still leaves.
 [Milestone 1](docs/writeups/milestone-1.md) records the original baseline.
 The design is in [`docs/architecture/`](docs/architecture/README.md).
 
