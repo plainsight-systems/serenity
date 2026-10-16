@@ -68,8 +68,11 @@ class SiteTests(unittest.TestCase):
         # Exercise missing configuration independently of the live manifest.
         manifest = self.web / 'data/media.json'
         data = json.loads(manifest.read_text())
-        for entry in data.values():
-            entry['url'] = ''
+        for name, entry in data.items():
+            # Keep hosted posters configured: their ignored local originals
+            # need not exist in CI. Exercise missing required film URLs only.
+            if name not in site.IMAGE_KEYS:
+                entry['url'] = ''
         manifest.write_text(json.dumps(data))
         project = self.root / 'project'
         project.mkdir()
