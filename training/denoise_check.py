@@ -5,7 +5,7 @@
         --sequence gen-0105 --frames 8 --out CHECK_DIR
     # the committed test fixture: a random network of small widths, a crop
     uv run --locked python denoise_check.py fixture --random-network --data DATA \\
-        --sequence gen-0101 --frames 2 --crop 600 300 40 22 --out ../tests/data/denoise
+        --sequence gen-0121 --frames 3 --crop 512 14 40 22 --out ../tests/data/denoise
     # after the GPU has run a fixture (tests/gpu/denoise_check, or the test):
     uv run --locked python denoise_check.py compare --fixture CHECK_DIR --gpu GPU_DIR
 

@@ -6,7 +6,20 @@ its weights for the Metal pass. The record of the run, its curve and its
 results: docs/research/2026-10-15-denoiser-training.md.
 
 Its own environment, outside the C++ build: nothing the renderer builds or
-runs depends on it.
+runs depends on it. Everything it reads and writes lives beside the
+checkout, never in it, in `../serenity-data/` (from the checkout's root;
+`../../serenity-data/` from this directory):
+
+| Directory | What | Made by |
+|---|---|---|
+| `denoiser-v1/` | the data set, 32.3 GB, its manifest | `scripts/make_denoiser_dataset.py` |
+| `denoiser-v1-warmup/` | the test sequences' warm-up frames | `render_warmup.py` |
+| `denoiser-v1-runs/` | each run's log, checkpoints and test results | `train.py`, `evaluate.py` |
+| `denoiser-v1-model/{wide,small}/` | the exported networks the renderer reads | `export.py` |
+
+The whole cycle, in order: render the data set, render the warm-up frames,
+train, test once, export, check the renderer against PyTorch, run it.
+Each step below.
 
 ## The environment
 
@@ -28,7 +41,21 @@ uv run --locked python -m unittest test_training -v
 
 ## The data
 
-The data set is read, never written, and every file is checked against
+From the checkout's root, with the system Python (the script uses only the
+standard library). It builds `build/native-release/serenity-headless` and
+renders from a clean, committed tree, recording the commit and the
+binary's SHA-256 in the manifest; it resumes where it stopped, and refuses
+a manifest made by another commit, so a new render of the data set goes
+into a new directory. denoiser-v1 took 4.0 h on the M3 Max
+(docs/research/2026-10-14-denoiser-dataset.md):
+
+```sh
+python3 scripts/make_denoiser_dataset.py --print-plan                                   # the plan as JSON; renders nothing
+python3 scripts/make_denoiser_dataset.py --estimate --out ../serenity-data/denoiser-v1  # the first input and target, timed
+python3 scripts/make_denoiser_dataset.py --out ../serenity-data/denoiser-v1             # render it, or resume
+```
+
+Training reads the data set, never writes it, and checks every file against
 its manifest's SHA-256 as it is loaded. Check it whole first (needs a
 configured build in the checkout, as the script reads its CMake cache):
 
@@ -50,41 +77,57 @@ uv run --locked python render_warmup.py --data ../../serenity-data/denoiser-v1 \
 
 ## Training
 
-`config.json` holds the run's settings; paths in it are relative to it.
+A config holds a run's settings; paths in it are relative to it.
+`config.json` is the small network (max_lr 1e-3), `config-wide.json` the
+wide one (max_lr 5e-3), the demo's; docs/research/2026-10-15-denoiser-training.md
+has both runs (8.3 h and 5.7 h on the M3 Max).
 
 ```sh
 # OIDN's learning-rate finder: an exponential sweep, its curve in find_lr.csv
 uv run --locked python train.py find-lr --config config.json --out ../../serenity-data/denoiser-v1-runs/find-lr
 
-# the run: log.csv every epoch, best.pt at the best validation loss, last.pt to resume
-uv run --locked python train.py train --config config.json --out ../../serenity-data/denoiser-v1-runs/v1
+# the runs: log.csv every epoch, best.pt at the best validation loss, last.pt to resume
+uv run --locked python train.py train --config config-wide.json --out ../../serenity-data/denoiser-v1-runs/v1-wide
+uv run --locked python train.py train --config config.json --out ../../serenity-data/denoiser-v1-runs/v1-small-lr1e-3
 ```
 
 `train` resumes from `last.pt` if the run directory has one, and refuses a
 directory holding another config's run. Each checkpoint records the config,
 the data set manifest's SHA-256, the git commit and whether `training/` had
-uncommitted changes.
+uncommitted changes. `--data DIR` reads the data set from elsewhere than
+the config's path.
 
 ## The test, once
 
+The real marbles are the test, read by `evaluate.py` alone, once a run has
+ended; the references are `make reference`'s at t = 8 and t = 120, in the
+checkout's `.cache/references/`. For each network:
+
 ```sh
-uv run --locked python evaluate.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1/best.pt \
+uv run --locked python evaluate.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1-wide/best.pt \
     --data ../../serenity-data/denoiser-v1 --warmup ../../serenity-data/denoiser-v1-warmup \
     --references ../.cache/references --oidn /opt/homebrew/bin/oidnDenoise \
-    --out ../../serenity-data/denoiser-v1-runs/v1/test --images IMAGES_DIR
+    --out ../../serenity-data/denoiser-v1-runs/v1-wide/test --images IMAGES_DIR
 ```
 
-It refuses an `--out` that already holds results. Tables:
-`uv run --locked python report.py wide=RUN_A/test/results.json small=RUN_B/test/results.json`.
+It refuses an `--out` that already holds results. `--dry-run-on-validation`
+runs the same code on the validation split instead, to check the script
+before the test. Tables, both networks side by side:
 
-`config.json` is the small network (max_lr 1e-3), `config-wide.json` the wide
-one (max_lr 5e-3); docs/research/2026-10-15-denoiser-training.md has both runs.
+```sh
+uv run --locked python report.py wide=../../serenity-data/denoiser-v1-runs/v1-wide/test/results.json \
+    small=../../serenity-data/denoiser-v1-runs/v1-small-lr1e-3/test/results.json
+```
+
+A rough MPS time a frame: `uv run --locked python benchmark.py --checkpoint RUN/best.pt`.
 
 ## The export
 
 ```sh
-uv run --locked python export.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1/best.pt \
-    --out ../../serenity-data/denoiser-v1-model
+uv run --locked python export.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1-wide/best.pt \
+    --out ../../serenity-data/denoiser-v1-model/wide
+uv run --locked python export.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1-small-lr1e-3/best.pt \
+    --out ../../serenity-data/denoiser-v1-model/small
 ```
 
 `weights.bin` (float32), `layout.json` (every tensor's place, the network's
@@ -107,7 +150,20 @@ uv run --locked python denoise_check.py compare --fixture CHECK_DIR --gpu GPU_DI
 ```
 
 The test's own fixture, `tests/data/denoise`, was made by `fixture
---random-network --sequence gen-0121 --frames 3 --crop 512 14 40 22`.
+--random-network --sequence gen-0121 --frames 3 --crop 512 14 40 22`; ctest
+runs it on every build (`tests/gpu/denoise_test.cpp`).
+
+## Running it
+
+The denoised graphs name the exports by a path relative to `graphs/`, so
+from the checkout's root:
+
+```sh
+make run GRAPH=graphs/restir_pt_denoised.toml SCENE=scenes/marbles.toml        # the wide network
+make run GRAPH=graphs/restir_pt_denoised_small.toml SCENE=scenes/marbles.toml  # the small one
+```
+
+A graph's `[denoise] weights` names another export.
 
 ## Files
 
