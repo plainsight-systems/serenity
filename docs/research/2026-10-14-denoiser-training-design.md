@@ -5,6 +5,12 @@ after it: a denoiser, here one that also upscales. This note designs how
 it is trained. Running the trained network in a Metal pass is the second
 half of the milestone and gets its own note.
 
+**Status: built**, 2026-10-14 to 2026-10-15, in the four phases below,
+each with its note. Where what was built departs from this design, its
+note says so: for example, each input frame's history is the whole run
+before it rather than 30 frames of warm-up, images are read without
+OpenImageIO, and the test's times are t = 2, 4, 6, 8, 30, 60 and 120.
+
 Decided with the user, 2026-10-14:
 
 - **A kernel-predicting network.** A small network looks at each pixel's
@@ -152,22 +158,40 @@ time:
 
 1. **Renderer outputs.** Motion vectors; surface color, normal and depth
    images; the headless renderer writing them beside each frame; the scene
-   generator's seed option. Each output tested. Built 2026-10-14
-   (2026-10-14-denoiser-features.md).
+   generator's seed option. Each output tested. **Built** 2026-10-14
+   ([2026-10-14-denoiser-features.md](2026-10-14-denoiser-features.md)):
+   the `features` pass, contract 17.
 2. **The data set.** The overnight render, its manifest and checksums.
-   Rendered 2026-10-14 (2026-10-14-denoiser-dataset.md): 400 frames,
-   4,096-sample targets, 4.0 h, 32.3 GB.
+   **Rendered** 2026-10-14
+   ([2026-10-14-denoiser-dataset.md](2026-10-14-denoiser-dataset.md)): 400
+   frames, 4,096-sample targets, 4.0 h, 32.3 GB.
 3. **Training.** The `training/` toolkit, the run, the validation curve.
-   Trained 2026-10-15 (2026-10-15-denoiser-training.md): two sizes, 300
-   epochs each; on the held-out marbles 0.29 to 0.39 of the input's
-   displayed error, below Open Image Denoise's; the table's flicker 36 to
-   47% above the targets'; both networks exported.
+   **Trained** 2026-10-15
+   ([2026-10-15-denoiser-training.md](2026-10-15-denoiser-training.md)):
+   two sizes, 300 epochs each; on the held-out marbles 0.29 to 0.39 of the
+   input's displayed error, below Open Image Denoise's; the table's flicker
+   36 to 47% above the targets'; both networks exported.
 4. **The Metal pass.** Its own note: the network as Metal kernels, its
    cost, the demo graph `graphs/restir_pt_denoised.toml`, and the test
-   results.
+   results. **Built** 2026-10-15
+   ([2026-10-15-denoiser-live.md](2026-10-15-denoiser-live.md)): the
+   `denoise` pass on our own compute kernels, contract 18, the light at
+   half the output each way; within 2.2 × 10^-4 of PyTorch on the test
+   fixture; 78 ms a frame in the window with the wide network, 24 ms at
+   1920 × 1080. The user chose the wide network for the demo and no
+   retrain for now (2026-10-15).
+
+Then Milestone 3's own guidelines and performance pass
+([2026-10-15-milestone-3-guidelines-pass.md](2026-10-15-milestone-3-guidelines-pass.md)):
+every valid finding fixed, every graph the same to the bit.
 
 ## Not decided here
 
 The network's exact size and layout are set by the runtime budget, which
 Phase 4 measures. The feature extractor starts as a small U-Net, as Open
 Image Denoise's and Thomas et al. 2022's do, and is sized down to fit.
+
+Since decided: two sizes were trained, small (294k parameters) and wide
+(543k, Open Image Denoise's `unet` scale); Phase 4 measured both (the
+denoise pass 16.7 and 26.4 ms at the window's light), and the user chose
+the wide one for the demo, 2026-10-15.
