@@ -435,13 +435,16 @@ struct TreeGatherOf {
         forward = reconnection::footprint(before.delta, before.density, before.position, at, normal);
     }
 
-    // Step 5 of the loop: NEE by resampled importance sampling, a
-    // candidate path ending on the light it keeps.
-    [[gnu::always_inline]] void next_event(Scene scene, thread float3&, float3 beta, Shading here, uint surface,
-                                           thread PathNumbers&) {
-        const uint index = surface + 1u;
-        const uint m = nee::candidate_count(settings.nee_candidates, index);
-        const float3 origin = path::next_event_origin(here.surface, here.wo);
+    // Step 5's draw: `m` candidates from the pixel's light tile at surface
+    // `surface`'s numbers, resampled to one, and the sum of their RIS
+    // weights.
+    struct Resampled {
+        nee::Candidate kept;
+        float sum;
+    };
+
+    [[gnu::always_inline]] Resampled resample_lights(Scene scene, Shading here, uint surface, uint m,
+                                                     float3 origin) const {
         PathNumbers numbers = shift::nee_numbers(stream, surface);
         float sum = 0.0f;
         nee::Candidate kept = nee::no_candidate();
@@ -458,6 +461,19 @@ struct TreeGatherOf {
                 kept = candidate;
             }
         }
+        return Resampled{kept, sum};
+    }
+
+    // Step 5 of the loop: NEE by resampled importance sampling, a
+    // candidate path ending on the light it keeps.
+    [[gnu::always_inline]] void next_event(Scene scene, thread float3&, float3 beta, Shading here, uint surface,
+                                           thread PathNumbers&) {
+        const uint index = surface + 1u;
+        const uint m = nee::candidate_count(settings.nee_candidates, index);
+        const float3 origin = path::next_event_origin(here.surface, here.wo);
+        const Resampled resampled = resample_lights(scene, here, surface, m, origin);
+        const nee::Candidate kept = resampled.kept;
+        const float sum = resampled.sum;
         const float3 wi = to_float3(kept.sample.direction);
         if (!(kept.target > 0.0f)) {
             return;
