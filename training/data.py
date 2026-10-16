@@ -68,6 +68,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeVar
 
 import numpy as np
 import torch
@@ -84,8 +85,10 @@ TARGET_CHANNELS = 6
 ALBEDO_FLOOR = 0.02  # NRD_MATERIAL_FACTOR_MIN_SCALE
 CROP = 128  # input pixels; the target's is 256
 
+Image = TypeVar("Image", np.ndarray, torch.Tensor)
 
-def albedo_factor(albedo):
+
+def albedo_factor(albedo: Image) -> Image:
     """NRD's demodulation factor, per channel: 0.02 + 0.98 albedo (albedo in [0, 1])."""
     return ALBEDO_FLOOR + (1.0 - ALBEDO_FLOOR) * albedo
 
@@ -102,7 +105,7 @@ def file_sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _read_checked(root: Path, entry: dict) -> np.ndarray:
+def read_checked(root: Path, entry: dict) -> np.ndarray:
     """The PFM `entry` names, refused if its bytes are not the manifest's."""
     path = root / entry["path"]
     data = path.read_bytes()
@@ -167,12 +170,12 @@ class Manifest:
         for i in seq.frames:
             f = self.frames[(seq.name, i)]
             fi = f["input"]["files"]
-            inputs.append(input_frame(*(_read_checked(self.root, fi[k])
+            inputs.append(input_frame(*(read_checked(self.root, fi[k])
                                         for k in ("radiance", "albedo", "normal", "depth", "motion")), axes))
             if with_target:
                 ft = f["target"]["files"]
-                targets.append(target_frame(_read_checked(self.root, ft["radiance"]),
-                                            _read_checked(self.root, ft["albedo"])))
+                targets.append(target_frame(read_checked(self.root, ft["radiance"]),
+                                            read_checked(self.root, ft["albedo"])))
         return np.stack(inputs), (np.stack(targets) if with_target else None)
 
 

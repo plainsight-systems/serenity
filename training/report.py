@@ -17,20 +17,26 @@ REGIONS = (("whole", "whole"), ("glass_metal", "glass+metal"), ("porcelain", "po
 
 
 def fmt(v: float) -> str:
+    """Five decimals under 0.01, four above."""
     return f"{v:.5f}" if v < 0.01 else f"{v:.4f}"
 
 
-def main() -> None:
-    runs = {}
+def main() -> int:
+    if len(sys.argv) < 2 or not all("=" in arg for arg in sys.argv[1:]):
+        print(__doc__.split("\n\n")[1], file=sys.stderr)
+        return 2
+    runs: dict[str, dict] = {}
     for arg in sys.argv[1:]:
         name, path = arg.split("=", 1)
         runs[name] = json.loads(Path(path).read_text())
     first = next(iter(runs.values()))
     seqs = list(first["sequences"])
-    kinds = [(f"{n} network", n, "network") for n in runs] + [("input, bilinear", None, "input_bilinear"),
-                                                              ("OIDN, bilinear", None, "oidn_bilinear")]
+    # OIDN's column only if the first run's evaluate.py was given --oidn.
+    with_oidn = "oidn_bilinear" in first["sequences"][seqs[0]]["flicker"]
+    oidn = [("OIDN, bilinear", None, "oidn_bilinear")] if with_oidn else []
+    kinds = [(f"{n} network", n, "network") for n in runs] + [("input, bilinear", None, "input_bilinear")] + oidn
 
-    def value(run_name, kind, seq, table, region):
+    def value(run_name: str | None, kind: str, seq: str, table: str, region: str) -> float:
         run = runs[run_name] if run_name else first
         return run["sequences"][seq][table][kind][region]
 
@@ -67,7 +73,8 @@ def main() -> None:
             vals = [value(r, k, s, "flicker", key) for _, r, k in cols]
             print(f"| {s} | " + " | ".join(fmt(v) for v in vals) + " |")
         print()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

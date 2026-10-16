@@ -18,8 +18,9 @@ the first hit's material decides:
   whole            every pixel.
 
 Fireflies move and are not shapes; they are in no region but the whole, as
-the scene's static masks were. The counts are checked against Milestone 2's
-(tests/test_training.py).
+the scene's static masks were. The counts were compared once with Milestone
+2's (docs/research/2026-10-15-denoiser-training.md, "Regions"; no test
+holds them).
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ import numpy as np
 REGIONS = ("whole", "glass_metal", "porcelain", "table")
 
 
-def camera_basis(camera: dict, width: int, height: int):
+def camera_basis(camera: dict, width: int, height: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """(origin, forward, right, up) of the pinhole, `right` and `up` scaled as camera.h has them."""
     origin = np.array(camera["position"], dtype=np.float64)
     look_at = np.array(camera["look_at"], dtype=np.float64)

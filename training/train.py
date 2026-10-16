@@ -73,7 +73,9 @@ def provenance(config: dict, manifest: Manifest) -> dict:
     }
 
 
-def make_batch(split: SplitOnDevice, picks, augmentations) -> tuple[torch.Tensor, torch.Tensor]:
+def make_batch(split: SplitOnDevice, picks: list[tuple[int, int, int]],
+               augmentations: list[Augmentation]) -> tuple[torch.Tensor, torch.Tensor]:
+    """Each (sequence, oy, ox) pick's crop, augmented, stacked: (B, 8, 12, 128, 128) and (B, 8, 6, 256, 256)."""
     inputs, targets = [], []
     for (s, oy, ox), a in zip(picks, augmentations):
         i, t = split.crop(s, oy, ox)
@@ -83,7 +85,9 @@ def make_batch(split: SplitOnDevice, picks, augmentations) -> tuple[torch.Tensor
     return torch.stack(inputs), torch.stack(targets)
 
 
-def run_batch(model: Denoiser, inputs: torch.Tensor, targets: torch.Tensor):
+def run_batch(model: Denoiser, inputs: torch.Tensor,
+              targets: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """The batch's loss and its parts (loss.sequence_loss), the network run over each sequence."""
     outputs, _ = model(inputs, targets[:, :, 3:6])
     return sequence_loss(outputs, targets[:, :, 0:3])
 
@@ -102,40 +106,41 @@ def validate(model: Denoiser, split: SplitOnDevice, batch_size: int) -> tuple[fl
     return tuple((totals / len(tiles)).tolist())
 
 
-def setup(config: dict, need_validation: bool):
+def setup(config: dict, need_validation: bool) -> tuple[torch.device, Manifest, SplitOnDevice,
+                                                       SplitOnDevice | None, Denoiser]:
     device = torch.device(config["device"])
     torch.manual_seed(config["seed"])
     manifest = Manifest(Path(config["data"]))
     t0 = time.time()
-    train = SplitOnDevice(manifest, "train", device)
+    train_split = SplitOnDevice(manifest, "train", device)
     valid = SplitOnDevice(manifest, "validation", device) if need_validation else None
-    print(f"data: {len(train)} training sequences"
+    print(f"data: {len(train_split)} training sequences"
           + (f", {len(valid)} validation" if valid else "") + f", read and checked in {time.time() - t0:.0f} s",
           flush=True)
     model = Denoiser(Widths(**config["widths"])).to(device)
     print(f"network: {parameter_count(model):,} parameters, "
           f"{macs_per_input_pixel(model.widths):,.0f} multiply-adds per input pixel", flush=True)
-    return device, manifest, train, valid, model
+    return device, manifest, train_split, valid, model
 
 
 def find_lr(config: dict, out: Path) -> None:
     """OIDN's find_lr.py: Adam, the learning rate raised exponentially each step from lr_min to lr_max,
     the loss smoothed (beta 0.98, bias-corrected), stopped once it passes 4x its best."""
     out.mkdir(parents=True, exist_ok=False)
-    device, manifest, train, _, model = setup(config, need_validation=False)
+    _, manifest, train_split, _, model = setup(config, need_validation=False)
     f = config["find_lr"]
     steps = f["steps"]
     optimizer = torch.optim.Adam(model.parameters(), lr=f["lr_min"])
     gamma = (f["lr_max"] / f["lr_min"]) ** (1.0 / (steps - 1))
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
     rng = np.random.default_rng([config["seed"], 999_999])
-    picks = epoch_crops(len(train), math.ceil(steps * config["batch_size"] / len(train)), rng)
+    picks = epoch_crops(len(train_split), math.ceil(steps * config["batch_size"] / len(train_split)), rng)
     rows = [("step", "learning_rate", "smoothed_loss", "loss")]
     avg, best, beta = 0.0, math.inf, 0.98
     bs = config["batch_size"]
     for step in range(steps):
         batch = picks[step * bs:(step + 1) * bs]
-        inputs, targets = make_batch(train, batch, [Augmentation.draw(rng) for _ in batch])
+        inputs, targets = make_batch(train_split, batch, [Augmentation.draw(rng) for _ in batch])
         optimizer.zero_grad()
         loss, _ = run_batch(model, inputs, targets)
         loss.backward()

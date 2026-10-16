@@ -19,6 +19,7 @@ until every marble is in frame. The same N writes the same file. --out FILE
 writes to FILE rather than to standard output.
 """
 import argparse
+from collections.abc import Sequence
 import math
 import random
 import sys
@@ -64,7 +65,7 @@ AIM = (0.0, 0.757, -0.07)
 EYE = (0.0, 0.88, 0.3)
 
 
-def framed(position, look_at, marbles):
+def framed(position: Sequence[float], look_at: Sequence[float], marbles: list[tuple[float, float, float]]) -> bool:
     """Whether every (x, z, r) of `marbles`, whole, is inside the frame of a camera at `position` aimed at `look_at`."""
     forward = [a - b for a, b in zip(look_at, position)]
     forward = [v / math.hypot(*forward) for v in forward]
@@ -131,7 +132,7 @@ if generated:
 position, look_at, focus = list(EYE), list(AIM), 0.39
 if generated:
     back = [e - a for e, a in zip(EYE, AIM)]
-    for attempt in range(1000):
+    for _ in range(1000):
         turn = math.radians(rng.uniform(-12.0, 12.0))
         reach = rng.uniform(0.9, 1.1)
         lift = rng.uniform(-0.02, 0.02)

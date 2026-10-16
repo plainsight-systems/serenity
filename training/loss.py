@@ -76,7 +76,7 @@ def frame_weights(frames: int) -> list[float]:
     return [math.exp(-((frames - 1 - t) ** 2) / 8.0) for t in range(frames)]
 
 
-def _gaussian(channels: int, device, dtype) -> torch.Tensor:
+def _gaussian(channels: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
     x = torch.arange(WINDOW, device=device, dtype=dtype) - WINDOW // 2
     g = torch.exp(-(x ** 2) / (2 * SIGMA ** 2))
     g = g / g.sum()
@@ -124,8 +124,9 @@ def spatial_loss(p: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
     return SPATIAL_L1 * (p - t).abs().mean() + SPATIAL_MSSSIM * (1.0 - ms_ssim(p, t))
 
 
-def sequence_loss(outputs: torch.Tensor, targets: torch.Tensor) -> tuple[torch.Tensor, dict]:
-    """The loss of (B, T, 3, H, W) outputs against targets, both linear radiance."""
+def sequence_loss(outputs: torch.Tensor, targets: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """The loss of (B, T, 3, H, W) outputs against targets, both linear radiance, and its weighted
+    spatial and temporal parts (detached, for the log)."""
     frames = outputs.shape[1]
     w = frame_weights(frames)
     p = pu(outputs)

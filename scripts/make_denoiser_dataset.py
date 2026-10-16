@@ -19,8 +19,9 @@ and "Splits"; what was rendered, docs/research/2026-10-14-denoiser-dataset.md):
     (1 to 8 s, fireflies waking in the dark), the flood (8 to 24 s, the
     most fireflies lit and the perched ones rising past the descending),
     awake (24 to 120 s). The test: the real marbles from t = 2, 4, 6 and 8
-    (the opening) and t = 30, 60 and 120 (t = 8 is asked for twice and
-    rendered once).
+    (the opening; t = 8, its end, is labeled the flood in the plan, as the
+    strata are half-open) and t = 30, 60 and 120 (t = 8 is asked for twice
+    and rendered once).
   - Per frame, the input: graphs/restir_pt_features.toml (ReSTIR PT + MNEE
     and the features) at 960 x 540, one sample, its linear radiance and its
     albedo, normal, depth and motion. One run a sequence, frames f .. f + 7.
@@ -125,23 +126,23 @@ INPUT_FEATURES = ('albedo', 'normal', 'depth', 'motion')
 RENDERER = ROOT / 'build/native-release/serenity-headless'
 
 
-def frame_time(index):
+def frame_time(index: int) -> float:
     """Frame `index`'s time, as serenity-headless computes it (step x index, in double)."""
     return STEP * index
 
 
-def stratum_of(seconds):
+def stratum_of(seconds: float) -> str:
     """The generated strata's name for a time: a test sequence's, by where it starts."""
     return next((name for name, _, _, high in STRATA if seconds < high), STRATA[-1][0])
 
 
-def drawn_start(name, low, high):
+def drawn_start(name: str, low: float, high: float) -> int:
     """A sequence's first frame, drawn from [low, high) seconds by `name` alone."""
     t = random.Random(f'{DATASET}-time-{name}').uniform(low, high)
     return round(t * FPS)
 
 
-def plan(sequences=None, kept=KEPT, target_samples=TARGET_SAMPLES):
+def plan(sequences: int | None = None, kept: int = KEPT, target_samples: int = TARGET_SAMPLES) -> dict:
     """The data set: its sequences, each with its scene, split, frames and renders. Pure.
 
     `sequences`, `kept` and `target_samples` other than their defaults make a
@@ -185,7 +186,7 @@ def plan(sequences=None, kept=KEPT, target_samples=TARGET_SAMPLES):
 
 # ---------------------------------------------------------------- files
 
-def sha256(path):
+def sha256(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, 'rb') as f:
         for block in iter(lambda: f.read(1 << 22), b''):
@@ -199,7 +200,7 @@ _HIGH = bytes(1 if (b & 0x7F) == 0x7F else 0 for b in range(256))
 _NEXT = bytes(1 if b & 0x80 else 0 for b in range(256))
 
 
-def non_finite_floats(path):
+def non_finite_floats(path: Path) -> int:
     """How many of a little-endian PFM's floats are NaN or infinite."""
     data = Path(path).read_bytes()
     lines = data.split(b'\n', 3)
@@ -211,12 +212,12 @@ def non_finite_floats(path):
     return (high & nxt).bit_count()
 
 
-def pfm_bytes(size):
+def pfm_bytes(size: tuple[int, int]) -> int:
     w, h = size
     return len(f'PF\n{w} {h}\n-1.0\n') + w * h * 12
 
 
-def write_json(path, value):
+def write_json(path: Path, value: object) -> None:
     tmp = path.with_suffix('.json.tmp')
     tmp.write_text(json.dumps(value, indent=1, sort_keys=False) + '\n', encoding='utf-8')
     os.replace(tmp, path)
@@ -224,11 +225,11 @@ def write_json(path, value):
 
 # ---------------------------------------------------------------- the renderer
 
-def git(*args):
+def git(*args: str) -> str:
     return subprocess.run(['git', '-C', str(ROOT), *args], check=True, capture_output=True, text=True).stdout
 
 
-def build_renderer():
+def build_renderer() -> None:
     for cmd in (['cmake', '--preset', 'native-release', '--log-level=NOTICE'],
                 ['cmake', '--build', '--preset', 'native-release', '--target', 'serenity-headless']):
         result = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
@@ -236,7 +237,7 @@ def build_renderer():
             sys.exit(f'building the renderer failed: {" ".join(cmd)}\n{result.stdout}{result.stderr}')
 
 
-def renderer_record(allow_dirty):
+def renderer_record(allow_dirty: bool) -> dict:
     dirty = [line for line in git('status', '--porcelain').splitlines() if line]
     if dirty and not allow_dirty:
         sys.exit('the checkout has uncommitted changes, so no commit names the renderer; commit them, '
@@ -262,7 +263,7 @@ def renderer_record(allow_dirty):
     }
 
 
-def gpu_note(utilization):
+def gpu_note(utilization: bool) -> str:
     """Any serenity process running (none of ours is, between units), and, if asked, the GPU's
     utilization: asked before the first render only, since ioreg's lags behind our own last one."""
     others = subprocess.run(['pgrep', '-l', 'serenity'], capture_output=True, text=True).stdout.split('\n')
@@ -281,7 +282,8 @@ class RenderFailed(Exception):
     pass
 
 
-def headless(args, staging):
+def headless(args: list, staging: Path) -> float:
+    """Runs serenity-headless with `args` into a fresh `staging`: its seconds, or RenderFailed."""
     if staging.exists():
         shutil.rmtree(staging)
     staging.parent.mkdir(parents=True, exist_ok=True)
@@ -469,7 +471,8 @@ class Dataset:
         return seconds
 
 
-def estimate(the_plan, input_seconds, input_frames, target_seconds, albedo_seconds):
+def estimate(the_plan: dict, input_seconds: float, input_frames: int, target_seconds: float,
+             albedo_seconds: float) -> dict:
     """Hours for the whole plan from one input run, one target and one albedo run, and the bytes it writes."""
     seqs = the_plan['sequences']
     rate = input_seconds / input_frames  # a timeline frame, replayed or kept, start-up included
@@ -482,7 +485,7 @@ def estimate(the_plan, input_seconds, input_frames, target_seconds, albedo_secon
             'targets': targets, 'bytes': targets * per_frame}
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description='Renders the denoiser data set (see the docstring).')
     parser.add_argument('--out', type=Path, help='the data set directory (outside the repo)')
     parser.add_argument('--print-plan', action='store_true', help='print the plan as JSON and stop')

@@ -39,8 +39,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from data import SCALE, Manifest, _read_checked, input_frame
-from export import layout
+from data import SCALE, Manifest, input_frame, read_checked
+from export import layout, read_back, serialize
 from model import Denoiser, UNet, Widths
 from pfm import read_pfm, write_pfm
 from regions import view_axes
@@ -66,13 +66,8 @@ def random_network(seed: int) -> Denoiser:
 def export_network(model: Denoiser, out: Path, provenance: dict) -> None:
     """export.py's two files for `model`."""
     out.mkdir(parents=True)
-    tensors, blobs, offset = [], [], 0
-    for name, t in model.state_dict().items():
-        a = t.detach().cpu().numpy().astype("<f4")
-        tensors.append({"name": name, "shape": list(a.shape), "offset": offset, "count": int(a.size)})
-        blobs.append(a.tobytes())
-        offset += a.nbytes
-    (out / "weights.bin").write_bytes(b"".join(blobs))
+    tensors, weights = serialize(model)
+    (out / "weights.bin").write_bytes(weights)
     w = model.widths
     state = dict(provenance, config={"widths": {"enc": w.enc, "bottleneck": w.bottleneck, "dec": w.dec}})
     (out / "layout.json").write_text(json.dumps(layout(model, tensors, state), indent=1))
@@ -95,7 +90,7 @@ def expected_outputs(model: Denoiser, frames: list[np.ndarray], albedo_full: lis
     return outputs
 
 
-def fixture(args) -> int:
+def fixture(args: argparse.Namespace) -> int:
     if args.out.exists():
         print(f"{args.out} exists", file=sys.stderr)
         return 1
@@ -124,9 +119,9 @@ def fixture(args) -> int:
     frames, albedos = [], []
     for k, i in enumerate(seq.frames[:args.frames]):
         f = manifest.frames[(seq.name, i)]
-        parts = [_read_checked(manifest.root, f["input"]["files"][n])
+        parts = [read_checked(manifest.root, f["input"]["files"][n])
                  for n in ("radiance", "albedo", "normal", "depth", "motion")]
-        full = _read_checked(manifest.root, f["target"]["files"]["albedo"])
+        full = read_checked(manifest.root, f["target"]["files"]["albedo"])
         if crop:
             x, y, w, h = crop
             parts = [p[y:y + h, x:x + w] for p in parts]
@@ -151,16 +146,15 @@ def fixture(args) -> int:
 
 def network_from_export(directory: Path) -> Denoiser:
     """A network read back from export.py's files alone, as export.py checks it."""
-    doc = json.loads((directory / "layout.json").read_text())
-    model = Denoiser(Widths(**doc["config"]["widths"]))
-    raw = (directory / "weights.bin").read_bytes()
-    state = {t["name"]: torch.from_numpy(np.frombuffer(raw, dtype="<f4", count=t["count"], offset=t["offset"])
-                                         .reshape(t["shape"]).copy()) for t in doc["tensors"]}
-    model.load_state_dict(state)
-    return model.eval()
+    return read_back(json.loads((directory / "layout.json").read_text()), (directory / "weights.bin").read_bytes())
 
 
-def compare(args) -> int:
+def _displayed(image: np.ndarray) -> torch.Tensor:
+    """(H, W, 3) linear -> (3, H, W) 8-bit display values, as floats 0..255."""
+    return displayed(torch.from_numpy(np.ascontiguousarray(image.transpose(2, 0, 1)))[None])[0]
+
+
+def compare(args: argparse.Namespace) -> int:
     meta = json.loads((args.fixture / "fixture.json").read_text())
     rows = []
     for k in range(meta["frames"]):
@@ -168,8 +162,7 @@ def compare(args) -> int:
         gpu = read_pfm(args.gpu / f"frame-{k}-gpu.pfm")
         linear = np.abs(gpu - expected)
         relative = linear / (np.abs(expected) + 1e-3)
-        to = lambda a: displayed(torch.from_numpy(np.ascontiguousarray(a.transpose(2, 0, 1)))[None])[0]
-        shown = (to(gpu) - to(expected)).abs()
+        shown = (_displayed(gpu) - _displayed(expected)).abs()
         rows.append({"frame": k, "max_abs_linear": float(linear.max()), "max_relative": float(relative.max()),
                      "mean_relative": float(relative.mean()),
                      "displayed_max_8bit": float(shown.max()), "displayed_mean_8bit": float(shown.mean()),

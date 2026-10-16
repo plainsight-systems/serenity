@@ -49,7 +49,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 
-from data import (INPUT_SIZE, SCALE, Manifest, _read_checked, file_sha256, input_frame)
+from data import INPUT_SIZE, SCALE, Manifest, file_sha256, input_frame, read_checked
 from model import Denoiser, UNet, Widths
 from pfm import read_pfm, write_pfm
 from regions import REGIONS, masks, view_axes
@@ -76,7 +76,7 @@ def warmup_inputs(warmup: Path, record: dict, sequence: str, axes: np.ndarray) -
         parts = []
         for suffix in ("", "-albedo", "-normal", "-depth", "-motion"):
             name = f"frame-{i:06d}{suffix}.pfm"
-            parts.append(_read_checked(warmup / sequence, {"path": name, "sha256": entry["files"][name]}))
+            parts.append(read_checked(warmup / sequence, {"path": name, "sha256": entry["files"][name]}))
         frames.append(input_frame(*parts, axes))
     return frames
 
@@ -105,8 +105,9 @@ def bilinear(image_hwc: np.ndarray) -> torch.Tensor:
 
 
 def oidn(binary: Path, radiance: np.ndarray, albedo: np.ndarray, normal: np.ndarray) -> np.ndarray:
-    with tempfile.TemporaryDirectory() as d:
-        d = Path(d)
+    """Open Image Denoise's RT filter, high quality, HDR, on one (H, W, 3) frame with its albedo and normal."""
+    with tempfile.TemporaryDirectory() as scratch:
+        d = Path(scratch)
         write_pfm(d / "c.pfm", radiance)
         write_pfm(d / "a.pfm", albedo)
         write_pfm(d / "n.pfm", normal)
@@ -120,12 +121,12 @@ def to_display(radiance: torch.Tensor, device: torch.device) -> torch.Tensor:
     return (displayed(radiance[None].to(device))[0] / 255.0).cpu()
 
 
-def region_mse(a: torch.Tensor, b: torch.Tensor, region_masks: dict) -> dict:
+def region_mse(a: torch.Tensor, b: torch.Tensor, region_masks: dict[str, torch.Tensor]) -> dict[str, float]:
     sq = ((a - b) ** 2).mean(dim=0)
     return {r: float(sq[m].mean()) for r, m in region_masks.items()}
 
 
-def region_flicker(frames: list[torch.Tensor], region_masks: dict) -> dict:
+def region_flicker(frames: list[torch.Tensor], region_masks: dict[str, torch.Tensor]) -> dict[str, float]:
     change = torch.stack([(frames[i] - frames[i - 1]).abs().mean(dim=0) for i in range(1, len(frames))]).mean(0)
     return {r: float(change[m].mean()) for r, m in region_masks.items()}
 
@@ -190,7 +191,7 @@ def main() -> int:
         for i in seq.frames:
             files = manifest.frames[(seq.name, i)]["input"]["files"]
             for k in raw:
-                raw[k].append(_read_checked(manifest.root, files[k]))
+                raw[k].append(read_checked(manifest.root, files[k]))
         images = {"network": outputs, "input_bilinear": [bilinear(r) for r in raw["radiance"]]}
         if args.oidn:
             images["oidn_bilinear"] = [bilinear(oidn(args.oidn, r, a, n))

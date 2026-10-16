@@ -10,12 +10,14 @@ align_corners=False and border padding is that sampler.
 
 Not bit-exact with the GPU: the renderer stores the pyramid as half floats
 and its sampler filters with its own weight precision; this keeps floats.
-How close it comes is measured against the renderer's own PNG
-(tests/test_training.py, and docs/research/2026-10-15-denoiser-training.md):
-the displayed MSE here is only as exact as that.
+How close it comes was measured once against the renderer's own PNG
+(docs/research/2026-10-15-denoiser-training.md, "Displayed MSE"; no test
+holds it): the displayed MSE here is only as exact as that.
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 import torch
 import torch.nn.functional as F
@@ -48,7 +50,8 @@ def _centers(height: int, width: int, device: torch.device) -> torch.Tensor:
     return torch.stack((gx, gy), dim=-1)[None]
 
 
-def _down13(read, source_hw: tuple[int, int], target_hw: tuple[int, int], device) -> torch.Tensor:
+def _down13(read: Callable[[torch.Tensor], torch.Tensor], source_hw: tuple[int, int], target_hw: tuple[int, int],
+            device: torch.device) -> torch.Tensor:
     """Step 2's filter: five 2 x 2 boxes from 13 bilinear reads about each target texel's center."""
     uv = _centers(*target_hw, device)
     texel = torch.tensor([1.0 / source_hw[1], 1.0 / source_hw[0]], device=device)

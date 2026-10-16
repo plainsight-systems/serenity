@@ -37,6 +37,26 @@ from loss import HDR_Y_MAX, PU_A, PU_B, PU_C, PU_D, PU_E, PU_F, PU_G, PU_NORM_SC
 from model import MASKED, NETWORK_INPUTS, SCORES, SPACINGS, SUBPIXELS, TAPS, Denoiser, Widths
 
 
+def serialize(model: Denoiser) -> tuple[list[dict], bytes]:
+    """weights.bin's bytes for `model`, every parameter in state_dict order, and each tensor's layout entry."""
+    tensors, blobs, offset = [], [], 0
+    for name, t in model.state_dict().items():
+        a = t.detach().cpu().numpy().astype("<f4")
+        tensors.append({"name": name, "shape": list(a.shape), "offset": offset, "count": int(a.size)})
+        blobs.append(a.tobytes())
+        offset += a.nbytes
+    return tensors, b"".join(blobs)
+
+
+def read_back(doc: dict, raw: bytes) -> Denoiser:
+    """A network made from layout.json's `doc` and weights.bin's `raw` alone, in eval mode."""
+    model = Denoiser(Widths(**doc["config"]["widths"]))
+    state = {t["name"]: torch.from_numpy(np.frombuffer(raw, dtype="<f4", count=t["count"], offset=t["offset"])
+                                         .reshape(t["shape"]).copy()) for t in doc["tensors"]}
+    model.load_state_dict(state)
+    return model.eval()
+
+
 def structure(w: Widths) -> list[dict]:
     e, bn, d = w.enc, w.bottleneck, w.dec
     layers = []
@@ -61,6 +81,8 @@ def structure(w: Widths) -> list[dict]:
 
 
 def layout(model: Denoiser, tensors: list[dict], state: dict) -> dict:
+    """layout.json's document: `tensors` (serialize's), the network's structure, its inputs' and scores'
+    meaning, and the provenance `state` (a checkpoint's) records."""
     return {
         "format": "serenity-denoiser-weights/1",
         "dtype": "float32", "byte_order": "little", "tensor_order": "PyTorch: conv weight [out][in][ky][kx], bias [out]",
@@ -123,32 +145,19 @@ def main() -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     model, state = load_network(args.checkpoint, torch.device("cpu"))
 
-    tensors, blobs, offset = [], [], 0
-    for name, t in model.state_dict().items():
-        a = t.detach().cpu().numpy().astype("<f4")
-        tensors.append({"name": name, "shape": list(a.shape), "offset": offset, "count": int(a.size)})
-        blobs.append(a.tobytes())
-        offset += a.nbytes
-    weights = b"".join(blobs)
+    tensors, weights = serialize(model)
     (args.out / "weights.bin").write_bytes(weights)
     doc = layout(model, tensors, state)
     doc["checkpoint_sha256"] = hashlib.sha256(args.checkpoint.read_bytes()).hexdigest()
     (args.out / "layout.json").write_text(json.dumps(doc, indent=1))
 
     # Read back by the layout alone; the same output, bit for bit.
-    fresh = Denoiser(Widths(**doc["config"]["widths"]))
-    loaded = {}
-    raw = (args.out / "weights.bin").read_bytes()
-    for t in doc["tensors"]:
-        a = np.frombuffer(raw, dtype="<f4", count=t["count"], offset=t["offset"]).reshape(t["shape"])
-        loaded[t["name"]] = torch.from_numpy(a.copy())
-    fresh.load_state_dict(loaded)
-    fresh.eval()
+    fresh = read_back(doc, (args.out / "weights.bin").read_bytes())
     g = torch.Generator().manual_seed(0)
     x = torch.rand(1, INPUT_CHANNELS, 64, 64, generator=g)
-    a = torch.rand(1, 3, 128, 128, generator=g)
+    albedo = torch.rand(1, 3, 128, 128, generator=g)
     with torch.no_grad():
-        if not torch.equal(model.frame(x, a, None)[0], fresh.frame(x, a, None)[0]):
+        if not torch.equal(model.frame(x, albedo, None)[0], fresh.frame(x, albedo, None)[0]):
             print("weights.bin read back by layout.json computes something else; refused", file=sys.stderr)
             return 1
     sums = "".join(f"{hashlib.sha256((args.out / n).read_bytes()).hexdigest()}  {n}\n"

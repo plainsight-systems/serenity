@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import statistics
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import torch
@@ -28,7 +29,8 @@ from evaluate import load_network
 from model import NETWORK_INPUTS, macs_per_input_pixel, parameter_count
 
 
-def timed(fn, frames: int) -> float:
+def timed(fn: Callable[[], object], frames: int) -> float:
+    """The median milliseconds of `frames` synchronized calls of `fn`, after 10 of warm-up."""
     for _ in range(10):
         fn()
     torch.mps.synchronize()

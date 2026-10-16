@@ -101,7 +101,7 @@ class UNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         skips = []
-        for i, layer in enumerate(self.enc):
+        for layer in self.enc:
             x = F.relu(layer(x))
             skips.append(x)
             x = F.max_pool2d(x, 2)
@@ -120,7 +120,7 @@ def warp_history(history: torch.Tensor, motion: torch.Tensor,
 
     `extent`, the image's (H, W) inside a padded tensor: reads past it are not history.
     """
-    b, _, height, width = history.shape
+    _, _, height, width = history.shape
     if extent is not None:
         height, width = extent
     mv = F.interpolate(motion, scale_factor=SCALE, mode="nearest") * SCALE  # output pixels, nearest
@@ -134,12 +134,13 @@ def warp_history(history: torch.Tensor, motion: torch.Tensor,
     return moved * valid, valid
 
 
-def tap_validity(height: int, width: int, device, dtype, extent: tuple[int, int] | None = None) -> list[torch.Tensor]:
+def tap_validity(height: int, width: int, device: torch.device, dtype: torch.dtype,
+                 extent: tuple[int, int] | None = None) -> list[torch.Tensor]:
     """Per spacing, (1, 9, 1, h, w): 1 where a tap lands inside the image (its (h, w) `extent` if padded)."""
-    ones = torch.zeros(1, 1, height, width, device=device, dtype=dtype)
+    inside = torch.zeros(1, 1, height, width, device=device, dtype=dtype)
     eh, ew = extent if extent is not None else (height, width)
-    ones[:, :, :eh, :ew] = 1.0
-    return [F.unfold(ones, 3, dilation=s, padding=s).view(1, TAPS, 1, height, width) for s in SPACINGS]
+    inside[:, :, :eh, :ew] = 1.0
+    return [F.unfold(inside, 3, dilation=s, padding=s).view(1, TAPS, 1, height, width) for s in SPACINGS]
 
 
 class Denoiser(nn.Module):
@@ -149,7 +150,7 @@ class Denoiser(nn.Module):
         self.unet = UNet(NETWORK_INPUTS, SCORES * SUBPIXELS, self.widths)
 
     def frame(self, inp: torch.Tensor, albedo_full: torch.Tensor, history: torch.Tensor | None,
-              extent: tuple[int, int] | None = None) -> tuple[torch.Tensor, torch.Tensor, dict]:
+              extent: tuple[int, int] | None = None) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
         """One frame. inp (B, 12, h, w), albedo_full (B, 3, 2h, 2w), history (B, 3, 2h, 2w) or None.
 
         Returns (radiance (B, 3, 2h, 2w), demodulated output: the next history, parts for inspection).

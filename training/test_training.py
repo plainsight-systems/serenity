@@ -18,7 +18,7 @@ import torch.nn.functional as F
 
 from data import Augmentation, albedo_factor, augment, validation_tiles
 from loss import frame_weights, ms_ssim, pu
-from model import SCORES, SPACINGS, SUBPIXELS, TAPS, Denoiser, Widths, warp_history
+from model import SCORES, SUBPIXELS, TAPS, Denoiser, Widths, warp_history
 from pfm import read_pfm, write_pfm
 
 TINY = Widths(enc=[8, 8, 8, 8], bottleneck=8, dec=[8, 8, 8, 8])
@@ -118,7 +118,7 @@ class KernelTest(unittest.TestCase):
         model = self.scored(bias.reshape(-1))
         inp = torch.rand(1, 12, 16, 16)
         albedo = torch.rand(1, 3, 32, 32)
-        out, demod_out, _ = model.frame(inp, albedo, None)
+        out, _, _ = model.frame(inp, albedo, None)
         expected = F.interpolate(inp[:, 0:3], scale_factor=2, mode="nearest") * albedo_factor(albedo)
         torch.testing.assert_close(out, expected, atol=1e-5, rtol=1e-5)
 
@@ -129,7 +129,7 @@ class KernelTest(unittest.TestCase):
         model = self.scored(bias.reshape(-1))
         inp = torch.zeros(1, 12, 16, 16)
         inp[:, 0:3] = torch.rand(1, 3, 16, 16)
-        out, _, parts = model.frame(inp, torch.ones(1, 3, 32, 32), None)
+        _, _, parts = model.frame(inp, torch.ones(1, 3, 32, 32), None)
         corner = inp[0, 0:3, 0:2, 0:2].mean(dim=(1, 2))
         torch.testing.assert_close(parts["filtered"][0, :, 0, 0], corner, atol=1e-5, rtol=1e-5)
 
@@ -154,9 +154,9 @@ class KernelTest(unittest.TestCase):
         inp = torch.zeros(1, 12, 16, 16)
         inp[:, 0:3] = 1.0
         history = torch.full((1, 3, 32, 32), 5.0)
-        out, demod_out, _ = model.frame(inp, torch.ones(1, 3, 32, 32), history)
+        _, demod_out, _ = model.frame(inp, torch.ones(1, 3, 32, 32), history)
         torch.testing.assert_close(demod_out, history, atol=1e-4, rtol=0)
-        out, demod_out, _ = model.frame(inp, torch.ones(1, 3, 32, 32), None)
+        _, demod_out, _ = model.frame(inp, torch.ones(1, 3, 32, 32), None)
         torch.testing.assert_close(demod_out, torch.ones_like(history), atol=1e-6, rtol=0)
 
 
