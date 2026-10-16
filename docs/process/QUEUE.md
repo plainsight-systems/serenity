@@ -101,6 +101,11 @@ This file tracks active and accepted work.
 
 ## Next, in order
 
+0. Before Milestone 4 starts (the user, 2026-10-15): a codebase-wide pass,
+   both C++ guideline corpora rule by rule over everything since Milestone
+   1 (ReSTIR DI and PT, MNEE included), as Milestone 3's close did for its
+   own code.
+
 1. Milestone 1, the rest: the reference render and its error measure.
    Done: the marbles themselves (porcelain under a clear coat, glass tinted
    by the first medium, cat's-eyes with swirled cores, a steel bearing,
