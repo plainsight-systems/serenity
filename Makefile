@@ -8,7 +8,7 @@
 # (docs/research/2026-10-10-sanitizers.md). There is no CI yet
 # (docs/process/QUEUE.md).
 
-.PHONY: test test-release test-sanitize run headless movie reference convergence check toolchain clean
+.PHONY: test test-release test-sanitize run headless movie reference convergence weights check toolchain clean
 
 # Configure quietly: dependencies' status summaries (SDL prints its whole
 # option list) are hidden; warnings and errors still show. VERBOSE=1 shows all.
@@ -185,6 +185,12 @@ convergence:
 	rm -rf $(CONVERGENCE_FRAMES_DIR)
 	@cat $(CONVERGENCE)
 	@echo $(CONVERGENCE)
+
+## The trained denoiser networks, wide and small, from the project's media
+## host into ../serenity-data/denoiser-v1-model beside the checkout, each
+## file checked against its pinned SHA-256 (scripts/fetch_denoiser_weights.sh).
+weights:
+	./scripts/fetch_denoiser_weights.sh
 
 ## Whether this machine's toolchain is the pinned one (cmake/toolchain.json).
 ## Configuring runs the same check and stops on a mismatch.

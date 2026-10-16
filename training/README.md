@@ -15,7 +15,12 @@ checkout, never in it, in `../serenity-data/` (from the checkout's root;
 | `denoiser-v1/` | the data set, 32.3 GB, its manifest | `scripts/make_denoiser_dataset.py` |
 | `denoiser-v1-warmup/` | the test sequences' warm-up frames | `render_warmup.py` |
 | `denoiser-v1-runs/` | each run's log, checkpoints and test results | `train.py`, `evaluate.py` |
-| `denoiser-v1-model/{wide,small}/` | the exported networks the renderer reads | `export.py` |
+| `denoiser-v1-model/{wide,small}/` | the exported networks the renderer reads | `export.py`, or `make weights` from the published copies |
+
+To run the published networks without training, `make weights` (from the
+checkout's root) downloads both from the project's media host
+(`https://media.plainsight-systems.com/denoiser-v1-model/`) and checks each
+file against the SHA-256 pinned in `scripts/fetch_denoiser_weights.sh`.
 
 The whole cycle, in order: render the data set, render the warm-up frames,
 train, test once, export, check the renderer against PyTorch, run it.

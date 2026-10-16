@@ -4,45 +4,44 @@
 
 # Serenity
 
-Serenity is a GPU path tracer I’m building to explore techniques that also
-matter to inference: processing work in small pieces, retaining useful state,
-and deciding how to arrange it on the GPU. The scene gives me something
-visible to judge: 36 glass, porcelain, and metal marbles on a walnut table,
-lit by 616 moving fireflies.
+Serenity is a GPU path tracer I’m building to work through techniques that
+also matter to inference: processing work in small pieces, keeping a small
+amount of running state, combining partial results, and reusing earlier work.
+The scene gives me something visible to judge that work by: 36 glass,
+porcelain, and metal marbles on a walnut table, lit by 616 moving fireflies.
 
-It runs natively on Apple silicon through Metal 4, in C++20. The target is a
+It runs natively on Apple silicon through Metal 4, in C++20. The goal is a
 clean moving image at the display’s full resolution and 60 frames a second,
-traced lower and upscaled. A denoiser of its own now does the denoising and
-the upscaling; making the whole frame fast comes next, then a Vulkan backend
-for the AMD Strix Halo.
+with the light traced at a lower resolution and brought up to the display’s.
 
 [![The marbles rendered with ReSTIR PT and MNEE, ten seconds into the opening](docs/writeups/images/marbles-restir-pt-mnee-10s.jpg)](https://serenity.plainsight-systems.com/#film)
 
-**Current state: milestone 3, at its close.** A small neural network,
-trained for this renderer, removes the noise ReSTIR leaves and doubles the
-resolution each way: the light is traced at a quarter of the output's
-pixels, and for every output pixel the network predicts how to average the
-noisy pixels around it. On the marbles, which it never saw in training,
-the wider of the two networks I trained cuts the error after tone mapping
-to 0.29 to 0.39 of the raw input's, measured against 4,096-sample
-path-traced frames; that is 18 to 38% below Intel's Open Image Denoise run
-on each frame. On my M3 Max a denoised 1920 × 1080 frame takes 24 ms, and
-the window's full 3456 × 2234 takes 78 ms, so 60 frames a second is not
-there yet. The table's light still flickers more than the path-traced
-frames do once every firefly is awake (36 to 47% more change from frame to
-frame); that waits for the next training round.
+**Current state: milestone 3, at its close.** The renderer now traces the
+light at a quarter of the output’s pixels and hands it to a small neural
+network I trained for it. For every output pixel, the network decides how
+much each nearby noisy pixel should count, and the pixel becomes their
+weighted average. That removes most of the noise ReSTIR leaves and doubles
+the resolution each way. I tested it once on the marbles, which it never saw
+in training. Measured after tone mapping against 4,096-sample path-traced
+frames, the wider of the two networks leaves 0.29 to 0.39 of the raw input’s
+error, 18 to 38% less than Intel’s Open Image Denoise run on each frame. On
+my M3 Max a denoised 1920 × 1080 frame takes 23.5 ms and the window’s
+3456 × 2234 takes 77 ms, so 60 frames a second at full resolution is still
+ahead. Once every firefly is awake, the table’s light also changes more from
+frame to frame than the path-traced frames do (36 to 47% more), which I’ve
+left for the next training round.
 
-Milestone 2 built the light the network starts from. ReSTIR PT reuses paths
-across pixels and frames, with manifold next event estimation (MNEE) to find
-light focused through glass. At 1920 × 1080 the fully lit scene takes
-39.8 ms, compared with an estimated 40.6 ms for five path-traced samples, and
-at that similar cost ReSTIR roughly halves whole-frame error after tone
-mapping and bloom.
+Milestone 2 built the light the network starts from. ReSTIR PT reuses whole
+light paths across neighboring pixels and from the previous frame, and
+manifold next event estimation (MNEE) finds the light that the glass marbles
+focus onto the table. At 1920 × 1080 a frame of the fully lit scene takes
+39.8 ms, about what five path-traced samples cost (40.6 ms), and at that cost
+it roughly halves the error left after tone mapping.
 
 [Milestone 2: reusing work with ReSTIR](docs/writeups/milestone-2.md) follows
 the decisions, measurements, and connections to inference.
-Milestone 3's write-up comes with the milestone's close; until then the
-denoiser's record is in its research notes: the
+Milestone 3’s write-up comes with the milestone’s close; until then the
+denoiser’s record is in its research notes: the
 [design](docs/research/2026-10-14-denoiser-training-design.md), the
 [training](docs/research/2026-10-15-denoiser-training.md) and the
 [network in the renderer](docs/research/2026-10-15-denoiser-live.md).
@@ -66,40 +65,41 @@ R2; GitHub Pages serves the site.
 ## Why I built it
 
 Lighting a scene with thousands of moving lights is a sampling problem. You
-can't trace a ray to every light for every pixel, every frame, so you pick a
+can’t trace a ray to every light for every pixel, every frame, so you pick a
 few, and the picture is only as good as the picking. ReSTIR (Bitterli et al.,
 2020) is the algorithm that made this work in real time: each pixel keeps a
 tiny reservoir of light samples and shares it with its neighbors and with the
-previous frame. NVIDIA's *Marbles at Night* demo showed what that looks like,
-and it's the spirit of this scene.
+previous frame. NVIDIA’s *Marbles at Night* demo showed what that looks like,
+and it’s the spirit of this scene.
 
 What interests me is underneath. A frame has a hard deadline, about 16 ms.
-Making it means streaming through work in on-chip memory, carrying a few
-bytes of state instead of everything you've seen, and merging that state
+Meeting it means streaming through work in on-chip memory, carrying a few
+bytes of state instead of everything you’ve seen, and merging that state
 across neighbors and across time. Those are the same problems I work on in
 inference, met from the other side. Serenity is where I get to work on them
 with a picture at the end.
 
-The renderer now includes the MIS path tracer, ReSTIR DI, ReSTIR PT with
-spatial and temporal reuse, MNEE for caustics, and a denoiser of its own.
-Direct-light reuse did not pay off in this scene at equal time, so the work
-moved to whole paths through the marbles.
+So far the renderer has the MIS path tracer as its baseline, ReSTIR DI,
+ReSTIR PT with spatial and temporal reuse, MNEE for caustics, and a denoiser
+of its own. Reusing direct light alone didn’t pay off in this scene at equal
+time, because most of what the camera sees arrives through glass or off
+metal, so the work moved to reusing whole paths.
 
-The denoiser is the most literal piece of attention in the renderer. For
-each output pixel, the network scores the noisy pixels around it, the
-scores are softmax-normalized, and the pixel becomes their weighted
-average: the weights are computed fresh from every frame, as attention
-computes its weights from the tokens in front of it. I trained it in
-PyTorch on scenes generated for the purpose, never on the marbles, and it
-runs every frame on the renderer's own Metal compute kernels, which match
-PyTorch's outputs to a few parts in ten thousand.
-`graphs/restir_pt_denoised.toml` is the current renderer;
-`graphs/restir_pt.toml` is the same light without it, and
-`graphs/path.toml` remains the reference and comparison baseline.
+The denoiser is where the connection to attention is closest. For each
+output pixel the network produces a score for every noisy pixel around it,
+the scores go through a softmax, and the output is the weighted average of
+those pixels. As in attention, what the network learned is how to compute
+the scores; the scores themselves come from the frame in front of it, which
+is why it works on a scene it never saw. The correspondence has limits: the
+neighborhood is a small, fixed window (3 × 3 at three spacings), and the
+values being averaged are the noisy colors themselves, not learned
+projections. I trained it in PyTorch on scenes generated for the purpose and
+run it every frame in the renderer’s own Metal compute kernels, which match
+PyTorch to a few parts in ten thousand.
 
-Next I want to make the whole frame fast: the reuse passes as kernels,
-measured for where the time and the bytes go. The second backend will let
-me investigate the same scene on AMD through Vulkan.
+Next I want to make the whole frame fast, treating the reuse passes as
+kernels and measuring where the time and the bytes go. After that, a Vulkan
+backend will let me run the same scene on AMD’s Strix Halo.
 
 Serenity is R&D under Plainsight Systems LLC.
 
@@ -132,21 +132,23 @@ make run      # the window, running graphs/test_pattern.toml
 make headless # the same frames, as 60 PNGs in frames/
 ```
 
-The current renderer, ReSTIR PT and MNEE, denoised and upscaled by the
+The current renderer is ReSTIR PT and MNEE, denoised and upscaled by the
 network: the light is traced at half the window’s resolution each way, and
-the network brings it to every pixel.
+the network brings it to every pixel. It reads the trained network from
+`../serenity-data/denoiser-v1-model/wide`, beside the checkout. The weights
+aren’t committed; `make weights` downloads both networks from the project’s
+media host and checks every file against its pinned checksum.
 
 ```bash
+make weights
 make run GRAPH=graphs/restir_pt_denoised.toml SCENE=scenes/marbles.toml
 ```
 
-It reads the trained network from `../serenity-data/denoiser-v1-model/wide`,
-beside the checkout. The weights aren’t in the repository:
-[`training/README.md`](training/README.md) makes them, from rendering the
-data set (four hours on my M3 Max) and training (about six and eight
-hours for the two networks) to the export.
-`graphs/restir_pt_denoised_small.toml` runs the smaller network: a little
-faster, with slightly higher error.
+To make them yourself, [`training/README.md`](training/README.md) covers the
+whole cycle, from rendering the data set (four hours on my M3 Max) and
+training (about six and eight hours for the two networks) to the export.
+`graphs/restir_pt_denoised_small.toml` runs the smaller network, a little
+faster with slightly higher error.
 
 The same light without the denoiser, at half the window’s resolution each
 way, stretched to the window:
