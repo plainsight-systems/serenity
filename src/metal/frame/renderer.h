@@ -267,9 +267,10 @@ namespace serenity::metal {
 // renderer last recorded, a sample of this frame's own instant when a
 // frame is several (frame_inputs.h, previous). Nothing else changes for a
 // graph without it. Its images are shared by the frames in flight, so the
-// pass counts among those the queue barrier waits before; no barrier in the
-// frame, since no pass reads what it writes. read_features() copies them
-// back.
+// pass counts among those the queue barrier waits before; no barrier of its
+// own in the frame: its one reader, the denoise pass, comes after the
+// barrier recorded for the radiance that pass reads. read_features() copies
+// them back.
 //
 // The denoise pass (core/frame/schedule.h; passes/denoise/denoise.h). A
 // graph with it renders at two sizes (frame::light_size): every pass before

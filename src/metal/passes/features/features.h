@@ -15,11 +15,12 @@ namespace serenity::metal {
 // primary surface its view depth and its motion since the frame before
 // (last frame's camera and transforms); through glass and mirrors, primary
 // surface replacement, to the albedo and normal of the first surface that
-// is neither. Writes the four feature images (feature_images.h), which no
-// pass of the frame reads: so it needs no barrier before or after it within
-// the frame, and the renderer records none for it beyond the queue barrier
-// before the first pass that writes what the frames in flight share
-// (metal/frame/renderer.h).
+// is neither. Writes the four feature images (feature_images.h), which only
+// the denoise pass reads, after the barrier the renderer records before it
+// for the radiance it reads too: so the features pass needs no barrier of
+// its own within the frame, and the renderer records none for it beyond the
+// queue barrier before the first pass that writes what the frames in
+// flight share (metal/frame/renderer.h).
 //
 // A pass of its own rather than a part of ReSTIR PT's initial pass
 // (core/frame/schedule.h says why): a graph without it compiles, binds and

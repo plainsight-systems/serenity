@@ -40,7 +40,9 @@ namespace serenity::metal {
 // before the pass (metal/frame/renderer.cpp). The weights are the network's,
 // converted once at construction: each 3 x 3 convolution's to half floats
 // laid out [tap][input channel][output channel], the input's 28 channels
-// padded to 32 with zeros; biases and the head in float (StaticArrays).
+// padded to 32 with zeros; the head's to half floats laid out [feature]
+// [output], its 124 outputs padded to head_columns; biases in float
+// (StaticArrays).
 //
 // What a frame gives it (FrameResources): the light pass's accumulated
 // image and the features at the light size, the full-size albedo, the

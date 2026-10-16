@@ -134,7 +134,7 @@ namespace serenity::frame {
 //             light passes trace there: the albedo and normal of the first
 //             surface that is not glass or a mirror, the primary surface's
 //             depth and its motion since the frame before; writes the four
-//             feature images, which no other pass of the frame reads.
+//             feature images, which only the denoise pass reads.
 //
 // A pass of its own, not a part of ReSTIR PT's initial pass, which finds the
 // primary hit anyway: so a graph that does not ask for features runs the

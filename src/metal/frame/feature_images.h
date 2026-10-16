@@ -30,7 +30,7 @@ namespace serenity::metal {
 // pixels: 28 P bytes copied to a shared buffer and out of it, as the values
 // they are (ES.48), then 48 P written as floats: 14.5, 14.5 and 25 MB at
 // 960 x 540, once a written frame (GPU.1: a readback at the frame's
-// boundary, for files; the denoiser will read the images where they are).
+// boundary, for files; the denoiser reads the images where they are).
 //
 // Throws MetalError if the frame's size is not one Metal makes an image of
 // (metal/device/device.h, max_texture_side), or the device cannot make one.
