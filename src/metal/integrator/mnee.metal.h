@@ -741,6 +741,67 @@ inline float3 leaving(float3 p, float3 n, float3 to) {
     return offset_ray(p, metal::dot(to - p, n) >= 0.0f ? n : -n);
 }
 
+// Step 3's light carried along a solved chain of `count` crossings `p` at
+// `casters`, from the receiver's point `origin` in `medium` to the light's
+// `y`: each crossing's Fresnel transmittance and radiance scaling, and each
+// segment's medium. Not found where a crossing reflects whole.
+struct Carried {
+    bool found;
+    float3 kept;
+};
+
+template <typename SceneT>
+[[gnu::always_inline]] inline Carried chain_transmittance(SceneT scene, uint medium, float3 origin, float3 y, uint count,
+                                                          thread const float3* p, thread const Caster* casters) {
+    float3 kept = float3(1.0f);
+    float3 from = origin;
+    #pragma unroll
+    for (uint i = 0u; i < max_interfaces; ++i) {
+        if (i >= count) {
+            break;
+        }
+        const float3 n = metal::normalize(p[i] - casters[i].center);
+        const Boundary boundary = dielectric_boundary(casters[i].ior, metal::normalize(p[i] - from), n);
+        if (boundary.total_internal) {
+            return Carried{false, float3(0.0f)};
+        }
+        const float eta_t = transmitted_eta(casters[i].ior, boundary.entering);
+        kept *= transmittance(scene.media(), medium, metal::distance(from, p[i])) * (1.0f - boundary.reflectance) /
+                (eta_t * eta_t);
+        medium = boundary.entering ? casters[i].interior : serenity::contracts::no_medium;
+        from = p[i];
+    }
+    kept *= transmittance(scene.media(), medium, metal::distance(p[count - 1u], y));
+    return Carried{true, kept};
+}
+
+// Step 4 along the same chain: each segment traced, nearest first, the
+// last to the light's `y`, its shape `light` ignored.
+template <typename SceneT>
+[[gnu::always_inline]] inline bool chain_visible(SceneT scene, Shapes shapes, float3 origin, float3 y, uint light,
+                                                 uint count, thread const float3* p, thread const Caster* casters) {
+    const uint last = count - 1u;
+    if (!reaches(scene.structure, shapes, origin, p[0], casters[0].shape, hit_tolerance * casters[0].radius)) {
+        return false;
+    }
+    #pragma unroll
+    for (uint i = 0u; i < max_interfaces; ++i) {
+        if (i >= last) {
+            break;
+        }
+        const float3 n = metal::normalize(p[i] - casters[i].center);
+        if (!reaches(scene.structure, shapes, leaving(p[i], n, p[i + 1u]), p[i + 1u], casters[i + 1u].shape,
+                     hit_tolerance * casters[i + 1u].radius)) {
+            return false;
+        }
+    }
+    const float3 leave_from = leaving(p[last], metal::normalize(p[last] - casters[last].center), y);
+    return !occluded(scene.structure, shapes,
+                     metal::raytracing::ray(leave_from, metal::normalize(y - leave_from), 0.0f,
+                                            metal::distance(leave_from, y)),
+                     light);
+}
+
 // Steps 2 to 4 at `here` for the light sample `sample` drawn from `origin`
 // (x0) toward a sphere light centered at `light_center`, whose segment
 // `seed` crosses casters: X (above), per solid angle at x0; 0 where no
@@ -789,59 +850,18 @@ inline float3 manifold_light(SceneT scene, Shading here, float3 origin, float3 l
         return float3(0.0f);
     }
 
-    // Each crossing's Fresnel transmittance and radiance scaling, and each
-    // segment's medium, from the receiver on.
-    float3 kept = float3(1.0f);
-    uint medium = here.medium;
-    float3 from = origin;
-    #pragma unroll
-    for (uint i = 0u; i < max_interfaces; ++i) {
-        if (i >= count) {
-            break;
-        }
-        const float3 n = metal::normalize(p[i] - casters[i].center);
-        const Boundary boundary = dielectric_boundary(casters[i].ior, metal::normalize(p[i] - from), n);
-        if (boundary.total_internal) {
-            return float3(0.0f);
-        }
-        const float eta_t = transmitted_eta(casters[i].ior, boundary.entering);
-        kept *= transmittance(scene.media(), medium, metal::distance(from, p[i])) * (1.0f - boundary.reflectance) /
-                (eta_t * eta_t);
-        medium = boundary.entering ? casters[i].interior : serenity::contracts::no_medium;
-        from = p[i];
+    const Carried carried = chain_transmittance(scene, here.medium, origin, y, count, p, casters);
+    if (!carried.found) {
+        return float3(0.0f);
     }
-    kept *= transmittance(scene.media(), medium, metal::distance(p[last], y));
 
     const float geometry = geometry_term(count, p, casters, blocks, origin, y, light_normal);
     const float3 unshadowed =
-        f * to_float3(sample.radiance) * kept * geometry * (sample.distance * sample.distance / cos_y);
+        f * to_float3(sample.radiance) * carried.kept * geometry * (sample.distance * sample.distance / cos_y);
     if (!metal::any(unshadowed > 0.0f) || !metal::all(metal::isfinite(unshadowed))) {
         return float3(0.0f);
     }
-
-    // Step 4: each segment traced, nearest first.
-    if (!reaches(scene.structure, shapes, origin, p[0], casters[0].shape, hit_tolerance * casters[0].radius)) {
-        return float3(0.0f);
-    }
-    #pragma unroll
-    for (uint i = 0u; i < max_interfaces; ++i) {
-        if (i >= last) {
-            break;
-        }
-        const float3 n = metal::normalize(p[i] - casters[i].center);
-        if (!reaches(scene.structure, shapes, leaving(p[i], n, p[i + 1u]), p[i + 1u], casters[i + 1u].shape,
-                     hit_tolerance * casters[i + 1u].radius)) {
-            return float3(0.0f);
-        }
-    }
-    const float3 leave_from = leaving(p[last], metal::normalize(p[last] - casters[last].center), y);
-    if (occluded(scene.structure, shapes,
-                 metal::raytracing::ray(leave_from, metal::normalize(y - leave_from), 0.0f,
-                                        metal::distance(leave_from, y)),
-                 sample.primitive)) {
-        return float3(0.0f);
-    }
-    return unshadowed;
+    return chain_visible(scene, shapes, origin, y, sample.primitive, count, p, casters) ? unshadowed : float3(0.0f);
 }
 
 
