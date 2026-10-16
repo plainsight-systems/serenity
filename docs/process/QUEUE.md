@@ -45,7 +45,8 @@ This file tracks active and accepted work.
   RTXDI's BSDF candidate, the temporal and spatial merges in basic mode,
   graphs/restir_ris.toml, restir_temporal.toml, restir_spatial.toml and
   restir.toml (docs/research/2026-10-11-restir-ris-results.md,
-  -restir-temporal.md, -restir-spatial.md); on the way, the path loop made
+  2026-10-11-restir-temporal.md, 2026-10-11-restir-spatial.md); on the way,
+  the path loop made
   one loop again (2026-10-11-path-split-cost.md), MIS in the path tracer,
   the new time baseline (2026-10-11-path-mis.md), and the ray offset sized
   to the point's rounding (2026-10-11-ray-offset.md). ReSTIR DI lost to

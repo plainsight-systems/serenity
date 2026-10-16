@@ -141,7 +141,8 @@ in.
    `docs/research/2026-10-10-restir-di-layout.md`). ReSTIR PT runs
    Enhanced's defaults, whose merges are weighted by pairwise and Talbot
    MIS; its means are checked region by region against the same reference
-   (`docs/research/2026-10-11-restir-pt-phase1.md`, `-phase2.md`), and
+   (`docs/research/2026-10-11-restir-pt-phase1.md`,
+   `docs/research/2026-10-11-restir-pt-phase2.md`), and
    manifold next event estimation's bias, dark over a glass sphere's
    shadow, is measured there too (`docs/research/2026-10-12-mnee.md`).
    Because the reference does none of their resampling, a bug in it cannot
