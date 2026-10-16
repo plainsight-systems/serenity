@@ -16,6 +16,8 @@
 #include <string_view>
 #include <system_error>
 
+#include "core/frame/extent.h"
+
 namespace serenity::output {
 
 namespace {
@@ -213,8 +215,8 @@ contracts::LinearImage read_pfm(const std::filesystem::path& path) {
                          std::to_string(expected));
     }
     if (file_bytes > expected) {
-        refuse(path, std::to_string(file_bytes - expected) + " bytes follow its " + std::to_string(extent.width) +
-                         " x " + std::to_string(extent.height) + " floats");
+        refuse(path, std::to_string(file_bytes - expected) + " bytes follow its " + frame::to_string(extent) +
+                         " floats");
     }
 
     contracts::LinearImage image = contracts::make_linear_image(extent);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -20,9 +21,10 @@ namespace serenity::denoise {
 // lines, rather than a new dependency for one file read once at start-up.
 //
 // Anything else is a JsonError naming the byte offset: a file that is not
-// JSON is refused, never half-read (SL.io.2). \u escapes outside the ASCII
-// range are refused too, as nothing in a layout writes them: a reader of
-// them would be code no file exercises.
+// JSON is refused, never half-read (SL.io.2). So is an object that names a
+// member twice, which RFC 8259 leaves to the reader and at() would read by
+// its first. \u escapes outside the ASCII range are refused too, as nothing
+// in a layout writes them: a reader of them would be code no file exercises.
 //
 // Not performance-sensitive: one small file, once.
 

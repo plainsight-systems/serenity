@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include "core/contracts/denoise.h"
+
 namespace serenity::denoise {
 
 // Axis: Pass (the denoiser's network: its weights, read from its export).
@@ -65,19 +67,20 @@ struct Convolution {
     std::vector<float> bias;     // [outputs]
 };
 
-// training/model.py's Widths.
+// training/model.py's Widths: one encoder and one decoder width a level
+// (contracts::unet_levels).
 struct Widths {
-    std::array<std::uint32_t, 4> enc{};
+    std::array<std::uint32_t, contracts::unet_levels> enc{};
     std::uint32_t bottleneck = 0;
-    std::array<std::uint32_t, 4> dec{};  // levels 3, 2, 1, 0
+    std::array<std::uint32_t, contracts::unet_levels> dec{};  // levels 3, 2, 1, 0
 };
 
 struct Network {
     Widths widths;
-    std::array<Convolution, 4> enc;
+    std::array<Convolution, contracts::unet_levels> enc;
     Convolution bottleneck_a;
     Convolution bottleneck_b;
-    std::array<Convolution, 4> dec;
+    std::array<Convolution, contracts::unet_levels> dec;
     Convolution dec_final;
     Convolution head;
     std::string source;  // the directory read, for messages

@@ -9,12 +9,12 @@
 #include <stdexcept>
 
 #include "core/animation/draw.h"
+#include "core/animation/rounding.h"
 
 namespace serenity::animation {
 
 namespace {
 
-constexpr int terms = 3;
 constexpr double two_pi = 2.0 * std::numbers::pi;
 constexpr double float_max = std::numeric_limits<float>::max();
 
@@ -38,19 +38,8 @@ double wander_draw(std::uint64_t seed, int axis, int term, Draw which) {
     return static_cast<double>(bits >> 11) * 0x1.0p-53;
 }
 
-// `x` rounded to a float no greater, and no less: so a float box holds every
-// point of the double one it rounds (F.10).
-float round_down(double x) noexcept {
-    const auto f = static_cast<float>(x);
-    return static_cast<double>(f) > x ? std::nextafter(f, -std::numeric_limits<float>::infinity()) : f;
-}
-
-float round_up(double x) noexcept {
-    const auto f = static_cast<float>(x);
-    return static_cast<double>(f) < x ? std::nextafter(f, std::numeric_limits<float>::infinity()) : f;
-}
-
-// The box `center` +/- `grown` on each axis, in double, rounded outward.
+// The box `center` +/- `grown` on each axis, in double, rounded outward
+// (rounding.h).
 contracts::Box outward(contracts::Float3 center, double grown) {
     return contracts::Box{
         {round_down(center.x - grown), round_down(center.y - grown), round_down(center.z - grown)},
@@ -85,17 +74,17 @@ Wander make_wander(const WanderParams& params, float body, const contracts::Obst
     for (int axis = 0; axis < 3; ++axis) {
         const auto a = static_cast<std::size_t>(axis);
         // Step 1: the weights, ratios and phases, from the seed alone.
-        std::array<double, terms> weights{};
+        std::array<double, wander_terms> weights{};
         double total = 0.0;
-        for (int k = 0; k < terms; ++k) {
-            const auto i = static_cast<std::size_t>(k);
+        for (std::size_t i = 0; i < wander_terms; ++i) {
+            const auto k = static_cast<int>(i);
             weights[i] = least_weight + weight_span * wander_draw(params.seed, axis, k, Draw::weight);
             total += weights[i];
             wander.frequency[a][i] = least_ratio + ratio_span * wander_draw(params.seed, axis, k, Draw::ratio);
             wander.phase[a][i] = two_pi * wander_draw(params.seed, axis, k, Draw::phase);
         }
         // Step 2: the amplitudes, summing to the reach on each axis.
-        for (std::size_t i = 0; i < terms; ++i) {
+        for (std::size_t i = 0; i < wander_terms; ++i) {
             wander.amplitude[a][i] = static_cast<double>(reach) * weights[i] / total;
             const double v = two_pi * wander.frequency[a][i] * wander.amplitude[a][i];
             mean_square_speed += 0.5 * v * v;
@@ -116,7 +105,7 @@ contracts::Float3 position(const Wander& wander, frame::Seconds t) {
     std::array<double, 3> p{};
     for (std::size_t axis = 0; axis < 3; ++axis) {
         double sum = contracts::component(wander.anchor, static_cast<int>(axis));
-        for (std::size_t k = 0; k < terms; ++k) {
+        for (std::size_t k = 0; k < wander_terms; ++k) {
             sum += wander.amplitude[axis][k] *
                    std::sin(two_pi * wander.frequency[axis][k] * seconds + wander.phase[axis][k]);
         }

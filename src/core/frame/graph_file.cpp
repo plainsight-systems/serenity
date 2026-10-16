@@ -242,90 +242,134 @@ passes::RestirDi restir_baseline(passes::RestirDi settings, const RestirReads& r
     return settings;
 }
 
+// Reads one ReSTIR family's settings table into `settings` (read_restir_di,
+// read_restir_pt): each key into its member, and each value checked alone,
+// beside `baseline`, by the core's one rule (schedule.h, invalid), so the
+// rule can refuse only it and the refusal names its line. One reader for
+// both families (ES.3), holding references to the table and the settings
+// it reads them into for the length of one read, so neither copied nor
+// moved (C.21).
+template <typename Settings>
+class SettingsReader {
+public:
+    SettingsReader(std::string_view source, const toml::table& table, std::string_view where,
+                   std::span<const PassKind> kinds, const Settings& baseline, Settings& settings)
+        : source_(source), table_(table), where_(where), kinds_(kinds), baseline_(baseline), settings_(settings) {}
+    SettingsReader(const SettingsReader&) = delete;
+    SettingsReader& operator=(const SettingsReader&) = delete;
+    SettingsReader(SettingsReader&&) = delete;
+    SettingsReader& operator=(SettingsReader&&) = delete;
+    ~SettingsReader() = default;
+
+    // Reads `key`, which must be there, into `member` by `read`, and checks
+    // it alone.
+    template <typename T, typename Read>
+    void take(std::string_view key, T Settings::*member, Read read) {
+        const toml::node& node = required(source_, table_, key, where_);
+        settings_.*member = read(node);
+        Settings alone = baseline_;
+        alone.*member = settings_.*member;
+        if (const std::optional<std::string> reason = invalid(alone, kinds_)) {
+            throw GraphFileError(at(source_, node, *reason));
+        }
+    }
+
+    void take_count(std::string_view key, std::uint32_t Settings::*member) {
+        take(key, member, [&](const toml::node& node) { return count(source_, node, key); });
+    }
+
+    void take_float(std::string_view key, float Settings::*member) {
+        take(key, member, [&](const toml::node& node) { return finite_float(source_, node, key); });
+    }
+
+    // The values taken after this are checked beside `member` as read, not
+    // as written in the baseline: for a bound one setting sets another.
+    template <typename T>
+    void bound_by(T Settings::*member) {
+        baseline_.*member = settings_.*member;
+    }
+
+private:
+    std::string_view source_;
+    const toml::table& table_;
+    std::string_view where_;
+    std::span<const PassKind> kinds_;
+    Settings baseline_;
+    Settings& settings_;
+};
+
 // ReSTIR DI's settings, for a graph of the pass `kinds`. Which keys are
 // read depends on the passes and on two of the settings (graph_file.h), so
 // those two are read first; then every key the graph reads must be there,
-// and every key there must be read. Each value is checked by the core's one
-// rule (schedule.h, invalid) at its own line: set alone into settings the
-// rule accepts (restir_baseline), so the rule can refuse only it.
+// and every key there must be read. Each value is checked alone, set into
+// settings the rule accepts (restir_baseline).
 passes::RestirDi read_restir_di(std::string_view source, const toml::table& table, std::span<const PassKind> kinds) {
     passes::RestirDi settings{};  // every setting not read stays its zero
     const RestirReads reads = restir_reads(source, table, kinds, settings);
     refuse_unread(source, table, reads);
-    const passes::RestirDi baseline = restir_baseline(settings, reads);
-
-    // Reads `key` into `member` by `read`, and checks it alone.
-    const auto take = [&]<typename T>(std::string_view key, T passes::RestirDi::*member, auto read) {
-        const toml::node& node = required(source, table, key, "[restir_di]");
-        settings.*member = read(node);
-        passes::RestirDi alone = baseline;
-        alone.*member = settings.*member;
-        if (const std::optional<std::string> reason = invalid(alone, kinds)) {
-            throw GraphFileError(at(source, node, *reason));
-        }
-    };
-    const auto as_count = [&](std::string_view key) {
-        return [&source, key](const toml::node& node) { return count(source, node, key); };
-    };
-    const auto as_float = [&](std::string_view key) {
-        return [&source, key](const toml::node& node) { return finite_float(source, node, key); };
-    };
-    take("candidates", &passes::RestirDi::candidates, as_count("candidates"));
-    take("bsdf_candidates", &passes::RestirDi::bsdf_candidates, as_count("bsdf_candidates"));
+    SettingsReader<passes::RestirDi> reader(source, table, "[restir_di]", kinds, restir_baseline(settings, reads),
+                                            settings);
+    reader.take_count("candidates", &passes::RestirDi::candidates);
+    reader.take_count("bsdf_candidates", &passes::RestirDi::bsdf_candidates);
     if (reads.temporal) {
-        take("history", &passes::RestirDi::history, as_count("history"));
-        take("permutation", &passes::RestirDi::permutation, [&](const toml::node& node) {
+        reader.take_count("history", &passes::RestirDi::history);
+        reader.take("permutation", &passes::RestirDi::permutation, [&](const toml::node& node) {
             return switched_on(source, node, "permutation") ? contracts::Permutation::on : contracts::Permutation::off;
         });
     }
     if (reads.spatial) {
-        take("neighbors", &passes::RestirDi::neighbors, as_count("neighbors"));
-        take("radius", &passes::RestirDi::radius, as_float("radius"));
+        reader.take_count("neighbors", &passes::RestirDi::neighbors);
+        reader.take_float("radius", &passes::RestirDi::radius);
     }
     if (reads.merges) {
-        take("depth_threshold", &passes::RestirDi::depth_threshold, as_float("depth_threshold"));
-        take("normal_threshold", &passes::RestirDi::normal_threshold, as_float("normal_threshold"));
+        reader.take_float("depth_threshold", &passes::RestirDi::depth_threshold);
+        reader.take_float("normal_threshold", &passes::RestirDi::normal_threshold);
     }
     if (reads.reused) {
-        take("visibility_age", &passes::RestirDi::visibility_age, as_count("visibility_age"));
-        take("visibility_distance", &passes::RestirDi::visibility_distance, as_float("visibility_distance"));
+        reader.take_count("visibility_age", &passes::RestirDi::visibility_age);
+        reader.take_float("visibility_distance", &passes::RestirDi::visibility_distance);
     }
     return settings;
+}
+
+// Every [restir_pt] key (graph_file.h).
+constexpr std::array<std::string_view, 9> restir_pt_keys = {
+    "nee_candidates", "max_surfaces",   "footprint", "roughness",   "neighbors",
+    "sigma",          "confidence_cap", "cap_floor", "cap_exponent"};
+
+// The pass a [restir_pt] key is read only with; none for the four every
+// graph with ReSTIR PT's passes reads.
+std::optional<PassKind> restir_pt_reader(std::string_view key) {
+    if (key == "neighbors" || key == "sigma") {
+        return PassKind::restir_pt_spatial;
+    }
+    if (key == "confidence_cap") {
+        return PassKind::restir_pt_temporal;
+    }
+    if (key == "cap_floor" || key == "cap_exponent") {
+        return PassKind::restir_pt_duplication;
+    }
+    return std::nullopt;
 }
 
 // ReSTIR PT's settings (core/contracts/path_reuse_settings.h): the four
 // every graph with its passes reads, neighbors and sigma with
 // restir_pt_spatial alone, confidence_cap with restir_pt_temporal, and
-// cap_floor and cap_exponent with restir_pt_duplication. Each key the passes read must be written, each
-// they do not must not be; each value is checked against its range alone,
-// beside the written defaults (core/passes/restir_pt.h), so a mistake is
-// reported at its own line.
+// cap_floor and cap_exponent with restir_pt_duplication. Each key the
+// passes read must be written, each they do not must not be; each value is
+// checked against its range alone, beside the written defaults
+// (core/passes/restir_pt.h), so a mistake is reported at its own line.
 passes::RestirPt read_restir_pt(std::string_view source, const toml::table& table, std::span<const PassKind> kinds) {
     const auto has = [&](PassKind kind) { return std::ranges::find(kinds, kind) != kinds.end(); };
     const bool spatial = has(PassKind::restir_pt_spatial);
     const bool temporal = has(PassKind::restir_pt_temporal);
     const bool duplication = has(PassKind::restir_pt_duplication);
-    constexpr std::array<std::string_view, 9> keys = {"nee_candidates", "max_surfaces",   "footprint",
-                                                      "roughness",      "neighbors",      "sigma",
-                                                      "confidence_cap", "cap_floor",      "cap_exponent"};
-    // The pass a key is read only with; none for the four every graph reads.
-    const auto reader = [](std::string_view key) -> std::optional<PassKind> {
-        if (key == "neighbors" || key == "sigma") {
-            return PassKind::restir_pt_spatial;
-        }
-        if (key == "confidence_cap") {
-            return PassKind::restir_pt_temporal;
-        }
-        if (key == "cap_floor" || key == "cap_exponent") {
-            return PassKind::restir_pt_duplication;
-        }
-        return std::nullopt;
-    };
     for (const auto& [key, value] : table) {
-        if (std::ranges::find(keys, key.str()) == keys.end()) {
-            throw GraphFileError(at(source, key.source(), "unknown key '" + std::string(key.str()) + "' in [restir_pt]"));
+        if (std::ranges::find(restir_pt_keys, key.str()) == restir_pt_keys.end()) {
+            throw GraphFileError(
+                at(source, key.source(), "unknown key '" + std::string(key.str()) + "' in [restir_pt]"));
         }
-        if (const std::optional<PassKind> pass = reader(key.str()); pass && !has(*pass)) {
+        if (const std::optional<PassKind> pass = restir_pt_reader(key.str()); pass && !has(*pass)) {
             throw GraphFileError(at(source, key.source(),
                                     "'" + std::string(key.str()) + "' is read only with " + std::string(name(*pass)) +
                                         " (core/contracts/path_reuse_settings.h): a key nobody reads"));
@@ -348,54 +392,35 @@ passes::RestirPt read_restir_pt(std::string_view source, const toml::table& tabl
         baseline.cap_exponent = passes::written_cap_exponent;
     }
     passes::RestirPt settings = baseline;
-    const auto take = [&]<typename T>(std::string_view key, T passes::RestirPt::*member, auto read) {
-        const toml::node& node = required(source, table, key, "[restir_pt]");
-        settings.*member = read(node);
-        passes::RestirPt alone = baseline;
-        alone.*member = settings.*member;
-        if (const std::optional<std::string> reason = invalid(alone, kinds)) {
-            throw GraphFileError(at(source, node, *reason));
-        }
-    };
-    const auto as_count = [&](std::string_view key) {
-        return [&source, key](const toml::node& node) { return count(source, node, key); };
-    };
-    const auto as_float = [&](std::string_view key) {
-        return [&source, key](const toml::node& node) { return finite_float(source, node, key); };
-    };
-    take("nee_candidates", &passes::RestirPt::nee_candidates, as_count("nee_candidates"));
-    take("max_surfaces", &passes::RestirPt::max_surfaces, as_count("max_surfaces"));
-    take("footprint", &passes::RestirPt::footprint, as_float("footprint"));
-    take("roughness", &passes::RestirPt::roughness, as_float("roughness"));
+    SettingsReader<passes::RestirPt> reader(source, table, "[restir_pt]", kinds, baseline, settings);
+    reader.take_count("nee_candidates", &passes::RestirPt::nee_candidates);
+    reader.take_count("max_surfaces", &passes::RestirPt::max_surfaces);
+    reader.take_float("footprint", &passes::RestirPt::footprint);
+    reader.take_float("roughness", &passes::RestirPt::roughness);
     if (spatial) {
-        take("neighbors", &passes::RestirPt::neighbors, as_count("neighbors"));
-        take("sigma", &passes::RestirPt::sigma, as_float("sigma"));
+        reader.take_count("neighbors", &passes::RestirPt::neighbors);
+        reader.take_float("sigma", &passes::RestirPt::sigma);
     }
     if (temporal) {
-        take("confidence_cap", &passes::RestirPt::confidence_cap, as_float("confidence_cap"));
-        baseline.confidence_cap = settings.confidence_cap;  // the floor's bound is the cap written
+        reader.take_float("confidence_cap", &passes::RestirPt::confidence_cap);
+        reader.bound_by(&passes::RestirPt::confidence_cap);  // the floor's bound is the cap written
     }
     if (duplication) {
-        take("cap_floor", &passes::RestirPt::cap_floor, as_float("cap_floor"));
-        take("cap_exponent", &passes::RestirPt::cap_exponent, as_float("cap_exponent"));
+        reader.take_float("cap_floor", &passes::RestirPt::cap_floor);
+        reader.take_float("cap_exponent", &passes::RestirPt::cap_exponent);
     }
     return settings;
 }
 
-Schedule read_schedule(std::string_view source, const toml::table& root) {
-    only(source, root, {"passes", "tone_map", "restir_di", "restir_pt", "mnee", "denoise"}, "the frame graph");
-
-    const toml::node* passes_node = root.get("passes");
-    if (!passes_node) {
-        throw GraphFileError(std::string(source) + ": no 'passes'");
-    }
-    const toml::array* passes = passes_node->as_array();
+// The passes, in order, from `passes_node`: a non-empty array of known
+// pass names.
+std::vector<PassKind> read_passes(std::string_view source, const toml::node& passes_node) {
+    const toml::array* passes = passes_node.as_array();
     if (!passes || passes->empty()) {
-        throw GraphFileError(at(source, *passes_node, "'passes' must be a non-empty array of pass names"));
+        throw GraphFileError(at(source, passes_node, "'passes' must be a non-empty array of pass names"));
     }
-
-    Schedule schedule;
-    schedule.passes.reserve(passes->size());
+    std::vector<PassKind> kinds;
+    kinds.reserve(passes->size());
     for (const toml::node& entry : *passes) {
         const std::optional<std::string_view> text = entry.value<std::string_view>();
         if (!text) {
@@ -403,76 +428,123 @@ Schedule read_schedule(std::string_view source, const toml::table& root) {
         }
         const std::optional<PassKind> kind = pass_kind(*text);
         if (!kind) {
-            throw GraphFileError(at(source, entry,
-                                    "unknown pass '" + std::string(*text) + "'; known passes: " + known_pass_names()));
-        }
-        schedule.passes.push_back(*kind);
-    }
-
-    // The tone map's settings, each mistake reported at the line it is
-    // about; whether they come with their pass, by the rule for the whole.
-    const toml::node* tone_map_node = root.get("tone_map");
-    if (tone_map_node) {
-        const toml::table* table = tone_map_node->as_table();
-        if (!table) {
-            throw GraphFileError(at(source, *tone_map_node, "'tone_map' must be a table, [tone_map]"));
-        }
-        schedule.tone_map = read_tone_map(source, *table);
-    }
-    // ReSTIR DI's, likewise; a table with no ReSTIR pass to read it is
-    // refused at the table, before its keys, which no pass reads.
-    if (const toml::node* restir_node = root.get("restir_di")) {
-        const toml::table* table = restir_node->as_table();
-        if (!table) {
-            throw GraphFileError(at(source, *restir_node, "'restir_di' must be a table, [restir_di]"));
-        }
-        if (std::ranges::none_of(schedule.passes, [](PassKind kind) { return is_restir(kind); })) {
-            throw GraphFileError(at(source, *restir_node, "the frame graph has [restir_di] settings and no ReSTIR DI pass"));
-        }
-        schedule.restir_di = read_restir_di(source, *table, schedule.passes);
-    }
-    if (const toml::node* restir_pt_node = root.get("restir_pt")) {
-        const toml::table* table = restir_pt_node->as_table();
-        if (!table) {
-            throw GraphFileError(at(source, *restir_pt_node, "'restir_pt' must be a table, [restir_pt]"));
-        }
-        if (std::ranges::none_of(schedule.passes, [](PassKind kind) { return is_restir_pt(kind); })) {
             throw GraphFileError(
-                at(source, *restir_pt_node, "the frame graph has [restir_pt] settings and no ReSTIR PT pass"));
+                at(source, entry, "unknown pass '" + std::string(*text) + "'; known passes: " + known_pass_names()));
         }
-        schedule.restir_pt = read_restir_pt(source, *table, schedule.passes);
+        kinds.push_back(*kind);
     }
-    // Caustics by MNEE: true or false, read by the path pass and ReSTIR
-    // PT's; a graph with neither refused at the key.
-    if (const toml::node* mnee_node = root.get("mnee")) {
-        const std::optional<bool> mnee = mnee_node->value_exact<bool>();
-        if (!mnee) {
-            throw GraphFileError(at(source, *mnee_node, "'mnee' must be true or false"));
-        }
-        schedule.mnee = *mnee;
-        if (schedule.mnee && std::ranges::none_of(schedule.passes, [](PassKind kind) {
-                return kind == PassKind::path || is_restir_pt(kind);
-            })) {
-            throw GraphFileError(at(source, *mnee_node, "the frame graph sets mnee and has no path or ReSTIR PT pass "
-                                                        "to read it"));
-        }
+    return kinds;
+}
+
+// The table `key` of `root`, none if the graph has no `key`; anything but
+// a table there is refused at it.
+const toml::table* table_of(std::string_view source, const toml::table& root, std::string_view key) {
+    const toml::node* node = root.get(key);
+    if (!node) {
+        return nullptr;
     }
-    if (const toml::node* denoise_node = root.get("denoise")) {
-        const toml::table* table = denoise_node->as_table();
-        if (!table) {
-            throw GraphFileError(at(source, *denoise_node, "'denoise' must be a table, [denoise]"));
-        }
-        if (std::ranges::find(schedule.passes, PassKind::denoise) == schedule.passes.end()) {
-            throw GraphFileError(at(source, *denoise_node, "the frame graph has [denoise] settings and no denoise pass"));
-        }
-        only(source, *table, {"weights"}, "[denoise]");
-        const toml::node& weights = required(source, *table, "weights", "[denoise]");
-        const std::optional<std::string_view> text = weights.value_exact<std::string_view>();
-        if (!text || text->empty()) {
-            throw GraphFileError(at(source, weights, "'weights' must name the exported network's directory, in quotes"));
-        }
-        schedule.denoise = passes::Denoise{std::filesystem::path(*text)};
+    const toml::table* table = node->as_table();
+    if (!table) {
+        throw GraphFileError(at(source, *node,
+                                "'" + std::string(key) + "' must be a table, [" + std::string(key) + "]"));
     }
+    return table;
+}
+
+// The tone map's settings, each mistake reported at the line it is about;
+// whether they come with their pass is the rule for the whole's
+// (read_schedule).
+std::optional<passes::ToneMap> read_tone_map_table(std::string_view source, const toml::table& root) {
+    const toml::table* table = table_of(source, root, "tone_map");
+    if (!table) {
+        return std::nullopt;
+    }
+    return read_tone_map(source, *table);
+}
+
+// ReSTIR DI's, likewise; a table with no ReSTIR DI pass to read it is
+// refused at the table, before its keys, which no pass reads.
+std::optional<passes::RestirDi> read_restir_di_table(std::string_view source, const toml::table& root,
+                                                     std::span<const PassKind> kinds) {
+    const toml::table* table = table_of(source, root, "restir_di");
+    if (!table) {
+        return std::nullopt;
+    }
+    if (std::ranges::none_of(kinds, is_restir)) {
+        throw GraphFileError(
+            at(source, *table, "the frame graph has [restir_di] settings and no ReSTIR DI pass"));
+    }
+    return read_restir_di(source, *table, kinds);
+}
+
+// ReSTIR PT's, likewise.
+std::optional<passes::RestirPt> read_restir_pt_table(std::string_view source, const toml::table& root,
+                                                     std::span<const PassKind> kinds) {
+    const toml::table* table = table_of(source, root, "restir_pt");
+    if (!table) {
+        return std::nullopt;
+    }
+    if (std::ranges::none_of(kinds, is_restir_pt)) {
+        throw GraphFileError(
+            at(source, *table, "the frame graph has [restir_pt] settings and no ReSTIR PT pass"));
+    }
+    return read_restir_pt(source, *table, kinds);
+}
+
+// Caustics by MNEE: true or false, read by the path pass and ReSTIR PT's.
+// In a graph with neither the key is one nobody reads, refused at its line
+// whatever its value: `mnee = false` there is as much a typo as `true`
+// (E.2). The schedule cannot tell false from left out, so this is the
+// reader's to refuse; invalid() refuses mnee set. Off unless written.
+bool read_mnee(std::string_view source, const toml::table& root, std::span<const PassKind> kinds) {
+    const toml::node* node = root.get("mnee");
+    if (!node) {
+        return false;
+    }
+    const std::optional<bool> mnee = node->value_exact<bool>();
+    if (!mnee) {
+        throw GraphFileError(at(source, *node, "'mnee' must be true or false"));
+    }
+    if (std::ranges::none_of(kinds, [](PassKind kind) { return kind == PassKind::path || is_restir_pt(kind); })) {
+        throw GraphFileError(
+            at(source, *node, "the frame graph sets mnee and has no path or ReSTIR PT pass to read it"));
+    }
+    return *mnee;
+}
+
+// The denoiser's settings: the exported network's directory, as written.
+std::optional<passes::Denoise> read_denoise_table(std::string_view source, const toml::table& root,
+                                                  std::span<const PassKind> kinds) {
+    const toml::table* table = table_of(source, root, "denoise");
+    if (!table) {
+        return std::nullopt;
+    }
+    if (std::ranges::find(kinds, PassKind::denoise) == kinds.end()) {
+        throw GraphFileError(at(source, *table, "the frame graph has [denoise] settings and no denoise pass"));
+    }
+    only(source, *table, {"weights"}, "[denoise]");
+    const toml::node& weights = required(source, *table, "weights", "[denoise]");
+    const std::optional<std::string_view> text = weights.value_exact<std::string_view>();
+    if (!text || text->empty()) {
+        throw GraphFileError(
+            at(source, weights, "'weights' must name the exported network's directory, in quotes"));
+    }
+    return passes::Denoise{std::filesystem::path(*text)};
+}
+
+Schedule read_schedule(std::string_view source, const toml::table& root) {
+    only(source, root, {"passes", "tone_map", "restir_di", "restir_pt", "mnee", "denoise"}, "the frame graph");
+    const toml::node* passes_node = root.get("passes");
+    if (!passes_node) {
+        throw GraphFileError(std::string(source) + ": no 'passes'");
+    }
+    Schedule schedule;
+    schedule.passes = read_passes(source, *passes_node);
+    schedule.tone_map = read_tone_map_table(source, root);
+    schedule.restir_di = read_restir_di_table(source, root, schedule.passes);
+    schedule.restir_pt = read_restir_pt_table(source, root, schedule.passes);
+    schedule.mnee = read_mnee(source, root, schedule.passes);
+    schedule.denoise = read_denoise_table(source, root, schedule.passes);
     if (const std::optional<std::string> reason = invalid(schedule)) {
         throw GraphFileError(at(source, *passes_node, *reason));
     }

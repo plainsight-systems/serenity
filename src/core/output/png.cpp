@@ -27,9 +27,8 @@ void write_png(const std::filesystem::path& path, frame::Extent extent, std::spa
     }
     const std::uint64_t expected = row_bytes * extent.height;
     if (rgba.size() != expected) {
-        throw PngError("cannot write " + path.string() + ": " + std::to_string(rgba.size()) +
-                    " bytes given for a " + std::to_string(extent.width) + " x " + std::to_string(extent.height) +
-                    " RGBA image, which needs " + std::to_string(expected));
+        throw PngError("cannot write " + path.string() + ": " + std::to_string(rgba.size()) + " bytes given for a " +
+                       frame::to_string(extent) + " RGBA image, which needs " + std::to_string(expected));
     }
     const int ok = stbi_write_png(path.c_str(), static_cast<int>(extent.width), static_cast<int>(extent.height),
                                   channels, rgba.data(), static_cast<int>(row_bytes));

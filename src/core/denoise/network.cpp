@@ -4,12 +4,13 @@
 #include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <format>
 #include <fstream>
-#include <iterator>
 #include <limits>
 #include <optional>
 #include <span>
 #include <string_view>
+#include <system_error>
 #include <utility>
 
 #include "core/contracts/denoise.h"
@@ -59,10 +60,11 @@ Widths read_widths(const Json& config, const std::string& source) {
     Widths w;
     const JsonArray& enc = widths.at("enc").array("widths.enc");
     const JsonArray& dec = widths.at("dec").array("widths.dec");
-    if (enc.size() != 4 || dec.size() != 4) {
-        refuse(source, "widths.enc and widths.dec must have four entries each");
+    if (enc.size() != contracts::unet_levels || dec.size() != contracts::unet_levels) {
+        refuse(source, "widths.enc and widths.dec must have " + std::to_string(contracts::unet_levels) +
+                           " entries each");
     }
-    for (std::size_t i = 0; i < 4; ++i) {
+    for (std::size_t i = 0; i < contracts::unet_levels; ++i) {
         w.enc[i] = width(enc[i], "a widths.enc entry", source);
         w.dec[i] = width(dec[i], "a widths.dec entry", source);
     }
@@ -74,7 +76,8 @@ Widths read_widths(const Json& config, const std::string& source) {
 void check_constants(const Json& layout, const std::string& source) {
     const auto same = [&](const Json& node, float expected, std::string_view what) {
         if (static_cast<float>(node.number(what)) != expected) {
-            refuse(source, std::string(what) + " is not the " + std::to_string(expected) + " this renderer runs with");
+            refuse(source,
+                   std::string(what) + " is not the " + std::format("{}", expected) + " this renderer runs with");
         }
     };
     if (layout.at("format").string("format") != format) {
@@ -107,7 +110,12 @@ void check_constants(const Json& layout, const std::string& source) {
         same_spacings = spacings[s].number("a spacing") == static_cast<double>(contracts::spacing_pixels[s]);
     }
     if (!same_spacings) {
-        refuse(source, "its spacings are not contract 18's 1, 2 and 4");
+        std::string listed;
+        for (std::size_t s = 0; s < contracts::denoise_spacings; ++s) {
+            listed += (s == 0 ? "" : s + 1 == contracts::denoise_spacings ? " and " : ", ") +
+                      std::to_string(contracts::spacing_pixels[s]);
+        }
+        refuse(source, "its spacings are not contract 18's " + listed);
     }
 }
 
@@ -124,19 +132,20 @@ struct Needed {
 std::vector<Needed> needed(Network& n) {
     const Widths& w = n.widths;
     std::vector<Needed> list;
-    for (std::size_t i = 0; i < 4; ++i) {
+    constexpr std::size_t deepest = contracts::unet_levels - 1;  // the encoder's last level, the decoder's first
+    for (std::size_t i = 0; i < contracts::unet_levels; ++i) {
         list.push_back({"unet.enc." + std::to_string(i), i == 0 ? contracts::network_inputs : w.enc[i - 1], w.enc[i],
                         3, &n.enc[i]});
     }
-    list.push_back({"unet.bottleneck_a", w.enc[3], w.bottleneck, 3, &n.bottleneck_a});
+    list.push_back({"unet.bottleneck_a", w.enc[deepest], w.bottleneck, 3, &n.bottleneck_a});
     list.push_back({"unet.bottleneck_b", w.bottleneck, w.bottleneck, 3, &n.bottleneck_b});
     std::uint32_t previous = w.bottleneck;
-    for (std::size_t i = 0; i < 4; ++i) {
-        list.push_back({"unet.dec." + std::to_string(i), previous + w.enc[3 - i], w.dec[i], 3, &n.dec[i]});
+    for (std::size_t i = 0; i < contracts::unet_levels; ++i) {
+        list.push_back({"unet.dec." + std::to_string(i), previous + w.enc[deepest - i], w.dec[i], 3, &n.dec[i]});
         previous = w.dec[i];
     }
-    list.push_back({"unet.dec_final", w.dec[3], w.dec[3], 3, &n.dec_final});
-    list.push_back({"unet.head", w.dec[3], contracts::head_outputs, 1, &n.head});
+    list.push_back({"unet.dec_final", w.dec[deepest], w.dec[deepest], 3, &n.dec_final});
+    list.push_back({"unet.head", w.dec[deepest], contracts::head_outputs, 1, &n.head});
     return list;
 }
 
@@ -181,15 +190,23 @@ std::vector<float> tensor(const JsonArray& tensors, std::vector<bool>& taken, co
 }
 
 // The file's bytes, read once; the weights are viewed as bytes where they
-// are (std::as_bytes), not copied again.
+// are (std::as_bytes), not copied again. Sized from the file, and read
+// whole or refused, as load_schedule() and scene::load() read theirs: a
+// read that fails, a directory, or a file that ends early is "cannot
+// read", never a shorter file that surfaces later as a size or JSON
+// mistake it is not (I.10, SL.io.2).
 std::string read_file(const std::filesystem::path& path, const std::string& source) {
+    const std::string cannot = "cannot read " + path.filename().string();
+    std::error_code error;
+    const std::uintmax_t size = std::filesystem::file_size(path, error);
     std::ifstream file{path, std::ios::binary};
-    if (!file) {
-        refuse(source, "cannot read " + path.filename().string());
+    if (error || !file || size > static_cast<std::uintmax_t>(std::numeric_limits<std::streamsize>::max())) {
+        refuse(source, cannot);
     }
-    std::string bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-    if (file.bad()) {
-        refuse(source, "cannot read " + path.filename().string());
+    std::string bytes(static_cast<std::size_t>(size), '\0');
+    file.read(bytes.data(), static_cast<std::streamsize>(size));
+    if (!file || file.gcount() != static_cast<std::streamsize>(size)) {
+        refuse(source, cannot);
     }
     return bytes;
 }
@@ -217,8 +234,8 @@ Network parse_network(const std::string& layout_json, std::span<const std::byte>
             c.inputs = need.inputs;
             c.outputs = need.outputs;
             c.kernel = need.kernel;
-            c.weight = tensor(tensors, taken, need.name + ".weight", {need.outputs, need.inputs, need.kernel, need.kernel},
-                              weights, source);
+            c.weight = tensor(tensors, taken, need.name + ".weight",
+                              {need.outputs, need.inputs, need.kernel, need.kernel}, weights, source);
             c.bias = tensor(tensors, taken, need.name + ".bias", {need.outputs}, weights, source);
             total += (c.weight.size() + c.bias.size()) * sizeof(float);
         }

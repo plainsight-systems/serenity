@@ -39,10 +39,10 @@ namespace serenity::frame {
 //   - the radiance image, the frame's linear radiance at the frame's size,
 //     between a pass that computes light and the pass that presents it.
 //
-// A pass that computes light (preview, path, restir_shade) writes radiance;
-// a presenting pass (display, tone_map) reads it and writes the target; the
-// test
-// pattern, a diagnostic in display values already, writes the target alone.
+// A pass that computes light (preview, path, restir_shade, restir_pt_shade:
+// writes_radiance()) writes radiance; a presenting pass (display, tone_map)
+// reads it and writes the target; the test pattern, a diagnostic in display
+// values already, writes the target alone.
 // So a frame graph that computes light ends in a presenting pass, which
 // decides how its light looks: display shows it as it is, as tests and
 // diagnostics want; tone_map gives it exposure, glare and a film-like
@@ -239,8 +239,9 @@ struct Schedule {
     // that pass (graph_file.h, core/passes/tone_map.h).
     std::optional<passes::ToneMap> tone_map;
     // ReSTIR DI's settings: present exactly when the schedule has its
-    // passes (graph_file.h, core/contracts/reuse_settings.h). Last, and
-    // none unless given, so a schedule written {passes, tone_map} keeps its meaning.
+    // passes (graph_file.h, core/contracts/reuse_settings.h). None unless
+    // given, as every member after it, so a schedule written {passes,
+    // tone_map} keeps its meaning.
     std::optional<passes::RestirDi> restir_di = std::nullopt;
     // ReSTIR PT's settings: present exactly when the schedule has its
     // passes (graph_file.h, core/contracts/path_reuse_settings.h).
@@ -260,12 +261,12 @@ struct Schedule {
 // the frames before them (frame/history.h).
 bool accumulates(const Schedule& schedule);
 
-// Whether `schedule` has restir_temporal, restir_pt_temporal or denoise: whether its
-// frames build on the reservoirs and surface records (or primary hits) of
-// the frames before them, since its reuse history started (frame/history.h,
-// ReuseHistory). Apart from
-// accumulates(): a changing scene starts the accumulated image over every
-// frame, and keeps its reuse history.
+// Whether `schedule` has restir_temporal, restir_pt_temporal or denoise:
+// whether its frames build on the reservoirs and surface records (or
+// primary hits) of the frames before them, since its reuse history started
+// (frame/history.h, ReuseHistory). Apart from accumulates(): a changing
+// scene starts the accumulated image over every frame, and keeps its reuse
+// history.
 bool reuses_history(const Schedule& schedule);
 
 // Whether `schedule` has the denoise pass, and so renders its light at

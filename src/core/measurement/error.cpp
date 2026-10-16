@@ -6,6 +6,8 @@
 #include <stdexcept>
 #include <string>
 
+#include "core/frame/extent.h"
+
 namespace serenity::measurement {
 
 ImageError error_against(Judged judged) {
@@ -16,10 +18,8 @@ ImageError error_against(Judged judged) {
     const std::size_t values = contracts::checked_values(reference, "error_against: the reference");
     (void)contracts::checked_values(image, "error_against: the image");
     if (!(image.extent == reference.extent)) {
-        throw std::invalid_argument("error_against: the image is " + std::to_string(image.extent.width) + " x " +
-                                    std::to_string(image.extent.height) + ", the reference " +
-                                    std::to_string(reference.extent.width) + " x " +
-                                    std::to_string(reference.extent.height));
+        throw std::invalid_argument("error_against: the image is " + frame::to_string(image.extent) +
+                                    ", the reference " + frame::to_string(reference.extent));
     }
     for (std::size_t i = 0; i < values; ++i) {
         const float v = image.rgb[i];

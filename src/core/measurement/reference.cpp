@@ -5,6 +5,7 @@
 #include <format>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "core/measurement/error.h"
@@ -19,9 +20,8 @@ void ReferenceBuilder::add(const contracts::LinearImage& batch) {
     // batch leaves the state as it was (I.5, E.4): its extent the first's,
     // contract 13's own check, then each value.
     if (count_ != 0 && !(extent == extent_)) {
-        throw std::invalid_argument(which + ": " + std::to_string(extent.width) + " x " +
-                                    std::to_string(extent.height) + ", where the first batch is " +
-                                    std::to_string(extent_.width) + " x " + std::to_string(extent_.height));
+        throw std::invalid_argument(which + ": " + frame::to_string(extent) + ", where the first batch is " +
+                                    frame::to_string(extent_));
     }
     const std::size_t values = contracts::checked_values(batch, which);
     for (std::size_t i = 0; i < values; ++i) {
@@ -73,9 +73,9 @@ contracts::LinearImage ReferenceBuilder::mean() const {
 namespace {
 
 // The floors' shared precondition.
-void check_floor(std::size_t count, const char* which) {
+void check_floor(std::size_t count, std::string_view which) {
     if (count < 2) {
-        throw std::logic_error(std::string{"ReferenceBuilder::"} + which + ": " + std::to_string(count) +
+        throw std::logic_error("ReferenceBuilder::" + std::string(which) + ": " + std::to_string(count) +
                                " batches, where a floor needs two or more");
     }
 }

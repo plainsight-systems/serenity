@@ -84,6 +84,11 @@ TEST_CASE("headless: every mistake is refused by name") {
     CHECK(contains(headless_error({"--size", "640"}), "WIDTHxHEIGHT"));
     CHECK(contains(headless_error({"--size", "0x360"}), "at least 1"));
     CHECK(contains(headless_error({"--fast"}), "unknown option '--fast'"));
+    // A second of any option, never the last one silently kept.
+    CHECK(contains(headless_error({"--samples", "1024", "--samples", "1"}),
+                   "--samples is given twice; each option is given once"));
+    CHECK(contains(headless_error({"--graph", "t"}), "--graph is given twice"));
+    CHECK(contains(headless_error({"--features", "--features"}), "--features is given twice"));
     CHECK(contains(headless_error({"--first", last_index.c_str(), "--frames", "2"}), "past frame index 2^32 - 1"));
 }
 
@@ -185,6 +190,14 @@ TEST_CASE("window: the graph is required, the scene optional, and nothing else i
     CHECK_THROWS_AS(parse(std::vector<const char*>{}), OptionsError);
     CHECK_THROWS_AS(parse(std::vector<const char*>{"--graph"}), OptionsError);
     CHECK_THROWS_AS(parse(std::vector<const char*>{"--graph", "s", "--size", "1x1"}), OptionsError);
+    // A second of any option, never the last one silently kept.
+    CHECK(contains(serenity::tests::error_of<OptionsError>(
+                       [] { return parse(std::vector<const char*>{"--graph", "a", "--graph", "b"}); }),
+                   "--graph is given twice; each option is given once"));
+    CHECK(contains(serenity::tests::error_of<OptionsError>([] {
+                       return parse(std::vector<const char*>{"--graph", "a", "--scale", "1", "--scale", "0.5"});
+                   }),
+                   "--scale is given twice"));
 }
 
 TEST_CASE("window: a render scale in (0, 1], and the size it gives") {

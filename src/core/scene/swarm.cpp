@@ -166,11 +166,12 @@ std::optional<Perched> perch_from(const Drawing& d, const PerchStart& start, con
     const Range& range = d.range;
     // The start's x and z, the drawn line's less the offset's, in step 2's
     // range or the attempt fails: never clamped, which would turn the rise.
-    const auto start_of = [&](float lo, float hi, std::uint64_t axis, std::size_t at) {
-        return static_cast<float>(lo + pick(axis) * (static_cast<double>(hi) - lo) - offset[at]);
+    // `axis` is the draw's counter and the offset's index both (I.24).
+    const auto start_of = [&](float lo, float hi, std::size_t axis) {
+        return static_cast<float>(lo + pick(axis) * (static_cast<double>(hi) - lo) - offset[axis]);
     };
-    const float sx = start_of(box.min.x, box.max.x, 0, 0);
-    const float sz = start_of(box.min.z, box.max.z, 2, 2);
+    const float sx = start_of(box.min.x, box.max.x, 0);
+    const float sz = start_of(box.min.z, box.max.z, 2);
     if (!in(sx, range.low[0], range.high[0]) || !in(sz, range.low[2], range.high[2])) {
         return std::nullopt;
     }

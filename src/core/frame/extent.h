@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace serenity::frame {
 
@@ -16,5 +17,10 @@ struct Extent {
 
     friend bool operator==(const Extent&, const Extent&) = default;
 };
+
+// "W x H": a size as every message names one, written once (ES.3).
+inline std::string to_string(Extent extent) {
+    return std::to_string(extent.width) + " x " + std::to_string(extent.height);
+}
 
 }  // namespace serenity::frame

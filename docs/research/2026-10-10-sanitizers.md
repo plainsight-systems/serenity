@@ -35,6 +35,25 @@ So the build has no AddressSanitizer preset: one that cannot start would
 claim a check that never happens. Revisit with the next Xcode (the pin
 moves in a commit of its own, `cmake/toolchain.json`).
 
+## ThreadSanitizer: crashes before main (2026-10-16)
+
+Asked by the codebase pass (CP.9): the core's one CPU-threaded code,
+`make_flights`/`try_flights`' workers (core/animation/flight.h), had never
+run under ThreadSanitizer. The core's tests built with `-fsanitize=thread`
+(a scratch build, not a preset) die at once with SIGSEGV, before listing a
+test; so does a program of nine lines (one `std::thread` writing an int,
+joined, a `printf`), built by Apple clang 17.0.0 with its runtime and by
+Homebrew's clang 21.1.8 with its own, run inside the agent's sandbox and
+outside it. lldb stops it in the runtime's start-up, before `main`:
+`EXC_BAD_ACCESS` at address 0 in `__tsan::SlotLock(__tsan::ThreadState*)`,
+`libclang_rt.tsan_osx_dynamic.dylib`. As with ASan, the runtime's on this
+macOS (26.6.2), not the build's: no ThreadSanitizer preset, which would
+claim a check that never runs. The workers' contract stays what the tests
+hold (the same flights for any worker count, the lowest failure rethrown)
+and flight.h's argument (each flight a function of its own job; the
+obstacles const and safe to ask from any thread; one relaxed counter, the
+joins publishing). Revisit with the next Xcode.
+
 ## UndefinedBehaviorSanitizer: one third-party idiom
 
 `native-sanitize` (CMakePresets.json) builds everything, dependencies

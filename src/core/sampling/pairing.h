@@ -49,15 +49,24 @@
 // moves for the three textures at sigma = 16, once.
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace serenity::sampling {
 
-// eq. 3's shuffle count for `sigma`. Precondition: sigma >= 0.8, finite.
+// The widest texture an offset's signed 8-bit coordinates allow: wrapped
+// into [-width / 2, width / 2], an offset of a texture this wide or less is
+// within [-127, 127] (above). Every one of contract 15's widths is within
+// it (pairing.cpp asserts it).
+inline constexpr std::uint32_t largest_pairing_width = 2u * std::numeric_limits<std::int8_t>::max();
+
+// eq. 3's shuffle count for `sigma`. Precondition: sigma at least
+// contracts::min_pairing_sigma (0.8), finite.
 std::uint32_t shuffle_count(double sigma);
 
 // One reuse texture, width x width offsets row by row, each packed as
-// above. Precondition: width even, in [2, 254]; sigma >= 0.8, finite.
+// above. Precondition: width even, in [2, largest_pairing_width]; sigma at
+// least contracts::min_pairing_sigma, finite.
 std::vector<std::uint16_t> reuse_texture(std::uint32_t width, double sigma, std::uint64_t seed);
 
 // The three textures of contract 15's widths, one after another, each from

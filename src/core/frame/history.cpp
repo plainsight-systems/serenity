@@ -6,13 +6,23 @@
 
 namespace serenity::frame {
 
-namespace {
-
-std::string at(Extent size) {
-    return std::to_string(size.width) + " x " + std::to_string(size.height);
+bool HeldFrames::start(std::uint64_t since, std::uint64_t index, Extent size) {
+    const bool remade = !made_ || !(size == size_);
+    made_ = true;
+    size_ = size;
+    since_ = since;
+    next_ = index + 1;
+    return remade;
 }
 
-}  // namespace
+bool HeldFrames::continues(std::uint64_t since, std::uint64_t index, Extent size) const {
+    return made_ && since == since_ && index == next_ && size == size_;
+}
+
+std::string HeldFrames::holds() const {
+    return made_ ? "frames " + std::to_string(since_) + " .. " + std::to_string(next_ - 1) + " at " + to_string(size_)
+                 : "nothing yet";
+}
 
 Joined History::join(const FrameInputs& inputs, Extent size, SceneMotion motion) {
     if (inputs.accumulated_since > inputs.index) {
@@ -27,22 +37,15 @@ Joined History::join(const FrameInputs& inputs, Extent size, SceneMotion motion)
     }
 
     if (held == 0) {
-        const bool remade = !made_ || !(size == size_);
-        made_ = true;
-        size_ = size;
-        since_ = inputs.accumulated_since;
-        next_ = inputs.index + 1;
+        const bool remade = held_.start(inputs.accumulated_since, inputs.index, size);
         time_ = inputs.time;
         return Joined{0, remade};
     }
 
-    if (!made_ || inputs.accumulated_since != since_ || inputs.index != next_ || !(size == size_)) {
-        const std::string holds =
-            made_ ? "frames " + std::to_string(since_) + " .. " + std::to_string(next_ - 1) + " at " + at(size_)
-                  : "nothing yet";
+    if (!held_.continues(inputs.accumulated_since, inputs.index, size)) {
         throw HistoryError("frame " + std::to_string(inputs.index) + " claims an image accumulated since frame " +
-                           std::to_string(inputs.accumulated_since) + " at " + at(size) +
-                           ", which is not what the image holds (" + holds +
+                           std::to_string(inputs.accumulated_since) + " at " + to_string(size) +
+                           ", which is not what the image holds (" + held_.holds() +
                            "); a frame skipped, or a change without starting over");
     }
     if (motion == SceneMotion::changing && inputs.time != time_) {
@@ -50,7 +53,7 @@ Joined History::join(const FrameInputs& inputs, Extent size, SceneMotion motion)
                            " s, would join frames at " + std::to_string(time_.count()) +
                            " s; the scene changes, so an image holds one instant (start over at each new time)");
     }
-    next_ = inputs.index + 1;
+    held_.take(inputs.index);
     return Joined{static_cast<std::uint32_t>(held), false};
 }
 
@@ -73,23 +76,15 @@ ReuseJoined ReuseHistory::join(const FrameInputs& inputs, Extent size) {
     }
     const std::uint64_t held = inputs.index - inputs.reused_since;
     if (held == 0) {
-        const bool remade = !made_ || !(size == size_);
-        made_ = true;
-        size_ = size;
-        since_ = inputs.reused_since;
-        next_ = inputs.index + 1;
-        return ReuseJoined{0, remade};
+        return ReuseJoined{0, held_.start(inputs.reused_since, inputs.index, size)};
     }
-    if (!made_ || inputs.reused_since != since_ || inputs.index != next_ || !(size == size_)) {
-        const std::string holds =
-            made_ ? "frames " + std::to_string(since_) + " .. " + std::to_string(next_ - 1) + " at " + at(size_)
-                  : "nothing yet";
+    if (!held_.continues(inputs.reused_since, inputs.index, size)) {
         throw HistoryError("frame " + std::to_string(inputs.index) + " claims reservoirs reused since frame " +
-                           std::to_string(inputs.reused_since) + " at " + at(size) +
-                           ", which is not what the history holds (" + holds +
+                           std::to_string(inputs.reused_since) + " at " + to_string(size) +
+                           ", which is not what the history holds (" + held_.holds() +
                            "); a frame skipped, or a change without starting over");
     }
-    next_ = inputs.index + 1;
+    held_.take(inputs.index);
     return ReuseJoined{held, false};
 }
 

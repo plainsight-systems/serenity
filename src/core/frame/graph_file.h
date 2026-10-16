@@ -21,6 +21,7 @@ namespace serenity::frame {
 // The format:
 //
 //   passes = ["path", "tone_map"] # pass names, in order; at least one
+//   mnee = true                   # a boolean; only with path or a ReSTIR PT pass
 //
 //   [tone_map]                    # exactly when a pass is tone_map
 //   exposure = 0.0                # stops, within [-10, 10] (core/passes/tone_map.h)
@@ -40,6 +41,17 @@ namespace serenity::frame {
 //   visibility_age = 4            # frames, an integer in [0, 255]; (B), if reused
 //   visibility_distance = 16.0    # pixels, in [0, 127]; (B), if reused
 //
+//   [restir_pt]                   # exactly when a pass is one of ReSTIR PT's
+//   nee_candidates = 32           # an integer in [1, 32]
+//   max_surfaces = 9              # an integer in [1, 14]
+//   footprint = 0.02              # in (0, 10]
+//   roughness = 0.2               # in [0, 1]
+//   neighbors = 3                 # an integer in [1, 3]; (PS)
+//   sigma = 16.0                  # pixels, in [0.8, 32]; (PS)
+//   confidence_cap = 20.0         # in [1, 60]; (PT)
+//   cap_floor = 1.0               # in [0, confidence_cap]; (PD)
+//   cap_exponent = 0.1            # in (0, 1]; (PD)
+//
 //   [denoise]                     # exactly when a pass is denoise
 //   weights = "../../serenity-data/denoiser-v1-model/wide"
 //                                 # the exported network's directory; a
@@ -47,8 +59,16 @@ namespace serenity::frame {
 //                                 # file's (core/passes/denoise.h)
 //
 // (T): only in a graph with restir_temporal; (S): only with restir_spatial;
-// (B): only in a graph with either, in basic mode. The values shown are
-// the ones the graphs are written with, RTXDI's defaults.
+// (B): only in a graph with either, in basic mode. (PS): only with
+// restir_pt_spatial; (PT): only with restir_pt_temporal; (PD): only with
+// restir_pt_duplication. The values shown are the ones the graphs are
+// written with: RTXDI's defaults for [restir_di], ReSTIR PT Enhanced's for
+// [restir_pt] (core/passes/restir_pt.h). mnee turns on caustics by manifold
+// next event estimation (Schedule::mnee, schedule.h), off unless written.
+//
+// ReSTIR PT's settings are core/contracts/path_reuse_settings.h's, which
+// says what each does and why its range is what it is; each is required
+// exactly when a pass of the graph reads it, as ReSTIR DI's are (below).
 //
 // The ReSTIR settings are core/contracts/reuse_settings.h's, which says what
 // each does and why its range is what it is. Each is required exactly when a
@@ -65,14 +85,15 @@ namespace serenity::frame {
 // booleans.
 //
 // Every key is checked. A missing passes, a passes that is not a non-empty
-// array of strings, an unknown pass name, a [tone_map] or [restir_di] table
-// without its passes or the passes without the table, a setting missing,
-// of the wrong type or out of range, a schedule the core does not accept
-// (schedule.h, invalid()), or a
-// key nobody reads is a GraphFileError, never a default or an ignored line: a typo
-// must fail the run that reads it, not render something else (E.2, E.14).
-// Each GraphFileError names the file and the line, and an unknown pass name lists the
-// known ones. A file that cannot be read whole, a directory's path or one
+// array of strings, an unknown pass name, a [tone_map], [restir_di],
+// [restir_pt] or [denoise] table without its passes or the passes without
+// the table, a setting missing, of the wrong type or out of range, an mnee
+// that is not a boolean or is written, true or false, in a graph with
+// neither path nor a ReSTIR PT pass, a schedule the core does not accept
+// (schedule.h, invalid()), or a key nobody reads is a GraphFileError, never
+// a default or an ignored line: a typo must fail the run that reads it, not
+// render something else (E.2, E.14). Each GraphFileError names the file and
+// the line, and an unknown pass name lists the known ones. A file that cannot be read whole, a directory's path or one
 // that ends early, is a GraphFileError naming it, never an empty graph.
 //
 // Not performance-sensitive: read once, at start-up.

@@ -24,6 +24,7 @@
 #include "core/denoise/network.h"
 #include "core/frame/graph_file.h"
 #include "core/frame/schedule.h"
+#include "support/files.h"
 #include "support/text.h"
 #include "test_paths.h"
 
@@ -162,6 +163,14 @@ TEST_CASE("JSON is read whole and strictly") {
     CHECK_THROWS_AS(doc.at("a").number("a"), denoise::JsonError);
 }
 
+TEST_CASE("a JSON object that names a member twice is refused at the second, never read by its first") {
+    const auto twice = [] { return denoise::parse_json(R"({"a": 1, "a": 2})"); };
+    CHECK(tests::contains(tests::error_of<denoise::JsonError>(twice),
+                          "JSON at byte 9: the member name \"a\" a second time in one object"));
+    // The same name in two objects is two members.
+    CHECK(denoise::parse_json(R"({"a": {"a": 1}})").at("a").at("a").number("") == 1.0);
+}
+
 TEST_CASE("the fixture's exported network reads, its widths and tensors as the structure needs") {
     const denoise::Network n = denoise::load_network(fixture_network);
     CHECK(n.widths.enc == std::array<std::uint32_t, 4>{8, 16, 24, 32});
@@ -177,7 +186,12 @@ TEST_CASE("the fixture's exported network reads, its widths and tensors as the s
 TEST_CASE("a network export that is not what the renderer runs is refused, naming what") {
     CHECK(tests::contains(network_refusal("\"format\": \"serenity-denoiser-weights/1\"", "\"format\": \"other\""),
                           "format"));
-    CHECK(tests::contains(network_refusal("\"albedo_floor\": 0.02", "\"albedo_floor\": 0.03"), "albedo_floor"));
+    CHECK(tests::contains(network_refusal("\"albedo_floor\": 0.02", "\"albedo_floor\": 0.03"),
+                          "inputs.albedo_floor is not the 0.02 this renderer runs with"));
+    CHECK(tests::contains(network_refusal("   2,\n   4\n", "   2,\n   8\n"),
+                          "its spacings are not contract 18's 1, 2 and 4"));
+    CHECK(tests::contains(network_refusal("    24,\n    32\n   ],", "    24\n   ],"),
+                          "widths.enc and widths.dec must have 4 entries each"));
     CHECK(tests::contains(network_refusal("\"masked_tap_score\": -10000.0", "\"masked_tap_score\": -1000.0"),
                           "masked_tap_score"));
     CHECK(tests::contains(network_refusal("\"bottleneck\": 40", "\"bottleneck\": 41"), "multiple of 8"));
@@ -185,4 +199,22 @@ TEST_CASE("a network export that is not what the renderer runs is refused, namin
     CHECK(tests::contains(network_refusal("{", "{", 1000), "inside weights.bin"));
     CHECK(tests::contains(network_refusal("{", "{ ,"), "layout.json"));
     CHECK(network_refusal("{", "{").empty());
+}
+
+TEST_CASE("an export whose file cannot be read whole is refused as unreadable, not as a short file") {
+    // A directory where a file should be opens on macOS and reads nothing:
+    // read through a stream iterator it was an empty weights.bin, refused
+    // later for its size, or an empty layout.json, for its JSON.
+    const tests::ScratchDirectory scratch("denoise-unreadable");
+    std::filesystem::copy_file(fixture_network / "layout.json", scratch / "layout.json");
+    std::filesystem::create_directory(scratch / "weights.bin");
+    CHECK(tests::contains(tests::error_of<denoise::NetworkError>([&] { return denoise::load_network(scratch.path()); }),
+                          "cannot read weights.bin"));
+    std::filesystem::remove(scratch / "layout.json");
+    std::filesystem::create_directory(scratch / "layout.json");
+    CHECK(tests::contains(tests::error_of<denoise::NetworkError>([&] { return denoise::load_network(scratch.path()); }),
+                          "cannot read layout.json"));
+    CHECK(tests::contains(
+        tests::error_of<denoise::NetworkError>([&] { return denoise::load_network(scratch / "missing"); }),
+        "cannot read layout.json"));
 }

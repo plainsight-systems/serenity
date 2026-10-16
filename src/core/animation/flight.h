@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <variant>
 #include <vector>
@@ -341,12 +342,15 @@ struct Visit : Cases... {
 // One stretch of the path: its behaviour, when it starts within the loop,
 // how long it lasts, and the numbers of its closed form, whose meaning is
 // its behaviour's: flight.cpp names where each number is, per behaviour
-// (P.1), and reads them only by those names.
+// (P.1), and reads them only by those names, each asserted to fit
+// segment_numbers (P.5).
+inline constexpr std::size_t segment_numbers = 19;
+
 struct Segment {
     Behaviour behaviour = Behaviour::transit;
     double start = 0.0;
     double duration = 0.0;
-    std::array<double, 19> numbers{};
+    std::array<double, segment_numbers> numbers{};
 };
 
 struct Flight {
@@ -395,13 +399,25 @@ Flight make_flight(const FlightJob& job, const contracts::Obstacles& obstacles);
 // MotionError, is rethrown as a FlightsError that carries k and the
 // refusal's reason, its message "flight k: " and the reason; anything else
 // as itself. So the error does not depend on the threads either.
+//
+// Its copy never throws (E.16), as an exception's must, being copied as it
+// is thrown and caught: the reason is kept in a std::runtime_error, whose
+// copies share one message rather than allocate one, beside its base's.
 class FlightsError : public MotionError {
 public:
     FlightsError(std::size_t job, const std::string& reason)
-        : MotionError("flight " + std::to_string(job) + ": " + reason), job(job), reason(reason) {}
-    std::size_t job;     // which job was refused
-    std::string reason;  // why, as make_flight said it (I.4: not parsed back out of what())
+        : MotionError("flight " + std::to_string(job) + ": " + reason), job_(job), reason_(reason) {}
+
+    // Which job was refused.
+    std::size_t job() const noexcept { return job_; }
+    // Why, as make_flight said it (I.4: not parsed back out of what()).
+    std::string_view reason() const noexcept { return reason_.what(); }
+
+private:
+    std::size_t job_;
+    std::runtime_error reason_;
 };
+static_assert(std::is_nothrow_copy_constructible_v<FlightsError>, "an exception's copy never throws (E.16)");
 
 std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles,
                                  std::size_t workers);

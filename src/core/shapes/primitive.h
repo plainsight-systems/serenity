@@ -25,6 +25,9 @@
 
 #include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
+#if !defined(__METAL_VERSION__)
+#include "core/contracts/obstacles.h"
+#endif
 
 namespace serenity {
 namespace shapes {
@@ -51,11 +54,10 @@ static_assert(std::is_trivially_copyable_v<ShapeRecord>, "ShapeRecord is written
 // An axis-aligned box: a geometry's extent in object space, what its
 // acceleration structure holds; or a shape's extent in the world (shapes.h).
 // Two packed triples, the layout of Metal's and Vulkan's bounding boxes
-// alike.
-struct Bounds {
-    contracts::Float3 min;
-    contracts::Float3 max;
-};
+// alike. Contract 11's box (contracts/obstacles.h), the same two corners,
+// not a second type of them (ES.3), as animation/extent.h takes it too: the
+// still shapes answer contract 11's touches() with it as it is.
+using Bounds = contracts::Box;
 
 static_assert(sizeof(Bounds) == 24, "Bounds must be two packed triples of floats");
 static_assert(std::is_trivially_copyable_v<Bounds>, "Bounds is written to the GPU as bytes");

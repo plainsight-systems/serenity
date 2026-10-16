@@ -33,9 +33,9 @@ namespace serenity::app {
 // schedule.h, light_size); a scale below 1 applies on top, the network
 // then upscaling to the scaled size and the layer stretching that.
 //
-// parse() throws OptionsError naming the argument for an unknown option, a
-// missing or malformed value, a scale outside (0, 1], or a missing --graph
-// (E.2, E.14). Numbers are read whole, by std::from_chars: no sign, space
+// parse() throws OptionsError naming the argument for an unknown option, an
+// option given twice, a missing or malformed value, a scale outside (0, 1],
+// or a missing --graph (E.2, E.14). Numbers are read whole, by std::from_chars: no sign, space
 // or locale (E.28). It reads neither file; they are loaded after parsing
 // succeeds (core/frame/graph_file.h, core/scene/scene.h).
 class OptionsError : public std::runtime_error {

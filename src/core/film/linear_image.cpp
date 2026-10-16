@@ -21,8 +21,8 @@ constexpr std::size_t rgba_channels = 4;  // what the GPU's accumulated image ho
 std::size_t checked_pixels(frame::Extent extent, std::string_view what) {
     if (extent.width == 0 || extent.height == 0 || extent.width > max_image_side ||
         extent.height > max_image_side) {
-        throw std::invalid_argument(std::string{what} + ": an image of " + std::to_string(extent.width) + " x " +
-                                    std::to_string(extent.height) + ", where each side is from 1 to " +
+        throw std::invalid_argument(std::string{what} + ": an image of " + frame::to_string(extent) +
+                                    ", where each side is from 1 to " +
                                     std::to_string(max_image_side));
     }
     return std::size_t{extent.width} * extent.height;
@@ -39,7 +39,7 @@ LinearImage from_rgba(frame::Extent extent, std::span<const float> rgba) {
     const std::size_t pixels = checked_pixels(extent, "from_rgba");
     if (rgba.size() != pixels * rgba_channels) {
         throw std::invalid_argument("from_rgba: " + std::to_string(rgba.size()) + " floats given for a " +
-                                    std::to_string(extent.width) + " x " + std::to_string(extent.height) +
+                                    frame::to_string(extent) +
                                     " RGBA image, which holds " + std::to_string(pixels * rgba_channels));
     }
     LinearImage image = make_linear_image(extent);
@@ -57,9 +57,7 @@ std::size_t checked_values(const LinearImage& image, std::string_view what) {
     const std::size_t values = checked_pixels(image.extent, what) * rgb_channels;
     if (image.rgb.size() != values) {
         throw std::invalid_argument(std::string{what} + ": " + std::to_string(image.rgb.size()) + " floats for a " +
-                                    std::to_string(image.extent.width) + " x " +
-                                    std::to_string(image.extent.height) + " image, which holds " +
-                                    std::to_string(values));
+                                    frame::to_string(image.extent) + " image, which holds " + std::to_string(values));
     }
     return values;
 }

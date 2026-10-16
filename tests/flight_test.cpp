@@ -1171,7 +1171,7 @@ TEST_CASE("of flights made in parallel, the lowest that fails is the one reporte
             (void)animation::make_flights(jobs, obstacles, workers);
             FAIL("expected an error");
         } catch (const animation::FlightsError& error) {
-            CHECK(error.job == 7);
+            CHECK(error.job() == 7);
             CHECK(std::string(error.what()).starts_with("flight 7: "));
         }
     }
@@ -1252,9 +1252,9 @@ TEST_CASE("a refusal carries its job and its reason; another std::invalid_argume
         (void)animation::make_flights(jobs, obstacles, animation::flight_workers());
         FAIL("expected an error");
     } catch (const animation::FlightsError& error) {
-        CHECK(error.job == 1);
-        CHECK(error.reason.starts_with("the flight's start"));
-        CHECK(std::string(error.what()) == "flight 1: " + error.reason);
+        CHECK(error.job() == 1);
+        CHECK(error.reason().starts_with("the flight's start"));
+        CHECK(std::string(error.what()) == "flight 1: " + std::string(error.reason()));
     }
     const Arguing arguing;
     try {
@@ -1360,7 +1360,7 @@ TEST_CASE("try_flights rethrows the lowest failure that is not a refusal; make_f
             (void)animation::make_flights(refusal_first, obstacles, workers);
             FAIL("expected an error");
         } catch (const animation::FlightsError& error) {
-            CHECK(error.job == 5);
+            CHECK(error.job() == 5);
         }
         CHECK(tests::error_of<std::runtime_error>([&] {
                   return animation::try_flights(failure_first, obstacles, workers);

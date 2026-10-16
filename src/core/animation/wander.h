@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 #include "core/animation/extent.h"
@@ -66,6 +67,9 @@ namespace serenity::animation {
 // Not performance-sensitive per wander: make_wander() runs once, at load;
 // position() is 9 sines in double, once per moving shape per frame.
 
+// K, the terms of each axis's sum (step 1).
+inline constexpr std::size_t wander_terms = 3;
+
 struct WanderParams {
     contracts::Float3 anchor{};
     float reach = 0.0f;  // finite, greater than 0
@@ -78,9 +82,9 @@ struct Wander {
     float reach = 0.0f;  // greater than 0
     // Per axis (x, y, z), per term: the amplitude, the frequency in hertz,
     // and the phase in radians.
-    std::array<std::array<double, 3>, 3> amplitude{};
-    std::array<std::array<double, 3>, 3> frequency{};
-    std::array<std::array<double, 3>, 3> phase{};
+    std::array<std::array<double, wander_terms>, 3> amplitude{};
+    std::array<std::array<double, wander_terms>, 3> frequency{};
+    std::array<std::array<double, wander_terms>, 3> phase{};
 };
 
 // The path for these numbers, by steps 1 to 3, of a body of radius `body`

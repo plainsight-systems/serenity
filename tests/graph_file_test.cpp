@@ -68,6 +68,12 @@ TEST_CASE("mnee is read where a pass reads it, off unless written, and refused a
               .mnee);
     CHECK(contains(error_for("passes = [\"preview\", \"display\"]\nmnee = true\n"),
                    "graph.toml:2: the frame graph sets mnee and has no path or ReSTIR PT pass"));
+    // Written false where nothing reads it is a key nobody reads too, not
+    // a harmless default.
+    CHECK(contains(error_for("passes = [\"test_pattern\"]\nmnee = false\n"),
+                   "graph.toml:2: the frame graph sets mnee and has no path or ReSTIR PT pass"));
+    CHECK(contains(error_for("passes = [\"preview\", \"display\"]\nmnee = false\n"),
+                   "graph.toml:2: the frame graph sets mnee and has no path or ReSTIR PT pass"));
     CHECK(contains(error_for("passes = [\"path\", \"display\"]\nmnee = 1\n"), "graph.toml:2: 'mnee' must be true or false"));
 }
 

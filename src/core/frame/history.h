@@ -147,6 +147,36 @@ struct Joined {
     bool remade = false;     // the image must be made anew, at the frame's size
 };
 
+// The part of the two rules above that is the same (ES.3): which frames of
+// one size a history holds, the frames `since` .. `next` - 1, and whether a
+// frame starts it over or is the next frame of the same start and size.
+// Kept by History and ReuseHistory, each adding its own checks; not for
+// their callers.
+class HeldFrames {
+public:
+    // Frame `index` starts over at `size`, holding the frames from `since`
+    // (its own index) on; whether the images must be made anew, having no
+    // size yet or another one.
+    bool start(std::uint64_t since, std::uint64_t index, Extent size);
+
+    // Whether frame `index`, claiming the frames from `since` on at `size`,
+    // is the next frame of what is held: the same start and size, and the
+    // index after the last held.
+    bool continues(std::uint64_t since, std::uint64_t index, Extent size) const;
+
+    // Frame `index`, which continues(), joins.
+    void take(std::uint64_t index) { next_ = index + 1; }
+
+    // What is held, for refusals: "frames a .. b at W x H", or "nothing yet".
+    std::string holds() const;
+
+private:
+    bool made_ = false;  // whether the images have a size yet
+    Extent size_;
+    std::uint64_t since_ = 0;  // the first frame held
+    std::uint64_t next_ = 0;   // the index of the frame taken next
+};
+
 class History {
 public:
     // Frame `inputs`, at `size`, of a scene that changes or not, joins the
@@ -154,11 +184,8 @@ public:
     Joined join(const FrameInputs& inputs, Extent size, SceneMotion motion);
 
 private:
-    bool made_ = false;  // whether the image has a size yet
-    Extent size_;
-    std::uint64_t since_ = 0;  // accumulated_since of the frames it holds
-    std::uint64_t next_ = 0;   // the index of the frame it takes next
-    Seconds time_{0.0};        // the time of the frames it holds
+    HeldFrames held_;    // the frames from accumulated_since
+    Seconds time_{0.0};  // the time of the frames it holds
 };
 
 // A running window's accumulated_since, frame by frame.
@@ -191,10 +218,7 @@ public:
     ReuseJoined join(const FrameInputs& inputs, Extent size);
 
 private:
-    bool made_ = false;  // whether the images have a size yet
-    Extent size_;
-    std::uint64_t since_ = 0;  // reused_since of the frames held
-    std::uint64_t next_ = 0;   // the index of the frame they take next
+    HeldFrames held_;  // the frames from reused_since
 };
 
 // A running window's reused_since, frame by frame.

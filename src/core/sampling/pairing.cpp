@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <format>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -42,6 +43,23 @@ constexpr std::array<std::array<std::uint8_t, 4>, 24> orders = {{
     {3, 0, 1, 2}, {3, 0, 2, 1}, {3, 1, 0, 2}, {3, 1, 2, 0}, {3, 2, 0, 1}, {3, 2, 1, 0},
 }};
 
+// Each texture's seed, from the one given: times xorshift64*'s multiplier
+// (Vigna 2016), an odd constant that sends consecutive seeds far apart, plus
+// the texture's index (reuse_textures).
+constexpr std::uint64_t texture_seed_step = 0x2545f4914f6cdd1dull;
+
+// Every width contract 15 lays out is one reuse_texture() takes.
+static_assert(
+    [] {
+        for (const std::uint32_t width : contracts::pairing_widths) {
+            if (width < 2u || width > largest_pairing_width || width % 2u != 0u) {
+                return false;
+            }
+        }
+        return true;
+    }(),
+    "contract 15's pairing widths are even, within [2, largest_pairing_width]");
+
 // `d` wrapped into [-width / 2, width / 2] (above, "wrapped"): a link longer
 // than half the texture is the shorter one across its edge.
 int wrapped(int d, int width) {
@@ -55,24 +73,27 @@ int wrapped(int d, int width) {
 }
 
 std::uint16_t packed(int x, int y) {
-    return static_cast<std::uint16_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(x)) |
-                                      (static_cast<std::uint32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(y)))
-                                       << 8u));
+    const auto low = static_cast<std::uint32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(x)));
+    const auto high = static_cast<std::uint32_t>(static_cast<std::uint8_t>(static_cast<std::int8_t>(y)));
+    return static_cast<std::uint16_t>(low | (high << 8u));
 }
 
 }  // namespace
 
 std::uint32_t shuffle_count(double sigma) {
     if (!std::isfinite(sigma) || sigma < static_cast<double>(contracts::min_pairing_sigma)) {
-        throw std::invalid_argument("shuffle_count: sigma " + std::to_string(sigma) + " is not at least 0.8");
+        throw std::invalid_argument("shuffle_count: sigma " + std::to_string(sigma) + " is not at least " +
+                                    std::format("{}", contracts::min_pairing_sigma));
     }
-    const double n = sigma * sigma / 2.0 + 1.46 / sigma - 1.76 / (sigma * sigma) + 0.656 / (sigma * sigma * sigma) + 0.5;
+    const double n =
+        sigma * sigma / 2.0 + 1.46 / sigma - 1.76 / (sigma * sigma) + 0.656 / (sigma * sigma * sigma) + 0.5;
     return static_cast<std::uint32_t>(std::floor(n));
 }
 
 std::vector<std::uint16_t> reuse_texture(std::uint32_t width, double sigma, std::uint64_t seed) {
-    if (width < 2 || width > 254 || width % 2 != 0) {
-        throw std::invalid_argument("reuse_texture: width " + std::to_string(width) + " is not even within [2, 254]");
+    if (width < 2 || width > largest_pairing_width || width % 2 != 0) {
+        throw std::invalid_argument("reuse_texture: width " + std::to_string(width) + " is not even within [2, " +
+                                    std::to_string(largest_pairing_width) + "]");
     }
     const std::uint32_t shuffles = shuffle_count(sigma);
     const std::size_t texels = std::size_t{width} * width;
@@ -95,7 +116,8 @@ std::vector<std::uint16_t> reuse_texture(std::uint32_t width, double sigma, std:
                                                        std::size_t{y1} * width + x0 % width,
                                                        std::size_t{y1} * width + x1};
                 const std::array<std::uint32_t, 4> held = {links[at[0]], links[at[1]], links[at[2]], links[at[3]]};
-                const std::array<std::uint8_t, 4>& order = orders[random.below(24)];
+                const std::array<std::uint8_t, 4>& order =
+                    orders[random.below(static_cast<std::uint32_t>(orders.size()))];
                 for (std::size_t i = 0; i < 4; ++i) {
                     links[at[i]] = held[order[i]];
                 }
@@ -125,7 +147,7 @@ std::vector<std::uint16_t> reuse_textures(double sigma, std::uint64_t seed) {
     all.reserve(contracts::pairing_entries);
     for (std::uint32_t t = 0; t < contracts::max_path_neighbors; ++t) {
         const std::vector<std::uint16_t> texture =
-            reuse_texture(contracts::pairing_widths[t], sigma, seed * 0x2545f4914f6cdd1dull + t);
+            reuse_texture(contracts::pairing_widths[t], sigma, seed * texture_seed_step + t);
         all.insert(all.end(), texture.begin(), texture.end());
     }
     return all;

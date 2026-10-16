@@ -52,4 +52,18 @@ fi
 "${CHECK}" --sdk "$(xcrun --sdk macosx --show-sdk-path)" >/dev/null 2>&1 ||
     fail "macos_sdk: the pinned SDK, named by its root, was refused"
 
+# A pins file that is missing or not JSON fails by name, not by a traceback.
+if "${CHECK}" --pins /nonexistent/toolchain.json >/dev/null 2>"${ERR}"; then
+    fail "pins: a missing pins file passed"
+fi
+grep -q "^TOOLCHAIN PINS UNREADABLE: /nonexistent/toolchain.json: " "${ERR}" ||
+    fail "pins: a missing pins file was not named: $(cat "${ERR}")"
+printf '{ not json' > "${PINS}"
+if "${CHECK}" --pins "${PINS}" >/dev/null 2>"${ERR}"; then
+    fail "pins: a pins file that is not JSON passed"
+fi
+grep -q "^TOOLCHAIN PINS UNREADABLE: ${PINS}: " "${ERR}" ||
+    fail "pins: a pins file that is not JSON was not named: $(cat "${ERR}")"
+grep -q "Traceback" "${ERR}" && fail "pins: a traceback, not a named failure: $(cat "${ERR}")"
+
 echo "check_toolchain: OK (a mismatch in any pin fails, by name)"

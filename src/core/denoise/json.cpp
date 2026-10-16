@@ -97,7 +97,16 @@ private:
             if (peek() != '"') {
                 fail("expected a member's name");
             }
+            const std::size_t name_at = at_;
             std::string key = string();
+            // A name twice is refused, at the second: at() would read the
+            // first and the file would be half-read (json.h).
+            for (const auto& [name, member] : members) {
+                if (name == key) {
+                    at_ = name_at;
+                    fail("the member name \"" + key + "\" a second time in one object");
+                }
+            }
             expect(':');
             members.emplace_back(std::move(key), value(depth + 1));
             if (peek() == '}') {

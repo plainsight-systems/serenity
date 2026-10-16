@@ -47,7 +47,6 @@
 #include <iostream>
 #include <optional>
 #include <span>
-#include <stdexcept>
 #include <string>
 
 #include "app/clock.h"
@@ -106,9 +105,11 @@ int main(int argc, char** argv) {
         const app::Options options = app::parse(arguments(argc, argv));
         const frame::Schedule schedule = frame::load_schedule(options.graph);
         if (!frame::presents(schedule)) {
-            throw std::runtime_error("the graph " + options.graph.string() +
-                                     " shows no image (it renders features alone, for serenity-headless "
-                                     "--features); a window needs one that does");
+            // The program's own refusal of its arguments, as serenity-headless
+            // refuses a graph that shows nothing (E.14).
+            throw app::OptionsError("the graph " + options.graph.string() +
+                                    " shows no image (it renders features alone, for serenity-headless "
+                                    "--features); a window needs one that does");
         }
         const std::optional<scene::SceneDescription> loaded =
             options.scene.empty() ? std::nullopt : std::optional{scene::load(options.scene)};

@@ -1,5 +1,6 @@
 #include "headless/options.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstddef>
@@ -10,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <vector>
 
 namespace serenity::headless {
 
@@ -97,9 +99,16 @@ private:
 Options parse(std::span<const char* const> args) {
     Options options;
     bool stepped = false;
+    std::vector<std::string_view> given;  // the options read so far
     Arguments arguments(args);
     while (const std::optional<std::string_view> next = arguments.next()) {
         const std::string_view option = *next;
+        // Each option once: a second would silently replace the first's
+        // value (E.2), so `--samples 1024 --samples 1` is refused, not run.
+        if (std::ranges::find(given, option) != given.end()) {
+            throw OptionsError(std::string{option} + " is given twice; each option is given once");
+        }
+        given.push_back(option);
         const auto value = [&] {
             const std::optional<std::string_view> given = arguments.next();
             if (!given) {

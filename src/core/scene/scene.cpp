@@ -4,6 +4,7 @@
 #include <array>
 #include <charconv>
 #include <cmath>
+#include <concepts>
 #include <cstdint>
 #include <fstream>
 #include <functional>
@@ -99,8 +100,8 @@ public:
         return number(required(t, key, what), std::string(what) + "'s " + std::string(key));
     }
 
-    // An integer from `least` to `most`, or a SceneError saying so in `range`
-    // words (ES.3: the one way the file's integers are read).
+    // An integer from `least` to `most`, or a SceneError at the node whose
+    // message is `message` (ES.3: the one way the file's integers are read).
     std::int64_t integer(const toml::node& node, std::int64_t least, std::int64_t most,
                          const std::string& message) const {
         const std::optional<std::int64_t> value = node.is_integer() ? node.value<std::int64_t>() : std::nullopt;
@@ -147,16 +148,11 @@ bool within(contracts::Float3 a, float low, float high) {
 }
 
 // A number as an error message writes it, the shortest decimal that reads
-// back as it: 0.0001, 10 (ES.45: the message formats the constant it
-// states, so the two cannot disagree).
-std::string words(double value) {
-    std::array<char, 64> buffer{};
-    const auto [end, error] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value,
-                                            std::chars_format::fixed);
-    return error == std::errc{} ? std::string(buffer.data(), end) : std::to_string(value);
-}
-
-std::string words(float value) {
+// back as it in its own type: 0.0001, 10 (ES.45: the message formats the
+// constant it states, so the two cannot disagree). One body for float and
+// double (T.1), each read back in its own precision.
+template <std::floating_point T>
+std::string words(T value) {
     std::array<char, 64> buffer{};
     const auto [end, error] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value,
                                             std::chars_format::fixed);
@@ -699,7 +695,7 @@ public:
 
     double distance(contracts::Float3 point) const override { return still_.distance(point); }
 
-    bool touches(const contracts::Box& box) const override { return still_.touches(shapes::Bounds{box.min, box.max}); }
+    bool touches(const contracts::Box& box) const override { return still_.touches(box); }
 
 private:
     shapes::StillShapes still_;
@@ -713,6 +709,13 @@ public:
     ShapeReading(const Reader& r, SceneDescription& description, const NameIndex& material_index,
                  const NameIndex& medium_index)
         : r_(r), description_(description), material_index_(material_index), medium_index_(medium_index) {}
+    // Its state is references to what it reads and writes, for one read:
+    // never copied or moved (C.12, C.21), as Context and Drawing are not.
+    ShapeReading(const ShapeReading&) = delete;
+    ShapeReading& operator=(const ShapeReading&) = delete;
+    ShapeReading(ShapeReading&&) = delete;
+    ShapeReading& operator=(ShapeReading&&) = delete;
+    ~ShapeReading() = default;
 
     // [[shapes]]: each read, a sphere or a box; motions and glows pending.
     void read_shapes(const toml::array& all);
@@ -734,6 +737,22 @@ public:
     void make_animation(const contracts::Obstacles& obstacles);
 
 private:
+    // What make_animation() gathers before it flies, per pending shape in
+    // the order the shapes come: the job of its flight, if it flies, and
+    // its wander, if it wanders.
+    static constexpr std::size_t no_job = std::numeric_limits<std::size_t>::max();
+    struct Gathered {
+        std::vector<animation::FlightJob> jobs;
+        std::vector<std::size_t> job_of;  // its flight's job, or no_job
+        std::vector<std::optional<animation::MotionRecord>> wander_of;
+    };
+
+    // make_animation()'s three steps (F.3): every flight's job gathered and
+    // every wander made; the flights made (fly()); every motion and glow
+    // recorded, the swarms' and the written ones', in the shapes' order.
+    Gathered gather(const contracts::Obstacles& obstacles);
+    void record(const Gathered& gathered, std::vector<animation::Flight> flights);
+
     std::uint32_t material(const toml::table& t, const std::string& what) const;
     std::uint32_t interior(const toml::table& t, const std::string& what, std::uint32_t worn) const;
     std::uint32_t add_sphere(contracts::Float3 center, float radius, std::uint32_t worn_index);
@@ -1169,17 +1188,22 @@ const toml::node& ShapeReading::flight_node(const Pending& p) const {
 }
 
 void ShapeReading::make_animation(const contracts::Obstacles& obstacles) {
-    constexpr std::size_t no_job = std::numeric_limits<std::size_t>::max();
-    std::vector<animation::FlightJob> jobs;
-    std::vector<std::size_t> job_of(pending_.size(), no_job);
-    std::vector<std::optional<animation::MotionRecord>> wander_of(pending_.size());
-    animation::Motions& motions = description_.animation.motions;
+    Gathered gathered = gather(obstacles);
+    std::vector<animation::Flight> flights = fly(gathered.jobs, gathered.job_of, obstacles);
+    record(gathered, std::move(flights));
+}
+
+ShapeReading::Gathered ShapeReading::gather(const contracts::Obstacles& obstacles) {
+    Gathered gathered{.jobs = {},
+                      .job_of = std::vector<std::size_t>(pending_.size(), no_job),
+                      .wander_of = std::vector<std::optional<animation::MotionRecord>>(pending_.size())};
+    std::vector<animation::FlightJob>& jobs = gathered.jobs;
     for (std::size_t i = 0; i < pending_.size(); ++i) {
         const Pending& p = pending_[i];
         const contracts::Transform& placed = description_.shapes.transforms[p.shape];
         const float body = contracts::scale(placed);  // a sphere's radius (core/shapes/sphere.h)
         if (p.swarm != no_swarm) {
-            job_of[i] = jobs.size();
+            gathered.job_of[i] = jobs.size();
             jobs.push_back(swarm_job(p));  // swarm.h, step 1's seed of its draw
             continue;
         }
@@ -1190,7 +1214,7 @@ void ShapeReading::make_animation(const contracts::Obstacles& obstacles) {
         const toml::table& t = r_.table(*p.motion, what);
         const std::string_view kind = r_.text(t, "kind", what);
         if (kind == "wander") {
-            wander_of[i] = make_wander(p, t, what, body, obstacles);
+            gathered.wander_of[i] = make_wander(p, t, what, body, obstacles);
         } else if (kind == "flight") {
             r_.only(t,
                     {"kind", "min", "max", "targets", "speed", "clearance", "circle", "swoop", "drift", "seed",
@@ -1200,7 +1224,7 @@ void ShapeReading::make_animation(const contracts::Obstacles& obstacles) {
             if (!inside_world(params.volume.min, params.volume.max, body)) {
                 r_.fail(t, what + "'s volume, grown by the sphere's radius, must lie " + world_words());
             }
-            job_of[i] = jobs.size();
+            gathered.job_of[i] = jobs.size();
             jobs.push_back({.params = std::move(params),
                             .start = contracts::translation(placed),
                             .body = body,
@@ -1210,21 +1234,23 @@ void ShapeReading::make_animation(const contracts::Obstacles& obstacles) {
                     "unknown motion kind '" + std::string(kind) + "'; known kinds: wander, flight");
         }
     }
+    return gathered;
+}
 
-    std::vector<animation::Flight> flights = fly(jobs, job_of, obstacles);
-
+void ShapeReading::record(const Gathered& gathered, std::vector<animation::Flight> flights) {
+    animation::Motions& motions = description_.animation.motions;
     for (std::size_t i = 0; i < pending_.size(); ++i) {
         const Pending& p = pending_[i];
-        std::optional<animation::MotionRecord> motion = wander_of[i];
-        if (job_of[i] != no_job) {
+        std::optional<animation::MotionRecord> motion = gathered.wander_of[i];
+        if (const std::size_t job = gathered.job_of[i]; job != no_job) {
             // Its reach, the volume grown to hold its prelude, grown by its
             // body, must lie in the world (scene.h).
-            const animation::Extent reach = animation::extent(flights[job_of[i]]);
-            if (!inside_world(reach.min, reach.max, jobs[job_of[i]].body)) {
+            const animation::Extent reach = animation::extent(flights[job]);
+            if (!inside_world(reach.min, reach.max, gathered.jobs[job].body)) {
                 r_.fail(flight_node(p),
                         p.what + "'s flight could carry it out of the world: it must stay " + world_words());
             }
-            motions.flights.push_back(std::move(flights[job_of[i]]));
+            motions.flights.push_back(std::move(flights[job]));
             motion = animation::MotionRecord{animation::MotionKind::flight,
                                              static_cast<std::uint32_t>(motions.flights.size() - 1)};
         }

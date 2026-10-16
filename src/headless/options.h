@@ -97,8 +97,9 @@ namespace serenity::headless {
 // none, and its motion is 0.
 //
 // parse() checks everything it can before anything renders and throws
-// OptionsError naming the argument (E.2, E.14): an unknown option, a
-// missing or malformed value (a --write other than all, last or doubling,
+// OptionsError naming the argument (E.2, E.14): an unknown option, an
+// option given twice (the second would replace the first), a missing or
+// malformed value (a --write other than all, last or doubling,
 // a --format that names none of Output's kinds; a number with a sign, a
 // space or anything after it, read by std::from_chars, E.28), zero frames,
 // zero samples or more than an image holds (2^24 - 1,
@@ -142,7 +143,6 @@ enum class Write {
     last,
     doubling,
 };
-
 
 // What parse() read: plain values, which parse() alone makes and checks
 // (C.2: a struct, since nothing here keeps an invariant after it).

@@ -20,8 +20,9 @@ the development machine). Python, which runs only this check and the
 review scripts and builds nothing, is found by CMake (find_package) and
 given a floor there, not pinned.
 
-Exit status: 0 when every version matches, 1 on any mismatch or when a tool
-cannot be run. Covered by tests/test_check_toolchain.sh, which proves a
+Exit status: 0 when every version matches, 1 on any mismatch, when a tool
+cannot be run, or when the pins file cannot be read as JSON (named, with
+why). Covered by tests/test_check_toolchain.sh, which proves a
 mismatch in each pin fails.
 """
 import json
@@ -84,7 +85,13 @@ def main(argv):
             return 1
         args = args[2:]
 
-    pins = json.loads(pins_path.read_text())
+    # A pins file that cannot be read, or is not JSON, is a named failure
+    # like any mismatch, not a traceback.
+    try:
+        pins = json.loads(pins_path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        print(f"TOOLCHAIN PINS UNREADABLE: {pins_path}: {error}", file=sys.stderr)
+        return 1
     failures = []
     for key, command in commands(tools).items():
         if key not in pins:

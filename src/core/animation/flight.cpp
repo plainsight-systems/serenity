@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "core/animation/draw.h"
+#include "core/animation/rounding.h"
 
 namespace serenity::animation {
 
@@ -169,6 +170,16 @@ struct StillAt {  // the point it holds
     static constexpr std::size_t at = 0;
 };
 
+// Every place above inside Segment::numbers: a triple's last number, or a
+// single's, below segment_numbers (P.5), so no name reads past the array.
+constexpr std::size_t triple = 3;
+static_assert(TransitAt::t1 + triple <= segment_numbers, "a transit's numbers fit a segment's");
+static_assert(CircleAt::v + triple <= segment_numbers && CircleAt::bob_phase < segment_numbers,
+              "a circle's numbers fit a segment's");
+static_assert(SwoopAt::b3 + triple <= segment_numbers, "a swoop's numbers fit a segment's");
+static_assert(DriftAt::phase + triple <= segment_numbers, "a drift's numbers fit a segment's");
+static_assert(StillAt::at + triple <= segment_numbers, "a still's numbers fit a segment's");
+
 constexpr Vec3 triple_at(const Segment& s, std::size_t i) noexcept {
     return {s.numbers[i], s.numbers[i + 1], s.numbers[i + 2]};
 }
@@ -183,6 +194,24 @@ constexpr Vec3 bezier(Vec3 b0, Vec3 b1, Vec3 b2, Vec3 b3, double u) noexcept {
     return (w * w * w) * b0 + (3.0 * w * w * u) * b1 + (3.0 * w * u * u) * b2 + (u * u * u) * b3;
 }
 
+// A transit's Bezier control points, its Hermite form as a Bezier: B0 = P0,
+// B1 = P0 + T0 / 3, B2 = P1 - T1 / 3, B3 = P1. The one place they are
+// worked out (ES.3), so evaluate(), speed_bound() and the opening's checks
+// read the same bits.
+constexpr std::array<Vec3, 4> controls_of_transit(const Segment& s) noexcept {
+    const Vec3 p0 = triple_at(s, TransitAt::p0);
+    const Vec3 p1 = triple_at(s, TransitAt::p1);
+    return {p0, p0 + (1.0 / 3.0) * triple_at(s, TransitAt::t0), p1 - (1.0 / 3.0) * triple_at(s, TransitAt::t1), p1};
+}
+
+// A point as contract 11 asks about it and position() places it. Its
+// coordinates are within float's range: a flight's points lie in its reach,
+// which reach_of() holds there, and a sample clear() asks about lies inside
+// the volume (ES.46).
+constexpr contracts::Float3 to_float(Vec3 p) noexcept {
+    return {static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z)};
+}
+
 [[noreturn]] void no_case(const char* where) {
     // After a switch over every Behaviour: reached only by a value no
     // enumerator names, a corrupt segment, which is refused rather than
@@ -194,12 +223,8 @@ constexpr Vec3 bezier(Vec3 b0, Vec3 b1, Vec3 b2, Vec3 b3, double u) noexcept {
 Vec3 evaluate(const Segment& s, double tau) {
     switch (s.behaviour) {
     case Behaviour::transit: {
-        // Hermite as Bezier: B1 = P0 + T0 / 3, B2 = P1 - T1 / 3.
-        const Vec3 p0 = triple_at(s, TransitAt::p0);
-        const Vec3 p1 = triple_at(s, TransitAt::p1);
-        const Vec3 t0 = triple_at(s, TransitAt::t0);
-        const Vec3 t1 = triple_at(s, TransitAt::t1);
-        return bezier(p0, p0 + (1.0 / 3.0) * t0, p1 - (1.0 / 3.0) * t1, p1, tau / s.duration);
+        const std::array<Vec3, 4> b = controls_of_transit(s);
+        return bezier(b[0], b[1], b[2], b[3], tau / s.duration);
     }
     case Behaviour::circle: {
         const Vec3 c = triple_at(s, CircleAt::center);
@@ -242,11 +267,8 @@ Vec3 velocity(const Segment& s, double tau) {
 double speed_bound(const Segment& s) {
     switch (s.behaviour) {
     case Behaviour::transit: {
-        const Vec3 p0 = triple_at(s, TransitAt::p0);
-        const Vec3 p1 = triple_at(s, TransitAt::p1);
-        const Vec3 b1 = p0 + (1.0 / 3.0) * triple_at(s, TransitAt::t0);
-        const Vec3 b2 = p1 - (1.0 / 3.0) * triple_at(s, TransitAt::t1);
-        return 3.0 * std::max({length(b1 - p0), length(b2 - b1), length(p1 - b2)}) / s.duration;
+        const std::array<Vec3, 4> b = controls_of_transit(s);
+        return 3.0 * std::max({length(b[1] - b[0]), length(b[2] - b[1]), length(b[3] - b[2])}) / s.duration;
     }
     case Behaviour::swoop: {
         const Vec3 b0 = triple_at(s, SwoopAt::b0);
@@ -327,8 +349,7 @@ bool clear(const Context& c, const Segment& s) {
             p.y > box.max.y - margin || p.z < box.min.z + margin || p.z > box.max.z - margin) {
             return false;
         }
-        if (c.obstacles.distance({static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z)}) <
-            needed) {
+        if (c.obstacles.distance(to_float(p)) < needed) {
             return false;
         }
     }
@@ -618,7 +639,7 @@ Episodes draw_episodes(const Context& c, Vec3 start) {
     const Segment first = drift_about(c.params, Draws{c.params.seed, 0, 0}, start);
     if (!clear(c, first)) {
         throw MotionError("the flight's start, the shape's center, is not clear of the still shapes and inside the "
-                      "volume by the clearance");
+                          "volume by the clearance");
     }
     e.behaviours.push_back(first);
     std::array<int, episodes> round{};
@@ -636,9 +657,10 @@ Episodes draw_episodes(const Context& c, Vec3 start) {
         const bool no_earlier = k == 1;
         const bool earlier_spent = !no_earlier && round[at - 1] + 1 >= rounds;
         if (no_earlier || earlier_spent || backtracks == most_backtracks) {
-            throw MotionError("flight episode " + std::to_string(k) + " could not be drawn clear of the still shapes, "
-                          "after " + std::to_string(backtracks) + " redraws of the episodes before it: a target "
-                          "with no room to circle it, or a volume too tight");
+            throw MotionError("flight episode " + std::to_string(k) +
+                              " could not be drawn clear of the still shapes, after " + std::to_string(backtracks) +
+                              " redraws of the episodes before it: a target with no room to circle it, or a volume "
+                              "too tight");
         }
         ++round[at - 1];  // back to the episode before, from its next round
         ++backtracks;
@@ -652,22 +674,10 @@ Episodes draw_episodes(const Context& c, Vec3 start) {
 std::vector<Segment> close_loop(const Context& c, Episodes& e) {
     std::vector<Segment> closing = transit(c, e.behaviours.back(), e.behaviours.front());
     for (int attempt = 0; closing.empty() && attempt < attempts; ++attempt) {
-        // Draw episode 63 afresh, from attempt numbers past the ones its own
-        // build used, so the draws differ.
-        for (int a = attempts * (attempt + 1); a < attempts * (attempt + 2); ++a) {
-            const Draws d{c.params.seed, episodes - 1, static_cast<std::uint64_t>(a)};
-            const Segment& last = e.behaviours[episodes - 2];
-            const Segment next = behaviour_for(c, d, evaluate(last, last.duration));
-            if (!clear(c, next)) {
-                continue;
-            }
-            std::vector<Segment> into = transit(c, last, next);
-            if (!into.empty()) {
-                e.behaviours[episodes - 1] = next;
-                e.transits[episodes - 1] = std::move(into);
-                break;
-            }
-        }
+        // Draw episode 63 afresh, from rounds past the one its own build
+        // used (round 0: no episode after it backs up into it), so the
+        // draws differ; a round with none clear leaves it as it was.
+        build(c, e, episodes - 1, attempt + 1);
         closing = transit(c, e.behaviours.back(), e.behaviours.front());
     }
     if (closing.empty()) {
@@ -805,21 +815,6 @@ Segment still_at(Vec3 at, double duration) noexcept {
     return s;
 }
 
-// A transit's Bezier control points: B1 = P0 + T0 / 3, B2 = P1 - T1 / 3, as
-// evaluate() places them.
-constexpr std::array<Vec3, 4> controls_of_transit(const Segment& s) noexcept {
-    const Vec3 p0 = triple_at(s, TransitAt::p0);
-    const Vec3 p1 = triple_at(s, TransitAt::p1);
-    return {p0, p0 + (1.0 / 3.0) * triple_at(s, TransitAt::t0), p1 - (1.0 / 3.0) * triple_at(s, TransitAt::t1), p1};
-}
-
-// A point as contract 11 asks about it and position() places it. Its
-// coordinates are within float's range: a flight's points lie in its reach,
-// which reach_of() holds there (ES.46).
-constexpr contracts::Float3 to_float(Vec3 p) noexcept {
-    return {static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z)};
-}
-
 // Step P2's check of the rise, by conservative advancement: at each sample
 // the distance to the still surfaces is exact (contract 11), so the path
 // may go on by the slack, at most V in u per unit, before it could come too
@@ -908,28 +903,10 @@ double lay_out_opening(std::vector<Segment>& opening) noexcept {
     return t;
 }
 
-// Which way outward() rounds: named, not a bool (I.24).
-enum class Toward {
-    down,  // a box's min
-    up,    // its max
-};
-
-// `x` rounded to a float no greater (down), or no less (up), than it: a
-// box's corner rounded outward. Within float's range, which reach_of checks
-// before it asks (ES.46).
-float outward(double x, Toward way) noexcept {
-    float f = static_cast<float>(x);
-    if (way == Toward::up && static_cast<double>(f) < x) {
-        f = std::nextafter(f, std::numeric_limits<float>::infinity());
-    } else if (way == Toward::down && static_cast<double>(f) > x) {
-        f = std::nextafter(f, -std::numeric_limits<float>::infinity());
-    }
-    return f;
-}
-
 // The box its center never leaves (flight.h, extent()): the volume, grown
 // to hold the opening's points, a wait's and a rise's control points, whose
-// box holds its curve; rounded outward to float.
+// box holds its curve; rounded outward to float (rounding.h), within
+// float's range, which it checks first.
 Extent reach_of(const Extent& volume, const std::vector<Segment>& opening) {
     std::array<double, 3> lo{};
     std::array<double, 3> hi{};
@@ -966,8 +943,8 @@ Extent reach_of(const Extent& volume, const std::vector<Segment>& opening) {
             throw MotionError("the opening reaches past float's range");
         }
     }
-    return {{outward(lo[0], Toward::down), outward(lo[1], Toward::down), outward(lo[2], Toward::down)},
-            {outward(hi[0], Toward::up), outward(hi[1], Toward::up), outward(hi[2], Toward::up)}};
+    return {{round_down(lo[0]), round_down(lo[1]), round_down(lo[2])},
+            {round_up(hi[0]), round_up(hi[1]), round_up(hi[2])}};
 }
 
 // The refusal below says "an hour": most_wait, which this ties it to (ES.45).
@@ -1085,8 +1062,7 @@ contracts::Float3 position(const Flight& flight, frame::Seconds t) {
                                         [](double value, const Segment& s) { return value < s.start; });
     const Segment& s = *(after - 1);
     // Step E3: its closed form.
-    const Vec3 p = evaluate(s, tau - s.start);
-    return {static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z)};
+    return to_float(evaluate(s, tau - s.start));
 }
 
 std::size_t flight_workers() {

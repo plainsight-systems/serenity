@@ -137,6 +137,9 @@ TEST_CASE("tone-map settings come exactly with the pass, in range") {
     CHECK(refused_for(with(0.0f, 1.0f), "bloom"));
     CHECK(refused_for(with(0.0f, -0.01f), "bloom"));
     CHECK(refused_for(with(0.0f, std::numeric_limits<float>::infinity()), "bloom"));
+    // Each value as the graph file writes it, as every other refusal has it.
+    CHECK(refusal(with(10.5f, 0.0f)) == "the tone map's exposure, 10.5 stops, must be finite, within [-10, 10]");
+    CHECK(refusal(with(0.0f, -0.01f)) == "the tone map's bloom, -0.01, must be within [0, 1)");
 }
 
 TEST_CASE("every kind reads back by its name, and a value no kind names is refused") {

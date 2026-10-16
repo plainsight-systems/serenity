@@ -5,6 +5,8 @@
 #include <iomanip>
 #include <limits>
 #include <sstream>
+#include <string>
+#include <string_view>
 
 #include "core/contracts/bsdf.h"
 
@@ -81,8 +83,8 @@ std::optional<std::string> base_outside(const SceneDescription& scene, const std
     return std::nullopt;
 }
 
-std::optional<std::string> scalar_outside(const std::string& what, const char* name, float value) {
-    return fits(value) ? std::nullopt : std::optional{outside(what + "'s " + name, number(value))};
+std::optional<std::string> scalar_outside(const std::string& what, std::string_view name, float value) {
+    return fits(value) ? std::nullopt : std::optional{outside(what + "'s " + std::string(name), number(value))};
 }
 
 }  // namespace

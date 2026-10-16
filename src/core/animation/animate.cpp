@@ -6,7 +6,7 @@ namespace serenity::animation {
 
 namespace {
 
-void check_movers(const Animation& animation, std::span<contracts::Transform> transforms) {
+void check_movers(const Animation& animation, std::span<const contracts::Transform> transforms) {
     for (const Mover& mover : animation.movers) {
         if (mover.target >= transforms.size()) {
             throw std::invalid_argument("animate: a mover's target is not one of the transforms");
