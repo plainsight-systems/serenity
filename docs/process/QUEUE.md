@@ -31,34 +31,40 @@ This file tracks active and accepted work.
   and performance pass done 2026-10-15
   (docs/research/2026-10-15-milestone-3-guidelines-pass.md): both corpora
   rule by rule over its code, every valid finding fixed, every graph the
-  same to the bit. Next: the milestone's close.
-
-- **ReSTIR PT** (docs/research/2026-10-11-restir-pt-layout.md). Phase 1
-  built 2026-10-11 (initial sampling, the hybrid shift, paired spatial
-  reuse): docs/research/2026-10-11-restir-pt-phase1.md, its gate not met.
-  Phase 2 built 2026-10-11 by the user's direction (temporal reuse by
-  Talbot MIS, the duplication map, a G-buffer of primary hits, light tiles;
-  graphs/restir_pt.toml is the whole of Enhanced at its defaults):
-  docs/research/2026-10-11-restir-pt-phase2.md. Manifold NEE done
-  (2026-10-12/13, by the user's direction; branch mnee-wip): behind a
-  graph's `mnee`; graphs/restir_pt.toml sets it, by the equal-time
-  comparison (glass and metal displayed error -16% at t = 120, -5% at
-  t = 8); graphs/path.toml does not and stays the reference:
-  docs/research/2026-10-12-mnee.md. Then Phase 3's references.
-
-- **The first frames.** Step (a), done: a frame's whole path, end to end. A
-  frame graph file names the passes, the Metal 4 backend records it with two
-  frames in flight, and the test pattern reaches an SDL3 window at the
-  display's resolution, or PNG files from the headless renderer. Step (b),
-  done: the first scene, read from a file, ray traced in hardware: a soft
-  brass sphere on a checkerboard at night, lit by two fireflies, through the
-  preview pass (direct light with soft shadows, sky light, GGX metal, glass
-  without caustics, 4x anti-aliasing), with each frame's GPU time in the
-  window's title. 78 ms at the display's 3456 x 2234 on the M3 Max, 20 ms at
-  half that each way: rendering below the display and upscaling with MetalFX
-  is what brings it to 60 frames a second.
+  same to the bit. Its documentation pass done 2026-10-15: the
+  architecture documents, MEMORY.md, this queue, the research index, the
+  training README and the front page brought up to Milestones 2 and 3.
+  Next: the milestone's close: its write-up, docs/writeups/milestone-3.md,
+  then main fast-forwarded to `denoiser` (workflow.md).
 
 ## Accepted
+
+- **Milestone 2: ReSTIR, closed 2026-10-13** (docs/writeups/milestone-2.md;
+  main fast-forwarded to `restir-di`). ReSTIR DI, Phases A to C
+  (2026-10-10/11): resampled importance sampling with visibility reuse,
+  RTXDI's BSDF candidate, the temporal and spatial merges in basic mode,
+  graphs/restir_ris.toml, restir_temporal.toml, restir_spatial.toml and
+  restir.toml (docs/research/2026-10-11-restir-ris-results.md,
+  -restir-temporal.md, -restir-spatial.md); on the way, the path loop made
+  one loop again (2026-10-11-path-split-cost.md), MIS in the path tracer,
+  the new time baseline (2026-10-11-path-mis.md), and the ray offset sized
+  to the point's rounding (2026-10-11-ray-offset.md). ReSTIR DI lost to
+  the MIS path tracer at equal time on the marbles, whose light arrives
+  mostly through glass and off mirrors, so the milestone moved to ReSTIR
+  PT, in place of the ReSTIR GI first planned
+  (2026-10-11-restir-pt-layout.md): Phase 1, initial sampling, the hybrid
+  shift and paired spatial reuse (2026-10-11-restir-pt-phase1.md); Phase 2
+  by the user's direction, temporal reuse by Talbot MIS, duplication maps,
+  a G-buffer of primary hits and light tiles, graphs/restir_pt.toml
+  (2026-10-11-restir-pt-phase2.md). Manifold NEE for glass (2026-10-12/13,
+  by the user's direction): set in graphs/restir_pt.toml by the
+  equal-time comparison (glass and metal displayed error -16% at t = 120,
+  -5% at t = 8), opt-in on the path tracer (graphs/path_mnee.toml), not in
+  graphs/path.toml, which stays the reference (2026-10-12-mnee.md). The
+  references at t = 120 and t = 8 rendered again after the ray offset,
+  2026-10-13 (that note, "Against the 2026-10-13 references"). The
+  convergence runs were not repeated on them: Milestone 2 compared
+  estimators at equal frame time instead.
 
 - **Publication feed for the Plainsight hub** (2026-10-13). Implemented
   `/writing/index.xml` from staged public articles, following Andrew's approval
@@ -93,15 +99,28 @@ This file tracks active and accepted work.
   toolchain pin and its check, the boundary check, the Metal backend's
   device and library loading.
 
-- **Milestone 1, the naive path tracer.** First slice, done: a still
-  scene converging over frames. The textbook path tracer with next event
-  estimation (pbrt-v4's SimplePathIntegrator, principle 7: each light path
-  counted one way), uniform light selection, Russian roulette, on contracts
-  1 to 3 (surface interaction, BSDF, emitter), into an accumulated image
-  whose pixels keep their own sample counts; headless --write and --time
-  for references. Checked against closed forms: furnaces, an integrating
-  sphere, lit floors. The preview reads its lights through the emitter
-  contract too.
+- **Milestone 1, the naive path tracer, closed 2026-10-10**
+  (docs/writeups/milestone-1.md). The first frames: a frame graph file
+  names the passes, the Metal 4 backend records it with two frames in
+  flight, to an SDL3 window at the display's resolution or to files from
+  the headless renderer; the first scene, a brass sphere lit by two
+  fireflies, through the preview pass. The textbook path tracer with next
+  event estimation (pbrt-v4's SimplePathIntegrator), uniform light
+  selection, Russian roulette, on contracts 1 to 3, into an accumulated
+  image whose pixels keep their own sample counts; checked against closed
+  forms (furnaces, an integrating sphere, lit floors). The marbles
+  (scenes/marbles.toml, written by scripts/make_marbles.py): thirty-six
+  marbles at real scale through a macro lens, lit by 616 fireflies in two
+  swarms; moving fireflies, one level of placed boxes rebuilt each frame
+  (2026-10-09-acceleration-structure.md); fireflies in flight and
+  blinking; tone mapping with bloom; the dark opening
+  (2026-10-10-dark-opening.md). The reference and its error
+  (2026-10-10-reference.md): the headless renderer's PFM,
+  serenity-measure, make reference and make convergence, the references
+  at t = 120 and t = 8 with their floors, the two-reference check and the
+  naive estimator's convergence. The time baseline, superseded 2026-10-11
+  by the MIS path tracer (MEMORY.md): 30.04 ms at 3456 x 2234 on the
+  marbles at t = 120 (2026-10-11-path-mis.md).
 
 ## Next, in order
 
@@ -110,65 +129,18 @@ This file tracks active and accepted work.
    1 (ReSTIR DI and PT, MNEE included), as Milestone 3's close did for its
    own code.
 
-1. Milestone 1, the rest: the reference render and its error measure.
-   Done: the marbles themselves (porcelain under a clear coat, glass tinted
-   by the first medium, cat's-eyes with swirled cores, a steel bearing,
-   thirty-six marbles at real scale through a macro lens, seen from above,
-   lit by 616 fireflies in two swarms circling among them, the scene written
-   by scripts/make_marbles.py; scenes/marbles.toml);
-   moving fireflies (the wander; shapes as a geometry and a transform; one
-   level of placed boxes rebuilt each frame, docs/research/2026-10-09-
-   acceleration-structure.md); fireflies in flight and blinking (episodes
-   checked clear at load, glows on the GPU); tone mapping with bloom (a
-   radiance image between passes, display and tone_map as the presenting
-   passes, Jimenez's bloom pyramid, Khronos PBR Neutral), so a firefly's
-   flash shows on the firefly; the dark opening (a black sky; fireflies
-   that wake one by one, one swarm perched on the table and the marbles
-   that rises, the other held above that comes down; a sleeping light's
-   shadow ray not traced, as pbrt-v4 does; a swarm's firefly whose flight
-   is refused by chance drawn again; docs/research/2026-10-10-dark-
-   opening.md). The baseline the estimators are measured against
-   (2026-10-11, superseding the textbook kernel's 29.90 ms at 1a617ab, by
-   the user's direction: MEMORY.md): the path tracer with MIS on the
-   marbles at t = 120, every firefly awake, 30.04 ms at 3456 x 2234, 31.95
-   ms at t = 8, by the method the dark opening's note keeps; error x time
-   at 1920 x 1080 about 0.018 at t = 120 and 0.04 at t = 8
-   (docs/research/2026-10-11-path-mis.md). The reference and
-   its error, built (docs/research/2026-10-10-reference.md): the headless
-   renderer's --format pfm, sample indices held under 2^32,
-   serenity-measure, and make reference and make convergence. Left: the
-   references at t = 120 and t = 8 rendered, their floors, the
-   two-reference check, and the naive estimator's convergence at both
-   times, into that note's Results.
+1. Reservoir reuse as kernels: the optimization milestone, what each pass
+   costs and where the bytes go, which waited for the full pipeline (the
+   user, 2026-10-14).
 
-Then, each in its turn: ReSTIR DI (Phase A done 2026-10-10, branch
-restir-di-phase-a: resampled importance sampling with visibility reuse,
-graphs/restir_ris.toml; its split of the path loop made one loop again,
-the path pass's time and bits kept, docs/research/2026-10-11-path-split-
-cost.md; the review of f86e7ae answered 2026-10-11 on branch
-phase-a-review: the reuse settings Sample reuse's contract, the light
-transport the Integrator's, each candidate's light placed once, the packed
-Bsdf's range refused by name, the RIS graph 2.7% faster at t = 120,
-phase-a-guidelines-pass.md; MIS in the shared path tracer done
-2026-10-11 on branch path-mis, docs/research/2026-10-11-path-mis.md, the
-continuation's spikes gone; the review of 7751a65 answered 2026-10-11 on
-branch mis-review: both strategies drawn and weighed from the point rays
-leave from, the power heuristic without overflow, the probes' layouts one
-header per probe, that note's "Review of 7751a65"; the ray offset sized to
-the point's rounding (Wachter and Binder, hit points put back on their
-shapes) done 2026-10-11, docs/research/2026-10-11-ray-offset.md, the
-references at t = 120 and t = 8 to render again once, when ReSTIR DI
-is finished (not before), with the convergence runs after them; Phase
-B done 2026-10-11 on branch restir-di: RTXDI's BSDF candidate, weighed
-against the light candidates by MIS, and the temporal merge in basic
-mode, graphs/restir_temporal.toml, docs/research/2026-10-11-restir-
-temporal.md; Phase C done 2026-10-11 on branch restir-di: the spatial
-merge, RTXDI's k = 1 within 32 pixels, basic mode and raytraced alone,
-graphs/restir.toml (ReSTIR DI whole) and graphs/restir_spatial.toml,
-docs/research/2026-10-11-restir-spatial.md; left: the references
-rendered again and the convergence runs); ReSTIR GI; caustics by manifold next
-event estimation; reservoir reuse as kernels; a denoiser of its own against
-Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
+2. The Vulkan backend on the AMD machine (Strix Halo), beside
+   `src/metal/` (MEMORY.md), the denoiser's kernels with it.
+
+Not scheduled: the denoiser's next training round (the user, 2026-10-15:
+no retrain for now). Its planned investment is heavier sampling of the
+targets; with it, the temporal weight measured, a longer cycle, and, if
+wanted, earlier opening sequences in the data set (Parking Lot:
+"Training", "Data set").
 
 ## Parking Lot
 
@@ -212,17 +184,15 @@ Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
 - Features: one ray a pixel a frame, as the noisy input's own; the 1920 x 1080 target's albedo is not averaged over its 4,096 samples (Open Image Denoise: aux images "should use the same pixel reconstruction filter as the beauty"): average it if the network's output shows edge or depth-of-field artifacts.
 - Features: glass beyond the first hit follows one branch by Fresnel's larger weight; a marble seen through another at near-grazing angles snaps between branches (Open Image Denoise suggests albedo 1 there if it is noisy).
 - Features: the pass costs ReSTIR PT 1.2 ms at 960 x 540 (12.5 -> 13.7, +10%); written by the initial pass from its primary hit, it would save the camera ray; Phase 4 measures it in the denoised frame.
-- Features: the window passes the frame before but no window graph has the features pass yet.
 - Data set: no training sequence starts before 3 s (the opening's draws, 2.97 to 6.97 s); the test's t = 2 is earlier than any; add earlier sequences if Phase 3's validation shows the first fireflies waking poorly.
-- Data set: 4,096-sample targets still sparkle inside glass and cat's-eye cores (path tracer, no MNEE); denoise or deepen those targets if the network learns the speckle.
+- Data set: 4,096-sample targets still sparkle inside glass and cat's-eye cores (path tracer, no MNEE); denoise or deepen those targets if the network learns the speckle. Heavier targets are the next training round's planned investment (the user, 2026-10-15); at denoiser-v1 the targets' own error is a tenth of the network's (2026-10-15-denoiser-training.md).
 - Denoiser: the full-size albedo retraces the features kernel at the output size each frame (Phase 4's note gives its cost); an albedo-only variant saves writes, not rays; reusing the light's features upsampled would not be the training's input.
 - Denoiser: half-precision activations change 0.7 to 0.9% of displayed pixels by one level (up to 9 in a few) against PyTorch's float32 on real frames; float activations if a difference is ever seen.
 - Denoiser: the export's SHA256SUMS is not checked at load (sizes, shapes, constants and finite values are).
 - Data set: the test inputs use frame indices 0 to 7,207; Phase 4's 65,536-sample references for scoring must start past them (make reference batches from index 0).
-- Training: the table flickers 36 to 47% more than the targets once every firefly is awake (and on validation); the temporal term is under 3% of the loss at Chaitanya et al.'s 0.125. Measure 0.125 x 2, x 4, x 8: validation flicker against validation error; the user decides (2026-10-15-denoiser-training.md).
+- Training: the table flickers 36 to 47% more than the targets once every firefly is awake (and on validation); the temporal term is under 3% of the loss at Chaitanya et al.'s 0.125. Measure 0.125 x 2, x 4, x 8: validation flicker against validation error (2026-10-15-denoiser-training.md). Decided by the user 2026-10-15: no retrain now; it waits for the next training round.
 - Training: validation still fell about 0.0005 per 50 epochs through the anneal; a 600-epoch cycle to see if it keeps falling.
-- Training: the network reads view-space normals (data.py); Phase 4 transforms the features pass's world normal by the camera's axes, or the features pass writes view space.
-- Training: small or wide for Phase 4 by their Metal cost (small 1 to 9% higher displayed error, 56% of the U-Net's multiply-adds; PyTorch fp16 U-Net 7.2 against 9.6 ms); both exported.
 - Training: Thomas et al. 2022's loss weights and sub-pixel handling unread (the PDF could not be fetched); check them against loss.py and model.py.
 - Training: MPS runs from one seed agree to four figures, not to the bit.
 - ReSTIR PT's radiance is not bit-reproducible on the GPU: reruns of a frame differ in 1 to 9 pixels by up to 2.4e-7 (features exact); find the order-dependent sum.
+- Denoiser: the design's comparison with MetalFX's denoiser, "if available", was not made; Open Image Denoise was the yardstick. Whether it is still wanted is the user's call.

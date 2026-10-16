@@ -50,6 +50,18 @@ This repo is C++-dominant and performance-sensitive.
 - GPU behavior is environment-sensitive. Verification names the machine it
   ran on (the device test prints it); a green build is not proof. There is
   one target, the development machine (MEMORY.md).
+- **Python is outside the C++ gates.** `scripts/` and `training/` are
+  reviewed for correctness, not against the C++ corpora; `training/` keeps
+  its own pinned environment (`training/README.md`), and nothing the
+  renderer builds or runs depends on it.
+- **A milestone closes with its write-up and `main`.** The write-up goes in
+  `docs/writeups/`, then `main` is fast-forwarded to the work branch and
+  pushed; `main` only ever fast-forwards. Milestone 3 added two steps
+  before its write-up: a guidelines and performance pass over its own
+  code, both corpora rule by rule, every graph shown unchanged to the bit
+  (`../research/2026-10-15-milestone-3-guidelines-pass.md`), and a
+  documentation pass bringing the architecture, process and front-page
+  documents up to what was built.
 
 Do not weaken inherited governance without a decision; MEMORY.md records the
 ones taken.
