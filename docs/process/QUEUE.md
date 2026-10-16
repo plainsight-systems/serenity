@@ -146,6 +146,10 @@ This file tracks active and accepted work.
 2. The Vulkan backend on the AMD machine (Strix Halo), beside
    `src/metal/` (MEMORY.md), the denoiser's kernels with it.
 
+3. Two further targets, added by the user 2026-10-16: the user's NVIDIA
+   RTX 3090, and the Xbox Series X. Which backends they take (Vulkan,
+   Direct3D 12) and in what order is planned with Milestone 4.
+
 Not scheduled: the denoiser's next training round (the user, 2026-10-15:
 no retrain for now). Its planned investment is heavier sampling of the
 targets; with it, the temporal weight measured, a longer cycle, and, if
