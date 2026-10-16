@@ -1,6 +1,9 @@
 #include "metal/passes/denoise/denoise.h"
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -159,28 +162,25 @@ void DenoisePass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResour
                                                 c.params.out_blocks / c.params.chunk_blocks},
                                       MTL::Size{128, 1, 1});
     };
-    const auto resample = [&](const DenoiseImages::Resample& r, const MTL::ComputePipelineState* kernel) {
+    const auto pool = [&](const DenoiseImages::Resample& r) {
         barrier(encoder);
         arguments->setAddress(r.params_address, binding::params);
         arguments->setAddress(r.input, binding::input);
         arguments->setAddress(r.output, binding::output);
-        encoder->setComputePipelineState(kernel);
+        encoder->setComputePipelineState(maxpool_.get());
         encoder->dispatchThreads(
             MTL::Size{NS::UInteger{r.params.width} * r.params.height * (r.params.channels / 4), 1, 1},
             MTL::Size{256, 1, 1});
     };
     for (std::size_t l = 0; l < 4; ++l) {
         convolve(l);
-        resample(images->pool(l), maxpool_.get());
+        pool(images->pool(l));
     }
-    convolve(4);
-    convolve(5);
-    for (std::size_t i = 0; i < 4; ++i) {
-        convolve(6 + i);
+    for (std::size_t i = 4; i < DenoiseImages::convolutions; ++i) {
+        convolve(i);
     }
-    convolve(10);
 
-    // 4. The output: a threadgroup a row of 128 input pixels, a thread an
+    // 4. The output: a threadgroup a row of 32 input pixels, a thread an
     // output pixel of twice the padded grid.
     barrier(encoder);
     arguments->setAddress(images->features(), binding::input);

@@ -12,7 +12,13 @@ This file tracks active and accepted work.
   scripts/make_marbles.py --seed N [--out FILE]. Phase 2 rendered 2026-10-14
   (docs/research/2026-10-14-denoiser-dataset.md): denoiser-v1 by
   scripts/make_denoiser_dataset.py, 400 frames in 50 sequences, 4.0 h, 32.3 GB,
-  at ../serenity-data/denoiser-v1 beside the checkout. Next: Phase 3, training.
+  at ../serenity-data/denoiser-v1 beside the checkout. Phase 3, training: the
+  wide and small networks (training/, branch denoiser-phase3). Phase 4 built
+  2026-10-15 (docs/research/2026-10-15-denoiser-live.md): the `denoise` pass
+  on our own Metal kernels (contract 18), two resolutions in one frame
+  (frame::light_size), graphs/restir_pt_denoised.toml with the weights as a
+  setting, the match against PyTorch in ctest. Next: the network's quality
+  in the window, the small network against the wide at equal time.
 
 - **ReSTIR PT** (docs/research/2026-10-11-restir-pt-layout.md). Phase 1
   built 2026-10-11 (initial sampling, the hybrid shift, paired spatial
@@ -191,4 +197,7 @@ Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
 - Features: the window passes the frame before but no window graph has the features pass yet.
 - Data set: no training sequence starts before 3 s (the opening's draws, 2.97 to 6.97 s); the test's t = 2 is earlier than any; add earlier sequences if Phase 3's validation shows the first fireflies waking poorly.
 - Data set: 4,096-sample targets still sparkle inside glass and cat's-eye cores (path tracer, no MNEE); denoise or deepen those targets if the network learns the speckle.
+- Denoiser: the full-size albedo retraces the features kernel at the output size each frame (Phase 4's note gives its cost); an albedo-only variant saves writes, not rays; reusing the light's features upsampled would not be the training's input.
+- Denoiser: half-precision activations change 0.7 to 0.9% of displayed pixels by one level (up to 9 in a few) against PyTorch's float32 on real frames; float activations if a difference is ever seen.
+- Denoiser: the export's SHA256SUMS is not checked at load (sizes, shapes, constants and finite values are).
 - Data set: the test inputs use frame indices 0 to 7,207; Phase 4's 65,536-sample references for scoring must start past them (make reference batches from index 0).

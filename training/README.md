@@ -88,6 +88,23 @@ structure, its inputs and outputs) and `SHA256SUMS`; the export reads the
 weights back by the layout alone and checks they compute what the
 checkpoint does, bit for bit.
 
+## The renderer against PyTorch
+
+The renderer's denoise pass (src/metal/passes/denoise/) runs the exported
+network on the GPU; `denoise_check.py` makes a fixture of renderer images
+and PyTorch's outputs for it, and compares the GPU's outputs with them
+(docs/research/2026-10-15-denoiser-live.md):
+
+```sh
+uv run --locked python denoise_check.py fixture --network ../../serenity-data/denoiser-v1-model/wide \
+    --data ../../serenity-data/denoiser-v1 --sequence gen-0125 --frames 8 --out CHECK_DIR
+../build/native-release/tests/gpu/denoise_check CHECK_DIR GPU_DIR
+uv run --locked python denoise_check.py compare --fixture CHECK_DIR --gpu GPU_DIR
+```
+
+The test's own fixture, `tests/data/denoise`, was made by `fixture
+--random-network --sequence gen-0121 --frames 3 --crop 512 14 40 22`.
+
 ## Files
 
 | File | What |
@@ -102,4 +119,5 @@ checkpoint does, bit for bit.
 | `render_warmup.py` | the test sequences' warm-up frames |
 | `evaluate.py` | the test |
 | `export.py` | the weights for Phase 4 |
+| `denoise_check.py` | the renderer's denoise pass against PyTorch: fixtures and the comparison |
 | `test_training.py` | the conventions, on synthetic data |

@@ -17,7 +17,15 @@
 // inputs and float accumulators. The light, its demodulation (up to 50 x
 // the radiance, past half's range), the history, the head's scores and
 // everything after them are float. The match against PyTorch's float32 is
-// measured (docs/research/2026-10-15-denoiser-live.md).
+// measured (docs/research/2026-10-15-denoiser-live.md). Every sum runs in a
+// fixed order, a simdgroup's matrix product or a thread's loop, never an
+// atomic: the same inputs give the same image, run after run (GDSA.2).
+//
+// Threadgroup memory only where it is reused or reorders access (GPU.5): a
+// convolution's input halo and weights, read by every tap of every
+// simdgroup, and the head's scores, transposed for the lanes. Staging the
+// output kernel's taps too was measured and gained nothing, and so was
+// aliasing the convolution's halo and results to raise occupancy (GPU.3).
 //
 // Buffers of activations hold a level's pixels with a one-pixel border of
 // zeros on every side, channels innermost, rows `pitch` pixels apart: the

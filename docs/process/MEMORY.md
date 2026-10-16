@@ -63,7 +63,13 @@ Decided 2026-10-08, at the repository's creation:
   close to Vulkan's model, which the second backend will need anyway; its
   machine-learning encoder and in-shader tensors are where the denoiser's
   inference can run inside the frame; and MetalFX's denoised upscaler is
-  there as a second baseline beside Open Image Denoise.
+  there as a second baseline beside Open Image Denoise. Amended 2026-10-15
+  (Milestone 3, Phase 4): the denoiser's convolutions run as our own
+  compute kernels on simdgroup matrices inside the frame's encoder, not
+  through the machine-learning encoder, whose networks are packages built
+  offline with fixed input sizes and whose kernels on the M3 Max we could
+  neither tune nor match to PyTorch by construction
+  (`research/2026-10-15-denoiser-live.md`).
 - **The core is platform-neutral; only `src/metal/` uses Metal's host API.**
   Enforced by `tools/check_boundaries.sh`, whose rules are proven to fire by
   `tests/test_check_boundaries.sh`.

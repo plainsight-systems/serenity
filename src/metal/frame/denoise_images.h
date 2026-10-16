@@ -40,8 +40,10 @@ namespace serenity::metal {
 //
 // Shared storage, zeroed when made: the borders must be zero and nothing
 // writes them, and a private buffer's first contents are not defined.
-// Nothing is aliased: some 0.9 GB at a 1728 x 1117 light for the wide
-// network, on a machine with far more (the alternatives, in the note).
+// Nothing is aliased: about 0.95 GB at a 1728 x 1117 light for the wide
+// network (a quarter of it the two histories, 2 x 7.7 M float4s), on a machine
+// with far more; GPU.9's aliasing would save little: the network's input
+// and its last convolution's output could share 0.12 GB.
 //
 // The history. The output feeds the next frame, so which frames it holds
 // is the core's reuse history (core/frame/history.h, ReuseHistory), as
