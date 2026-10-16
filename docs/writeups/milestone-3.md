@@ -7,165 +7,185 @@ estimation traced at 960 × 540, denoised and upscaled to 1920 × 1080 by the
 network described here.*
 
 [Milestone 2](milestone-2.md) left me with better samples and a frame that
-was still visibly noisy. ReSTIR PT roughly halved the displayed error for
-the cost of five path-traced samples, but half of a noisy image is still
-noisy, and the fireflies move, so it never settles. Production renderers
-that use ReSTIR run a denoiser after it, and treat the samples as evidence
-for a reconstruction that produces the picture.
+was still visibly noisy. Reusing paths made the light cheaper to find,
+but the fireflies keep moving. I needed a way to turn those samples into
+a moving image without waiting for thousands of them to accumulate.
 
-I wanted that reconstruction to be my own, for two reasons. Tracing the
-light at a lower resolution and bringing it up to the display's is how a
-frame like this one gets anywhere near real time, so the same pass should
-also upscale. And of everything in the renderer, a denoiser is where the
-connection to attention is most direct, because it decides how much each
-nearby value should count and then takes their weighted average.
+That gave me a reason to build and train a model of my own. Serenity began
+as a way to investigate GPU techniques that also matter to inference.
+Now I could follow that connection through the whole process: produce
+the training data, teach a network to reconstruct the image, and write
+the kernels that run it inside the renderer. The result would be visible
+in the marbles, including whatever the model lost or got wrong.
 
-## Learning how to weigh the neighbors
+I also wanted it to upscale. Tracing at half the width and height means
+tracing a quarter as many pixels, leaving more of the frame budget for
+reconstruction. The network now turns 960 × 540 samples into a 1920 × 1080
+image. On my M3 Max, the fully lit frame takes 23.5 ms, down from Milestone
+2's 39.8 ms, with much less noise.
 
-The network I built predicts kernels. For every output pixel it looks at
-the noisy pixels around the matching input pixel, gives each of them a
-score, and passes the scores through a softmax. The output is the weighted
-average of those pixels' light. It does this at three spacings, 3 × 3
-neighborhoods at one, two and four pixels apart, so it can reach further
-across flat surfaces without reading every pixel in between. It also
-learns how much of its own previous frame to blend in, moved by the motion
-vectors to where each pixel's surface was. Each of the four output pixels
-over an input pixel gets its own kernel, which is how it doubles the
-resolution each way.
+## Learning what to keep
 
-A small example shows the correspondence. Suppose a pixel on the table has
-three neighbors: one on the table, one on the edge of a marble, and one
-with a stray bright sample. If the network scores them 2, 1 and −1, the
-softmax turns those scores into weights of about 0.71, 0.26 and 0.04, and
-the pixel takes mostly the table's light, a little of the edge's, and
-almost none of the outlier's. Attention does the same arithmetic with
-queries and keys. As in attention, the network has not learned the weights
-themselves. It has learned how to compute them from what is in front of
-it: the noisy light, the surface color, the normal, the depth and the
-motion of each pixel. That is why it can work on a scene it has never
-seen.
+Averaging nearby pixels can remove noise, but it can also smear a marble
+into the table. The useful decision is how much each neighbor should
+contribute. I built a network that makes that decision from the noisy
+light and the renderer's knowledge of the surfaces: their color,
+orientation, depth and motion.
 
-The correspondence has limits. The neighborhood is small and fixed rather
-than the whole sequence, and the values being averaged are the noisy
-colors themselves, not learned projections of them. What carries over is
-the structure: a score from features, a normalization, and a weighted sum
-over a window.
+For each output pixel, the network assigns scores to nearby input pixels
+and passes those scores through a softmax to get weights. Suppose a pixel
+on the table has three neighbors: another table pixel, the edge of a
+marble, and a stray bright sample. Scores of 2, 1 and −1 become weights of
+about 0.71, 0.26 and 0.04. Their weighted average keeps mostly the table's
+light, some of the edge's, and very little of the outlier's.
 
-## What it learned from
+That is the score, softmax and weighted sum used in attention. Here the
+scores come from the image features and the values are the noisy light
+in a local neighborhood. Training teaches the network how to compute
+those scores, so the filter weights change with what is in front of it.
+An edge needs a different mixture from a patch of table.
 
-The question I cared about most was whether it would learn the task or
-learn the scene. The network should learn what noise looks like next to an
-edge, or behind glass, not what the marbles happen to look like. So it
-never saw the marbles in training. I gave the scene generator a seed and
-rendered 40 other layouts, with different marbles, swarms and camera
-positions, plus the brass-sphere scenes, and held the real marbles back
-as the test. Validation on four of the generated scenes decided when to
-stop, and the marbles were scored once, after training ended.
+The network can reach across three neighborhood spacings, which lets it
+use more distant pixels where the surface allows it. It also decides how
+much of its previous output to keep, using motion vectors to line that
+image up with the current frame. Each input pixel supplies four output
+pixels, with a separate set of filter weights for each. Upscaling is
+therefore part of the reconstruction it learns.
 
-The inputs are what the renderer will actually produce: ReSTIR PT's own
-output at 960 × 540. Reuse correlates neighboring pixels and consecutive
-frames, so its noise is different from a path tracer's, and a denoiser
-trained on the wrong noise would be solving a different problem. Each
-input frame comes with its surface features, taken through glass and
-mirrors to the first rough surface behind them, as Intel's Open Image
-Denoise and NVIDIA's NRD both prescribe. The noisy light is divided by
-the surface color before the network sees it and multiplied back after,
-so the wood grain and the swirls in the cat's-eyes don't depend on the
-network keeping them. That step is close to what normalization does in a
-model: it takes a factor the network shouldn't have to learn out of the
-values it works on.
+## Giving it something worth learning
 
-The targets are the same instants rendered with 4,096 samples a pixel.
-Rendering all 400 frames of the data set took about four hours on my M3
-Max. At that sample count most of the frame is clean, but the inside of
-the glass and the cat's-eye cores still speckle. I kept those targets for
-this first round, and the test let me check what it cost: against
-65,536-sample references, the targets' own error is about a tenth of the
-network's, in the glass as much as anywhere. For now the network's own
-error is what limits the result.
+I wanted to know whether this would work on the marbles without teaching
+the network that particular scene. I generated 40 other layouts with
+different marbles, firefly swarms and camera positions, and added the
+brass-sphere scenes. Four generated layouts were reserved for validation,
+which selected the saved model during training. The original marbles
+stayed out of both sets and became the test after training finished.
 
-I trained two sizes in PyTorch, with Open Image Denoise's loss and
-schedule and a temporal term meant to discourage flicker: a small network
-of 294,000 parameters and a wider one of 543,000 at Open Image Denoise's
-own scale. Training and validation loss stayed together for all 300
-epochs, so neither was memorizing its scenes. The wider one was 1 to 9%
-better, and that is the one the demo uses.
+The noisy inputs came from the actual ReSTIR renderer. Reuse makes errors
+persist between neighboring pixels and successive frames, so training on
+ordinary path-traced noise would give the model a different problem from
+the one it would encounter live. The target for each input was the same
+instant rendered with 4,096 samples per pixel. Producing the 400 frames
+of data took about four hours on the M3 Max.
 
-## Running it inside the frame
+I could also make the task easier without asking the network to learn
+more. The renderer already knows the wood grain and the colored swirls
+inside the cat's-eyes. I factor that surface color out of the noisy light
+before filtering, then restore it at full resolution afterward. That
+lets the network work on the lighting while the renderer supplies the
+fine surface detail. It is another place where conditioning the values
+passed into a model matters: removing a known source of variation leaves
+less for the learned computation to account for.
 
-Running the network inside the renderer meant writing it as Metal compute
-kernels in the same encoder as the rest of the frame. Apple's Metal 4 has
-an encoder for machine-learning models, but it would have meant building
-each network into a Core ML package offline, rebuilding the pipeline when
-the window changes size, and running shaders I couldn't inspect or check
-against PyTorch. MPSGraph records into its own command buffers. The
-shipping real-time upscalers and denoisers I could find out about run
-their networks as the vendor's own compute shaders in the engine's command
-stream, which is what this does.
+Glass makes those inputs less straightforward. The surface in front of
+the camera may be transparent, while the detail I want to preserve is
+behind it. The feature rays follow glass and mirrors to a rough surface,
+so the network gets information about what the pixel shows. That choice
+helps it distinguish a change in the visible surface from a change in
+the noise.
 
-The first version of the denoise pass took 162 ms at the window's size.
-Most of that time went to reading the same input pixels and weights from
-device memory over and over. Staging each block of input channels and
-their weights in threadgroup memory once, and having the threads that need
-them read from there, brought it to 57 ms. Keeping the head's scores on
-chip instead of writing them out, storing the weights in half precision,
-and letting each decoder read the layer below it where it already lies,
-instead of copying it into a concatenated buffer, brought it to 30 ms
-while the GPU was still shared with training, and 26 ms once it wasn't.
-The same sequence shows up in attention kernels: most of the gain comes
-from where the data sits when the arithmetic needs it.
+I trained two network sizes in PyTorch. Validation kept improving
+alongside training, with no sign of overfitting in either run. The wider
+network generally reconstructed the held-out marbles better, and after
+watching both live I kept that one. It has about 543,000 parameters.
+The [training notes](../research/2026-10-15-denoiser-training.md) keep the
+architecture, training setup and full comparisons together.
 
-The kernels match PyTorch closely enough that, on real frames, 99.1 to
-99.3% of the displayed pixels are identical and nearly all the rest differ
-by one level of eight-bit color. The difference comes from half precision,
-and a test in the build fails if a single weight is shifted by 0.1.
+## Making the model fit the frame
 
-## What the frame looks like now
+A trained model still had to share the GPU with the renderer. I chose to
+run it as my own Metal compute kernels in the same encoder as the rest
+of the frame. That gave me control over the memory layout and the work
+between layers, with PyTorch's output as the reference for what the
+kernels should compute.
+
+The first version spent 162 ms in the denoise pass at the window's
+3456 × 2234 output size. Many threads needed the same input pixels and
+model parameters, but kept reading them separately from device memory.
+I changed the convolutions to load a block into threadgroup memory,
+where the threads working on it could share those reads. That brought
+the pass to 57 ms under the same conditions.
+
+The remaining work followed the same reasoning. The final scores only
+exist to become filter weights, so I kept them on chip through the
+weighted sum. Where a layer needed outputs from two earlier layers, I
+let it read those buffers directly instead of copying them into a new
+combined buffer. Half-precision storage reduced the bytes moved for
+model parameters and intermediate values. This is the same kind of work
+that makes attention kernels practical: arranging for the arithmetic to
+use data while it is nearby, and avoiding intermediate writes whose
+only purpose is to feed the next operation.
+
+Those early timings shared the GPU with training. With the changes in
+place and training finished, the denoise pass takes about 26 ms at the
+window's size, or 7.5 ms for a 1920 × 1080 output. On the real frames used
+to check it against PyTorch, over 99% of displayed pixels are identical;
+nearly all the rest differ by one level of eight-bit color. The memory
+savings from half precision leave very little visible numerical change.
+
+## What survives the reconstruction
 
 ![ReSTIR PT and MNEE (left) and the same light denoised (right), ten seconds into the opening](images/marbles-restir-pt-vs-denoised-10s.jpg)
 
 *Ten seconds into the opening. Left: Milestone 2's ReSTIR PT and MNEE at
-1920 × 1080, 39.8 ms (about 25 frames a second). Right: the same light
-traced at 960 × 540 and denoised to 1920 × 1080, 23.5 ms (about 43 frames
-a second).*
+1920 × 1080. Right: light traced at 960 × 540, then denoised and upscaled
+to 1920 × 1080. The frame times quoted here are measured later in the
+scene, at 120 seconds with all lights awake.*
 
-On the marbles, which it never saw, the network leaves 0.29 to 0.39 of the
-raw input's displayed error across the seven test sequences, measured
-against the 4,096-sample targets after tone mapping. That is 18 to 38%
-less than Open Image Denoise run on each frame.
+The held-out marbles gave me the result I needed to keep going. Across
+seven test sequences, reconstruction removed roughly two thirds of the
+raw input's displayed error. The porcelain reads as porcelain, and the
+wood grain and colored swirls remain visible through much less noise.
+The noisy frame-to-frame boiling is reduced, though a slower shimmer
+remains on the table.
 
-| Region, all lights awake (t = 120 s) | ReSTIR PT, upscaled | Open Image Denoise | The network |
+I used Intel's Open Image Denoise as a quality comparison, running it on
+each low-resolution frame and then upscaling the result. My network uses
+previous frames and learns the upscale as well. Across those sequences,
+that combined reconstruction had 18 to 38% less displayed error than the
+Open Image Denoise route. The fully lit scene gives a closer look:
+
+| Region, all lights awake (t = 120 s) | ReSTIR PT, upscaled | Open Image Denoise, upscaled | Serenity's network |
 |---|---|---|---|
 | Whole frame | 0.00462 | 0.00221 | 0.00163 |
 | Glass and metal | 0.0280 | 0.0151 | 0.0095 |
 
-*Displayed MSE against the 65,536-sample reference. Open Image Denoise runs
-on each 960 × 540 frame, then the result is upscaled.*
+*Displayed MSE against a 65,536-sample reference; lower is better. Each
+route starts with the same 960 × 540 input and produces a 1920 × 1080
+image. This table compares reconstruction quality, so it reports MSE
+itself. Frame costs are reported separately rather than folded into
+Milestone 1's error × time measure.*
 
-Because the light is traced at a quarter of the pixels, the denoised frame
-is also cheaper than the raw one it replaces: 23.5 ms at 1920 × 1080 against
-Milestone 2's 39.8 ms. Most of what I hoped for is visible. The porcelain
-reads as porcelain, the swirls and the wood grain stay sharp, and the
-frame no longer boils from one frame to the next.
+The remaining errors give me specific things to work on. The table's
+slow shimmer corresponds to 36 to 47% more frame-to-frame variation than
+in the targets once all the fireflies are awake. I included a training
+penalty for changes between frames, but it contributed less than 3% of
+the total loss. Giving it more weight is something to test in the next
+training round. Cleaner targets are another planned investment: the
+4,096-sample images still have speckles inside the glass, even though
+their measured error is much lower than the network's output.
 
-Some things are not fixed. Once every firefly is awake, the light on the
-table changes 36 to 47% more from frame to frame than in the path-traced
-targets, a slow shimmer that a single frame doesn't show. The temporal
-term turned out to be under 3% of the training loss, so the network was
-hardly asked to prevent it; giving that term more weight is the first
-thing for the next training round. The large out-of-focus marbles in the
-foreground have ragged edges, because each pixel's features come from a
-single ray through the lens. And the fireflies seen through glass and in
-the metal marbles, points smaller than a pixel at the input's resolution,
-come out as soft glows rather than sharp glints.
+Other losses begin before the network gets its input. The large,
+out-of-focus marbles have ragged edges because the surface features come
+from a single ray through the lens at each pixel. Tiny fireflies seen
+through glass or reflected in metal can occupy less than one input
+pixel, and emerge as soft glows instead of sharp glints. Those are useful
+places to judge what lower-resolution tracing is costing me, beyond the
+whole-frame error number.
 
 ## Next
 
-At the window's 3456 × 2234, close to 4K, the frame takes 77 ms, about 13
-frames a second. The network is 26 ms of that, a full-resolution pass for
-the surface color another 9 ms, and tracing the light at the lower
-resolution 41.5 ms. Even a free denoiser would leave the frame at about 24
-frames a second, so the next milestone is the light itself: the reuse
-passes treated as kernels, measured for where the time and the bytes go,
-with the same questions I would ask of an attention kernel that reads too
-much of its cache.
+At 1920 × 1080 the complete frame now takes about 23.5 ms, or 43 frames
+a second. At the window's 3456 × 2234 it still takes about 77 ms, or 13
+frames a second. The network accounts for 26 ms, the full-resolution
+surface-color pass another 9 ms, and tracing and reusing the light at
+half resolution about 41.5 ms. The
+[implementation notes](../research/2026-10-15-denoiser-live.md) break down
+those costs.
+
+Tracing and reuse alone already exceed the entire budget for 60 frames
+a second. With the reconstruction running, I can now measure those passes
+as part of the complete pipeline and see what their samples contribute
+to the final image. That is the next milestone: follow the time and the
+memory traffic through reuse, with the same questions about stored work,
+repeated reads and GPU scheduling that brought me to Serenity.

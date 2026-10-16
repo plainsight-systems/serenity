@@ -34,8 +34,9 @@ This file tracks active and accepted work.
   same to the bit. Its documentation pass done 2026-10-15: the
   architecture documents, MEMORY.md, this queue, the research index, the
   training README and the front page brought up to Milestones 2 and 3.
-  Next: the milestone's close: its write-up, docs/writeups/milestone-3.md,
-  then main fast-forwarded to `denoiser` (workflow.md).
+  Write-up revised 2026-10-16 using Andrew's voice guide:
+  docs/writeups/milestone-3.md, accepted 2026-10-16; main fast-forwarded to
+  `denoiser` at the close (workflow.md).
 
 ## Accepted
 
