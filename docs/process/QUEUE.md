@@ -27,7 +27,11 @@ This file tracks active and accepted work.
   2026-10-15 (docs/research/2026-10-15-denoiser-live.md): the `denoise` pass
   on our own Metal kernels (contract 18), two resolutions in one frame
   (frame::light_size), graphs/restir_pt_denoised.toml with the weights as a
-  setting, the match against PyTorch in ctest. Next: the milestone's close.
+  setting, the match against PyTorch in ctest. The milestone's own guidelines
+  and performance pass done 2026-10-15
+  (docs/research/2026-10-15-milestone-3-guidelines-pass.md): both corpora
+  rule by rule over its code, every valid finding fixed, every graph the
+  same to the bit. Next: the milestone's close.
 
 - **ReSTIR PT** (docs/research/2026-10-11-restir-pt-layout.md). Phase 1
   built 2026-10-11 (initial sampling, the hybrid shift, paired spatial
