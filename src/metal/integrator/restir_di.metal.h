@@ -122,6 +122,7 @@
 #include "metal/integrator/target.metal.h"
 #include "metal/light_selection/uniform_light.metal.h"
 #include "metal/lights/emitter.metal.h"
+#include "metal/math/transform.metal.h"
 #include "metal/scene/scene_block.metal.h"
 
 namespace serenity {
@@ -139,7 +140,7 @@ inline uint pack_medium(uint medium) {
 }
 
 inline uint unpack_medium(uint packed) {
-    const uint medium = packed & serenity::contracts::path_counter_mask;
+    const uint medium = packed & serenity::contracts::path_medium_mask;
     return medium == serenity::contracts::path_no_medium ? serenity::contracts::no_medium : medium;
 }
 
@@ -155,8 +156,7 @@ struct Surfaces {
 // 10: s R p + T).
 inline float3 previous_position(constant serenity::contracts::Transform* last_transforms,
                                 serenity::contracts::SurfaceInteraction surface) {
-    const serenity::contracts::Transform placed = last_transforms[surface.primitive];
-    return transform_translation(placed) + transform_direction(placed, to_float3(surface.object_position));
+    return transform_to_world(last_transforms[surface.primitive], to_float3(surface.object_position));
 }
 
 // Step 1: the camera's segment along `ray`, as a record and a path state;

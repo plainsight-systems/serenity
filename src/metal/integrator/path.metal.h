@@ -484,6 +484,9 @@ namespace path {
 
 constant constexpr uint roulette_from = 3;  // the 4th surface, counting from 0
 constant constexpr uint safety_stop = 256;
+// A path's numbers, at most 7 a surface and the camera's 4, lie below every
+// purpose's (sampler.metal.h).
+static_assert(7u * safety_stop + 4u <= purpose_span, "a path's numbers stay below the purposes'");
 constant constexpr float max_survival = 0.95f;
 
 // The scene (metal/scene/scene_block.metal.h), its lights chosen among
@@ -760,7 +763,7 @@ struct Stopped {
     bool at_surface;  // at a surface that aims at lights (Stop::at_first_aimed only); else the path ended
     Shading here;     // that surface, after step 4; read only where at_surface
     uint surface;     // its count along the path, from 0; read only where at_surface
-    Walk walk;        // where the path ended, only L is meaningful
+    Walk walk;        // the walk where it stopped: all of it where at_surface, else only L
 };
 
 // Steps 1 to 8 for each surface from `first`, the count of the surface the

@@ -143,6 +143,7 @@ static_assert(std::is_trivially_copyable_v<SurfaceRecord>, "SurfaceRecord is wri
 
 // PathState's packed words' bits (above).
 SERENITY_CONSTANT uint32_t path_counter_mask = 0xffffu;
+SERENITY_CONSTANT uint32_t path_medium_mask = 0xffffu;  // the medium's 16 bits, at bit 0 of its word
 SERENITY_CONSTANT uint32_t path_surface_shift = 16u;
 SERENITY_CONSTANT uint32_t path_surface_mask = 0xffu;  // after its shift
 SERENITY_CONSTANT uint32_t path_flags_shift = 24u;

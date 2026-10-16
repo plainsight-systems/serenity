@@ -180,11 +180,13 @@
 #include "metal/camera/thin_lens.metal.h"
 #include "metal/device/append.metal.h"
 #include "metal/device/indirect_grid.h"
+#include "metal/integrator/mnee.metal.h"
 #include "metal/integrator/nee.metal.h"
 #include "metal/integrator/path.metal.h"
 #include "metal/integrator/reconnection.metal.h"
 #include "metal/integrator/shift.metal.h"
 #include "metal/integrator/target.metal.h"
+#include "metal/math/transform.metal.h"
 #include "metal/math/warp.metal.h"
 #include "metal/reuse/duplication.metal.h"
 #include "metal/reuse/pairing.metal.h"
@@ -219,14 +221,14 @@ inline CameraRay primary_ray(constant serenity::contracts::CameraData& camera, u
 // every dimension a path reaches, as theirs are (metal/sampler/
 // sampler.metal.h): a light tile's entry, at (entry, tile) and the frame;
 // the tile an 8 x 8 block draws, at (block, frame).
-constant constexpr uint tile_fill_first = 8u << 24u;
-constant constexpr uint tile_pick_first = 9u << 24u;
+constant constexpr uint tile_fill_first = purpose::tile_fill;
+constant constexpr uint tile_pick_first = purpose::tile_pick;
 // The temporal merge's two picks and the spatial merge's, at (pixel,
 // frame); the frame's start of the temporal search's ring, at ((0, 0),
 // frame), the frame's alone.
-constant constexpr uint temporal_pick_first = 10u << 24u;
-constant constexpr uint spatial_pick_first = 11u << 24u;
-constant constexpr uint ring_first = 12u << 24u;
+constant constexpr uint temporal_pick_first = purpose::temporal_pick;
+constant constexpr uint spatial_pick_first = purpose::spatial_pick;
+constant constexpr uint ring_first = purpose::ring;
 
 // Entry `n` of frame `frame`'s light tiles, entry n % 1024 of tile
 // n / 1024: a light the selection draws, placed and packed as this frame
@@ -374,9 +376,9 @@ struct TreeGatherOf {
     [[gnu::always_inline]] void emitted(Scene scene, thread float3&, float3 beta, serenity::lights::LightRecord light,
                                         float3 point, metal::raytracing::ray along, float emission_pdf, uint surface,
                                         serenity::contracts::SurfaceInteraction at) {
-        const float3 emitted = light_emitted(scene.lights(), light, point, -along.direction);
+        const float3 glow = light_emitted(scene.lights(), light, point, -along.direction);
         if (surface == 0u) {
-            seen += beta * emitted;
+            seen += beta * glow;
             return;
         }
         if (manifold && mnee::covered(chain)) {
@@ -392,12 +394,12 @@ struct TreeGatherOf {
             weighed ? nee::bsdf_weight(nee::candidate_count(settings.nee_candidates, length - 1u), light_density,
                                        emission_pdf)
                     : 1.0f;
-        const float3 integrand = beta * emitted * weight;
+        const float3 integrand = beta * glow * weight;
         if (rc != 0u) {
             // x_{d-1} is x_k: its weight is the shift's to reweigh.
             const bool at_k = rc == length - 1u;
             offer(integrand, 1.0f,
-                  found(length, serenity::contracts::PathEnd::struck, at_k ? emitted : emitted * weight,
+                  found(length, serenity::contracts::PathEnd::struck, at_k ? glow : glow * weight,
                         at_k ? light_density : 0.0f));
             return;
         }
@@ -406,7 +408,7 @@ struct TreeGatherOf {
         if (reconnection::connectable(pair, threshold, settings.roughness)) {
             offer(integrand, 1.0f,
                   Stored{length, length, serenity::contracts::PathEnd::struck, before_lobe, 0u, at.primitive,
-                         encode_shape_point(shapes, at.primitive, at_light), 0u, emitted,
+                         encode_shape_point(shapes, at.primitive, at_light), 0u, glow,
                          1.0f / pair.forward, 0.0f});
             return;
         }
@@ -442,7 +444,7 @@ struct TreeGatherOf {
         PathNumbers numbers = shift::nee_numbers(stream, surface);
         float sum = 0.0f;
         nee::Candidate kept = nee::no_candidate();
-        const float probability = 1.0f / float(scene.selection().count);
+        const float probability = selection_probability(scene.selection());
         for (uint i = 0u; i < m; ++i) {
             const float choose = next_number(numbers);
             const float2 u = next_numbers2(numbers);
@@ -630,8 +632,7 @@ template <bool manifold>
 inline float3 previous_position(TreeGatherOf<manifold> tree, constant serenity::contracts::Transform* transforms,
                                 constant serenity::contracts::Transform* last_transforms) {
     const float3 object = transform_to_object(transforms[tree.primary_shape], to_float3(tree.primary.position));
-    const serenity::contracts::Transform placed = last_transforms[tree.primary_shape];
-    return transform_translation(placed) + transform_direction(placed, object);
+    return transform_to_world(last_transforms[tree.primary_shape], object);
 }
 
 // The reservoir's estimate on its own, F W: what the shade adds where no

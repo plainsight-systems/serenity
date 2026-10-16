@@ -35,33 +35,39 @@ struct SelectedLight {
     float probability;  // 1 / count
 };
 
-// The light `u`, a number in [0, 1), chooses. Precondition: count is at
-// least 1; the estimator tests it before asking (path.metal.h, step 5).
-inline SelectedLight select_light(UniformLight selection, float u) {
-    const uint i = metal::min(uint(u * float(selection.count)), selection.count - 1u);
-    return SelectedLight{selection.records[i], 1.0f / float(selection.count)};
-}
-
-// The probability select_light() chooses `light` with (above). Precondition:
-// count is at least 1, as it is wherever a light exists to be asked of.
-inline float light_probability(UniformLight selection, serenity::lights::LightRecord) {
+// The probability a uniform choice takes any one light with: the one place
+// this axis's density is written, which every estimator asks rather than
+// assume uniform selection itself (I.1). Precondition: count is at least
+// 1, as it is wherever a light exists to be asked of.
+inline float selection_probability(UniformLight selection) {
     return 1.0f / float(selection.count);
 }
 
 // For ReSTIR DI's candidates, which keep a light by its record's index
-// (contracts/light_sample.h): the index select_light() chooses for the same
-// `u`, by the same formula, and its probability. select_light() stays as it
-// is, so the naive path tracer's image does not move by a bit; the formula
-// is written twice, three lines, rather than select_light() rewritten over
-// this one, which would put the path tracer's image at the compiler's
-// mercy for no gain (ES.3 weighed against the additive rule).
+// (contracts/light_sample.h): the index `u`, a number in [0, 1), chooses,
+// and its probability. Precondition: count is at least 1; the estimator
+// tests it before asking (path.metal.h, step 5).
 struct SelectedIndex {
     uint index;         // into the light records
     float probability;  // 1 / count
 };
 inline SelectedIndex select_light_index(UniformLight selection, float u) {
     const uint i = metal::min(uint(u * float(selection.count)), selection.count - 1u);
-    return SelectedIndex{i, 1.0f / float(selection.count)};
+    return SelectedIndex{i, selection_probability(selection)};
+}
+
+// The light `u` chooses: the same choice, its record. Built on
+// select_light_index(), so the two cannot drift apart (ES.3); the path
+// tracer's image is the same to the bit as when the formula was written
+// twice (docs/research/2026-10-16-codebase-guidelines-pass.md, C18).
+inline SelectedLight select_light(UniformLight selection, float u) {
+    const SelectedIndex chosen = select_light_index(selection, u);
+    return SelectedLight{selection.records[chosen.index], chosen.probability};
+}
+
+// The probability select_light() chooses `light` with (above).
+inline float light_probability(UniformLight selection, serenity::lights::LightRecord) {
+    return selection_probability(selection);
 }
 
 }  // namespace shaders

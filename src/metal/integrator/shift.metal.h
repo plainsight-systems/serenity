@@ -26,7 +26,7 @@
 //   pick_first + c                the tree's pick of its candidate path c
 //
 // Above every dimension a path tracer's or ReSTIR DI's stream reaches (5, 6
-// and 7 x 2^24; sampler.metal.h lists 1 to 4 x 2^24), and pcg3d is a
+// and 7 x 2^24; sampler.metal.h's table holds every purpose), and pcg3d is a
 // bijection of (key, dimension), so these are distinct words from all of
 // theirs. Russian roulette is never replayed (Enhanced §6.2.4): the source
 // path's survival is in its source density, not in its numbers.
@@ -97,6 +97,7 @@
 #include "metal/acceleration/trace.metal.h"
 #include "metal/camera/thin_lens.metal.h"
 #include "metal/integrator/nee.metal.h"
+#include "metal/integrator/mnee.metal.h"
 #include "metal/integrator/path.metal.h"
 #include "metal/integrator/reconnection.metal.h"
 #include "metal/integrator/surface.metal.h"
@@ -113,12 +114,21 @@ namespace serenity {
 namespace shaders {
 namespace shift {
 
-// The numbers' dimensions (above, "The numbers"), named once (ES.45).
-constant constexpr uint bsdf_first = 5u << 24u;
-constant constexpr uint nee_first = 6u << 24u;
-constant constexpr uint pick_first = 7u << 24u;
+// The numbers' dimensions (above, "The numbers"; sampler.metal.h's table),
+// and each span's bound within it: a surface's four BSDF numbers and its
+// candidates' four each, at most max_path_surfaces surfaces; a pick for at
+// most two candidates a surface (its NEE's, and the light or sky its BSDF
+// ray finds) and the escape.
+constant constexpr uint bsdf_first = purpose::path_bsdf;
+constant constexpr uint nee_first = purpose::path_nee;
+constant constexpr uint pick_first = purpose::path_pick;
 constant constexpr uint bsdf_stride = 4u;
 constant constexpr uint nee_stride = 128u;  // 4 x max_nee_candidates
+static_assert(nee_stride >= 4u * serenity::contracts::max_nee_candidates, "a surface's candidates fit its stride");
+static_assert(bsdf_stride * serenity::contracts::max_path_surfaces <= purpose_span &&
+                  nee_stride * serenity::contracts::max_path_surfaces <= purpose_span &&
+                  2u * (serenity::contracts::max_path_surfaces + 1u) <= purpose_span,
+              "the tree's numbers stay within their purposes' spans");
 
 // The stream of surface s's step 6 numbers, and its roulette's after them.
 inline PathNumbers bsdf_numbers(PathNumbers stream, uint surface) {
@@ -393,7 +403,7 @@ inline Shifted reconnect(path::Scene scene, Shading here, float3 beta, Before be
     const bool nee_at_k = lobe_at == 0u;
     const float geometry = metal::abs(metal::dot(to_float3(at_k.geometric_normal), w)) / distance2;
     const reconnection::Pair pair{
-        roughness, 1.0f / (density * metal::max(geometry, 1.0e-30f)),
+        roughness, 1.0f / (density * metal::max(geometry, reconnection::least_geometry)),
         reconnection::inverse_skipped(lobe_at)
             ? reconnection::largest
             : reconnection::footprint((lobe_at & c::lobe_delta) != 0u, density_k, x_k, y, y_normal)};

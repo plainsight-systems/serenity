@@ -81,12 +81,11 @@ inline float3 next_numbers3(thread PathNumbers& numbers) {
 }
 
 // Another purpose's numbers in the same pixel and frame: `stream`, a
-// path's (path_numbers()), from dimension `first`. ReSTIR DI's candidates,
-// temporal and spatial passes draw from first = 1, 2 and 3 x 2^24, and its
-// temporal permutation from 4 x 2^24 at pixel (0, 0), the frame's alone
-// (metal/passes/restir_di/restir_di.metal.h), where no path reaches: the
-// safety stop bounds a path at 256 surfaces of at most 7 numbers each, 4 for
-// the camera, under 2^11 (path.metal.h). pcg3d is a bijection of (key,
+// path's (path_numbers()), from dimension `first`, one of the purposes'
+// below, each a span of purpose_span dimensions from its first, where no
+// path reaches: the safety stop bounds a path at 256 surfaces of at most 7
+// numbers each, 4 for the camera, under 2^11 (path.metal.h, which asserts
+// it). pcg3d is a bijection of (key,
 // dimension), so the purposes' numbers are distinct words from the path's and
 // from each other's, as independent as any two of the path's (GDSA.3: a
 // stream per pixel and frame, a counter within it). The shade continues the
@@ -97,6 +96,34 @@ inline float3 next_numbers3(thread PathNumbers& numbers) {
 inline PathNumbers purpose_numbers(PathNumbers stream, uint first) {
     return PathNumbers{stream.key, first};
 }
+
+// Every purpose's first dimension, in one table (P.1, ES.45): a path's own
+// numbers below the first, each purpose's in [first, first + purpose_span),
+// which the file that draws them asserts its numbers stay within (P.5).
+// None overlaps another, by construction: span k is k x purpose_span.
+constant constexpr uint purpose_span = 1u << 24u;
+namespace purpose {
+// ReSTIR DI (metal/passes/restir_di/restir_di.metal.h): steps 2 and 3's
+// candidates, step 4's and step 5's merges, and the frame's permutation,
+// drawn at pixel (0, 0).
+constant constexpr uint restir_candidates = 1u * purpose_span;
+constant constexpr uint restir_temporal = 2u * purpose_span;
+constant constexpr uint restir_spatial = 3u * purpose_span;
+constant constexpr uint restir_permutation = 4u * purpose_span;
+// ReSTIR PT's tree and shift (metal/integrator/shift.metal.h, "The
+// numbers"): each surface's BSDF and roulette numbers, its NEE candidates',
+// and the tree's picks.
+constant constexpr uint path_bsdf = 5u * purpose_span;
+constant constexpr uint path_nee = 6u * purpose_span;
+constant constexpr uint path_pick = 7u * purpose_span;
+// ReSTIR PT's passes (metal/passes/restir_pt/restir_pt.metal.h): the light
+// tiles' fill and pick, the merges' picks, the temporal search's ring.
+constant constexpr uint tile_fill = 8u * purpose_span;
+constant constexpr uint tile_pick = 9u * purpose_span;
+constant constexpr uint temporal_pick = 10u * purpose_span;
+constant constexpr uint spatial_pick = 11u * purpose_span;
+constant constexpr uint ring = 12u * purpose_span;
+}  // namespace purpose
 
 }  // namespace shaders
 }  // namespace serenity

@@ -14,6 +14,7 @@
 #include "core/contracts/path_reservoir.h"
 #include "core/contracts/path_reuse_settings.h"
 #include "core/contracts/transform.h"
+#include "metal/integrator/mnee.metal.h"
 #include "metal/passes/bindings.h"
 #include "metal/passes/restir_pt/restir_pt.metal.h"
 

@@ -51,6 +51,13 @@ namespace reconnection {
 
 constant constexpr float largest = metal::numeric_limits<float>::max();
 
+// The floors a footprint divides by, so a surface seen edge on gives a
+// large footprint, not an infinity or a NaN: a cosine's, and the geometry
+// term's (|cos| / d^2) where reconnect() writes a forward footprint out
+// (shift.metal.h).
+constant constexpr float least_cosine = 1.0e-20f;
+constant constexpr float least_geometry = 1.0e-30f;
+
 // The right-hand side of eq. 5: (c / 100) times the primary ray's footprint,
 // from the camera's point x0 and the primary hit x1 with its normal n1. The
 // largest float for a primary hit seen edge on, whose footprint has no
@@ -59,7 +66,7 @@ inline float footprint_threshold(float c, float3 x0, float3 x1, float3 n1) {
     const float3 to_camera = x0 - x1;
     const float d2 = metal::dot(to_camera, to_camera);
     const float cosine = metal::abs(metal::dot(n1, to_camera)) * metal::rsqrt(d2);
-    const float spread = d2 * (4.0f * M_PI_F) / metal::max(cosine, 1.0e-20f);
+    const float spread = d2 * (4.0f * M_PI_F) / metal::max(cosine, least_cosine);
     return cosine > 0.0f ? (c / 100.0f) * spread : largest;
 }
 
@@ -85,7 +92,7 @@ inline float footprint(bool delta, float density, float3 from, float3 to, float3
     const float3 d = to - from;
     const float d2 = metal::dot(d, d);
     const float cosine = metal::abs(metal::dot(to_normal, d)) * metal::rsqrt(d2);
-    return delta || !(density > 0.0f) ? 0.0f : d2 / (density * metal::max(cosine, 1.0e-20f));
+    return delta || !(density > 0.0f) ? 0.0f : d2 / (density * metal::max(cosine, least_cosine));
 }
 
 // A pair's three quantities, by name (I.24).

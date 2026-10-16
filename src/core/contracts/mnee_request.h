@@ -44,6 +44,10 @@
 // fast math a NaN need not survive (docs/research/
 // 2026-10-16-codebase-guidelines-pass.md, C14).
 //
+// The requests' light reaches a pixel by float atomics in the order the
+// solves arrive in: from three requests a pixel the sum's last bits are not
+// guaranteed run to run (metal/passes/mnee/mnee.h, "Determinism").
+//
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
 #include "core/contracts/bsdf.h"

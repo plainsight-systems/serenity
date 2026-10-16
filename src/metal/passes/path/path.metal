@@ -11,6 +11,7 @@
 #include "core/contracts/transform.h"
 #include "metal/camera/thin_lens.metal.h"
 #include "metal/film/accumulate.metal.h"
+#include "metal/integrator/mnee.metal.h"
 #include "metal/integrator/path.metal.h"
 #include "metal/passes/bindings.h"
 #include "metal/sampler/sampler.metal.h"

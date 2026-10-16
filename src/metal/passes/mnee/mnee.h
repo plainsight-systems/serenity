@@ -35,6 +35,16 @@ namespace serenity::metal {
 //               mean, as if the path's sample had held it, and set back to
 //               0.
 //
+// Determinism (GDSA.2): not guaranteed where a pixel takes three or more
+// requests. Two float adds commute exactly; from three on, the sum's
+// rounding follows the order the solves arrive in, which the GPU's
+// scheduling decides. Measured reproducible all the same: every graph's
+// headless output, the MNEE graphs among them, was the same to the bit run
+// after run on 2026-10-16 (docs/research/
+// 2026-10-16-codebase-guidelines-pass.md, area C's P1), so a byte diff of
+// two builds is a fair check here; a fold in a fixed order would make it
+// so by construction, at a cost not measured.
+//
 // Why a list (contract 16): solved inside the loop, every SIMD group waited
 // on its lanes that solved (a tenth of the paths), the path pass 4.1 times
 // as long; solved here, lanes are requests (GDSA.13: divergent work grouped

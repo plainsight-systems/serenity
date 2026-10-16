@@ -330,10 +330,10 @@ namespace shaders {
 namespace restir {
 
 // Each step's stream's first dimension (sampler.metal.h, purpose_numbers).
-constant constexpr uint candidates_numbers = 1u << 24;   // steps 2 and 3
-constant constexpr uint temporal_numbers = 2u << 24;     // step 4
-constant constexpr uint spatial_numbers = 3u << 24;      // step 5
-constant constexpr uint permutation_numbers = 4u << 24;  // step 4's permutation, drawn at pixel (0, 0)
+constant constexpr uint candidates_numbers = purpose::restir_candidates;    // steps 2 and 3
+constant constexpr uint temporal_numbers = purpose::restir_temporal;         // step 4
+constant constexpr uint spatial_numbers = purpose::restir_spatial;           // step 5
+constant constexpr uint permutation_numbers = purpose::restir_permutation;  // step 4's permutation, at pixel (0, 0)
 
 // Step 2 of temporal reuse, the caller's: where a point is in a frame's
 // image, through that frame's camera, rounded to the nearest pixel; none
