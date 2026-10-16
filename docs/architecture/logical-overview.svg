@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="760" height="792" viewBox="0 0 760 792" role="img">
 <title>Serenity's logical flow: startup once, then every frame, with the light at each rough surface expanded</title>
-<desc>At startup the scene description is built into geometry and acceleration structures, and the frame state is allocated. Every frame takes time, frame index and camera as inputs, then runs Animate, Primary visibility, Light, Resolve, Denoise (a later milestone), Upscale, Tone map, and Present or write. Light at each rough surface has three parts: direct light, by naive sampling (also the reference, with time frozen and thousands of samples) or unbiased ReSTIR DI (candidates, temporal merge, spatial merge, shade); indirect light, by path-traced bounces that ReSTIR GI later reuses; and caustics through glass, by manifold next event estimation, a later milestone. The merges read and write the reservoirs and read the surface records, the two kinds of state kept between frames.</desc>
+<desc>At startup the scene description is built into geometry and acceleration structures, and the frame state is allocated. Every frame takes time, frame index and camera as inputs, then runs Animate, Primary visibility, Light, Resolve, Denoise and Upscale (one trained network, from the light at half the output's size each way), Tone map, and Present or write. Light at each rough surface has three parts: direct light, by naive sampling (also the reference, with time frozen and thousands of samples) or ReSTIR DI as RTXDI ships it (candidates, temporal merge, spatial merge, shade); indirect light, by path-traced bounces, which ReSTIR PT reuses as whole paths with their direct light; and caustics through glass, by manifold next event estimation. The merges read and write the reservoirs and read the surface records, the two kinds of state kept between frames.</desc>
 <style>
   .bg { fill: #FFFFFF; }
   .th { font: 500 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: #2C2C2A; }
@@ -10,7 +10,6 @@
   .teal rect   { fill: #E1F5EE; stroke: #0F6E56; } .teal text   { fill: #085041; }
   .purple rect { fill: #EEEDFE; stroke: #534AB7; } .purple text { fill: #3C3489; }
   .coral rect  { fill: #FAECE7; stroke: #D85A30; } .coral text  { fill: #712B13; }
-  .later rect  { stroke-dasharray: 5 4; }
   .panel { fill: #F7FBF9; stroke: #0F6E56; stroke-width: 1; }
   .arr { stroke: #888780; stroke-width: 1.5; fill: none; }
   .state { stroke: #D85A30; stroke-width: 1.2; stroke-dasharray: 4 3; fill: none; }
@@ -31,8 +30,6 @@
 <text class="ts" x="310" y="33">scene data, inputs</text>
 <g class="coral"><rect x="432" y="22" width="14" height="14" rx="3"/></g>
 <text class="ts" x="452" y="33">kept between frames</text>
-<g class="gray later"><rect x="584" y="22" width="14" height="14" rx="3"/></g>
-<text class="ts" x="604" y="33">later milestone</text>
 
 <!-- Startup -->
 <text class="ts" x="40" y="74">Startup, once</text>
@@ -77,14 +74,14 @@
   <text class="ts" x="170" y="486" text-anchor="middle">plus fireflies seen directly</text></g>
 <line class="arr" x1="170" y1="496" x2="170" y2="516" marker-end="url(#a)"/>
 
-<g class="gray later"><rect x="40" y="518" width="260" height="46" rx="6"/>
+<g class="gray"><rect x="40" y="518" width="260" height="46" rx="6"/>
   <text class="th" x="170" y="537" text-anchor="middle">Denoise</text>
-  <text class="ts" x="170" y="554" text-anchor="middle">later: inside the frame budget</text></g>
+  <text class="ts" x="170" y="554" text-anchor="middle">a trained network, at the light size</text></g>
 <line class="arr" x1="170" y1="564" x2="170" y2="584" marker-end="url(#a)"/>
 
 <g class="gray"><rect x="40" y="586" width="260" height="46" rx="6"/>
   <text class="th" x="170" y="605" text-anchor="middle">Upscale</text>
-  <text class="ts" x="170" y="622" text-anchor="middle">to the display's resolution</text></g>
+  <text class="ts" x="170" y="622" text-anchor="middle">2x each way, by the same network</text></g>
 <line class="arr" x1="170" y1="632" x2="170" y2="652" marker-end="url(#a)"/>
 
 <g class="gray"><rect x="40" y="654" width="260" height="46" rx="6"/>
@@ -98,14 +95,14 @@
 
 <!-- Direct light, expanded -->
 <rect class="panel" x="324" y="246" width="400" height="482" rx="8"/>
-<text class="th" x="340" y="270">Direct: one estimator per frame</text>
+<text class="th" x="340" y="270">Light: the estimator a graph chooses</text>
 
 <g class="teal"><rect x="340" y="282" width="368" height="46" rx="6"/>
   <text class="th" x="524" y="301" text-anchor="middle">Naive</text>
   <text class="ts" x="524" y="318" text-anchor="middle">per sample: a light, a point on it, a shadow ray</text></g>
 <text class="ts" x="340" y="346">Also the reference: t frozen, thousands of samples</text>
 
-<text class="th" x="340" y="374">or ReSTIR DI, unbiased</text>
+<text class="th" x="340" y="374">or ReSTIR DI, as RTXDI ships it</text>
 
 <g class="teal"><rect x="340" y="384" width="200" height="42" rx="6"/>
   <text class="th" x="440" y="401" text-anchor="middle">Candidates</text>
@@ -125,8 +122,8 @@
 
 <g class="teal"><rect x="340" y="610" width="368" height="46" rx="6"/>
   <text class="th" x="524" y="629" text-anchor="middle">Indirect</text>
-  <text class="ts" x="524" y="646" text-anchor="middle">path-traced bounces; ReSTIR GI reuses them, later</text></g>
-<g class="teal later"><rect x="340" y="666" width="368" height="46" rx="6"/>
+  <text class="ts" x="524" y="646" text-anchor="middle">path-traced bounces; ReSTIR PT reuses whole paths</text></g>
+<g class="teal"><rect x="340" y="666" width="368" height="46" rx="6"/>
   <text class="th" x="524" y="685" text-anchor="middle">Caustics</text>
   <text class="ts" x="524" y="702" text-anchor="middle">through glass, by manifold next event estimation</text></g>
 

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="780" height="710" viewBox="0 0 780 710" role="img">
 <title>Each logical box mapped to the file families that implement it, by layer</title>
-<desc>Twelve boxes of the logical overview, each with the directories that implement it, coloured by layer: the platform-neutral core, the Metal backend, the app and headless renderer, and scene data. Light is the widest: the integrator, light selection, sample reuse, lights, materials, textures and the sampler, all in the Metal backend. Beneath them, the contracts in core/contracts are what the families depend on instead of each other.</desc>
+<desc>Twelve boxes of the logical overview, each with the directories that implement it, coloured by layer: the platform-neutral core, the Metal backend, the app and headless renderer, and scene data. Light is the widest: the integrator, light selection, sample reuse, lights, materials, textures and the sampler, all in the Metal backend. Denoise, Upscale and Tone map are the passes, with their settings and the denoiser's trained network read in the core. Beneath them, the contracts in core/contracts are what the families depend on instead of each other.</desc>
 <style>
   .bg { fill: #FFFFFF; }
   .th { font: 500 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: #2C2C2A; }
@@ -71,6 +71,8 @@
 <g class="gray"><rect x="40" y="462" width="180" height="30" rx="6"/><text class="th" x="130.0" y="482.0" text-anchor="middle">Denoise, Upscale, Tone map</text></g>
 <line class="arr" x1="220" y1="477" x2="246" y2="477" marker-end="url(#a)"/>
 <g class="teal"><rect x="250" y="464" width="96" height="26" rx="5"/><text class="ts" x="298.0" y="481" text-anchor="middle">metal/passes</text></g>
+<g class="purple"><rect x="354" y="464" width="90" height="26" rx="5"/><text class="ts" x="399.0" y="481" text-anchor="middle">core/passes</text></g>
+<g class="purple"><rect x="452" y="464" width="96" height="26" rx="5"/><text class="ts" x="500.0" y="481" text-anchor="middle">core/denoise</text></g>
 <g class="gray"><rect x="40" y="502" width="180" height="30" rx="6"/><text class="th" x="130.0" y="522.0" text-anchor="middle">Surface records</text></g>
 <line class="arr" x1="220" y1="517" x2="246" y2="517" marker-end="url(#a)"/>
 <g class="purple"><rect x="250" y="504" width="76" height="26" rx="5"/><text class="ts" x="288.0" y="521" text-anchor="middle">core/film</text></g>
@@ -86,5 +88,5 @@
 <g class="purple"><rect x="40" y="632" width="700" height="66" rx="6"/>
   <text class="th" x="390.0" y="653" text-anchor="middle">core/contracts</text>
   <text class="ts" x="390.0" y="671" text-anchor="middle">surface interaction · BSDF · emitter · light sample · film outputs · frame images</text>
-  <text class="ts" x="390.0" y="688" text-anchor="middle">frame constants · camera · texture reference: what the families depend on</text></g>
+  <text class="ts" x="390.0" y="688" text-anchor="middle">frame constants · camera · texture reference · reservoirs · features · the network: what the families depend on</text></g>
 </svg>

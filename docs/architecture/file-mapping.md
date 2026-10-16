@@ -4,11 +4,11 @@ How the boxes in [`logical-overview.md`](logical-overview.md) become files,
 applying the axes in [`change-axes.md`](change-axes.md): the algorithm laid
 over the axes, which gives the file families.
 
-This is a first pass. It fixes the layers, the families and the direction of
-dependencies, and it names the contracts between families. It does not
-define the contracts, and it lists no kinds yet: each contract is designed in
-its own header before the code that uses it, and each kind arrives with the
-change that first needs it. The directories exist now, empty.
+It fixes the layers, the families and the direction of dependencies, and
+it names the contracts between families. It was written before the code,
+when the directories were empty; it does not define the contracts or list
+the kinds: each contract is designed in its own header before the code that
+uses it, and each kind arrived with the change that first needed it.
 
 ## Layers
 
@@ -27,6 +27,17 @@ change that first needs it. The directories exist now, empty.
 - **Scene descriptions, `scenes/`,** and **frame graphs, `graphs/`,** are
   data, at the repository root, in separate files: what is rendered, and
   which passes render it, so one scene runs under any graph.
+- **The denoiser's training, `training/`,** is outside the build: a Python
+  toolkit, PyTorch, with its own pinned environment (`training/uv.lock`).
+  No CMake target, test or graph depends on it. What it hands the renderer
+  is a file: the trained network, exported as weights and their layout,
+  which the core reads and checks at start-up.
+- **Data and models live beside the checkout,** never in it:
+  `../serenity-data/` holds the denoiser's data set (`denoiser-v1`, 32.3
+  GB, rendered by `scripts/make_denoiser_dataset.py` with a manifest of
+  every file's checksum), the training runs, and the exported networks
+  (`denoiser-v1-model/wide` and `small`), which the denoised graphs name by
+  a path relative to `graphs/`.
 
 Dependencies point one way: the app and the headless renderer depend on the
 backend and the core, the measuring program on the core alone, the backend
@@ -47,8 +58,14 @@ families, made in the scene description:
 - **The table** is a box *shape* wearing a rough *material* whose color comes
   from a wood *texture*.
 - **ReSTIR DI** is the *integrator*'s direct-light strategy choosing lights by
-  *light selection* and reusing them through *sample reuse*; **ReSTIR GI** is
-  the same reuse applied to the integrator's bounces.
+  *light selection* and reusing them through *sample reuse*; **ReSTIR PT** is
+  the same reuse applied to whole paths, which the *integrator* shifts from
+  one pixel or frame to another.
+- **Manifold next event estimation** is the *integrator*'s strategy for
+  light through glass, solved by a *pass* of its own from a work list.
+- **The denoiser** is a *pass* reading the radiance and the *film*'s
+  features, its trained weights data read by the core, its history kept by
+  the *frame graph*.
 - **The reference** is the same integrator with reuse switched off,
   accumulating on the *film*.
 
@@ -69,7 +86,10 @@ data or adds a kind; it does not change a family that already exists.
 | `src/core/lights/` | Light | each light kind's parameters |
 | `src/core/media/` | Medium | each medium kind's parameters |
 | `src/core/film/` | Film | what a pixel accumulates and outputs |
-| `src/core/frame/` | Frame graph | the passes, their order, the images between them, and the history kept across frames; reading frame graph files |
+| `src/core/sampling/` | Sampler | static sampling data the CPU builds: ReSTIR PT's pairing textures |
+| `src/core/passes/` | Pass | each pass's settings as a frame graph writes them, and what the tone map computes |
+| `src/core/denoise/` | Pass | the denoiser's trained network, read from its export and checked against contract 18 |
+| `src/core/frame/` | Frame graph | the passes, their order, the images between them, the history kept across frames, and the light and output sizes; reading frame graph files |
 | `src/core/output/` | Output | each file format's writer |
 | `src/core/measurement/` | Measurement | error against the reference, and timing reports |
 | `src/metal/device/` | GPU backend | the device, libraries and pipelines, resources, encoding and synchronization |
@@ -94,6 +114,7 @@ data or adds a kind; it does not change a family that already exists.
 | `src/measure/` | Measurement | the measuring program's command line: a reference made from files, and images judged against it |
 | `scenes/` | Scene content | scene descriptions, as data |
 | `graphs/` | Frame graph | frame graphs, as data |
+| `training/` | outside the build | the denoiser's training toolkit: data loading, the network, the loss, training, the test, the export, and the check of the renderer's pass against PyTorch |
 
 A kind lives in two halves with the same axis and the same name: its
 parameters and anything the CPU needs in the core (a sphere's bounds, for
@@ -123,6 +144,9 @@ depend on contracts, not on each other.
 | 13 | **Linear image**: a rendered image's radiance on the CPU, three floats a pixel, before tone mapping | Film | Output, Measurement |
 | 14 | **Reservoir**: a light sample by identity, its contribution weight, its count, its target at its own surface and where its visibility was last tested, as stored between passes and frames (`reservoir.h`, 24 bytes, RTXDI's packed reservoir) | Sample reuse | Pass, Frame graph |
 | 15 | **Path reservoir**: ReSTIR PT's one path a pixel by its numbers' stream and its reconnection vertex (a primitive and a point in its own coordinates), its F, contribution weight, count and cached Jacobian (`path_reservoir.h`, 64 bytes, ReSTIR PT Enhanced's Algorithm 1); its settings beside it (`path_reuse_settings.h`) | Sample reuse | Pass, Integrator (the shift), Frame graph |
+| 16 | **MNEE's work list**: a request a pixel the estimators' loops leave for the manifold solve where a light's straight segment crosses glass (the receiver, the light sample, the crossings, the weight; 128 bytes), and the list's header: its count, capacity and the solve's indirect grid (`mnee_request.h`) | Integrator | Pass (the MNEE pass), Frame graph |
+| 17 | **The denoiser's features**: albedo, world normal, view depth and 2.5D motion a pixel, along the light's own camera rays, through glass and mirrors by primary surface replacement (`features.h`) | Film | Pass (the denoiser), the headless renderer's `--features` |
+| 18 | **The denoiser's network as it runs**: its constants (scale 2, 28 input channels, 124 scores, spacings 1, 2 and 4, the albedo floor, the PU transfer), the threadgroup shapes host and shaders share, and its per-frame constants (`denoise.h`) | Pass | the core's loader, the Metal denoise pass, host and shaders |
 
 Each is designed on its own, header first, before the code that uses it.
 Contract 7 was the first written: `src/core/contracts/frame_constants.h`.
@@ -138,9 +162,15 @@ hands to Output's files and Measurement's errors. Contracts 4, 5 and 14
 came with ReSTIR DI: `light_sample.h`, `surface_record.h` and
 `reservoir.h`, with `reuse_constants.h`, Sample reuse's per-frame values,
 beside them; contract 6 grew by ReSTIR's records and reservoirs, ping-ponged
-across frames (`metal/frame/frame_images.h`). The camera is one contract for every
-camera, as Falcor's `CameraData` is, since a frame has one camera and
-cameras differ by parameters, not code.
+across frames (`metal/frame/frame_images.h`). Contract 15 came with ReSTIR
+PT, with contract 3's light tiles and contract 5's G-buffer of primary hits;
+contract 16 with manifold next event estimation; contracts 17 and 18 with
+the denoiser, the frame graph keeping the feature images and the
+denoiser's history (`metal/frame/feature_images.h`, `denoise_images.h`), and
+contract 7 growing by a second ring of constants: a denoised frame's
+passes before the denoiser run at the light size, the rest at the output's.
+The camera is one contract for every camera, as Falcor's `CameraData` is,
+since a frame has one camera and cameras differ by parameters, not code.
 
 **How a layout crosses into a shader.** The data a contract passes to the
 GPU (a material's parameters, a light sample, a surface record) has one
@@ -163,8 +193,8 @@ evaluates, each a family of its own.
 
 ## Not here yet
 
-- **The kinds.** Each family grows by its first kind when a change needs it:
-  the sphere, the box, the dielectric, the sphere light, and so on.
-- **The contracts' contents.** Named above; each is its own design.
 - **The Vulkan backend.** It arrives as `src/vulkan/`, mirroring
-  `src/metal/`'s families, when the AMD machine's milestone comes.
+  `src/metal/`'s families, when the AMD machine's milestone comes. The
+  denoiser's kernels are to be written for it too, on Vulkan's cooperative
+  matrices (`docs/research/2026-10-15-denoiser-live.md`), reading the same
+  exported weights through the same core loader.
