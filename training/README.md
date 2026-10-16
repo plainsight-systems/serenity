@@ -74,7 +74,11 @@ uv run --locked python evaluate.py --checkpoint ../../serenity-data/denoiser-v1-
     --out ../../serenity-data/denoiser-v1-runs/v1/test --images IMAGES_DIR
 ```
 
-It refuses an `--out` that already holds results.
+It refuses an `--out` that already holds results. Tables:
+`uv run --locked python report.py wide=RUN_A/test/results.json small=RUN_B/test/results.json`.
+
+`config.json` is the small network (max_lr 1e-3), `config-wide.json` the wide
+one (max_lr 5e-3); docs/research/2026-10-15-denoiser-training.md has both runs.
 
 ## The export
 
@@ -120,4 +124,6 @@ The test's own fixture, `tests/data/denoise`, was made by `fixture
 | `evaluate.py` | the test |
 | `export.py` | the weights for Phase 4 |
 | `denoise_check.py` | the renderer's denoise pass against PyTorch: fixtures and the comparison |
+| `report.py` | markdown tables from one or more test results |
+| `benchmark.py` | a rough MPS time a frame |
 | `test_training.py` | the conventions, on synthetic data |

@@ -12,8 +12,14 @@ This file tracks active and accepted work.
   scripts/make_marbles.py --seed N [--out FILE]. Phase 2 rendered 2026-10-14
   (docs/research/2026-10-14-denoiser-dataset.md): denoiser-v1 by
   scripts/make_denoiser_dataset.py, 400 frames in 50 sequences, 4.0 h, 32.3 GB,
-  at ../serenity-data/denoiser-v1 beside the checkout. Phase 3, training: the
-  wide and small networks (training/, branch denoiser-phase3). Phase 4 built
+  at ../serenity-data/denoiser-v1 beside the checkout. Phase 3 trained
+  2026-10-15 (docs/research/2026-10-15-denoiser-training.md): `training/`
+  (its own pinned environment, a new dependency, declared there), two sizes
+  (small 294k parameters, wide 543k), tested once on the real marbles:
+  displayed error 0.29 to 0.39 of the input's, below Open Image Denoise's;
+  both exported to ../serenity-data/denoiser-v1-model. Waiting on the user:
+  the temporal weight (the table flickers 36 to 47% more than the targets).
+  Phase 4 built
   2026-10-15 (docs/research/2026-10-15-denoiser-live.md): the `denoise` pass
   on our own Metal kernels (contract 18), two resolutions in one frame
   (frame::light_size), graphs/restir_pt_denoised.toml with the weights as a
@@ -201,3 +207,10 @@ Open Image Denoise and MetalFX; the Vulkan backend on the AMD machine.
 - Denoiser: half-precision activations change 0.7 to 0.9% of displayed pixels by one level (up to 9 in a few) against PyTorch's float32 on real frames; float activations if a difference is ever seen.
 - Denoiser: the export's SHA256SUMS is not checked at load (sizes, shapes, constants and finite values are).
 - Data set: the test inputs use frame indices 0 to 7,207; Phase 4's 65,536-sample references for scoring must start past them (make reference batches from index 0).
+- Training: the table flickers 36 to 47% more than the targets once every firefly is awake (and on validation); the temporal term is under 3% of the loss at Chaitanya et al.'s 0.125. Measure 0.125 x 2, x 4, x 8: validation flicker against validation error; the user decides (2026-10-15-denoiser-training.md).
+- Training: validation still fell about 0.0005 per 50 epochs through the anneal; a 600-epoch cycle to see if it keeps falling.
+- Training: the network reads view-space normals (data.py); Phase 4 transforms the features pass's world normal by the camera's axes, or the features pass writes view space.
+- Training: small or wide for Phase 4 by their Metal cost (small 1 to 9% higher displayed error, 56% of the U-Net's multiply-adds; PyTorch fp16 U-Net 7.2 against 9.6 ms); both exported.
+- Training: Thomas et al. 2022's loss weights and sub-pixel handling unread (the PDF could not be fetched); check them against loss.py and model.py.
+- Training: MPS runs from one seed agree to four figures, not to the bit.
+- ReSTIR PT's radiance is not bit-reproducible on the GPU: reruns of a frame differ in 1 to 9 pixels by up to 2.4e-7 (features exact); find the order-dependent sum.

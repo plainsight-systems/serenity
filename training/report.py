@@ -37,7 +37,7 @@ def main() -> None:
     print("### Displayed MSE against the 4,096-sample targets, mean of each sequence's 8 frames\n")
     for key, label in REGIONS:
         print(f"**{label}**\n")
-        print("| sequence | " + " | ".join(k[0] for k in kinds) + " | network / input |")
+        print("| sequence | " + " | ".join(k[0] for k in kinds) + f" | {next(iter(runs))} / input |")
         print("|---|" + "---|" * (len(kinds) + 1))
         for s in seqs:
             vals = [value(r, k, s, "vs_targets", key) for _, r, k in kinds]

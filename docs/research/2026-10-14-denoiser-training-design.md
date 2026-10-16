@@ -158,6 +158,10 @@ time:
    Rendered 2026-10-14 (2026-10-14-denoiser-dataset.md): 400 frames,
    4,096-sample targets, 4.0 h, 32.3 GB.
 3. **Training.** The `training/` toolkit, the run, the validation curve.
+   Trained 2026-10-15 (2026-10-15-denoiser-training.md): two sizes, 300
+   epochs each; on the held-out marbles 0.29 to 0.39 of the input's
+   displayed error, below Open Image Denoise's; the table's flicker 36 to
+   47% above the targets'; both networks exported.
 4. **The Metal pass.** Its own note: the network as Metal kernels, its
    cost, the demo graph `graphs/restir_pt_denoised.toml`, and the test
    results.
