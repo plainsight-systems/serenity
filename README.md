@@ -25,18 +25,20 @@ the resolution each way. I tested it once on the marbles, which it never saw
 in training. Measured after tone mapping against 4,096-sample path-traced
 frames, the wider of the two networks leaves 0.29 to 0.39 of the raw input’s
 error, 18 to 38% less than Intel’s Open Image Denoise run on each frame. On
-my M3 Max a denoised 1920 × 1080 frame takes 23.5 ms and the window’s
-3456 × 2234 takes 77 ms, so 60 frames a second at full resolution is still
-ahead. Once every firefly is awake, the table’s light also changes more from
-frame to frame than the path-traced frames do (36 to 47% more), which I’ve
-left for the next training round.
+my M3 Max a denoised 1920 × 1080 frame takes 23.5 ms (about 43 frames a
+second) and the window’s 3456 × 2234 takes 77 ms (about 13 frames a
+second), so 60 frames a second at full resolution is still ahead. Once
+every firefly is awake, the table’s light also changes more from frame to
+frame than the path-traced frames do (36 to 47% more), which I’ve left for
+the next training round.
 
 Milestone 2 built the light the network starts from. ReSTIR PT reuses whole
 light paths across neighboring pixels and from the previous frame, and
 manifold next event estimation (MNEE) finds the light that the glass marbles
 focus onto the table. At 1920 × 1080 a frame of the fully lit scene takes
-39.8 ms, about what five path-traced samples cost (40.6 ms), and at that cost
-it roughly halves the error left after tone mapping.
+39.8 ms (about 25 frames a second), about what five path-traced samples
+cost (40.6 ms), and at that cost it roughly halves the error left after
+tone mapping.
 
 [Milestone 2: reusing work with ReSTIR](docs/writeups/milestone-2.md) follows
 the decisions, measurements, and connections to inference.
@@ -72,7 +74,8 @@ tiny reservoir of light samples and shares it with its neighbors and with the
 previous frame. NVIDIA’s *Marbles at Night* demo showed what that looks like,
 and it’s the spirit of this scene.
 
-What interests me is underneath. A frame has a hard deadline, about 16 ms.
+What interests me is underneath. A frame has a hard deadline, about 16 ms
+at 60 frames a second.
 Meeting it means streaming through work in on-chip memory, carrying a few
 bytes of state instead of everything you’ve seen, and merging that state
 across neighbors and across time. Those are the same problems I work on in
