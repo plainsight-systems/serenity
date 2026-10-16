@@ -40,6 +40,14 @@ This file tracks active and accepted work.
 
 ## Accepted
 
+- **Milestone 3 site update** (2026-10-16): homepage, Writing, About,
+  article registry/media and feed updated for the accepted third milestone.
+  Six videos and two posters uploaded to R2 and verified by full public
+  readback; original files preserved. Site build and ten tests pass. Both
+  new players load and play from R2; the article fits a 390-pixel viewport.
+  Andrew approved the preview and requested commit/push for publication
+  through the main-branch Pages workflow.
+
 - **Milestone 2: ReSTIR, closed 2026-10-13** (docs/writeups/milestone-2.md;
   main fast-forwarded to `restir-di`). ReSTIR DI, Phases A to C
   (2026-10-10/11): resampled importance sampling with visibility reuse,

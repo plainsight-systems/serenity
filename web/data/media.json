@@ -8,32 +8,32 @@
     "provenance": "Project illustration, not a rendered frame."
   },
   "poster": {
-    "local": "docs/writeups/images/marbles-restir-pt-mnee-10s.jpg",
-    "url": "",
+    "local": "media/2026-10-15-marbles-opening-restir-pt-denoised-thumbnail-10s.png",
+    "url": "https://media.plainsight-systems.com/2026-10-15-marbles-opening-restir-pt-denoised-thumbnail-10s.png",
     "width": 1920,
     "height": 1080,
-    "alt": "Thirty-six marbles on a walnut table, lit by fireflies ten seconds into the opening.",
-    "provenance": "Milestone 2 · ReSTIR PT + MNEE · t = 10 s"
+    "alt": "Denoised glass, porcelain and metal marbles ten seconds into the opening",
+    "provenance": "Milestone 3 · Denoised and upscaled · t = 10 s"
   },
   "film": {
-    "local": "media/2026-10-13-marbles-opening-restir-pt-mnee-1080p30-16mbps.mp4",
-    "url": "https://media.plainsight-systems.com/2026-10-13-marbles-opening-restir-pt-mnee-1080p30-16mbps.mp4",
+    "local": "media/2026-10-15-marbles-opening-restir-pt-denoised-1080p30-16mbps.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-15-marbles-opening-restir-pt-denoised-1080p30-16mbps.mp4",
     "width": 1920,
     "height": 1080,
     "type": "video/mp4",
     "label": "1080p film",
-    "provenance": "Milestone 2 · ReSTIR PT + MNEE · Offline render · 1920 × 1080 · 30 fps playback",
-    "alt": "Thirty-second ReSTIR PT render of the marbles opening, with caustics through the glass"
+    "provenance": "Milestone 3 · ReSTIR PT + MNEE · Denoised and upscaled from 960 × 540 · Offline render · 1920 × 1080 · 30 fps playback",
+    "alt": "Thirty-second opening with light traced at half resolution, then denoised and upscaled by Serenity’s network"
   },
   "film_small": {
-    "local": "media/2026-10-13-marbles-opening-restir-pt-mnee-540p.mp4",
-    "url": "https://media.plainsight-systems.com/2026-10-13-marbles-opening-restir-pt-mnee-540p.mp4",
+    "local": "media/2026-10-15-marbles-opening-restir-pt-denoised-540p.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-15-marbles-opening-restir-pt-denoised-540p.mp4",
     "optional": true,
     "label": "Smaller playback file"
   },
   "film_original": {
-    "local": "media/2026-10-13-marbles-opening-restir-pt-mnee-master.mp4",
-    "url": "https://media.plainsight-systems.com/2026-10-13-marbles-opening-restir-pt-mnee-master.mp4",
+    "local": "media/2026-10-15-marbles-opening-restir-pt-denoised-master.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-15-marbles-opening-restir-pt-denoised-master.mp4",
     "optional": true,
     "label": "Open the original render"
   },
@@ -105,5 +105,36 @@
     "url": "https://media.plainsight-systems.com/2026-10-13-marbles-opening-path-vs-restir-pt-master.mp4",
     "label": "Full-resolution comparison (3840 × 1080)",
     "optional": true
+  },
+  "denoised_comparison": {
+    "local": "media/2026-10-15-marbles-opening-restir-pt-vs-denoised-1080p30-16mbps.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-15-marbles-opening-restir-pt-vs-denoised-1080p30-16mbps.mp4",
+    "label": "Comparison film (1920 × 540)",
+    "width": 1920,
+    "height": 540,
+    "type": "video/mp4",
+    "alt": "Thirty-second comparison: full-resolution ReSTIR PT on the left, half-resolution light denoised and upscaled on the right",
+    "provenance": "ReSTIR PT + MNEE (left) · Half-resolution tracing with denoising and upscaling (right) · Offline render · 30 fps playback",
+    "note": "The timing labels refer to the fully lit scene at 120 seconds, measured on an M3 Max. This film shows the opening."
+  },
+  "denoised_comparison_small": {
+    "local": "media/2026-10-15-marbles-opening-restir-pt-vs-denoised-540p.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-15-marbles-opening-restir-pt-vs-denoised-540p.mp4",
+    "label": "Smaller comparison (960 × 270)",
+    "optional": true
+  },
+  "denoised_comparison_original": {
+    "local": "media/2026-10-15-marbles-opening-restir-pt-vs-denoised-master.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-15-marbles-opening-restir-pt-vs-denoised-master.mp4",
+    "label": "Full-resolution comparison (3840 × 1080)",
+    "optional": true
+  },
+  "denoised_comparison_poster": {
+    "local": "media/2026-10-15-marbles-opening-restir-pt-vs-denoised-thumbnail-10s.png",
+    "url": "https://media.plainsight-systems.com/2026-10-15-marbles-opening-restir-pt-vs-denoised-thumbnail-10s.png",
+    "width": 3840,
+    "height": 1080,
+    "alt": "ReSTIR PT on the left and Serenity’s denoised reconstruction on the right, ten seconds into the opening",
+    "provenance": "Milestone 3 · Comparison at t = 10 s"
   }
 }

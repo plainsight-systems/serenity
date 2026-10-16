@@ -85,7 +85,8 @@ class SiteTests(unittest.TestCase):
         self.assertEqual(set((project / 'content/writing').rglob('*.md')),
                          {project / 'content/writing/_index.md',
                           project / 'content/writing/milestone-1/index.md',
-                          project / 'content/writing/milestone-2/index.md'})
+                          project / 'content/writing/milestone-2/index.md',
+                          project / 'content/writing/milestone-3/index.md'})
         html = (output / 'index.html').read_text()
         self.assertIn('https://media.example.invalid/', html)
         self.assertIn('Smaller playback file', html)
@@ -101,7 +102,7 @@ class SiteTests(unittest.TestCase):
         home = (output / 'index.html').read_text()
         index = (output / 'writing/index.html').read_text()
         self.assertIn('2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4', first)
-        self.assertIn('2026-10-13-marbles-opening-restir-pt-mnee-1080p30-16mbps.mp4', home)
+        self.assertIn('2026-10-15-marbles-opening-restir-pt-denoised-1080p30-16mbps.mp4', home)
         self.assertNotIn('2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4', home)
         self.assertIn('2026-10-13-marbles-opening-path-vs-restir-pt-1080p30-16mbps.mp4', second)
         self.assertIn('width="1920" height="540"', second)
@@ -110,6 +111,13 @@ class SiteTests(unittest.TestCase):
                       '2026-10-12-mnee.md#equal-frame-time-one-displayed-frame-each', second)
         self.assertIn('https://example.invalid/serenity/images/marbles-restir-pt-mnee-10s.jpg', second)
         self.assertIn('https://example.invalid/serenity/images/marbles-opening-10s.jpg', first)
+        third = (output / 'writing/milestone-3/index.html').read_text()
+        self.assertIn('2026-10-15-marbles-opening-restir-pt-vs-denoised-1080p30-16mbps.mp4', third)
+        self.assertIn('width="1920" height="540"', third)
+        self.assertIn('href="/serenity/writing/milestone-2/"', third)
+        self.assertIn('https://example.invalid/serenity/images/marbles-denoised-20s.jpg', third)
+        self.assertIn('2026-10-15-denoiser-training.md', third)
+        self.assertLess(index.index('writing/milestone-3/'), index.index('writing/milestone-2/'))
         self.assertLess(index.index('writing/milestone-2/'), index.index('writing/milestone-1/'))
 
     def test_feed_is_complete_public_metadata_even_in_preview(self):
@@ -131,8 +139,8 @@ class SiteTests(unittest.TestCase):
                         '--panicOnWarning'], check=True, capture_output=True)
         xml = (output / 'writing/index.xml').read_text()
         entries = ET.fromstring(xml).findall('./channel/item')
-        self.assertEqual(len(entries), 27)
-        self.assertEqual(entries[0].findtext('title'), site.ARTICLES['milestone-2']['title'])
+        self.assertEqual(len(entries), 28)
+        self.assertEqual(entries[0].findtext('title'), site.ARTICLES['milestone-3']['title'])
         self.assertIn('Fixture 0 & <GPU>', [item.findtext('title') for item in entries])
         self.assertNotIn('PRIVATE BODY', xml)
         self.assertNotIn('/writing/draft/', xml)

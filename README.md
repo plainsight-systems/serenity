@@ -16,7 +16,7 @@ with the light traced at a lower resolution and brought up to the display’s.
 
 [![The marbles twenty seconds into the opening, the swarm perched among them and the first fireflies rising: ReSTIR PT and MNEE, denoised and upscaled to 1920 × 1080 by the network](docs/writeups/images/marbles-denoised-20s.jpg)](https://serenity.plainsight-systems.com/#film)
 
-**Current state: milestone 3, at its close.** The renderer now traces the
+**Current state: milestone 3.** The renderer now traces the
 light at a quarter of the output’s pixels and hands it to a small neural
 network I trained for it. For every output pixel, the network decides how
 much each nearby noisy pixel should count, and the pixel becomes their

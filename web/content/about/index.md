@@ -10,11 +10,11 @@ The scene is deliberately simple: glass, porcelain, and metal marbles on a walnu
 
 ## Where it is now
 
-Milestone 2 adds ReSTIR path reuse and a search for light focused through glass. Reusing earlier work makes much of the displayed image cleaner for a similar frame cost, especially the table and porcelain. The glass remains the harder part.
+Milestone 3 adds a neural network I trained to denoise and upscale the light from ReSTIR. It learns how much nearby samples and earlier frames should contribute to each output pixel. Tracing at half the width and height leaves fewer pixels to render, while the reconstruction produces a much cleaner image.
 
-The current renderer takes around 40 ms at 1920 × 1080 on my M3 Max. Next are denoising and tracing at a lower resolution with upscaling, working toward a clean image at the display’s full resolution and 60 frames a second.
+A fully lit 1920 × 1080 frame now takes about 23.5 ms on my M3 Max, compared with 39.8 ms before reconstruction. At the window’s 3456 × 2234 it takes about 77 ms. The table still shimmers and small reflections lose detail. Next I’m working on the cost of tracing and reuse, toward a clean moving image at the display’s full resolution and 60 frames a second.
 
-The [second milestone]({{< relref "/writing/milestone-2" >}}) follows those decisions and their connections to inference. The [first milestone]({{< relref "/writing/milestone-1" >}}) records how I built the baseline.
+The [third milestone]({{< relref "/writing/milestone-3" >}}) follows the model from training data to the Metal kernels that run it. The [second milestone]({{< relref "/writing/milestone-2" >}}) covers path reuse and light focused through glass; the [first]({{< relref "/writing/milestone-1" >}}) records the baseline.
 
 ## Why the name
 

@@ -52,11 +52,23 @@ ARTICLES = {
         'images': ['marbles-restir-pt-mnee-10s.jpg', 'marbles-path-vs-restir-pt-10s.jpg'],
         'film': 'comparison', 'film_title': 'The comparison in motion',
     },
+    'milestone-3': {
+        'title': 'Milestone 3: turning samples into an image',
+        'description': 'Building and training a reconstruction model, running it inside the renderer, '
+                       'and seeing what survives denoising and upscaling.',
+        'date': '2026-10-16', 'milestone': 3,
+        'image': 'images/marbles-denoised-20s.jpg',
+        'images': ['marbles-denoised-20s.jpg', 'marbles-restir-pt-vs-denoised-10s.jpg'],
+        'film': 'denoised_comparison', 'film_title': 'The reconstruction in motion',
+    },
 }
-IMAGE_KEYS = {'artwork', 'poster', 'baseline_poster', 'comparison_poster'}
+IMAGE_KEYS = {'artwork', 'poster', 'baseline_poster', 'comparison_poster',
+              'denoised_comparison_poster'}
 MEDIA_KEYS = IMAGE_KEYS | {'film', 'film_small', 'film_original', 'brass',
                           'baseline', 'baseline_small', 'baseline_original',
-                          'comparison', 'comparison_small', 'comparison_original'}
+                          'comparison', 'comparison_small', 'comparison_original',
+                          'denoised_comparison', 'denoised_comparison_small',
+                          'denoised_comparison_original'}
 PUBLIC_PAGES = {'index.html', 'about/index.html', 'writing/index.html', '404.html'} | {
     f'writing/{slug}/index.html' for slug in ARTICLES
 }

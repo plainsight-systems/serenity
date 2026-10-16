@@ -306,6 +306,22 @@ Clarified by the user 2026-10-12:
 
 ## Publication feed
 
+- Milestone-three site update (2026-10-16): Andrew requested publication
+  preparation after the renderer and accepted article reached main. The
+  homepage now selects the denoised opening; Writing and the RSS feed include
+  milestone 3, with its ReSTIR-versus-denoised comparison. About reflects the
+  trained model, measured frame costs and tracing/reuse as next work. Earlier
+  articles retain their films. The accepted article is staged unchanged.
+- R2 holds all eight October 15 milestone-three media files: playback, small,
+  master and PNG poster for both `marbles-opening-restir-pt-denoised` and
+  `marbles-opening-restir-pt-vs-denoised`. Public readback SHA-256 matches all
+  local files; MIME types, lengths, immutable cache headers and all six video
+  byte ranges pass. Denoised playback/master are 1920 × 1080; comparison
+  playback is 1920 × 540 and master 3840 × 1080. Originals are unchanged.
+  Local verification records are in `.cache/site-media/milestone-3/`.
+  Andrew approved the local preview and requested commit/push for publication
+  through the main-branch Pages workflow.
+
 - On 2026-10-13 Andrew approved automatic aggregation of project writing by
   the Plainsight Systems hub. `/writing/index.xml` derives complete published
   article metadata from the existing staged Writing pages, with no body text,

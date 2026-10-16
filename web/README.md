@@ -1,6 +1,6 @@
 # Serenity project site
 
-Hugo implements the homepage, Writing index, both milestone articles,
+Hugo implements the homepage, Writing index, three milestone articles,
 and About page. The shared navy framing and Plex typography follow Cradle and
 Plainsight Systems. No JavaScript, analytics, external fonts, or renderer build
 is required. A custom 404 page is included.
@@ -18,7 +18,7 @@ Open <http://127.0.0.1:1314/>. Rerun after source edits; this is a build followe
 by a static server, not a watcher. The server binds only to loopback and serves
 only the generated output. Port 1313 is the default if `--port` is omitted.
 
-The ReSTIR film, side-by-side comparison, milestone-one film, their smaller
+The denoised film, both side-by-side comparisons, milestone-one film, their smaller
 playback options and original masters, and the brass sphere are hosted at
 `media.plainsight-systems.com` in R2 bucket
 `plainsight-public-media`. Their URLs are configured in `data/media.json`, so
@@ -30,13 +30,14 @@ For offline media development, clear the relevant manifest URLs and pass
 
 ## Content and publication boundary
 
-- `docs/writeups/milestone-1.md` and `milestone-2.md` are the authoritative
+- `docs/writeups/milestone-1.md`, `milestone-2.md`, and `milestone-3.md` are the authoritative
   articles. The builder stages each as a Hugo leaf bundle, removing its
   duplicate H1 and supplying publication metadata from `ARTICLES` in
   `scripts/site.py`. Edit the prose in the original writeup; update its registry
   entry if its title changes. The registry also selects its images and film.
-- The homepage features the ReSTIR film. Milestone 2 includes the comparison
-  film; milestone 1 retains its original film. Each article has its own Writing
+- The homepage features the denoised film. Milestone 3 includes the ReSTIR
+  versus denoised comparison; milestone 2 retains its path tracer versus
+  ReSTIR comparison, and milestone 1 retains its original film. Each article has its own Writing
   thumbnail and social preview. Relative links between writeups resolve to
   published pages; relative research links resolve to GitHub.
 - `content/` holds the About page and Writing introduction.
@@ -61,8 +62,8 @@ set `url` to the final HTTPS object URL after upload and delivery checks.
 
 | Entry | Public build behavior |
 |---|---|
-| `artwork`, `poster`, `baseline_poster`, `comparison_poster` | Site-owned assets by default; may use hosted URLs |
-| `film`, `baseline`, `comparison`, `brass` | Hosted URLs required; local files only with `--local-media` |
+| `artwork`, `poster`, `baseline_poster`, `comparison_poster`, `denoised_comparison_poster` | Site-owned assets by default; may use hosted URLs |
+| `film`, `baseline`, `comparison`, `denoised_comparison`, `brass` | Hosted URLs required; local files only with `--local-media` |
 | Each film’s `_small` and `_original` entries | Optional explicit links, shown only when URLs are set |
 
 Each film has native controls, a poster, and `preload="none"`; it does not
@@ -77,9 +78,19 @@ its smaller version is 960 × 270 and its master is 3840 × 1080. The player
 uses the actual dimensions. ReSTIR playback and master are 1920 × 1080,
 with a 960 × 540 smaller version. All six are 30 seconds at 30 fps playback.
 
+Milestone-three objects also use their dated filenames at the bucket root:
+`2026-10-15-marbles-opening-restir-pt-denoised-*` and
+`2026-10-15-marbles-opening-restir-pt-vs-denoised-*`. Each has playback,
+smaller, master, and PNG poster files. The denoised playback/master are
+1920 × 1080; the comparison playback is 1920 × 540 and master 3840 × 1080.
+Smaller versions halve both dimensions. All videos are 30 seconds at 30 fps.
+The model traces at 960 × 540 and reconstructs at 1920 × 1080; playback rate
+is separate from measured rendering speed. The comparison's timing labels
+refer to the fully lit benchmark, not the opening shown in the film.
+
 New uploads use `Content-Type: video/mp4` and
 `Cache-Control: public, max-age=31536000, immutable`. Use new filenames for
-changed media. The local `serenity-r2` AWS CLI profile is scoped to
+changed media; PNG posters use `image/png`. The local `serenity-r2` AWS CLI profile is scoped to
 `plainsight-public-media`; credentials stay outside this repository.
 
 The 892 MB comparison master exceeds the standard CDN cache limit and is
