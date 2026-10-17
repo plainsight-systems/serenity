@@ -49,8 +49,10 @@ struct Reached {
     contracts::Bsdf bsdf;  // resolved unless `light` or not found
 };
 
+// The camera's rays and their mirrors' see the fireflies: every shape
+// (contract 19, everything).
 inline Reached reach(Scene scene, metal::raytracing::ray along) {
-    const Hit hit = trace(scene.structure, scene.shapes(), along);
+    const Hit hit = trace(scene.structure, scene.shapes(), along, contracts::RayMask::everything);
     if (!hit.found) {
         return Reached{false, float3(0.0f), contracts::SurfaceInteraction{}, false, contracts::Bsdf{}};
     }
@@ -163,7 +165,7 @@ inline Found replaced(Scene scene, Reached at, float3 direction) {
 
 kernel void features(constant contracts::FrameConstants& frame [[buffer(binding::constants)]],
                      constant contracts::CameraData& camera [[buffer(binding::camera)]],
-                     metal::raytracing::primitive_acceleration_structure structure [[buffer(binding::structure)]],
+                     serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
                      constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
                      constant float* sphere_glows [[buffer(binding::glows)]],
                      constant contracts::Transform* transforms [[buffer(binding::transforms)]],

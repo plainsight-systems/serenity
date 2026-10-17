@@ -37,7 +37,7 @@ static_assert(own_there < restir_pt::replay_slots, "the temporal shifts fit a pi
 // the group's scan: none returns before it.
 kernel void restir_pt_temporal_shift(
     constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
-    primitive_acceleration_structure structure [[buffer(binding::structure)]],
+    serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
     constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
     constant float* sphere_glows [[buffer(binding::glows)]],
     constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],
@@ -102,7 +102,7 @@ kernel void restir_pt_temporal_shift(
 // one shift whatever its lanes' slots (GPU.4).
 kernel void restir_pt_temporal_replay(
     constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
-    primitive_acceleration_structure structure [[buffer(binding::structure)]],
+    serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
     constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
     constant float* sphere_glows [[buffer(binding::glows)]],
     constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],

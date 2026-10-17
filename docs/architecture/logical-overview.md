@@ -34,7 +34,8 @@ and the camera.
 - **Animate** places every firefly where it is at *t*, sets how brightly
   each glows at *t*, and updates the acceleration structures to match. The
   fireflies are small glowing spheres: geometry that rays can hit, and
-  lights that the estimators sample.
+  lights that the estimators sample. Rays that only test whether a light
+  is visible skip them (principle 11).
 - **Primary visibility** traces a ray from the camera through each pixel. At
   glass it reflects or refracts, chosen by the Fresnel term; at polished metal
   it reflects; it stops at the first rough surface, or when it leaves the
@@ -213,13 +214,37 @@ in.
     backends render the same scene from the same description, and each is
     judged against the reference.
 
+11. **A ray finds what its question needs, and a firefly casts no
+    shadow.** Every shape is in one of two classes: a light (a firefly) or
+    a surface (everything else). A ray that asks *what it reaches*, the
+    camera's, a bounced ray, a replayed path, the features', finds both,
+    since it must be able to strike a firefly: that is how MIS's BSDF
+    strategy finds a light, and how the camera sees one. A ray that asks
+    *whether a chosen light is visible*, a shadow ray, a reconnection's
+    check between two vertices, manifold next event estimation's segments,
+    finds surfaces only. Each estimator asks the same question the same
+    way wherever it asks it, so a shift tests a path's visibility as the
+    path was sampled. This is production's per-object "casts shadows"
+    switch, kept by an instance mask (DXR's and Vulkan's mask bits,
+    Unreal's ray-traced shadows), applied to every light: of the
+    scene's 653 shapes, 616 are fireflies 1.5 mm across, which every
+    visibility ray would otherwise search among for the shadows of
+    fireflies on each other and on the surfaces, too small to see.
+    The image changes by exactly those shadows, measured before the
+    choice was kept (Milestone 4's Step 2,
+    `docs/research/2026-10-17-milestone-4-plan.md`), and every estimator
+    and the reference make it alike, so they still compare. A scene whose
+    lights are large enough for their shadows to matter would give the
+    class to the scene's data, per shape, as Unreal's primitives carry it;
+    no scene here has one.
+
 ## The design space
 
 What varies, and which principle handles it.
 
 | What varies | Examples | Handled as |
 |---|---|---|
-| Number of fireflies | hundreds to thousands | scene data (8); no per-pixel cost (9) |
+| Number of fireflies | hundreds to thousands | scene data (8); no per-pixel cost (9); none in a visibility ray's way (11) |
 | Firefly motion, color, intensity | per firefly | scene data, evaluated at *t* (1, 8) |
 | Geometry | spheres, the table | scene data (8) |
 | Material | rough, glass, polished metal | rough surfaces take light; glass and metal are passed through, by the camera's path and by caustic paths |
@@ -325,6 +350,16 @@ written at any resolution and any number of samples.
 whose GPU traces rays in hardware, through Metal 4. The second backend
 targets an AMD Strix Halo through Vulkan's ray tracing. Neither is assumed to
 behave like the other; each is measured on its own.
+
+**A mask needs an instance level, and the scene has none.** Metal, like
+DXR and Vulkan, tests a ray's mask against an instance's, never against a
+primitive's, and the scene's structure is one level of boxes, because on
+this GPU the instance level cost each ray more than it saved
+(`docs/research/2026-10-09-acceleration-structure.md`). So principle 11's
+two questions are kept, on Metal today, as two structures: every shape,
+and the surfaces alone, each ray tracing the one its question names. A
+two-level structure keeps the same two questions as mask bits on its
+instances; which a ray asks does not change.
 
 **Little is kept alive across a ray query.** On the M3 Max the naive path
 tracer's one kernel holds every path's state, and its ray queries' scratch,

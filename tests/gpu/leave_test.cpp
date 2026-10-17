@@ -18,7 +18,7 @@
 // another, started outside the shape: a leak, the offset too large for it.
 //
 // Its dispatch is support/traced_probe.h's, as acceleration_test.cpp's: it
-// binds the structure as a resource, which the probe runner does not.
+// binds the structures' block, which the probe runner does not.
 
 #include <algorithm>
 #include <array>
@@ -61,7 +61,9 @@ std::vector<LeaveResult> leave(const scene::SceneDescription& description, const
     const metal::SceneBuffers buffers(device, submission, description);
     metal::ShapeTransforms transforms(device, submission, description.shapes.transforms,
                                       metal::FrameArray::Copies::one);
-    metal::SceneAcceleration acceleration(device, submission, description.shapes, {});
+    const std::vector<std::uint32_t> lights = scene::light_shapes(description);
+    metal::SceneAcceleration acceleration(device, submission, description.shapes,
+                                          {.moving = {}, .lights = lights});
     const metal::Library library(device, metallib::probes);
     const auto count = static_cast<std::uint32_t>(queries.size());
     return tests::run_traced<LeaveResult>({device, submission, library, buffers, transforms, acceleration},

@@ -29,7 +29,7 @@ namespace binding = serenity::bindings::restir_pt;
 // without compiles the tree it always did and binds what it always bound.
 template <bool manifold>
 inline void initial_pixel(constant serenity::contracts::FrameConstants& frame,
-                          constant serenity::contracts::CameraData& camera, primitive_acceleration_structure structure,
+                          constant serenity::contracts::CameraData& camera, serenity::shaders::SceneStructure structure,
                           constant serenity::gpu::SceneBlock& block, constant float* sphere_glows,
                           constant serenity::contracts::Transform* transforms,
                           constant serenity::contracts::PathReuseSettings& settings,
@@ -63,7 +63,7 @@ inline void initial_pixel(constant serenity::contracts::FrameConstants& frame,
 
 kernel void restir_pt_initial(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
                               constant serenity::contracts::CameraData& camera [[buffer(binding::camera)]],
-                              primitive_acceleration_structure structure [[buffer(binding::structure)]],
+                              serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
                               constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
                               constant float* sphere_glows [[buffer(binding::glows)]],
                               constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],
@@ -83,7 +83,7 @@ kernel void restir_pt_initial(constant serenity::contracts::FrameConstants& fram
 
 kernel void restir_pt_initial_mnee(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
                                    constant serenity::contracts::CameraData& camera [[buffer(binding::camera)]],
-                                   primitive_acceleration_structure structure [[buffer(binding::structure)]],
+                                   serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
                                    constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
                                    constant float* sphere_glows [[buffer(binding::glows)]],
                                    constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],
@@ -112,7 +112,7 @@ kernel void restir_pt_initial_mnee(constant serenity::contracts::FrameConstants&
 // each a light drawn by the light selection and packed as this frame places
 // and lights it.
 kernel void restir_pt_light_tiles(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
-                                  primitive_acceleration_structure structure [[buffer(binding::structure)]],
+                                  serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
                                   constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
                                   constant float* sphere_glows [[buffer(binding::glows)]],
                                   constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],

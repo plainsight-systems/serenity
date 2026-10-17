@@ -40,7 +40,7 @@ Partner partner_of(constant ushort* pairing, uint2 pixel, uint t, uint frame, ui
 // group's at once (restir_pt.metal.h). Every thread reaches the group's
 // scan: none returns before it.
 kernel void restir_pt_shift(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
-                            primitive_acceleration_structure structure [[buffer(binding::structure)]],
+                            serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
                             constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
                             constant float* sphere_glows [[buffer(binding::glows)]],
                             constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],
@@ -99,7 +99,7 @@ kernel void restir_pt_replay_grid(device atomic_uint* counter [[buffer(binding::
 
 // Step 10: the pairs that replay, one thread each.
 kernel void restir_pt_replay(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
-                             primitive_acceleration_structure structure [[buffer(binding::structure)]],
+                             serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
                              constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
                              constant float* sphere_glows [[buffer(binding::glows)]],
                              constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],

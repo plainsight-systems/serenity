@@ -341,7 +341,9 @@ std::vector<tests::ShiftResult> shift(const std::string& text, frame::Extent siz
     metal::ShapeTransforms transforms(device, submission, description.shapes.transforms,
                                       metal::FrameArray::Copies::one);
     metal::LightGlows glows(device, submission, description.light_counts.spheres, false);
-    metal::SceneAcceleration acceleration(device, submission, description.shapes, {});
+    const std::vector<std::uint32_t> lights = scene::light_shapes(description);
+    metal::SceneAcceleration acceleration(device, submission, description.shapes,
+                                          {.moving = {}, .lights = lights});
     metal::Library library(device, metallib::probes);
     const auto pipeline = library.compute_pipeline("pt_shift");
     const auto fill = library.compute_pipeline("pt_light_tiles");
@@ -375,7 +377,7 @@ std::vector<tests::ShiftResult> shift(const std::string& text, frame::Extent siz
     table->setAddress(out->gpuAddress(), 0);
     table->setAddress(in->gpuAddress(), 1);
     table->setAddress(framed->gpuAddress(), 2);
-    table->setResource(acceleration.resource(slot.slot), 3);
+    table->setAddress(acceleration.address(slot.slot), 3);
     table->setAddress(buffers.block_address(), 4);
     table->setAddress(glows.address(slot.slot), 5);
     table->setAddress(transforms.address(slot.slot), 6);

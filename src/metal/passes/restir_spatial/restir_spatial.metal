@@ -24,7 +24,7 @@ namespace binding = serenity::bindings::restir_spatial;
 
 kernel void restir_spatial(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
                            constant serenity::contracts::CameraData& camera [[buffer(binding::camera)]],
-                           primitive_acceleration_structure structure [[buffer(binding::structure)]],
+                           serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
                            constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
                            constant float* sphere_glows [[buffer(binding::glows)]],
                            constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],

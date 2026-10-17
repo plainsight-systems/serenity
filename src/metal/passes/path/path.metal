@@ -28,7 +28,7 @@ using namespace serenity::shaders;
 // did (path.metal.h) and binds what it always bound.
 template <bool manifold>
 inline void trace_pixel(constant serenity::contracts::FrameConstants& frame,
-                        constant serenity::contracts::CameraData& camera, primitive_acceleration_structure structure,
+                        constant serenity::contracts::CameraData& camera, serenity::shaders::SceneStructure structure,
                         constant serenity::gpu::SceneBlock& block, constant float* sphere_glows,
                         constant serenity::contracts::Transform* transforms, device atomic_uint* non_finite,
                         texture2d<float, access::read_write> accumulated, mnee::Queue queue, uint2 pixel) {
@@ -67,7 +67,7 @@ inline void trace_pixel(constant serenity::contracts::FrameConstants& frame,
 kernel void path_trace(constant serenity::contracts::FrameConstants& frame
                        [[buffer(serenity::bindings::path::constants)]],
                        constant serenity::contracts::CameraData& camera [[buffer(serenity::bindings::path::camera)]],
-                       primitive_acceleration_structure structure [[buffer(serenity::bindings::path::structure)]],
+                       serenity::shaders::SceneStructure structure [[buffer(serenity::bindings::path::structure)]],
                        constant serenity::gpu::SceneBlock& block [[buffer(serenity::bindings::path::scene)]],
                        constant float* sphere_glows [[buffer(serenity::bindings::path::glows)]],
                        constant serenity::contracts::Transform* transforms
@@ -84,7 +84,7 @@ kernel void path_trace_mnee(constant serenity::contracts::FrameConstants& frame
                             [[buffer(serenity::bindings::path::constants)]],
                             constant serenity::contracts::CameraData& camera
                             [[buffer(serenity::bindings::path::camera)]],
-                            primitive_acceleration_structure structure [[buffer(serenity::bindings::path::structure)]],
+                            serenity::shaders::SceneStructure structure [[buffer(serenity::bindings::path::structure)]],
                             constant serenity::gpu::SceneBlock& block [[buffer(serenity::bindings::path::scene)]],
                             constant float* sphere_glows [[buffer(serenity::bindings::path::glows)]],
                             constant serenity::contracts::Transform* transforms

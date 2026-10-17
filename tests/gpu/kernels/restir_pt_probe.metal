@@ -79,7 +79,7 @@ kernel void pt_pairing(device PairingResult* out [[buffer(0)]], constant Pairing
 // 6, the settings at 7, the queries' count at 8, the light tiles at 9.
 kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQuery* queries [[buffer(1)]],
                      constant serenity::contracts::CameraData& camera [[buffer(2)]],
-                     primitive_acceleration_structure structure [[buffer(3)]],
+                     serenity::shaders::SceneStructure structure [[buffer(3)]],
                      constant serenity::gpu::SceneBlock& block [[buffer(4)]],
                      constant float* sphere_glows [[buffer(5)]],
                      constant serenity::contracts::Transform* transforms [[buffer(6)]],
@@ -140,7 +140,7 @@ kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQu
 // The light tiles pt_shift's trees draw from, frame 0's. Bindings: as
 // pt_shift binds the scene, the structure at 3, the block at 4, the glows
 // at 5, the transforms at 6; the tiles it writes at 9.
-kernel void pt_light_tiles(primitive_acceleration_structure structure [[buffer(3)]],
+kernel void pt_light_tiles(serenity::shaders::SceneStructure structure [[buffer(3)]],
                            constant serenity::gpu::SceneBlock& block [[buffer(4)]],
                            constant float* sphere_glows [[buffer(5)]],
                            constant serenity::contracts::Transform* transforms [[buffer(6)]],

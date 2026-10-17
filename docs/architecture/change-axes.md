@@ -88,6 +88,7 @@ Each interface has one owner; everything else reads it.
 | **Light sample**: which light and which point on it, in its own coordinates | Light | Sample reuse, Integrator |
 | **Film outputs**: radiance, albedo, normal, depth, motion per pixel | Film | Pass, Sample reuse |
 | **Images** between passes, and the history kept across frames | Frame graph | every Pass |
+| **Ray mask**: the classes of shape (lights, surfaces), and which a ray finds | Acceleration | Integrator, Pass (the features) |
 
 If any of these lived inside the code that uses it, a change to it would
 touch every user at once, and the axes would silently become one.
@@ -233,6 +234,29 @@ light half's tracing, in the image half, the two shared the ray tracing
 hardware and it took four times as long; split by the hardware each
 uses rather than by which pass reads what, the frame is shown sooner
 (Milestone 4's Step 1 measures both).
+
+**A ray mask is two axes' business, and neither is the scene's.** Which
+shapes a ray finds (`logical-overview.md`, principle 11) splits in two:
+
+- **Acceleration** owns the mask: the classes a shape can be in (a light,
+  a surface), which class each shape is in, learned from Light's own
+  answer to whether a shape is a light (contract 3), and the guarantee
+  that a ray carrying a mask finds exactly the shapes of its classes, at
+  the distances and as the shapes it would have found them unmasked. How
+  that is kept, one structure per mask on today's single level or mask
+  bits on a two-level structure's instances, is Acceleration's alone and
+  changes nothing outside it.
+- **Integrator** (and the features pass, which traces the camera's rays)
+  chooses each ray's mask by the question the ray asks: what it reaches,
+  or whether a chosen light is visible.
+
+The test holds: splitting the scene into two levels (Milestone 4's Step
+3) touches no estimator, and an estimator asking a new question picks a
+mask without touching the structure. It looks wrong that **the scene has
+no say** in which shapes cast shadows, as Unreal's primitives each have:
+every light here is a firefly-sized sphere, so the class follows from
+being a light; a light whose shadow should show is the change that moves
+the class into the scene's data, as a per-shape value.
 
 **Scene content and animation are two files, not one.** Both describe how the
 fireflies move, which makes merging them tempting. But animation changes when

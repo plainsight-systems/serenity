@@ -40,7 +40,8 @@
 //   12), no_medium, air, at the camera.
 //   For each surface, until Russian roulette ends the path (step 7):
 //
-//   Step 1  Trace: the nearest surface along the ray; beta *=
+//   Step 1  Trace: the nearest shape along the ray, a firefly among them
+//           (contract 19: it carries everything); beta *=
 //           transmittance(medium, t) (contract 12), what the medium the ray
 //           crossed kept of it, t the stretch from the surface the ray truly
 //           left, not from the point just off it the ray starts at
@@ -85,8 +86,9 @@
 //           whatever the shadow ray finds, so the ray is not traced; if the
 //           direction leaves on wo's other side, stop there too: it is not
 //           step 5's to draw (below); else trace one shadow ray, from that
-//           same point to the light's surface, the light itself ignored; if
-//           nothing blocks it,
+//           same point to the light's surface, among the surfaces alone
+//           (contract 19: the occluders; no firefly, the light itself
+//           among them, casts a shadow); if nothing blocks it,
 //             L += beta x f(wo, wi) |cos(wi)| x L_e x T / (P x p_l) x w_l,
 //           w_l = (P p_l)^2 / ((P p_l)^2 + p_b^2), p_b = pdf(wo, wi), the
 //           density with which step 6 here would draw wi (contract 2): the
@@ -584,7 +586,7 @@ inline float3 next_event(Scene scene, Shading here, thread PathNumbers& numbers)
                               to_float3(sample.radiance) * transmittance(scene.media(), here.medium, sample.distance) /
                               light_density * next_event_weight(light_density, here.bsdf, here.wo, wi);
     if (occluded(scene.structure, scene.shapes(), metal::raytracing::ray(origin, wi, 0.0f, sample.distance),
-                 sample.primitive)) {
+                 serenity::contracts::RayMask::occluders, sample.primitive)) {
         return float3(0.0f);
     }
     return unshadowed;
@@ -854,7 +856,7 @@ template <Start start, Stop stop, typename Gather>
     }
     for (uint surface = start == Start::after_step_5 ? first + 1u : first; surface < safety_stop; ++surface) {
         // Step 1.
-        const Hit hit = trace(scene.structure, scene.shapes(), along);
+        const Hit hit = trace(scene.structure, scene.shapes(), along, serenity::contracts::RayMask::everything);
 
         // Step 2.
         if (!hit.found) {

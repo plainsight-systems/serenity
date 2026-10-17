@@ -29,7 +29,7 @@ using namespace serenity::shaders;
 namespace binding = serenity::bindings::restir_shade;
 
 kernel void restir_shade(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
-                         primitive_acceleration_structure structure [[buffer(binding::structure)]],
+                         serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
                          constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
                          constant float* sphere_glows [[buffer(binding::glows)]],
                          constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],

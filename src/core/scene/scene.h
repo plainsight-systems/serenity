@@ -364,6 +364,13 @@ inline bool changes(const SceneDescription& scene) {
     return animation::changes(scene.animation);
 }
 
+// The shapes that are lights, by index, in increasing order: those whose
+// shape_lights entry names a light. What the acceleration structure is
+// handed to keep the lights out of a visibility ray's way (contract 19,
+// core/contracts/ray_mask.h), as it is handed the movers' targets; one
+// function so the renderer and the tests read the scene alike (ES.3).
+std::vector<std::uint32_t> light_shapes(const SceneDescription& scene);
+
 // Reads the scene file at `path`.
 SceneDescription load(const std::filesystem::path& path);
 

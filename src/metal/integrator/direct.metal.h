@@ -29,7 +29,11 @@
 // 6). Shadow rays never cross glass (it blocks them), so they cross only
 // the medium the surface they leave is in: air, or the medium of a shape
 // the light is inside too, dimmed over the shadow ray's length.
-
+//
+// Which shapes each ray finds (contract 19): the camera's and the
+// reflected rays carry everything, and see the fireflies; the shadow rays
+// and the test of the sky carry the occluders, so no firefly casts a
+// shadow, as in every estimator.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -106,7 +110,7 @@ struct Reached {
 };
 
 inline Reached reach(Scene scene, metal::raytracing::ray r) {
-    const Hit hit = trace(scene.structure, scene.shapes(), r);
+    const Hit hit = trace(scene.structure, scene.shapes(), r, serenity::contracts::RayMask::everything);
     if (!hit.found) {
         return Reached{};
     }
@@ -145,7 +149,8 @@ inline float3 from_lights(Scene scene, Shading here, PixelSamples px, uint count
             const float3 wi = to_float3(sample.direction);
             const float3 f = bsdf_evaluate(here.bsdf, here.wo, wi);
             if (!metal::any(f > 0.0f) ||
-                occluded(scene.structure, scene.shapes(), leave(here.surface, wi, sample.distance), sample.primitive)) {
+                occluded(scene.structure, scene.shapes(), leave(here.surface, wi, sample.distance),
+                         serenity::contracts::RayMask::occluders, sample.primitive)) {
                 continue;
             }
             sum += f * metal::abs(metal::dot(wi, shading)) * to_float3(sample.radiance) *
@@ -197,7 +202,8 @@ inline float3 shade_reflected(Scene scene, Shading from, float3 direction, bool 
         const float3 wi = to_float3(sample.direction);
         const float3 f = bsdf_evaluate(bsdf, wo, wi);
         if (metal::any(f > 0.0f) &&
-            !occluded(scene.structure, scene.shapes(), leave(at.surface, wi, sample.distance), sample.primitive)) {
+            !occluded(scene.structure, scene.shapes(), leave(at.surface, wi, sample.distance),
+                      serenity::contracts::RayMask::occluders, sample.primitive)) {
             color += f * metal::abs(metal::dot(wi, shading)) * to_float3(sample.radiance) *
                      transmittance(scene.media(), from.medium, sample.distance) / sample.pdf /
                      selection_probability(scene.selection(), j);
@@ -249,8 +255,10 @@ inline float3 shade_scattering(Scene scene, Shading here, PixelSamples px) {
         const float3 wi = to_float3(sample.direction);
         const float3 weight = to_float3(sample.value) * metal::abs(metal::dot(wi, shading)) / sample.pdf;
         if ((sample.lobe & serenity::contracts::lobe_diffuse) != 0u) {
-            const bool open =
-                !occluded(scene.structure, scene.shapes(), leave(here.surface, wi), serenity::contracts::no_primitive);
+            // The sky's visibility: a light's, so among the surfaces alone
+            // (contract 19, the occluders).
+            const bool open = !occluded(scene.structure, scene.shapes(), leave(here.surface, wi),
+                                        serenity::contracts::RayMask::occluders, serenity::contracts::no_primitive);
             if (open) {
                 bounced += weight * gradient_sky(scene.sky(), wi);
             }
