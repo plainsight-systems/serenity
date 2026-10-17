@@ -109,6 +109,11 @@ struct FrameResources {
     MTL::GPUAddress last_path_finals = 0;
     MTL::GPUAddress previous_pixels = 0;
     MTL::GPUAddress duplication = 0;
+    // The grid ReSTIR PT's one-thread-a-pixel kernels dispatch over: `size`,
+    // or with checkerboard rendering the packed grid of the frame's traced
+    // field (contract 20, core/contracts/checkerboard.h), which the kernels
+    // map back to pixels by the same contract. Empty without its passes.
+    frame::Extent traced;
 
     // With mnee (core/frame/schedule.h): MNEE's work list (contract 16),
     // its header and the solve's indirect grid in it, and, for the path
@@ -143,6 +148,16 @@ struct FrameResources {
     MTL::Texture* full_albedo = nullptr;
     MTL::GPUAddress denoise_constants = 0;
     const DenoiseImages* denoise = nullptr;
+
+    // With checkerboard rendering, given to the fill alone (passes/
+    // checkerboard_fill/checkerboard_fill.h), beside the accumulated image,
+    // this frame's features and its hand-off, light_radiance above: its
+    // constants (contract 20's CheckerboardConstants), and its history
+    // (checkerboard_images.h), the frame before's light and depth it reads
+    // and this frame's it writes. Null and 0 otherwise.
+    MTL::GPUAddress checkerboard_constants = 0;
+    MTL::Texture* previous_light = nullptr;
+    MTL::Texture* history_light = nullptr;
 };
 
 }  // namespace serenity::metal

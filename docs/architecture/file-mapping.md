@@ -148,6 +148,7 @@ depend on contracts, not on each other.
 | 17 | **The denoiser's features**: albedo, world normal, view depth and 2.5D motion a pixel, along the light's own camera rays, through glass and mirrors by primary surface replacement (`features.h`) | Film | Pass (the denoiser), the headless renderer's `--features` |
 | 18 | **The denoiser's network as it runs**: its constants (scale 2, 28 input channels, 124 scores, spacings 1, 2 and 4, the albedo floor, the PU transfer), the threadgroup shapes host and shaders share, and its per-frame constants (`denoise.h`) | Pass | the core's loader, the Metal denoise pass, host and shaders |
 | 19 | **Ray mask**: the classes of shape, a light or a surface, as bits, and the two masks a ray carries, everything or the occluders (the surfaces), with which purpose of ray carries which (`ray_mask.h`) | Acceleration | Integrator, Pass (the features) |
+| 20 | **Checkerboard**: which pixels a frame traces with the setting on, the packed slot of a traced pixel's reservoir, the traced grid, the frame before's traced pixel beside one, and the fill's constants (`checkerboard.h`) | Frame graph | Sample reuse, Pass (ReSTIR PT's and the fill) |
 
 Each is designed on its own, header first, before the code that uses it.
 Contract 7 was the first written: `src/core/contracts/frame_constants.h`.
@@ -170,7 +171,8 @@ the denoiser, the frame graph keeping the feature images and the
 denoiser's history (`metal/frame/feature_images.h`, `denoise_images.h`), and
 contract 7 growing by a second ring of constants: a denoised frame's
 passes before the denoiser run at the light size, the rest at the output's.
-Contract 19, `ray_mask.h`, came with Milestone 4's ray masks.
+Contract 19, `ray_mask.h`, came with Milestone 4's ray masks, and
+contract 20, `checkerboard.h`, with its checkerboard rendering.
 The camera is one contract for every camera, as Falcor's `CameraData` is,
 since a frame has one camera and cameras differ by parameters, not code.
 
@@ -227,6 +229,27 @@ the families that already own each part:
 | the features' camera rays: everything | Pass | `src/metal/passes/features/features.metal` |
 | the scene's view holding the block, and the kernels binding it where they bound the structure | Scene content, Pass | `src/metal/scene/scene_block.metal.h`, each pass's `.metal`, `src/metal/passes/scene_binding.h`, `src/metal/frame/frame_resources.h` |
 | handing the acceleration the shapes that are lights, as it is handed the ones that move | Frame graph | `src/metal/frame/renderer.cpp` |
+
+## Checkerboard rendering
+
+Tracing half the light's pixels a frame (`logical-overview.md`, "The
+frame"; the axes in `change-axes.md`) adds one contract and one pass, and
+changes the families that own each part:
+
+| What | Family | File |
+|---|---|---|
+| which pixels frame *n* traces, the packed slot two pixels of a row share, the grid the light's kernels dispatch over, the frame before's pixel beside one, the fill's constants (contract 20) | Frame graph (contract) | `src/core/contracts/checkerboard.h`, new |
+| the setting, read from the graph file and refused beside what cannot carry it | Frame graph | `src/core/frame/schedule.{h,cpp}`, `src/core/frame/graph_file.cpp` |
+| the setting as ReSTIR PT's kernels read it | Sample reuse (contract 15's sibling) | `src/core/contracts/path_reuse_settings.h` |
+| each kernel's pixel and slot through the contract; the spatial partner over the traced lattice; the temporal input in the other field | Pass, Sample reuse | `src/metal/passes/restir_pt/restir_pt.metal.h`, each `src/metal/passes/restir_pt_*/*.metal`, `src/metal/reuse/pairing.metal.h` |
+| the light's kernels dispatched over the traced grid | Pass | each `src/metal/passes/restir_pt*/*.cpp`, `src/metal/frame/frame_resources.h` |
+| the fill: the hand-off written from the traced half and the frame before's | Pass | `src/metal/passes/checkerboard_fill/`, new |
+| the fill's history, every pixel's handed-off light and depth, two by the frame's parity | Frame graph | `src/metal/frame/checkerboard_images.{h,cpp}`, new |
+| the fill in place of the hand-off's copy, the frame before's slot, the reuse textures over the lattice | Frame graph | `src/metal/frame/renderer.{h,cpp}` |
+
+Contract 20 is the one place the field and the packing are written, read
+alike by the host's dispatches and every kernel, so no two can disagree
+about which pixel a thread or a slot is.
 
 ## Not here yet
 

@@ -63,7 +63,7 @@ void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder, const Fra
     // The tiles, which the tree's candidates read (GPU.8: a write and its reader).
     barrier_after_dispatch(encoder);
     encoder->setComputePipelineState(pipeline_.get());
-    dispatch_per_pixel(encoder, pipeline_.get(), resources.size);
+    dispatch_per_pixel(encoder, pipeline_.get(), resources.traced);  // a thread a traced pixel
     if (mnee_) {
         // The tree's MNEE requests solved, their light into the light buffer.
         mnee_->record(encoder, resources, MneePass::Into::light_buffer);

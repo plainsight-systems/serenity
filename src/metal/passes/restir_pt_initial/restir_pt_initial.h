@@ -15,8 +15,10 @@ namespace serenity::metal {
 //
 // Steps 1 to 4 of metal/passes/restir_pt/restir_pt.metal.h: the frame's
 // light tiles, one thread an entry; a barrier (GPU.8: the tiles' write and
-// the candidates that read them); then one thread a pixel, the path tree
-// along the camera's ray resampled to one path.
+// the candidates that read them); then one thread a traced pixel (every
+// pixel, or with the checkerboard the frame's field: frame_resources.h,
+// traced; contract 20), the path tree along the camera's ray resampled to
+// one path.
 //
 // Reads: the scene, structure, camera, ReSTIR PT's settings and, with
 // temporal reuse, last frame's transforms. Writes: the light tiles, and the

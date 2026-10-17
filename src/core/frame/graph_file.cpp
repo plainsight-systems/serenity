@@ -512,6 +512,27 @@ bool read_mnee(std::string_view source, const toml::table& root, std::span<const
     return *mnee;
 }
 
+// Checkerboard rendering of the light: true or false, read by ReSTIR PT's
+// passes and the denoised frame's fill (schedule.h). In a graph without
+// both, the key is one nobody reads, refused at its line whatever its value,
+// as mnee is (E.2). Off unless written.
+bool read_checkerboard(std::string_view source, const toml::table& root, std::span<const PassKind> kinds) {
+    const toml::node* node = root.get("checkerboard");
+    if (!node) {
+        return false;
+    }
+    const std::optional<bool> checkerboard = node->value_exact<bool>();
+    if (!checkerboard) {
+        throw GraphFileError(at(source, *node, "'checkerboard' must be true or false"));
+    }
+    if (std::ranges::none_of(kinds, is_restir_pt) || std::ranges::find(kinds, PassKind::denoise) == kinds.end()) {
+        throw GraphFileError(at(source, *node,
+                                "the frame graph sets checkerboard and lacks ReSTIR PT's passes, which it halves, "
+                                "or the denoise pass, whose input it fills"));
+    }
+    return *checkerboard;
+}
+
 // The denoiser's settings: the exported network's directory, as written.
 std::optional<passes::Denoise> read_denoise_table(std::string_view source, const toml::table& root,
                                                   std::span<const PassKind> kinds) {
@@ -533,7 +554,8 @@ std::optional<passes::Denoise> read_denoise_table(std::string_view source, const
 }
 
 Schedule read_schedule(std::string_view source, const toml::table& root) {
-    only(source, root, {"passes", "tone_map", "restir_di", "restir_pt", "mnee", "denoise"}, "the frame graph");
+    only(source, root, {"passes", "tone_map", "restir_di", "restir_pt", "mnee", "denoise", "checkerboard"},
+         "the frame graph");
     const toml::node* passes_node = root.get("passes");
     if (!passes_node) {
         throw GraphFileError(std::string(source) + ": no 'passes'");
@@ -545,6 +567,7 @@ Schedule read_schedule(std::string_view source, const toml::table& root) {
     schedule.restir_pt = read_restir_pt_table(source, root, schedule.passes);
     schedule.mnee = read_mnee(source, root, schedule.passes);
     schedule.denoise = read_denoise_table(source, root, schedule.passes);
+    schedule.checkerboard = read_checkerboard(source, root, schedule.passes);
     if (const std::optional<std::string> reason = invalid(schedule)) {
         throw GraphFileError(at(source, *passes_node, *reason));
     }

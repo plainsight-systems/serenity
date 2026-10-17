@@ -33,7 +33,7 @@ void RestirPtSpatialPass::record(MTL4::ComputeCommandEncoder* encoder, const Fra
     // reservoirs, since Metal's validation refuses a null binding.
     arguments->setAddress(resources.path_finals != 0 ? resources.path_finals : resources.path_reservoirs,
                           binding::finals);
-    reuse_.record(encoder, resources.size, resources.replay_grid);
+    reuse_.record(encoder, resources.traced, resources.replay_grid);
 }
 
 }  // namespace serenity::metal

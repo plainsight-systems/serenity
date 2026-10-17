@@ -159,7 +159,10 @@ in.
    light step works on one pixel alone. Reuse across pixels and time lives
    in one place, and that is where the kernel work concentrates. The image
    steps after Resolve look at neighborhoods by design: the denoiser, which
-   also reads its own last output, and the tone map's bloom.
+   also reads its own last output, and the tone map's bloom. So does the
+   checkerboard's fill ("The frame"), which reads the frame before's light
+   and the traced pixels around the ones it fills: it reconstructs an
+   image, it reuses no sample.
 
 6. **A reservoir holds a light sample by identity, not by position.** It
    keeps which firefly and which point on it, in the firefly's own
@@ -254,6 +257,7 @@ What varies, and which principle handles it.
 | Estimator | naive; ReSTIR DI or ReSTIR PT, temporal, spatial, both; manifold next event estimation on or off | interchangeable (4) |
 | Reuse settings | M candidates, k neighbors, history length | settings of the estimator, not code |
 | Samples per pixel | one a frame, or thousands for the reference | a setting; the reference is the light transport without reuse (3) |
+| Pixels traced a frame | every one, or half in an alternating checkerboard | a setting of a denoised ReSTIR PT graph; the other half the frame before's light, moved ("The frame") |
 | Resolution | traced, and output | with the denoiser, traced at half the output each way and upscaled by it; without, traced at the window's size or a fraction the window stretches; anything, headless |
 | Denoiser | none, or our own network, wide or small | a stage after Resolve, its weights data; judged against the reference, and against Open Image Denoise offline |
 | Backend | Metal, Vulkan | the core is shared (10) |
@@ -336,6 +340,41 @@ about as often as the slower half takes, not their sum.
 
 A graph without the denoiser has one half and runs on one queue, as
 before.
+
+**Checkerboard rendering of the light** (Milestone 4's Step 4, a setting
+of the frame graph, `docs/research/2026-10-17-milestone-4-plan.md`). Each
+frame traces the light at half the light size's pixels, a checkerboard
+whose two fields alternate frame by frame, so every pixel is traced every
+other frame; the other half of the image is the frame before's light,
+moved by the motion vectors, as console checkerboard rendering
+reconstructs the pixels it did not shade. It is RTXDI's checkerboard mode
+for ReSTIR PT:
+
+- **What runs on the half**: ReSTIR PT's initial sampling (and with it the
+  caustics' requests, so their solve), the temporal and spatial reuse, the
+  shade and the duplication map. Their reservoirs, primary hits and light
+  buffer are kept packed, two pixels of a row to one slot, as RTXDI keeps
+  its reservoirs, so the traced half lies side by side in memory.
+- **Where reuse looks**: a spatial neighbor is a pixel traced this frame,
+  and the temporal input a pixel traced the frame before, the other field,
+  as RTXDI moves each to the field that holds a reservoir.
+- **What stays whole**: the features at the light size, the denoiser's
+  guide images, traced at every pixel every frame, as RTXDI's G-buffer and
+  a console's depth and ID buffers are: they are what tells a moved pixel
+  from a revealed one, and what the network edges on.
+- **The fill**: at the end of the light half, where the hand-off copied
+  the light's radiance, each pixel not traced this frame takes the light
+  the frame before traced where its surface was, found by its motion and
+  kept only where the depth seen there is the depth the motion predicts;
+  where none is (a surface just revealed, a history's first frame), the
+  traced pixels beside it, kept by the same test. The traced pixels go
+  through as they are. The fill writes the hand-off, never the accumulated
+  image, so a still scene's mean is each pixel's own traced frames.
+
+It changes what the denoiser sees, which was trained on light traced at
+every pixel: a half of each frame a frame old. Whether that is kept is the
+user's call, from the denoised frames before and after; off, every graph
+renders what it did.
 
 The target is not met yet. The denoised frame takes 78 ms in the window
 with the wide network (68 with the small one), and 24 ms at 1920 x 1080

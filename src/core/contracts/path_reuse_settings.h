@@ -63,6 +63,13 @@
 //                    paths it counts left out of the tree and of every shift
 //                    (metal/passes/restir_pt/restir_pt.metal.h). Not a key of
 //                    [restir_pt]: the renderer copies it from the schedule.
+//   checkerboard     1 where the graph sets checkerboard (core/frame/
+//                    schedule.h, Schedule::checkerboard), else 0: the
+//                    passes trace the pixels contract 20 names for the
+//                    frame, half of them, their arrays packed and their
+//                    grid the packed one (core/contracts/checkerboard.h).
+//                    Not a key of [restir_pt]: copied from the schedule, as
+//                    mnee is.
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
@@ -114,7 +121,8 @@ struct PathReuseSettings {
     float cap_floor;
     float cap_exponent;
     uint32_t mnee;
-    uint32_t padding[2];
+    uint32_t checkerboard;
+    uint32_t padding;
 };
 
 static_assert(sizeof(PathReuseSettings) == 48,

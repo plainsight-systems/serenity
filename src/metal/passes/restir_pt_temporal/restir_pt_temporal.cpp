@@ -42,7 +42,7 @@ void RestirPtTemporalPass::record(MTL4::ComputeCommandEncoder* encoder, const Fr
     arguments->setAddress(resources.duplication, binding::duplication);
     arguments->setAddress(resources.last_transforms, binding::last_transforms);
     arguments->setAddress(resources.last_glows, binding::last_glows);
-    reuse_.record(encoder, resources.size, resources.replay_grid);
+    reuse_.record(encoder, resources.traced, resources.replay_grid);
 }
 
 }  // namespace serenity::metal

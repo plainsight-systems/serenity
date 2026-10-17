@@ -32,10 +32,12 @@
 #include "metal/frame/frame_resources.h"
 #include "metal/film/failure_count.h"
 #include "metal/frame/accumulation.h"
+#include "metal/frame/checkerboard_images.h"
 #include "metal/frame/denoise_images.h"
 #include "metal/frame/feature_images.h"
 #include "metal/frame/frame_images.h"
 #include "metal/frame/mnee_list.h"
+#include "metal/passes/checkerboard_fill/checkerboard_fill.h"
 #include "metal/passes/denoise/denoise.h"
 #include "metal/passes/display/display.h"
 #include "metal/passes/features/features.h"
@@ -377,6 +379,32 @@ namespace serenity::metal {
 // already waited for the frame before, its image half included. A
 // submission of two parts for a graph of one is refused by MetalError.
 //
+// Checkerboard rendering (contract 20, core/contracts/checkerboard.h;
+// logical-overview.md, "The frame"; Milestone 4's Step 4). A graph that
+// sets it (core/frame/schedule.h, Schedule::checkerboard: always a
+// denoised ReSTIR PT graph) gets, at construction, ReSTIR PT's settings
+// with checkerboard 1, its reuse textures built at sigma over the traced
+// lattice's step (metal/reuse/pairing.metal.h, lattice_partner), the fill
+// (passes/checkerboard_fill/checkerboard_fill.h), a ring of its
+// constants, 16 bytes a frame, and its history (checkerboard_images.h),
+// made by prepare() at the light size. Each frame, ReSTIR PT's passes are
+// given the packed grid to dispatch over (frame_resources.h, traced), and
+// the light half ends with the fill where it ends with the copy: a barrier
+// from the dispatches before it (the shade's accumulated image, the
+// features' images and the full-size albedo's: GPU.8, a write and its
+// reader), then the fill, writing the slot's hand-off whole; in one part,
+// the barrier after it to the image half is from dispatch, not blit. The
+// fill reads the frame before's history, by the frame's parity, and writes
+// this frame's, the image frame n - 1 read, which the light half's queue
+// barrier orders after that read. It is told the history holds this
+// history's frame before (contract 20's CheckerboardConstants, history 1)
+// when the denoiser's does (denoise_images.h: this history, this size,
+// the frame before), which the parity then holds whatever was submitted
+// between the two frames. Nothing else changes, and nothing for a graph
+// without it. Memory: the fill's history, 62 MB at 1728 x 1117; the packed
+// arrays use the first half of the full-size ones, and the fill writes the
+// hand-off the copy wrote. Its argument table is a denoised graph's.
+//
 // Cost of recording a ReSTIR frame, on the CPU, beyond the above: 128 bytes
 // of reuse constants, four pipeline binds and dispatches with their
 // argument-table entries (two of each without the merges); with a temporal merge, one more animation of
@@ -556,6 +584,15 @@ private:
         FrameArray full_feature_constants;
         FeaturesPass full_features_pass;
     };
+    // Checkerboard rendering's (above): the fill, its constants' ring and
+    // its history.
+    struct CheckerboardFamily {
+        CheckerboardFamily(const Device& device, Submission& submission, const Library& library);
+
+        CheckerboardFillPass fill;
+        FrameArray constants;
+        CheckerboardImages images;
+    };
     // A denoised graph's resources from the denoise pass on (renderer.cpp,
     // denoise_resources()); every pass's own without the pass.
     struct DenoiseResources {
@@ -592,10 +629,12 @@ private:
                                        const frame::FrameInputs& inputs, frame::Extent size,
                                        const Prepared& prepared);
     // The light half (every step before the denoise pass; all of them in a
-    // graph without it), then the full-size albedo and the hand-off's copy;
+    // graph without it), then the full-size albedo and the hand-off's copy,
+    // or with the checkerboard its fill;
     // and the image half, from the denoise pass on (above, "Two halves").
     void record_light(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources);
-    void record_hand_off(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun);
+    void record_hand_off(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun,
+                         const FrameResources& resources, const Prepared& prepared);
     void record_image(MTL4::ComputeCommandEncoder* encoder, const DenoiseResources& denoised_resources);
 
     Submission& submission_;
@@ -618,6 +657,7 @@ private:
     std::optional<MneeFamily> mnee_;
     std::optional<FeatureFamily> features_;
     std::optional<DenoiseFamily> denoise_;
+    std::optional<CheckerboardFamily> checkerboard_;
     // A temporal graph's last frame (above): its transforms and glows,
     // animated at its time each frame, only when the scene changes (a still
     // scene's one copy is last frame's too); and the camera and time the

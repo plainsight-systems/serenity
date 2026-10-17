@@ -1,6 +1,7 @@
 // ReSTIR PT's paired spatial reuse (restir_pt_spatial.h): steps 8 to 11 of
 // metal/passes/restir_pt/restir_pt.metal.h, four kernels in order, each
-// behind a barrier.
+// behind a barrier; one thread a traced pixel where a kernel runs one a
+// pixel (restir_pt.metal.h, Traced).
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -21,15 +22,19 @@ namespace binding = serenity::bindings::restir_pt;
 namespace {
 
 // The paired neighbor of the pixel `pixel` in texture `t` this frame, and
-// whether it is in the image.
+// whether it is in the image; with the checkerboard, over the traced
+// field's lattice (metal/reuse/pairing.metal.h, lattice_partner()).
 struct Partner {
     bool inside;
     uint2 pixel;
 };
 
-Partner partner_of(constant ushort* pairing, uint2 pixel, uint t, uint frame, uint2 size) {
-    const int2 p = pairing::partner(pairing, int2(pixel), t, pairing::framing(frame, t));
-    const bool inside = p.x >= 0 && p.y >= 0 && p.x < int(size.x) && p.y < int(size.y);
+Partner partner_of(constant ushort* pairing, uint2 pixel, uint t, restir_pt::Traced traced) {
+    const pairing::Framing map = pairing::framing(traced.frame, t);
+    const int2 p = traced.checkerboard
+                       ? pairing::lattice_partner(pairing, int2(pixel), t, map, int(traced.frame & 1u))
+                       : pairing::partner(pairing, int2(pixel), t, map);
+    const bool inside = p.x >= 0 && p.y >= 0 && p.x < int(traced.width) && p.y < int(traced.height);
     return Partner{inside, inside ? uint2(p) : uint2(0u)};
 }
 
@@ -52,10 +57,11 @@ kernel void restir_pt_shift(constant serenity::contracts::FrameConstants& frame 
                             device float4* shifts [[buffer(binding::shifts)]],
                             device uint* replays [[buffer(binding::replays)]],
                             device atomic_uint* counter [[buffer(binding::counter)]],
-                            uint2 pixel [[thread_position_in_grid]]) {
-    const uint2 size = uint2(frame.width, frame.height);
-    const bool inside = pixel.x < size.x && pixel.y < size.y;
-    const uint i = pixel.y * size.x + pixel.x;
+                            uint2 grid_place [[thread_position_in_grid]]) {
+    const restir_pt::Traced traced = restir_pt::traced(frame, settings);
+    const uint2 pixel = traced.pixel(grid_place);
+    const bool inside = traced.inside(pixel);
+    const uint i = traced.slot(pixel);
     uint appended[serenity::contracts::max_path_neighbors];
     uint count = 0u;
     if (inside) {
@@ -64,8 +70,8 @@ kernel void restir_pt_shift(constant serenity::contracts::FrameConstants& frame 
         const bool held = serenity::contracts::path_end(reservoir.flags) != serenity::contracts::PathEnd::none;
         const serenity::contracts::PrimaryHit own = primaries[i];
         for (uint t = 0u; t < settings.neighbors; ++t) {
-            const Partner partner = partner_of(pairing, pixel, t, frame.frame_index, size);
-            const uint j = partner.pixel.y * size.x + partner.pixel.x;
+            const Partner partner = partner_of(pairing, pixel, t, traced);
+            const uint j = traced.slot(partner.pixel);
             if (!partner.inside || !restir_pt::similar(own, primaries[j])) {
                 shifts[i * serenity::contracts::max_path_neighbors + t] =
                     float4(0.0f, 0.0f, 0.0f, restir_pt::not_paired);
@@ -115,16 +121,15 @@ kernel void restir_pt_replay(constant serenity::contracts::FrameConstants& frame
     if (n >= grid->count) {
         return;
     }
-    const uint2 size = uint2(frame.width, frame.height);
+    const restir_pt::Traced traced = restir_pt::traced(frame, settings);
     const uint item = replays[n];
     const uint i = restir_pt::replay_pixel(item);
     const uint t = restir_pt::replay_slot(item);
-    const uint2 pixel = uint2(i % size.x, i / size.x);
-    const Partner partner = partner_of(pairing, pixel, t, frame.frame_index, size);
+    const uint2 pixel = traced.slot_pixel(i);
+    const Partner partner = partner_of(pairing, pixel, t, traced);
     const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
     shifts[i * serenity::contracts::max_path_neighbors + t] = restir_pt::stored_shift(shift::shift_path(
-        scene, shift::unpack_primary_hit(primaries[partner.pixel.y * size.x + partner.pixel.x]), reservoirs[i],
-        settings));
+        scene, shift::unpack_primary_hit(primaries[traced.slot(partner.pixel)]), reservoirs[i], settings));
 }
 
 // Step 11: the merge, one thread a pixel; its estimate added to the light
@@ -138,13 +143,14 @@ kernel void restir_pt_spatial(constant serenity::contracts::FrameConstants& fram
                               const device float4* shifts [[buffer(binding::shifts)]],
                               device float4* light [[buffer(binding::light)]],
                               device serenity::contracts::PathReservoir* finals [[buffer(binding::finals)]],
-                              uint2 pixel [[thread_position_in_grid]]) {
-    const uint2 size = uint2(frame.width, frame.height);
-    if (pixel.x >= size.x || pixel.y >= size.y) {
+                              uint2 grid_place [[thread_position_in_grid]]) {
+    const restir_pt::Traced traced = restir_pt::traced(frame, settings);
+    const uint2 pixel = traced.pixel(grid_place);
+    if (!traced.inside(pixel)) {
         return;
     }
     constexpr uint slots = serenity::contracts::max_path_neighbors;
-    const uint i = pixel.y * size.x + pixel.x;
+    const uint i = traced.slot(pixel);
     const serenity::contracts::PathReservoir own = reservoirs[i];
     // k: the partners similar enough to have been tried (path_merge.metal.h).
     uint k = 0u;
@@ -168,8 +174,8 @@ kernel void restir_pt_spatial(constant serenity::contracts::FrameConstants& fram
         if (outward.w == restir_pt::not_paired) {
             continue;
         }
-        const Partner partner = partner_of(pairing, pixel, t, frame.frame_index, size);
-        const uint j = partner.pixel.y * size.x + partner.pixel.x;
+        const Partner partner = partner_of(pairing, pixel, t, traced);
+        const uint j = traced.slot(partner.pixel);
         const serenity::contracts::PathReservoir theirs = reservoirs[j];
         const float their_count = float(serenity::contracts::path_count(theirs.flags));
         count_sum += their_count;

@@ -89,6 +89,7 @@ Each interface has one owner; everything else reads it.
 | **Film outputs**: radiance, albedo, normal, depth, motion per pixel | Film | Pass, Sample reuse |
 | **Images** between passes, and the history kept across frames | Frame graph | every Pass |
 | **Ray mask**: the classes of shape (lights, surfaces), and which a ray finds | Acceleration | Integrator, Pass (the features) |
+| **Checkerboard**: which pixels a frame traces, and where their arrays keep them | Frame graph | Sample reuse, Pass |
 
 If any of these lived inside the code that uses it, a change to it would
 touch every user at once, and the axes would silently become one.
@@ -257,6 +258,33 @@ no say** in which shapes cast shadows, as Unreal's primitives each have:
 every light here is a firefly-sized sphere, so the class follows from
 being a light; a light whose shadow should show is the change that moves
 the class into the scene's data, as a per-shape value.
+
+**Checkerboard rendering is three axes' business, and none is the
+estimator's.** Tracing half the light's pixels a frame
+(`logical-overview.md`, "The frame") splits in three:
+
+- **Frame graph** owns which pixels a frame traces and where their
+  arrays keep them: the field rule (a pixel is traced in a frame of the
+  same parity as its coordinates' sum), the packed slot two pixels of a
+  row share, and the grid the light's kernels dispatch over, as one
+  contract (contract 20) every pass reads alike; and the fill, which
+  writes the hand-off where the copy was, since what the image half reads
+  of the light half's is the frame graph's (contract 6).
+- **Sample reuse** asks it where a neighbor and last frame's input may
+  be: a spatial partner among this frame's traced pixels (the pairing
+  taken over their lattice), a temporal input among the frame before's.
+  The merges themselves, their weights and the shifts do not change.
+- **Pass**: the fill's kernel, which reads the features and the frame
+  before's hand-off and writes this frame's.
+
+It looks wrong that **the setting is the frame graph's and not
+[restir_pt]'s**, since only ReSTIR PT's passes read it: the fill and the
+hand-off are the denoised frame's, which ReSTIR PT's settings know
+nothing of, and a graph that sets it must have both; the renderer copies
+it into the path reuse settings as it copies mnee. And that **the
+features stay whole** while the light is halved: they are Film's guide
+images for the denoiser, and the fill's evidence for whether a moved
+pixel is the same surface; halved, both would guess at edges.
 
 **Scene content and animation are two files, not one.** Both describe how the
 fireflies move, which makes merging them tempting. But animation changes when

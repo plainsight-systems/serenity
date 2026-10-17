@@ -24,7 +24,8 @@
 //     one, which a fixed distance could not do, and a mirror at x_k
 //     refused by its inverse footprint;
 //   - each frame's pairing is an involution over the image, its offsets'
-//     standard deviation sigma;
+//     standard deviation sigma; and with the checkerboard over the frame's
+//     traced field, every partner traced, sigma pixels apart;
 //   - a path shifted to its own pixel keeps its F, its Jacobian 1; a
 //     reconnection's Jacobian is supplemental eq. 4's, on a floor under a
 //     firefly whose densities and geometry terms are worked out here.
@@ -50,6 +51,7 @@
 
 #include "core/camera/thin_lens.h"
 #include "core/contracts/bsdf.h"
+#include "core/contracts/checkerboard.h"
 #include "core/contracts/light_tile.h"
 #include "core/contracts/path_reservoir.h"
 #include "core/contracts/path_reuse_settings.h"
@@ -324,6 +326,52 @@ TEST_CASE("each frame's pairing is an involution over the image, its offsets' de
         same += (zero[i].x == one[i].x && zero[i].y == one[i].y) ? 1u : 0u;
     }
     CHECK(same < zero.size() / 10);
+}
+
+TEST_CASE("with the checkerboard, each frame's pairing is an involution over the traced field, sigma pixels apart") {
+    tests::ProbeRunner runner;
+    // As the renderer builds them with the checkerboard: at sigma over the
+    // lattice's step (metal/frame/renderer.h).
+    const std::vector<std::uint16_t> textures =
+        sampling::reuse_textures(16.0 / static_cast<double>(contracts::checkerboard_lattice_step), 0x5e2e417f);
+    constexpr std::uint32_t width = 512;
+    constexpr std::uint32_t height = 384;
+    for (std::uint32_t frame = 0; frame < 4; ++frame) {
+        for (std::uint32_t texture = 0; texture < contracts::max_path_neighbors; ++texture) {
+            const tests::PairingQuery query{frame, texture, width, height};
+            const auto results = runner.run<tests::PairingResult>(
+                "pt_lattice_pairing", std::size_t{width} * height,
+                {tests::Binding::of(query), tests::Binding::of(textures)});
+            std::size_t broken = 0;
+            std::size_t untraced = 0;
+            std::size_t traced = 0;
+            double squares = 0.0;
+            for (std::uint32_t i = 0; i < width * height; ++i) {
+                const int x = static_cast<int>(i % width);
+                const int y = static_cast<int>(i / width);
+                if (!contracts::checkerboard_traced(static_cast<std::uint32_t>(x), static_cast<std::uint32_t>(y),
+                                                    frame)) {
+                    continue;
+                }
+                ++traced;
+                const tests::PairingResult r = results[i];
+                broken += (r.back_x != x || r.back_y != y) ? 1u : 0u;
+                // The partner, inside the image or not, a pixel of the field.
+                untraced += contracts::checkerboard_traced(static_cast<std::uint32_t>(r.x),
+                                                           static_cast<std::uint32_t>(r.y), frame)
+                                ? 0u
+                                : 1u;
+                const double dx = r.x - x;
+                const double dy = r.y - y;
+                squares += dx * dx + dy * dy;
+            }
+            INFO("frame " << frame << ", texture " << texture);
+            CHECK(broken == 0u);
+            CHECK(untraced == 0u);
+            const double deviation = std::sqrt(squares / (2.0 * static_cast<double>(traced)));
+            CHECK(deviation == doctest::Approx(16.0).epsilon(0.1));
+        }
+    }
 }
 
 namespace {

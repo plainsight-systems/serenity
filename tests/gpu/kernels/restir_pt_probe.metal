@@ -10,6 +10,7 @@
 
 #include "core/contracts/bsdf.h"
 #include "core/contracts/camera.h"
+#include "core/contracts/checkerboard.h"
 #include "core/contracts/path_reservoir.h"
 #include "core/contracts/path_reuse_settings.h"
 #include "core/contracts/transform.h"
@@ -70,6 +71,28 @@ kernel void pt_pairing(device PairingResult* out [[buffer(0)]], constant Pairing
     const int2 pixel = int2(int(i % q.width), int(i / q.width));
     const int2 partner = pairing::partner(textures, pixel, q.texture, map);
     const int2 back = pairing::partner(textures, partner, q.texture, map);
+    out[i] = PairingResult{partner.x, partner.y, back.x, back.y};
+}
+
+// Each traced pixel's partner in a frame's pairing over the checkerboard's
+// traced lattice (metal/reuse/pairing.metal.h, lattice_partner), and its
+// partner's; an untraced pixel's result is the pixel itself, twice.
+// Bindings: the results at 0, the query (frame, texture, image size) at 1,
+// the reuse textures at 2.
+kernel void pt_lattice_pairing(device PairingResult* out [[buffer(0)]], constant PairingQuery& q [[buffer(1)]],
+                               constant ushort* textures [[buffer(2)]], uint i [[thread_position_in_grid]]) {
+    if (i >= q.width * q.height) {
+        return;
+    }
+    const int2 pixel = int2(int(i % q.width), int(i / q.width));
+    if (!serenity::contracts::checkerboard_traced(uint(pixel.x), uint(pixel.y), q.frame)) {
+        out[i] = PairingResult{pixel.x, pixel.y, pixel.x, pixel.y};
+        return;
+    }
+    const pairing::Framing map = pairing::framing(q.frame, q.texture);
+    const int phase = int(q.frame & 1u);
+    const int2 partner = pairing::lattice_partner(textures, pixel, q.texture, map, phase);
+    const int2 back = pairing::lattice_partner(textures, partner, q.texture, map, phase);
     out[i] = PairingResult{partner.x, partner.y, back.x, back.y};
 }
 

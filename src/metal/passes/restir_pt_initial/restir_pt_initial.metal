@@ -1,5 +1,6 @@
 // ReSTIR PT's initial sampling (restir_pt_initial.h): steps 1 to 4 of
-// metal/passes/restir_pt/restir_pt.metal.h, one thread a pixel. The path
+// metal/passes/restir_pt/restir_pt.metal.h, one thread a traced pixel
+// (restir_pt.metal.h, Traced: every pixel, or the frame's field). The path
 // tree along the camera's ray, resampled to one path into the pixel's path
 // reservoir; the pixel's primary hit for the merge; the light the camera
 // sees directly into the frame's light buffer.
@@ -37,11 +38,13 @@ inline void initial_pixel(constant serenity::contracts::FrameConstants& frame,
                           device serenity::contracts::PrimaryHit* primaries, device float4* light,
                           const device serenity::contracts::LightTileEntry* tiles,
                           device serenity::contracts::Float3* previous_positions,
-                          constant serenity::contracts::Transform* last_transforms, mnee::Queue queue, uint2 pixel) {
-    if (pixel.x >= frame.width || pixel.y >= frame.height) {
+                          constant serenity::contracts::Transform* last_transforms, mnee::Queue queue, uint2 grid_place) {
+    const restir_pt::Traced traced = restir_pt::traced(frame, settings);
+    const uint2 pixel = traced.pixel(grid_place);
+    if (!traced.inside(pixel)) {
         return;
     }
-    const uint i = pixel.y * frame.width + pixel.x;
+    const uint i = traced.slot(pixel);
     const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
     PathNumbers numbers;
     const CameraRay ray = restir_pt::primary_ray(camera, pixel, frame.frame_index, uint2(frame.width, frame.height),
@@ -76,9 +79,9 @@ kernel void restir_pt_initial(constant serenity::contracts::FrameConstants& fram
                               [[buffer(binding::previous_positions)]],
                               constant serenity::contracts::Transform* last_transforms
                               [[buffer(binding::last_transforms)]],
-                              uint2 pixel [[thread_position_in_grid]]) {
+                              uint2 grid_place [[thread_position_in_grid]]) {
     initial_pixel<false>(frame, camera, structure, block, sphere_glows, transforms, settings, reservoirs, primaries,
-                         light, tiles, previous_positions, last_transforms, mnee::Queue{nullptr, nullptr}, pixel);
+                         light, tiles, previous_positions, last_transforms, mnee::Queue{nullptr, nullptr}, grid_place);
 }
 
 kernel void restir_pt_initial_mnee(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
@@ -102,10 +105,10 @@ kernel void restir_pt_initial_mnee(constant serenity::contracts::FrameConstants&
                                    device serenity::contracts::MneeRequest* mnee_requests
                                    [[buffer(binding::mnee_requests)]],
                                    device atomic_uint* mnee_header [[buffer(binding::mnee_header)]],
-                                   uint2 pixel [[thread_position_in_grid]]) {
+                                   uint2 grid_place [[thread_position_in_grid]]) {
     initial_pixel<true>(frame, camera, structure, block, sphere_glows, transforms, settings, reservoirs, primaries,
                         light, tiles, previous_positions, last_transforms, mnee::Queue{mnee_requests, mnee_header},
-                        pixel);
+                        grid_place);
 }
 
 // The frame's light tiles (contracts/light_tile.h), one thread an entry:

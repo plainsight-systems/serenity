@@ -24,7 +24,7 @@ void RestirPtShadePass::record(MTL4::ComputeCommandEncoder* encoder, const Frame
     arguments->setAddress(resources.non_finite_counter, binding::non_finite);
     arguments->setTexture(resources.accumulation->gpuResourceID(), binding::accumulated);
     encoder->setComputePipelineState(pipeline_.get());
-    dispatch_per_pixel(encoder, pipeline_.get(), resources.size);
+    dispatch_per_pixel(encoder, pipeline_.get(), resources.traced);  // a thread a traced pixel
 }
 
 }  // namespace serenity::metal

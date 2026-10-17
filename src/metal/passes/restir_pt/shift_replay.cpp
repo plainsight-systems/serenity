@@ -20,10 +20,10 @@ ShiftReplay::ShiftReplay(const Library& library, const char* shift, const char* 
     }
 }
 
-void ShiftReplay::record(MTL4::ComputeCommandEncoder* encoder, frame::Extent size,
+void ShiftReplay::record(MTL4::ComputeCommandEncoder* encoder, frame::Extent traced,
                          MTL::GPUAddress replay_grid) const {
     encoder->setComputePipelineState(shift_.get());
-    dispatch_per_pixel(encoder, shift_.get(), size);
+    dispatch_per_pixel(encoder, shift_.get(), traced);
     barrier_after_dispatch(encoder);
     encoder->setComputePipelineState(grid_.get());
     encoder->dispatchThreads(MTL::Size{1, 1, 1}, MTL::Size{1, 1, 1});
@@ -32,7 +32,7 @@ void ShiftReplay::record(MTL4::ComputeCommandEncoder* encoder, frame::Extent siz
     encoder->dispatchThreads(replay_grid);
     barrier_after_dispatch(encoder);
     encoder->setComputePipelineState(merge_.get());
-    dispatch_per_pixel(encoder, merge_.get(), size);
+    dispatch_per_pixel(encoder, merge_.get(), traced);
 }
 
 }  // namespace serenity::metal

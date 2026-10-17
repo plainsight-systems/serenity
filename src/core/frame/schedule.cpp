@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 
+#include "core/contracts/checkerboard.h"
 #include "core/contracts/denoise.h"
 
 namespace serenity::frame {
@@ -739,7 +740,24 @@ std::optional<std::string> invalid(const Schedule& schedule) {
         return "the frame graph has [restir_pt] settings and no ReSTIR PT pass";
     }
     if (schedule.restir_pt) {
-        return invalid(*schedule.restir_pt, passes);
+        if (std::optional<std::string> reason = invalid(*schedule.restir_pt, passes)) {
+            return reason;
+        }
+    }
+
+    // Checkerboard rendering: ReSTIR PT's passes to halve and the denoise
+    // pass's hand-off to fill, and a sigma the traced lattice pairs at
+    // (schedule.h).
+    if (schedule.checkerboard && !(restir_pt && denoising)) {
+        return "the frame graph sets checkerboard, which halves ReSTIR PT's passes and fills the denoise pass's "
+               "input, and lacks ReSTIR PT's passes or the denoise pass";
+    }
+    const float least_sigma = contracts::min_pairing_sigma * contracts::checkerboard_lattice_step;
+    if (schedule.checkerboard && std::ranges::find(passes, PassKind::restir_pt_spatial) != passes.end() &&
+        schedule.restir_pt->sigma < least_sigma) {
+        return setting(pt, "sigma", text(schedule.restir_pt->sigma)) + "must be at least " + text(least_sigma) +
+               " pixels with checkerboard: the traced field's lattice pairs at sigma over its step, " +
+               text(contracts::checkerboard_lattice_step) + " pixels, at least " + text(contracts::min_pairing_sigma);
     }
     return std::nullopt;
 }

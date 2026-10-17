@@ -1,7 +1,8 @@
 // ReSTIR PT's temporal reuse (restir_pt_temporal.h): steps 5 to 7 of
 // metal/passes/restir_pt/restir_pt.metal.h, three kernels and the spatial
 // pass's replay grid (restir_pt_spatial.metal, restir_pt_replay_grid) in
-// order, each behind a barrier.
+// order, each behind a barrier; one thread a traced pixel where a kernel
+// runs one a pixel (restir_pt.metal.h, Traced).
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -52,10 +53,11 @@ kernel void restir_pt_temporal_shift(
     const device serenity::contracts::Float3* previous_positions [[buffer(binding::previous_positions)]],
     device uint* previous_pixels [[buffer(binding::previous_pixels)]],
     constant serenity::contracts::Transform* last_transforms [[buffer(binding::last_transforms)]],
-    constant float* last_glows [[buffer(binding::last_glows)]], uint2 pixel [[thread_position_in_grid]]) {
-    const uint2 size = uint2(frame.width, frame.height);
-    const bool inside = pixel.x < size.x && pixel.y < size.y;
-    const uint i = pixel.y * size.x + pixel.x;
+    constant float* last_glows [[buffer(binding::last_glows)]], uint2 grid_place [[thread_position_in_grid]]) {
+    const restir_pt::Traced traced = restir_pt::traced(frame, settings);
+    const uint2 pixel = traced.pixel(grid_place);
+    const bool inside = traced.inside(pixel);
+    const uint i = traced.slot(pixel);
     uint appended[2];
     uint count = 0u;
     if (inside) {
@@ -63,7 +65,7 @@ kernel void restir_pt_temporal_shift(
         uint j = restir_pt::no_pixel;
         if (reuse.previous != 0u && own_hit.distance > 0.0f) {
             j = restir_pt::previous_pixel(reuse.previous_camera, to_float3(previous_positions[i]),
-                                          decode_unit(own_hit.normal), last_primaries, size,
+                                          decode_unit(own_hit.normal), last_primaries, traced,
                                           restir_pt::ring_start(frame.frame_index));
         }
         previous_pixels[i] = j;
@@ -144,12 +146,13 @@ kernel void restir_pt_temporal(constant serenity::contracts::FrameConstants& fra
                                [[buffer(binding::last_finals)]],
                                const device uint* previous_pixels [[buffer(binding::previous_pixels)]],
                                const device float* duplication [[buffer(binding::duplication)]],
-                               uint2 pixel [[thread_position_in_grid]]) {
-    const uint2 size = uint2(frame.width, frame.height);
-    if (pixel.x >= size.x || pixel.y >= size.y) {
+                               uint2 grid_place [[thread_position_in_grid]]) {
+    const restir_pt::Traced traced = restir_pt::traced(frame, settings);
+    const uint2 pixel = traced.pixel(grid_place);
+    if (!traced.inside(pixel)) {
         return;
     }
-    const uint i = pixel.y * size.x + pixel.x;
+    const uint i = traced.slot(pixel);
     const serenity::contracts::PathReservoir own = reservoirs[i];
     const uint j = previous_pixels[i];
     restir_pt::Merged merged{own, restir_pt::estimate(own)};

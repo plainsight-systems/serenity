@@ -170,6 +170,23 @@ namespace serenity::frame {
 // started over as ReSTIR's is: at a history's first frame and when the
 // size changes.
 //
+// Checkerboard rendering of the light (contract 20, core/contracts/
+// checkerboard.h; Milestone 4's Step 4, docs/research/2026-10-17-milestone-
+// 4-plan.md) is a setting of the frame graph, not a pass: ReSTIR PT's
+// passes trace half the light size's pixels each frame, a checkerboard
+// whose fields alternate, and the frame's light half ends, where the
+// hand-off copied the light's radiance to the image half, with the fill,
+// which writes the hand-off whole: the traced pixels as they are, each of
+// the others from what the frame before traced where its surface was, by
+// its features' motion and depth, or from the traced pixels around it
+// (metal/passes/checkerboard_fill/checkerboard_fill.h). Its rules
+// (invalid()): only in a graph with ReSTIR PT's passes, which it halves,
+// and the denoise pass, whose hand-off the fill writes; and with
+// restir_pt_spatial, a sigma that leaves the traced lattice's own at least
+// the least one (contracts::min_pairing_sigma times
+// contracts::checkerboard_lattice_step). Off unless written, so
+// every graph renders what it did.
+//
 // An estimator is a graph (logical-overview.md, principle 4: estimators are
 // interchangeable over the same scene):
 //
@@ -252,9 +269,11 @@ struct Schedule {
     // tracer every estimator is measured against stays the one it was.
     bool mnee = false;
     // The denoiser's settings: present exactly when the schedule has its
-    // pass (core/passes/denoise.h). Last, so the members before keep their
-    // places.
+    // pass (core/passes/denoise.h).
     std::optional<passes::Denoise> denoise = std::nullopt;
+    // Checkerboard rendering of the light (above): off unless written. Last,
+    // so the members before keep their places.
+    bool checkerboard = false;
 };
 
 // Whether any pass of `schedule` accumulates: whether its frames build on
@@ -313,7 +332,9 @@ bool writes_features(const Schedule& schedule);
 //     its settings exactly with its passes, in range
 //     (core/contracts/path_reuse_settings.h);
 //   - mnee set only beside a pass that reads it: path, or ReSTIR PT's;
-//   - the denoise pass's rules (above), and its settings exactly with it.
+//   - the denoise pass's rules (above), and its settings exactly with it;
+//   - checkerboard set only with ReSTIR PT's passes and the denoise pass,
+//     and a sigma the traced lattice can pair at (above).
 //
 // None if `schedule` is valid; otherwise why not, in words a reader of the
 // frame graph file can act on. The graph reader refuses an invalid schedule

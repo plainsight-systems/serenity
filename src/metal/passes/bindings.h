@@ -254,6 +254,17 @@ enum Buffer : unsigned {
 enum Texture : unsigned { light = 0, albedo = 1, normal = 2, depth = 3, motion = 4, full_albedo = 5, radiance = 6 };
 }  // namespace denoise
 
+// The checkerboard's fill (passes/checkerboard_fill/checkerboard_fill.h):
+// the light-size frame's constants and its own (contract 20's
+// CheckerboardConstants); this frame's accumulated image, the frame
+// before's history (metal/frame/checkerboard_images.h: its light and
+// depth) and this frame's depth and motion, read; this frame's hand-off
+// and history, written.
+namespace checkerboard_fill {
+enum Buffer : unsigned { constants = 0, fill_constants = 1 };
+enum Texture : unsigned { accumulated = 0, previous_light = 1, depth = 2, motion = 3, light = 4, history = 5 };
+}  // namespace checkerboard_fill
+
 
 // Every pass that reads the scene binds it at scene_view's indices (above):
 // each index as an unsigned, since two enumerations are not compared.

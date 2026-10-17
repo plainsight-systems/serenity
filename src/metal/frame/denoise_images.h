@@ -40,8 +40,9 @@ namespace serenity::metal {
 //   - every dispatch's ConvParams and ResampleParams, written once per size;
 //   - the hand-off of the light's radiance (metal/frame/renderer.h, "Two
 //     halves"): one RGBA32Float image at the light size per frame slot,
-//     which the light half copies its accumulated image into and the
-//     denoise pass reads, so frame N + 1's light never writes the copy
+//     which the light half copies its accumulated image into (with
+//     checkerboard rendering, which the fill writes whole: passes/
+//     checkerboard_fill/checkerboard_fill.h) and the denoise pass reads, so frame N + 1's light never writes the copy
 //     frame N's denoiser reads (CP.3; GPU.7, MEM.4: one per frame in
 //     flight). Private, the GPU's alone; 62 MB at 1728 x 1117.
 //

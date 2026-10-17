@@ -142,6 +142,39 @@
 // resampled and shifted (no production system shifts a manifold walk; its
 // Jacobian under a shift is the solve's own, not built here).
 //
+// Checkerboard rendering (contract 20, core/contracts/checkerboard.h;
+// settings.checkerboard, the graph's; Milestone 4's Step 4). RTXDI's
+// checkerboard mode, as its ReSTIR PT runs it (RTXDI-Library,
+// Rtxdi/PT/TemporalResampling.hlsli and SpatialResampling.hlsli; the
+// sample's FullSample LightingPasses.cpp, which halves every lighting
+// dispatch's width): every kernel that runs one thread a pixel runs one a
+// traced pixel instead, over the packed grid, its pixel and its arrays'
+// slot both the contract's (Traced, below), so steps 1 to 4 and 7 to 13
+// do what they did, at half the pixels, and the light tiles, a frame's
+// own, do not change. What moves is where reuse looks:
+//
+//   - step 5's temporal input is a pixel the frame before traced: each
+//     try, the reprojected pixel and the ring around it, the ring at twice
+//     its reach (RTXDI's radius 2 in checkerboard mode, so every try keeps
+//     the reprojected pixel's parity), is moved into the frame before's
+//     field (checkerboard_previous_x, RTXDI's
+//     RTXDI_ActivateCheckerboardPixel), and read at its slot;
+//   - step 8's partner is a pixel this frame traces: the pairing is taken
+//     over the traced field's lattice (metal/reuse/pairing.metal.h,
+//     lattice_partner), so it stays an involution, which RTXDI's moving
+//     of an independently drawn neighbor into the field would not keep;
+//     the renderer builds the reuse textures at sigma over the lattice's
+//     step, so a partner lies as far in pixels as without it;
+//   - step 13's window is 17 x 17 slots of the packed grid: 289 of the
+//     frame's final reservoirs, as without it, over 34 x 17 pixels.
+//
+// The pixels not traced keep their slots' last contents for the frame
+// after, which never reads them as this frame's: the frame after traces
+// them and writes the slot again before any read. Their light is the
+// fill's, at the end of the light half (metal/passes/checkerboard_fill/
+// checkerboard_fill.h). Without the setting every function below is the
+// row-major index and the thread's own pixel it was, the same integers.
+//
 // What is approximate, stated. Last frame's domain, where step 5 shifts this
 // pixel's path for its Talbot weight, is last frame's camera, primary hits,
 // transforms and glows, traced against this frame's structure: a ray a
@@ -173,6 +206,8 @@
 #include <metal_stdlib>
 
 #include "core/contracts/camera.h"
+#include "core/contracts/checkerboard.h"
+#include "core/contracts/frame_constants.h"
 #include "core/contracts/path_reservoir.h"
 #include "core/contracts/light_tile.h"
 #include "core/contracts/path_reuse_settings.h"
@@ -202,6 +237,49 @@ namespace shaders {
 namespace restir_pt {
 
 using Scene = path::Scene;
+
+// The pixels a frame traces and where ReSTIR PT's arrays keep each (above,
+// "Checkerboard rendering"; contract 20): without the setting every pixel,
+// at its row-major index; with it the frame's field, packed. Made once a
+// kernel from the frame's constants and the settings (traced(), below), so
+// every kernel and the host's dispatch (metal/frame/frame_resources.h,
+// traced) agree which pixel a thread or a slot is.
+struct Traced {
+    bool checkerboard;
+    uint width;  // the image's, in pixels
+    uint height;
+    uint frame;  // the frame's index, its field's parity
+
+    // The grid a one-thread-a-pixel kernel runs over.
+    uint2 grid() const {
+        return checkerboard ? uint2(serenity::contracts::checkerboard_width(width), height) : uint2(width, height);
+    }
+    // The pixel the grid's thread at `place` takes: possibly outside the
+    // image (inside()), past its edge or an odd width's last column.
+    uint2 pixel(uint2 place) const {
+        return checkerboard ? uint2(serenity::contracts::checkerboard_x(place.x, place.y, frame), place.y) : place;
+    }
+    bool inside(uint2 pixel) const { return pixel.x < width && pixel.y < height; }
+    // The slot of `pixel`'s entries in the arrays.
+    uint slot(uint2 pixel) const {
+        return checkerboard ? serenity::contracts::checkerboard_slot(pixel.x, pixel.y, width)
+                            : pixel.y * width + pixel.x;
+    }
+    // The pixel slot `i` holds in this frame.
+    uint2 slot_pixel(uint i) const {
+        const uint columns = grid().x;
+        return pixel(uint2(i % columns, i / columns));
+    }
+};
+
+inline Traced traced(constant serenity::contracts::FrameConstants& frame,
+                     constant serenity::contracts::PathReuseSettings& settings) {
+    return Traced{settings.checkerboard != 0u, frame.width, frame.height, frame.frame_index};
+}
+
+// How much further step 5's ring reaches with the checkerboard (above):
+// twice, so each try keeps the reprojected pixel's parity.
+constant constexpr int checkerboard_ring_reach = 2;
 
 // The camera's ray through `pixel` in frame `frame`, its numbers the path
 // pass's (metal/passes/path/path.metal): the one ray a pixel's tree starts
@@ -726,17 +804,20 @@ struct Merged {
 // Step 5's search (the temporal input's pixel), as ReSTIR DI's temporal
 // merge finds its own (metal/reuse/temporal.metal.h, steps 2 and 3): the
 // pixel's primary hit where it was last frame, `previous_position`,
-// through last frame's camera, rounds to a pixel p of last frame's image of
-// `size`; p, then the 8 around it in ring order from the frame's
+// through last frame's camera, rounds to a pixel p of last frame's image,
+// of `traced`'s size; p, then the 8 around it in ring order from the frame's
 // `ring_start`, until one whose last-frame primary hit is similar to this
 // pixel's (above, similar(): its distance from last frame's camera, and
-// `normal`, its geometric normal this frame). That pixel's index, or
-// no_pixel: the surface was out of last frame's image, or nothing near
-// was it.
+// `normal`, its geometric normal this frame); with the checkerboard, each
+// try at twice the ring's reach and moved into the frame before's field
+// (above, "Checkerboard rendering"). That pixel's slot in `traced`'s
+// arrays, or no_pixel: the surface was out of last frame's image, or
+// nothing near was it.
 constant constexpr uint no_pixel = 0xffffffffu;
 
 inline uint previous_pixel(constant serenity::contracts::CameraData& camera, float3 previous_position, float3 normal,
-                           const device serenity::contracts::PrimaryHit* last, uint2 size, uint ring_start) {
+                           const device serenity::contracts::PrimaryHit* last, Traced traced, uint ring_start) {
+    const uint2 size = uint2(traced.width, traced.height);
     if (!(camera_depth(camera, previous_position) > 0.0f)) {
         return no_pixel;
     }
@@ -746,12 +827,17 @@ inline uint previous_pixel(constant serenity::contracts::CameraData& camera, flo
     }
     const int2 p = int2(metal::min(uint2(place), size - 1u));
     const float distance = metal::distance(to_float3(camera.origin), previous_position);
+    const int reach = traced.checkerboard ? checkerboard_ring_reach : 1;
     for (uint t = 0u; t < temporal_tries; ++t) {
-        const int2 x = t == 0u ? p : ring_neighbor(p, t, ring_start);
+        int2 x = t == 0u ? p : p + reach * ring_neighbor(int2(0), t, ring_start);
+        if (traced.checkerboard) {
+            // Into the frame before's field (above, "Checkerboard rendering").
+            x.x = serenity::contracts::checkerboard_previous_x(x.x, x.y, traced.frame);
+        }
         if (metal::any(x < int2(0)) || metal::any(x >= int2(size))) {
             continue;
         }
-        const uint j = uint(x.y) * size.x + uint(x.x);
+        const uint j = traced.slot(uint2(x));
         if (similar(distance, normal, last[j])) {
             return j;
         }
