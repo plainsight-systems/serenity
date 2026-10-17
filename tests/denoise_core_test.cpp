@@ -94,9 +94,11 @@ TEST_CASE("the denoise pass's rules") {
                                                PassKind::features, PassKind::denoise, PassKind::denoise,
                                                PassKind::tone_map})),
                           "denoise more than once"));
-    Schedule preview{{PassKind::preview, PassKind::features, PassKind::denoise, PassKind::display}, std::nullopt};
-    preview.denoise = passes::Denoise{"network"};
-    CHECK(tests::contains(refusal(preview), "no light pass that accumulates"));
+    // Its light is ReSTIR PT's, traced checkerboarded: the path tracer's is
+    // refused.
+    Schedule path{{PassKind::path, PassKind::features, PassKind::denoise, PassKind::tone_map}, tests::look};
+    path.denoise = passes::Denoise{"network"};
+    CHECK(tests::contains(refusal(path), "no restir_pt_shade comes before it"));
     CHECK(tests::contains(refusal(schedule_of({PassKind::restir_pt_initial, PassKind::restir_pt_temporal,
                                                PassKind::restir_pt_shade, PassKind::features, PassKind::denoise,
                                                PassKind::restir_pt_duplication, PassKind::tone_map})),
@@ -116,7 +118,9 @@ TEST_CASE("the denoised graph in graphs/ reads, its weights relative to its own 
 
 TEST_CASE("every mistake in [denoise] is an error") {
     const std::string passes =
-        "passes = [\"path\", \"features\", \"denoise\", \"tone_map\"]\n[tone_map]\nexposure = 0.0\nbloom = 0.04\n";
+        "passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"features\", \"denoise\", \"tone_map\"]\n"
+        "[tone_map]\nexposure = 0.0\nbloom = 0.04\n"
+        "[restir_pt]\nnee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = 0.2\n";
     const auto error = [&](const std::string& rest) {
         return tests::error_of<frame::GraphFileError>([&] { return frame::parse_schedule(passes + rest, "g.toml"); });
     };

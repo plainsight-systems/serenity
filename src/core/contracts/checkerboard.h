@@ -6,8 +6,8 @@
 // dispatches them (architecture/logical-overview.md, "The frame";
 // Milestone 4's Step 4, docs/research/2026-10-17-milestone-4-plan.md).
 //
-// With the frame graph's checkerboard set (core/frame/schedule.h), frame n
-// traces the light at the pixels (x, y) of the light size whose x + y + n
+// In a denoised graph (core/frame/schedule.h, denoises), frame n traces
+// the light at the pixels (x, y) of the light size whose x + y + n
 // is even, half of them, a checkerboard whose two fields alternate frame by
 // frame: so every pixel is traced in every other frame, and in one of any
 // two frames in a row. This is RTXDI's checkerboard mode, its "black"

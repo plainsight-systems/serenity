@@ -63,8 +63,8 @@
 //                    paths it counts left out of the tree and of every shift
 //                    (metal/passes/restir_pt/restir_pt.metal.h). Not a key of
 //                    [restir_pt]: the renderer copies it from the schedule.
-//   checkerboard     1 where the graph sets checkerboard (core/frame/
-//                    schedule.h, Schedule::checkerboard), else 0: the
+//   checkerboard     1 in a denoised graph, whose light is traced
+//                    checkerboarded (core/frame/schedule.h), else 0: the
 //                    passes trace the pixels contract 20 names for the
 //                    frame, half of them, their arrays packed and their
 //                    grid the packed one (core/contracts/checkerboard.h).

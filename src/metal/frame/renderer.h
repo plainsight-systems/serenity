@@ -289,12 +289,11 @@ namespace serenity::metal {
 //     features pass writing the frame's slot's;
 //   - the light's radiance: the accumulated image carries the light's
 //     history across frames (a still scene's mean, accumulation.h), so it
-//     stays one image on the light's queue, and the light half ends by
-//     copying it into the slot's hand-off image (denoise_images.h,
-//     DenoiseImages::light_radiance), which the denoise pass reads in its
-//     place: RGBA32Float at the light size, 31 MB at 1728 x 1117, copied
-//     once a frame (31 MB read, 31 written: a fraction of a millisecond at
-//     the memory's bandwidth; the timestamps do not resolve it, the note);
+//     stays one image on the light's queue, and the light half ends with
+//     the checkerboard's fill (below), which writes the slot's hand-off
+//     image whole from it (denoise_images.h, DenoiseImages::light_radiance),
+//     and the denoise pass reads the hand-off in its place: RGBA32Float at
+//     the light size, 31 MB at 1728 x 1117;
 //   - the full-size albedo: the features kernel at the output's size writes
 //     all four of its images whole each frame, the albedo the one the
 //     denoiser reads, so, as the light-size features, a FeatureImages at
@@ -310,11 +309,11 @@ namespace serenity::metal {
 //
 // Barriers (GPU.8), each naming its hazard: the light half's queue barrier
 // before its first pass that crosses frames waits for the light queue's
-// copies as well as its dispatches (dispatch and blit before dispatch),
-// since its shade writes the accumulated image the frame before's copy
-// read; a barrier from the shade's dispatch, and the full-size albedo's,
-// to the copy (dispatch before blit), which in one part also orders the
-// albedo before the image half. The image half's queue barrier, at its
+// dispatches, the frame before's fill among them, which read the
+// accumulated image this frame's shade writes; a barrier from the shade's
+// dispatch, the features' and the full-size albedo's, to the fill
+// (dispatch before dispatch), which in one part also orders the albedo
+// before the image half. The image half's queue barrier, at its
 // start, waits for the overlap queue's dispatches before it: the frame
 // before's image half, which read and wrote what this one reads and
 // writes (the history, the radiance image, the bloom). The light half's
@@ -322,38 +321,38 @@ namespace serenity::metal {
 //
 // One part for a denoised graph. A frame recorded into a submission begun
 // with one part (a test's, which begins its own) records both halves into
-// the first part's one encoder, the copy between them, and a barrier from
-// the copy to the image half (blit before dispatch) in place of the event:
+// the first part's one encoder, the fill between them, and a barrier from
+// the fill to the image half (dispatch before dispatch) in place of the
+// event:
 // the same work in the same order on one queue, so the same pixels. The
 // image half then records no queue barrier of its own: the light half's
 // already waited for the frame before, its image half included. A
 // submission of two parts for a graph of one is refused by MetalError.
 //
 // Checkerboard rendering (contract 20, core/contracts/checkerboard.h;
-// logical-overview.md, "The frame"; Milestone 4's Step 4). A graph that
-// sets it (core/frame/schedule.h, Schedule::checkerboard: always a
-// denoised ReSTIR PT graph) gets, at construction, ReSTIR PT's settings
-// with checkerboard 1, its reuse textures built at sigma over the traced
-// lattice's step (metal/reuse/pairing.metal.h, lattice_partner), the fill
+// logical-overview.md, "The frame"; Milestone 4's Step 4): how a denoised
+// graph, always a ReSTIR PT one (core/frame/schedule.h), traces its light.
+// It gets, at construction, ReSTIR PT's settings with checkerboard 1, its
+// reuse textures built at sigma over the traced lattice's step
+// (metal/reuse/pairing.metal.h, lattice_partner), the fill
 // (passes/checkerboard_fill/checkerboard_fill.h), a ring of its
 // constants, 16 bytes a frame, and its history (checkerboard_images.h),
 // made by prepare() at the light size. Each frame, ReSTIR PT's passes are
 // given the packed grid to dispatch over (frame_resources.h, traced), and
-// the light half ends with the fill where it ends with the copy: a barrier
-// from the dispatches before it (the shade's accumulated image, the
-// features' images and the full-size albedo's: GPU.8, a write and its
-// reader), then the fill, writing the slot's hand-off whole; in one part,
-// the barrier after it to the image half is from dispatch, not blit. The
-// fill reads the frame before's history, by the frame's parity, and writes
+// the light half ends with a barrier from the dispatches before it (the
+// shade's accumulated image, the features' images and the full-size
+// albedo's: GPU.8, a write and its reader), then the fill, writing the
+// slot's hand-off whole. The fill reads the frame before's history, by the
+// frame's parity, and writes
 // this frame's, the image frame n - 1 read, which the light half's queue
 // barrier orders after that read. It is told the history holds this
 // history's frame before (contract 20's CheckerboardConstants, history 1)
 // when the denoiser's does (denoise_images.h: this history, this size,
 // the frame before), which the parity then holds whatever was submitted
-// between the two frames. Nothing else changes, and nothing for a graph
-// without it. Memory: the fill's history, 62 MB at 1728 x 1117; the packed
-// arrays use the first half of the full-size ones, and the fill writes the
-// hand-off the copy wrote. Its argument table is a denoised graph's.
+// between the two frames. A graph without the denoise pass traces every
+// pixel and has none of it. Memory: the fill's history, 62 MB at
+// 1728 x 1117; the packed arrays use the first half of the full-size ones.
+// Its argument table is a denoised graph's.
 //
 // Cost of recording a ReSTIR PT frame, on the CPU, beyond the above: 80
 // bytes of reuse constants, its passes' pipeline binds and dispatches with
@@ -520,8 +519,8 @@ private:
         FrameArray full_feature_constants;
         FeaturesPass full_features_pass;
     };
-    // Checkerboard rendering's (above): the fill, its constants' ring and
-    // its history.
+    // Checkerboard rendering's (above), a denoised graph's: the fill, its
+    // constants' ring and its history.
     struct CheckerboardFamily {
         CheckerboardFamily(const Device& device, Submission& submission, const Library& library);
 
@@ -564,8 +563,8 @@ private:
                                        const frame::FrameInputs& inputs, frame::Extent size,
                                        const Prepared& prepared);
     // The light half (every step before the denoise pass; all of them in a
-    // graph without it), then the full-size albedo and the hand-off's copy,
-    // or with the checkerboard its fill;
+    // graph without it), then the full-size albedo and the checkerboard's
+    // fill, which writes the hand-off;
     // and the image half, from the denoise pass on (above, "Two halves").
     void record_light(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources);
     void record_hand_off(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun,

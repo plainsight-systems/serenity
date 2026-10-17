@@ -8,30 +8,23 @@
 //     once, and none it does not, each at its own slot;
 //   - the frame before's pixel beside a pixel is one that frame traced;
 //
-// and the setting's refusals, which keep the fill's inputs there: only
-// with ReSTIR PT's passes and the denoise pass, a boolean, and a sigma the
-// traced lattice can pair at.
+// and a denoised graph's one rule for it: a sigma the traced lattice can
+// pair at.
 
 #include <cstdint>
 #include <cstdlib>
-#include <fstream>
 #include <limits>
-#include <sstream>
-#include <string>
 #include <vector>
 
 #include <doctest/doctest.h>
 
 #include "core/contracts/checkerboard.h"
-#include "core/frame/graph_file.h"
 #include "core/frame/schedule.h"
-#include "support/text.h"
-#include "test_paths.h"
+#include "support/schedules.h"
 
 namespace contracts = serenity::contracts;
-using serenity::frame::GraphFileError;
-using serenity::frame::parse_schedule;
-using serenity::tests::contains;
+using serenity::frame::PassKind;
+using serenity::frame::Schedule;
 
 namespace {
 
@@ -111,39 +104,26 @@ TEST_CASE("the frame before's pixel beside a pixel is one that frame traced, at 
     }
 }
 
-TEST_CASE("checkerboard is read only beside ReSTIR PT's passes and the denoise pass") {
-    std::ifstream file(serenity::tests::graphs_dir / "restir_pt_denoised.toml");
-    std::stringstream read;
-    read << file.rdbuf();
-    // The demo graph without its own checkerboard line, so the test does not
-    // depend on whether the demo has it on.
-    std::string denoised = read.str();
-    const auto written = denoised.find("\ncheckerboard = ");
-    if (written != std::string::npos) {
-        denoised.erase(written, denoised.find('\n', written + 1) - written);
-    }
-    // A top-level key goes before the first table.
-    const auto with = [&](const std::string& line) {
-        std::string text = denoised;
-        text.insert(text.find("\n["), "\n" + line);
-        return text;
+TEST_CASE("a denoised graph, its light traced checkerboarded, refuses a sigma the traced lattice cannot pair at") {
+    const std::vector<PassKind> light = {PassKind::restir_pt_initial, PassKind::restir_pt_spatial,
+                                         PassKind::restir_pt_shade};
+    const auto graph = [&](bool denoised, float sigma) {
+        std::vector<PassKind> kinds = light;
+        if (denoised) {
+            kinds.push_back(PassKind::features);
+            kinds.push_back(PassKind::denoise);
+        }
+        kinds.push_back(PassKind::tone_map);
+        Schedule s{kinds, serenity::tests::look};
+        s.restir_pt = serenity::tests::written_restir_pt(kinds);
+        s.restir_pt->sigma = sigma;
+        if (denoised) {
+            s.denoise = serenity::passes::Denoise{"network"};
+        }
+        return s;
     };
-    const auto error_for = [](const std::string& text) {
-        return serenity::tests::error_of<GraphFileError>([&] { return parse_schedule(text, "graph.toml"); });
-    };
-    CHECK(parse_schedule(with("checkerboard = true"), "graph.toml").checkerboard);
-    CHECK_FALSE(parse_schedule(with("checkerboard = false"), "graph.toml").checkerboard);
-    CHECK(contains(error_for(with("checkerboard = 1")), "'checkerboard' must be true or false"));
-    // Without the denoise pass, whose hand-off the fill writes.
-    std::ifstream light_file(serenity::tests::graphs_dir / "restir_pt.toml");
-    std::stringstream light_read;
-    light_read << light_file.rdbuf();
-    std::string light = light_read.str();
-    light.insert(light.find("\n["), "\ncheckerboard = true");
-    CHECK(contains(error_for(light), "sets checkerboard and lacks ReSTIR PT's passes"));
-    // A sigma the traced lattice cannot pair at: 0.8 pixels, a lattice's 0.57.
-    std::string narrow = with("checkerboard = true");
-    const std::string sigma = "sigma = 16.0";
-    narrow.replace(narrow.find(sigma), sigma.size(), "sigma = 0.8");
-    CHECK(contains(error_for(narrow), "must be at least 1.13137 pixels with checkerboard"));
+    // 0.8 pixels, the least a full image pairs at, is a lattice step's 0.57.
+    CHECK(serenity::tests::refusal(graph(false, 0.8f)).empty());
+    CHECK(serenity::tests::refused_for(graph(true, 0.8f), "must be at least 1.13137 pixels in a denoised graph"));
+    CHECK(serenity::tests::refusal(graph(true, 1.2f)).empty());
 }

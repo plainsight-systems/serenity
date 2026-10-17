@@ -334,10 +334,10 @@ std::optional<std::string> restir_pt_broken(const std::vector<PassKind>& passes)
     return std::nullopt;
 }
 
-// The denoise pass at most once, after the features pass and an
-// accumulating light pass, and directly before the presenting pass, the
-// last (schedule.h). That a light pass computes radiance before any pass
-// reads it is radiance_broken()'s.
+// The denoise pass at most once, after the features pass and ReSTIR PT's
+// shade, and directly before the presenting pass, the last (schedule.h).
+// That a light pass computes radiance before any pass reads it is
+// radiance_broken()'s.
 std::optional<std::string> denoise_broken(const std::vector<PassKind>& passes) {
     const auto at = std::ranges::find(passes, PassKind::denoise);
     if (at == passes.end()) {
@@ -350,9 +350,9 @@ std::optional<std::string> denoise_broken(const std::vector<PassKind>& passes) {
     if (!before([](PassKind kind) { return writes_features(kind); })) {
         return "the frame graph's denoise pass reads the feature images, and no features pass comes before it";
     }
-    if (!before([](PassKind kind) { return writes_radiance(kind) && accumulates(kind); })) {
-        return "the frame graph's denoise pass reads the light as an accumulated image, and no light pass that "
-               "accumulates (path, restir_pt_shade) comes before it";
+    if (!before([](PassKind kind) { return kind == PassKind::restir_pt_shade; })) {
+        return "the frame graph's denoise pass reads ReSTIR PT's light, traced checkerboarded, and no "
+               "restir_pt_shade comes before it";
     }
     if (passes.end() - at != 2 || !writes_target(passes.back())) {
         return "the frame graph's denoise pass writes the radiance its presenting pass shows at the output size, "
@@ -526,18 +526,14 @@ std::optional<std::string> invalid(const Schedule& schedule) {
         }
     }
 
-    // Checkerboard rendering: ReSTIR PT's passes to halve and the denoise
-    // pass's hand-off to fill, and a sigma the traced lattice pairs at
-    // (schedule.h).
-    if (schedule.checkerboard && !(restir_pt && denoising)) {
-        return "the frame graph sets checkerboard, which halves ReSTIR PT's passes and fills the denoise pass's "
-               "input, and lacks ReSTIR PT's passes or the denoise pass";
-    }
+    // A denoised graph's light is traced checkerboarded: a sigma the traced
+    // lattice pairs at (schedule.h).
     const float least_sigma = contracts::min_pairing_sigma * contracts::checkerboard_lattice_step;
-    if (schedule.checkerboard && std::ranges::find(passes, PassKind::restir_pt_spatial) != passes.end() &&
+    if (denoising && std::ranges::find(passes, PassKind::restir_pt_spatial) != passes.end() &&
         schedule.restir_pt->sigma < least_sigma) {
         return setting(pt, "sigma", text(schedule.restir_pt->sigma)) + "must be at least " + text(least_sigma) +
-               " pixels with checkerboard: the traced field's lattice pairs at sigma over its step, " +
+               " pixels in a denoised graph: its light is traced checkerboarded, and the traced field's lattice "
+               "pairs at sigma over its step, " +
                text(contracts::checkerboard_lattice_step) + " pixels, at least " + text(contracts::min_pairing_sigma);
     }
     return std::nullopt;

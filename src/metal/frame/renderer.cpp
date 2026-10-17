@@ -77,7 +77,7 @@ constexpr NS::UInteger max_denoise_buffers = 12;
 constexpr NS::UInteger max_denoise_textures = 8;
 static_assert(bindings::denoise::coarse < max_denoise_buffers);
 static_assert(bindings::denoise::radiance < max_denoise_textures);
-// With checkerboard rendering, always a denoised graph's, the fill.
+// The checkerboard's fill, a denoised graph's.
 static_assert(bindings::checkerboard_fill::fill_constants < max_denoise_buffers);
 static_assert(bindings::checkerboard_fill::history < max_denoise_textures);
 // A ReSTIR PT graph, with or without mnee (its initial pass's work list and
@@ -349,8 +349,9 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     if (denoises_) {
         denoise_.emplace(device, submission_, library_, *network);
     }
-    // Checkerboard rendering's, in a denoised ReSTIR PT graph (frame::invalid).
-    if (schedule.checkerboard) {
+    // Checkerboard rendering's, a denoised graph's, always a ReSTIR PT one
+    // (frame::invalid).
+    if (denoises_) {
         checkerboard_.emplace(device, submission_, library_);
     }
 }
@@ -465,14 +466,14 @@ void Renderer::make_restir_pt(const Device& device, const frame::Schedule& sched
     const bool spatial = has(schedule, frame::PassKind::restir_pt_spatial);
     contracts::PathReuseSettings settings = *schedule.restir_pt;
     settings.mnee = schedule.mnee ? 1u : 0u;  // the graph's, for every pass of the family
-    settings.checkerboard = schedule.checkerboard ? 1u : 0u;  // likewise
+    settings.checkerboard = denoises_ ? 1u : 0u;  // a denoised graph's light is traced checkerboarded
     // With spatial reuse, the three reuse textures, built once on the CPU
     // from the graph's sigma and a fixed seed (core/sampling/pairing.h); one
     // zero texel without. With the checkerboard the pairing is over the
     // traced lattice, so at sigma over its step, sigma pixels along each
     // axis (renderer.h; the core has refused a sigma the lattice cannot
     // take, frame::invalid).
-    const double sigma = schedule.checkerboard
+    const double sigma = denoises_
                              ? static_cast<double>(settings.sigma) / contracts::checkerboard_lattice_step
                              : static_cast<double>(settings.sigma);
     const std::vector<std::uint16_t> textures =
@@ -826,10 +827,6 @@ Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& res
 // its reads need (renderer.h): every pass before the denoise pass.
 void Renderer::record_light(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) {
     encoder->setArgumentTable(resources.arguments);
-    // With a hand-off, the queue's earlier copies too: the frame before's
-    // copy read the accumulated image this frame's shade writes (renderer.h,
-    // "Two halves"). Otherwise dispatches alone, as every graph's was.
-    const MTL::Stages before = denoise_ ? MTL::StageDispatch | MTL::StageBlit : MTL::StageDispatch;
     bool restir_before = false;  // whether a ReSTIR PT pass came before, in this frame
     for (std::size_t i = 0; i < image_begins_; ++i) {
         const Step& step = steps_[i];
@@ -840,7 +837,7 @@ void Renderer::record_light(MTL4::ComputeCommandEncoder* encoder, const FrameRes
             // accumulated image before the frame before has written it. One
             // barrier for every such hazard, before the first pass that
             // touches any (GPU.8).
-            encoder->barrierAfterQueueStages(before, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+            encoder->barrierAfterQueueStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
         }
         if (frame::is_restir_pt(step.kind) && restir_before) {
             // What the ReSTIR PT pass before it wrote this frame: the
@@ -857,20 +854,13 @@ void Renderer::record_light(MTL4::ComputeCommandEncoder* encoder, const FrameRes
     }
 }
 
-// The light's radiance into the slot's hand-off image, after the shade's
-// dispatch wrote it (renderer.h, "Two halves"; GPU.8: dispatch before
-// blit); with the checkerboard, the fill in its place, after the shade's,
-// the features' and the full-size albedo's dispatches (renderer.h,
-// "Checkerboard rendering"; GPU.8: dispatch before dispatch).
-// Precondition: the graph denoises.
+// The checkerboard's fill, writing the slot's hand-off image whole from the
+// light's radiance, after the shade's, the features' and the full-size
+// albedo's dispatches (renderer.h, "Two halves", "Checkerboard rendering";
+// GPU.8: dispatch before dispatch). Precondition: the graph denoises.
 void Renderer::record_hand_off(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun,
                                const FrameResources& resources, const Prepared& prepared) {
     MTL::Texture* hand_off = denoise_->images.light_radiance(begun.slot);
-    if (!checkerboard_) {
-        encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageBlit, MTL4::VisibilityOptionDevice);
-        encoder->copyFromTexture(accumulation_->texture(), hand_off);
-        return;
-    }
     CheckerboardFamily& c = *checkerboard_;
     // The frame before's history is this history's frame before when the
     // denoiser's is (renderer.h).
@@ -941,8 +931,8 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         // The full-size albedo, in the light half (renderer.h, "Two
         // halves"): it writes the slot's own images, which nothing before
         // it in the frame reads, so no barrier before it, as none before the
-        // light-size features; the copy's barrier after it orders it before
-        // the image half in one part, the event in two.
+        // light-size features; the fill's barrier orders it before the image
+        // half in one part, the event in two.
         denoise_->full_features_pass.record(encoder, denoised.full_features);
         record_hand_off(encoder, begun, resources, prepared);
         MTL4::ComputeCommandEncoder* image = encoder;
@@ -959,11 +949,9 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
             image->setArgumentTable(arguments_.get());
             image->barrierAfterQueueStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
         } else {
-            // One part: the copy (or the fill, a dispatch) before the image
-            // half reads it, in place of the event (renderer.h, "One part
-            // for a denoised graph").
-            encoder->barrierAfterEncoderStages(checkerboard_ ? MTL::StageDispatch : MTL::StageBlit,
-                                               MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+            // One part: the fill before the image half reads its hand-off, in
+            // place of the event (renderer.h, "One part for a denoised graph").
+            barrier_after_dispatch(encoder);
         }
         record_image(image, denoised);
         image->endEncoding();

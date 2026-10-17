@@ -22,7 +22,6 @@ namespace serenity::frame {
 //
 //   passes = ["path", "tone_map"] # pass names, in order; at least one
 //   mnee = true                   # a boolean; only with path or a ReSTIR PT pass
-//   checkerboard = true           # a boolean; only with ReSTIR PT's passes and denoise
 //
 //   [tone_map]                    # exactly when a pass is tone_map
 //   exposure = 0.0                # stops, within [-10, 10] (core/passes/tone_map.h)
@@ -49,9 +48,7 @@ namespace serenity::frame {
 // (PD): only with restir_pt_duplication. The values shown are the ones the
 // graphs are written with, ReSTIR PT Enhanced's defaults
 // (core/passes/restir_pt.h). mnee turns on caustics by manifold
-// next event estimation (Schedule::mnee, schedule.h), off unless written;
-// checkerboard, the light traced at half its pixels a frame
-// (Schedule::checkerboard, schedule.h), off unless written.
+// next event estimation (Schedule::mnee, schedule.h), off unless written.
 //
 // ReSTIR PT's settings are core/contracts/path_reuse_settings.h's, which
 // says what each does and why its range is what it is. Each is required
@@ -67,8 +64,7 @@ namespace serenity::frame {
 // [denoise] table without its passes or the passes without
 // the table, a setting missing, of the wrong type or out of range, an mnee
 // that is not a boolean or is written, true or false, in a graph with
-// neither path nor a ReSTIR PT pass, a checkerboard likewise in a graph
-// without both ReSTIR PT's passes and the denoise pass, a schedule the core does not accept
+// neither path nor a ReSTIR PT pass, a schedule the core does not accept
 // (schedule.h, invalid()), or a key nobody reads is a GraphFileError, never
 // a default or an ignored line: a typo must fail the run that reads it, not
 // render something else (E.2, E.14). Each GraphFileError names the file and

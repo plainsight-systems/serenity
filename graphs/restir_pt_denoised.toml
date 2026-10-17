@@ -12,10 +12,6 @@
 # fetches it). A relative path is relative to this file's directory.
 
 mnee = true
-# Checkerboard rendering of the light (Milestone 4, step 4,
-# docs/research/2026-10-17-milestone-4-plan.md): each frame traces half
-# the light's pixels, alternating, and the fill rebuilds the other half.
-checkerboard = true
 passes = ["restir_pt_initial", "restir_pt_temporal", "restir_pt_spatial", "restir_pt_shade",
           "restir_pt_duplication", "features", "denoise", "tone_map"]
 

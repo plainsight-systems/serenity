@@ -127,29 +127,28 @@ namespace serenity::frame {
 // denoise pass and the presenting pass at the output's. So the window's
 // light is traced at a quarter of its pixels and the network, not the
 // window's layer, upscales it. Its rules (invalid()): at most once; after
-// the features pass and after a light pass that accumulates (its light is
-// the accumulated image, the frame's mean); followed by the presenting
-// pass alone, directly; and [denoise] settings exactly with it. Its output
+// the features pass and after ReSTIR PT's shade (its light is ReSTIR PT's
+// accumulated image, the frame's mean, traced checkerboarded, below);
+// followed by the presenting pass alone, directly; with restir_pt_spatial,
+// a sigma the traced lattice can pair at (below); and [denoise] settings
+// exactly with it. Its output
 // feeds the next frame, so a graph with it reuses history (reuses_history),
 // started over as ReSTIR's is: at a history's first frame and when the
 // size changes.
 //
 // Checkerboard rendering of the light (contract 20, core/contracts/
 // checkerboard.h; Milestone 4's Step 4, docs/research/2026-10-17-milestone-
-// 4-plan.md) is a setting of the frame graph, not a pass: ReSTIR PT's
-// passes trace half the light size's pixels each frame, a checkerboard
-// whose fields alternate, and the frame's light half ends, where the
-// hand-off copied the light's radiance to the image half, with the fill,
-// which writes the hand-off whole: the traced pixels as they are, each of
-// the others from what the frame before traced where its surface was, by
-// its features' motion and depth, or from the traced pixels around it
-// (metal/passes/checkerboard_fill/checkerboard_fill.h). Its rules
-// (invalid()): only in a graph with ReSTIR PT's passes, which it halves,
-// and the denoise pass, whose hand-off the fill writes; and with
-// restir_pt_spatial, a sigma that leaves the traced lattice's own at least
-// the least one (contracts::min_pairing_sigma times
-// contracts::checkerboard_lattice_step). Off unless written, so
-// every graph renders what it did.
+// 4-plan.md) is how a denoised graph traces its light, not a pass or a
+// setting: ReSTIR PT's passes trace half the light size's pixels each
+// frame, a checkerboard whose fields alternate, and the frame's light half
+// ends with the fill, which writes the hand-off to the image half whole:
+// the traced pixels as they are, each of the others from what the frame
+// before traced where its surface was, by its features' motion and depth,
+// or from the traced pixels around it (metal/passes/checkerboard_fill/
+// checkerboard_fill.h). With restir_pt_spatial, the graph's sigma must
+// leave the traced lattice's own at least the least one
+// (contracts::min_pairing_sigma times contracts::checkerboard_lattice_step).
+// A graph without the denoise pass traces every pixel.
 //
 // `last` names the final kind, without being a kind of its own (a second
 // name for its value, which no switch needs a case for): schedule.cpp
@@ -210,9 +209,6 @@ struct Schedule {
     // The denoiser's settings: present exactly when the schedule has its
     // pass (core/passes/denoise.h).
     std::optional<passes::Denoise> denoise = std::nullopt;
-    // Checkerboard rendering of the light (above): off unless written. Last,
-    // so the members before keep their places.
-    bool checkerboard = false;
 };
 
 // Whether any pass of `schedule` accumulates: whether its frames build on
@@ -228,7 +224,7 @@ bool accumulates(const Schedule& schedule);
 bool reuses_history(const Schedule& schedule);
 
 // Whether `schedule` has the denoise pass, and so renders its light at
-// light_size().
+// light_size(), traced checkerboarded (above).
 bool denoises(const Schedule& schedule);
 
 // The size every pass before the denoise pass renders at, for a frame whose
@@ -267,9 +263,8 @@ bool writes_features(const Schedule& schedule);
 //     passes read in its range and each they do not read its zero
 //     (core/contracts/path_reuse_settings.h);
 //   - mnee set only beside a pass that reads it: path, or ReSTIR PT's;
-//   - the denoise pass's rules (above), and its settings exactly with it;
-//   - checkerboard set only with ReSTIR PT's passes and the denoise pass,
-//     and a sigma the traced lattice can pair at (above).
+//   - the denoise pass's rules (above), its light ReSTIR PT's at a sigma
+//     the traced lattice can pair at, and its settings exactly with it.
 //
 // None if `schedule` is valid; otherwise why not, in words a reader of the
 // frame graph file can act on. The graph reader refuses an invalid schedule
