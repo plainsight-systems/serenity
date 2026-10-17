@@ -196,3 +196,16 @@ What it leaves for the next steps: the light half is now the frame
 (73.8 ms overlapped) and what slows it is the denoiser beside it, so ray
 masks and the split structure, which shorten the light, are measured
 against this frame, and the overlap is measured again after each.
+
+## Decisions after Step 2 (the user, 2026-10-17)
+
+- **Ray masks kept**: 3 to 4% on the frame for the fireflies' own
+  shadows, which are not visible.
+- **Step 3, the split scene, skipped on Metal.** Its point, building the
+  still scene once, is already met (the occluders' structure is built once,
+  and the per-frame rebuild of the one-level structure costs about 0 ms),
+  and the standard two-level structure measured slower here because every
+  ray pays for the instance level (Step 2's table; 2026-10-09-acceleration-
+  structure.md). It is kept for the Vulkan and Xbox milestones, where
+  two-level structures are the hardware's normal case.
+- **Next: Step 4, checkerboard rendering.**

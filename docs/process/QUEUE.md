@@ -150,7 +150,8 @@ This file tracks active and accepted work.
 
 1. Milestone 4, making the frame fast (the user, 2026-10-17;
    docs/research/2026-10-17-milestone-4-plan.md): async compute overlap,
-   ray masks, a split scene structure, checkerboard rendering of the light.
+   ray masks, checkerboard rendering of the light (the split scene skipped
+   on Metal, kept for the Vulkan and Xbox milestones).
    Retraining, if checkerboard needs it, on the user's RTX 3090. Step 1,
    async compute overlap, built 2026-10-17 (the plan's "Step 1"): a
    denoised frame's two halves on two queues, the hand-off ringed by the
