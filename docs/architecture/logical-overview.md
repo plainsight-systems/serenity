@@ -285,11 +285,12 @@ is traced at 1728 x 1117 and the network brings it to every pixel.
 
 **A denoised frame runs in two halves, on two queues** (Milestone 4,
 `docs/research/2026-10-17-milestone-4-plan.md`). The **light half** is
-everything up to Resolve, with the features: Animate, the light, the
-reservoirs' merges, at the light size. The **image half** is the rest:
-the full-size albedo, Denoise and Upscale, Tone map, at the output size.
-The light half is bound by the ray tracing hardware and leaves the
-arithmetic units nearly idle; the image half is the reverse. So frame N's
+everything that traces rays: Animate, the light, the reservoirs' merges,
+the features at the light size, and the surface's color at the output
+size, which the denoiser multiplies back. The **image half** is the rest:
+Denoise and Upscale, Tone map, at the output size. The light half is
+bound by the ray tracing hardware and leaves the arithmetic units nearly
+idle; the image half is the reverse. So frame N's
 image half runs beside frame N + 1's light half, and a frame is shown
 about as often as the slower half takes, not their sum.
 

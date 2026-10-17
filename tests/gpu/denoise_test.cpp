@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -151,9 +152,12 @@ TEST_CASE("the denoised graph's history starts over with ReSTIR's: at a history'
 // The hand-off (metal/frame/renderer.h, "Two halves"): frame N + 1's light
 // half never writes what frame N's image half reads. Frames with their
 // halves on two queues, two in flight and none waited for, end in the same
-// bits as the same frames each recorded into one part and waited for. A
-// hand-off frame N + 1 overwrote under frame N's denoiser would reach the
-// denoiser's history, and through it the last frame.
+// bits as the same frames each recorded into one part and waited for: every
+// frame as displayed, and the last frame's radiance. A hand-off frame N + 1
+// overwrote under frame N's image half would change frame N's image (the
+// full-size albedo, which the denoiser multiplies back after its history)
+// or reach the denoiser's history and the frames after it (the radiance and
+// the features).
 //
 // Left to the GPU, frame N's image half reads the hand-off at its start,
 // before frame N + 1's light half has reached its end and written it, so a
@@ -212,33 +216,51 @@ private:
     NS::SharedPtr<MTL4::ArgumentTable> table_;
 };
 
+// Frame `index` of the hand-off's run, 50 ms after the one before, so the
+// fireflies move a pixel or so between frames: every image the halves hand
+// over, the full-size albedo's among them, differs from frame to frame.
+frame::FrameInputs stepped_frame(std::uint64_t index, const scene::SceneDescription& scene) {
+    const auto at = [](std::uint64_t i) { return frame::Seconds{30.0 + 0.05 * static_cast<double>(i)}; };
+    frame::FrameInputs inputs = tests::frame_at(index, index, at(index).count(), scene.camera);
+    inputs.reused_since = 0;
+    if (index > 0) {
+        inputs.previous = frame::PreviousFrame{at(index - 1), scene.camera};
+    }
+    return inputs;
+}
+
 struct HandOffRun {
-    std::vector<float> last;                 // the last frame's denoised radiance
-    std::vector<metal::Completed> records;  // the frames', in sequence order
+    std::vector<std::vector<std::uint8_t>> shown;  // each frame, as displayed
+    std::vector<float> last;                       // the last frame's denoised radiance
+    std::vector<metal::Completed> records;         // the frames', in sequence order
 };
 
 // `frames` frames of the brass sphere through the fixture's denoised graph
-// at `size`: of two parts, each image half held back by the delay, none
-// waited for; or of one part, each waited for.
+// at `size`, each into a target of its own, so every frame's image is read
+// back, not only the last's: of two parts, each image half held back by the
+// delay, none waited for; or of one part, each waited for.
 HandOffRun run_hand_off(const scene::SceneDescription& scene, frame::Extent size, std::uint64_t frames,
                         metal::Parts parts) {
     metal::Device device;
     metal::Submission submission(device);
     const Delay delay(device, submission);
     metal::Renderer renderer(device, submission, tests::fixture_denoised_graph(), &scene);
-    metal::Offscreen target(device, submission, size);
+    std::vector<std::unique_ptr<metal::Offscreen>> targets;
+    for (std::uint64_t i = 0; i < frames; ++i) {
+        targets.push_back(std::make_unique<metal::Offscreen>(device, submission, size));
+    }
     const std::uint64_t first = submission.next_sequence();
     HandOffRun run;
     for (std::uint64_t i = 0; i < frames; ++i) {
         const auto pool = metal::scoped_pool();
-        const frame::FrameInputs inputs = frame_of(i, 0, scene);
+        const frame::FrameInputs inputs = stepped_frame(i, scene);
         renderer.prepare(inputs, size);
         const metal::FrameSlot begun = submission.begin(parts);
         REQUIRE((begun.second != nullptr) == (parts == metal::Parts::two));
         if (begun.second != nullptr) {
             delay.record(begun.second);
         }
-        renderer.record(begun, inputs, target.texture(), size);
+        renderer.record(begun, inputs, targets[i]->texture(), size);
         submission.commit();
         if (begun.settled && begun.settled->sequence >= first) {
             run.records.push_back(*begun.settled);
@@ -253,6 +275,9 @@ HandOffRun run_hand_off(const scene::SceneDescription& scene, frame::Extent size
         run.records.push_back(settled);
     }
     std::ranges::sort(run.records, {}, &metal::Completed::sequence);
+    for (const std::unique_ptr<metal::Offscreen>& target : targets) {
+        run.shown.push_back(tests::read_back(*target));
+    }
     run.last.assign(std::size_t{size.width} * size.height * 4, 0.0f);
     renderer.read_accumulated(run.last);
     return run;
@@ -266,6 +291,11 @@ TEST_CASE("frame N + 1's light half never writes what frame N's image half reads
     constexpr std::uint64_t frames = 6;
     const HandOffRun overlapped = run_hand_off(scene, size, frames, metal::Parts::two);
     const HandOffRun serial = run_hand_off(scene, size, frames, metal::Parts::one);
+    REQUIRE(overlapped.shown.size() == frames);
+    for (std::size_t k = 0; k < frames; ++k) {
+        INFO("frame " << k);
+        CHECK(overlapped.shown[k] == serial.shown[k]);
+    }
     CHECK(tests::same_bits(overlapped.last, serial.last));
 
     // It exercised the hazard: each frame's light half (its record's start)

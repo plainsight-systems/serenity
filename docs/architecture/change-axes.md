@@ -227,11 +227,12 @@ features are. **The light's radiance is copied when the features are
 not**: the features are written whole each frame, so a second set is
 enough, but the accumulated image carries history across frames on the
 light's queue (a still scene's mean), so the denoiser gets a copy of it
-per frame in flight instead. **The full-size albedo, a ray-traced kernel,
-runs in the image half beside the denoiser rather than with the light**:
-it is the denoiser's own input at the output's size, and on the light's
-queue it would lengthen the slower half (Milestone 4's Step 1 measures
-both halves).
+per frame in flight instead. **The full-size albedo, the denoiser's own
+input, runs in the light half**: its kernel traces rays, and beside the
+light half's tracing, in the image half, the two shared the ray tracing
+hardware and it took four times as long; split by the hardware each
+uses rather than by which pass reads what, the frame is shown sooner
+(Milestone 4's Step 1 measures both).
 
 **Scene content and animation are two files, not one.** Both describe how the
 fireflies move, which makes merging them tempting. But animation changes when

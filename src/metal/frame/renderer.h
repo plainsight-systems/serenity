@@ -294,19 +294,25 @@ namespace serenity::metal {
 // FeatureImages at the target's size and a second ring of feature
 // constants, written by the features kernel dispatched again at the
 // target's size, as the training's full-size albedo was rendered (docs/
-// research/2026-10-14-denoiser-features.md), recorded as part of the
-// denoise step. Its accumulated image, ReSTIR's arrays, MNEE's list and
-// the features are at the light size; the radiance image and the bloom
-// pyramid at the target's, the radiance image the denoise pass's output,
-// not the accumulated image. Its argument table holds the denoiser's
-// textures (renderer.cpp, texture_bindings()). A graph
-// without it renders as it did: one size, one ring, the same bindings.
+// research/2026-10-14-denoiser-features.md), recorded at the end of the
+// light half (below, "Two halves"). Its accumulated image, ReSTIR's
+// arrays, MNEE's list and the features are at the light size; the
+// radiance image and the bloom pyramid at the target's, the radiance image
+// the denoise pass's output, not the accumulated image. Its argument table
+// holds the denoiser's textures (renderer.cpp, texture_bindings()). A
+// graph without it renders as it did: one size, one ring, the same
+// bindings.
 //
 // Two halves (logical-overview.md, "The frame"; Milestone 4, docs/research/
 // 2026-10-17-milestone-4-plan.md, Step 1). A denoised frame splits at the
-// denoise pass: the light half, animate and every pass before it, bound by
-// the ray-tracing unit; the image half, the full-size albedo, the denoise
-// pass and every pass after it, bound by arithmetic. parts() is
+// denoise pass: the light half, animate, every pass before it and the
+// full-size albedo's features kernel, bound by the ray-tracing unit; the
+// image half, the denoise pass and every pass after it, bound by
+// arithmetic. The full-size albedo is the denoiser's input, but its kernel
+// traces rays: in the image half it ran beside the light half's tracing,
+// both on the ray-tracing unit, and took 32 ms there against 8.5 alone at
+// the window's size; in the light half it runs beside the network, and the
+// frame is shown sooner (the note, Step 1, measures both). parts() is
 // Parts::two for such a graph and Parts::one for any other, and
 // render_to_window() and render_to_offscreen() begin each frame's
 // submission with it (submission.h, "Two parts"): the light half in the
@@ -336,22 +342,29 @@ namespace serenity::metal {
 //     DenoiseImages::light_radiance), which the denoise pass reads in its
 //     place: RGBA32Float at the light size, 31 MB at 1728 x 1117, copied
 //     once a frame, about 0.1 ms of the light half (measured in the note);
-//   - the slot's transforms, glows, structure and constants, which the
-//     full-size albedo's kernel traces and reads: ringed already.
+//   - the full-size albedo: the features kernel at the output's size writes
+//     all four of its images whole each frame, the albedo the one the
+//     denoiser reads, so, as the light-size features, a FeatureImages at
+//     the output's size per slot;
+//   - the slot's constants, which the image half reads: ringed already.
 // What the image half writes the light half never reads. Memory, beyond a
 // graph of one part: a second set of features at the light size (28 bytes
-// a pixel, 54 MB at 1728 x 1117) and two radiance copies (16 bytes a pixel,
-// 62 MB): 116 MB, made at prepare(), never per frame (GPU.9).
+// a pixel, 54 MB at 1728 x 1117), a second at the output's size (216 MB at
+// 3456 x 2234) and two radiance copies (16 bytes a pixel, 62 MB): 332 MB,
+// made at prepare(), never per frame (GPU.9). Copying only the albedo out
+// of one set would save 216 MB for 62 MB of copies on the light's queue
+// every frame; the light half is the longer, so the memory is spent.
 //
 // Barriers (GPU.8), each naming its hazard: the light half's queue barrier
 // before its first pass that crosses frames waits for the light queue's
 // copies as well as its dispatches (dispatch and blit before dispatch),
 // since its shade writes the accumulated image the frame before's copy
-// read; a barrier from the shade's dispatch to the copy (dispatch before
-// blit). The image half's queue barrier, at its start, waits for the
-// overlap queue's dispatches before it: the frame before's image half,
-// which read and wrote what this one reads and writes (the history, the
-// radiance image, the bloom, the full-size albedo). The light half's
+// read; a barrier from the shade's dispatch, and the full-size albedo's,
+// to the copy (dispatch before blit), which in one part also orders the
+// albedo before the image half. The image half's queue barrier, at its
+// start, waits for the overlap queue's dispatches before it: the frame
+// before's image half, which read and wrote what this one reads and
+// writes (the history, the radiance image, the bloom). The light half's
 // writes reach the image half through the submission's event.
 //
 // One part for a denoised graph. A frame recorded into a submission begun
@@ -538,7 +551,7 @@ private:
         DenoiseImages images;
         FrameArray output_constants;
         FrameArray constants;
-        FeatureImages full_features;
+        std::array<std::optional<FeatureImages>, frames_in_flight> full_features;  // a set per slot (above)
         FrameArray full_feature_constants;
         FeaturesPass full_features_pass;
     };
@@ -578,8 +591,8 @@ private:
                                        const frame::FrameInputs& inputs, frame::Extent size,
                                        const Prepared& prepared);
     // The light half (every step before the denoise pass; all of them in a
-    // graph without it), then the hand-off's copy; and the image half, from
-    // the denoise pass on (above, "Two halves").
+    // graph without it), then the full-size albedo and the hand-off's copy;
+    // and the image half, from the denoise pass on (above, "Two halves").
     void record_light(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources);
     void record_hand_off(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun);
     void record_image(MTL4::ComputeCommandEncoder* encoder, const DenoiseResources& denoised_resources);

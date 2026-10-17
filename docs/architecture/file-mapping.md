@@ -200,7 +200,7 @@ file is new:
 | What | Family | File |
 |---|---|---|
 | the second queue, each frame slot's second command allocator and buffer, the event the light half signals and the image half waits for, a two-part submission's commit and settling | GPU backend | `src/metal/device/submission.{h,cpp}` |
-| where the frame splits, the barriers on each side, the hand-off images kept one set per frame slot (the features, and a copy of the light's radiance), and how many parts a frame has | Frame graph | `src/metal/frame/renderer.{h,cpp}` |
+| where the frame splits, the barriers on each side, the hand-off images kept one set per frame slot (the features at both sizes, and a copy of the light's radiance), and how many parts a frame has | Frame graph | `src/metal/frame/renderer.{h,cpp}` |
 | the per-slot radiance copy | Frame graph | `src/metal/frame/denoise_images.{h,cpp}`, beside the denoiser's other memory |
 | asking the renderer for its parts and beginning the submission with them | Presentation | `src/app/main.cpp` through `render_to_window()`, `src/headless/main.cpp` through `render_to_offscreen()` (both in `renderer.cpp`), unchanged themselves |
 | a frame's time when frames overlap: from when it began, or the frame before it finished if later, to when it finished | Measurement | `src/core/measurement/frame_times.{h,cpp}` |

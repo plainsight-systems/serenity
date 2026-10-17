@@ -342,10 +342,13 @@ Renderer::DenoiseFamily::DenoiseFamily(const Device& device, Submission& submiss
       output_constants(device, submission, std::vector<std::byte>(ring_slot_size), FrameArray::Copies::per_frame),
       constants(device, submission, std::vector<std::byte>(sizeof(contracts::DenoiseConstants)),
                 FrameArray::Copies::per_frame),
-      full_features(device, submission),
       full_feature_constants(device, submission, std::vector<std::byte>(sizeof(contracts::FeatureConstants)),
                              FrameArray::Copies::per_frame),
-      full_features_pass(library) {}
+      full_features_pass(library) {
+    for (std::optional<FeatureImages>& set : full_features) {
+        set.emplace(device, submission);
+    }
+}
 
 Renderer::Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
                    const scene::SceneDescription* scene)
@@ -643,7 +646,9 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
         features_->prepare(light);
     }
     if (denoise_) {
-        denoise_->full_features.prepare(size);
+        for (std::optional<FeatureImages>& set : denoise_->full_features) {
+            set->prepare(size);
+        }
     }
     if (mnee_) {
         mnee_->list.prepare(light);
@@ -857,10 +862,11 @@ Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& res
     full_features = output;
     full_features.feature_constants =
         write_feature_constants(d.full_feature_constants, begun.slot, inputs.previous, size);
-    full_features.albedo = d.full_features.albedo();
-    full_features.normal = d.full_features.normal();
-    full_features.depth = d.full_features.depth();
-    full_features.motion = d.full_features.motion();
+    const FeatureImages& full = *d.full_features.at(begun.slot);  // the slot's (renderer.h)
+    full_features.albedo = full.albedo();
+    full_features.normal = full.normal();
+    full_features.depth = full.depth();
+    full_features.motion = full.motion();
 
     // Its constants: the view axes, the sizes, whether there is a history.
     const camera::ViewAxes axes = camera::view_axes(*inputs.camera);
@@ -885,7 +891,7 @@ Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& res
     denoising.normal = resources.normal;
     denoising.depth = resources.depth;
     denoising.motion = resources.motion;
-    denoising.full_albedo = d.full_features.albedo();
+    denoising.full_albedo = full.albedo();
     denoising.denoise_constants = d.constants.address(begun.slot);
     denoising.denoise = &d.images;
     return out;
@@ -944,11 +950,6 @@ void Renderer::record_image(MTL4::ComputeCommandEncoder* encoder, const DenoiseR
             barrier_after_dispatch(encoder);
         }
         if (step.kind == frame::PassKind::denoise) {
-            // The full-size albedo first, then the pass, both after the
-            // barrier above. Only the pass's last dispatch reads the
-            // full-size albedo, after barriers of its own (passes/denoise/
-            // denoise.h), so its first dispatches overlap this one.
-            denoise_->full_features_pass.record(encoder, denoised_resources.full_features);
             std::visit([&](const auto& pass) { pass.record(encoder, denoised_resources.denoising); }, step.pass);
             continue;
         }
@@ -988,6 +989,12 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         encoder->endEncoding();
     } else {
         const DenoiseResources denoised = denoise_resources(resources, begun, inputs, size, prepared);
+        // The full-size albedo, in the light half (renderer.h, "Two
+        // halves"): it writes the slot's own images, which nothing before
+        // it in the frame reads, so no barrier before it, as none before the
+        // light-size features; the copy's barrier after it orders it before
+        // the image half in one part, the event in two.
+        denoise_->full_features_pass.record(encoder, denoised.full_features);
         record_hand_off(encoder, begun);
         MTL4::ComputeCommandEncoder* image = encoder;
         if (begun.second != nullptr) {
