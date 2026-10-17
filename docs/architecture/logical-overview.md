@@ -283,6 +283,34 @@ denoiser a frame has two sizes: every step up to Resolve runs at the
 denoiser and the tone map at the **output size**. In the window the light
 is traced at 1728 x 1117 and the network brings it to every pixel.
 
+**A denoised frame runs in two halves, on two queues** (Milestone 4,
+`docs/research/2026-10-17-milestone-4-plan.md`). The **light half** is
+everything up to Resolve, with the features: Animate, the light, the
+reservoirs' merges, at the light size. The **image half** is the rest:
+the full-size albedo, Denoise and Upscale, Tone map, at the output size.
+The light half is bound by the ray tracing hardware and leaves the
+arithmetic units nearly idle; the image half is the reverse. So frame N's
+image half runs beside frame N + 1's light half, and a frame is shown
+about as often as the slower half takes, not their sum.
+
+- **What crosses between them** is what the denoiser reads of the light
+  half: the frame's radiance and its features. Each frame in flight has
+  its own copy of these, so frame N + 1's light half never writes what
+  frame N's image half is still reading.
+- **What stays in order** is each half's own history. The light half's
+  reservoirs and accumulated image pass from frame to frame on its queue,
+  the denoiser's last output on the other; frame N's image half starts
+  only once frame N's light half has finished.
+- **The cost is one frame of latency.** A frame is still shown only once
+  both its halves have run, so from its light half's start to its showing
+  takes what it did; but frames now leave the light half faster than one
+  frame's two halves take, so one more frame is in flight between being
+  traced and being shown. The image of each frame is the same as when the
+  halves run in turn, bit for bit; only when it is shown changes.
+
+A graph without the denoiser has one half and runs on one queue, as
+before.
+
 The target is not met yet. The denoised frame takes 78 ms in the window
 with the wide network (68 with the small one), and 24 ms at 1920 x 1080
 (`docs/research/2026-10-15-denoiser-live.md`); ReSTIR PT alone at the
@@ -312,7 +340,7 @@ Strix Halo this is measured again, not assumed.
 
 **The network runs on the renderer's own kernels.** The denoiser's
 convolutions are compute kernels of the renderer's own, on the GPU's
-matrix units, inside the frame's one encoder, not a machine-learning
+matrix units, inside the frame's own submission, not a machine-learning
 runtime's: Metal 4's machine-learning encoder runs networks built offline
 for fixed input sizes, on kernels that could neither be tuned nor matched
 to the training's arithmetic (`docs/research/2026-10-15-denoiser-live.md`).

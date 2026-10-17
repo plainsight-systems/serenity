@@ -9,7 +9,10 @@ void FrameTimes::add(frame::Seconds gpu_start, frame::Seconds gpu_end) {
     if (!(gpu_end >= gpu_start)) {
         throw std::invalid_argument("FrameTimes::add: a frame that ended before it began");
     }
-    const frame::Seconds duration = gpu_end - gpu_start;
+    // From the frame before's end if later, never past this one's (above).
+    const frame::Seconds from = last_end_ ? std::clamp(*last_end_, gpu_start, gpu_end) : gpu_start;
+    const frame::Seconds duration = gpu_end - from;
+    last_end_ = gpu_end;
     if (current_.frames == 0) {
         current_.shortest = duration;
         current_.longest = duration;

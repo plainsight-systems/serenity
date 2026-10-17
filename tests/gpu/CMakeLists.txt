@@ -40,11 +40,13 @@ add_dependencies(serenity_gpu_tests serenity-headless)
 
 # The probe kernels, each running a shader half on its own for its test
 # (each kernel's records in its own header, kernels/<kernel>.h, shared with
-# its test alone), and the smallest kernel, smoke, that the library and
-# argument-table tests run.
+# its test alone); the smallest kernel, smoke, that the library and
+# argument-table tests run; and delay, which the hand-off test holds a
+# queue back with.
 serenity_add_metallib(
     TARGET serenity_gpu_tests NAME probes
     SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/kernels/smoke.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/kernels/delay.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/light_probe.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/bsdf_probe.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/sampler_probe.metal"

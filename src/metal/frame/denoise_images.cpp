@@ -75,7 +75,7 @@ bool DenoiseImages::prepare(const frame::FrameInputs& inputs, frame::Extent ligh
     light_ = {};
     const auto pool = scoped_pool();
     padded_ = {align(light.width), align(light.height)};
-    allocate();
+    allocate(light);
     plan();
     light_ = light;
     history_ = joined;
@@ -83,7 +83,7 @@ bool DenoiseImages::prepare(const frame::FrameInputs& inputs, frame::Extent ligh
     return held > 0;
 }
 
-void DenoiseImages::allocate() {
+void DenoiseImages::allocate(frame::Extent light) {
     const denoise::Widths& w = widths_;
     const auto level = [&](std::uint32_t l) { return frame::Extent{padded_.width >> l, padded_.height >> l}; };
     constexpr std::uint32_t bottom = contracts::unet_levels - 1u;  // the lowest level with a skip
@@ -105,6 +105,19 @@ void DenoiseImages::allocate() {
     }
     make(histogram_, contracts::median_bins * sizeof(std::uint32_t), "depth histogram");
     make(median_, sizeof(contracts::MedianState), "depth median");
+    // The hand-off, at the light's own size, the accumulated image's format.
+    for (ResidentTexture& image : light_radiance_) {
+        image.reset();
+        image = make_resident_texture(device_.get(), submission_, MTL::PixelFormatRGBA32Float, light,
+                                      "light radiance hand-off");
+    }
+}
+
+MTL::Texture* DenoiseImages::light_radiance(std::uint32_t slot) const {
+    if (slot >= light_radiance_.size()) {
+        throw MetalError("DenoiseImages::light_radiance: slot " + std::to_string(slot) + " is not one");
+    }
+    return light_radiance_[slot].texture.get();
 }
 
 void DenoiseImages::plan() {

@@ -199,6 +199,40 @@ and still on the Pass axis, so every backend runs the same numbers; and the
 full-size albedo the output is multiplied by, which is the features pass's
 kernel run again at the output's size.
 
+**Running the denoised frame on two queues is two axes, and neither is a
+pass's.** Which work goes on which queue, and the hand-off between them
+(`logical-overview.md`, "The frame"), split in two:
+
+- **GPU backend**: the second queue, its command buffers, the events that
+  order one queue's work after the other's, and when a frame's slot is
+  free again. It knows a submission has one part or two, never what is
+  in them.
+- **Frame graph**: where the frame splits (at the denoiser), which images
+  cross the split and so are kept once per frame in flight, and the
+  barriers on each side. It knows the schedule's passes, never how a
+  queue is made or waited on.
+
+Neither leaks further. The core's schedule says nothing of queues: it says
+what a frame computes, and a backend that cannot overlap (or the Vulkan
+one, with its own queue families) runs the same schedule its own way. No
+pass knows which queue it is on: each records into the encoder it is
+given, after the barriers the frame graph records, as before. The window
+and the headless renderer ask the renderer how many parts its frames have
+and hand that to the submission; they learn nothing else of it.
+
+Three things in it look wrong and are not. **The features are kept twice
+while nothing about them changed**: the second copy is the hand-off's, the
+frame graph's (contract 6), not Film's, whose contract is what a pixel's
+features are. **The light's radiance is copied when the features are
+not**: the features are written whole each frame, so a second set is
+enough, but the accumulated image carries history across frames on the
+light's queue (a still scene's mean), so the denoiser gets a copy of it
+per frame in flight instead. **The full-size albedo, a ray-traced kernel,
+runs in the image half beside the denoiser rather than with the light**:
+it is the denoiser's own input at the output's size, and on the light's
+queue it would lengthen the slower half (Milestone 4's Step 1 measures
+both halves).
+
 **Scene content and animation are two files, not one.** Both describe how the
 fireflies move, which makes merging them tempting. But animation changes when
 a new kind of motion is written, and scene content when the scene is

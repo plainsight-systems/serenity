@@ -2,6 +2,7 @@
 
 #include <array>
 #include <chrono>
+#include <memory>
 #include <string>
 #include <thread>
 #include <utility>
@@ -60,15 +61,20 @@ NS::SharedPtr<MTL::SharedEvent> make_event(MTL::Device* device) {
 Submission::Submission(const Device& device)
     : device_(NS::RetainPtr(device.handle())),
       queue_(make_queue(device_.get())),
+      overlap_(make_queue(device_.get())),
       residency_(make_residency_set(device_.get())),
-      completed_(make_event(device_.get())) {
+      completed_(make_event(device_.get())),
+      first_done_(make_event(device_.get())) {
     const auto pool = scoped_pool();
     queue_->addResidencySet(residency_.get());
+    overlap_->addResidencySet(residency_.get());
     for (Slot& slot : slots_) {
-        slot.allocator = NS::TransferPtr(device_->newCommandAllocator());
-        slot.commands = NS::TransferPtr(device_->newCommandBuffer());
-        if (!slot.allocator || !slot.commands) {
-            throw MetalError("the device made no command allocator or command buffer");
+        for (Part* part : {&slot.first, &slot.second}) {
+            part->allocator = NS::TransferPtr(device_->newCommandAllocator());
+            part->commands = NS::TransferPtr(device_->newCommandBuffer());
+            if (!part->allocator || !part->commands) {
+                throw MetalError("the device made no command allocator or command buffer");
+            }
         }
     }
 }
@@ -98,24 +104,33 @@ std::optional<Completed> Submission::settle(std::uint64_t sequence) {
                     std::to_string(timeout.count()) + " ms: the GPU has stopped");
     }
     // The event says the GPU is done; the feedback, which carries any error,
-    // comes separately and usually just after. Wait for it, bounded.
-    const Feedback& feedback = *slot.feedback;
+    // comes separately and usually just after, a part's at a time. Wait for
+    // each part's, bounded.
     const auto deadline = std::chrono::steady_clock::now() + timeout;
-    while (feedback.arrived.load(std::memory_order_acquire) < sequence + 1) {
-        if (std::chrono::steady_clock::now() > deadline) {
-            throw MetalError("no feedback for submission " + std::to_string(sequence) + " within " +
-                        std::to_string(timeout.count()) + " ms");
+    const auto arrived = [&](const Feedback& feedback) {
+        while (feedback.arrived.load(std::memory_order_acquire) < sequence + 1) {
+            if (std::chrono::steady_clock::now() > deadline) {
+                throw MetalError("no feedback for submission " + std::to_string(sequence) + " within " +
+                                 std::to_string(timeout.count()) + " ms");
+            }
+            std::this_thread::sleep_for(feedback_poll);
         }
-        std::this_thread::sleep_for(feedback_poll);
-    }
-    if (feedback.failed.load(std::memory_order_acquire)) {
-        throw MetalError(feedback.failure);
+        if (feedback.failed.load(std::memory_order_acquire)) {
+            throw MetalError(feedback.failure);
+        }
+    };
+    const Feedback& first = *slot.first.feedback;
+    arrived(first);
+    // A two-part submission's record spans both parts (submission.h).
+    const Feedback& last = slot.parts == Parts::two ? *slot.second.feedback : first;
+    if (slot.parts == Parts::two) {
+        arrived(last);
     }
     slot.settled_through = sequence + 1;
-    return Completed{sequence, feedback.gpu_start, feedback.gpu_end};
+    return Completed{sequence, first.gpu_start, last.gpu_end};
 }
 
-FrameSlot Submission::begin() {
+FrameSlot Submission::begin(Parts parts) {
     if (finished_) {
         throw MetalError("begin() after finish()");
     }
@@ -133,11 +148,46 @@ FrameSlot Submission::begin() {
         settled = settle(sequence - frames_in_flight);
     }
 
-    slot.allocator->reset();
-    slot.commands->beginCommandBuffer(slot.allocator.get());
+    slot.parts = parts;
+    slot.first.allocator->reset();
+    slot.first.commands->beginCommandBuffer(slot.first.allocator.get());
+    MTL4::CommandBuffer* second = nullptr;
+    if (parts == Parts::two) {
+        slot.second.allocator->reset();
+        slot.second.commands->beginCommandBuffer(slot.second.allocator.get());
+        second = slot.second.commands.get();
+    }
     open_ = true;
     ++next_;
-    return FrameSlot{slot.commands.get(), index, sequence, settled};
+    return FrameSlot{slot.first.commands.get(), second, index, sequence, settled};
+}
+
+// Commits `commands` to `queue` with a feedback handler writing `state`
+// (submission.h, Failure is visible). The handler holds its own reference
+// to what it writes. The options object is made per commit: the API's
+// shape. noexcept: the handler runs inside an Objective-C block on Metal's
+// queue, which an exception must not unwind through, so one (a failed
+// allocation while building the message) ends the program at once instead
+// (E.12). Called inside an autorelease pool.
+void Submission::commit_part(MTL4::CommandQueue* queue, MTL4::CommandBuffer* commands,
+                             const std::shared_ptr<Feedback>& state, std::uint64_t sequence, const char* part) {
+    auto options = NS::TransferPtr(MTL4::CommitOptions::alloc()->init());
+    options->addFeedbackHandler(
+        [state, sequence, part](MTL4::CommitFeedback* feedback) noexcept {
+            if (feedback != nullptr && feedback->error() != nullptr &&
+                !state->failed.load(std::memory_order_relaxed)) {
+                state->failure = "submission " + std::to_string(sequence) + part + " failed on the GPU: " +
+                                 describe(feedback->error());
+                state->failed.store(true, std::memory_order_release);
+            }
+            if (feedback != nullptr) {
+                state->gpu_start = frame::Seconds{feedback->GPUStartTime()};
+                state->gpu_end = frame::Seconds{feedback->GPUEndTime()};
+            }
+            state->arrived.store(sequence + 1, std::memory_order_release);
+        });
+    const std::array<const MTL4::CommandBuffer*, 1> buffers{commands};
+    queue->commit(buffers.data(), buffers.size(), options.get());
 }
 
 void Submission::end_and_commit(const MTL::Drawable* drawable) {
@@ -150,39 +200,38 @@ void Submission::end_and_commit(const MTL::Drawable* drawable) {
     }
     const std::uint64_t sequence = next_ - 1;
     Slot& slot = slots_[sequence % frames_in_flight];
-    slot.commands->endCommandBuffer();
+    const bool two = slot.parts == Parts::two;
+    slot.first.commands->endCommandBuffer();
+    if (two) {
+        slot.second.commands->endCommandBuffer();
+    }
 
     const auto pool = scoped_pool();
-    if (drawable != nullptr) {
-        queue_->wait(drawable);
+    // The queue of the last part writes the drawable (submission.h).
+    MTL4::CommandQueue* const last = two ? overlap_.get() : queue_.get();
+    if (!two && last_committed_ == Parts::two) {
+        // One part after two: after every part before it (submission.h).
+        queue_->wait(completed_.get(), sequence);
     }
-
-    // Metal 4 reports a submission's GPU error here, on its own queue. The
-    // handler holds its own reference to what it writes (submission.h). The
-    // options object is made per commit: the API's shape. noexcept: the
-    // handler runs inside an Objective-C block on Metal's queue, which an
-    // exception must not unwind through, so one (a failed allocation while
-    // building the message) ends the program at once instead (E.12).
-    auto options = NS::TransferPtr(MTL4::CommitOptions::alloc()->init());
-    options->addFeedbackHandler([state = slot.feedback, sequence](MTL4::CommitFeedback* feedback) noexcept {
-        if (feedback != nullptr && feedback->error() != nullptr && !state->failed.load(std::memory_order_relaxed)) {
-            state->failure = "submission " + std::to_string(sequence) + " failed on the GPU: " +
-                             describe(feedback->error());
-            state->failed.store(true, std::memory_order_release);
+    if (two) {
+        commit_part(queue_.get(), slot.first.commands.get(), slot.first.feedback, sequence, ", part 1,");
+        queue_->signalEvent(first_done_.get(), sequence + 1);
+        overlap_->wait(first_done_.get(), sequence + 1);
+        if (drawable != nullptr) {
+            overlap_->wait(drawable);
         }
-        if (feedback != nullptr) {
-            state->gpu_start = frame::Seconds{feedback->GPUStartTime()};
-            state->gpu_end = frame::Seconds{feedback->GPUEndTime()};
+        commit_part(overlap_.get(), slot.second.commands.get(), slot.second.feedback, sequence, ", part 2,");
+    } else {
+        if (drawable != nullptr) {
+            queue_->wait(drawable);
         }
-        state->arrived.store(sequence + 1, std::memory_order_release);
-    });
-
-    const std::array<const MTL4::CommandBuffer*, 1> buffers{slot.commands.get()};
-    queue_->commit(buffers.data(), buffers.size(), options.get());
-    if (drawable != nullptr) {
-        queue_->signalDrawable(drawable);
+        commit_part(queue_.get(), slot.first.commands.get(), slot.first.feedback, sequence, "");
     }
-    queue_->signalEvent(completed_.get(), sequence + 1);
+    if (drawable != nullptr) {
+        last->signalDrawable(drawable);
+    }
+    last->signalEvent(completed_.get(), sequence + 1);
+    last_committed_ = slot.parts;
     open_ = false;
 }
 
@@ -261,6 +310,7 @@ void Submission::add_residency_set(MTL::ResidencySet* set) {
         throw MetalError("add_residency_set() with no set");
     }
     queue_->addResidencySet(set);
+    overlap_->addResidencySet(set);
 }
 
 void Submission::remove_residency_set(MTL::ResidencySet* set) noexcept {
@@ -269,6 +319,7 @@ void Submission::remove_residency_set(MTL::ResidencySet* set) noexcept {
         abandoned_ = true;  // it may have recorded a use of what `set` holds
     }
     queue_->removeResidencySet(set);
+    overlap_->removeResidencySet(set);
 }
 
 Resident::Resident(Submission& submission, MTL::Allocation* allocation)

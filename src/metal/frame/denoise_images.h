@@ -37,10 +37,17 @@ namespace serenity::metal {
 //   - the history, last frame's output and this frame's, a float4 an output
 //     pixel of twice the padded grid, two of them by the frame's parity;
 //   - the depth median's bins and state (contracts::MedianState);
-//   - every dispatch's ConvParams and ResampleParams, written once per size.
+//   - every dispatch's ConvParams and ResampleParams, written once per size;
+//   - the hand-off of the light's radiance (metal/frame/renderer.h, "Two
+//     halves"): one RGBA32Float image at the light size per frame slot,
+//     which the light half copies its accumulated image into and the
+//     denoise pass reads, so frame N + 1's light never writes the copy
+//     frame N's denoiser reads (CP.3; GPU.7, MEM.4: one per frame in
+//     flight). Private, the GPU's alone; 62 MB at 1728 x 1117.
 //
-// Shared storage, zeroed when made: the borders must be zero and nothing
-// writes them, and a private buffer's first contents are not defined.
+// The buffers are in shared storage, zeroed when made: the borders must be
+// zero and nothing writes them, and a private buffer's first contents are
+// not defined. The hand-off images are written whole before they are read.
 // Nothing is aliased: about 0.95 GB at a 1728 x 1117 light for the wide
 // network (a quarter of it the two histories, 2 x 7.7 M float4s), on a machine
 // with far more; GPU.9's aliasing would save little: the network's input
@@ -107,6 +114,9 @@ public:
     // Last frame's output and this frame's, by the prepared frame's parity.
     MTL::GPUAddress history() const noexcept;
     MTL::GPUAddress next_history() const noexcept;
+    // Frame slot `slot`'s hand-off of the light's radiance (above). Throws
+    // MetalError for a slot that is not one (I.6).
+    MTL::Texture* light_radiance(std::uint32_t slot) const;
 
 private:
     using Buffer = ResidentBuffer;  // metal/device/resident.h
@@ -120,9 +130,10 @@ private:
 
     void make(Buffer& buffer, std::size_t bytes, std::string_view what);
     void make(Activations& a, frame::Extent size, std::uint32_t stride, std::string_view what);
-    // At a new size: every buffer made (allocate), then every dispatch's
-    // parameters planned and written once (plan).
-    void allocate();
+    // At a new size, the light's `light`: every buffer and image made
+    // (allocate), then every dispatch's parameters planned and written once
+    // (plan).
+    void allocate(frame::Extent light);
     void plan();
 
     NS::SharedPtr<MTL::Device> device_;
@@ -145,6 +156,7 @@ private:
     Buffer histogram_;
     Buffer median_;
     Buffer params_;
+    std::array<ResidentTexture, frames_in_flight> light_radiance_;  // the hand-off, by slot
     std::array<Conv, convolutions> convs_{};
     std::array<Resample, resamplings> pools_{};
 };
