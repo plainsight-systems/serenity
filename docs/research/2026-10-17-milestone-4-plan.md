@@ -59,6 +59,14 @@ hardware idle.
    Milestone 3 does it (data about 4 h on the Mac; training on the RTX 3090,
    below).
 
+Each step follows the project's design order (docs/process/MEMORY.md):
+the architecture documents first (docs/architecture/: the logical overview,
+the change axes and the file mapping, updated for what the step adds or
+moves), then the design written into the headers it touches, with both C++
+guideline corpora (the C++ Core Guidelines and the C++ performance
+guidelines) checked rule by rule as each header is written and the
+deciding rules cited by ID, then the code.
+
 Each change is measured as it lands (per-dispatch timestamps, frame time
 at both sizes), kept only if faster, and checked for an unchanged image
 except where the change is meant to alter it (2's firefly shadows, 4),
