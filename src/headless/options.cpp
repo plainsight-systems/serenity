@@ -230,11 +230,13 @@ bool written(Write write, RunFrame frame) {
 }
 
 void prepare_output(const std::filesystem::path& out) {
+    // Before making it: create_directories() throws its own filesystem_error
+    // for a file in the directory's place, not this refusal.
+    if (std::filesystem::exists(out) && !std::filesystem::is_directory(out)) {
+        throw OptionsError("--out " + out.string() + " is not a directory");
+    }
     if (std::filesystem::create_directories(out)) {
         return;  // made just now, empty
-    }
-    if (!std::filesystem::is_directory(out)) {
-        throw OptionsError("--out " + out.string() + " is not a directory");
     }
     if (!std::filesystem::is_empty(out)) {
         throw OptionsError("--out " + out.string() +

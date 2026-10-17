@@ -3,39 +3,16 @@
 // whole, and the headless renderer's output directory.
 
 #include <filesystem>
-#include <fstream>
 #include <limits>
 #include <stdexcept>
-#include <string>
 #include <vector>
-
-#include <unistd.h>
 
 #include <doctest/doctest.h>
 
 #include "app/clock.h"
 #include "app/options.h"
 #include "headless/options.h"
-
-namespace {
-
-// A directory of the test's own under the system's temporary directory,
-// named by the process so two runs at once (both presets) never share one,
-// and removed when the test ends (R.1).
-struct ScratchDirectory {
-    std::filesystem::path path;
-
-    explicit ScratchDirectory(const std::string& name)
-        : path(std::filesystem::temp_directory_path() /
-               ("serenity-programs-test-" + name + "-" + std::to_string(::getpid()))) {
-        std::filesystem::remove_all(path);
-    }
-    ~ScratchDirectory() { std::filesystem::remove_all(path); }
-    ScratchDirectory(const ScratchDirectory&) = delete;
-    ScratchDirectory& operator=(const ScratchDirectory&) = delete;
-};
-
-}  // namespace
+#include "support/files.h"
 
 TEST_CASE("window: the clock counts from its construction and never runs backwards") {
     const serenity::app::Clock clock;
@@ -79,25 +56,30 @@ TEST_CASE("both programs read a number whole: no sign, no space, nothing after i
 
 TEST_CASE("headless: a way of writing with no rule is an error, not a frame written") {
     using serenity::headless::Write;
-    // An enumeration with no fixed type holds the values its enumerators'
-    // bits span: 0 to 3 here, 3 naming none.
+    // A scoped enumeration's underlying type is int, fixed, so it holds any
+    // int: 3 names none.
     CHECK_THROWS_AS(serenity::headless::written(static_cast<Write>(3), {.after_first = 0, .frames = 1}),
                     std::logic_error);
 }
 
 TEST_CASE("headless: the output directory holds this run's frames and nothing else") {
     using serenity::headless::prepare_output;
-    const ScratchDirectory scratch("out");
-    const std::filesystem::path out = scratch.path / "frames";
+    using serenity::headless::OptionsError;
+    const serenity::tests::ScratchDirectory scratch("programs-test-out");
+    const std::filesystem::path out = scratch.path() / "parent" / "frames";
 
     CHECK_NOTHROW(prepare_output(out));  // made, with its parents
     CHECK(std::filesystem::is_directory(out));
     CHECK_NOTHROW(prepare_output(out));  // there and empty: taken
 
-    std::ofstream(out / "frame-000000.png") << "an earlier run's frame";
-    CHECK_THROWS_AS(prepare_output(out), serenity::headless::OptionsError);
+    serenity::tests::write_bytes(out / "frame-000000.png", "an earlier run's frame");
+    CHECK_THROWS_WITH_AS(prepare_output(out), doctest::Contains("already holds files"), OptionsError);
 
-    const std::filesystem::path file = scratch.path / "a-file";
-    std::ofstream(file) << "not a directory";
-    CHECK_THROWS(prepare_output(file));
+    // A file in the directory's place: OptionsError, as the header states,
+    // not the file system's own error from trying to make it.
+    const std::filesystem::path file = scratch / "a-file";
+    serenity::tests::write_bytes(file, "not a directory");
+    CHECK_THROWS_WITH_AS(prepare_output(file), doctest::Contains("is not a directory"), OptionsError);
+    // And one that cannot be made, under that file: the file system's error.
+    CHECK_THROWS_AS(prepare_output(file / "frames"), std::filesystem::filesystem_error);
 }
