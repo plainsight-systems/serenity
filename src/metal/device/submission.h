@@ -32,12 +32,20 @@ struct Completed {
     frame::Seconds gpu_end{0.0};    // host time
 };
 
+// How many parts a submission has (Submission, below, "Two parts"): one,
+// on the main queue; or two, the second on the overlap queue, after the
+// first. A type, not a count or a flag, so no other number can be asked
+// for (I.4).
+enum class Parts { one, two };
+
 // A submission begun: the command buffer to record into, its slot, and its
 // sequence number, for wait_until_complete(). `settled` is the earlier
 // submission that begin() settled to free the slot, if it was not settled
-// already.
+// already. `second` is the second part's command buffer, on the overlap
+// queue, for a submission begun with Parts::two; null for one part.
 struct FrameSlot {
     MTL4::CommandBuffer* commands = nullptr;
+    MTL4::CommandBuffer* second = nullptr;
     std::uint32_t slot = 0;
     std::uint64_t sequence = 0;
     std::optional<Completed> settled;
@@ -73,9 +81,10 @@ private:
 
 // Submission.
 //
-// How a frame's work reaches the GPU, through Metal 4: one command queue,
-// and the per-frame resources that let the CPU record frame N + 1 while the
-// GPU runs frame N (GPU.7).
+// How a frame's work reaches the GPU, through Metal 4: the main command
+// queue, an overlap queue beside it for a submission's second part (below,
+// "Two parts"), and the per-frame resources that let the CPU record frame
+// N + 1 while the GPU runs frame N (GPU.7).
 //
 // The frames in flight. Two, so recording and execution overlap without the
 // latency and memory a deeper ring adds (GPU.7's caveat). Each slot owns a
@@ -102,6 +111,49 @@ private:
 // Anything else the CPU writes for a frame and the GPU reads (frame constants,
 // renderer.h) is ringed by the same slot, so it is never overwritten while the
 // GPU may still read it.
+//
+// Two parts. begin(Parts::two) begins a submission whose work is in two
+// command buffers: the first on the main queue, as a one-part submission's;
+// the second on the overlap queue, a queue of its own, so the GPU may run
+// it beside the main queue's next submission (Apple: work on separate
+// MTL4CommandQueues runs concurrently unless an event orders it; the
+// overlap is the GPU's to find, and is measured, not assumed: GPU.7's
+// caveat). The renderer puts a denoised frame's light in the first and its
+// image in the second (metal/frame/renderer.h). The order, every edge
+// explicit and narrow, an event a value per submission rather than a wait
+// for a whole queue (GPU.7, GPU.8):
+//   - part 2 of submission n runs after part 1 of submission n: the main
+//     queue signals `first_done` = n + 1 after part 1, and the overlap
+//     queue waits for it before part 2;
+//   - part 2 of n runs after part 2 of n - 1 only by its queue's order and
+//     the barrier its recorder records (the renderer's), as one queue's
+//     frames always have;
+//   - part 1 of n + 1 does not wait for part 2 of n: that is the overlap.
+//     What part 1 of n + 1 must not touch is what part 2 of n reads, and
+//     that is the slot's: the slot rule above already keeps it, since part
+//     1 of n + 2, the next to use slot n % 2, is begun only once all of
+//     submission n, part 2 with it, has completed. So whatever a part 2
+//     reads of what a part 1 wrote must be ringed by the slot (the
+//     renderer's hand-off images, renderer.h): CP.3, the writer and the
+//     reader never share a copy at once;
+//   - a submission is complete when its last part is: `completed` = n + 1
+//     is signalled by the overlap queue after part 2, so begin()'s wait,
+//     wait_until_complete() and has_completed() mean the whole frame;
+//   - a one-part submission after a two-part one (a readback, renderer's
+//     read_accumulated()) runs after every part before it: the main queue
+//     waits for `completed` = n first, so it sees what part 2 wrote. One
+//     part after one part waits for nothing new: the barrier its recorder
+//     records orders it, as before, so a graph that never begins two parts
+//     submits exactly what it did.
+// The drawable a present() writes is waited for and signalled on the queue
+// of the submission's last part, which writes it.
+//
+// A two-part submission's Completed record spans both parts: from when the
+// GPU began part 1 to when it finished part 2, the frame's time on the GPU
+// from its first work to its last. Frames' records may then overlap; what
+// that means for a frame time is Measurement's (core/measurement/
+// frame_times.h). Both parts' feedback is waited for, and either's error
+// is the submission's.
 //
 // The CPU never waits for the whole queue, only for the one submission whose
 // slot it needs (GPU.7). The one deliberate full wait is
@@ -161,7 +213,12 @@ private:
 // Cost of a frame, from the CPU: one event wait (it returns at once unless
 // the GPU is two frames behind); a poll for that submission's feedback,
 // which Metal delivers just after the event; one allocator reset, one
-// command buffer begun and ended, one commit, one event signal. The poll
+// command buffer begun and ended, one commit, one event signal; for two
+// parts, a second of each, a second feedback polled, and one event wait,
+// on the overlap queue, the GPU's. The overlap queue, its residency (the
+// same set as the main queue's) and its slots' allocators and buffers are
+// made once, at construction, whether or not any submission has two parts:
+// a queue and two empty buffers, no memory a frame uses. The poll
 // usually sleeps once or twice, a few tens of microseconds while the GPU
 // runs the frame between. A blocking wait on a second event, set by the
 // feedback handler, would wake once instead (CONC.4); it is kept a poll,
@@ -184,9 +241,9 @@ public:
     Submission& operator=(Submission&&) = delete;
     ~Submission();
 
-    // Begins the next submission. Its command buffer is valid until the
-    // matching commit() or present().
-    FrameSlot begin();
+    // Begins the next submission, of `parts` (above, "Two parts"). Its
+    // command buffers are valid until the matching commit() or present().
+    FrameSlot begin(Parts parts = Parts::one);
 
     // Ends and commits the frame begun last.
     void commit();
@@ -238,8 +295,8 @@ public:
     // is null.
     void make_resident(MTL::Allocation* allocation);
 
-    // Adds a residency set another object owns (a layer's) to the queue, and
-    // takes it out again: remove_residency_set() first waits as wait_idle()
+    // Adds a residency set another object owns (a layer's) to both queues,
+    // and takes it out again: remove_residency_set() first waits as wait_idle()
     // does, for the owner's destructor. Throws MetalError if `set` is null.
     void add_residency_set(MTL::ResidencySet* set);
     void remove_residency_set(MTL::ResidencySet* set) noexcept;
@@ -264,27 +321,41 @@ private:
         frame::Seconds gpu_end{0.0};
     };
 
-    struct Slot {
+    // One part's command allocator, buffer and feedback, in a slot.
+    struct Part {
         NS::SharedPtr<MTL4::CommandAllocator> allocator;
         NS::SharedPtr<MTL4::CommandBuffer> commands;
         std::shared_ptr<Feedback> feedback = std::make_shared<Feedback>();
+    };
+
+    struct Slot {
+        Part first;   // on the main queue
+        Part second;  // on the overlap queue, for a two-part submission
+        Parts parts = Parts::one;  // of the submission last begun in this slot
         // The sequence + 1 of the last submission in this slot settled; read
         // and written only on the caller's thread.
         std::uint64_t settled_through = 0;
     };
 
-    // Waits for submission `sequence`'s event, then its feedback, and throws
-    // if either does not come in time or the submission failed. Returns its
-    // record if this call settled it, none if it was settled already.
+    // Waits for submission `sequence`'s event, then its parts' feedback, and
+    // throws if any does not come in time or the submission failed. Returns
+    // its record if this call settled it, none if it was settled already.
     std::optional<Completed> settle(std::uint64_t sequence);
     void end_and_commit(const MTL::Drawable* drawable);
+    // Commits one part's `commands` to `queue`, its feedback handler writing
+    // `state`; `part` names it in a failure's message ("" for one part).
+    static void commit_part(MTL4::CommandQueue* queue, MTL4::CommandBuffer* commands,
+                            const std::shared_ptr<Feedback>& state, std::uint64_t sequence, const char* part);
 
     NS::SharedPtr<MTL::Device> device_;
-    NS::SharedPtr<MTL4::CommandQueue> queue_;
+    NS::SharedPtr<MTL4::CommandQueue> queue_;    // the main queue
+    NS::SharedPtr<MTL4::CommandQueue> overlap_;  // a two-part submission's second part's
     NS::SharedPtr<MTL::ResidencySet> residency_;
-    NS::SharedPtr<MTL::SharedEvent> completed_;
+    NS::SharedPtr<MTL::SharedEvent> completed_;   // n + 1 once submission n has completed
+    NS::SharedPtr<MTL::SharedEvent> first_done_;  // n + 1 once part 1 of two-part submission n has
     std::array<Slot, frames_in_flight> slots_;
     std::uint64_t next_ = 0;   // the sequence begin() hands out next
+    Parts last_committed_ = Parts::one;  // the parts of the last submission committed
     bool open_ = false;        // a submission is begun and not yet committed
     bool finished_ = false;    // finish() has run; nothing may be begun after
     bool abandoned_ = false;   // an allocation left the set while open_: never commit it

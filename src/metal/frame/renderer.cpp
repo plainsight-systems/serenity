@@ -290,13 +290,31 @@ void Renderer::MneeFamily::bind(FrameResources& resources, const FrameSlot& begu
 // The features pass's (renderer.h): its images, its constants' ring and,
 // when shapes move, the shapes as the frame before placed them.
 Renderer::FeatureFamily::FeatureFamily(const Device& device, Submission& submission,
-                                       const scene::SceneDescription& scene, bool moves)
-    : images(device, submission),
-      constants(device, submission, std::vector<std::byte>(sizeof(contracts::FeatureConstants)),
+                                       const scene::SceneDescription& scene, bool moves, Sets kept)
+    : constants(device, submission, std::vector<std::byte>(sizeof(contracts::FeatureConstants)),
                 FrameArray::Copies::per_frame) {
+    sets[0].emplace(device, submission);
+    if (kept == Sets::per_slot) {
+        for (std::size_t slot = 1; slot < sets.size(); ++slot) {
+            sets[slot].emplace(device, submission);
+        }
+    }
     if (moves) {
         previous_transforms.emplace(device, submission, scene.shapes.transforms, FrameArray::Copies::per_frame);
     }
+}
+
+void Renderer::FeatureFamily::prepare(frame::Extent light) {
+    for (std::optional<FeatureImages>& set : sets) {
+        if (set) {
+            set->prepare(light);
+        }
+    }
+}
+
+const FeatureImages& Renderer::FeatureFamily::images(std::uint32_t slot) const {
+    // One set per slot when handed off, else the one (renderer.h).
+    return sets[1] ? *sets.at(slot) : *sets[0];
 }
 
 void Renderer::FeatureFamily::bind(FrameResources& resources, const FrameSlot& begun,
@@ -306,10 +324,12 @@ void Renderer::FeatureFamily::bind(FrameResources& resources, const FrameSlot& b
     resources.feature_constants = write_feature_constants(constants, begun.slot, previous, light);
     resources.feature_last_transforms =
         previous_transforms ? previous_transforms->address(begun.slot) : resources.transforms;
-    resources.albedo = images.albedo();
-    resources.normal = images.normal();
-    resources.depth = images.depth();
-    resources.motion = images.motion();
+    const FeatureImages& written = images(begun.slot);
+    resources.albedo = written.albedo();
+    resources.normal = written.normal();
+    resources.depth = written.depth();
+    resources.motion = written.motion();
+    last_slot = begun.slot;
 }
 
 // The denoise pass's (renderer.h): the network's last width, its buffers,
@@ -322,10 +342,13 @@ Renderer::DenoiseFamily::DenoiseFamily(const Device& device, Submission& submiss
       output_constants(device, submission, std::vector<std::byte>(ring_slot_size), FrameArray::Copies::per_frame),
       constants(device, submission, std::vector<std::byte>(sizeof(contracts::DenoiseConstants)),
                 FrameArray::Copies::per_frame),
-      full_features(device, submission),
       full_feature_constants(device, submission, std::vector<std::byte>(sizeof(contracts::FeatureConstants)),
                              FrameArray::Copies::per_frame),
-      full_features_pass(library) {}
+      full_features_pass(library) {
+    for (std::optional<FeatureImages>& set : full_features) {
+        set.emplace(device, submission);
+    }
+}
 
 Renderer::Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
                    const scene::SceneDescription* scene)
@@ -371,7 +394,10 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     // The features pass's. Its pass reads a scene, which the check above
     // has made sure of.
     if (frame::writes_features(schedule)) {
-        features_.emplace(device, submission_, *scene, animation::moves(animation_));
+        // One set per frame slot when the denoiser reads them from the
+        // other queue (renderer.h, "Two halves").
+        features_.emplace(device, submission_, *scene, animation::moves(animation_),
+                          denoises_ ? FeatureFamily::Sets::per_slot : FeatureFamily::Sets::one);
     }
     // The denoise pass's. The core has made sure the graph has the features
     // pass and a light pass before it (frame::invalid).
@@ -394,6 +420,11 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
     if (const auto first = std::ranges::find_if(schedule.passes, crosses_frames); first != schedule.passes.end()) {
         first_cross_frame_ = static_cast<std::size_t>(first - schedule.passes.begin());
     }
+    // The image half begins at the denoise pass (renderer.h, "Two halves");
+    // the core puts every pass that crosses frames on the light's side of it
+    // (frame::invalid: the features and a light pass come before it).
+    image_begins_ = static_cast<std::size_t>(std::ranges::find(schedule.passes, frame::PassKind::denoise) -
+                                             schedule.passes.begin());
     const bool temporal = has(schedule, frame::PassKind::restir_temporal);
     const bool spatial = has(schedule, frame::PassKind::restir_spatial);
     steps_.reserve(schedule.passes.size());
@@ -612,10 +643,12 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
         images_->prepare(size);
     }
     if (features_) {
-        features_->images.prepare(light);
+        features_->prepare(light);
     }
     if (denoise_) {
-        denoise_->full_features.prepare(size);
+        for (std::optional<FeatureImages>& set : denoise_->full_features) {
+            set->prepare(size);
+        }
     }
     if (mnee_) {
         mnee_->list.prepare(light);
@@ -674,10 +707,10 @@ void Renderer::read_accumulated(std::span<float> out) {
 }
 
 FeatureImages::Read Renderer::read_features() const {
-    if (!features_ || features_->images.albedo() == nullptr) {
+    if (!features_ || features_->images(features_->last_slot).albedo() == nullptr) {
         throw MetalError("read_features: the frame graph has no features pass, or no frame has made its images");
     }
-    return features_->images.read();
+    return features_->images(features_->last_slot).read();
 }
 
 // What prepare() readied for the frame: checked to be this frame at this
@@ -829,10 +862,11 @@ Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& res
     full_features = output;
     full_features.feature_constants =
         write_feature_constants(d.full_feature_constants, begun.slot, inputs.previous, size);
-    full_features.albedo = d.full_features.albedo();
-    full_features.normal = d.full_features.normal();
-    full_features.depth = d.full_features.depth();
-    full_features.motion = d.full_features.motion();
+    const FeatureImages& full = *d.full_features.at(begun.slot);  // the slot's (renderer.h)
+    full_features.albedo = full.albedo();
+    full_features.normal = full.normal();
+    full_features.depth = full.depth();
+    full_features.motion = full.motion();
 
     // Its constants: the view axes, the sizes, whether there is a history.
     const camera::ViewAxes axes = camera::view_axes(*inputs.camera);
@@ -852,25 +886,27 @@ Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& res
 
     FrameResources& denoising = out.denoising;
     denoising = output;
-    denoising.light_radiance = accumulation_->texture();
+    denoising.light_radiance = d.images.light_radiance(begun.slot);  // the hand-off (renderer.h)
     denoising.albedo = resources.albedo;
     denoising.normal = resources.normal;
     denoising.depth = resources.depth;
     denoising.motion = resources.motion;
-    denoising.full_albedo = d.full_features.albedo();
+    denoising.full_albedo = full.albedo();
     denoising.denoise_constants = d.constants.address(begun.slot);
     denoising.denoise = &d.images;
     return out;
 }
 
-// The schedule's passes in order into `encoder`, each after the barriers
-// its reads need (renderer.h).
-void Renderer::record_steps(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources,
-                            const DenoiseResources& denoised_resources) {
+// The light half's passes in order into `encoder`, each after the barriers
+// its reads need (renderer.h): every pass before the denoise pass.
+void Renderer::record_light(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) {
     encoder->setArgumentTable(resources.arguments);
+    // With a hand-off, the queue's earlier copies too: the frame before's
+    // copy read the accumulated image this frame's shade writes (renderer.h,
+    // "Two halves"). Otherwise dispatches alone, as every graph's was.
+    const MTL::Stages before = denoise_ ? MTL::StageDispatch | MTL::StageBlit : MTL::StageDispatch;
     bool restir_before = false;  // whether a ReSTIR pass came before, in this frame
-    bool denoised = false;       // whether the denoise pass came before, in this frame
-    for (std::size_t i = 0; i < steps_.size(); ++i) {
+    for (std::size_t i = 0; i < image_begins_; ++i) {
         const Step& step = steps_[i];
         if (i == first_cross_frame_) {
             // The frames in flight share the images between passes, the
@@ -879,7 +915,7 @@ void Renderer::record_steps(MTL4::ComputeCommandEncoder* encoder, const FrameRes
             // accumulated image before the frame before has written it. One
             // barrier for every such hazard, before the first pass that
             // touches any (GPU.8).
-            encoder->barrierAfterQueueStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+            encoder->barrierAfterQueueStages(before, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
         }
         if (reuses_samples(step.kind) && restir_before) {
             // What the ReSTIR pass before it wrote this frame: the records,
@@ -891,18 +927,33 @@ void Renderer::record_steps(MTL4::ComputeCommandEncoder* encoder, const FrameRes
             // The radiance image an earlier pass of this frame wrote.
             barrier_after_dispatch(encoder);
         }
+        std::visit([&](const auto& pass) { pass.record(encoder, resources); }, step.pass);
+    }
+}
+
+// The light's radiance into the slot's hand-off image, after the shade's
+// dispatch wrote it (renderer.h, "Two halves"; GPU.8: dispatch before
+// blit). Precondition: the graph denoises.
+void Renderer::record_hand_off(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun) {
+    encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageBlit, MTL4::VisibilityOptionDevice);
+    encoder->copyFromTexture(accumulation_->texture(), denoise_->images.light_radiance(begun.slot));
+}
+
+// The image half's passes in order into `encoder`, each after the barriers
+// its reads need (renderer.h): the denoise pass and every pass after it.
+void Renderer::record_image(MTL4::ComputeCommandEncoder* encoder, const DenoiseResources& denoised_resources) {
+    for (std::size_t i = image_begins_; i < steps_.size(); ++i) {
+        const Step& step = steps_[i];
+        if (frame::reads_radiance(step.kind)) {
+            // The radiance an earlier pass wrote: the light's, handed off,
+            // for the denoise pass; the denoise pass's for the tone map.
+            barrier_after_dispatch(encoder);
+        }
         if (step.kind == frame::PassKind::denoise) {
-            // The full-size albedo first, then the pass, both after the
-            // barrier above. Only the pass's last dispatch reads the
-            // full-size albedo, after barriers of its own (passes/denoise/
-            // denoise.h), so its first dispatches overlap this one.
-            denoise_->full_features_pass.record(encoder, denoised_resources.full_features);
             std::visit([&](const auto& pass) { pass.record(encoder, denoised_resources.denoising); }, step.pass);
-            denoised = true;
             continue;
         }
-        const FrameResources& given = denoised ? denoised_resources.output : resources;
-        std::visit([&](const auto& pass) { pass.record(encoder, given); }, step.pass);
+        std::visit([&](const auto& pass) { pass.record(encoder, denoised_resources.output); }, step.pass);
     }
 }
 
@@ -911,6 +962,9 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
     if (begun.commands == nullptr || begun.slot >= frames_in_flight || target == nullptr || size.width == 0 ||
         size.height == 0) {
         throw MetalError("Renderer::record: no command buffer, no frame slot, no target, or an empty image");
+    }
+    if (begun.second != nullptr && parts() == Parts::one) {
+        throw MetalError("Renderer::record: a submission of two parts for a frame graph of one (Renderer::parts)");
     }
     check_time(inputs.time, inputs.index, "its time");
     const Prepared prepared = take_prepared(inputs, size);
@@ -930,10 +984,39 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         throw MetalError("Renderer::record: the command buffer made no compute encoder");
     }
     animate(encoder, begun, inputs, previous);
-    const DenoiseResources denoised = denoise_ ? denoise_resources(resources, begun, inputs, size, prepared)
-                                               : DenoiseResources{resources, resources, resources};
-    record_steps(encoder, resources, denoised);
-    encoder->endEncoding();
+    record_light(encoder, resources);
+    if (!denoise_) {
+        encoder->endEncoding();
+    } else {
+        const DenoiseResources denoised = denoise_resources(resources, begun, inputs, size, prepared);
+        // The full-size albedo, in the light half (renderer.h, "Two
+        // halves"): it writes the slot's own images, which nothing before
+        // it in the frame reads, so no barrier before it, as none before the
+        // light-size features; the copy's barrier after it orders it before
+        // the image half in one part, the event in two.
+        denoise_->full_features_pass.record(encoder, denoised.full_features);
+        record_hand_off(encoder, begun);
+        MTL4::ComputeCommandEncoder* image = encoder;
+        if (begun.second != nullptr) {
+            // The image half in the second part, on the overlap queue
+            // (renderer.h, "Two halves"): after the light half by the
+            // submission's event, and after the frame before's image half,
+            // the overlap queue's earlier dispatches, by this barrier (GPU.8).
+            encoder->endEncoding();
+            image = begun.second->computeCommandEncoder();
+            if (image == nullptr) {
+                throw MetalError("Renderer::record: the second command buffer made no compute encoder");
+            }
+            image->setArgumentTable(arguments_.get());
+            image->barrierAfterQueueStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+        } else {
+            // One part: the copy before the image half reads it, in place
+            // of the event (renderer.h, "One part for a denoised graph").
+            encoder->barrierAfterEncoderStages(MTL::StageBlit, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+        }
+        record_image(image, denoised);
+        image->endEncoding();
+    }
     // What the next frame's temporal merge asks of this one.
     previous_camera_ = inputs.camera;
     previous_time_ = inputs.time;
@@ -956,7 +1039,7 @@ std::optional<WindowFrame> render_to_window(Submission& submission, Presenter& p
                          " the layer was given");
     }
     renderer.prepare(inputs, size);
-    const FrameSlot begun = submission.begin();
+    const FrameSlot begun = submission.begin(renderer.parts());
     renderer.record(begun, inputs, texture, size);
     submission.present(drawable);
     return WindowFrame{begun.sequence, begun.settled};
@@ -969,7 +1052,7 @@ std::uint64_t render_to_offscreen(Submission& submission, Offscreen& target, Ren
     // has one, drains (P.8).
     const auto pool = scoped_pool();
     renderer.prepare(inputs, target.size());
-    const FrameSlot begun = submission.begin();
+    const FrameSlot begun = submission.begin(renderer.parts());
     renderer.record(begun, inputs, target.texture(), target.size());
     submission.commit();
     return begun.sequence;

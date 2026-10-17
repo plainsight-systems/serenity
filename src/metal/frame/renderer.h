@@ -157,7 +157,9 @@ namespace serenity::metal {
 // describe real hazards, and the frame graph, which knows every pass,
 // synthesizes them). Without it the frames would overlap, which is slower,
 // not faster (docs/research/2026-10-09-pass-costs.md). The queue's wait for
-// the drawable orders the frame against the display (submission.h).
+// the drawable orders the frame against the display (submission.h). A
+// denoised frame's two halves each have such a barrier, on their own
+// queues (below, "Two halves").
 //
 // Frame constants (contracts/frame_constants.h) and the framed camera
 // (contracts/camera.h) reach the shaders through a buffer, because Metal 4's
@@ -270,7 +272,9 @@ namespace serenity::metal {
 // Apart from a temporal graph's last transforms, which are at the time the
 // renderer last recorded, a sample of this frame's own instant when a
 // frame is several (frame_inputs.h, previous). Nothing else changes for a
-// graph without it. Its images are shared by the frames in flight, so the
+// graph without it. In a denoised graph its images are one set per frame
+// slot, the hand-off (below, "Two halves"); in any other, one set the
+// frames in flight share, so the
 // pass counts among those the queue barrier waits before; no barrier of its
 // own in the frame: its one reader, the denoise pass, comes after the
 // barrier recorded for the radiance that pass reads. read_features() copies
@@ -290,13 +294,88 @@ namespace serenity::metal {
 // FeatureImages at the target's size and a second ring of feature
 // constants, written by the features kernel dispatched again at the
 // target's size, as the training's full-size albedo was rendered (docs/
-// research/2026-10-14-denoiser-features.md), recorded as part of the
-// denoise step. Its accumulated image, ReSTIR's arrays, MNEE's list and
-// the features are at the light size; the radiance image and the bloom
-// pyramid at the target's, the radiance image the denoise pass's output,
-// not the accumulated image. Its argument table holds the denoiser's
-// textures (renderer.cpp, texture_bindings()). A graph
-// without it renders as it did: one size, one ring, the same bindings.
+// research/2026-10-14-denoiser-features.md), recorded at the end of the
+// light half (below, "Two halves"). Its accumulated image, ReSTIR's
+// arrays, MNEE's list and the features are at the light size; the
+// radiance image and the bloom pyramid at the target's, the radiance image
+// the denoise pass's output, not the accumulated image. Its argument table
+// holds the denoiser's textures (renderer.cpp, texture_bindings()). A
+// graph without it renders as it did: one size, one ring, the same
+// bindings.
+//
+// Two halves (logical-overview.md, "The frame"; Milestone 4, docs/research/
+// 2026-10-17-milestone-4-plan.md, Step 1). A denoised frame splits at the
+// denoise pass: the light half, animate, every pass before it and the
+// full-size albedo's features kernel, bound by the ray-tracing unit; the
+// image half, the denoise pass and every pass after it, bound by
+// arithmetic. The full-size albedo is the denoiser's input, but its kernel
+// traces rays: in the image half it ran beside the light half's tracing,
+// both on the ray-tracing unit, and took 32 ms there against 8.5 alone at
+// the window's size; in the light half it runs beside the network, and the
+// frame is shown sooner (the note, Step 1, measures both). parts() is
+// Parts::two for such a graph and Parts::one for any other, and
+// render_to_window() and render_to_offscreen() begin each frame's
+// submission with it (submission.h, "Two parts"): the light half in the
+// first part, on the main queue, the image half in the second, on the
+// overlap queue, so frame N's image half may run beside frame N + 1's
+// light half. What orders them is the submission's: part 2 after part 1 of
+// the same frame by its event; each half after its own half of the frame
+// before by its queue and the queue barrier recorded at its start, so each
+// half's history (the light's reservoirs and accumulated image; the
+// denoiser's last output, the radiance image and bloom) passes from frame
+// to frame in order, as before.
+//
+// The hand-off: what the image half reads of what the light half wrote.
+// The invariant: frame N + 1's light half never writes what frame N's image
+// half reads (CP.3: never one copy shared by a writer and a reader at
+// once). Everything the image half reads of the light half's is ringed by
+// the frame slot, as the constants are (GPU.7, MEM.4: a resource per frame
+// in flight; submission.h: a slot is reused only once its frame, image
+// half included, has completed):
+//   - the features, written whole by the features pass each frame and read
+//     by nothing else on the light's queue: a FeatureImages per slot, the
+//     features pass writing the frame's slot's;
+//   - the light's radiance: the accumulated image carries the light's
+//     history across frames (a still scene's mean, accumulation.h), so it
+//     stays one image on the light's queue, and the light half ends by
+//     copying it into the slot's hand-off image (denoise_images.h,
+//     DenoiseImages::light_radiance), which the denoise pass reads in its
+//     place: RGBA32Float at the light size, 31 MB at 1728 x 1117, copied
+//     once a frame (31 MB read, 31 written: a fraction of a millisecond at
+//     the memory's bandwidth; the timestamps do not resolve it, the note);
+//   - the full-size albedo: the features kernel at the output's size writes
+//     all four of its images whole each frame, the albedo the one the
+//     denoiser reads, so, as the light-size features, a FeatureImages at
+//     the output's size per slot;
+//   - the slot's constants, which the image half reads: ringed already.
+// What the image half writes the light half never reads. Memory, beyond a
+// graph of one part: a second set of features at the light size (28 bytes
+// a pixel, 54 MB at 1728 x 1117), a second at the output's size (216 MB at
+// 3456 x 2234) and two radiance copies (16 bytes a pixel, 62 MB): 332 MB,
+// made at prepare(), never per frame (GPU.9). Copying only the albedo out
+// of one set would save 216 MB for 62 MB of copies on the light's queue
+// every frame; the light half is the longer, so the memory is spent.
+//
+// Barriers (GPU.8), each naming its hazard: the light half's queue barrier
+// before its first pass that crosses frames waits for the light queue's
+// copies as well as its dispatches (dispatch and blit before dispatch),
+// since its shade writes the accumulated image the frame before's copy
+// read; a barrier from the shade's dispatch, and the full-size albedo's,
+// to the copy (dispatch before blit), which in one part also orders the
+// albedo before the image half. The image half's queue barrier, at its
+// start, waits for the overlap queue's dispatches before it: the frame
+// before's image half, which read and wrote what this one reads and
+// writes (the history, the radiance image, the bloom). The light half's
+// writes reach the image half through the submission's event.
+//
+// One part for a denoised graph. A frame recorded into a submission begun
+// with one part (a test's, which begins its own) records both halves into
+// the first part's one encoder, the copy between them, and a barrier from
+// the copy to the image half (blit before dispatch) in place of the event:
+// the same work in the same order on one queue, so the same pixels. The
+// image half then records no queue barrier of its own: the light half's
+// already waited for the frame before, its image half included. A
+// submission of two parts for a graph of one is refused by MetalError.
 //
 // Cost of recording a ReSTIR frame, on the CPU, beyond the above: 128 bytes
 // of reuse constants, four pipeline binds and dispatches with their
@@ -344,11 +423,17 @@ public:
     // Metal failure, which end the run.
     void prepare(const frame::FrameInputs& inputs, frame::Extent size);
 
+    // How many parts a frame's submission has (above, "Two halves"): two
+    // for a denoised graph, one for any other.
+    Parts parts() const noexcept { return denoises_ ? Parts::two : Parts::one; }
+
     // Records frame `inputs` into `begun`, writing `target`, of `size`.
-    // `begun` is what Submission::begin() returned. Throws MetalError if the
-    // frame was not prepared at this size, if the graph uses images or
-    // accumulates; if it has no camera and the graph reads a scene; or if
-    // Metal makes no encoder.
+    // `begun` is what Submission::begin() returned, of parts() or of one
+    // part (above, "One part for a denoised graph"). Throws MetalError if
+    // the frame was not prepared at this size, if the graph uses images or
+    // accumulates; if it has no camera and the graph reads a scene; if
+    // `begun` has two parts and the graph one; or if Metal makes no
+    // encoder.
     void record(const FrameSlot& begun, const frame::FrameInputs& inputs, MTL::Texture* target,
                 frame::Extent size);
 
@@ -438,17 +523,23 @@ private:
         MneeList list;
         FailureCount lost;
     };
-    // The features pass's: its images, its constants' ring, and the shapes
+    // The features pass's: its images, one set or, handed off, one per
+    // frame slot (above, "Two halves"); its constants' ring; and the shapes
     // as the previous frame placed them, when shapes move.
     struct FeatureFamily {
+        enum class Sets { one, per_slot };
         FeatureFamily(const Device& device, Submission& submission, const scene::SceneDescription& scene,
-                      bool moves);
+                      bool moves, Sets sets);
+        void prepare(frame::Extent light);
+        // The set frame slot `slot`'s frame writes.
+        const FeatureImages& images(std::uint32_t slot) const;
         void bind(FrameResources& resources, const FrameSlot& begun,
                   const std::optional<frame::PreviousFrame>& previous, frame::Extent light);
 
-        FeatureImages images;
+        std::array<std::optional<FeatureImages>, frames_in_flight> sets;  // the second only per slot
         FrameArray constants;
         std::optional<ShapeTransforms> previous_transforms;
+        std::uint32_t last_slot = 0;  // the slot of the frame bound last, which read_features() reads
     };
     // The denoise pass's: the network's last width, its buffers, the
     // target-size ring, its constants' ring, and the full-size albedo's
@@ -461,7 +552,7 @@ private:
         DenoiseImages images;
         FrameArray output_constants;
         FrameArray constants;
-        FeatureImages full_features;
+        std::array<std::optional<FeatureImages>, frames_in_flight> full_features;  // a set per slot (above)
         FrameArray full_feature_constants;
         FeaturesPass full_features_pass;
     };
@@ -500,8 +591,12 @@ private:
     DenoiseResources denoise_resources(const FrameResources& resources, const FrameSlot& begun,
                                        const frame::FrameInputs& inputs, frame::Extent size,
                                        const Prepared& prepared);
-    void record_steps(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources,
-                      const DenoiseResources& denoised_resources);
+    // The light half (every step before the denoise pass; all of them in a
+    // graph without it), then the full-size albedo and the hand-off's copy;
+    // and the image half, from the denoise pass on (above, "Two halves").
+    void record_light(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources);
+    void record_hand_off(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun);
+    void record_image(MTL4::ComputeCommandEncoder* encoder, const DenoiseResources& denoised_resources);
 
     Submission& submission_;
     Library library_;
@@ -538,6 +633,9 @@ private:
     // is one of ReSTIR DI's (whose arrays the frames share), before which
     // the queue barrier is recorded; none if none does.
     std::optional<std::size_t> first_cross_frame_;
+    // The denoise pass's step, where the image half begins; steps_.size()
+    // in a graph without it, all of whose steps are the light half's.
+    std::size_t image_begins_ = 0;
 };
 
 // One frame, start to finish, for each kind of target. The window and the

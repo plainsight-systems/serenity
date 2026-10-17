@@ -151,7 +151,10 @@ This file tracks active and accepted work.
 1. Milestone 4, making the frame fast (the user, 2026-10-17;
    docs/research/2026-10-17-milestone-4-plan.md): async compute overlap,
    ray masks, a split scene structure, checkerboard rendering of the light.
-   Retraining, if checkerboard needs it, on the user's RTX 3090.
+   Retraining, if checkerboard needs it, on the user's RTX 3090. Step 1,
+   async compute overlap, built 2026-10-17 (the plan's "Step 1"): a
+   denoised frame's two halves on two queues, the hand-off ringed by the
+   frame slot, every graph the same to the bit; measured there.
 
 1a. Reservoir reuse as kernels: tiling, layout and fusion of the merge
    passes, what each costs and where the bytes go (about 4 ms of the light
