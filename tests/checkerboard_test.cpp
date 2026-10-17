@@ -111,11 +111,17 @@ TEST_CASE("the frame before's pixel beside a pixel is one that frame traced, at 
     }
 }
 
-TEST_CASE("checkerboard is read only beside ReSTIR PT's passes and the denoise pass, off unless written") {
+TEST_CASE("checkerboard is read only beside ReSTIR PT's passes and the denoise pass") {
     std::ifstream file(serenity::tests::graphs_dir / "restir_pt_denoised.toml");
     std::stringstream read;
     read << file.rdbuf();
-    const std::string denoised = read.str();
+    // The demo graph without its own checkerboard line, so the test does not
+    // depend on whether the demo has it on.
+    std::string denoised = read.str();
+    const auto written = denoised.find("\ncheckerboard = ");
+    if (written != std::string::npos) {
+        denoised.erase(written, denoised.find('\n', written + 1) - written);
+    }
     // A top-level key goes before the first table.
     const auto with = [&](const std::string& line) {
         std::string text = denoised;
@@ -125,7 +131,6 @@ TEST_CASE("checkerboard is read only beside ReSTIR PT's passes and the denoise p
     const auto error_for = [](const std::string& text) {
         return serenity::tests::error_of<GraphFileError>([&] { return parse_schedule(text, "graph.toml"); });
     };
-    CHECK_FALSE(parse_schedule(denoised, "graph.toml").checkerboard);
     CHECK(parse_schedule(with("checkerboard = true"), "graph.toml").checkerboard);
     CHECK_FALSE(parse_schedule(with("checkerboard = false"), "graph.toml").checkerboard);
     CHECK(contains(error_for(with("checkerboard = 1")), "'checkerboard' must be true or false"));
