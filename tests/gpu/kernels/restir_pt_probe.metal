@@ -99,7 +99,10 @@ kernel void pt_lattice_pairing(device PairingResult* out [[buffer(0)]], constant
 // A path drawn at each query's source pixel, shifted to its destination.
 // Bindings: the results at 0, the queries at 1, the camera at 2, the
 // structure at 3, the scene's block at 4, its glows at 5 and transforms at
-// 6, the settings at 7, the queries' count at 8, the light tiles at 9.
+// 6, the settings at 7, the queries' count at 8, the light tiles at 9, and
+// MNEE's work list at 10 and its header at 11, a list of capacity 0: the
+// trees' MNEE requests are counted and dropped, MNEE's paths being out of
+// the path space every tree and shift samples (restir_pt.metal.h).
 kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQuery* queries [[buffer(1)]],
                      constant serenity::contracts::CameraData& camera [[buffer(2)]],
                      serenity::shaders::SceneStructure structure [[buffer(3)]],
@@ -109,6 +112,8 @@ kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQu
                      constant serenity::contracts::PathReuseSettings& settings [[buffer(7)]],
                      constant uint& count [[buffer(8)]],
                      const device serenity::contracts::LightTileEntry* tiles [[buffer(9)]],
+                     device serenity::contracts::MneeRequest* mnee_requests [[buffer(10)]],
+                     device atomic_uint* mnee_header [[buffer(11)]],
                      uint i [[thread_position_in_grid]]) {
     if (i >= count) {
         return;
@@ -121,9 +126,9 @@ kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQu
     const auto tree_at = [&](uint2 pixel) {
         PathNumbers numbers;
         const CameraRay ray = restir_pt::primary_ray(camera, pixel, q.frame, size, numbers);
-        restir_pt::TreeGather tree = restir_pt::start_tree<false>(settings, numbers, scene.shapes(),
-                                                           restir_pt::block_tile(tiles, pixel, q.frame),
-                                                           mnee::Queue{nullptr, nullptr}, 0u);  // settings.mnee 0
+        restir_pt::TreeGather tree =
+            restir_pt::start_tree(settings, numbers, scene.shapes(), restir_pt::block_tile(tiles, pixel, q.frame),
+                                  mnee::Queue{mnee_requests, mnee_header}, 0u);
         (void)path::walk_path(scene, path::walk_from(ray), numbers, tree);
         return tree;
     };

@@ -313,27 +313,6 @@ std::optional<passes::RestirPt> read_restir_pt_table(std::string_view source, co
     return read_restir_pt(source, *table, kinds);
 }
 
-// Caustics by MNEE: true or false, read by the path pass and ReSTIR PT's.
-// In a graph with neither the key is one nobody reads, refused at its line
-// whatever its value: `mnee = false` there is as much a typo as `true`
-// (E.2). The schedule cannot tell false from left out, so this is the
-// reader's to refuse; invalid() refuses mnee set. Off unless written.
-bool read_mnee(std::string_view source, const toml::table& root, std::span<const PassKind> kinds) {
-    const toml::node* node = root.get("mnee");
-    if (!node) {
-        return false;
-    }
-    const std::optional<bool> mnee = node->value_exact<bool>();
-    if (!mnee) {
-        throw GraphFileError(at(source, *node, "'mnee' must be true or false"));
-    }
-    if (std::ranges::none_of(kinds, [](PassKind kind) { return kind == PassKind::path || is_restir_pt(kind); })) {
-        throw GraphFileError(
-            at(source, *node, "the frame graph sets mnee and has no path or ReSTIR PT pass to read it"));
-    }
-    return *mnee;
-}
-
 // The denoiser's settings: the exported network's directory, as written.
 std::optional<passes::Denoise> read_denoise_table(std::string_view source, const toml::table& root,
                                                   std::span<const PassKind> kinds) {
@@ -355,7 +334,7 @@ std::optional<passes::Denoise> read_denoise_table(std::string_view source, const
 }
 
 Schedule read_schedule(std::string_view source, const toml::table& root) {
-    only(source, root, {"passes", "tone_map", "restir_pt", "mnee", "denoise"},
+    only(source, root, {"passes", "tone_map", "restir_pt", "denoise"},
          "the frame graph");
     const toml::node* passes_node = root.get("passes");
     if (!passes_node) {
@@ -365,7 +344,6 @@ Schedule read_schedule(std::string_view source, const toml::table& root) {
     schedule.passes = read_passes(source, *passes_node);
     schedule.tone_map = read_tone_map_table(source, root);
     schedule.restir_pt = read_restir_pt_table(source, root, schedule.passes);
-    schedule.mnee = read_mnee(source, root, schedule.passes);
     schedule.denoise = read_denoise_table(source, root, schedule.passes);
     if (const std::optional<std::string> reason = invalid(schedule)) {
         throw GraphFileError(at(source, *passes_node, *reason));

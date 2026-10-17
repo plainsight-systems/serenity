@@ -1,13 +1,10 @@
 #pragma once
 
-#include <optional>
-
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
 #include "metal/device/library.h"
 #include "metal/frame/frame_resources.h"
-#include "metal/passes/mnee/mnee.h"
 
 namespace serenity::metal {
 
@@ -45,21 +42,13 @@ namespace serenity::metal {
 // state the frames share, this one (metal/frame/renderer.h, GPU.8): frames
 // in flight overlap their recording, not their writes to the image.
 //
-// The graph's mnee setting (core/frame/schedule.h) picks which of two
-// kernels runs: the path tracer, or the path tracer with caustics by
-// manifold next event estimation. Two kernels rather than a flag the shader
-// reads, so the path tracer without MNEE compiles, and costs, what it did.
-//
 // Cost: one thread per pixel, in rows of the execution width (GPU.2); per
 // pixel, the integrator's path (about twice its length in rays, a handful
 // of surfaces in practice; integrator/path.metal.h), and 32 bytes of
 // image: the accumulated pixel's 16 read and 16 written.
 class PathPass {
 public:
-    // With `mnee`, the path tracer with manifold next event estimation
-    // (metal/integrator/path.metal.h, "Manifold next event estimation"), a
-    // kernel of its own; without, the kernel the pass always ran.
-    PathPass(const Library& library, bool mnee);
+    explicit PathPass(const Library& library);
 
     // Records the pass. Throws MetalError if `resources` has no scene, no
     // camera, no accumulated image or no counter of samples not finite.
@@ -67,7 +56,6 @@ public:
 
 private:
     NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
-    std::optional<MneePass> mnee_;  // with mnee: the requests' solve and fold
 };
 
 }  // namespace serenity::metal

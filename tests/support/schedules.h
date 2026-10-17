@@ -70,12 +70,11 @@ inline const std::vector<frame::PassKind> restir_pt_passes = {
     frame::PassKind::restir_pt_shade, frame::PassKind::restir_pt_duplication};
 
 // A ReSTIR PT graph of `kinds`, its light shown as it is (display), its
-// settings the written ones; MNEE on where `mnee` says.
-inline frame::Schedule restir_pt_graph(const std::vector<frame::PassKind>& kinds, bool mnee = false) {
+// settings the written ones.
+inline frame::Schedule restir_pt_graph(const std::vector<frame::PassKind>& kinds) {
     frame::Schedule s{kinds, std::nullopt};
     s.passes.push_back(frame::PassKind::display);
     s.restir_pt = written_restir_pt(kinds);
-    s.mnee = mnee;
     return s;
 }
 

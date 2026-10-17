@@ -55,8 +55,7 @@
 //               lobe sent, which no shadow ray could have reached the light
 //               along (glass blocks shadow rays): w_b = 1. Light that glass
 //               focuses onto a rough surface is counted so, the one way it
-//               can be, unless the graph sets mnee, where manifold next
-//               event estimation takes it over (below).
+//               can be.
 //               And for a ray a lobe that is not delta sent to wo's other
 //               side, which step 5 there does not draw (below, "One
 //               origin"): every such lobe reflects, so only a direction
@@ -357,33 +356,6 @@
 // declared (docs/process/MEMORY.md, 2026-10-11) and held instead by
 // converging to the same references (docs/research/2026-10-11-path-mis.md).
 //
-// Manifold next event estimation (decided 2026-10-11, by the user's
-// direction: docs/research/2026-10-12-mnee.md; integrator/mnee.metal.h
-// states the algorithm and what it covers). A graph's `mnee` setting
-// (core/frame/schedule.h) runs the path pass's loop with a third gather,
-// Manifold, in place of Radiance; the loop is the same loop, compiled once
-// more for it, so the path pass without MNEE keeps its loop and its time.
-// Its hooks:
-//
-//   - step 5 at a receiver (mnee::receives(): a diffuse lobe) draws the
-//     light sample exactly as Radiance does, the same numbers; its one ray
-//     query visits the whole segment (mnee::seed_segment()) in place of the
-//     shadow ray: clear, the term step 5 always adds; crossing casters, a
-//     request on MNEE's work list (contract 16) for the MNEE pass to solve
-//     after the loop and add to the pixel, its weight beta / (P p_l), the
-//     same density, its MIS weight 1 (below); blocked otherwise. At any
-//     other surface, step 5 as before. The request in place of the solve:
-//     solved here, the lanes that solve held up their SIMD groups, the pass
-//     4.1 times as long (contract 16);
-//   - step 6 at each surface carries the chain (mnee::chain_after(), one
-//     word): where the bounce leaves a receiver's diffuse lobe, and how many
-//     refractions at caster spheres since;
-//   - step 3 does not count a light struck at the end of such a chain
-//     (mnee::covered()): MNEE counts it, at the receiver. Every other light
-//     is counted as Radiance counts it, so for a direction both step 5 and
-//     step 6 draw toward a light in plain sight, the MIS weights are the
-//     ones above and still sum to 1.
-//
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -395,7 +367,6 @@
 #include "metal/acceleration/trace.metal.h"
 #include "metal/camera/thin_lens.metal.h"
 #include "metal/device/layout.metal.h"
-#include "metal/integrator/mnee.metal.h"
 #include "metal/integrator/surface.metal.h"
 #include "metal/light_selection/uniform_light.metal.h"
 #include "metal/lights/emitter.metal.h"
@@ -585,99 +556,6 @@ struct Radiance {
     static constant constexpr bool observes_vertices = false;
 };
 
-// Step 5 with MNEE at `here`, throughput `beta`, for pixel `pixel` (above,
-// "Manifold next event estimation"): the light sample drawn as next_event()
-// draws it; at a receiver, its segment visited whole, the ordinary term
-// where it is clear; where it crosses casters, a request on `queue` for the
-// MNEE pass to solve (contract 16), its weight beta / (P p_l), and nothing
-// here (where the list is full, the MNEE pass counts the request lost:
-// mnee::enqueue()). At any other surface, next_event() itself. Returns what
-// L gains over beta.
-inline float3 next_event_manifold(Scene scene, Shading here, thread PathNumbers& numbers, float3 beta,
-                                  mnee::Queue queue, uint pixel) {
-    if (!mnee::receives(here.bsdf)) {
-        return next_event(scene, here, numbers);
-    }
-    const SelectedLight chosen = select_light(scene.selection(), next_number(numbers));
-    const float3 origin = next_event_origin(here.surface, here.wo);
-    const serenity::contracts::LightSample sample =
-        sample_light(scene.lights(), chosen.light, origin, next_numbers2(numbers));
-    if (sample.pdf <= 0.0f || !metal::any(to_float3(sample.radiance) > 0.0f)) {
-        return float3(0.0f);
-    }
-    const float3 wi = to_float3(sample.direction);
-    if (!leave_alike(here.surface, wi, here.wo)) {
-        return float3(0.0f);
-    }
-    const float light_density = chosen.probability * sample.pdf;
-    const mnee::Seed seed = mnee::seed_segment(scene, origin, wi, sample.distance, sample.primitive);
-    if (seed.count == 0u) {
-        if (seed.blocked) {
-            return float3(0.0f);
-        }
-        return bsdf_evaluate(here.bsdf, here.wo, wi) * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) *
-               to_float3(sample.radiance) * transmittance(scene.media(), here.medium, sample.distance) /
-               light_density * next_event_weight(light_density, here.bsdf, here.wo, wi);
-    }
-    if (!seed.usable) {
-        return float3(0.0f);
-    }
-    mnee::enqueue(queue, mnee::request(here, origin, sample, seed, beta / light_density, pixel));
-    return float3(0.0f);
-}
-
-// The path tracer's gather with MNEE (above): Radiance's, but for step 5 at
-// a receiver and the lights MNEE counts, which step 3 leaves to it. Its
-// state, the chain, one word across the loop's ray queries (GPU.3); the
-// shape records it reads each surface's kind from, the work list and the
-// pixel its requests are for.
-struct Manifold {
-    constant serenity::shapes::ShapeRecord* shapes;
-    mnee::Queue queue;
-    uint pixel;
-    uint chain = mnee::off_chain;
-
-    // Step 2.
-    [[gnu::always_inline]] void escaped(Scene scene, thread float3& L, float3 beta, metal::raytracing::ray along,
-                                        uint) const {
-        L += beta * gradient_sky(scene.sky(), along.direction);
-    }
-
-    // Step 3, but for a light MNEE counts.
-    [[gnu::always_inline]] void emitted(Scene scene, thread float3& L, float3 beta, serenity::lights::LightRecord light,
-                                        float3 point, metal::raytracing::ray along, float emission_pdf, uint,
-                                        serenity::contracts::SurfaceInteraction) const {
-        if (mnee::covered(chain)) {
-            return;
-        }
-        L += beta * light_emitted(scene.lights(), light, point, -along.direction) *
-             emission_weight(scene.selection(), scene.lights(), light, along.origin, along.direction, emission_pdf);
-    }
-
-    // Step 5.
-    [[gnu::always_inline]] void next_event(Scene scene, thread float3& L, float3 beta, Shading here, uint,
-                                           thread PathNumbers& numbers) const {
-        L += beta * next_event_manifold(scene, here, numbers, beta, queue, pixel);
-    }
-
-    // Step 6's numbers, the path's next three.
-    [[gnu::always_inline]] float3 bsdf_numbers(thread PathNumbers& numbers, uint) const {
-        return next_numbers3(numbers);
-    }
-
-    // After step 6: the chain carried on.
-    [[gnu::always_inline]] void scattered(Shading here, serenity::contracts::BsdfSample next, uint, float3, float3) {
-        chain = mnee::chain_after(chain, next.lobe, shapes, here.surface.primitive);
-    }
-    [[gnu::always_inline]] void crossed(Scene, uint, float) const {}
-    [[gnu::always_inline]] bool continues_at(uint) const { return true; }
-    [[gnu::always_inline]] void reached(Shading, float3, uint) const {}
-    [[gnu::always_inline]] bool survives(thread float3&, float, uint, thread PathNumbers&) const { return true; }
-
-    static constant constexpr bool divides_by_survival = true;
-    static constant constexpr bool observes_vertices = true;
-};
-
 // Steps 1 to 8 for each surface, from the walk's ray until the path ends;
 // the walk where it ended.
 //
@@ -800,15 +678,6 @@ template <typename Gather>
 // `numbers` the path's own. The path pass's.
 inline float3 radiance(Scene scene, CameraRay camera, thread PathNumbers& numbers) {
     Radiance gather;
-    return walk_path(scene, walk_from(camera), numbers, gather).L;
-}
-
-// The same, with MNEE (above): the path pass's where its graph sets mnee,
-// its requests for pixel `pixel` written on `queue`; the light they find
-// the MNEE pass's to add (metal/passes/mnee/mnee.h).
-inline float3 radiance_manifold(Scene scene, CameraRay camera, thread PathNumbers& numbers, mnee::Queue queue,
-                                uint pixel) {
-    Manifold gather{scene.block->shapes, queue, pixel};
     return walk_path(scene, walk_from(camera), numbers, gather).L;
 }
 

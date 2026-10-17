@@ -22,8 +22,8 @@ static_assert(contracts::mnee_grid_offset % alignof(gpu::IndirectGrid) == 0 &&
 
 }  // namespace
 
-MneeList::MneeList(const Device& device, Submission& submission, Light light)
-    : device_(NS::RetainPtr(device.handle())), submission_(submission), light_kind_(light) {}
+MneeList::MneeList(const Device& device, Submission& submission)
+    : device_(NS::RetainPtr(device.handle())), submission_(submission) {}
 
 void MneeList::make(ResidentBuffer& array, std::size_t bytes, MTL::ResourceOptions storage, std::string_view what) {
     array = make_resident_buffer(device_.get(), submission_, bytes, storage, "MNEE's " + std::string(what));
@@ -38,7 +38,7 @@ void MneeList::prepare(frame::Extent size) {
     if (requests_) {
         submission_.drain();  // frames in flight may still read the old arrays
     }
-    for (ResidentBuffer* array : {&requests_, &header_, &light_}) {
+    for (ResidentBuffer* array : {&requests_, &header_}) {
         array->reset();
     }
     const auto pool = scoped_pool();
@@ -49,10 +49,6 @@ void MneeList::prepare(frame::Extent size) {
     std::memset(header_.buffer->contents(), 0, header_bytes);
     const auto words = static_cast<std::uint32_t*>(header_.buffer->contents());
     words[contracts::mnee_capacity_word] = static_cast<std::uint32_t>(capacity);
-    if (light_kind_ == Light::own) {
-        make(light_, pixels * 4 * sizeof(float), MTL::ResourceStorageModeShared, "MNEE light");
-        std::memset(light_.buffer->contents(), 0, pixels * 4 * sizeof(float));
-    }
     size_ = size;
 }
 
@@ -61,7 +57,6 @@ MneeList::Addresses MneeList::addresses() const noexcept {
     out.requests = requests_.address();
     out.header = header_.address();
     out.grid = out.header != 0 ? out.header + contracts::mnee_grid_offset : 0;
-    out.light = light_.address();
     return out;
 }
 

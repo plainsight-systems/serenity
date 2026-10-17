@@ -421,7 +421,7 @@ public:
 
     // MNEE requests the work list had no room for, their light lost
     // (contract 16), over every completed frame, as non_finite_samples()
-    // counts; 0 for a graph without mnee.
+    // counts; 0 for a graph without ReSTIR PT's passes.
     std::uint64_t mnee_lost_requests() const noexcept;
 
     // The accumulated image's floats into `out`, RGBA a pixel, rows top to
@@ -480,7 +480,7 @@ private:
     };
     // MNEE's (contract 16): its work list and its count of lost requests.
     struct MneeFamily {
-        MneeFamily(const Device& device, Submission& submission, MneeList::Light light);
+        MneeFamily(const Device& device, Submission& submission);
         void bind(FrameResources& resources, const FrameSlot& begun);
 
         MneeList list;

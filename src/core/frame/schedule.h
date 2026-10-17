@@ -201,11 +201,6 @@ struct Schedule {
     // unless given, as every member after it, so a schedule written
     // {passes, tone_map} keeps its meaning.
     std::optional<passes::RestirPt> restir_pt = std::nullopt;
-    // Caustics by manifold next event estimation (metal/integrator/
-    // mnee.metal.h), read by the path pass and by ReSTIR PT's passes, one of
-    // which a graph that sets it must have; off unless written, so the path
-    // tracer every estimator is measured against stays the one it was.
-    bool mnee = false;
     // The denoiser's settings: present exactly when the schedule has its
     // pass (core/passes/denoise.h).
     std::optional<passes::Denoise> denoise = std::nullopt;
@@ -262,7 +257,6 @@ bool writes_features(const Schedule& schedule);
 //     (above); and its settings exactly with its passes, each setting the
 //     passes read in its range and each they do not read its zero
 //     (core/contracts/path_reuse_settings.h);
-//   - mnee set only beside a pass that reads it: path, or ReSTIR PT's;
 //   - the denoise pass's rules (above), its light ReSTIR PT's at a sigma
 //     the traced lattice can pair at, and its settings exactly with it.
 //

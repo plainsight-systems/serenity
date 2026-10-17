@@ -2,12 +2,12 @@
 
 // Contract 16: manifold next event estimation's work list. Owned by the
 // Integrator (metal/integrator/mnee.metal.h, which states the algorithm);
-// written by the estimators' loops, read by the MNEE pass's kernels
+// written by ReSTIR PT's path tree, read by the MNEE pass's kernels
 // (metal/passes/mnee/mnee.h).
 //
 // Why a list (decided 2026-10-12, by measurement: docs/research/
 // 2026-10-12-mnee.md). Solved where the light sample is drawn, inside the
-// path loop, MNEE made the path pass 4.1 times as long (30 to 124 ms at
+// path loop, MNEE made the path tracer's pass 4.1 times as long (30 to 124 ms at
 // 3456 x 2234): a tenth of the paths solve, so nearly every SIMD group of 32
 // carries one, and its other lanes wait through the walk's iterations and
 // its rays (GPU.4). Cycles moved its MNEE out of its surface kernel into a
@@ -22,8 +22,8 @@
 // so far), of the light sample (direction, distance, radiance, the light's
 // shape), the seed's crossings (their t along the segment and their shapes,
 // mnee_shape_bits each, two a word), the pixel, and the weight its light is multiplied by: the
-// path's throughput over the sample's density (P p_l in the path tracer;
-// over survival and times W_RIS in ReSTIR PT). 128 bytes.
+// path's throughput over the sample's density, over survival and times
+// W_RIS (ReSTIR PT's tree). 128 bytes.
 //
 // The list's header, one small shared buffer of mnee_header_bytes the CPU
 // writes once: the count (mnee_count_word, the writers' atomic, set back to

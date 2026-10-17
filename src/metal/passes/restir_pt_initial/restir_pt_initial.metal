@@ -24,11 +24,8 @@ using namespace metal::raytracing;
 using namespace serenity::shaders;
 namespace binding = serenity::bindings::restir_pt;
 
-// One pixel's tree (steps 1 to 4), with MNEE (`manifold`, the graph's
-// mnee: its requests written on `queue`, whose light the MNEE pass adds to
-// the light buffer after) or without; a kernel for each, below, so the one
-// without compiles the tree it always did and binds what it always bound.
-template <bool manifold>
+// One pixel's tree (steps 1 to 4), with MNEE: its requests written on
+// `queue`, whose light the MNEE pass adds to the light buffer after.
 inline void initial_pixel(constant serenity::contracts::FrameConstants& frame,
                           constant serenity::contracts::CameraData& camera, serenity::shaders::SceneStructure structure,
                           constant serenity::gpu::SceneBlock& block, constant float* sphere_glows,
@@ -52,7 +49,7 @@ inline void initial_pixel(constant serenity::contracts::FrameConstants& frame,
     // confidence_cap is 0 exactly in a graph without restir_pt_temporal,
     // where neither array is bound (contracts/path_reuse_settings.h).
     const bool temporal = settings.confidence_cap > 0.0f;
-    restir_pt::TreeGatherOf<manifold> tree = restir_pt::start_tree<manifold>(
+    restir_pt::TreeGather tree = restir_pt::start_tree(
         settings, numbers, scene.shapes(), restir_pt::block_tile(tiles, pixel, frame.frame_index), queue, i);
     (void)path::walk_path(scene, path::walk_from(ray), numbers, tree);
     reservoirs[i] = restir_pt::finish_tree(tree);
@@ -78,36 +75,12 @@ kernel void restir_pt_initial(constant serenity::contracts::FrameConstants& fram
                               [[buffer(binding::previous_positions)]],
                               constant serenity::contracts::Transform* last_transforms
                               [[buffer(binding::last_transforms)]],
+                              device serenity::contracts::MneeRequest* mnee_requests
+                              [[buffer(binding::mnee_requests)]],
+                              device atomic_uint* mnee_header [[buffer(binding::mnee_header)]],
                               uint2 grid_place [[thread_position_in_grid]]) {
-    initial_pixel<false>(frame, camera, structure, block, sphere_glows, transforms, settings, reservoirs, primaries,
-                         light, tiles, previous_positions, last_transforms, mnee::Queue{nullptr, nullptr}, grid_place);
-}
-
-kernel void restir_pt_initial_mnee(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
-                                   constant serenity::contracts::CameraData& camera [[buffer(binding::camera)]],
-                                   serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
-                                   constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
-                                   constant float* sphere_glows [[buffer(binding::glows)]],
-                                   constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],
-                                   constant serenity::contracts::PathReuseSettings& settings
-                                   [[buffer(binding::settings)]],
-                                   device serenity::contracts::PathReservoir* reservoirs
-                                   [[buffer(binding::reservoirs)]],
-                                   device serenity::contracts::PrimaryHit* primaries [[buffer(binding::primaries)]],
-                                   device float4* light [[buffer(binding::light)]],
-                                   const device serenity::contracts::LightTileEntry* tiles
-                                   [[buffer(binding::light_tiles)]],
-                                   device serenity::contracts::Float3* previous_positions
-                                   [[buffer(binding::previous_positions)]],
-                                   constant serenity::contracts::Transform* last_transforms
-                                   [[buffer(binding::last_transforms)]],
-                                   device serenity::contracts::MneeRequest* mnee_requests
-                                   [[buffer(binding::mnee_requests)]],
-                                   device atomic_uint* mnee_header [[buffer(binding::mnee_header)]],
-                                   uint2 grid_place [[thread_position_in_grid]]) {
-    initial_pixel<true>(frame, camera, structure, block, sphere_glows, transforms, settings, reservoirs, primaries,
-                        light, tiles, previous_positions, last_transforms, mnee::Queue{mnee_requests, mnee_header},
-                        grid_place);
+    initial_pixel(frame, camera, structure, block, sphere_glows, transforms, settings, reservoirs, primaries, light,
+                  tiles, previous_positions, last_transforms, mnee::Queue{mnee_requests, mnee_header}, grid_place);
 }
 
 // The frame's light tiles (contracts/light_tile.h), one thread an entry:

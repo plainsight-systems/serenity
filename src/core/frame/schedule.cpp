@@ -511,9 +511,6 @@ std::optional<std::string> invalid(const Schedule& schedule) {
     }
 
     const bool restir_pt = std::ranges::any_of(passes, [](PassKind kind) { return is_restir_pt(kind); });
-    if (schedule.mnee && !restir_pt && std::ranges::find(passes, PassKind::path) == passes.end()) {
-        return "the frame graph sets mnee and has no path or ReSTIR PT pass to read it";
-    }
     if (restir_pt && !schedule.restir_pt) {
         return "the frame graph has ReSTIR PT's passes and no [restir_pt] settings";
     }

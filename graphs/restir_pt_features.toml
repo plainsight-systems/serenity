@@ -7,7 +7,6 @@
 # The light is graphs/restir_pt.toml's to the bit: the features pass reads
 # the scene alone and writes only its own images. Needs a scene.
 
-mnee = true
 passes = ["restir_pt_initial", "restir_pt_temporal", "restir_pt_spatial", "restir_pt_shade",
           "restir_pt_duplication", "features", "tone_map"]
 

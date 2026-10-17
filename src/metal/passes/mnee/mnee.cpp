@@ -12,8 +12,7 @@ namespace serenity::metal {
 
 MneePass::MneePass(const Library& library)
     : grid_(library.compute_pipeline("mnee_grid")),
-      solve_(library.compute_pipeline("mnee_solve")),
-      fold_(library.compute_pipeline("mnee_fold")) {
+      solve_(library.compute_pipeline("mnee_solve")) {
     // The solve's threadgroup, as mnee.metal's grid writes it (contract 16).
     if (solve_->maxTotalThreadsPerThreadgroup() < contracts::mnee_solve_group) {
         throw MetalError("MneePass: the solve's pipeline takes fewer threads a group than its grid's " +
@@ -21,13 +20,11 @@ MneePass::MneePass(const Library& library)
     }
 }
 
-void MneePass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources, Into into) const {
-    const bool folds = into == Into::accumulated_image;
+void MneePass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
     if (resources.mnee_requests == 0 || resources.mnee_header == 0 || resources.non_finite_counter == 0 ||
-        resources.mnee_lost_counter == 0 || (folds ? resources.mnee_light == 0 ||
-        resources.accumulation == nullptr : resources.light == 0)) {
+        resources.mnee_lost_counter == 0 || resources.light == 0) {
         throw MetalError("MneePass: the frame lacks one of its MNEE work list, counter of samples not finite or of "
-                         "lost requests, or the light it adds to");
+                         "lost requests, or the light buffer it adds to");
     }
     namespace binding = bindings::mnee;
     MTL4::ArgumentTable* arguments = resources.arguments;
@@ -36,22 +33,14 @@ void MneePass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources
     arguments->setAddress(resources.mnee_requests, binding::requests);
     arguments->setAddress(resources.mnee_header, binding::header);
     arguments->setAddress(resources.mnee_grid, binding::grid);
-    arguments->setAddress(folds ? resources.mnee_light : resources.light, binding::light);
+    arguments->setAddress(resources.light, binding::light);
     arguments->setAddress(resources.mnee_lost_counter, binding::lost);
-    if (folds) {
-        arguments->setTexture(resources.accumulation->gpuResourceID(), binding::accumulated);
-    }
     barrier_after_dispatch(encoder);
     encoder->setComputePipelineState(grid_.get());
     encoder->dispatchThreads(MTL::Size{1, 1, 1}, MTL::Size{1, 1, 1});
     barrier_after_dispatch(encoder);
     encoder->setComputePipelineState(solve_.get());
     encoder->dispatchThreads(resources.mnee_grid);
-    if (folds) {
-        barrier_after_dispatch(encoder);
-        encoder->setComputePipelineState(fold_.get());
-        dispatch_per_pixel(encoder, fold_.get(), resources.size);
-    }
 }
 
 }  // namespace serenity::metal

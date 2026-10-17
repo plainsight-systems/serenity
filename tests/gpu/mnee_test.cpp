@@ -8,12 +8,11 @@
 //     sphere's center and both ends); and the generalized geometry term it
 //     gives is the solid angle at the receiver per area at the light, found
 //     here by moving the light's point and solving again;
-//   - the estimator: the path tracer with MNEE, and ReSTIR PT with it,
-//     converge to the path tracer's mean without it on a caustic, a glass
-//     sphere on a diffuse floor under a small light, to within MNEE's bias,
-//     measured here and stated; and the caustic is counted once, so a build
-//     that counted it both ways (MNEE's and the bounce's) fails. The path
-//     tracer's reference is rendered once for both;
+//   - the estimator: ReSTIR PT, MNEE always on, converges to the path
+//     tracer's mean on a caustic, a glass sphere on a diffuse floor under a
+//     small light, to within MNEE's bias, measured here and stated; and the
+//     caustic is counted once, so a build that counted it both ways
+//     (MNEE's and the bounce's) fails;
 //   - a request the full work list has no room for is counted lost.
 
 #include <algorithm>
@@ -284,14 +283,9 @@ double mean_red(const std::vector<float>& rgba, std::uint32_t x, std::uint32_t y
     return tests::patch_mean(rgba, caustic_size, {x, y, half});
 }
 
-// The path tracer, with MNEE and without; ReSTIR PT as graphs/restir_pt.toml
-// runs it, with MNEE, its settings the written ones (support/schedules.h).
-frame::Schedule path_graph(bool mnee) {
-    frame::Schedule graph = tests::path_graph();
-    graph.mnee = mnee;
-    return graph;
-}
-const frame::Schedule restir_pt_mnee_graph = tests::restir_pt_graph(tests::restir_pt_passes, true);
+// ReSTIR PT, MNEE always on, its settings the written ones
+// (support/schedules.h).
+const frame::Schedule restir_pt_mnee_graph = tests::restir_pt_graph(tests::restir_pt_passes);
 
 // Where the caustic lies in the image (the sphere's shadow on the floor,
 // and the floor seen through the sphere above it) and the whole image,
@@ -356,29 +350,16 @@ TEST_CASE("MNEE: a request the full work list has no room for is counted lost, a
     // fast math, which need not keep one (docs/research/
     // 2026-10-16-codebase-guidelines-pass.md, C14). Now the MNEE pass's grid
     // kernel counts it; the path's sample keeps its other light, finite.
-    for (const auto& [name, graph] : {std::pair{"the path tracer with MNEE", path_graph(true)},
-                                      std::pair{"ReSTIR PT with MNEE", restir_pt_mnee_graph}}) {
-        INFO(name);
-        // Two frames; no sample left out for not being finite (the rig's
-        // render() checks it).
-        tests::AccumulatingRig rig(light_in_glass_in_a_cavity(), graph, {32, 32});
-        const std::vector<float> rgba = rig.render_accumulated(2);
-        MESSAGE("lost requests: " << rig.renderer().mnee_lost_requests());
-        CHECK(rig.renderer().mnee_lost_requests() > 0);
-        CHECK(std::ranges::all_of(rgba, [](float v) { return std::isfinite(v); }));
-    }
+    // Two frames; no sample left out for not being finite (the rig's
+    // render() checks it).
+    tests::AccumulatingRig rig(light_in_glass_in_a_cavity(), restir_pt_mnee_graph, {32, 32});
+    const std::vector<float> rgba = rig.render_accumulated(2);
+    MESSAGE("lost requests: " << rig.renderer().mnee_lost_requests());
+    CHECK(rig.renderer().mnee_lost_requests() > 0);
+    CHECK(std::ranges::all_of(rgba, [](float v) { return std::isfinite(v); }));
 }
 
-TEST_CASE("MNEE: the path tracer and ReSTIR PT with it converge to the caustic the path tracer finds, counting "
-          "it once") {
-    // One reference for both, the costliest render here (P.9).
-    const std::vector<float> reference = render_caustic(path_graph(false), 8192);
-    {
-        INFO("the path tracer with MNEE");
-        check_caustic(path_graph(true), 2048, reference);
-    }
-    {
-        INFO("ReSTIR PT with MNEE");
-        check_caustic(restir_pt_mnee_graph, 1024, reference);
-    }
+TEST_CASE("MNEE: ReSTIR PT with it converges to the caustic the path tracer finds, counting it once") {
+    const std::vector<float> reference = render_caustic(tests::path_graph(), 8192);
+    check_caustic(restir_pt_mnee_graph, 1024, reference);
 }

@@ -53,19 +53,15 @@ enum Buffer : unsigned {
     glows = 4,
     transforms = 5,
     non_finite = 6,  // the frame's count of samples not finite (metal/film/failure_count.h)
-    mnee_requests = 7,  // with mnee: MNEE's work list (contract 16)
-    mnee_header = 8,    // its count and capacity
 };
 enum Texture : unsigned { accumulated = 0 };  // also the frame's radiance (path/path.h)
 }  // namespace path
 
-// The MNEE pass's three kernels (passes/mnee/mnee.h), recorded by the path
-// pass and ReSTIR PT's initial pass after their own: the scene at the path
-// tracer's indices, then the work list, its header, its indirect grid, the
-// light each request adds to its pixel (a float4 a pixel: the path pass's
-// MNEE light, folded into the accumulated image at texture 0, or ReSTIR
-// PT's light buffer), and the frame's count of requests lost to a full list
-// (metal/film/failure_count.h).
+// The MNEE pass's two kernels (passes/mnee/mnee.h), recorded by ReSTIR PT's
+// initial pass after its own: the scene at the path tracer's indices, then
+// the work list, its header, its indirect grid, the light buffer each
+// request adds to its pixel (a float4 a pixel), and the frame's count of
+// requests lost to a full list (metal/film/failure_count.h).
 namespace mnee {
 enum Buffer : unsigned {
     constants = 0,
@@ -80,7 +76,6 @@ enum Buffer : unsigned {
     light = 10,
     lost = 11,
 };
-enum Texture : unsigned { accumulated = 0 };
 }  // namespace mnee
 
 namespace display {
@@ -126,7 +121,7 @@ enum Buffer : unsigned {
     duplication = 23,         // the duplication map, D a pixel
     last_transforms = 24,     // last frame's shape transforms
     last_glows = 25,          // and glows
-    mnee_requests = 26,       // with mnee: MNEE's work list (contract 16), the initial pass's
+    mnee_requests = 26,       // MNEE's work list (contract 16), the initial pass's
     mnee_header = 27,         // its count and capacity
 };
 enum Texture : unsigned { accumulated = 0 };  // the shade's: also the frame's radiance, as the path pass's

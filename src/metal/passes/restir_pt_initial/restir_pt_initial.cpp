@@ -19,19 +19,17 @@ constexpr NS::UInteger tiles_group = 256;
 
 }  // namespace
 
-RestirPtInitialPass::RestirPtInitialPass(const Library& library, bool mnee)
+RestirPtInitialPass::RestirPtInitialPass(const Library& library)
     : tiles_(library.compute_pipeline("restir_pt_light_tiles")),
-      pipeline_(library.compute_pipeline(mnee ? "restir_pt_initial_mnee" : "restir_pt_initial")) {
-    if (mnee) {
-        mnee_.emplace(library);
-    }
-}
+      pipeline_(library.compute_pipeline("restir_pt_initial")),
+      mnee_(library) {}
 
 void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
     if (resources.path_settings == 0 || resources.path_reservoirs == 0 || resources.primaries == 0 ||
-        resources.light == 0 || resources.light_tiles == 0) {
+        resources.light == 0 || resources.light_tiles == 0 || resources.mnee_requests == 0 ||
+        resources.mnee_header == 0) {
         throw MetalError("RestirPtInitialPass: the frame lacks one of its ReSTIR PT's settings, path reservoirs, "
-                         "primary hits, light buffer or light tiles");
+                         "primary hits, light buffer, light tiles or MNEE's work list");
     }
     namespace binding = bindings::restir_pt;
     MTL4::ArgumentTable* arguments = resources.arguments;
@@ -48,14 +46,8 @@ void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder, const Fra
                           binding::previous_positions);
     arguments->setAddress(resources.last_transforms != 0 ? resources.last_transforms : resources.transforms,
                           binding::last_transforms);
-    if (mnee_) {
-        // MNEE's work list, the mnee kernel's alone.
-        if (resources.mnee_requests == 0 || resources.mnee_header == 0) {
-            throw MetalError("RestirPtInitialPass: the frame lacks MNEE's work list");
-        }
-        arguments->setAddress(resources.mnee_requests, binding::mnee_requests);
-        arguments->setAddress(resources.mnee_header, binding::mnee_header);
-    }
+    arguments->setAddress(resources.mnee_requests, binding::mnee_requests);
+    arguments->setAddress(resources.mnee_header, binding::mnee_header);
     encoder->setComputePipelineState(tiles_.get());
     encoder->dispatchThreads(
         MTL::Size{contracts::light_tiles * contracts::light_tile_size, 1, 1},
@@ -64,10 +56,8 @@ void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder, const Fra
     barrier_after_dispatch(encoder);
     encoder->setComputePipelineState(pipeline_.get());
     dispatch_per_pixel(encoder, pipeline_.get(), resources.traced);  // a thread a traced pixel
-    if (mnee_) {
-        // The tree's MNEE requests solved, their light into the light buffer.
-        mnee_->record(encoder, resources, MneePass::Into::light_buffer);
-    }
+    // The tree's MNEE requests solved, their light into the light buffer.
+    mnee_.record(encoder, resources);
 }
 
 }  // namespace serenity::metal

@@ -11,7 +11,6 @@
 # The network is training/export.py's, beside the checkout (make weights
 # fetches it). A relative path is relative to this file's directory.
 
-mnee = true
 passes = ["restir_pt_initial", "restir_pt_temporal", "restir_pt_spatial", "restir_pt_shade",
           "restir_pt_duplication", "features", "denoise", "tone_map"]
 

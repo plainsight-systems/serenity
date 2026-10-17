@@ -59,8 +59,8 @@ static_assert(std::is_trivially_copyable_v<contracts::CameraData>);
 // the families it has (buffer_bindings()). A new kind of material,
 // texture, medium or light adds to the scene's block, not here.
 //
-// Every graph: the path pass without mnee, the preview, the features pass,
-// the presenting passes.
+// Every graph: the path pass, the preview, the features pass, the
+// presenting passes.
 constexpr NS::UInteger max_buffers = 8;
 constexpr NS::UInteger max_textures = 4;
 static_assert(bindings::path::non_finite < max_buffers);
@@ -68,10 +68,6 @@ static_assert(bindings::preview::transforms < max_buffers);
 static_assert(bindings::features::last_transforms < max_buffers);
 static_assert(bindings::tone_map::target < max_textures);
 static_assert(bindings::features::motion < max_textures);
-// A graph with mnee: the path pass's work list and the MNEE pass.
-constexpr NS::UInteger max_mnee_buffers = 12;
-static_assert(bindings::path::mnee_header < max_mnee_buffers);
-static_assert(bindings::mnee::lost < max_mnee_buffers);
 // A graph with the denoise pass.
 constexpr NS::UInteger max_denoise_buffers = 12;
 constexpr NS::UInteger max_denoise_textures = 8;
@@ -80,8 +76,8 @@ static_assert(bindings::denoise::radiance < max_denoise_textures);
 // The checkerboard's fill, a denoised graph's.
 static_assert(bindings::checkerboard_fill::fill_constants < max_denoise_buffers);
 static_assert(bindings::checkerboard_fill::history < max_denoise_textures);
-// A ReSTIR PT graph, with or without mnee (its initial pass's work list and
-// the MNEE pass bind within it).
+// A ReSTIR PT graph (its initial pass's work list and the MNEE pass bind
+// within it).
 constexpr NS::UInteger max_restir_pt_buffers = 28;
 static_assert(bindings::restir_pt::mnee_header < max_restir_pt_buffers);
 static_assert(bindings::mnee::lost < max_restir_pt_buffers);
@@ -98,9 +94,6 @@ bool has(const frame::Schedule& schedule, frame::PassKind kind) {
 // The buffers `schedule`'s table holds: the most of its families' (above).
 NS::UInteger buffer_bindings(const frame::Schedule& schedule) {
     NS::UInteger most = max_buffers;
-    if (schedule.mnee) {
-        most = std::max(most, max_mnee_buffers);
-    }
     if (frame::denoises(schedule)) {
         most = std::max(most, max_denoise_buffers);
     }
@@ -221,15 +214,14 @@ void Renderer::RestirPtFamily::bind(FrameResources& resources, const FrameSlot& 
 }
 
 // MNEE's (renderer.h): its work list and its count of lost requests.
-Renderer::MneeFamily::MneeFamily(const Device& device, Submission& submission, MneeList::Light light)
-    : list(device, submission, light), lost(device, submission, "MNEE requests lost to a full work list") {}
+Renderer::MneeFamily::MneeFamily(const Device& device, Submission& submission)
+    : list(device, submission), lost(device, submission, "MNEE requests lost to a full work list") {}
 
 void Renderer::MneeFamily::bind(FrameResources& resources, const FrameSlot& begun) {
     const MneeList::Addresses addresses = list.addresses();
     resources.mnee_requests = addresses.requests;
     resources.mnee_header = addresses.header;
     resources.mnee_grid = addresses.grid;
-    resources.mnee_light = addresses.light;
     lost.begin_frame(begun.slot, begun.sequence);
     resources.mnee_lost_counter = lost.address(begun.slot);
 }
@@ -387,7 +379,7 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
             steps_.push_back(Step{kind, Pass{std::in_place_type<PreviewPass>, library_}});
             break;
         case frame::PassKind::path:
-            steps_.push_back(Step{kind, Pass{std::in_place_type<PathPass>, library_, schedule.mnee}});
+            steps_.push_back(Step{kind, Pass{std::in_place_type<PathPass>, library_}});
             break;
         case frame::PassKind::display:
             steps_.push_back(Step{kind, Pass{std::in_place_type<DisplayPass>, library_}});
@@ -398,7 +390,7 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
                 Step{kind, Pass{std::in_place_type<ToneMapPass>, device, library_, submission_, *schedule.tone_map}});
             break;
         case frame::PassKind::restir_pt_initial:
-            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirPtInitialPass>, library_, schedule.mnee}});
+            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirPtInitialPass>, library_}});
             break;
         case frame::PassKind::restir_pt_spatial:
             steps_.push_back(Step{kind, Pass{std::in_place_type<RestirPtSpatialPass>, library_}});
@@ -465,7 +457,6 @@ void Renderer::make_restir_pt(const Device& device, const frame::Schedule& sched
     reuses_history_ = temporal;
     const bool spatial = has(schedule, frame::PassKind::restir_pt_spatial);
     contracts::PathReuseSettings settings = *schedule.restir_pt;
-    settings.mnee = schedule.mnee ? 1u : 0u;  // the graph's, for every pass of the family
     settings.checkerboard = denoises_ ? 1u : 0u;  // a denoised graph's light is traced checkerboarded
     // With spatial reuse, the three reuse textures, built once on the CPU
     // from the graph's sigma and a fixed seed (core/sampling/pairing.h); one
@@ -481,11 +472,11 @@ void Renderer::make_restir_pt(const Device& device, const frame::Schedule& sched
     restir_pt_.emplace(device, submission_, settings, textures, spatial, temporal);
 }
 
-// MNEE's work list, with mnee; the path pass's own light buffer before its
-// fold (ReSTIR PT's requests add to its light buffer). Its requests keep a
-// shape in 16 bits (contract 16), refused rather than wrapped (I.5).
+// MNEE's work list, a ReSTIR PT graph's (its requests add to the light
+// buffer). Its requests keep a shape in 16 bits (contract 16), refused
+// rather than wrapped (I.5).
 void Renderer::make_mnee(const Device& device, const frame::Schedule& schedule, const scene::SceneDescription* scene) {
-    if (!schedule.mnee) {
+    if (!schedule.restir_pt) {
         return;
     }
     if (scene->shapes.records.size() > contracts::mnee_largest_shape + 1u) {
@@ -493,7 +484,7 @@ void Renderer::make_mnee(const Device& device, const frame::Schedule& schedule, 
                          " shapes, and MNEE's requests keep a shape's index in 16 bits, at most " +
                          std::to_string(contracts::mnee_largest_shape + 1u));
     }
-    mnee_.emplace(device, submission_, schedule.restir_pt ? MneeList::Light::none : MneeList::Light::own);
+    mnee_.emplace(device, submission_);
 }
 
 // The scene on the GPU, for a graph that reads it, and what its frames

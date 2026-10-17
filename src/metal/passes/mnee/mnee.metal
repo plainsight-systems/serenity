@@ -1,12 +1,10 @@
 // The MNEE pass's kernels (mnee.h): the work list's length as an indirect
-// grid, and the requests it had no room for counted; its requests solved
-// one thread each; and, for the path pass, the light they found folded into
-// the accumulated image.
+// grid, and the requests it had no room for counted; and its requests
+// solved one thread each, their light added to ReSTIR PT's light buffer.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
 
-#include "core/contracts/frame_constants.h"
 #include "core/contracts/mnee_request.h"
 #include "core/contracts/transform.h"
 #include "metal/device/append.metal.h"
@@ -49,8 +47,8 @@ kernel void mnee_grid(device atomic_uint* header [[buffer(binding::header)]],
 
 // Each request solved, its light added to its pixel's: three atomic adds,
 // since the requests of one path's vertices share a pixel. A light not
-// finite is counted (metal/film/failure_count.h) and left out, as the path
-// pass leaves out a sample.
+// finite is counted (metal/film/failure_count.h) and left out, as the shade
+// leaves out a sample.
 kernel void mnee_solve(serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
                        constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
                        constant float* sphere_glows [[buffer(binding::glows)]],
@@ -73,27 +71,4 @@ kernel void mnee_solve(serenity::shaders::SceneStructure structure [[buffer(bind
         }
     }
     count_non_finite(failed, non_finite);
-}
-
-// The path pass's: each pixel's MNEE light, this frame's sample's share,
-// added to the accumulated image's mean (its count, n, in a: the mean
-// moves by it over n, as if the path's sample had held it), and set back to
-// 0 for the next frame. A pixel that holds no sample (its only one not
-// finite, and left out) takes none of it either.
-kernel void mnee_fold(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
-                      device float4* light [[buffer(binding::light)]],
-                      texture2d<float, access::read_write> accumulated [[texture(binding::accumulated)]],
-                      uint2 pixel [[thread_position_in_grid]]) {
-    if (pixel.x >= frame.width || pixel.y >= frame.height) {
-        return;
-    }
-    const uint i = pixel.y * frame.width + pixel.x;
-    const float3 found = light[i].xyz;
-    if (any(found != 0.0f)) {
-        const float4 held = accumulated.read(pixel);
-        if (held.a > 0.0f) {
-            accumulated.write(float4(held.rgb + found / held.a, held.a), pixel);
-        }
-        light[i] = float4(0.0f);
-    }
 }

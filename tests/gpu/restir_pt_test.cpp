@@ -54,6 +54,7 @@
 #include "core/contracts/checkerboard.h"
 #include "core/contracts/light_tile.h"
 #include "core/contracts/path_reservoir.h"
+#include "core/contracts/mnee_request.h"
 #include "core/contracts/path_reuse_settings.h"
 #include "core/frame/graph_file.h"
 #include "core/passes/restir_pt.h"
@@ -414,8 +415,11 @@ std::vector<tests::ShiftResult> shift(const std::string& text, frame::Extent siz
     const auto counted = buffer_of(tests::Binding::of(count));
     constexpr std::size_t tile_entries = std::size_t{contracts::light_tiles} * contracts::light_tile_size;
     const auto tiles = buffer_of(tests::Binding::zeroed(tile_entries * sizeof(contracts::LightTileEntry)));
+    // MNEE's list, of capacity 0 (its header zeroed): the trees' requests
+    // are dropped (kernels/restir_pt_probe.metal, pt_shift).
+    const auto mnee_header = buffer_of(tests::Binding::zeroed(contracts::mnee_header_bytes));
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-    descriptor->setMaxBufferBindCount(10);
+    descriptor->setMaxBufferBindCount(12);
     NS::Error* error = nullptr;
     auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
     REQUIRE(table);
@@ -432,6 +436,8 @@ std::vector<tests::ShiftResult> shift(const std::string& text, frame::Extent siz
     table->setAddress(set->gpuAddress(), 7);
     table->setAddress(counted->gpuAddress(), 8);
     table->setAddress(tiles->gpuAddress(), 9);
+    table->setAddress(mnee_header->gpuAddress(), 10);
+    table->setAddress(mnee_header->gpuAddress(), 11);
     encoder->setArgumentTable(table.get());
     encoder->setComputePipelineState(fill.get());
     encoder->dispatchThreads(MTL::Size(tile_entries, 1, 1), MTL::Size(fill->threadExecutionWidth(), 1, 1));
