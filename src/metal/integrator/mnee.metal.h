@@ -138,8 +138,12 @@
 // blocks of a few dozen multiply-adds and three normalizations each, a 2 x
 // 2 inverse and one sphere's roots a crossing; at most 64 iterations, about
 // six from a straight seed that converges; then n + 1 rays for visibility.
-// Every loop over crossings is unrolled to max_interfaces, so the crossings'
-// arrays are registers (GPU.3; a 4% gain measured in the loop). Pure
+// Every loop of the solve over crossings is unrolled to max_interfaces, so
+// its crossings' arrays are registers (GPU.3; a 4% gain measured in the
+// loop). Not seed_segment()'s insertion, in the estimators' loops: it
+// indexes its Seed at run time, and whether the compiler keeps that Seed
+// in registers is not measured (docs/research/
+// 2026-10-16-codebase-guidelines-pass.md, area C's P3). Pure
 // functions of their inputs (F.8) but enqueue(); results returned as
 // structs (F.21); every constant named (ES.45).
 
@@ -167,9 +171,10 @@ namespace serenity {
 namespace shaders {
 namespace mnee {
 
-// Every loop over a chain's crossings runs max_interfaces times at most,
-// unrolled, so each array a crossing indexes is held in registers, not
-// thread memory (GPU.3).
+// Every loop of the solve over a chain's crossings runs max_interfaces
+// times at most, unrolled, so each array a crossing indexes is held in
+// registers, not thread memory (GPU.3); seed_segment()'s insertion is the
+// one loop over them that is not (above).
 
 // Cycles' solver's constants (mnee.h), named once (ES.45); the distances
 // relative to the caster's radius (above).
