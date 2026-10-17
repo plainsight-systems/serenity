@@ -99,6 +99,11 @@ bool reuses_samples(frame::PassKind kind) {
     return frame::is_restir(kind) || frame::is_restir_pt(kind);
 }
 
+// Whether `schedule` has a pass of `kind`.
+bool has(const frame::Schedule& schedule, frame::PassKind kind) {
+    return std::ranges::find(schedule.passes, kind) != schedule.passes.end();
+}
+
 // The reuse constants are written into their ring as their bytes.
 static_assert(std::is_trivially_copyable_v<contracts::ReuseConstants>);
 
@@ -188,6 +193,140 @@ MTL::GPUAddress write_feature_constants(FrameArray& ring, std::uint32_t slot,
 
 }  // namespace
 
+// ReSTIR DI's (renderer.h): its settings, its arrays, and the ring of its
+// reuse constants.
+Renderer::RestirDiFamily::RestirDiFamily(const Device& device, Submission& submission,
+                                         const passes::RestirDi& graph_settings, bool temporal, bool spatial)
+    : settings(graph_settings),
+      images(device, submission, temporal ? ReuseImages::Temporal::merged : ReuseImages::Temporal::none,
+             temporal || spatial ? ReuseImages::Working::needed : ReuseImages::Working::none),
+      constants(device, submission, std::vector<std::byte>(sizeof(contracts::ReuseConstants)),
+                FrameArray::Copies::per_frame) {}
+
+void Renderer::RestirDiFamily::bind(FrameResources& resources, const FrameSlot& begun, std::uint64_t index,
+                                    const std::optional<contracts::Camera>& previous_camera, frame::Extent light) {
+    // The reuse constants: the settings, and whether there is a frame
+    // before to merge, with its camera framed for this frame's size.
+    contracts::ReuseConstants reuse{};
+    reuse.settings = settings;
+    reuse.previous = previous_camera ? 1u : 0u;
+    if (previous_camera) {
+        reuse.previous_camera = camera::shader_form(*previous_camera, light);
+    }
+    std::memcpy(constants.bytes(begun.slot).data(), &reuse, sizeof(reuse));
+    resources.reuse = constants.address(begun.slot);
+    const ReuseImages::Addresses arrays = images.addresses(index);
+    resources.records = arrays.records;
+    resources.path_states = arrays.path_states;
+    resources.previous_positions = arrays.previous_positions;
+    resources.last_records = arrays.last_records;
+    resources.working_reservoirs = arrays.working;
+    resources.final_reservoirs = arrays.final_reservoirs;
+    resources.last_final_reservoirs = arrays.last_final;
+}
+
+// ReSTIR PT's (renderer.h): its arrays, its settings and reuse textures,
+// and with temporal reuse the ring of its reuse constants.
+Renderer::RestirPtFamily::RestirPtFamily(const Device& device, Submission& submission,
+                                         const contracts::PathReuseSettings& settings,
+                                         std::span<const std::uint16_t> textures, bool spatial, bool temporal)
+    : images(device, submission, spatial ? PathReuseImages::Spatial::merged : PathReuseImages::Spatial::none,
+             temporal ? PathReuseImages::Temporal::merged : PathReuseImages::Temporal::none),
+      statics(device, submission,
+              std::array<std::span<const std::byte>, 2>{std::as_bytes(std::span(&settings, 1)),
+                                                        std::as_bytes(textures)}) {
+    if (temporal) {
+        constants.emplace(device, submission, std::vector<std::byte>(sizeof(contracts::PathReuseConstants)),
+                          FrameArray::Copies::per_frame);
+    }
+}
+
+void Renderer::RestirPtFamily::bind(FrameResources& resources, const FrameSlot& begun, std::uint64_t index,
+                                    const std::optional<contracts::Camera>& previous_camera, frame::Extent light) {
+    const PathReuseImages::Addresses arrays = images.addresses(index);
+    resources.path_settings = statics.address(0);
+    resources.pairing = statics.address(1);
+    resources.path_reservoirs = arrays.reservoirs;
+    resources.primaries = arrays.primaries;
+    resources.light = arrays.light;
+    resources.shifts = arrays.shifts;
+    resources.replays = arrays.replays;
+    resources.replay_counter = arrays.counter;
+    resources.replay_grid = arrays.grid;
+    resources.light_tiles = arrays.light_tiles;
+    resources.last_primaries = arrays.last_primaries;
+    resources.path_finals = arrays.finals;
+    resources.last_path_finals = arrays.last_finals;
+    resources.previous_positions = arrays.previous_positions;
+    resources.previous_pixels = arrays.previous_pixels;
+    resources.duplication = arrays.duplication;
+    if (constants) {
+        // Whether there is a frame before to merge, with its camera framed
+        // for this frame's size.
+        contracts::PathReuseConstants reuse{};
+        reuse.previous = previous_camera ? 1u : 0u;
+        if (previous_camera) {
+            reuse.previous_camera = camera::shader_form(*previous_camera, light);
+        }
+        std::memcpy(constants->bytes(begun.slot).data(), &reuse, sizeof(reuse));
+        resources.path_constants = constants->address(begun.slot);
+    }
+}
+
+// MNEE's (renderer.h): its work list and its count of lost requests.
+Renderer::MneeFamily::MneeFamily(const Device& device, Submission& submission, MneeList::Light light)
+    : list(device, submission, light), lost(device, submission, "MNEE requests lost to a full work list") {}
+
+void Renderer::MneeFamily::bind(FrameResources& resources, const FrameSlot& begun) {
+    const MneeList::Addresses addresses = list.addresses();
+    resources.mnee_requests = addresses.requests;
+    resources.mnee_header = addresses.header;
+    resources.mnee_grid = addresses.grid;
+    resources.mnee_light = addresses.light;
+    lost.begin_frame(begun.slot, begun.sequence);
+    resources.mnee_lost_counter = lost.address(begun.slot);
+}
+
+// The features pass's (renderer.h): its images, its constants' ring and,
+// when shapes move, the shapes as the frame before placed them.
+Renderer::FeatureFamily::FeatureFamily(const Device& device, Submission& submission,
+                                       const scene::SceneDescription& scene, bool moves)
+    : images(device, submission),
+      constants(device, submission, std::vector<std::byte>(sizeof(contracts::FeatureConstants)),
+                FrameArray::Copies::per_frame) {
+    if (moves) {
+        previous_transforms.emplace(device, submission, scene.shapes.transforms, FrameArray::Copies::per_frame);
+    }
+}
+
+void Renderer::FeatureFamily::bind(FrameResources& resources, const FrameSlot& begun,
+                                   const std::optional<frame::PreviousFrame>& previous, frame::Extent light) {
+    // Whether there is a frame before, and its camera framed for this
+    // frame's size; its shapes, animated in record() where they move.
+    resources.feature_constants = write_feature_constants(constants, begun.slot, previous, light);
+    resources.feature_last_transforms =
+        previous_transforms ? previous_transforms->address(begun.slot) : resources.transforms;
+    resources.albedo = images.albedo();
+    resources.normal = images.normal();
+    resources.depth = images.depth();
+    resources.motion = images.motion();
+}
+
+// The denoise pass's (renderer.h): the network's last width, its buffers,
+// the target-size ring, its constants' ring, and the full-size albedo's
+// images, constants and kernel.
+Renderer::DenoiseFamily::DenoiseFamily(const Device& device, Submission& submission, const Library& library,
+                                       const denoise::Network& network)
+    : features(network.widths.dec.back()),
+      images(device, submission, network.widths),
+      output_constants(device, submission, std::vector<std::byte>(ring_slot_size), FrameArray::Copies::per_frame),
+      constants(device, submission, std::vector<std::byte>(sizeof(contracts::DenoiseConstants)),
+                FrameArray::Copies::per_frame),
+      full_features(device, submission),
+      full_feature_constants(device, submission, std::vector<std::byte>(sizeof(contracts::FeatureConstants)),
+                             FrameArray::Copies::per_frame),
+      full_features_pass(library) {}
+
 Renderer::Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
                    const scene::SceneDescription* scene)
     : submission_(submission),
@@ -200,40 +339,20 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     if (const std::optional<std::string> reason = frame::invalid(schedule)) {
         throw MetalError("Renderer: " + *reason);
     }
-    const auto any = [&](bool (*has)(frame::PassKind)) { return std::ranges::any_of(schedule.passes, has); };
-    needs_scene_ = any(frame::needs_scene);
-    const bool accumulates = any(frame::accumulates);
-    const bool radiance = any(frame::writes_radiance);
+    needs_scene_ = std::ranges::any_of(schedule.passes, frame::needs_scene);
     if (needs_scene_ && scene == nullptr) {
         throw MetalError("Renderer: the frame graph's passes read a scene, and none was given (--scene)");
     }
     const auto pool = scoped_pool();
-    const auto has = [&](frame::PassKind kind) {
-        return std::ranges::find(schedule.passes, kind) != schedule.passes.end();
-    };
-    const bool temporal = has(frame::PassKind::restir_temporal);
-    const bool spatial = has(frame::PassKind::restir_spatial);
-    const bool path_temporal = has(frame::PassKind::restir_pt_temporal);
     // Raytraced mode's temporal merge traces last frame's surface against
     // last frame's structure, which this backend does not keep: refused by
     // name, never traced against this frame's (renderer.h; the design for
     // keeping it waits in docs/process/QUEUE.md).
-    if (temporal && schedule.restir_di &&
+    if (has(schedule, frame::PassKind::restir_temporal) && schedule.restir_di &&
         schedule.restir_di->bias_correction == contracts::BiasCorrection::raytraced) {
         throw MetalError("Renderer: the frame graph's restir_temporal pass with bias_correction = \"raytraced\" is "
                          "not implemented by the Metal backend yet: it needs last frame's acceleration structure; "
                          "use \"basic\"");
-    }
-
-    // The first pass that writes the images between passes, accumulates,
-    // or writes ReSTIR's arrays, which the frame before's shade reads, or the
-    // feature images, which the frame before's readers read.
-    const auto crosses_frames = [](frame::PassKind kind) {
-        return frame::writes_radiance(kind) || frame::accumulates(kind) || reuses_samples(kind) ||
-               frame::writes_features(kind) || kind == frame::PassKind::denoise;
-    };
-    if (const auto first = std::ranges::find_if(schedule.passes, crosses_frames); first != schedule.passes.end()) {
-        first_cross_frame_ = static_cast<std::size_t>(first - schedule.passes.begin());
     }
     // The network, read once (core/denoise/network.h); its weights go to the
     // GPU with its pass, its widths size its buffers.
@@ -241,6 +360,42 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     if (schedule.denoise) {
         network = denoise::load_network(schedule.denoise->weights);
     }
+    make_steps(device, schedule, network);
+    make_images(device, schedule);
+    make_restir_di(device, schedule, scene);
+    make_restir_pt(device, schedule, scene);
+    make_mnee(device, schedule, scene);
+    if (needs_scene_) {
+        make_scene(device, *scene);
+    }
+    // The features pass's. Its pass reads a scene, which the check above
+    // has made sure of.
+    if (frame::writes_features(schedule)) {
+        features_.emplace(device, submission_, *scene, animation::moves(animation_));
+    }
+    // The denoise pass's. The core has made sure the graph has the features
+    // pass and a light pass before it (frame::invalid).
+    if (denoises_) {
+        denoise_.emplace(device, submission_, library_, *network);
+    }
+}
+
+// Each of the schedule's pass kinds as this backend's pass for it, in
+// schedule order (renderer.h); and the first pass that writes the images
+// between passes, accumulates, or writes ReSTIR's arrays, which the frame
+// before's shade reads, or the feature images, which the frame before's
+// readers read.
+void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
+                          const std::optional<denoise::Network>& network) {
+    const auto crosses_frames = [](frame::PassKind kind) {
+        return frame::writes_radiance(kind) || frame::accumulates(kind) || reuses_samples(kind) ||
+               frame::writes_features(kind) || kind == frame::PassKind::denoise;
+    };
+    if (const auto first = std::ranges::find_if(schedule.passes, crosses_frames); first != schedule.passes.end()) {
+        first_cross_frame_ = static_cast<std::size_t>(first - schedule.passes.begin());
+    }
+    const bool temporal = has(schedule, frame::PassKind::restir_temporal);
+    const bool spatial = has(schedule, frame::PassKind::restir_spatial);
     steps_.reserve(schedule.passes.size());
     for (frame::PassKind kind : schedule.passes) {
         // No default: a kind this backend does not implement fails the build
@@ -261,7 +416,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         case frame::PassKind::tone_map:
             // The schedule has its settings with its pass (frame::invalid).
             steps_.push_back(
-                Step{kind, Pass{std::in_place_type<ToneMapPass>, device, library_, submission, *schedule.tone_map}});
+                Step{kind, Pass{std::in_place_type<ToneMapPass>, device, library_, submission_, *schedule.tone_map}});
             break;
         case frame::PassKind::restir_initial:
             // Into the working array when a merge follows, else the frame's
@@ -300,154 +455,128 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
             break;
         case frame::PassKind::denoise:
             // The schedule has its settings with its pass (frame::invalid).
-            steps_.push_back(Step{kind, Pass{std::in_place_type<DenoisePass>, device, library_, submission, *network}});
+            steps_.push_back(
+                Step{kind, Pass{std::in_place_type<DenoisePass>, device, library_, submission_, *network}});
             break;
         }
     }
-    // The pass that accumulates is the one that writes radiance (the core
-    // allows one of each, and path is both), and its accumulated image is
-    // the frame's radiance (passes/path/path.h): no image of its own then.
-    // In a denoised graph the radiance is the denoise pass's, at the target's
-    // size, and the accumulated image the light's, at the light size.
+}
+
+// The images between passes and the accumulated image (renderer.h). The
+// pass that accumulates is the one that writes radiance (the core allows
+// one of each, and path is both), and its accumulated image is the frame's
+// radiance (passes/path/path.h): no image of its own then. In a denoised
+// graph the radiance is the denoise pass's, at the target's size, and the
+// accumulated image the light's, at the light size.
+void Renderer::make_images(const Device& device, const frame::Schedule& schedule) {
+    const bool accumulates = frame::accumulates(schedule);
+    const bool radiance = std::ranges::any_of(schedule.passes, frame::writes_radiance);
     const FrameImages::Radiance own =
         accumulates && !denoises_ ? FrameImages::Radiance::accumulated : FrameImages::Radiance::image;
     const FrameImages::Bloom bloom = schedule.tone_map ? FrameImages::Bloom::pyramid : FrameImages::Bloom::none;
     if (radiance && (own == FrameImages::Radiance::image || bloom == FrameImages::Bloom::pyramid)) {
-        images_ = std::make_unique<FrameImages>(device, submission, own, bloom);
+        images_ = std::make_unique<FrameImages>(device, submission_, own, bloom);
     }
     if (accumulates) {
-        accumulation_ = std::make_unique<Accumulation>(device, submission);
-        non_finite_ = std::make_unique<FailureCount>(device, submission, "samples not finite");
+        accumulation_ = std::make_unique<Accumulation>(device, submission_);
+        non_finite_ = std::make_unique<FailureCount>(device, submission_, "samples not finite");
     }
-    // ReSTIR's arrays and constants, only for its graph (renderer.h). Its
-    // passes read a scene, which the check above has made sure of.
-    if (schedule.restir_di) {
-        check_packable(*scene, max_restir_media, "ReSTIR DI's path state");
-        restir_ = schedule.restir_di;
-        reuses_history_ = temporal;
-        reuse_ = std::make_unique<ReuseImages>(device, submission,
-                                               temporal ? ReuseImages::Temporal::merged : ReuseImages::Temporal::none,
-                                               temporal || spatial ? ReuseImages::Working::needed
-                                                                   : ReuseImages::Working::none);
-        reuse_constants_ = std::make_unique<FrameArray>(device, submission,
-                                                        std::vector<std::byte>(sizeof(contracts::ReuseConstants)),
-                                                        FrameArray::Copies::per_frame);
-    }
+}
 
-    // ReSTIR PT's arrays, settings and reuse textures, only for its graph.
-    if (schedule.restir_pt) {
-        // What the G-buffer and the light tiles pack (contracts/
-        // primary_hit.h, light_tile.h), refused rather than wrapped (I.5).
-        check_packable(*scene, contracts::primary_no_medium, "ReSTIR PT's G-buffer");
-        if (scene->shapes.records.size() > contracts::tile_largest_id + 1u ||
-            scene->light_counts.lights > contracts::tile_largest_id + 1u) {
-            throw MetalError("Renderer: the scene has " + std::to_string(scene->shapes.records.size()) +
-                             " shapes and " + std::to_string(scene->light_counts.lights) +
-                             " lights, and ReSTIR PT's light tiles keep each index in 16 bits, at most " +
-                             std::to_string(contracts::tile_largest_id + 1u) + " of either");
-        }
-        const bool merged = has(frame::PassKind::restir_pt_spatial);
-        reuses_history_ = path_temporal;
-        path_reuse_ = std::make_unique<PathReuseImages>(
-            device, submission, merged ? PathReuseImages::Spatial::merged : PathReuseImages::Spatial::none,
-            path_temporal ? PathReuseImages::Temporal::merged : PathReuseImages::Temporal::none);
-        if (path_temporal) {
-            path_constants_ = std::make_unique<FrameArray>(
-                device, submission, std::vector<std::byte>(sizeof(contracts::PathReuseConstants)),
-                FrameArray::Copies::per_frame);
-        }
-        contracts::PathReuseSettings settings = *schedule.restir_pt;
-        settings.mnee = schedule.mnee ? 1u : 0u;  // the graph's, for every pass of the family
-        const std::vector<std::uint16_t> textures =
-            merged ? sampling::reuse_textures(static_cast<double>(settings.sigma), pairing_seed)
-                   : std::vector<std::uint16_t>(1, 0u);
-        const std::array<std::span<const std::byte>, 2> arrays = {std::as_bytes(std::span(&settings, 1)),
-                                                                  std::as_bytes(std::span(textures))};
-        path_static_ = std::make_unique<StaticArrays>(device, submission, arrays);
+// ReSTIR DI's, only for its graph (renderer.h). Its passes read a scene,
+// which the constructor has made sure of.
+void Renderer::make_restir_di(const Device& device, const frame::Schedule& schedule,
+                              const scene::SceneDescription* scene) {
+    if (!schedule.restir_di) {
+        return;
     }
+    check_packable(*scene, max_restir_media, "ReSTIR DI's path state");
+    const bool temporal = has(schedule, frame::PassKind::restir_temporal);
+    reuses_history_ = temporal;
+    restir_di_.emplace(device, submission_, *schedule.restir_di, temporal,
+                       has(schedule, frame::PassKind::restir_spatial));
+}
 
-    // MNEE's work list, with mnee; the path pass's own light buffer before
-    // its fold (ReSTIR PT's requests add to its light buffer). Its requests
-    // keep a shape in 16 bits (contract 16), refused rather than wrapped (I.5).
-    if (schedule.mnee) {
-        if (scene->shapes.records.size() > contracts::mnee_largest_shape + 1u) {
-            throw MetalError("Renderer: the scene has " + std::to_string(scene->shapes.records.size()) +
-                             " shapes, and MNEE's requests keep a shape's index in 16 bits, at most " +
-                             std::to_string(contracts::mnee_largest_shape + 1u));
-        }
-        mnee_list_ = std::make_unique<MneeList>(device, submission, schedule.restir_pt ? MneeList::Light::none
-                                                                                       : MneeList::Light::own);
-        mnee_lost_ = std::make_unique<FailureCount>(device, submission, "MNEE requests lost to a full work list");
+// ReSTIR PT's, only for its graph (renderer.h).
+void Renderer::make_restir_pt(const Device& device, const frame::Schedule& schedule,
+                              const scene::SceneDescription* scene) {
+    if (!schedule.restir_pt) {
+        return;
     }
+    // What the G-buffer and the light tiles pack (contracts/primary_hit.h,
+    // light_tile.h), refused rather than wrapped (I.5).
+    check_packable(*scene, contracts::primary_no_medium, "ReSTIR PT's G-buffer");
+    if (scene->shapes.records.size() > contracts::tile_largest_id + 1u ||
+        scene->light_counts.lights > contracts::tile_largest_id + 1u) {
+        throw MetalError("Renderer: the scene has " + std::to_string(scene->shapes.records.size()) + " shapes and " +
+                         std::to_string(scene->light_counts.lights) +
+                         " lights, and ReSTIR PT's light tiles keep each index in 16 bits, at most " +
+                         std::to_string(contracts::tile_largest_id + 1u) + " of either");
+    }
+    const bool temporal = has(schedule, frame::PassKind::restir_pt_temporal);
+    reuses_history_ = temporal;
+    const bool spatial = has(schedule, frame::PassKind::restir_pt_spatial);
+    contracts::PathReuseSettings settings = *schedule.restir_pt;
+    settings.mnee = schedule.mnee ? 1u : 0u;  // the graph's, for every pass of the family
+    // With spatial reuse, the three reuse textures, built once on the CPU
+    // from the graph's sigma and a fixed seed (core/sampling/pairing.h); one
+    // zero texel without.
+    const std::vector<std::uint16_t> textures =
+        spatial ? sampling::reuse_textures(static_cast<double>(settings.sigma), pairing_seed)
+                : std::vector<std::uint16_t>(1, 0u);
+    restir_pt_.emplace(device, submission_, settings, textures, spatial, temporal);
+}
 
-    // Only a graph that reads the scene has it put on the GPU, and only its
-    // frames place what moves.
-    if (needs_scene_) {
-        scene_ = std::make_unique<SceneBuffers>(device, submission, *scene);
-        animation_ = scene->animation;
-        const bool moves = animation::moves(animation_);
-        transforms_ = std::make_unique<ShapeTransforms>(
-            device, submission, scene->shapes.transforms,
+// MNEE's work list, with mnee; the path pass's own light buffer before its
+// fold (ReSTIR PT's requests add to its light buffer). Its requests keep a
+// shape in 16 bits (contract 16), refused rather than wrapped (I.5).
+void Renderer::make_mnee(const Device& device, const frame::Schedule& schedule, const scene::SceneDescription* scene) {
+    if (!schedule.mnee) {
+        return;
+    }
+    if (scene->shapes.records.size() > contracts::mnee_largest_shape + 1u) {
+        throw MetalError("Renderer: the scene has " + std::to_string(scene->shapes.records.size()) +
+                         " shapes, and MNEE's requests keep a shape's index in 16 bits, at most " +
+                         std::to_string(contracts::mnee_largest_shape + 1u));
+    }
+    mnee_.emplace(device, submission_, schedule.restir_pt ? MneeList::Light::none : MneeList::Light::own);
+}
+
+// The scene on the GPU, for a graph that reads it, and what its frames
+// place (renderer.h).
+void Renderer::make_scene(const Device& device, const scene::SceneDescription& scene) {
+    scene_ = std::make_unique<SceneBuffers>(device, submission_, scene);
+    animation_ = scene.animation;
+    const bool moves = animation::moves(animation_);
+    transforms_ = std::make_unique<ShapeTransforms>(device, submission_, scene.shapes.transforms,
+                                                    moves ? FrameArray::Copies::per_frame : FrameArray::Copies::one);
+    // Checked here, not by animate() in a frame, so nothing about the scene
+    // can fail once a frame's submission has begun (renderer.h).
+    for (const animation::Glower& glower : animation_.glowers) {
+        if (glower.target >= scene.light_counts.spheres) {
+            throw MetalError("Renderer: a glowing light's target, " + std::to_string(glower.target) +
+                             ", is not one of the scene's " + std::to_string(scene.light_counts.spheres) +
+                             " sphere lights");
+        }
+    }
+    glows_ = std::make_unique<LightGlows>(device, submission_, scene.light_counts.spheres,
+                                          !animation_.glowers.empty());
+    // Last frame's, for a temporal graph whose scene changes (renderer.h).
+    if (reuses_history_ && animation::changes(animation_)) {
+        last_transforms_ = std::make_unique<ShapeTransforms>(
+            device, submission_, scene.shapes.transforms,
             moves ? FrameArray::Copies::per_frame : FrameArray::Copies::one);
-        // Checked here, not by animate() in a frame, so nothing about the
-        // scene can fail once a frame's submission has begun (renderer.h).
-        for (const animation::Glower& glower : animation_.glowers) {
-            if (glower.target >= scene->light_counts.spheres) {
-                throw MetalError("Renderer: a glowing light's target, " + std::to_string(glower.target) +
-                            ", is not one of the scene's " + std::to_string(scene->light_counts.spheres) +
-                            " sphere lights");
-            }
-        }
-        glows_ = std::make_unique<LightGlows>(device, submission, scene->light_counts.spheres,
-                                              !animation_.glowers.empty());
-        // Last frame's, for a temporal graph whose scene changes (renderer.h).
-        if (reuses_history_ && animation::changes(animation_)) {
-            last_transforms_ = std::make_unique<ShapeTransforms>(
-                device, submission, scene->shapes.transforms,
-                moves ? FrameArray::Copies::per_frame : FrameArray::Copies::one);
-            last_glows_ = std::make_unique<LightGlows>(device, submission, scene->light_counts.spheres,
-                                                       !animation_.glowers.empty());
-        }
-        // Where the families meet: the acceleration structure learns which
-        // shapes move, by the movers' targets, and nothing else of them.
-        std::vector<std::uint32_t> moving;
-        moving.reserve(animation_.movers.size());
-        for (const animation::Mover& mover : animation_.movers) {
-            moving.push_back(mover.target);
-        }
-        acceleration_ = std::make_unique<SceneAcceleration>(device, submission, scene->shapes, moving);
+        last_glows_ = std::make_unique<LightGlows>(device, submission_, scene.light_counts.spheres,
+                                                   !animation_.glowers.empty());
     }
-
-    // The features pass's images, constants and, when shapes move, the
-    // previous frame's placing of them (renderer.h). Its pass reads a scene,
-    // which the check above has made sure of.
-    if (frame::writes_features(schedule)) {
-        features_ = std::make_unique<FeatureImages>(device, submission);
-        feature_constants_ = std::make_unique<FrameArray>(
-            device, submission, std::vector<std::byte>(sizeof(contracts::FeatureConstants)),
-            FrameArray::Copies::per_frame);
-        if (animation::moves(animation_)) {
-            feature_transforms_ = std::make_unique<ShapeTransforms>(device, submission, scene->shapes.transforms,
-                                                                    FrameArray::Copies::per_frame);
-        }
+    // Where the families meet: the acceleration structure learns which
+    // shapes move, by the movers' targets, and nothing else of them.
+    std::vector<std::uint32_t> moving;
+    moving.reserve(animation_.movers.size());
+    for (const animation::Mover& mover : animation_.movers) {
+        moving.push_back(mover.target);
     }
-
-    // The denoise pass's (renderer.h). The core has made sure the graph has
-    // the features pass and a light pass before it (frame::invalid).
-    if (denoises_) {
-        denoise_features_ = network->widths.dec.back();
-        denoise_images_ = std::make_unique<DenoiseImages>(device, submission, network->widths);
-        output_constants_ = std::make_unique<FrameArray>(device, submission, std::vector<std::byte>(ring_slot_size),
-                                                         FrameArray::Copies::per_frame);
-        denoise_constants_ = std::make_unique<FrameArray>(
-            device, submission, std::vector<std::byte>(sizeof(contracts::DenoiseConstants)),
-            FrameArray::Copies::per_frame);
-        full_features_ = std::make_unique<FeatureImages>(device, submission);
-        full_feature_constants_ = std::make_unique<FrameArray>(
-            device, submission, std::vector<std::byte>(sizeof(contracts::FeatureConstants)),
-            FrameArray::Copies::per_frame);
-        full_features_pass_ = std::make_unique<FeaturesPass>(library_);
-    }
+    acceleration_ = std::make_unique<SceneAcceleration>(device, submission_, scene.shapes, moving);
 }
 
 Renderer::~Renderer() {
@@ -460,7 +589,7 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
     check_time(inputs.time, inputs.index, "its time");
     if (needs_scene_ && !inputs.camera) {
         throw MetalError("Renderer: frame " + std::to_string(inputs.index) +
-                    ": the frame graph reads a scene, and the frame has no camera");
+                         ": the frame graph reads a scene, and the frame has no camera");
     }
     // The frame before, which the features' motion is measured from: its
     // camera framed and its time placing the shapes in record(), so both are
@@ -483,20 +612,20 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
         images_->prepare(size);
     }
     if (features_) {
-        features_->prepare(light);
+        features_->images.prepare(light);
     }
-    if (full_features_) {
-        full_features_->prepare(size);
+    if (denoise_) {
+        denoise_->full_features.prepare(size);
     }
-    if (mnee_list_) {
-        mnee_list_->prepare(light);
+    if (mnee_) {
+        mnee_->list.prepare(light);
     }
     // 0 without a temporal merge, of either family (never both in a graph).
     std::uint64_t reused = 0;
-    if (reuse_) {
-        reused = reuse_->prepare(inputs, light);
-    } else if (path_reuse_) {
-        reused = path_reuse_->prepare(inputs, light);
+    if (restir_di_) {
+        reused = restir_di_->images.prepare(inputs, light);
+    } else if (restir_pt_) {
+        reused = restir_pt_->images.prepare(inputs, light);
     }
     std::uint32_t held = 0;
     if (accumulation_) {
@@ -504,13 +633,12 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
             animation::changes(animation_) ? frame::SceneMotion::changing : frame::SceneMotion::still;
         held = accumulation_->prepare(inputs, light, motion);
     }
-    const bool denoise_history = denoise_images_ ? denoise_images_->prepare(inputs, light) : false;
+    const bool denoise_history = denoise_ ? denoise_->images.prepare(inputs, light) : false;
     prepared_ = Prepared{inputs.index, size, held, reused, denoise_history};
 }
 
 bool Renderer::prepares() const noexcept {
-    return accumulation_ || images_ || reuse_ || path_reuse_ || mnee_list_ || features_ || denoise_images_ ||
-           full_features_;
+    return accumulation_ || images_ || restir_di_ || restir_pt_ || mnee_ || features_ || denoise_;
 }
 
 std::uint64_t Renderer::non_finite_samples() const noexcept {
@@ -518,7 +646,7 @@ std::uint64_t Renderer::non_finite_samples() const noexcept {
 }
 
 std::uint64_t Renderer::mnee_lost_requests() const noexcept {
-    return mnee_lost_ ? mnee_lost_->count() : 0u;
+    return mnee_ ? mnee_->lost.count() : 0u;
 }
 
 void Renderer::read_accumulated(std::span<float> out) {
@@ -531,7 +659,7 @@ void Renderer::read_accumulated(std::span<float> out) {
     if (image == nullptr) {
         throw MetalError("read_accumulated: the frame graph accumulates nothing, or no frame has made its image");
     }
-    constexpr std::size_t channels = 4;  // RGBA32Float
+    constexpr std::size_t channels = contracts::accumulated_image_channels;  // RGBA32Float
     const std::size_t row_bytes = std::size_t{image->width()} * channels * sizeof(float);
     const std::size_t floats = std::size_t{image->width()} * image->height() * channels;
     if (out.size() != floats) {
@@ -546,64 +674,61 @@ void Renderer::read_accumulated(std::span<float> out) {
 }
 
 FeatureImages::Read Renderer::read_features() const {
-    if (!features_ || features_->albedo() == nullptr) {
+    if (!features_ || features_->images.albedo() == nullptr) {
         throw MetalError("read_features: the frame graph has no features pass, or no frame has made its images");
     }
-    return features_->read();
+    return features_->images.read();
 }
 
-void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, MTL::Texture* target,
-                      frame::Extent size) {
-    if (begun.commands == nullptr || begun.slot >= frames_in_flight || target == nullptr || size.width == 0 ||
-        size.height == 0) {
-        throw MetalError("Renderer::record: no command buffer, no frame slot, no target, or an empty image");
+// What prepare() readied for the frame: checked to be this frame at this
+// size where the graph prepares anything, and taken (renderer.h).
+Renderer::Prepared Renderer::take_prepared(const frame::FrameInputs& inputs, frame::Extent size) {
+    if (!prepares()) {
+        return Prepared{inputs.index, size, 0u, 0u, false};
     }
-    check_time(inputs.time, inputs.index, "its time");
-    std::uint32_t accumulated_frames = 0;
-    std::uint64_t reused_frames = 0;
-    bool denoise_history = false;
-    if (prepares()) {
-        if (!prepared_ || prepared_->index != inputs.index || !(prepared_->size == size)) {
-            throw MetalError("Renderer::record: frame " + std::to_string(inputs.index) +
-                        " was not prepared at this size (Renderer::prepare)");
-        }
-        accumulated_frames = prepared_->accumulated_frames;
-        reused_frames = prepared_->reused_frames;
-        denoise_history = prepared_->denoise_history;
-        prepared_.reset();
+    if (!prepared_ || prepared_->index != inputs.index || !(prepared_->size == size)) {
+        throw MetalError("Renderer::record: frame " + std::to_string(inputs.index) +
+                         " was not prepared at this size (Renderer::prepare)");
     }
+    const Prepared taken = *prepared_;
+    prepared_.reset();
+    return taken;
+}
 
-    if (needs_scene_ && !inputs.camera) {
-        throw MetalError("Renderer::record: the frame graph reads a scene, and the frame has no camera");
-    }
-
-    // The passes before the denoise pass render at the light size, the
-    // target's own in a graph without it (renderer.h).
-    const frame::Extent light = frame::light_size(schedule_, size);
-    // The frame's constants and its camera framed for `at`, into `ring`'s
-    // slot; their addresses.
-    const auto write_constants = [&](FrameArray& ring, frame::Extent at) {
-        const contracts::FrameConstants constants{
-            static_cast<float>(inputs.time.count()),
-            static_cast<std::uint32_t>(inputs.index),
-            at.width,
-            at.height,
-            accumulated_frames,
-            {0u, 0u, 0u},
-        };
-        const std::span<std::byte> bytes = ring.bytes(begun.slot);
-        const MTL::GPUAddress address = ring.address(begun.slot);
-        std::memcpy(bytes.data() + constants_offset, &constants, sizeof(constants));
-        MTL::GPUAddress camera_address = 0;
-        if (inputs.camera) {
-            const contracts::CameraData camera = camera::shader_form(*inputs.camera, at);
-            std::memcpy(bytes.data() + camera_offset, &camera, sizeof(camera));
-            camera_address = address + camera_offset;
-        }
-        return std::pair{address + constants_offset, camera_address};
+// The frame's constants and its camera framed for `at`, into `ring`'s
+// slot; their addresses.
+std::pair<MTL::GPUAddress, MTL::GPUAddress> Renderer::write_constants(FrameArray& ring, const FrameSlot& begun,
+                                                                      const frame::FrameInputs& inputs,
+                                                                      frame::Extent at,
+                                                                      std::uint32_t accumulated_frames) {
+    const contracts::FrameConstants constants{
+        static_cast<float>(inputs.time.count()),
+        static_cast<std::uint32_t>(inputs.index),
+        at.width,
+        at.height,
+        accumulated_frames,
+        {0u, 0u, 0u},
     };
-    const auto [constants_address, camera_address] = write_constants(constants_, light);
+    const std::span<std::byte> bytes = ring.bytes(begun.slot);
+    const MTL::GPUAddress address = ring.address(begun.slot);
+    std::memcpy(bytes.data() + constants_offset, &constants, sizeof(constants));
+    MTL::GPUAddress camera_address = 0;
+    if (inputs.camera) {
+        const contracts::CameraData camera = camera::shader_form(*inputs.camera, at);
+        std::memcpy(bytes.data() + camera_offset, &camera, sizeof(camera));
+        camera_address = address + camera_offset;
+    }
+    return {address + constants_offset, camera_address};
+}
 
+// Every pass's resources at the light size: the constants and camera, the
+// scene, the images, and each family's (renderer.h). `previous` whether a
+// temporal graph merges last frame.
+FrameResources Renderer::frame_resources(const FrameSlot& begun, const frame::FrameInputs& inputs,
+                                         MTL::Texture* target, frame::Extent light, const Prepared& prepared,
+                                         bool previous) {
+    const auto [constants_address, camera_address] =
+        write_constants(constants_, begun, inputs, light, prepared.accumulated_frames);
     FrameResources resources{
         .arguments = arguments_.get(),
         .constants = constants_address,
@@ -627,166 +752,121 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         // The accumulated image is the frame's radiance (frame_images.h).
         resources.radiance = accumulation_->texture();
         resources.accumulation = accumulation_->texture();
-        resources.accumulated_frames = accumulated_frames;
+        resources.accumulated_frames = prepared.accumulated_frames;
         non_finite_->begin_frame(begun.slot, begun.sequence);
         resources.non_finite_counter = non_finite_->address(begun.slot);
     }
-
-    // A temporal graph merges last frame when the history holds it and the
-    // renderer recorded it (its camera kept): never at a history's first.
-    const bool previous = reuses_history_ && reused_frames > 0 && previous_camera_.has_value();
-    if (reuse_) {
-        // The reuse constants: the settings, and whether there is a frame
-        // before to merge, with its camera framed for this frame's size.
-        contracts::ReuseConstants reuse{};
-        reuse.settings = *restir_;
-        reuse.previous = previous ? 1u : 0u;
-        if (previous) {
-            reuse.previous_camera = camera::shader_form(*previous_camera_, light);
-        }
-        std::memcpy(reuse_constants_->bytes(begun.slot).data(), &reuse, sizeof(reuse));
-        resources.reuse = reuse_constants_->address(begun.slot);
-        const ReuseImages::Addresses arrays = reuse_->addresses(inputs.index);
-        resources.records = arrays.records;
-        resources.path_states = arrays.path_states;
-        resources.previous_positions = arrays.previous_positions;
-        resources.last_records = arrays.last_records;
-        resources.working_reservoirs = arrays.working;
-        resources.final_reservoirs = arrays.final_reservoirs;
-        resources.last_final_reservoirs = arrays.last_final;
+    const std::optional<contracts::Camera> previous_camera = previous ? previous_camera_ : std::nullopt;
+    if (restir_di_) {
+        restir_di_->bind(resources, begun, inputs.index, previous_camera, light);
     }
-    if (mnee_list_) {
-        const MneeList::Addresses list = mnee_list_->addresses();
-        resources.mnee_requests = list.requests;
-        resources.mnee_header = list.header;
-        resources.mnee_grid = list.grid;
-        resources.mnee_light = list.light;
-        mnee_lost_->begin_frame(begun.slot, begun.sequence);
-        resources.mnee_lost_counter = mnee_lost_->address(begun.slot);
+    if (mnee_) {
+        mnee_->bind(resources, begun);
     }
-    if (path_reuse_) {
-        const PathReuseImages::Addresses arrays = path_reuse_->addresses(inputs.index);
-        resources.path_settings = path_static_->address(0);
-        resources.pairing = path_static_->address(1);
-        resources.path_reservoirs = arrays.reservoirs;
-        resources.primaries = arrays.primaries;
-        resources.light = arrays.light;
-        resources.shifts = arrays.shifts;
-        resources.replays = arrays.replays;
-        resources.replay_counter = arrays.counter;
-        resources.replay_grid = arrays.grid;
-        resources.light_tiles = arrays.light_tiles;
-        resources.last_primaries = arrays.last_primaries;
-        resources.path_finals = arrays.finals;
-        resources.last_path_finals = arrays.last_finals;
-        resources.previous_positions = arrays.previous_positions;
-        resources.previous_pixels = arrays.previous_pixels;
-        resources.duplication = arrays.duplication;
-        if (path_constants_) {
-            // Whether there is a frame before to merge, with its camera
-            // framed for this frame's size.
-            contracts::PathReuseConstants reuse{};
-            reuse.previous = previous ? 1u : 0u;
-            if (previous) {
-                reuse.previous_camera = camera::shader_form(*previous_camera_, light);
-            }
-            std::memcpy(path_constants_->bytes(begun.slot).data(), &reuse, sizeof(reuse));
-            resources.path_constants = path_constants_->address(begun.slot);
-        }
+    if (restir_pt_) {
+        restir_pt_->bind(resources, begun, inputs.index, previous_camera, light);
     }
     if (features_) {
-        // Whether there is a frame before, and its camera framed for this
-        // frame's size; its shapes, animated below where they move.
-        resources.feature_constants = write_feature_constants(*feature_constants_, begun.slot, inputs.previous, light);
-        resources.feature_last_transforms =
-            feature_transforms_ ? feature_transforms_->address(begun.slot) : resources.transforms;
-        resources.albedo = features_->albedo();
-        resources.normal = features_->normal();
-        resources.depth = features_->depth();
-        resources.motion = features_->motion();
+        features_->bind(resources, begun, inputs.previous, light);
     }
     if (reuses_history_) {
         // Last frame's transforms and glows: this frame's own where the
-        // scene is still, else animated below at the previous time.
+        // scene is still, else animated by animate() at the previous time.
         resources.last_transforms = last_transforms_ ? last_transforms_->address(begun.slot) : resources.transforms;
         resources.last_glows = last_glows_ ? last_glows_->address(begun.slot) : resources.glows;
     }
+    return resources;
+}
 
-    MTL4::ComputeCommandEncoder* encoder = begun.commands->computeCommandEncoder();
-    if (encoder == nullptr) {
-        throw MetalError("Renderer::record: the command buffer made no compute encoder");
+// Animate: every moving shape placed and every glowing light lit at the
+// frame's time, by the core, in the slot's transforms and glows; and, when
+// shapes move, the slot's structure rebuilt over them, before any pass
+// traces it (renderer.h). With them, last frame's and the features' frame
+// before's where the graph keeps them.
+void Renderer::animate(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun,
+                       const frame::FrameInputs& inputs, bool previous) {
+    if (!scene_ || !animation::changes(animation_)) {
+        return;
     }
-    // Animate: every moving shape placed and every glowing light lit at the
-    // frame's time, by the core, in the slot's transforms and glows; and,
-    // when shapes move, the slot's structure rebuilt over them, before any
-    // pass traces it.
-    if (scene_ && animation::changes(animation_)) {
-        const std::span<contracts::Transform> placed = transforms_->transforms(begun.slot);
-        animation::animate(animation_, inputs.time, placed, glows_->glows(begun.slot));
-        if (animation::moves(animation_)) {
-            acceleration_->update(encoder, begun.slot, placed);
-        }
-        // Last frame's, at its time; unread at a history's first frame.
-        if (last_transforms_ && previous) {
-            animation::animate(animation_, previous_time_, last_transforms_->transforms(begun.slot),
-                               last_glows_->glows(begun.slot));
-        }
-        // The features' frame before, at its time; unread without one. Its
-        // shapes alone: a glow does not move a surface.
-        if (feature_transforms_ && inputs.previous) {
-            animation::place(animation_, inputs.previous->time, feature_transforms_->transforms(begun.slot));
-        }
+    const std::span<contracts::Transform> placed = transforms_->transforms(begun.slot);
+    animation::animate(animation_, inputs.time, placed, glows_->glows(begun.slot));
+    if (animation::moves(animation_)) {
+        acceleration_->update(encoder, begun.slot, placed);
     }
-    // A denoised graph's passes from the denoise pass on: at the target's
-    // size, with its constants and camera, the radiance image the denoise
-    // pass writes and the presenting pass reads; the denoise pass's own
-    // inputs; and the full-size albedo's features dispatch (renderer.h).
-    FrameResources output = resources;
-    FrameResources denoising = resources;
-    FrameResources full_features = resources;
-    if (denoises_) {
-        const auto [output_constants, output_camera] = write_constants(*output_constants_, size);
-        output.constants = output_constants;
-        output.camera = output_camera;
-        output.size = size;
-        output.radiance = images_->radiance();
-        output.accumulation = nullptr;
-
-        full_features = output;
-        full_features.feature_constants =
-            write_feature_constants(*full_feature_constants_, begun.slot, inputs.previous, size);
-        full_features.albedo = full_features_->albedo();
-        full_features.normal = full_features_->normal();
-        full_features.depth = full_features_->depth();
-        full_features.motion = full_features_->motion();
-
-        // Its constants: the view axes, the sizes, whether there is a history.
-        const camera::ViewAxes axes = camera::view_axes(*inputs.camera);
-        contracts::DenoiseConstants k{};
-        k.right = axes.right;
-        k.up = axes.up;
-        k.backward = axes.backward;
-        k.light_width = light.width;
-        k.light_height = light.height;
-        k.history = denoise_history ? 1u : 0u;
-        k.padded_width = denoise_images_->padded().width;
-        k.padded_height = denoise_images_->padded().height;
-        k.output_width = size.width;
-        k.output_height = size.height;
-        k.features = denoise_features_;
-        std::memcpy(denoise_constants_->bytes(begun.slot).data(), &k, sizeof(k));
-
-        denoising = output;
-        denoising.light_radiance = accumulation_->texture();
-        denoising.albedo = resources.albedo;
-        denoising.normal = resources.normal;
-        denoising.depth = resources.depth;
-        denoising.motion = resources.motion;
-        denoising.full_albedo = full_features_->albedo();
-        denoising.denoise_constants = denoise_constants_->address(begun.slot);
-        denoising.denoise = denoise_images_.get();
+    // Last frame's, at its time; unread at a history's first frame.
+    if (last_transforms_ && previous) {
+        animation::animate(animation_, previous_time_, last_transforms_->transforms(begun.slot),
+                           last_glows_->glows(begun.slot));
     }
+    // The features' frame before, at its time; unread without one. Its
+    // shapes alone: a glow does not move a surface.
+    if (features_ && features_->previous_transforms && inputs.previous) {
+        animation::place(animation_, inputs.previous->time, features_->previous_transforms->transforms(begun.slot));
+    }
+}
 
+// A denoised graph's passes from the denoise pass on (renderer.h): at the
+// target's size, with its constants and camera, the radiance image the
+// denoise pass writes and the presenting pass reads; the denoise pass's own
+// inputs; and the full-size albedo's features dispatch. Precondition: the
+// graph denoises.
+Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& resources, const FrameSlot& begun,
+                                                       const frame::FrameInputs& inputs, frame::Extent size,
+                                                       const Prepared& prepared) {
+    DenoiseFamily& d = *denoise_;
+    const frame::Extent light = resources.size;
+    DenoiseResources out{resources, resources, resources};
+    FrameResources& output = out.output;
+    const auto [output_constants, output_camera] =
+        write_constants(d.output_constants, begun, inputs, size, prepared.accumulated_frames);
+    output.constants = output_constants;
+    output.camera = output_camera;
+    output.size = size;
+    output.radiance = images_->radiance();
+    output.accumulation = nullptr;
+
+    FrameResources& full_features = out.full_features;
+    full_features = output;
+    full_features.feature_constants =
+        write_feature_constants(d.full_feature_constants, begun.slot, inputs.previous, size);
+    full_features.albedo = d.full_features.albedo();
+    full_features.normal = d.full_features.normal();
+    full_features.depth = d.full_features.depth();
+    full_features.motion = d.full_features.motion();
+
+    // Its constants: the view axes, the sizes, whether there is a history.
+    const camera::ViewAxes axes = camera::view_axes(*inputs.camera);
+    contracts::DenoiseConstants k{};
+    k.right = axes.right;
+    k.up = axes.up;
+    k.backward = axes.backward;
+    k.light_width = light.width;
+    k.light_height = light.height;
+    k.history = prepared.denoise_history ? 1u : 0u;
+    k.padded_width = d.images.padded().width;
+    k.padded_height = d.images.padded().height;
+    k.output_width = size.width;
+    k.output_height = size.height;
+    k.features = d.features;
+    std::memcpy(d.constants.bytes(begun.slot).data(), &k, sizeof(k));
+
+    FrameResources& denoising = out.denoising;
+    denoising = output;
+    denoising.light_radiance = accumulation_->texture();
+    denoising.albedo = resources.albedo;
+    denoising.normal = resources.normal;
+    denoising.depth = resources.depth;
+    denoising.motion = resources.motion;
+    denoising.full_albedo = d.full_features.albedo();
+    denoising.denoise_constants = d.constants.address(begun.slot);
+    denoising.denoise = &d.images;
+    return out;
+}
+
+// The schedule's passes in order into `encoder`, each after the barriers
+// its reads need (renderer.h).
+void Renderer::record_steps(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources,
+                            const DenoiseResources& denoised_resources) {
     encoder->setArgumentTable(resources.arguments);
     bool restir_before = false;  // whether a ReSTIR pass came before, in this frame
     bool denoised = false;       // whether the denoise pass came before, in this frame
@@ -816,13 +896,43 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
             // barrier above. Only the pass's last dispatch reads the
             // full-size albedo, after barriers of its own (passes/denoise/
             // denoise.h), so its first dispatches overlap this one.
-            full_features_pass_->record(encoder, full_features);
-            std::visit([&](const auto& pass) { pass.record(encoder, denoising); }, step.pass);
+            denoise_->full_features_pass.record(encoder, denoised_resources.full_features);
+            std::visit([&](const auto& pass) { pass.record(encoder, denoised_resources.denoising); }, step.pass);
             denoised = true;
             continue;
         }
-        std::visit([&](const auto& pass) { pass.record(encoder, denoised ? output : resources); }, step.pass);
+        const FrameResources& given = denoised ? denoised_resources.output : resources;
+        std::visit([&](const auto& pass) { pass.record(encoder, given); }, step.pass);
     }
+}
+
+void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, MTL::Texture* target,
+                      frame::Extent size) {
+    if (begun.commands == nullptr || begun.slot >= frames_in_flight || target == nullptr || size.width == 0 ||
+        size.height == 0) {
+        throw MetalError("Renderer::record: no command buffer, no frame slot, no target, or an empty image");
+    }
+    check_time(inputs.time, inputs.index, "its time");
+    const Prepared prepared = take_prepared(inputs, size);
+    if (needs_scene_ && !inputs.camera) {
+        throw MetalError("Renderer::record: the frame graph reads a scene, and the frame has no camera");
+    }
+    // The passes before the denoise pass render at the light size, the
+    // target's own in a graph without it (renderer.h).
+    const frame::Extent light = frame::light_size(schedule_, size);
+    // A temporal graph merges last frame when the history holds it and the
+    // renderer recorded it (its camera kept): never at a history's first.
+    const bool previous = reuses_history_ && prepared.reused_frames > 0 && previous_camera_.has_value();
+    const FrameResources resources = frame_resources(begun, inputs, target, light, prepared, previous);
+
+    MTL4::ComputeCommandEncoder* encoder = begun.commands->computeCommandEncoder();
+    if (encoder == nullptr) {
+        throw MetalError("Renderer::record: the command buffer made no compute encoder");
+    }
+    animate(encoder, begun, inputs, previous);
+    const DenoiseResources denoised = denoise_ ? denoise_resources(resources, begun, inputs, size, prepared)
+                                               : DenoiseResources{resources, resources, resources};
+    record_steps(encoder, resources, denoised);
     encoder->endEncoding();
     // What the next frame's temporal merge asks of this one.
     previous_camera_ = inputs.camera;

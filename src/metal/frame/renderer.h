@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -16,6 +17,7 @@
 #include "core/contracts/camera.h"
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
+#include "core/denoise/network.h"
 #include "core/frame/schedule.h"
 #include "core/passes/restir_di.h"
 #include "core/scene/scene.h"
@@ -379,11 +381,6 @@ public:
     FeatureImages::Read read_features() const;
 
 private:
-    // Whether the graph has anything prepare() readies, so record() asks
-    // that it was: every member prepare() prepares (I.5; one test, so the
-    // two cannot disagree).
-    bool prepares() const noexcept;
-
     using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass, RestirInitialPass,
                               RestirTemporalPass, RestirSpatialPass, RestirShadePass, RestirPtInitialPass,
                               RestirPtTemporalPass, RestirPtSpatialPass, RestirPtShadePass,
@@ -404,10 +401,114 @@ private:
         bool denoise_history = false;     // the denoiser reads last frame's output
     };
 
+    // Each family's state (above), one struct each, held in place in an
+    // optional, present only for a graph with the family's passes (C.1,
+    // R.5). Each binds its share of a frame's resources.
+    //
+    // ReSTIR DI's: its settings, as the graph gives them; its arrays; and
+    // the ring of its reuse constants, one copy per frame in flight.
+    struct RestirDiFamily {
+        RestirDiFamily(const Device& device, Submission& submission, const passes::RestirDi& graph_settings,
+                       bool temporal, bool spatial);
+        // `previous_camera` last frame's where the frame merges it, else none.
+        void bind(FrameResources& resources, const FrameSlot& begun, std::uint64_t index,
+                  const std::optional<contracts::Camera>& previous_camera, frame::Extent light);
+
+        passes::RestirDi settings;
+        ReuseImages images;
+        FrameArray constants;
+    };
+    // ReSTIR PT's: its arrays, its settings and reuse textures, and with
+    // temporal reuse the ring of its reuse constants.
+    struct RestirPtFamily {
+        RestirPtFamily(const Device& device, Submission& submission, const contracts::PathReuseSettings& settings,
+                       std::span<const std::uint16_t> textures, bool spatial, bool temporal);
+        void bind(FrameResources& resources, const FrameSlot& begun, std::uint64_t index,
+                  const std::optional<contracts::Camera>& previous_camera, frame::Extent light);
+
+        PathReuseImages images;
+        StaticArrays statics;                // the settings, then the reuse textures
+        std::optional<FrameArray> constants;  // with restir_pt_temporal: contracts::PathReuseConstants
+    };
+    // MNEE's (contract 16): its work list and its count of lost requests.
+    struct MneeFamily {
+        MneeFamily(const Device& device, Submission& submission, MneeList::Light light);
+        void bind(FrameResources& resources, const FrameSlot& begun);
+
+        MneeList list;
+        FailureCount lost;
+    };
+    // The features pass's: its images, its constants' ring, and the shapes
+    // as the previous frame placed them, when shapes move.
+    struct FeatureFamily {
+        FeatureFamily(const Device& device, Submission& submission, const scene::SceneDescription& scene,
+                      bool moves);
+        void bind(FrameResources& resources, const FrameSlot& begun,
+                  const std::optional<frame::PreviousFrame>& previous, frame::Extent light);
+
+        FeatureImages images;
+        FrameArray constants;
+        std::optional<ShapeTransforms> previous_transforms;
+    };
+    // The denoise pass's: the network's last width, its buffers, the
+    // target-size ring, its constants' ring, and the full-size albedo's
+    // images, constants and kernel.
+    struct DenoiseFamily {
+        DenoiseFamily(const Device& device, Submission& submission, const Library& library,
+                      const denoise::Network& network);
+
+        std::uint32_t features;
+        DenoiseImages images;
+        FrameArray output_constants;
+        FrameArray constants;
+        FeatureImages full_features;
+        FrameArray full_feature_constants;
+        FeaturesPass full_features_pass;
+    };
+    // A denoised graph's resources from the denoise pass on (renderer.cpp,
+    // denoise_resources()); every pass's own without the pass.
+    struct DenoiseResources {
+        FrameResources output;
+        FrameResources denoising;
+        FrameResources full_features;
+    };
+
+    // The constructor's parts (F.3), in its order.
+    void make_steps(const Device& device, const frame::Schedule& schedule,
+                    const std::optional<denoise::Network>& network);
+    void make_images(const Device& device, const frame::Schedule& schedule);
+    void make_restir_di(const Device& device, const frame::Schedule& schedule, const scene::SceneDescription* scene);
+    void make_restir_pt(const Device& device, const frame::Schedule& schedule, const scene::SceneDescription* scene);
+    void make_mnee(const Device& device, const frame::Schedule& schedule, const scene::SceneDescription* scene);
+    void make_scene(const Device& device, const scene::SceneDescription& scene);
+
+    // Whether the graph has anything prepare() readies, so record() asks
+    // that it was: every member prepare() prepares (I.5; one test, so the
+    // two cannot disagree).
+    bool prepares() const noexcept;
+
+    // record()'s parts (F.3), in its order.
+    Prepared take_prepared(const frame::FrameInputs& inputs, frame::Extent size);
+    static std::pair<MTL::GPUAddress, MTL::GPUAddress> write_constants(FrameArray& ring, const FrameSlot& begun,
+                                                                       const frame::FrameInputs& inputs,
+                                                                       frame::Extent at,
+                                                                       std::uint32_t accumulated_frames);
+    FrameResources frame_resources(const FrameSlot& begun, const frame::FrameInputs& inputs, MTL::Texture* target,
+                                   frame::Extent light, const Prepared& prepared, bool previous);
+    void animate(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun, const frame::FrameInputs& inputs,
+                 bool previous);
+    DenoiseResources denoise_resources(const FrameResources& resources, const FrameSlot& begun,
+                                       const frame::FrameInputs& inputs, frame::Extent size,
+                                       const Prepared& prepared);
+    void record_steps(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources,
+                      const DenoiseResources& denoised_resources);
+
     Submission& submission_;
     Library library_;
     FrameArray constants_;  // the ring: one slot per frame in flight
     NS::SharedPtr<MTL4::ArgumentTable> arguments_;  // every frame's: Metal snapshots it at each dispatch
+    bool denoises_ = false;
+    frame::Schedule schedule_;  // for light_size()
     bool needs_scene_ = false;  // some pass in the schedule reads the scene
     std::unique_ptr<SceneBuffers> scene_;
     std::unique_ptr<SceneAcceleration> acceleration_;
@@ -417,37 +518,11 @@ private:
     std::unique_ptr<FrameImages> images_;         // when a pass writes radiance, unless into the accumulated image
     std::unique_ptr<Accumulation> accumulation_;  // when a pass accumulates
     std::unique_ptr<FailureCount> non_finite_;    // with it: samples not finite
-    // ReSTIR DI's (above): its settings, as the graph gives them; its
-    // arrays; and the ring of its reuse constants, one copy per frame in
-    // flight. None for a graph without its passes.
-    std::optional<passes::RestirDi> restir_;
-    // ReSTIR PT's (above): its arrays, and its settings and reuse textures.
-    // None for a graph without its passes.
-    std::unique_ptr<PathReuseImages> path_reuse_;
-    std::unique_ptr<MneeList> mnee_list_;  // with mnee: MNEE's work list (contract 16)
-    std::unique_ptr<FailureCount> mnee_lost_;  // with it: the requests it had no room for
-    std::unique_ptr<StaticArrays> path_static_;
-    std::unique_ptr<FrameArray> path_constants_;  // with restir_pt_temporal: contracts::PathReuseConstants
-    std::unique_ptr<ReuseImages> reuse_;
-    std::unique_ptr<FrameArray> reuse_constants_;
-    // The features pass's (above): its images, its constants' ring, and the
-    // shapes as the previous frame placed them, when shapes move. None
-    // without the pass.
-    std::unique_ptr<FeatureImages> features_;
-    std::unique_ptr<FrameArray> feature_constants_;
-    std::unique_ptr<ShapeTransforms> feature_transforms_;
-    // The denoise pass's (above): the light size's rule, its buffers, the
-    // target-size ring, its constants' ring, and the full-size albedo's
-    // images, constants and kernel. None without the pass.
-    bool denoises_ = false;
-    frame::Schedule schedule_;  // for light_size()
-    std::uint32_t denoise_features_ = 0;  // the network's last width
-    std::unique_ptr<DenoiseImages> denoise_images_;
-    std::unique_ptr<FrameArray> output_constants_;
-    std::unique_ptr<FrameArray> denoise_constants_;
-    std::unique_ptr<FeatureImages> full_features_;
-    std::unique_ptr<FrameArray> full_feature_constants_;
-    std::unique_ptr<FeaturesPass> full_features_pass_;
+    std::optional<RestirDiFamily> restir_di_;
+    std::optional<RestirPtFamily> restir_pt_;
+    std::optional<MneeFamily> mnee_;
+    std::optional<FeatureFamily> features_;
+    std::optional<DenoiseFamily> denoise_;
     // A temporal graph's last frame (above): its transforms and glows,
     // animated at its time each frame, only when the scene changes (a still
     // scene's one copy is last frame's too); and the camera and time the
