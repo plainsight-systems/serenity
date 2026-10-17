@@ -88,9 +88,7 @@ inline float3 next_numbers3(thread PathNumbers& numbers) {
 // it). pcg3d is a bijection of (key,
 // dimension), so the purposes' numbers are distinct words from the path's and
 // from each other's, as independent as any two of the path's (GDSA.3: a
-// stream per pixel and frame, a counter within it). The shade continues the
-// path's own stream where the initial pass left it
-// (contracts/surface_record.h, PathState::dimension). The stream as one
+// stream per pixel and frame, a counter within it). The stream as one
 // value, not its pixel and frame, so a frame's index and a dimension, both
 // words, cannot be passed in each other's places (I.24).
 inline PathNumbers purpose_numbers(PathNumbers stream, uint first) {
@@ -102,14 +100,9 @@ inline PathNumbers purpose_numbers(PathNumbers stream, uint first) {
 // which the file that draws them asserts its numbers stay within (P.5).
 // None overlaps another, by construction: span k is k x purpose_span.
 constant constexpr uint purpose_span = 1u << 24u;
+// Spans 1 to 4 are unused (their purposes' estimator was removed), so every
+// number ReSTIR PT draws is the one it drew.
 namespace purpose {
-// ReSTIR DI (metal/passes/restir_di/restir_di.metal.h): steps 2 and 3's
-// candidates, step 4's and step 5's merges, and the frame's permutation,
-// drawn at pixel (0, 0).
-constant constexpr uint restir_candidates = 1u * purpose_span;
-constant constexpr uint restir_temporal = 2u * purpose_span;
-constant constexpr uint restir_spatial = 3u * purpose_span;
-constant constexpr uint restir_permutation = 4u * purpose_span;
 // ReSTIR PT's tree and shift (metal/integrator/shift.metal.h, "The
 // numbers"): each surface's BSDF and roulette numbers, its NEE candidates',
 // and the tree's picks.

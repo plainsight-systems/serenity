@@ -193,15 +193,11 @@ add_library(serenity_metal STATIC
     src/metal/passes/mnee/mnee.cpp
     src/metal/passes/path/path.cpp
     src/metal/passes/preview/preview.cpp
-    src/metal/passes/restir_initial/restir_initial.cpp
     src/metal/passes/restir_pt_duplication/restir_pt_duplication.cpp
     src/metal/passes/restir_pt_initial/restir_pt_initial.cpp
     src/metal/passes/restir_pt_shade/restir_pt_shade.cpp
     src/metal/passes/restir_pt_spatial/restir_pt_spatial.cpp
     src/metal/passes/restir_pt_temporal/restir_pt_temporal.cpp
-    src/metal/passes/restir_shade/restir_shade.cpp
-    src/metal/passes/restir_spatial/restir_spatial.cpp
-    src/metal/passes/restir_temporal/restir_temporal.cpp
     src/metal/passes/test_pattern/test_pattern.cpp
     src/metal/passes/tone_map/tone_map.cpp
 )
@@ -215,10 +211,6 @@ serenity_add_metallib(
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/mnee/mnee.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/display/display.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/tone_map/tone_map.metal"
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_initial/restir_initial.metal"
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_shade/restir_shade.metal"
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_spatial/restir_spatial.metal"
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_temporal/restir_temporal.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_initial/restir_pt_initial.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_temporal/restir_pt_temporal.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_spatial/restir_pt_spatial.metal"

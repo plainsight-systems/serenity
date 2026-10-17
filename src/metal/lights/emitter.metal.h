@@ -8,34 +8,26 @@
 // kind added to LightKind and not here fails to compile (-Werror).
 //
 // And contract 4, the light sample by identity (contracts/light_sample.h),
-// for ReSTIR DI: the same dispatch, declared at the end, beside contract 3's
-// functions and changing none of them (sample_light() draws the same
-// numbers into the same directions as before). An identity names its light
-// by its record's index, which these read the record by, so Sample reuse
-// stores 4 bytes of which light rather than the record's 8. Each kind
-// places its own point in the identity's two 16-bit numbers: the sphere a
-// unit direction by the equal-area octahedral map, a rectangle, when one
-// comes, its (u, v).
+// for ReSTIR PT's light vertices: the same dispatch, declared at the end,
+// beside contract 3's functions and changing none of them. An identity
+// names its light by its record's index, which these read the record by.
+// Each kind places its own point in the identity's two 16-bit numbers: the
+// sphere a unit direction by the equal-area octahedral map, a rectangle,
+// when one comes, its (u, v).
 //
 // A light is placed once for contract 4's questions (place_light(), below):
 // its record, and for a sphere its data, its shape's transform and its
-// glow, read into one value, which drawing a point on it, evaluating a
-// point and the density then read without loading any of it again. A
-// ReSTIR candidate asks all three of one light, so it loads that light's
-// data once, not once per question (decided 2026-10-11, by the review of
-// f86e7ae: each question had read the record, the sphere, its transform and
-// its glow again, and drawing read the transform twice). The answers are
-// the ones the per-question reads gave: the same values in, the same
-// arithmetic.
+// glow, read into one value, which finding a point on it, evaluating a
+// point and the density then read without loading any of it again
+// (decided 2026-10-11, by the review of f86e7ae: each question had read the
+// record, the sphere, its transform and its glow again).
 //
-// Cost: drawing a point is sample_light()'s work, one transform of the
-// point into the light's space and its encoding (a few dozen flops);
-// evaluating one is its decoding (a square root and a dozen flops), a
-// transform and a normalization. Placing a light reads the 8-byte light
-// record, the 16-byte sphere light, its 48-byte transform and its 4-byte
-// glow: 76 bytes of logical loads from small arrays in the constant address
-// space, once per placed light (metal/passes/restir_di/restir_di.metal.h
-// counts them a pixel).
+// Cost: keeping a point is one transform of it into the light's space and
+// its encoding (a few dozen flops); evaluating one is its decoding (a
+// square root and a dozen flops), a transform and a normalization. Placing
+// a light reads the 8-byte light record, the 16-byte sphere light, its
+// 48-byte transform and its 4-byte glow: 76 bytes of logical loads from
+// small arrays in the constant address space, once per placed light.
 
 #include <metal_stdlib>
 
@@ -128,7 +120,7 @@ struct PlacedLight {
 };
 
 // Light record `light`, placed by `lights`: this frame's arrays, or last
-// frame's for the temporal merge's previous surface.
+// frame's for a shift to last frame's pixel.
 inline PlacedLight place_light(Lights lights, uint light) {
     PlacedLight placed{};
     placed.record = lights.records[light];
@@ -143,26 +135,10 @@ inline PlacedLight place_light(Lights lights, uint light) {
     return placed;
 }
 
-// A point on `light`, light record `index`, drawn from `point` as
-// sample_light() draws a direction with the same `u`; holding no light
-// (contracts/light_sample.h, holds_light) where `point` is inside the light.
-inline serenity::contracts::LightPoint draw_light_point(PlacedLight light, uint index, float3 point, float2 u) {
-    switch (light.record.kind) {
-    case serenity::lights::LightKind::sphere:
-        if (metal::distance(light.sphere.center, point) <= light.sphere.radius) {
-            return serenity::contracts::LightPoint{0u, 0u};  // inside it: no sample, as sample_light()
-        }
-        return serenity::contracts::LightPoint{serenity::contracts::light_valid | index,
-                                               sphere_draw_point(light.sphere, light.placed, point, u)};
-    }
-    return serenity::contracts::LightPoint{0u, 0u};
-}
-
-// The identity of `reached`, a point on `light`, light record `index`, as a
-// ray found it: ReSTIR's BSDF candidate, which strikes a light rather than
-// drawing a point on it (metal/integrator/restir_di.metal.h). Stored as a
-// drawn point is, so it is evaluated, merged and shaded alike. Precondition:
-// `reached` on the light's surface, up to rounding.
+// The identity of `reached`, a point on `light`, light record `index`: a
+// light sample's point, or one a ray struck (metal/integrator/nee.metal.h,
+// kept_point). Precondition: `reached` on the light's surface, up to
+// rounding.
 inline serenity::contracts::LightPoint light_point_at(PlacedLight light, uint index, float3 reached) {
     switch (light.record.kind) {
     case serenity::lights::LightKind::sphere:
@@ -187,14 +163,6 @@ inline serenity::contracts::LightReceived evaluate_light_point(PlacedLight light
         return sphere_evaluate_point(light.sphere, light.placed, sample, point);
     }
     return serenity::contracts::LightReceived{};
-}
-
-// The same, the light placed from `lights` first: for an evaluation that
-// asks nothing else of its light (the shade's, and a merge's target).
-// Precondition: holds_light(sample).
-inline serenity::contracts::LightReceived evaluate_light_point(Lights lights, serenity::contracts::LightPoint sample,
-                                                               float3 point) {
-    return evaluate_light_point(place_light(lights, serenity::contracts::light_index(sample)), sample, point);
 }
 
 // Contract 3's density for a light point: the density with which

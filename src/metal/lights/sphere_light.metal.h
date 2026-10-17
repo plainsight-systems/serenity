@@ -26,19 +26,17 @@
 //
 // Its answers to contract 4, the light sample by identity
 // (contracts/light_sample.h), declared at the end beside contract 3's and
-// leaving them as they are, so the naive path tracer draws the numbers it
-// drew and renders the image it rendered:
+// leaving them as they are, so the path tracer draws the numbers it drew
+// and renders the image it rendered:
 //
-//   - a point drawn with its identity: the direction sphere_sample_light()
-//     draws with the same u, the point where it meets the sphere (the
-//     nearer root, distance_to_light()), and that point in the sphere's own
-//     space, the unit direction R^T (y - c) / r from its center
-//     (metal/math/transform.metal.h, transform_to_object), encoded by the
-//     equal-area octahedral map (metal/math/warp.metal.h; contracts/
-//     light_sample.h states what it loses). Its own
-//     space and not the world's: a light that turns keeps its point, as one
-//     that moves does. The scene's transforms do not turn yet
-//     (contracts/transform.h); the identity is correct when they do.
+//   - a point found on the sphere kept as its identity: that point in the
+//     sphere's own space, the unit direction R^T (y - c) / r from its
+//     center (metal/math/transform.metal.h, transform_to_object), encoded
+//     by the equal-area octahedral map (metal/math/warp.metal.h; contracts/
+//     light_sample.h states what it loses). Its own space and not the
+//     world's: a light that turns keeps its point, as one that moves does.
+//     The scene's transforms do not turn yet (contracts/transform.h); the
+//     identity is correct when they do.
 //   - an identity evaluated at a point: the decoded unit direction placed by
 //     this frame's transform, y = c + s R v; the direction and distance from
 //     the point to y; the radiance (the same every way, its glow this
@@ -49,8 +47,7 @@
 //
 // What the cone draws, it draws only on the cap the point can see; an
 // identity evaluated from another point may be on that point's far side,
-// and gives it nothing (cos <= 0): the target's support, not a failure
-// (metal/integrator/target.metal.h).
+// and gives it nothing (cos <= 0): the target's support, not a failure.
 
 #include <metal_stdlib>
 
@@ -159,24 +156,12 @@ inline float sphere_light_pdf(SphereLight light, float3 point, float3 direction)
 // Contract 4, for a sphere light placed by `placed` (the transform
 // sphere_light() read its center and radius from). Pure (F.8).
 
-// The point on the sphere that sphere_sample_light(light, point, u) draws
-// the direction toward, encoded: contract 4's `point`, the unit direction
-// from the center in the sphere's own space. Whether one was drawn is the
-// caller's to know: a point inside the light draws none (view_light()'s
-// distance at most the radius), and the emitter tests that first.
 // The point `reached`, on the sphere placed by `placed` up to rounding,
 // encoded as contract 4's `point`: the unit direction from the center in
-// the sphere's own space. What a drawn point and a point a ray struck are
-// both stored as.
+// the sphere's own space.
 inline uint sphere_point_at(serenity::contracts::Transform placed, float3 reached) {
     // On the unit sphere in its own space, up to the root's rounding.
     return encode_unit(metal::normalize(transform_to_object(placed, reached)));
-}
-
-inline uint sphere_draw_point(SphereLight light, serenity::contracts::Transform placed, float3 point, float2 u) {
-    const LightView v = view_light(light, point);
-    const float3 d = direction_to_light(v, u);
-    return sphere_point_at(placed, point + distance_to_light(light, v, d) * d);
 }
 
 // The density with which sphere_sample_light() draws the direction from
@@ -185,9 +170,9 @@ inline uint sphere_draw_point(SphereLight light, serenity::contracts::Transform 
 // `point` (cos_light > 0), 0 behind and from inside. sphere_light_pdf()
 // asks it of a direction, whose test against the cone's rim rounding can
 // fail for a point on the rim itself; a point on the sphere is in the cone
-// by construction, so this asks nothing of the direction (ReSTIR's BSDF
-// candidates strike the rim as often as anywhere: metal/integrator/
-// restir_di.metal.h, weigh()).
+// by construction, so this asks nothing of the direction (a shift that
+// reconnects to a light point may land on the rim as anywhere:
+// metal/integrator/shift.metal.h).
 inline float sphere_point_pdf(SphereLight light, float3 point, serenity::contracts::LightReceived received) {
     const LightView v = view_light(light, point);
     return v.distance > light.radius && received.cos_light > 0.0f ? 1.0f / v.solid_angle : 0.0f;

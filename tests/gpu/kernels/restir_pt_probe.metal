@@ -124,8 +124,7 @@ kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQu
         restir_pt::TreeGather tree = restir_pt::start_tree<false>(settings, numbers, scene.shapes(),
                                                            restir_pt::block_tile(tiles, pixel, q.frame),
                                                            mnee::Queue{nullptr, nullptr}, 0u);  // settings.mnee 0
-        (void)path::walk_path<path::Start::camera, path::Stop::at_end>(scene, path::walk_from(ray), Shading{}, 0u,
-                                                                       numbers, tree);
+        (void)path::walk_path(scene, path::walk_from(ray), numbers, tree);
         return tree;
     };
     const uint2 source = uint2(q.source_x, q.source_y);

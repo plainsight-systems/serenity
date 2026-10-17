@@ -213,7 +213,7 @@ TEST_CASE("recording a frame of moving, blinking fireflies allocates nothing of 
         INFO(file.filename().string());
         CHECK(most_allocated_by_record(flying, schedule, 6) == 0);
     }
-    REQUIRE(files.size() > 10);  // graphs/ found, not an empty directory
+    REQUIRE_FALSE(files.empty());  // graphs/ found, not an empty directory
     REQUIRE(denoised > 0);
     INFO("restir_pt_denoised.toml, the fixture's network");
     CHECK(most_allocated_by_record(flying, tests::fixture_denoised_graph(), 6) == 0);

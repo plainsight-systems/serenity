@@ -96,85 +96,6 @@ enum Buffer : unsigned { settings = 0 };
 enum Texture : unsigned { input = 0, level = 1, bloom = 1, target = 2 };
 }  // namespace tone_map
 
-// ReSTIR DI's four kernels (core/frame/schedule.h). Each reads the scene as
-// the path tracer does, at the same indices 0 to 5 (the camera bound only
-// by those that read it: initial, temporal and spatial), and the reuse
-// constants (core/contracts/reuse_constants.h) at 6; then the records and
-// reservoirs it reads and writes, flat arrays in buffers (contracts 5 and
-// 14), each at its own index. The temporal merge also reads last frame's
-// scene: its transforms and glows. The shade writes its final reservoirs back in a graph
-// with a temporal merge (restir_shade.h). Which reservoir array a pass
-// writes, the working one or the frame's final one, the renderer binds by
-// the graph (metal/frame/frame_images.h); the kernel names one output.
-namespace restir_initial {
-enum Buffer : unsigned {
-    constants = 0,
-    camera = 1,
-    structure = 2,
-    scene = 3,
-    glows = 4,
-    transforms = 5,
-    reuse = 6,
-    records = 7,             // written
-    path_states = 8,         // written
-    previous_positions = 9,  // written, in a graph with a temporal merge
-    last_transforms = 10,    // last frame's, in a graph with a temporal merge
-    output = 11,             // the working reservoirs, or the final ones in a graph with no merge
-};
-}  // namespace restir_initial
-
-namespace restir_temporal {
-enum Buffer : unsigned {
-    constants = 0,
-    camera = 1,
-    structure = 2,
-    scene = 3,
-    glows = 4,
-    transforms = 5,
-    reuse = 6,
-    records = 7,
-    previous_positions = 8,
-    last_records = 9,
-    last_final = 10,      // last frame's final reservoirs
-    input = 11,           // the initial reservoirs
-    output = 12,  // the same array, in place, when a spatial merge follows; else this frame's final
-    last_glows = 13,
-    last_transforms = 14,
-};
-}  // namespace restir_temporal
-
-namespace restir_spatial {
-enum Buffer : unsigned {
-    constants = 0,
-    camera = 1,
-    structure = 2,
-    scene = 3,
-    glows = 4,
-    transforms = 5,
-    reuse = 6,
-    records = 7,
-    input = 8,   // the reservoirs the pass before wrote: read at this pixel and its neighbors
-    output = 9,  // this frame's final reservoirs
-};
-}  // namespace restir_spatial
-
-namespace restir_shade {
-enum Buffer : unsigned {
-    constants = 0,
-    camera = 1,
-    structure = 2,
-    scene = 3,
-    glows = 4,
-    transforms = 5,
-    reuse = 6,
-    records = 7,
-    path_states = 8,
-    final_reservoirs = 9,  // read; its tested reservoirs written back in a graph with a temporal merge
-    non_finite = 10,  // the frame's count of samples not finite (metal/film/failure_count.h)
-};
-enum Texture : unsigned { accumulated = 0 };  // also the frame's radiance, as the path pass's
-}  // namespace restir_shade
-
 // ReSTIR PT's passes (metal/passes/restir_pt/restir_pt.metal.h) share one
 // layout, each kernel binding the part it reads or writes.
 namespace restir_pt {
@@ -279,23 +200,12 @@ static_assert(scene_at(preview::constants, preview::structure, preview::scene, p
 static_assert(scene_at(path::constants, path::structure, path::scene, path::glows, path::transforms));
 static_assert(scene_at(features::constants, features::structure, features::scene,
                        features::glows, features::transforms));
-static_assert(scene_at(restir_initial::constants, restir_initial::structure, restir_initial::scene,
-                       restir_initial::glows, restir_initial::transforms));
-static_assert(scene_at(restir_temporal::constants, restir_temporal::structure, restir_temporal::scene,
-                       restir_temporal::glows, restir_temporal::transforms));
-static_assert(scene_at(restir_spatial::constants, restir_spatial::structure, restir_spatial::scene,
-                       restir_spatial::glows, restir_spatial::transforms));
 static_assert(scene_at(restir_pt::constants, restir_pt::structure, restir_pt::scene,
                        restir_pt::glows, restir_pt::transforms));
 static_assert(scene_at(mnee::constants, mnee::structure, mnee::scene, mnee::glows, mnee::transforms));
-static_assert(scene_at(restir_shade::constants, restir_shade::structure, restir_shade::scene,
-                       restir_shade::glows, restir_shade::transforms));
 static_assert(camera_at(preview::camera));
 static_assert(camera_at(path::camera));
 static_assert(camera_at(features::camera));
-static_assert(camera_at(restir_initial::camera));
-static_assert(camera_at(restir_temporal::camera));
-static_assert(camera_at(restir_spatial::camera));
 static_assert(camera_at(restir_pt::camera));
 
 }  // namespace bindings

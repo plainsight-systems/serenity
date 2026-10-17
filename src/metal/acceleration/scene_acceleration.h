@@ -87,10 +87,8 @@ namespace serenity::metal {
 // same note.
 //
 // Last frame's structure is not kept: every frame traces its own. ReSTIR
-// DI's temporal merge in raytraced mode would trace last frame's
-// (core/contracts/reuse_settings.h), and the renderer refuses that graph by
-// name until it is kept (metal/frame/renderer.h; docs/process/QUEUE.md,
-// where the design for keeping it waits).
+// PT's shift to last frame's pixel traces this frame's (metal/passes/
+// restir_pt/restir_pt.metal.h, "What is approximate").
 //
 // Ray masks (contract 19, core/contracts/ray_mask.h). A ray carries a mask,
 // everything or the occluders, and finds the shapes of its mask's classes

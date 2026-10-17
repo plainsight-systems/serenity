@@ -71,8 +71,8 @@ struct FrameInputs {
     std::optional<contracts::Camera> camera;
 
     // The frame from which a graph that reuses history (frame::
-    // reuses_history: ReSTIR's temporal merge) carries its reservoirs and
-    // surface records: frame index's image is a function of the frames
+    // reuses_history: ReSTIR PT's temporal reuse, the denoiser) carries its
+    // reservoirs and primary hits: frame index's image is a function of the frames
     // reused_since .. index (principle 1), as an accumulated image is of
     // accumulated_since's. Equal to index to start over. A history apart
     // from the accumulated image's: a changing scene starts its accumulated

@@ -66,8 +66,9 @@ inline CameraRay pixel_ray(constant serenity::contracts::CameraData& camera, uin
     return camera_ray(camera, float2(pixel) + within, lens, size);
 }
 
-// The inverse, for ReSTIR DI's reuse (metal/reuse/temporal.metal.h,
-// similar.metal.h).
+// The inverse, for ReSTIR PT's temporal search and the features' motion
+// (metal/passes/restir_pt/restir_pt.metal.h, previous_pixel;
+// metal/passes/features/features.metal).
 //
 // camera_depth: how far in front of the camera `point` is, along forward:
 // dot(point - origin, forward). camera_pixel: where the pinhole ray through

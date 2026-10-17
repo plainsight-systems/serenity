@@ -122,147 +122,6 @@ private:
     std::array<ResidentTexture, passes::bloom_levels> pyramid_;
 };
 
-// Axis: Frame graph (ReSTIR DI's images between passes and across frames:
-// contract 6, holding contracts 5 and 14).
-//
-// The arrays ReSTIR DI's passes hand one another (core/frame/schedule.h),
-// made only for a graph that has those passes, so a graph without them
-// allocates what it did and renders what it did
-// (docs/research/2026-10-10-restir-di-layout.md, "Additive"). Buffers, not
-// textures: each element is a shared layout of 12 to 36 bytes, read whole,
-// flat in row-major pixel order (contracts/surface_record.h,
-// contracts/reservoir.h; GPU.2).
-//
-//   records             contract 5's SurfaceRecord, 32 bytes a pixel; two,
-//                       ping-ponged, in a graph with a temporal merge: this
-//                       frame's, which the initial pass writes, and last
-//                       frame's, which the temporal merge reads (MEM.4: data
-//                       that crosses one frame, double-buffered); one
-//                       otherwise.
-//   path states         contract 5's PathState, 36 bytes a pixel, one.
-//   previous positions  a Float3, 12 bytes a pixel, one, only in a graph
-//                       with a temporal merge.
-//   working reservoirs  contract 14, 24 bytes a pixel, one, only in a graph
-//                       with a merge: written by the initial pass, merged in
-//                       place by the temporal merge, read at neighbors by
-//                       the spatial merge.
-//   final reservoirs    contract 14, 24 bytes a pixel: what the last pass
-//                       before the shade writes, which the shade reads and,
-//                       where it traced, writes back its own pixel's; two,
-//                       ping-ponged, in a graph with a temporal merge, so
-//                       last frame's survives until this frame's temporal
-//                       merge has read it, whichever pass writes this
-//                       frame's (a temporal merge with no spatial merge
-//                       after it writes its output there while it reads
-//                       last frame's at other pixels); one otherwise.
-//
-// Which half of a ping-pong is this frame's is the frame's index's parity:
-// the reuse history holds only consecutive frames (core/frame/history.h),
-// so last frame's half is always the other.
-//
-// The history. Which frames the records and final reservoirs hold is the
-// core's rule (frame::ReuseHistory), kept by the one this object owns, as
-// Accumulation keeps frame::History (accumulation.h): prepare() asks it
-// whether the frame joins, refuses by MetalError with the rule's reason
-// what it refuses, and returns whether the frame has a previous one to
-// merge, for the reuse constants (core/contracts/reuse_constants.h).
-// Where the rule says the history starts over at another size, the arrays
-// are made anew: first draining the submission, as the accumulated image
-// is remade, since frames in flight may still read the old ones; before
-// the frame's submission begins (Renderer::prepare). Private storage, the
-// GPU's alone, made resident through the submission, made outside the
-// frame loop and kept until the size changes (GPU.9, MEM.9). Nothing in
-// them is cleared when made: a frame that starts the history over reads no
-// last frame's half, and every pass writes every pixel of what it writes.
-//
-// One set, not one per frame in flight, as FrameImages: the renderer's
-// queue barrier before the initial pass keeps a frame from writing what
-// the frame before still reads (metal/frame/renderer.h).
-//
-// Cost, memory, at P pixels, for a graph with all four passes: 64 + 36 +
-// 12 + 24 + 48 = 184 bytes a pixel, 1.42 GB at the display's 3456 x 2234
-// and 355 MB at a traced 1728 x 1117; the two halves of the surface
-// records are a third of it.
-// Per frame, what the passes read and write of it is counted in
-// metal/passes/restir_di/restir_di.metal.h. No CPU-GPU crossing: the CPU never
-// reads them.
-//
-// What a graph makes: with no merge (graphs/restir_ris.toml), one record
-// array, the path states and one final reservoir array, 92 bytes a pixel,
-// 178 MB at a traced 1728 x 1117; with no temporal merge there is no
-// history to keep: prepare() makes the arrays at the frame's size, remade
-// as above when it changes, and returns 0, no previous frame, asking no
-// rule. With the temporal merge (graphs/restir_temporal.toml), the two
-// halves of the records and final reservoirs, the previous positions and
-// the working array: 32 x 2 + 36 + 12 + 24 + 24 x 2 = 184 bytes a pixel,
-// and prepare() asks frame::ReuseHistory. The full graph, both merges
-// (graphs/restir.toml), needs the same arrays; the spatial merge alone
-// (graphs/restir_spatial.toml) one record array, the path states, the
-// working and one final array, 116 bytes a pixel, and keeps no history.
-//
-// Throws MetalError if the frame's size is not one Metal makes an image of
-// (metal/device/device.h, max_texture_side; the arrays are sized from it,
-// as the images are), or the device cannot make a buffer.
-class ReuseImages {
-public:
-    // Whether the graph has restir_temporal: two halves of the records and
-    // final reservoirs, and the previous positions. Types, not bools (I.4).
-    enum class Temporal { none, merged };
-
-    // Whether a merge follows the initial pass: the working reservoirs.
-    enum class Working { none, needed };
-
-    ReuseImages(const Device& device, Submission& submission, Temporal temporal, Working working);
-
-    ReuseImages(const ReuseImages&) = delete;
-    ReuseImages& operator=(const ReuseImages&) = delete;
-    ReuseImages(ReuseImages&&) = delete;
-    ReuseImages& operator=(ReuseImages&&) = delete;
-    ~ReuseImages() = default;
-
-    // Ready for frame `inputs` at `size`; see above. Returns the frames the
-    // history holds before this one (0: it starts over, and last frame's
-    // halves are not to be read; always 0 without a temporal merge).
-    // Throws MetalError if the core's rule refuses the frame, or an array
-    // cannot be made.
-    std::uint64_t prepare(const frame::FrameInputs& inputs, frame::Extent size);
-
-    // The arrays frame `index` reads and writes, as a shader binds them:
-    // this frame's halves and last frame's by its parity; 0 for what the
-    // graph does not have, or before the first prepare().
-    struct Addresses {
-        MTL::GPUAddress records = 0;
-        MTL::GPUAddress last_records = 0;
-        MTL::GPUAddress path_states = 0;
-        MTL::GPUAddress previous_positions = 0;
-        MTL::GPUAddress working = 0;
-        MTL::GPUAddress final_reservoirs = 0;
-        MTL::GPUAddress last_final = 0;
-    };
-    Addresses addresses(std::uint64_t index) const noexcept;
-
-private:
-    // Each array with its residency (metal/device/resident.h).
-    using Array = ResidentBuffer;
-
-    // Makes `array` of `bytes` in private storage, resident (GPU.9, MEM.9).
-    void make(Array& array, std::size_t bytes, std::string_view what);
-
-    NS::SharedPtr<MTL::Device> device_;
-    Submission& submission_;
-    Temporal temporal_;
-    Working working_kind_;
-    frame::Extent size_;  // the arrays' size; none before the first prepare()
-    frame::ReuseHistory history_;  // asked only with a temporal merge
-    // Each ping-ponged array's two halves, [0] for even frames; a graph
-    // without a temporal merge makes [0] alone (above).
-    std::array<Array, 2> records_;
-    Array path_states_;
-    Array previous_positions_;
-    Array working_;
-    std::array<Array, 2> final_reservoirs_;
-};
-
 // ReSTIR PT's arrays between its passes and across frames (metal/passes/
 // restir_pt/restir_pt.metal.h states what each pass reads and writes of
 // them), a graph with its passes only, private to the GPU:
@@ -299,16 +158,29 @@ private:
 //                       a frame, read by the next frame's temporal reuse
 //                       before this frame's map is written over it, so one.
 //
-// Which half of a ping-pong is this frame's is the frame's index's parity,
-// as ReuseImages's: the history holds only consecutive frames.
+// Which half of a ping-pong is this frame's is the frame's index's parity:
+// the reuse history holds only consecutive frames (core/frame/history.h),
+// so last frame's half is always the other.
 //
-// The history: as ReuseImages keeps ReSTIR DI's, by frame::ReuseHistory,
-// with temporal reuse only; prepare() returns the frames it holds before
+// The history. Which frames the arrays hold is the core's rule
+// (frame::ReuseHistory), with temporal reuse only, kept by the one this
+// object owns, as Accumulation keeps frame::History (accumulation.h):
+// prepare() asks it whether the frame joins, refuses by MetalError with the
+// rule's reason what it refuses, and returns the frames it holds before
 // this one, 0 where it starts over (the temporal reuse then merges
-// nothing). Made at the frame's size, remade when it changes, settled
-// first; nothing cleared when made, since a frame that starts the history
-// over reads no last frame's half, and every pass writes every pixel of
-// what it writes.
+// nothing). Where the rule says the history starts over at another size,
+// the arrays are made anew: first draining the submission, as the
+// accumulated image is remade, since frames in flight may still read the
+// old ones; before the frame's submission begins (Renderer::prepare).
+// Private storage, the GPU's alone, made resident through the submission,
+// made outside the frame loop and kept until the size changes (GPU.9,
+// MEM.9). Nothing in them is cleared when made: a frame that starts the
+// history over reads no last frame's half, and every pass writes every
+// pixel of what it writes.
+//
+// One set, not one per frame in flight, as FrameImages: the renderer's
+// queue barrier before the initial pass keeps a frame from writing what
+// the frame before still reads (metal/frame/renderer.h).
 //
 // Bytes a pixel: 128 for the initial pass alone; 188 with spatial reuse;
 // with both reuses, 64 + 2 x 48 + 16 + 48 + 12 + 2 x 64 + 12 + 4 + 4 = 384,

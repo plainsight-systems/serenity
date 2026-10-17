@@ -31,8 +31,6 @@ add_executable(serenity_tests
     schedule_test.cpp
     denoise_core_test.cpp
     graph_file_test.cpp
-    restir_schedule_test.cpp
-    restir_graph_file_test.cpp
     restir_pt_core_test.cpp
     checkerboard_test.cpp
     scene_test.cpp

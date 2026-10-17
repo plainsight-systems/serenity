@@ -10,7 +10,8 @@
 namespace serenity::frame {
 
 // Axis: Frame graph (history across frames: contract 6's accumulated image,
-// and ReSTIR's reservoirs and surface records).
+// and the reuse history: ReSTIR PT's reservoirs and primary hits, and the
+// denoiser's last output).
 //
 // Which frames an accumulated image holds: the rule, and the two plans that
 // keep it. Decided here, in the core, so every backend holds the same
@@ -63,16 +64,18 @@ namespace serenity::frame {
 // frame, whatever N: its frames are the same function of the same inputs, so
 // a second would render the same image again.
 //
-// The reuse history: ReSTIR DI's reservoirs and surface records (contracts
-// 14 and 5), which its temporal merge carries from one frame to the next
-// (frame::reuses_history; metal/reuse/temporal.metal.h). History as the
+// The reuse history: ReSTIR PT's path reservoirs and primary hits
+// (contracts 15 and 5), which its temporal reuse carries from one frame to
+// the next, and the denoiser's last output (frame::reuses_history). History
+// as the
 // accumulated image is: a frame with temporal reuse is a function of the
 // frames since its history started, reused_since (frame_inputs.h), so the
 // same rule-and-plans shape keeps it, here, for every backend. A backend
-// keeps the records and reservoirs on its GPU, and asks ReuseHistory
-// whether a frame may join them (metal/frame/frame_images.h, ReuseImages).
+// keeps the reservoirs and primary hits on its GPU, and asks ReuseHistory
+// whether a frame may join them (metal/frame/frame_images.h,
+// PathReuseImages; metal/frame/denoise_images.h).
 //
-// The rule. The reservoirs and records hold the frames reused_since ..
+// The rule. The reservoirs and primary hits hold the frames reused_since ..
 // index - 1, of one size, and a frame joins them when:
 //
 //   - it starts over (reused_since == index): it holds none, the temporal
@@ -86,9 +89,9 @@ namespace serenity::frame {
 // frame lit them and this frame's as this one does (logical-overview.md,
 // principle 6), so moving fireflies, a blinking one, and a camera that
 // moves never start it over; the camera's motion is the reprojection's to
-// follow. And no cap on the frames held: what bounds an old sample's weight
-// is the temporal merge's cap on its count, H x M
-// (core/contracts/reuse_settings.h).
+// follow. And no cap on the frames held: what bounds an old path's weight
+// is the temporal reuse's cap on its confidence, c_cap
+// (core/contracts/path_reuse_settings.h).
 // Anything else is refused by HistoryError, as for the accumulated image: a
 // frame skipped, a size changed or a reused_since moved without starting
 // over, or a reused_since after the frame. Merged in, last frame's
@@ -98,12 +101,10 @@ namespace serenity::frame {
 // What starts it over: a new size (the plans below), and a new graph,
 // whose renderer makes its images anew. A camera cut would, and is not yet
 // a frame input: a camera the caller replaces with another is, to the
-// history, a camera that moved far in one frame, and the merges' similarity
-// tests and normalization then keep the frame as correct as any other
-// while its reuse
-// finds little: unbiased in raytraced mode, and within basic mode's
-// edge-bounded bias in basic (metal/reuse/unbiased.metal.h). The input
-// arrives with the first caller that cuts.
+// history, a camera that moved far in one frame, and the temporal search's
+// similarity test and the merge's MIS weights then keep the frame as
+// correct as any other while its reuse finds little. The input arrives
+// with the first caller that cuts.
 //
 // The postcondition both plans keep (I.7): the same frames since the same
 // start give the same reservoirs, and so the same image, in the window, in

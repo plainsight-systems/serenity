@@ -34,15 +34,16 @@
 //              footprint_threshold, from the lens point, y1 and its normal).
 //   sides      contract 1's flags in bits 0 to 7 (which side the ray
 //              arrived from), and the medium inside y1's shape in bits 16
-//              to 31 (contract 12; 0xffff for none, as contracts/
-//              surface_record.h packs it): where a transmission at y1
-//              enters.
+//              to 31 (contract 12; 0xffff for none): where a transmission
+//              at y1 enters. A scene with 0xffff media or more is refused
+//              where a ReSTIR PT graph's renderer is built
+//              (metal/frame/renderer.h, I.5).
 //
 // What a shift reads is the full-precision surface the initial pass shaded,
 // less the packing: wo and the geometric normal turned by under 10^-4
-// radians, the BSDF's parameters to a half's precision (contracts/
-// surface_record.h, "What the packing changes", the same for ReSTIR DI's
-// G-buffer). The canonical path's own F at its own pixel was computed on the
+// radians, the BSDF's parameters to a half's precision (bsdf.h states each:
+// for a glossy lobe, a turn of under 10^-4 radians; for a color, under
+// 5 x 10^-4 of it; the position is exact). The canonical path's own F at its own pixel was computed on the
 // unpacked surface; its shifts to neighbors, and theirs to it, on the packed
 // one. A bias of the packing's size, as a G-buffer's is in production;
 // tests/gpu/restir_pt_test.cpp holds the shifted F to the retraced one's.

@@ -3,8 +3,8 @@
 // Axis: Scene content (whether a scene's materials fit contract 2's packed
 // form).
 //
-// ReSTIR DI stores each pixel's surface with its Bsdf packed (contracts/
-// bsdf.h, pack_bsdf), whose precondition is that every color and scalar a
+// ReSTIR PT stores each pixel's primary hit with its Bsdf packed
+// (contracts/bsdf.h, pack_bsdf), whose precondition is that every color and scalar a
 // material resolves to is finite and at most 65504 in magnitude, half's
 // largest (contracts::packed_largest). The scene reader admits more: an
 // ior is any finite number above 1, and a rough material's color, or a

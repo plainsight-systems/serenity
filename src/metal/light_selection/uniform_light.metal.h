@@ -43,8 +43,8 @@ inline float selection_probability(UniformLight selection) {
     return 1.0f / float(selection.count);
 }
 
-// For ReSTIR DI's candidates, which keep a light by its record's index
-// (contracts/light_sample.h): the index `u`, a number in [0, 1), chooses,
+// For ReSTIR PT's light tiles, which keep a light by its record's index
+// (contracts/light_tile.h): the index `u`, a number in [0, 1), chooses,
 // and its probability. Precondition: count is at least 1; the estimator
 // tests it before asking (path.metal.h, step 5).
 struct SelectedIndex {

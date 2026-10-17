@@ -4,9 +4,10 @@
 // Integrator.
 //
 // A light sample by identity: which light, and which point on it, in the
-// light's own coordinates (logical-overview.md, principle 6). A reservoir
-// keeps one (contract 14, core/contracts/reservoir.h) from frame to frame and
-// pixel to pixel, and every pass that reads it asks the light where that
+// light's own coordinates (logical-overview.md, principle 6). A path
+// reservoir keeps one where its path reconnects to a light (contract 15,
+// core/contracts/path_reservoir.h) from frame to frame and pixel to pixel,
+// and every shift that reads it asks the light where that
 // point is now, how bright, and how it faces the surface asking: the
 // fireflies move between frames, so a position kept from last frame is
 // wrong in this one, and an identity is right in every frame. Named
@@ -35,9 +36,9 @@
 //
 // Equal-area, not Cigolle et al.'s plain octahedral map (2014): every one
 // of the 2^32 cells covers the same area of the unit sphere, 4 pi / 2^32,
-// the measure the target and the candidates' densities are in (metal/
-// integrator/target.metal.h), so the quantization below is the same size
-// on every part of every light. It costs a square root more to decode.
+// the measure a reconnection's density is in (metal/integrator/
+// shift.metal.h), so the quantization below is the same size on every part
+// of every light. It costs a square root more to decode.
 //
 // The quantization, stated (ES.46: a deliberate narrowing, its loss said).
 // A point is drawn continuously and kept as its cell's representative,
@@ -57,21 +58,14 @@
 // rule, accurate to the cell's size squared; where they do not, at the rim
 // of the cap a surface sees, where the cosine at the light crosses 0
 // inside a cell, the error is of the order of the share of the cap in rim
-// cells, about the cell's size over the cap's angle. Not zero: it is why
-// the raytraced mode's check against the reference (core/passes/
-// restir_di.h, bias_correction) holds ReSTIR within a tolerance, not to
-// the reference exactly. The tolerance is the implementation's to measure.
+// cells, about the cell's size over the cap's angle. Not zero, and stated.
 //
 // The questions an emitter answers of an identity (metal/lights/
 // emitter.metal.h), beside contract 3's, each kind answering for itself:
 //
-//   LightPoint draw_light_point(light, point, u)
-//       a point on light record `light`, drawn from `point` as sample_light()
-//       draws a direction from it with the same u (contract 3), kept as an
-//       identity: the point the drawn direction reaches on the light,
-//       encoded as above. A point inside the light draws none (light 0).
-//       sample_light() itself is unchanged and draws the same numbers it
-//       did.
+//   LightPoint light_point_at(light, index, reached)
+//       the identity of `reached`, a point on light record `index`: a light
+//       sample's point, or one a ray struck, encoded as above.
 //   LightReceived evaluate_light_point(sample, point)
 //       what the light at identity `sample` gives `point`, as this frame
 //       places and lights it, at the decoded point: the direction and
@@ -81,15 +75,14 @@
 //       nothing), and its area scale, world area per unit of the light's
 //       own area (a sphere's r^2: contract 10's transforms scale
 //       uniformly). Evaluated against last frame's transforms and glows, it
-//       is what last frame's surface saw (metal/reuse/temporal.metal.h).
+//       is what last frame's surface saw.
 //
 // Densities over identities are per unit of the light's own area (the unit
 // sphere's, for a sphere), so one sample means one thing at every surface
-// and in every frame, whatever the light's scale then
-// (metal/integrator/target.metal.h).
+// and in every frame, whatever the light's scale then.
 //
-// Layout: two words, 8 bytes; contract 14 holds one at its start. Layout
-// rules as for every shared contract (contracts/frame_constants.h).
+// Layout: two words, 8 bytes. Layout rules as for every shared contract
+// (contracts/frame_constants.h).
 
 #include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
@@ -100,7 +93,7 @@ namespace contracts {
 // The equal-area octahedral map's round trip, at most: the angle, in
 // radians, between a unit vector and its 32-bit code decoded (above;
 // metal/math/warp.metal.h). Measured over the sphere by
-// tests/gpu/restir_test.cpp, which holds the map to it.
+// tests/gpu/encoding_test.cpp, which holds the map to it.
 SERENITY_CONSTANT float unit_round_trip_error = 1.0e-4f;
 
 // LightPoint::light's bits (above).

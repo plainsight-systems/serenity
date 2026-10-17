@@ -54,7 +54,7 @@ void DenoiseImages::make(Activations& a, frame::Extent size, std::uint32_t strid
 bool DenoiseImages::prepare(const frame::FrameInputs& inputs, frame::Extent light) {
     check_texture_size(light, "the denoiser's buffers");
     // Joined on a copy, kept once the buffers exist (E.4; frame_images.cpp,
-    // ReuseImages::prepare).
+    // PathReuseImages::prepare).
     frame::ReuseHistory joined = history_;
     std::uint64_t held = 0;
     try {

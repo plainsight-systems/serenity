@@ -46,7 +46,7 @@ std::string material_name(const SceneDescription& scene, std::size_t i) {
 }
 
 std::string outside(const std::string& what, const std::string& value) {
-    return what + ", " + value + ", is outside what ReSTIR DI's packed surface record holds: finite, at most " +
+    return what + ", " + value + ", is outside what ReSTIR PT's packed G-buffer holds: finite, at most " +
            number(contracts::packed_largest) + " in magnitude (contracts/bsdf.h)";
 }
 

@@ -120,8 +120,8 @@ inline uint bsdf_lobes(serenity::contracts::Bsdf bsdf) {
 
 // Contract 2's packed form (contracts/bsdf.h states both functions and
 // what packing loses): Material's one definition of how a Bsdf is stored in
-// ReSTIR DI's surface record and read back, by every pass that writes or
-// reads one. A switch on the kind with no default, as above, so a kind
+// ReSTIR PT's G-buffer and MNEE's requests and read back, by every pass
+// that writes or reads one. A switch on the kind with no default, as above, so a kind
 // added and not packed fails to compile.
 //
 // A half is rounded from a float to nearest, ties to even, by the shading

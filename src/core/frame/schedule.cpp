@@ -22,13 +22,11 @@ namespace {
 // through. The switches below cover every kind (-Wswitch); this list is
 // held to the enum's final kind, PassKind::last, so a kind left out of it
 // fails to compile (schedule.h).
-constexpr std::array<PassKind, 16> kinds = {
-    PassKind::test_pattern,      PassKind::preview,           PassKind::path,
-    PassKind::display,           PassKind::tone_map,          PassKind::restir_initial,
-    PassKind::restir_temporal,   PassKind::restir_spatial,    PassKind::restir_shade,
-    PassKind::restir_pt_initial, PassKind::restir_pt_temporal, PassKind::restir_pt_spatial,
-    PassKind::restir_pt_shade,   PassKind::restir_pt_duplication, PassKind::features,
-    PassKind::denoise};
+constexpr std::array<PassKind, 12> kinds = {
+    PassKind::test_pattern,       PassKind::preview,           PassKind::path,
+    PassKind::display,            PassKind::tone_map,          PassKind::restir_pt_initial,
+    PassKind::restir_pt_temporal, PassKind::restir_pt_spatial, PassKind::restir_pt_shade,
+    PassKind::restir_pt_duplication, PassKind::features,       PassKind::denoise};
 static_assert(kinds.size() == static_cast<std::size_t>(PassKind::last) + 1,
               "every PassKind is in `kinds`, in declaration order");
 static_assert(kinds.back() == PassKind::last, "the last PassKind is last in `kinds`");
@@ -63,14 +61,6 @@ std::string_view name(PassKind kind) {
         return "display";
     case PassKind::tone_map:
         return "tone_map";
-    case PassKind::restir_initial:
-        return "restir_initial";
-    case PassKind::restir_temporal:
-        return "restir_temporal";
-    case PassKind::restir_spatial:
-        return "restir_spatial";
-    case PassKind::restir_shade:
-        return "restir_shade";
     case PassKind::restir_pt_initial:
         return "restir_pt_initial";
     case PassKind::restir_pt_temporal:
@@ -98,10 +88,6 @@ bool needs_scene(PassKind kind) {
         return false;
     case PassKind::preview:
     case PassKind::path:
-    case PassKind::restir_initial:
-    case PassKind::restir_temporal:
-    case PassKind::restir_spatial:
-    case PassKind::restir_shade:
     case PassKind::restir_pt_initial:
     case PassKind::restir_pt_temporal:
     case PassKind::restir_pt_spatial:
@@ -121,9 +107,6 @@ bool accumulates(PassKind kind) {
     case PassKind::preview:
     case PassKind::display:
     case PassKind::tone_map:
-    case PassKind::restir_initial:
-    case PassKind::restir_temporal:
-    case PassKind::restir_spatial:
     case PassKind::restir_pt_initial:
     case PassKind::restir_pt_temporal:
     case PassKind::restir_pt_spatial:
@@ -132,7 +115,6 @@ bool accumulates(PassKind kind) {
     case PassKind::denoise:
         return false;
     case PassKind::path:
-    case PassKind::restir_shade:     // folds its pixels into the accumulated image, as path does
     case PassKind::restir_pt_shade:  // likewise
         return true;
     }
@@ -145,9 +127,6 @@ bool writes_radiance(PassKind kind) {
     case PassKind::test_pattern:
     case PassKind::display:
     case PassKind::tone_map:
-    case PassKind::restir_initial:
-    case PassKind::restir_temporal:
-    case PassKind::restir_spatial:
     case PassKind::restir_pt_initial:
     case PassKind::restir_pt_temporal:
     case PassKind::restir_pt_spatial:
@@ -157,7 +136,6 @@ bool writes_radiance(PassKind kind) {
         return false;
     case PassKind::preview:
     case PassKind::path:
-    case PassKind::restir_shade:
     case PassKind::restir_pt_shade:
         return true;
     }
@@ -170,10 +148,6 @@ bool reads_radiance(PassKind kind) {
     case PassKind::test_pattern:
     case PassKind::preview:
     case PassKind::path:
-    case PassKind::restir_initial:
-    case PassKind::restir_temporal:
-    case PassKind::restir_spatial:
-    case PassKind::restir_shade:
     case PassKind::restir_pt_initial:
     case PassKind::restir_pt_temporal:
     case PassKind::restir_pt_spatial:
@@ -194,10 +168,6 @@ bool writes_target(PassKind kind) {
     switch (kind) {
     case PassKind::preview:
     case PassKind::path:
-    case PassKind::restir_initial:
-    case PassKind::restir_temporal:
-    case PassKind::restir_spatial:
-    case PassKind::restir_shade:
     case PassKind::restir_pt_initial:
     case PassKind::restir_pt_temporal:
     case PassKind::restir_pt_spatial:
@@ -218,31 +188,6 @@ bool writes_features(PassKind kind) {
     return kind == PassKind::features;
 }
 
-bool is_restir(PassKind kind) {
-    // No default, as for name().
-    switch (kind) {
-    case PassKind::test_pattern:
-    case PassKind::preview:
-    case PassKind::path:
-    case PassKind::display:
-    case PassKind::tone_map:
-    case PassKind::restir_pt_initial:
-    case PassKind::restir_pt_temporal:
-    case PassKind::restir_pt_spatial:
-    case PassKind::restir_pt_shade:
-    case PassKind::restir_pt_duplication:
-    case PassKind::features:
-    case PassKind::denoise:
-        return false;
-    case PassKind::restir_initial:
-    case PassKind::restir_temporal:
-    case PassKind::restir_spatial:
-    case PassKind::restir_shade:
-        return true;
-    }
-    no_case("is_restir");
-}
-
 bool is_restir_pt(PassKind kind) {
     switch (kind) {
     case PassKind::test_pattern:
@@ -250,10 +195,6 @@ bool is_restir_pt(PassKind kind) {
     case PassKind::path:
     case PassKind::display:
     case PassKind::tone_map:
-    case PassKind::restir_initial:
-    case PassKind::restir_temporal:
-    case PassKind::restir_spatial:
-    case PassKind::restir_shade:
     case PassKind::features:
     case PassKind::denoise:
         return false;
@@ -342,7 +283,7 @@ std::optional<std::string> radiance_broken(const std::vector<PassKind>& passes) 
 // A family of passes kept in its order (schedule.h): those of `passes`
 // that `is_member` names each at most once, `first` and `last`, which
 // every graph of the family begins and ends with, both present if any is,
-// in `order`. `family`, as "ReSTIR DI", names it in the refusals.
+// in `order`. `family`, as "ReSTIR PT", names it in the refusals.
 std::optional<std::string> family_broken(const std::vector<PassKind>& passes, bool (*is_member)(PassKind),
                                          std::span<const PassKind> order, PassKind first, PassKind last,
                                          std::string_view family) {
@@ -371,26 +312,12 @@ std::optional<std::string> family_broken(const std::vector<PassKind>& passes, bo
     return std::nullopt;
 }
 
-// ReSTIR DI's passes in their order, each at most once, restir_initial
-// and restir_shade both present if any is (schedule.h). Nothing else can
-// stand between them: every other kind that is not the presenting pass
-// writes radiance or accumulates, which the rules before this one refuse
-// beside the shade.
-std::optional<std::string> restir_broken(const std::vector<PassKind>& passes) {
-    constexpr std::array<PassKind, 4> order = {PassKind::restir_initial, PassKind::restir_temporal,
-                                               PassKind::restir_spatial, PassKind::restir_shade};
-    return family_broken(passes, is_restir, order, PassKind::restir_initial, PassKind::restir_shade, "ReSTIR DI");
-}
-
-// ReSTIR PT's passes kept as ReSTIR DI's are (above), never beside ReSTIR
-// DI's, and the duplication map only with the temporal reuse (schedule.h).
+// ReSTIR PT's passes in their order, each at most once, restir_pt_initial
+// and restir_pt_shade both present if any is, and the duplication map only
+// with the temporal reuse (schedule.h).
 std::optional<std::string> restir_pt_broken(const std::vector<PassKind>& passes) {
     if (std::ranges::none_of(passes, is_restir_pt)) {
         return std::nullopt;
-    }
-    if (std::ranges::any_of(passes, is_restir)) {
-        return "the frame graph has ReSTIR DI's and ReSTIR PT's passes; ReSTIR PT's reservoir holds the direct light "
-               "ReSTIR DI's would, so a graph runs one family";
     }
     constexpr std::array<PassKind, 5> order = {PassKind::restir_pt_initial, PassKind::restir_pt_temporal,
                                                PassKind::restir_pt_spatial, PassKind::restir_pt_shade,
@@ -425,7 +352,7 @@ std::optional<std::string> denoise_broken(const std::vector<PassKind>& passes) {
     }
     if (!before([](PassKind kind) { return writes_radiance(kind) && accumulates(kind); })) {
         return "the frame graph's denoise pass reads the light as an accumulated image, and no light pass that "
-               "accumulates (path, restir_shade, restir_pt_shade) comes before it";
+               "accumulates (path, restir_pt_shade) comes before it";
     }
     if (passes.end() - at != 2 || !writes_target(passes.back())) {
         return "the frame graph's denoise pass writes the radiance its presenting pass shows at the output size, "
@@ -434,11 +361,10 @@ std::optional<std::string> denoise_broken(const std::vector<PassKind>& passes) {
     return std::nullopt;
 }
 
-// The pieces of the ReSTIR settings' refusals (invalid(RestirDi) and
-// invalid(RestirPt) below), each worded once.
+// The pieces of ReSTIR PT's settings' refusals (invalid(RestirPt) below),
+// each worded once.
 
-// The families whose settings they are, as the refusals name them.
-constexpr std::string_view di = "ReSTIR DI's";
+// The family whose settings they are, as the refusals name it.
 constexpr std::string_view pt = "ReSTIR PT's";
 
 // "an integer in [low, high]".
@@ -452,7 +378,7 @@ std::string setting(std::string_view family, std::string_view key, const std::st
 }
 
 // A setting the schedule's passes do not read must be its zero
-// (core/contracts/reuse_settings.h, path_reuse_settings.h); `readers` says
+// (core/contracts/path_reuse_settings.h); `readers` says
 // which passes read it.
 std::string unread(std::string_view family, std::string_view key, const std::string& value,
                    std::string_view readers) {
@@ -467,122 +393,11 @@ std::string text(float value) {
     return s.str();
 }
 
-// An enumerator's value, which may be one no enumerator names.
-template <typename Enum>
-std::string text(Enum value) {
-    return std::to_string(static_cast<std::uint32_t>(value));
-}
-
 bool finite_within(float value, float low, float high) {
     return std::isfinite(value) && value >= low && value <= high;
 }
 
-// invalid(RestirDi)'s rules, by the passes that read each group of
-// settings (F.3): the candidates' (always read), the temporal merge's, the
-// spatial merge's, either merge's, and the shade's final-visibility reuse.
-std::optional<std::string> candidates_broken(const passes::RestirDi& settings) {
-    if (settings.candidates < 1u || settings.candidates > contracts::max_candidates) {
-        return setting(di, "candidates", std::to_string(settings.candidates)) + "must be " +
-               integer_in(1u, contracts::max_candidates);
-    }
-    if (settings.bsdf_candidates > contracts::max_bsdf_candidates) {
-        return setting(di, "bsdf_candidates", std::to_string(settings.bsdf_candidates)) + "must be " +
-               integer_in(0u, contracts::max_bsdf_candidates);
-    }
-    return std::nullopt;
-}
-
-std::optional<std::string> temporal_broken(const passes::RestirDi& settings, bool temporal) {
-    constexpr std::string_view readers = "with restir_temporal";
-    if (temporal && (settings.history < 1u || settings.history > contracts::max_history)) {
-        return setting(di, "history", std::to_string(settings.history)) + "must be " +
-               integer_in(1u, contracts::max_history);
-    }
-    if (!temporal && settings.history != 0u) {
-        return unread(di, "history", std::to_string(settings.history), readers);
-    }
-    if (settings.permutation != contracts::Permutation::off && settings.permutation != contracts::Permutation::on) {
-        return setting(di, "permutation", text(settings.permutation)) + "is neither off nor on";
-    }
-    if (!temporal && settings.permutation != contracts::Permutation::off) {
-        return unread(di, "permutation", "on", readers);
-    }
-    return std::nullopt;
-}
-
-std::optional<std::string> spatial_broken(const passes::RestirDi& settings, bool spatial) {
-    constexpr std::string_view readers = "with restir_spatial";
-    if (spatial && (settings.neighbors < 1u || settings.neighbors > contracts::max_neighbors)) {
-        return setting(di, "neighbors", std::to_string(settings.neighbors)) + "must be " +
-               integer_in(1u, contracts::max_neighbors);
-    }
-    if (!spatial && settings.neighbors != 0u) {
-        return unread(di, "neighbors", std::to_string(settings.neighbors), readers);
-    }
-    if (spatial && !finite_within(settings.radius, contracts::min_radius, contracts::max_radius)) {
-        return setting(di, "radius", text(settings.radius)) + "must be finite, within [" + text(contracts::min_radius) +
-               ", " + text(contracts::max_radius) + "] pixels";
-    }
-    if (!spatial && settings.radius != 0.0f) {
-        return unread(di, "radius", text(settings.radius), readers);
-    }
-    return std::nullopt;
-}
-
-std::optional<std::string> merges_broken(const passes::RestirDi& settings, bool merges) {
-    constexpr std::string_view readers = "with restir_temporal or restir_spatial";
-    const float depth = settings.depth_threshold;
-    if (merges && !(std::isfinite(depth) && depth > 0.0f && depth <= 1.0f)) {
-        return setting(di, "depth_threshold", text(depth)) + "must be within (0, 1]";
-    }
-    if (!merges && depth != 0.0f) {
-        return unread(di, "depth_threshold", text(depth), readers);
-    }
-    if (merges && !finite_within(settings.normal_threshold, -1.0f, 1.0f)) {
-        return setting(di, "normal_threshold", text(settings.normal_threshold)) + "must be a cosine, within [-1, 1]";
-    }
-    if (!merges && settings.normal_threshold != 0.0f) {
-        return unread(di, "normal_threshold", text(settings.normal_threshold), readers);
-    }
-    if (settings.bias_correction != contracts::BiasCorrection::basic &&
-        settings.bias_correction != contracts::BiasCorrection::raytraced) {
-        return setting(di, "bias_correction", text(settings.bias_correction)) + "is neither basic nor raytraced";
-    }
-    if (!merges && settings.bias_correction != contracts::BiasCorrection::basic) {
-        return unread(di, "bias_correction", "raytraced", readers);
-    }
-    return std::nullopt;
-}
-
-std::optional<std::string> visibility_broken(const passes::RestirDi& settings, bool merges) {
-    const bool basic = merges && settings.bias_correction == contracts::BiasCorrection::basic;
-    if (settings.visibility_reuse != contracts::VisibilityReuse::off &&
-        settings.visibility_reuse != contracts::VisibilityReuse::on) {
-        return setting(di, "visibility_reuse", text(settings.visibility_reuse)) + "is neither off nor on";
-    }
-    if (!basic && settings.visibility_reuse != contracts::VisibilityReuse::off) {
-        return unread(di, "visibility_reuse", "on", "in basic mode, with restir_temporal or restir_spatial");
-    }
-    const bool reused = basic && settings.visibility_reuse == contracts::VisibilityReuse::on;
-    constexpr std::string_view readers = "where visibility_reuse is on";
-    if (reused && settings.visibility_age > contracts::max_visibility_age) {
-        return setting(di, "visibility_age", std::to_string(settings.visibility_age)) + "must be " +
-               integer_in(0u, contracts::max_visibility_age);
-    }
-    if (!reused && settings.visibility_age != 0u) {
-        return unread(di, "visibility_age", std::to_string(settings.visibility_age), readers);
-    }
-    if (reused && !finite_within(settings.visibility_distance, 0.0f, contracts::max_visibility_distance)) {
-        return setting(di, "visibility_distance", text(settings.visibility_distance)) + "must be finite, within [0, " +
-               text(contracts::max_visibility_distance) + "] pixels";
-    }
-    if (!reused && settings.visibility_distance != 0.0f) {
-        return unread(di, "visibility_distance", text(settings.visibility_distance), readers);
-    }
-    return std::nullopt;
-}
-
-// invalid(RestirPt)'s rules, likewise, by the passes that read each group:
+// invalid(RestirPt)'s rules, by the passes that read each group of settings:
 // the four every ReSTIR PT graph reads (the path tree's and its shifts'),
 // the spatial reuse's, the temporal reuse's, and the duplication map's.
 std::optional<std::string> pt_paths_broken(const passes::RestirPt& settings) {
@@ -658,33 +473,13 @@ std::optional<std::string> pt_duplication_broken(const passes::RestirPt& setting
 
 }  // namespace
 
-std::optional<std::string> invalid(const passes::RestirDi& settings, std::span<const PassKind> passes) {
-    const auto has = [&](PassKind kind) { return std::ranges::find(passes, kind) != passes.end(); };
-    const bool temporal = has(PassKind::restir_temporal);
-    const bool spatial = has(PassKind::restir_spatial);
-    if (std::optional<std::string> reason = candidates_broken(settings)) {
-        return reason;
-    }
-    if (std::optional<std::string> reason = temporal_broken(settings, temporal)) {
-        return reason;
-    }
-    if (std::optional<std::string> reason = spatial_broken(settings, spatial)) {
-        return reason;
-    }
-    if (std::optional<std::string> reason = merges_broken(settings, temporal || spatial)) {
-        return reason;
-    }
-    return visibility_broken(settings, temporal || spatial);
-}
-
 std::optional<std::string> invalid(const Schedule& schedule) {
     const std::vector<PassKind>& passes = schedule.passes;
     if (passes.empty()) {
         return "the frame graph has no passes";
     }
     for (const auto broken :
-         {accumulation_broken, presentation_broken, radiance_broken, restir_pt_broken, restir_broken,
-          denoise_broken}) {
+         {accumulation_broken, presentation_broken, radiance_broken, restir_pt_broken, denoise_broken}) {
         if (std::optional<std::string> reason = broken(passes)) {
             return reason;
         }
@@ -700,20 +495,6 @@ std::optional<std::string> invalid(const Schedule& schedule) {
     }
     if (schedule.tone_map) {
         if (std::optional<std::string> reason = invalid(*schedule.tone_map)) {
-            return reason;
-        }
-    }
-
-    // ReSTIR DI's settings, exactly with its passes.
-    const bool restir = std::ranges::any_of(passes, [](PassKind kind) { return is_restir(kind); });
-    if (restir && !schedule.restir_di) {
-        return "the frame graph has ReSTIR DI's passes and no [restir_di] settings";
-    }
-    if (!restir && schedule.restir_di) {
-        return "the frame graph has [restir_di] settings and no ReSTIR DI pass";
-    }
-    if (schedule.restir_di) {
-        if (std::optional<std::string> reason = invalid(*schedule.restir_di, passes)) {
             return reason;
         }
     }
@@ -812,7 +593,7 @@ bool writes_features(const Schedule& schedule) {
 
 bool reuses_history(const Schedule& schedule) {
     return std::ranges::any_of(schedule.passes, [](PassKind kind) {
-        return kind == PassKind::restir_temporal || kind == PassKind::restir_pt_temporal || kind == PassKind::denoise;
+        return kind == PassKind::restir_pt_temporal || kind == PassKind::denoise;
     });
 }
 

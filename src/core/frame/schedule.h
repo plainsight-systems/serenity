@@ -9,7 +9,6 @@
 
 #include "core/frame/extent.h"
 #include "core/passes/denoise.h"
-#include "core/passes/restir_di.h"
 #include "core/passes/restir_pt.h"
 #include "core/passes/tone_map.h"
 
@@ -39,7 +38,7 @@ namespace serenity::frame {
 //   - the radiance image, the frame's linear radiance at the frame's size,
 //     between a pass that computes light and the pass that presents it.
 //
-// A pass that computes light (preview, path, restir_shade, restir_pt_shade:
+// A pass that computes light (preview, path, restir_pt_shade:
 // writes_radiance()) writes radiance; a presenting pass (display, tone_map)
 // reads it and writes the target; the test pattern, a diagnostic in display
 // values already, writes the target alone.
@@ -50,46 +49,11 @@ namespace serenity::frame {
 // backend records the barrier between a pass that writes an image and a
 // later one that reads it (metal/frame/renderer.h).
 //
-// ReSTIR DI (Bitterli et al. 2020) is four passes, one or more steps of its
-// algorithm each (metal/passes/restir_di/restir_di.metal.h states it by
-// numbered steps): split where a step must see every pixel's result before
-// it, the spatial merge reading its neighbors' reservoirs only after every
-// pixel has written its own, and where a pass would otherwise hold more
-// alive across its ray queries (logical-overview.md, "Little is kept alive
-// across a ray query"). What each reads and writes, of the frame's images
-// (contract 6; contracts 5 and 14 lay out the records and the reservoirs):
-//
-//   restir_initial   the camera's path to its first surface that aims at
-//                    lights, then M candidates there and visibility reuse
-//                    (steps 1 to 3); writes the surface records, the path
-//                    states and, in a graph with a temporal merge, the
-//                    surfaces' previous positions; and a reservoir a pixel.
-//   restir_temporal  the temporal merge (step 4); reads the records and
-//                    previous positions, last frame's records and final
-//                    reservoirs, and the initial reservoirs; writes a
-//                    reservoir a pixel.
-//   restir_spatial   the spatial merge (step 5); reads the records and the
-//                    reservoirs the pass before it wrote, at k neighbors;
-//                    writes a reservoir a pixel.
-//   restir_shade     the direct light from the final reservoir, and the
-//                    path's continuation (step 6); reads the records, the
-//                    path states and the final reservoirs; accumulates, and
-//                    so writes radiance, as the path pass does.
-//
-// The reservoirs the last pass before restir_shade writes are the frame's
-// final reservoirs, which the next frame's temporal merge reads as last
-// frame's (metal/frame/frame_images.h). The order a schedule keeps, checked
-// by invalid() below: restir_initial, restir_temporal if present,
-// restir_spatial if present, restir_shade, each at most once;
-// restir_initial and restir_shade both present if any of the four is; and
-// the shade, which writes radiance, before the presenting pass that reads
-// it, as every light pass is.
-//
 // ReSTIR PT (Lin et al. 2022; ReSTIR PT Enhanced, Lin, Kettunen and Wyman
-// 2026) is its own family of passes, never mixed with ReSTIR DI's in one
-// graph: its unified reservoir holds the direct light ReSTIR DI would
-// (docs/research/2026-10-11-restir-pt-layout.md). Its passes
-// (metal/passes/restir_pt/restir_pt.metal.h states the algorithm):
+// 2026) is a family of passes: its unified reservoir holds direct and
+// indirect light as whole paths (docs/research/2026-10-11-restir-pt-
+// layout.md). Its passes (metal/passes/restir_pt/restir_pt.metal.h states
+// the algorithm):
 //
 //   restir_pt_initial      the path tree at each pixel, NEE at every
 //                          vertex, resampled to one path; writes a path
@@ -187,19 +151,6 @@ namespace serenity::frame {
 // contracts::checkerboard_lattice_step). Off unless written, so
 // every graph renders what it did.
 //
-// An estimator is a graph (logical-overview.md, principle 4: estimators are
-// interchangeable over the same scene):
-//
-//   ["restir_initial", "restir_shade"]
-//       resampled importance sampling alone, with visibility reuse; with
-//       candidates = 1, naive next event estimation at the first surface;
-//   with restir_temporal, restir_spatial, or both between them, in that order
-//       temporal reuse, spatial reuse, or both;
-//   ["path"]
-//       the reference, unchanged: the naive path tracer
-//       (metal/integrator/path.metal.h), to whose image every ReSTIR graph
-//       converges (principle 3).
-//
 // `last` names the final kind, without being a kind of its own (a second
 // name for its value, which no switch needs a case for): schedule.cpp
 // asserts its list of every kind against it, so a kind missing from the
@@ -211,10 +162,6 @@ enum class PassKind {
     path,          // path tracing, naive, accumulating while the image holds still; needs a scene; writes radiance
     display,       // radiance as it is: the largest channel above 1 scaled to 1, then sRGB; writes the target
     tone_map,      // radiance exposed, bloomed and rolled off (core/passes/tone_map.h), then sRGB; writes the target
-    restir_initial,   // ReSTIR DI steps 1 to 3: the first rough surface, M candidates, visibility; needs a scene
-    restir_temporal,  // step 4: last frame's reservoir merged in; needs a scene
-    restir_spatial,   // step 5: k neighbors' reservoirs merged in; needs a scene
-    restir_shade,     // step 6: the survivor's light and the path's continuation; accumulates; writes radiance
     restir_pt_initial,      // ReSTIR PT: the path tree, resampled to one path a pixel; needs a scene
     restir_pt_temporal,     // ReSTIR PT's temporal reuse; needs a scene
     restir_pt_spatial,      // ReSTIR PT's paired spatial reuse; needs a scene
@@ -240,11 +187,6 @@ bool reads_radiance(PassKind kind);
 bool writes_target(PassKind kind);
 bool writes_features(PassKind kind);
 
-// Whether a pass of `kind` is one of ReSTIR DI's four (above): it reads or
-// writes the surface records or the reservoirs, and reads the [restir_di]
-// settings.
-bool is_restir(PassKind kind);
-
 // Whether a pass of `kind` is one of ReSTIR PT's (above): it reads or writes
 // the path reservoirs or the light buffer, and reads the [restir_pt]
 // settings.
@@ -255,13 +197,10 @@ struct Schedule {
     // The tone-map pass's settings: present exactly when the schedule has
     // that pass (graph_file.h, core/passes/tone_map.h).
     std::optional<passes::ToneMap> tone_map;
-    // ReSTIR DI's settings: present exactly when the schedule has its
-    // passes (graph_file.h, core/contracts/reuse_settings.h). None unless
-    // given, as every member after it, so a schedule written {passes,
-    // tone_map} keeps its meaning.
-    std::optional<passes::RestirDi> restir_di = std::nullopt;
     // ReSTIR PT's settings: present exactly when the schedule has its
-    // passes (graph_file.h, core/contracts/path_reuse_settings.h).
+    // passes (graph_file.h, core/contracts/path_reuse_settings.h). None
+    // unless given, as every member after it, so a schedule written
+    // {passes, tone_map} keeps its meaning.
     std::optional<passes::RestirPt> restir_pt = std::nullopt;
     // Caustics by manifold next event estimation (metal/integrator/
     // mnee.metal.h), read by the path pass and by ReSTIR PT's passes, one of
@@ -280,9 +219,9 @@ struct Schedule {
 // the frames before them (frame/history.h).
 bool accumulates(const Schedule& schedule);
 
-// Whether `schedule` has restir_temporal, restir_pt_temporal or denoise:
-// whether its frames build on the reservoirs and surface records (or
-// primary hits) of the frames before them, since its reuse history started
+// Whether `schedule` has restir_pt_temporal or denoise: whether its frames
+// build on the reservoirs and primary hits (or the denoiser's output) of
+// the frames before them, since its reuse history started
 // (frame/history.h, ReuseHistory). Apart from accumulates(): a changing
 // scene starts the accumulated image over every frame, and keeps its reuse
 // history.
@@ -322,14 +261,10 @@ bool writes_features(const Schedule& schedule);
 //   - tone-map settings exactly when there is a tone_map pass, with an
 //     exposure finite within [-10, 10] stops and a bloom in [0, 1)
 //     (core/passes/tone_map.h);
-//   - ReSTIR DI's passes in their order, each at most once, with
-//     restir_initial and restir_shade both present if any of the four is
-//     (above); and its settings exactly when its passes are present, each
-//     setting the passes read, as the graph's other settings decide what
-//     they read (bias_correction and visibility_reuse), in its range, and
-//     each they do not read its zero (core/contracts/reuse_settings.h);
-//   - ReSTIR PT's passes likewise (above), never beside ReSTIR DI's, and
-//     its settings exactly with its passes, in range
+//   - ReSTIR PT's passes in their order, each at most once, with
+//     restir_pt_initial and restir_pt_shade both present if any is
+//     (above); and its settings exactly with its passes, each setting the
+//     passes read in its range and each they do not read its zero
 //     (core/contracts/path_reuse_settings.h);
 //   - mnee set only beside a pass that reads it: path, or ReSTIR PT's;
 //   - the denoise pass's rules (above), and its settings exactly with it;
@@ -347,13 +282,9 @@ std::optional<std::string> invalid(const Schedule& schedule);
 // passes.
 std::optional<std::string> invalid(const passes::ToneMap& settings);
 
-// The ReSTIR rule's settings alone: whether `settings` hold what `passes`
-// read, in range, and its zero for what they do not (core/passes/
-// restir_di.h).
+// ReSTIR PT's settings alone: whether `settings` hold what `passes` read,
+// in range, and its zero for what they do not (core/passes/restir_pt.h).
 // For the graph reader, to name the line of the setting.
-std::optional<std::string> invalid(const passes::RestirDi& settings, std::span<const PassKind> passes);
-
-// ReSTIR PT's settings alone, likewise (core/passes/restir_pt.h).
 std::optional<std::string> invalid(const passes::RestirPt& settings, std::span<const PassKind> passes);
 
 // The name each kind is written as in a frame graph file, and back: name()

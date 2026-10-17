@@ -1,7 +1,7 @@
 #pragma once
 
-// The lit floor the path tracer and both ReSTIRs are held to
-// (tests/gpu/path_test.cpp, restir_test.cpp, restir_pt_test.cpp), once
+// The lit floor the path tracer and ReSTIR PT are held to
+// (tests/gpu/path_test.cpp, restir_pt_test.cpp), once
 // (ES.3, F.10): a Lambert floor of albedo 0.8 in a black sky under
 // fireflies of radius 0.05 and radiance 200, seen from above; and its
 // closed form, albedo x L sin^2 cos summed over the lights, at the floor

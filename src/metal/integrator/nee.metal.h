@@ -9,11 +9,10 @@
 // from where the vertex's rays leave (path.metal.h, "One origin"), density
 // p1 = P p_l in solid angle; each weighed by its unshadowed target
 // p̂ = luminance(f |cos| L_e) over p1; one kept by the streaming pick;
-// visibility tested for the kept one alone, as ReSTIR DI tests its
-// survivor. M is nee_candidates at the primary hit and nee_candidates / B^2
-// at vertex B, at least 1 (Enhanced §7's inverse-square schedule). ReSTIR
-// DI's candidate code (integrator/restir_di.metal.h) is what this
-// generalizes: one candidate's draw and weight are here, the loop that
+// visibility tested for the kept one alone. M is nee_candidates at the
+// primary hit and nee_candidates / B^2 at vertex B, at least 1 (Enhanced
+// §7's inverse-square schedule). One candidate's draw and weight are here,
+// the loop that
 // streams them is the Pass's (metal/passes/restir_pt/restir_pt.metal.h),
 // whose pick is Sample reuse's (metal/reuse/reservoir.metal.h, stream_pick):
 // the Integrator includes no Sample reuse header (tools/check_boundaries.sh
@@ -52,9 +51,9 @@
 #include "core/contracts/light_sample.h"
 #include "metal/acceleration/trace.metal.h"
 #include "metal/integrator/surface.metal.h"
-#include "metal/integrator/target.metal.h"
 #include "metal/lights/emitter.metal.h"
 #include "metal/materials/bsdf.metal.h"
+#include "metal/math/srgb.metal.h"
 
 namespace serenity {
 namespace shaders {

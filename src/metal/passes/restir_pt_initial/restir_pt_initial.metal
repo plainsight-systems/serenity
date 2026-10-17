@@ -54,8 +54,7 @@ inline void initial_pixel(constant serenity::contracts::FrameConstants& frame,
     const bool temporal = settings.confidence_cap > 0.0f;
     restir_pt::TreeGatherOf<manifold> tree = restir_pt::start_tree<manifold>(
         settings, numbers, scene.shapes(), restir_pt::block_tile(tiles, pixel, frame.frame_index), queue, i);
-    (void)path::walk_path<path::Start::camera, path::Stop::at_end>(scene, path::walk_from(ray), Shading{}, 0u,
-                                                                   numbers, tree);
+    (void)path::walk_path(scene, path::walk_from(ray), numbers, tree);
     reservoirs[i] = restir_pt::finish_tree(tree);
     primaries[i] = tree.primary;
     if (temporal && tree.primary.distance > 0.0f) {

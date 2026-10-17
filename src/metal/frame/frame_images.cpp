@@ -12,8 +12,6 @@
 #include "core/contracts/path_reservoir.h"
 #include "core/contracts/path_reuse_settings.h"
 #include "core/contracts/primary_hit.h"
-#include "core/contracts/reservoir.h"
-#include "core/contracts/surface_record.h"
 
 #include "metal/device/error.h"
 #include "metal/device/indirect_grid.h"
@@ -84,84 +82,6 @@ void FrameImages::prepare(frame::Extent size) {
     size_ = size;
 }
 
-ReuseImages::ReuseImages(const Device& device, Submission& submission, Temporal temporal, Working working)
-    : device_(NS::RetainPtr(device.handle())), submission_(submission), temporal_(temporal), working_kind_(working) {}
-
-void ReuseImages::make(Array& array, std::size_t bytes, std::string_view what) {
-    array = make_resident_buffer(device_.get(), submission_, bytes, MTL::ResourceStorageModePrivate,
-                                 "ReSTIR DI's " + std::string(what));
-}
-
-std::uint64_t ReuseImages::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
-    check_texture_size(size, "ReSTIR DI's arrays");
-    const bool temporal = temporal_ == Temporal::merged;
-    // The history joined on a copy, kept only once the arrays that hold
-    // the frame exist: a throw below leaves it claiming nothing they never
-    // held (E.4), as Accumulation's (accumulation.cpp).
-    frame::ReuseHistory joined = history_;
-    std::uint64_t held = 0;
-    if (temporal) {
-        try {
-            held = joined.join(inputs, size).held;
-        } catch (const frame::HistoryError& refused) {
-            throw MetalError(std::string("ReSTIR DI's reuse history: ") + refused.what());
-        }
-    }
-    if (size == size_) {
-        history_ = joined;
-        return held;
-    }
-    // A new size starts the history over (the rule refuses one that does
-    // not), so nothing of the old arrays is read again. Frames in flight
-    // may still read them: settled first, as FrameImages settles its
-    // images, and untimed, a resize's frame or two.
-    size_ = {};
-    const auto all = {&records_[0], &records_[1], &path_states_, &previous_positions_, &working_,
-                      &final_reservoirs_[0], &final_reservoirs_[1]};
-    if (std::ranges::any_of(all, [](const Array* array) { return static_cast<bool>(*array); })) {
-        submission_.drain();
-    }
-    for (Array* array : all) {
-        array->reset();
-    }
-    const auto pool = scoped_pool();
-    const std::size_t pixels = std::size_t{size.width} * size.height;
-    const std::size_t halves = temporal ? 2 : 1;
-    for (std::size_t h = 0; h < halves; ++h) {
-        make(records_[h], pixels * sizeof(contracts::SurfaceRecord), "surface records");
-        make(final_reservoirs_[h], pixels * sizeof(contracts::Reservoir), "final reservoirs");
-    }
-    make(path_states_, pixels * sizeof(contracts::PathState), "path states");
-    if (temporal) {
-        make(previous_positions_, pixels * sizeof(contracts::Float3), "previous positions");
-    }
-    if (working_kind_ == Working::needed) {
-        make(working_, pixels * sizeof(contracts::Reservoir), "working reservoirs");
-    }
-    size_ = size;
-    history_ = joined;
-    return held;
-}
-
-ReuseImages::Addresses ReuseImages::addresses(std::uint64_t index) const noexcept {
-    const auto address = [](const Array& array) { return array.address(); };
-    // This frame's half by its parity, last frame's the other; one half
-    // without a temporal merge.
-    const std::size_t now = temporal_ == Temporal::merged ? index % 2 : 0;
-    const std::size_t then = 1 - now;
-    Addresses out;
-    out.records = address(records_[now]);
-    out.path_states = address(path_states_);
-    out.previous_positions = address(previous_positions_);
-    out.working = address(working_);
-    out.final_reservoirs = address(final_reservoirs_[now]);
-    if (temporal_ == Temporal::merged) {
-        out.last_records = address(records_[then]);
-        out.last_final = address(final_reservoirs_[then]);
-    }
-    return out;
-}
-
 static_assert(PathReuseImages::grid_offset >= sizeof(std::uint32_t) &&
               PathReuseImages::grid_offset + sizeof(gpu::IndirectGrid) <= PathReuseImages::counter_bytes);
 static_assert(PathReuseImages::grid_offset % alignof(gpu::IndirectGrid) == 0 &&
@@ -186,7 +106,9 @@ void PathReuseImages::make(Array& array, std::size_t bytes, std::string_view wha
 std::uint64_t PathReuseImages::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
     check_texture_size(size, "ReSTIR PT's arrays");
     const bool temporal = temporal_ == Temporal::merged;
-    // Joined on a copy, kept once the arrays exist (ReuseImages::prepare).
+    // The history joined on a copy, kept only once the arrays that hold
+    // the frame exist: a throw below leaves it claiming nothing they never
+    // held (E.4), as Accumulation's (accumulation.cpp).
     frame::ReuseHistory joined = history_;
     std::uint64_t held = 0;
     if (temporal) {

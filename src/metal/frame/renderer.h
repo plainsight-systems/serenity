@@ -19,7 +19,6 @@
 #include "core/frame/frame_inputs.h"
 #include "core/denoise/network.h"
 #include "core/frame/schedule.h"
-#include "core/passes/restir_di.h"
 #include "core/scene/scene.h"
 #include "metal/acceleration/scene_acceleration.h"
 #include "metal/device/device.h"
@@ -43,15 +42,11 @@
 #include "metal/passes/features/features.h"
 #include "metal/passes/path/path.h"
 #include "metal/passes/preview/preview.h"
-#include "metal/passes/restir_initial/restir_initial.h"
 #include "metal/passes/restir_pt_duplication/restir_pt_duplication.h"
 #include "metal/passes/restir_pt_initial/restir_pt_initial.h"
 #include "metal/passes/restir_pt_shade/restir_pt_shade.h"
 #include "metal/passes/restir_pt_spatial/restir_pt_spatial.h"
 #include "metal/passes/restir_pt_temporal/restir_pt_temporal.h"
-#include "metal/passes/restir_shade/restir_shade.h"
-#include "metal/passes/restir_spatial/restir_spatial.h"
-#include "metal/passes/restir_temporal/restir_temporal.h"
 #include "metal/passes/test_pattern/test_pattern.h"
 #include "metal/passes/tone_map/tone_map.h"
 #include "metal/scene/shape_transforms.h"
@@ -150,7 +145,7 @@ namespace serenity::metal {
 // images between passes are one set the frames in flight share
 // (frame_images.h), and the accumulated image is the frame before's history:
 // before the first pass of a frame that writes the images, accumulates or
-// is one of ReSTIR DI's (whose arrays, ReuseImages, the frames share too),
+// is one of ReSTIR PT's (whose arrays, PathReuseImages, the frames share too),
 // the renderer records one barrier waiting for the queue's earlier
 // dispatches (barrierAfterQueueStages, dispatch before dispatch), so a frame
 // never writes the images while the frame before still reads them, nor reads
@@ -190,78 +185,33 @@ namespace serenity::metal {
 // scene_acceleration.h), and one structure build and one barrier.
 // Nothing is allocated.
 //
-// ReSTIR DI. A graph with its passes (core/frame/schedule.h) gets, at
-// construction, everything below and nothing else changes for a graph
-// without them. Implemented: restir_initial, restir_temporal in basic mode,
-// restir_spatial in either mode (its rays are this frame's) and
-// restir_shade. Refused at construction by MetalError, naming what is
-// refused, never run without it: a graph with restir_temporal in raytraced
-// mode, whose merge traces last frame's surface against last frame's
-// structure, which is not kept (scene_acceleration.h; its design waits in
-// docs/process/QUEUE.md). In detail:
-//
-//   - its passes, each built with where it writes its reservoirs, from the
-//     graph's order (frame_resources.h, ReservoirOutput): the initial pass
-//     to the working array when a merge follows, else the final one; the
-//     temporal merge in place when a spatial merge follows, else to the
-//     final one; the spatial merge always to the final one;
-//   - ReuseImages (frame_images.h), made by prepare() at the frame's size
-//     and asked by it, from the frame's inputs' reused_since
-//     (core/frame/frame_inputs.h), whether the frame has a previous one;
-//   - a second ring beside the frame constants', of the reuse constants
-//     (core/contracts/reuse_constants.h), 128 bytes a frame: the settings,
-//     whether there is a previous frame, and the previous frame's camera,
-//     framed for this frame's size, which the renderer keeps from the frame
-//     before (its inputs' camera: the renderer holds no camera of its own
-//     beyond the one it was last given);
-//   - for a graph with a temporal merge: last frame's transforms and glows,
-//     a second ShapeTransforms and LightGlows, which recording a frame fills
-//     by animating at the previous frame's time, kept from the frame before
-//     as its camera is (metal/scene/shape_transforms.h, light_glows.h), and
-//     only what moves or glows, as for this frame's (basic mode's merge
-//     traces no ray, so needs no structure of last frame's). At the first
-//     frame of a history there is no previous frame, and none of it is
-//     read;
-//   - the scene's media counted: a scene with 0xffff media or more is
-//     refused by MetalError, since the path state keeps a medium's index in
-//     16 bits (core/contracts/surface_record.h; I.5);
-//   - the scene's materials checked against the packed Bsdf's range: a
-//     scene with a color or scalar a material resolves to that is not
-//     finite or is above 65504 in magnitude is refused by MetalError naming
-//     the material and the value, since the surface record packs them as
-//     halves (core/contracts/bsdf.h; core/scene/packed_range.h; I.5).
-//
-// Barriers, each naming its hazard (GPU.8): the queue barrier before the
-// initial pass, the first that writes what frames share (this frame's
-// halves of the ping-pongs, which the frame before read as its own, and
-// the accumulated image, through the shade); and a dispatch-to-dispatch
-// barrier before each later ReSTIR pass, each reading what the one before
-// wrote, and before the presenting pass, which reads the shade's
-// accumulated image. Four dispatches and four barriers for the light, where
-// the path graph has one dispatch and one barrier.
-//
-// The argument table of a ReSTIR graph holds its passes' most buffer
-// bindings (passes/bindings.h), as every graph's holds its families' most
-// (renderer.cpp, buffer_bindings(), each family's count asserted against
-// its bindings there).
-//
 // ReSTIR PT. A graph with its passes gets, at construction, its passes;
 // PathReuseImages (frame_images.h), made by prepare() at the frame's size
-// and, with restir_pt_temporal, asked whether the frame has a previous one
-// (frame::ReuseHistory, as ReSTIR DI's arrays are); one static buffer of its
+// and, with restir_pt_temporal, asked from the frame's inputs' reused_since
+// (core/frame/frame_inputs.h, frame::ReuseHistory) whether the frame has a
+// previous one; one static buffer of its
 // settings and, with restir_pt_spatial, the three reuse textures, built
 // once on the CPU from the graph's sigma and a fixed seed
 // (core/sampling/pairing.h; 323 KB); and with restir_pt_temporal, a ring of
 // its reuse constants (contracts/path_reuse_settings.h, 80 bytes a frame:
-// the previous camera, whether there is a previous frame) and last frame's
-// transforms and glows, as ReSTIR DI's temporal merge has them. Refused at
+// the previous camera, whether there is a previous frame, which the
+// renderer keeps from the frame before: its inputs' camera, framed for this
+// frame's size) and last frame's transforms and glows, a second
+// ShapeTransforms and LightGlows, which recording a frame fills by
+// animating what moves or glows at the previous frame's time (metal/scene/
+// shape_transforms.h, light_glows.h); at the first frame of a history
+// there is no previous frame, and none of it is read. Refused at
 // construction by MetalError, as the G-buffer and the light tiles pack
 // them (I.5): a scene with 0xffff media or more, a material value outside
-// the packed BSDF's range, more than 65536 shapes or lights. Barriers as
-// ReSTIR DI's: the queue barrier before the initial pass, a dispatch
-// barrier before each later ReSTIR PT pass and, inside the passes, between
-// their dispatches (metal/passes/restir_pt_*/). Its argument table holds
-// its passes' most bindings, as ReSTIR DI's does.
+// the packed BSDF's range, more than 65536 shapes or lights. Barriers, each
+// naming its hazard (GPU.8): the queue barrier before the initial pass, the
+// first that writes what frames share; a dispatch barrier before each
+// later ReSTIR PT pass, each reading what the one before wrote, and,
+// inside the passes, between their dispatches (metal/passes/restir_pt_*/).
+// Its argument table holds its passes' most buffer bindings
+// (passes/bindings.h), as every graph's holds its families' most
+// (renderer.cpp, buffer_bindings(), each family's count asserted against
+// its bindings there).
 //
 // The features pass (contract 17, core/contracts/features.h). A graph with
 // it gets, at construction, its pass; FeatureImages (feature_images.h),
@@ -405,13 +355,13 @@ namespace serenity::metal {
 // arrays use the first half of the full-size ones, and the fill writes the
 // hand-off the copy wrote. Its argument table is a denoised graph's.
 //
-// Cost of recording a ReSTIR frame, on the CPU, beyond the above: 128 bytes
-// of reuse constants, four pipeline binds and dispatches with their
-// argument-table entries (two of each without the merges); with a temporal merge, one more animation of
+// Cost of recording a ReSTIR PT frame, on the CPU, beyond the above: 80
+// bytes of reuse constants, its passes' pipeline binds and dispatches with
+// their argument-table entries; with temporal reuse, one more animation of
 // what moves and glows, at the previous time (O(movers + glowers), as
-// animate()'s cost is: core/animation/animate.h), and no
-// second structure build: last frame's structure is the one last frame
-// built. Nothing is allocated.
+// animate()'s cost is: core/animation/animate.h), and no second structure
+// build: last frame's structure is the one last frame built. Nothing is
+// allocated.
 class Renderer {
 public:
     // Builds a pass for each entry of `schedule` from the backend's shader
@@ -420,9 +370,9 @@ public:
     // puts `scene` on the GPU. `scene` may be null when no pass reads it.
     // Throws MetalError if the schedule is invalid (frame::invalid), a pass needs a
     // scene and there is none, a glowing light is not one of the scene's, a
-    // ReSTIR graph's scene has more media or a wider material value than its
-    // path state and surface record hold (above), or a pipeline, buffer or
-    // structure cannot be built.
+    // ReSTIR PT graph's scene has more media, shapes or lights or a wider
+    // material value than its G-buffer and light tiles hold (above), or a
+    // pipeline, buffer or structure cannot be built.
     Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
              const scene::SceneDescription* scene);
 
@@ -494,10 +444,9 @@ public:
     FeatureImages::Read read_features() const;
 
 private:
-    using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass, RestirInitialPass,
-                              RestirTemporalPass, RestirSpatialPass, RestirShadePass, RestirPtInitialPass,
-                              RestirPtTemporalPass, RestirPtSpatialPass, RestirPtShadePass,
-                              RestirPtDuplicationPass, FeaturesPass, DenoisePass>;
+    using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass, RestirPtInitialPass,
+                              RestirPtTemporalPass, RestirPtSpatialPass, RestirPtShadePass, RestirPtDuplicationPass,
+                              FeaturesPass, DenoisePass>;
 
     // A pass of the schedule, with its kind (C.1).
     struct Step {
@@ -518,19 +467,6 @@ private:
     // optional, present only for a graph with the family's passes (C.1,
     // R.5). Each binds its share of a frame's resources.
     //
-    // ReSTIR DI's: its settings, as the graph gives them; its arrays; and
-    // the ring of its reuse constants, one copy per frame in flight.
-    struct RestirDiFamily {
-        RestirDiFamily(const Device& device, Submission& submission, const passes::RestirDi& graph_settings,
-                       bool temporal, bool spatial);
-        // `previous_camera` last frame's where the frame merges it, else none.
-        void bind(FrameResources& resources, const FrameSlot& begun, std::uint64_t index,
-                  const std::optional<contracts::Camera>& previous_camera, frame::Extent light);
-
-        passes::RestirDi settings;
-        ReuseImages images;
-        FrameArray constants;
-    };
     // ReSTIR PT's: its arrays, its settings and reuse textures, and with
     // temporal reuse the ring of its reuse constants.
     struct RestirPtFamily {
@@ -605,7 +541,6 @@ private:
     void make_steps(const Device& device, const frame::Schedule& schedule,
                     const std::optional<denoise::Network>& network);
     void make_images(const Device& device, const frame::Schedule& schedule);
-    void make_restir_di(const Device& device, const frame::Schedule& schedule, const scene::SceneDescription* scene);
     void make_restir_pt(const Device& device, const frame::Schedule& schedule, const scene::SceneDescription* scene);
     void make_mnee(const Device& device, const frame::Schedule& schedule, const scene::SceneDescription* scene);
     void make_scene(const Device& device, const scene::SceneDescription& scene);
@@ -652,7 +587,6 @@ private:
     std::unique_ptr<FrameImages> images_;         // when a pass writes radiance, unless into the accumulated image
     std::unique_ptr<Accumulation> accumulation_;  // when a pass accumulates
     std::unique_ptr<FailureCount> non_finite_;    // with it: samples not finite
-    std::optional<RestirDiFamily> restir_di_;
     std::optional<RestirPtFamily> restir_pt_;
     std::optional<MneeFamily> mnee_;
     std::optional<FeatureFamily> features_;
@@ -670,7 +604,7 @@ private:
     std::optional<Prepared> prepared_;
     std::vector<Step> steps_;  // in schedule order
     // The first pass that writes the images between passes, accumulates or
-    // is one of ReSTIR DI's (whose arrays the frames share), before which
+    // is one of ReSTIR PT's (whose arrays the frames share), before which
     // the queue barrier is recorded; none if none does.
     std::optional<std::size_t> first_cross_frame_;
     // The denoise pass's step, where the image half begins; steps_.size()

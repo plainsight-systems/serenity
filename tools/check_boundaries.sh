@@ -108,8 +108,8 @@ confined '#[[:space:]]*include[[:space:]]*[<"]toml\+\+/' 'src/core/(frame/graph_
 confined '#[[:space:]]*include[[:space:]]*[<"]stb_' 'src/core/output/png\.cpp$' 'stb'
 
 # 5. Sample reuse and the Integrator meet at contracts, and only a Pass
-#    composes them (change-axes.md; metal/passes/restir_di/
-#    restir_di.metal.h, "Where the families meet"): src/metal/reuse/
+#    composes them (change-axes.md; metal/passes/restir_pt/
+#    restir_pt.metal.h, "Where the families meet"): src/metal/reuse/
 #    includes no Integrator header and no Pass header, the backend's or the
 #    core's, and src/metal/integrator/ no Sample reuse header and no Pass
 #    header. By quoted, angled and relative path.
@@ -121,7 +121,7 @@ fi
 hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal/|core/)?(reuse|passes)/' src/metal/integrator/)"
 if [ -n "${hits}" ]; then
     echo "${hits}" | sed 's/^/  /' >&2
-    fail "src/metal/integrator/ includes Sample reuse or a Pass. The Integrator sees reservoirs as contract 14 alone."
+    fail "src/metal/integrator/ includes Sample reuse or a Pass. The Integrator sees reservoirs as contract 15 alone."
 fi
 
 if [ "${status}" -eq 0 ]; then

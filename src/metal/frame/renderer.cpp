@@ -24,8 +24,6 @@
 #include "core/contracts/mnee_request.h"
 #include "core/contracts/path_reuse_settings.h"
 #include "core/contracts/primary_hit.h"
-#include "core/contracts/reuse_constants.h"
-#include "core/contracts/surface_record.h"
 #include "core/denoise/network.h"
 #include "core/sampling/pairing.h"
 #include "core/scene/packed_range.h"
@@ -82,12 +80,6 @@ static_assert(bindings::denoise::radiance < max_denoise_textures);
 // With checkerboard rendering, always a denoised graph's, the fill.
 static_assert(bindings::checkerboard_fill::fill_constants < max_denoise_buffers);
 static_assert(bindings::checkerboard_fill::history < max_denoise_textures);
-// A ReSTIR DI graph.
-constexpr NS::UInteger max_restir_buffers = 15;
-static_assert(bindings::restir_initial::output < max_restir_buffers);
-static_assert(bindings::restir_temporal::last_transforms < max_restir_buffers);
-static_assert(bindings::restir_spatial::output < max_restir_buffers);
-static_assert(bindings::restir_shade::non_finite < max_restir_buffers);
 // A ReSTIR PT graph, with or without mnee (its initial pass's work list and
 // the MNEE pass bind within it).
 constexpr NS::UInteger max_restir_pt_buffers = 28;
@@ -98,18 +90,10 @@ static_assert(bindings::mnee::lost < max_restir_pt_buffers);
 // (core/sampling/pairing.h).
 constexpr std::uint64_t pairing_seed = 0x5e2e417f;
 
-// Whether `kind` is a pass of either ReSTIR, whose arrays the frames share.
-bool reuses_samples(frame::PassKind kind) {
-    return frame::is_restir(kind) || frame::is_restir_pt(kind);
-}
-
 // Whether `schedule` has a pass of `kind`.
 bool has(const frame::Schedule& schedule, frame::PassKind kind) {
     return std::ranges::find(schedule.passes, kind) != schedule.passes.end();
 }
-
-// The reuse constants are written into their ring as their bytes.
-static_assert(std::is_trivially_copyable_v<contracts::ReuseConstants>);
 
 // The buffers `schedule`'s table holds: the most of its families' (above).
 NS::UInteger buffer_bindings(const frame::Schedule& schedule) {
@@ -119,9 +103,6 @@ NS::UInteger buffer_bindings(const frame::Schedule& schedule) {
     }
     if (frame::denoises(schedule)) {
         most = std::max(most, max_denoise_buffers);
-    }
-    if (std::ranges::any_of(schedule.passes, frame::is_restir)) {
-        most = std::max(most, max_restir_buffers);
     }
     if (std::ranges::any_of(schedule.passes, frame::is_restir_pt)) {
         most = std::max(most, max_restir_pt_buffers);
@@ -134,11 +115,6 @@ NS::UInteger texture_bindings(const frame::Schedule& schedule) {
     return frame::denoises(schedule) ? max_denoise_textures : max_textures;
 }
 
-// What the path state keeps of a medium's index: 16 bits, 0xffff for none
-// (core/contracts/surface_record.h). A ReSTIR graph refuses a scene with
-// that many media or more (I.5).
-constexpr std::size_t max_restir_media = contracts::path_no_medium;
-
 // Shaders read a time as a float (contracts/frame_constants.h): a double
 // past float's range would reach them as infinity. `which` names the time
 // for the error: frame `index`'s own, or the frame before's.
@@ -150,15 +126,14 @@ void check_time(frame::Seconds time, std::uint64_t index, std::string_view which
     }
 }
 
-// What a reuse family's G-buffer or path state packs of `scene`
-// (contracts/surface_record.h, primary_hit.h; core/scene/packed_range.h),
-// refused rather than wrapped (I.5): fewer media than `media_limit`, which
-// a medium's 16-bit index holds with its "none", and every material value
-// within the packed BSDF's range. `family` names the reuse in the error.
-void check_packable(const scene::SceneDescription& scene, std::size_t media_limit, std::string_view family) {
+// What ReSTIR PT's G-buffer packs of `scene` (contracts/primary_hit.h;
+// core/scene/packed_range.h), refused rather than wrapped (I.5): fewer
+// media than `media_limit`, which a medium's 16-bit index holds with its
+// "none", and every material value within the packed BSDF's range.
+void check_packable(const scene::SceneDescription& scene, std::size_t media_limit) {
     if (scene.media.size() >= media_limit) {
-        throw MetalError("Renderer: the scene has " + std::to_string(scene.media.size()) + " media, and " +
-                         std::string(family) + " keeps a medium's index in 16 bits, under " +
+        throw MetalError("Renderer: the scene has " + std::to_string(scene.media.size()) +
+                         " media, and ReSTIR PT's G-buffer keeps a medium's index in 16 bits, under " +
                          std::to_string(media_limit));
     }
     if (const std::optional<std::string> outside = scene::outside_packed_bsdf(scene)) {
@@ -196,38 +171,6 @@ MTL::GPUAddress write_feature_constants(FrameArray& ring, std::uint32_t slot,
 }
 
 }  // namespace
-
-// ReSTIR DI's (renderer.h): its settings, its arrays, and the ring of its
-// reuse constants.
-Renderer::RestirDiFamily::RestirDiFamily(const Device& device, Submission& submission,
-                                         const passes::RestirDi& graph_settings, bool temporal, bool spatial)
-    : settings(graph_settings),
-      images(device, submission, temporal ? ReuseImages::Temporal::merged : ReuseImages::Temporal::none,
-             temporal || spatial ? ReuseImages::Working::needed : ReuseImages::Working::none),
-      constants(device, submission, std::vector<std::byte>(sizeof(contracts::ReuseConstants)),
-                FrameArray::Copies::per_frame) {}
-
-void Renderer::RestirDiFamily::bind(FrameResources& resources, const FrameSlot& begun, std::uint64_t index,
-                                    const std::optional<contracts::Camera>& previous_camera, frame::Extent light) {
-    // The reuse constants: the settings, and whether there is a frame
-    // before to merge, with its camera framed for this frame's size.
-    contracts::ReuseConstants reuse{};
-    reuse.settings = settings;
-    reuse.previous = previous_camera ? 1u : 0u;
-    if (previous_camera) {
-        reuse.previous_camera = camera::shader_form(*previous_camera, light);
-    }
-    std::memcpy(constants.bytes(begun.slot).data(), &reuse, sizeof(reuse));
-    resources.reuse = constants.address(begun.slot);
-    const ReuseImages::Addresses arrays = images.addresses(index);
-    resources.records = arrays.records;
-    resources.path_states = arrays.path_states;
-    resources.previous_positions = arrays.previous_positions;
-    resources.last_records = arrays.last_records;
-    resources.working_reservoirs = arrays.working;
-    resources.final_reservoirs = arrays.final_reservoirs;
-    resources.last_final_reservoirs = arrays.last_final;
-}
 
 // ReSTIR PT's (renderer.h): its arrays, its settings and reuse textures,
 // and with temporal reuse the ring of its reuse constants.
@@ -380,16 +323,6 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
         throw MetalError("Renderer: the frame graph's passes read a scene, and none was given (--scene)");
     }
     const auto pool = scoped_pool();
-    // Raytraced mode's temporal merge traces last frame's surface against
-    // last frame's structure, which this backend does not keep: refused by
-    // name, never traced against this frame's (renderer.h; the design for
-    // keeping it waits in docs/process/QUEUE.md).
-    if (has(schedule, frame::PassKind::restir_temporal) && schedule.restir_di &&
-        schedule.restir_di->bias_correction == contracts::BiasCorrection::raytraced) {
-        throw MetalError("Renderer: the frame graph's restir_temporal pass with bias_correction = \"raytraced\" is "
-                         "not implemented by the Metal backend yet: it needs last frame's acceleration structure; "
-                         "use \"basic\"");
-    }
     // The network, read once (core/denoise/network.h); its weights go to the
     // GPU with its pass, its widths size its buffers.
     std::optional<denoise::Network> network;
@@ -398,7 +331,6 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     }
     make_steps(device, schedule, network);
     make_images(device, schedule);
-    make_restir_di(device, schedule, scene);
     make_restir_pt(device, schedule, scene);
     make_mnee(device, schedule, scene);
     if (needs_scene_) {
@@ -425,13 +357,13 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
 
 // Each of the schedule's pass kinds as this backend's pass for it, in
 // schedule order (renderer.h); and the first pass that writes the images
-// between passes, accumulates, or writes ReSTIR's arrays, which the frame
-// before's shade reads, or the feature images, which the frame before's
-// readers read.
+// between passes, accumulates, or writes ReSTIR PT's arrays, which the
+// frame before's passes read, or the feature images, which the frame
+// before's readers read.
 void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
                           const std::optional<denoise::Network>& network) {
     const auto crosses_frames = [](frame::PassKind kind) {
-        return frame::writes_radiance(kind) || frame::accumulates(kind) || reuses_samples(kind) ||
+        return frame::writes_radiance(kind) || frame::accumulates(kind) || frame::is_restir_pt(kind) ||
                frame::writes_features(kind) || kind == frame::PassKind::denoise;
     };
     if (const auto first = std::ranges::find_if(schedule.passes, crosses_frames); first != schedule.passes.end()) {
@@ -442,8 +374,6 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
     // (frame::invalid: the features and a light pass come before it).
     image_begins_ = static_cast<std::size_t>(std::ranges::find(schedule.passes, frame::PassKind::denoise) -
                                              schedule.passes.begin());
-    const bool temporal = has(schedule, frame::PassKind::restir_temporal);
-    const bool spatial = has(schedule, frame::PassKind::restir_spatial);
     steps_.reserve(schedule.passes.size());
     for (frame::PassKind kind : schedule.passes) {
         // No default: a kind this backend does not implement fails the build
@@ -465,23 +395,6 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
             // The schedule has its settings with its pass (frame::invalid).
             steps_.push_back(
                 Step{kind, Pass{std::in_place_type<ToneMapPass>, device, library_, submission_, *schedule.tone_map}});
-            break;
-        case frame::PassKind::restir_initial:
-            // Into the working array when a merge follows, else the frame's
-            // final one (frame_resources.h).
-            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirInitialPass>, library_,
-                                             temporal || spatial ? ReservoirOutput::working : ReservoirOutput::final}});
-            break;
-        case frame::PassKind::restir_temporal:
-            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirTemporalPass>, library_,
-                                             spatial ? ReservoirOutput::working : ReservoirOutput::final}});
-            break;
-        case frame::PassKind::restir_spatial:
-            // Always to the final array, from the working one.
-            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirSpatialPass>, library_}});
-            break;
-        case frame::PassKind::restir_shade:
-            steps_.push_back(Step{kind, Pass{std::in_place_type<RestirShadePass>, library_}});
             break;
         case frame::PassKind::restir_pt_initial:
             steps_.push_back(Step{kind, Pass{std::in_place_type<RestirPtInitialPass>, library_, schedule.mnee}});
@@ -531,20 +444,6 @@ void Renderer::make_images(const Device& device, const frame::Schedule& schedule
     }
 }
 
-// ReSTIR DI's, only for its graph (renderer.h). Its passes read a scene,
-// which the constructor has made sure of.
-void Renderer::make_restir_di(const Device& device, const frame::Schedule& schedule,
-                              const scene::SceneDescription* scene) {
-    if (!schedule.restir_di) {
-        return;
-    }
-    check_packable(*scene, max_restir_media, "ReSTIR DI's path state");
-    const bool temporal = has(schedule, frame::PassKind::restir_temporal);
-    reuses_history_ = temporal;
-    restir_di_.emplace(device, submission_, *schedule.restir_di, temporal,
-                       has(schedule, frame::PassKind::restir_spatial));
-}
-
 // ReSTIR PT's, only for its graph (renderer.h).
 void Renderer::make_restir_pt(const Device& device, const frame::Schedule& schedule,
                               const scene::SceneDescription* scene) {
@@ -553,7 +452,7 @@ void Renderer::make_restir_pt(const Device& device, const frame::Schedule& sched
     }
     // What the G-buffer and the light tiles pack (contracts/primary_hit.h,
     // light_tile.h), refused rather than wrapped (I.5).
-    check_packable(*scene, contracts::primary_no_medium, "ReSTIR PT's G-buffer");
+    check_packable(*scene, contracts::primary_no_medium);
     if (scene->shapes.records.size() > contracts::tile_largest_id + 1u ||
         scene->light_counts.lights > contracts::tile_largest_id + 1u) {
         throw MetalError("Renderer: the scene has " + std::to_string(scene->shapes.records.size()) + " shapes and " +
@@ -684,13 +583,8 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
     if (mnee_) {
         mnee_->list.prepare(light);
     }
-    // 0 without a temporal merge, of either family (never both in a graph).
-    std::uint64_t reused = 0;
-    if (restir_di_) {
-        reused = restir_di_->images.prepare(inputs, light);
-    } else if (restir_pt_) {
-        reused = restir_pt_->images.prepare(inputs, light);
-    }
+    // 0 without temporal reuse.
+    const std::uint64_t reused = restir_pt_ ? restir_pt_->images.prepare(inputs, light) : 0u;
     std::uint32_t held = 0;
     if (accumulation_) {
         const frame::SceneMotion motion =
@@ -702,7 +596,7 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
 }
 
 bool Renderer::prepares() const noexcept {
-    return accumulation_ || images_ || restir_di_ || restir_pt_ || mnee_ || features_ || denoise_;
+    return accumulation_ || images_ || restir_pt_ || mnee_ || features_ || denoise_;
 }
 
 std::uint64_t Renderer::non_finite_samples() const noexcept {
@@ -821,9 +715,6 @@ FrameResources Renderer::frame_resources(const FrameSlot& begun, const frame::Fr
         resources.non_finite_counter = non_finite_->address(begun.slot);
     }
     const std::optional<contracts::Camera> previous_camera = previous ? previous_camera_ : std::nullopt;
-    if (restir_di_) {
-        restir_di_->bind(resources, begun, inputs.index, previous_camera, light);
-    }
     if (mnee_) {
         mnee_->bind(resources, begun);
     }
@@ -939,24 +830,25 @@ void Renderer::record_light(MTL4::ComputeCommandEncoder* encoder, const FrameRes
     // copy read the accumulated image this frame's shade writes (renderer.h,
     // "Two halves"). Otherwise dispatches alone, as every graph's was.
     const MTL::Stages before = denoise_ ? MTL::StageDispatch | MTL::StageBlit : MTL::StageDispatch;
-    bool restir_before = false;  // whether a ReSTIR pass came before, in this frame
+    bool restir_before = false;  // whether a ReSTIR PT pass came before, in this frame
     for (std::size_t i = 0; i < image_begins_; ++i) {
         const Step& step = steps_[i];
         if (i == first_cross_frame_) {
             // The frames in flight share the images between passes, the
-            // accumulated image and ReSTIR's arrays: none writes them while
+            // accumulated image and ReSTIR PT's arrays: none writes them while
             // the frame before still reads them, and none reads the
             // accumulated image before the frame before has written it. One
             // barrier for every such hazard, before the first pass that
             // touches any (GPU.8).
             encoder->barrierAfterQueueStages(before, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
         }
-        if (reuses_samples(step.kind) && restir_before) {
-            // What the ReSTIR pass before it wrote this frame: the records,
-            // path states and reservoirs (GPU.8: a write and its reader).
+        if (frame::is_restir_pt(step.kind) && restir_before) {
+            // What the ReSTIR PT pass before it wrote this frame: the
+            // reservoirs, primary hits and light buffer (GPU.8: a write and
+            // its reader).
             barrier_after_dispatch(encoder);
         }
-        restir_before = restir_before || reuses_samples(step.kind);
+        restir_before = restir_before || frame::is_restir_pt(step.kind);
         if (frame::reads_radiance(step.kind)) {
             // The radiance image an earlier pass of this frame wrote.
             barrier_after_dispatch(encoder);

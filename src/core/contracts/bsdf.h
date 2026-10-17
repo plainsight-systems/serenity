@@ -77,9 +77,9 @@
 // its light is the emitter contract's (contract 3).
 //
 // The packed form. A Bsdf as a G-buffer stores one, 16 bytes against its
-// 48, for ReSTIR DI's surface record (contract 5, core/contracts/
-// surface_record.h), which its merges read at every neighbor and so is most
-// of their traffic. Material owns it, here, beside the Bsdf it packs: one
+// 48, for ReSTIR PT's primary hits (contract 5, core/contracts/
+// primary_hit.h) and MNEE's requests (contract 16), which every shift and
+// solve reads and so is much of their traffic. Material owns it, here, beside the Bsdf it packs: one
 // definition of what a resolved material is, in two forms, so a field
 // Material adds is packed where it is added (ES.3). Two functions, each
 // backend's (metal/materials/bsdf.metal.h), to these semantics:
@@ -127,7 +127,7 @@
 // alpha in [10^-3, 1] (metal/materials/resolve.metal.h, least_alpha), so
 // those are within the precondition by the scene's own checks; an ior is
 // any finite number above 1, and a rough material's constant color, or a
-// checker's, any finite number. A renderer that packs (ReSTIR DI's) refuses,
+// checker's, any finite number. A renderer that packs (ReSTIR PT's) refuses,
 // by MetalError naming the material, a scene with a value a material can
 // resolve to outside the precondition (core/scene/packed_range.h; the path
 // graph, which packs nothing, takes it): a value packed past 65504 would be
@@ -140,10 +140,8 @@
 // by every pass, the target's and the shade's alike, so each pixel's
 // surface is one surface: what packing changes is which surface that is,
 // by those amounts, against the full-precision one the reference shades. A
-// small bias in the image, as a G-buffer's is in production; it is part of
-// what the raytraced mode's check against the reference holds within its
-// tolerance (core/contracts/reuse_settings.h, bias_correction). The naive
-// path tracer never packs a Bsdf, and shades what it did.
+// small bias in the image, as a G-buffer's is in production. The path
+// tracer never packs a Bsdf, and shades what it did.
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
@@ -229,7 +227,7 @@ static_assert(std::is_trivially_copyable_v<PackedBsdf>, "PackedBsdf is written t
 #endif
 
 // The kind alone, read without unpacking the rest: whether a stored surface
-// is one at all (kind none: contracts/surface_record.h). Here, with the
+// is one at all (kind none: contracts/primary_hit.h). Here, with the
 // layout, so the Integrator and Sample reuse, which meet at contracts
 // alone, read it one way.
 constexpr BsdfKind packed_kind(PackedBsdf packed) {

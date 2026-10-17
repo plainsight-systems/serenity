@@ -56,8 +56,8 @@ inline float3 cosine_direction(float3 n, float2 u) {
 // The equal-area octahedral map between the unit sphere and the square
 // (Clarberg 2008), quantized to two 16-bit numbers in one word, x in bits
 // 0 to 15 and y in 16 to 31 (contracts/light_sample.h states it and what
-// it loses): how ReSTIR DI stores a light's point on its unit sphere
-// (contract 4), a surface's wo and its shading normal (contracts 5 and 2).
+// it loses): how a light's point on its unit sphere is stored (contract
+// 4), and a surface's wo and its normals (contracts 5 and 2).
 // A mapping every family whose points are unit directions may use, so it
 // is here, not in one of them.
 //
@@ -71,7 +71,7 @@ inline float3 cosine_direction(float3 n, float2 u) {
 // 65536 levels, round((c + 1) / 2 x 65535). The round trip's error, the
 // angle between a unit vector and its code's decoding, is at most
 // contracts::unit_round_trip_error (core/contracts/light_sample.h, where
-// the quantization is stated), measured by tests/gpu/restir_test.cpp over
+// the quantization is stated), measured by tests/gpu/encoding_test.cpp over
 // the whole sphere.
 //
 // Cost: encode, a square root, an arctangent and a division; decode, a

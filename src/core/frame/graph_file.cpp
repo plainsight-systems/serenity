@@ -107,150 +107,20 @@ std::uint32_t count(std::string_view source, const toml::node& node, std::string
     if (*value < 0 || *value > std::int64_t{std::numeric_limits<std::uint32_t>::max()}) {
         throw GraphFileError(at(source, node, "'" + std::string(key) + "', " + std::to_string(*value) +
                                                   ", is no count a setting takes "
-                                                  "(core/contracts/reuse_settings.h, path_reuse_settings.h)"));
+                                                  "(core/contracts/path_reuse_settings.h)"));
     }
     return static_cast<std::uint32_t>(*value);
 }
 
-// `node` as a switch: a TOML boolean.
-bool switched_on(std::string_view source, const toml::node& node, std::string_view key) {
-    const std::optional<bool> value = node.is_boolean() ? node.value<bool>() : std::nullopt;
-    if (!value) {
-        throw GraphFileError(at(source, node, "'" + std::string(key) + "' must be true or false"));
-    }
-    return *value;
-}
-
-// `node` as bias_correction: one of its two strings.
-contracts::BiasCorrection bias_correction(std::string_view source, const toml::node& node) {
-    const std::optional<std::string_view> value = node.value<std::string_view>();
-    if (value == "basic") {
-        return contracts::BiasCorrection::basic;
-    }
-    if (value == "raytraced") {
-        return contracts::BiasCorrection::raytraced;
-    }
-    throw GraphFileError(at(source, node, "'bias_correction' must be \"basic\" or \"raytraced\""));
-}
-
-// Every [restir_di] key (graph_file.h), in the order the settings lay them
-// out.
-constexpr std::array<std::string_view, 12> restir_keys = {
-    "candidates",       "history",          "permutation",      "neighbors",      "radius",
-    "depth_threshold",  "normal_threshold", "bias_correction",  "visibility_reuse", "visibility_age",
-    "visibility_distance", "bsdf_candidates"};
-
-// Which [restir_di] keys a graph reads (graph_file.h): by its passes, and
-// by two of the settings, bias_correction and visibility_reuse, which are
-// read first for it.
-struct RestirReads {
-    bool temporal = false;
-    bool spatial = false;
-    bool merges = false;
-    bool basic = false;   // a merge in basic mode: visibility_reuse read
-    bool reused = false;  // and it on: visibility_age and visibility_distance read
-
-    bool reads(std::string_view key) const {
-        if (key == "candidates" || key == "bsdf_candidates") {
-            return true;
-        }
-        if (key == "history" || key == "permutation") {
-            return temporal;
-        }
-        if (key == "neighbors" || key == "radius") {
-            return spatial;
-        }
-        if (key == "depth_threshold" || key == "normal_threshold" || key == "bias_correction") {
-            return merges;
-        }
-        if (key == "visibility_reuse") {
-            return basic;
-        }
-        if (key == "visibility_age" || key == "visibility_distance") {
-            return reused;
-        }
-        return false;  // no key of [restir_di]'s
-    }
-};
-
-// The keys `settings`' two deciding values and the pass `kinds` say are
-// read; those two values, read first, into `settings`.
-RestirReads restir_reads(std::string_view source, const toml::table& table, std::span<const PassKind> kinds,
-                         passes::RestirDi& settings) {
-    const auto has = [&](PassKind kind) { return std::ranges::find(kinds, kind) != kinds.end(); };
-    RestirReads reads;
-    reads.temporal = has(PassKind::restir_temporal);
-    reads.spatial = has(PassKind::restir_spatial);
-    reads.merges = reads.temporal || reads.spatial;
-    if (reads.merges) {
-        settings.bias_correction = bias_correction(source, required(source, table, "bias_correction", "[restir_di]"));
-    }
-    reads.basic = reads.merges && settings.bias_correction == contracts::BiasCorrection::basic;
-    if (reads.basic) {
-        const bool on =
-            switched_on(source, required(source, table, "visibility_reuse", "[restir_di]"), "visibility_reuse");
-        settings.visibility_reuse = on ? contracts::VisibilityReuse::on : contracts::VisibilityReuse::off;
-    }
-    reads.reused = settings.visibility_reuse == contracts::VisibilityReuse::on;
-    return reads;
-}
-
-// Refuses, at its line, the first key in the file that `reads` does not
-// read, unknown or not read by this graph: toml++ keeps a table's keys
-// sorted, not in the file's order.
-void refuse_unread(std::string_view source, const toml::table& table, const RestirReads& reads) {
-    const toml::key* stray = nullptr;
-    for (const auto& [key, value] : table) {
-        if (!reads.reads(key.str()) && (stray == nullptr || key.source().begin.line < stray->source().begin.line)) {
-            stray = &key;
-        }
-    }
-    if (stray == nullptr) {
-        return;
-    }
-    const std::string key(stray->str());
-    throw GraphFileError(at(source, stray->source(),
-                            std::ranges::find(restir_keys, key) == restir_keys.end()
-                                ? "unknown key '" + key + "' in [restir_di]"
-                                : "'" + key +
-                                      "' is not read by this frame graph's passes "
-                                      "(core/contracts/reuse_settings.h says which read it): a key nobody reads"));
-}
-
-// The settings each value is checked beside (read_restir_di): `settings`'
-// two deciding values, the values the graphs are written with for every
-// other key `reads` reads, zeros for the rest.
-passes::RestirDi restir_baseline(passes::RestirDi settings, const RestirReads& reads) {
-    settings.candidates = passes::written_candidates;
-    settings.bsdf_candidates = passes::written_bsdf_candidates;
-    if (reads.temporal) {
-        settings.history = passes::written_history;
-        settings.permutation = passes::written_permutation;
-    }
-    if (reads.spatial) {
-        settings.neighbors = passes::written_neighbors;
-        settings.radius = passes::written_radius;
-    }
-    if (reads.merges) {
-        settings.depth_threshold = passes::written_depth_threshold;
-        settings.normal_threshold = passes::written_normal_threshold;
-    }
-    if (reads.reused) {
-        settings.visibility_age = passes::written_visibility_age;
-        settings.visibility_distance = passes::written_visibility_distance;
-    }
-    return settings;
-}
-
-// Reads one ReSTIR family's settings table into `settings` (read_restir_di,
-// read_restir_pt): each key into its member, and each value checked alone,
-// beside `baseline`, by the core's one rule (schedule.h, invalid), so the
-// rule can refuse only it and the refusal names its line. One reader for
-// both families (ES.3), holding references to the table and the settings
-// it reads them into for the length of one read, so neither copied nor
-// moved (C.21).
-template <typename Settings>
+// Reads ReSTIR PT's settings table into `settings` (read_restir_pt): each
+// key into its member, and each value checked alone, beside `baseline`, by
+// the core's one rule (schedule.h, invalid), so the rule can refuse only it
+// and the refusal names its line. It holds references to the table and the
+// settings it reads them into for the length of one read, so neither
+// copied nor moved (C.21).
 class SettingsReader {
+    using Settings = passes::RestirPt;
+
 public:
     SettingsReader(std::string_view source, const toml::table& table, std::string_view where,
                    std::span<const PassKind> kinds, const Settings& baseline, Settings& settings)
@@ -297,40 +167,6 @@ private:
     Settings baseline_;
     Settings& settings_;
 };
-
-// ReSTIR DI's settings, for a graph of the pass `kinds`. Which keys are
-// read depends on the passes and on two of the settings (graph_file.h), so
-// those two are read first; then every key the graph reads must be there,
-// and every key there must be read. Each value is checked alone, set into
-// settings the rule accepts (restir_baseline).
-passes::RestirDi read_restir_di(std::string_view source, const toml::table& table, std::span<const PassKind> kinds) {
-    passes::RestirDi settings{};  // every setting not read stays its zero
-    const RestirReads reads = restir_reads(source, table, kinds, settings);
-    refuse_unread(source, table, reads);
-    SettingsReader<passes::RestirDi> reader(source, table, "[restir_di]", kinds, restir_baseline(settings, reads),
-                                            settings);
-    reader.take_count("candidates", &passes::RestirDi::candidates);
-    reader.take_count("bsdf_candidates", &passes::RestirDi::bsdf_candidates);
-    if (reads.temporal) {
-        reader.take_count("history", &passes::RestirDi::history);
-        reader.take("permutation", &passes::RestirDi::permutation, [&](const toml::node& node) {
-            return switched_on(source, node, "permutation") ? contracts::Permutation::on : contracts::Permutation::off;
-        });
-    }
-    if (reads.spatial) {
-        reader.take_count("neighbors", &passes::RestirDi::neighbors);
-        reader.take_float("radius", &passes::RestirDi::radius);
-    }
-    if (reads.merges) {
-        reader.take_float("depth_threshold", &passes::RestirDi::depth_threshold);
-        reader.take_float("normal_threshold", &passes::RestirDi::normal_threshold);
-    }
-    if (reads.reused) {
-        reader.take_count("visibility_age", &passes::RestirDi::visibility_age);
-        reader.take_float("visibility_distance", &passes::RestirDi::visibility_distance);
-    }
-    return settings;
-}
 
 // Every [restir_pt] key (graph_file.h).
 constexpr std::array<std::string_view, 9> restir_pt_keys = {
@@ -392,7 +228,7 @@ passes::RestirPt read_restir_pt(std::string_view source, const toml::table& tabl
         baseline.cap_exponent = passes::written_cap_exponent;
     }
     passes::RestirPt settings = baseline;
-    SettingsReader<passes::RestirPt> reader(source, table, "[restir_pt]", kinds, baseline, settings);
+    SettingsReader reader(source, table, "[restir_pt]", kinds, baseline, settings);
     reader.take_count("nee_candidates", &passes::RestirPt::nee_candidates);
     reader.take_count("max_surfaces", &passes::RestirPt::max_surfaces);
     reader.take_float("footprint", &passes::RestirPt::footprint);
@@ -462,22 +298,8 @@ std::optional<passes::ToneMap> read_tone_map_table(std::string_view source, cons
     return read_tone_map(source, *table);
 }
 
-// ReSTIR DI's, likewise; a table with no ReSTIR DI pass to read it is
+// ReSTIR PT's, likewise; a table with no ReSTIR PT pass to read it is
 // refused at the table, before its keys, which no pass reads.
-std::optional<passes::RestirDi> read_restir_di_table(std::string_view source, const toml::table& root,
-                                                     std::span<const PassKind> kinds) {
-    const toml::table* table = table_of(source, root, "restir_di");
-    if (!table) {
-        return std::nullopt;
-    }
-    if (std::ranges::none_of(kinds, is_restir)) {
-        throw GraphFileError(
-            at(source, *table, "the frame graph has [restir_di] settings and no ReSTIR DI pass"));
-    }
-    return read_restir_di(source, *table, kinds);
-}
-
-// ReSTIR PT's, likewise.
 std::optional<passes::RestirPt> read_restir_pt_table(std::string_view source, const toml::table& root,
                                                      std::span<const PassKind> kinds) {
     const toml::table* table = table_of(source, root, "restir_pt");
@@ -554,7 +376,7 @@ std::optional<passes::Denoise> read_denoise_table(std::string_view source, const
 }
 
 Schedule read_schedule(std::string_view source, const toml::table& root) {
-    only(source, root, {"passes", "tone_map", "restir_di", "restir_pt", "mnee", "denoise", "checkerboard"},
+    only(source, root, {"passes", "tone_map", "restir_pt", "mnee", "denoise", "checkerboard"},
          "the frame graph");
     const toml::node* passes_node = root.get("passes");
     if (!passes_node) {
@@ -563,7 +385,6 @@ Schedule read_schedule(std::string_view source, const toml::table& root) {
     Schedule schedule;
     schedule.passes = read_passes(source, *passes_node);
     schedule.tone_map = read_tone_map_table(source, root);
-    schedule.restir_di = read_restir_di_table(source, root, schedule.passes);
     schedule.restir_pt = read_restir_pt_table(source, root, schedule.passes);
     schedule.mnee = read_mnee(source, root, schedule.passes);
     schedule.denoise = read_denoise_table(source, root, schedule.passes);

@@ -1,7 +1,7 @@
 #pragma once
 
 // The one sphere light the probe kernels that ask the emitter read (kernels/
-// restir_probe.metal, kernels/path_probe.metal), bound as the passes bind
+// encoding_probe.metal, kernels/path_probe.metal), bound as the passes bind
 // theirs, and a probe run with it (ES.3, F.10): one definition for every
 // test that runs such a probe.
 

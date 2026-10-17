@@ -15,18 +15,11 @@ namespace serenity::metal {
 //
 // What a pass is given to record itself: the frame's constants, the image it
 // writes, the argument table it binds through, and the scene, the framed
-// camera, the accumulated image and ReSTIR's records and reservoirs, if the
-// frame has them. One struct for
+// camera, the accumulated image and ReSTIR PT's reservoirs, if the frame
+// has them. One struct for
 // every pass, so the renderer records any pass the same way (renderer.h); each
 // pass takes what it needs and refuses, by MetalError, to run without what it
 // needs.
-
-// Where a ReSTIR pass that produces reservoirs writes them: the working
-// array, when a merge after it reads them, or the frame's final array, when
-// it is the last before the shade (frame_images.h). Decided by the graph,
-// once, when the renderer builds the pass; a type, so the call says which
-// (I.4).
-enum class ReservoirOutput { working, final };
 
 class DenoiseImages;  // denoise_images.h
 
@@ -65,34 +58,15 @@ struct FrameResources {
     MTL::GPUAddress glows = 0;
     MTL::GPUAddress acceleration = 0;
 
-    // ReSTIR DI's (frame_images.h, ReuseImages; core/frame/schedule.h): all
-    // 0 when the schedule has none of its passes, and each 0 when its
-    // passes do not use it. The reuse constants
-    // (core/contracts/reuse_constants.h); this frame's surface records,
-    // path states and previous positions (contract 5) and last frame's
-    // records; the working reservoirs, and this frame's and last frame's
-    // final ones (contract 14); and, for the temporal merge, last frame's
-    // transforms and glows (metal/scene/shape_transforms.h, light_glows.h).
-    MTL::GPUAddress reuse = 0;
-    MTL::GPUAddress records = 0;
-    MTL::GPUAddress path_states = 0;
-    MTL::GPUAddress previous_positions = 0;
-    MTL::GPUAddress last_records = 0;
-    MTL::GPUAddress working_reservoirs = 0;
-    MTL::GPUAddress final_reservoirs = 0;
-    MTL::GPUAddress last_final_reservoirs = 0;
-    MTL::GPUAddress last_transforms = 0;
-    MTL::GPUAddress last_glows = 0;
-
     // ReSTIR PT's (frame_images.h, PathReuseImages; renderer.h): its
     // settings and reuse textures, static; its path reservoirs, primary
     // hits, light buffer and light tiles; with either reuse, the shifted
     // paths, the replaying shifts, their count and the replay's indirect
     // grid; and with temporal reuse its reuse constants, last frame's
     // primary hits, this frame's and last frame's final reservoirs, the
-    // previous pixels and the duplication map, beside the previous
-    // positions and last frame's transforms and glows above, which the two
-    // families, never in one graph, share. 0 without its passes.
+    // previous positions, the previous pixels, the duplication map and last
+    // frame's transforms and glows (metal/scene/shape_transforms.h,
+    // light_glows.h). 0 without its passes.
     MTL::GPUAddress path_settings = 0;
     MTL::GPUAddress pairing = 0;
     MTL::GPUAddress path_reservoirs = 0;
@@ -107,8 +81,11 @@ struct FrameResources {
     MTL::GPUAddress last_primaries = 0;
     MTL::GPUAddress path_finals = 0;
     MTL::GPUAddress last_path_finals = 0;
+    MTL::GPUAddress previous_positions = 0;
     MTL::GPUAddress previous_pixels = 0;
     MTL::GPUAddress duplication = 0;
+    MTL::GPUAddress last_transforms = 0;
+    MTL::GPUAddress last_glows = 0;
     // The grid ReSTIR PT's one-thread-a-pixel kernels dispatch over: `size`,
     // or with checkerboard rendering the packed grid of the frame's traced
     // field (contract 20, core/contracts/checkerboard.h), which the kernels

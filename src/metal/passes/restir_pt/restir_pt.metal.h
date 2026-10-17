@@ -6,11 +6,10 @@
 // (Lin, Kettunen and Wyman 2026; docs/research/2026-10-11-restir-pt-
 // layout.md, the design this implements, Phases 1 and 2): every pixel's light by
 // resampling whole paths, reused across pixels by the hybrid shift, so the
-// reuse reaches through glass and off mirrors, which ReSTIR DI's does not.
+// reuse reaches through glass and off mirrors.
 //
-// Where the families meet, as ReSTIR DI's composition has it
-// (metal/passes/restir_di/restir_di.metal.h): this header composes and
-// decides nothing they decide.
+// Where the families meet (change-axes.md; tools/check_boundaries.sh, rule
+// 5): this header composes them and decides nothing they decide.
 //
 //   Integrator    the path loop (path.metal.h, walk_path, whose gather this
 //                 header supplies), NEE's candidates (nee.metal.h), the
@@ -66,8 +65,8 @@
 //
 //   5. The temporal input: the primary hit's last-frame point through last
 //      frame's camera, rounded to a pixel, it or the first of the 8 around
-//      it whose last-frame primary hit is similar (previous_pixel(), as
-//      ReSTIR DI's temporal merge searches); none at a history's first
+//      it whose last-frame primary hit is similar (previous_pixel(), in
+//      metal/reuse/temporal.metal.h's order); none at a history's first
 //      frame, off the image, or where nothing near is the same surface.
 //      Two shifts: last frame's final path there, shifted here in this
 //      frame's scene; this pixel's path, shifted there in last frame's
@@ -179,8 +178,7 @@
 // pixel's path for its Talbot weight, is last frame's camera, primary hits,
 // transforms and glows, traced against this frame's structure: a ray a
 // firefly crossed last frame and not this one (or the reverse) is answered by
-// this frame's. The structure kept a frame longer would make it exact, as
-// ReSTIR DI's raytraced mode needs (docs/process/QUEUE.md). And a
+// this frame's. The structure kept a frame longer would make it exact. And a
 // reconnection keeps its suffix after x_k as its source frame lit it
 // (contract 15's cached radiance), as the 2022 code does: a path kept across
 // frames carries a moved firefly's last light after x_k until it is resampled
@@ -221,7 +219,7 @@
 #include "metal/integrator/path.metal.h"
 #include "metal/integrator/reconnection.metal.h"
 #include "metal/integrator/shift.metal.h"
-#include "metal/integrator/target.metal.h"
+#include "metal/math/srgb.metal.h"
 #include "metal/math/transform.metal.h"
 #include "metal/math/warp.metal.h"
 #include "metal/reuse/duplication.metal.h"
@@ -720,9 +718,7 @@ inline serenity::contracts::PathReservoir finish_tree(TreeGatherOf<manifold> tre
 
 // Where the tree's primary hit was last frame (step 4): its point taken
 // into its shape's own coordinates by this frame's transform and placed by
-// last frame's (contract 10; as ReSTIR DI's restir::previous_position()
-// places the object-space point its surface carries). Read only where the
-// tree has a primary hit.
+// last frame's (contract 10). Read only where the tree has a primary hit.
 template <bool manifold>
 inline float3 previous_position(TreeGatherOf<manifold> tree, constant serenity::contracts::Transform* transforms,
                                 constant serenity::contracts::Transform* last_transforms) {
@@ -801,9 +797,8 @@ struct Merged {
     float3 estimate;
 };
 
-// Step 5's search (the temporal input's pixel), as ReSTIR DI's temporal
-// merge finds its own (metal/reuse/temporal.metal.h, steps 2 and 3): the
-// pixel's primary hit where it was last frame, `previous_position`,
+// Step 5's search (the temporal input's pixel, in metal/reuse/
+// temporal.metal.h's order): the pixel's primary hit where it was last frame, `previous_position`,
 // through last frame's camera, rounds to a pixel p of last frame's image,
 // of `traced`'s size; p, then the 8 around it in ring order from the frame's
 // `ring_start`, until one whose last-frame primary hit is similar to this
@@ -847,7 +842,7 @@ inline uint previous_pixel(constant serenity::contracts::CameraData& camera, flo
 
 // The frame's start of step 5's ring, the same for every pixel: drawn, so a
 // pixel whose first try fails does not take the same side's neighbor frame
-// after frame (temporal.metal.h, step 3, which found that drift).
+// after frame (temporal.metal.h, which says what that drift did).
 inline uint ring_start(uint frame) {
     PathNumbers numbers = purpose_numbers(path_numbers(uint2(0u), frame), ring_first);
     return draw_ring_start(next_number(numbers));

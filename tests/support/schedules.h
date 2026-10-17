@@ -1,9 +1,9 @@
 #pragma once
 
 // What the tests that build frame graphs share (ES.3, F.10): a tone map's
-// look, why the core refuses a schedule, and the ReSTIR families' settings
-// at the values graphs/ are written with (core/passes/restir_di.h,
-// restir_pt.h, written_*), for the passes that read them and zero for the
+// look, why the core refuses a schedule, and ReSTIR PT's settings at the
+// values graphs/ are written with (core/passes/restir_pt.h, written_*), for
+// the passes that read them and zero for the
 // rest, as the core requires (core/frame/schedule.h). Built from the
 // constants, not written out again, so a test that says it runs at the
 // written defaults does, whatever they become.
@@ -16,7 +16,6 @@
 #include <doctest/doctest.h>
 
 #include "core/frame/schedule.h"
-#include "core/passes/restir_di.h"
 #include "core/passes/restir_pt.h"
 #include "core/passes/tone_map.h"
 #include "support/text.h"
@@ -41,33 +40,6 @@ inline bool refused_for(const frame::Schedule& schedule, std::string_view part) 
 // Whether `kinds` holds `kind` (std::ranges::contains is C++23's).
 inline bool has(const std::vector<frame::PassKind>& kinds, frame::PassKind kind) {
     return std::ranges::find(kinds, kind) != kinds.end();
-}
-
-// ReSTIR DI's settings for a graph of passes `kinds`: the written value of each
-// setting they read, 0 for the rest.
-inline passes::RestirDi written_restir_di(const std::vector<frame::PassKind>& kinds) {
-    const bool temporal = has(kinds, frame::PassKind::restir_temporal);
-    const bool spatial = has(kinds, frame::PassKind::restir_spatial);
-    passes::RestirDi s{};
-    s.candidates = passes::written_candidates;
-    s.bsdf_candidates = passes::written_bsdf_candidates;
-    if (temporal) {
-        s.history = passes::written_history;
-        s.permutation = passes::written_permutation;
-    }
-    if (spatial) {
-        s.neighbors = passes::written_neighbors;
-        s.radius = passes::written_radius;
-    }
-    if (temporal || spatial) {
-        s.depth_threshold = passes::written_depth_threshold;
-        s.normal_threshold = passes::written_normal_threshold;
-        s.bias_correction = passes::written_bias_correction;
-        s.visibility_reuse = passes::written_visibility_reuse;
-        s.visibility_age = passes::written_visibility_age;
-        s.visibility_distance = passes::written_visibility_distance;
-    }
-    return s;
 }
 
 // ReSTIR PT's settings for a graph of passes `kinds`: the written value of each

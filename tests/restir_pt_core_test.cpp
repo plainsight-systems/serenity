@@ -60,7 +60,6 @@ TEST_CASE("graphs/restir_pt.toml reads as ReSTIR PT Enhanced at its defaults, wi
     CHECK(schedule.restir_pt->cap_floor == serenity::passes::written_cap_floor);
     CHECK(schedule.restir_pt->cap_exponent == serenity::passes::written_cap_exponent);
     CHECK(schedule.mnee);
-    CHECK_FALSE(schedule.restir_di.has_value());
 }
 
 TEST_CASE("ReSTIR PT's temporal reuse and duplication map: their order, their settings, and the map only with "
@@ -109,15 +108,6 @@ TEST_CASE("ReSTIR PT's temporal reuse and duplication map: their order, their se
                                        "graph.toml");
     REQUIRE(raised.restir_pt.has_value());
     CHECK(raised.restir_pt->cap_floor == 30.0f);
-}
-
-TEST_CASE("a graph runs one ReSTIR: ReSTIR PT's passes are refused beside ReSTIR DI's") {
-    const std::string error =
-        error_for("passes = [\"restir_initial\", \"restir_pt_initial\", \"restir_pt_shade\", "
-                  "\"display\"]\n[restir_di]\ncandidates = 8\nbsdf_candidates = 1\n[restir_pt]\n" +
-                  std::string(initial_keys));
-    INFO(error);
-    CHECK(contains(error, "one family"));
 }
 
 TEST_CASE("ReSTIR PT's passes keep their order, and its settings come with them, in range, at their own line") {

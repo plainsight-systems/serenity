@@ -2,7 +2,7 @@
 
 // The path reuse settings. Owned by Sample reuse; read by Pass, the
 // Integrator's shift and the Frame graph. Contract 15's sibling
-// (contracts/path_reservoir.h), as the reuse settings are contract 14's.
+// (contracts/path_reservoir.h).
 //
 // The values ReSTIR PT runs with (docs/research/2026-10-11-restir-pt-
 // layout.md, "What is built"), each its meaning and range, the ranges named
@@ -131,9 +131,8 @@ static_assert(sizeof(PathReuseSettings) == 48,
 static_assert(std::is_trivially_copyable_v<PathReuseSettings>, "PathReuseSettings is written to the GPU as bytes");
 #endif
 
-// What ReSTIR PT's temporal reuse is told each frame, beside its settings,
-// as ReSTIR DI's reuse constants (contracts/reuse_constants.h): the
-// previous frame's camera, framed for this frame's size, and whether that
+// What ReSTIR PT's temporal reuse is told each frame, beside its settings:
+// the previous frame's camera, framed for this frame's size, and whether that
 // frame is this one's history (1) or the history starts over here (0).
 struct PathReuseConstants {
     CameraData previous_camera;

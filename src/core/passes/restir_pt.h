@@ -3,8 +3,8 @@
 // Axis: Pass (ReSTIR PT's settings, as the graphs write them).
 //
 // ReSTIR PT's settings are contract 15's sibling, Sample reuse's
-// (core/contracts/path_reuse_settings.h, which states each and its range),
-// as ReSTIR DI's are contract 14's (core/passes/restir_di.h). This header
+// (core/contracts/path_reuse_settings.h, which states each and its range).
+// This header
 // names them for the Pass and Frame graph, and keeps the values the graphs
 // are written with, each named once with its source (ES.45): ReSTIR PT
 // Enhanced's defaults (Lin, Kettunen and Wyman 2026, §7 and Table 1's

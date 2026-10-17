@@ -35,10 +35,11 @@ namespace serenity::metal {
 // only the moving ones in the copy of the frame being recorded
 // (animation::animate).
 //
-// Last frame's transforms, for a graph with ReSTIR's temporal merge
-// (metal/reuse/temporal.metal.h): the merge evaluates last frame's surface
-// as last frame lit it, a light where last frame placed it, and the
-// initial pass places a hit's point where last frame placed its shape. The
+// Last frame's transforms, for a graph with ReSTIR PT's temporal reuse
+// (metal/passes/restir_pt/restir_pt.metal.h, step 5): the shift to last
+// frame's pixel evaluates its path as last frame lit it, a light where last
+// frame placed it, and the initial pass places a hit's point where last
+// frame placed its shape. The
 // renderer keeps a second ShapeTransforms for them, of this same class, and
 // in each frame being recorded animates the moving shapes into its slot's
 // copy at the previous frame's time (metal/frame/renderer.h). Not the

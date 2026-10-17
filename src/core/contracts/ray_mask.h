@@ -10,12 +10,11 @@
 // asks:
 //
 //   everything   what does this ray reach? The camera's rays and the
-//                features', a path's bounces, ReSTIR DI's BSDF candidate,
-//                a shift's replay: a ray that may strike a light, as MIS's
+//                features', a path's bounces, a shift's replay: a ray that may strike a light, as MIS's
 //                BSDF strategy and the camera do, and must find it.
 //   occluders    is this chosen light visible from here? Every shadow ray
 //                toward a light sample (next event estimation in the path
-//                tracer, ReSTIR DI and ReSTIR PT, and a shift's
+//                tracer and ReSTIR PT, and a shift's
 //                reconnection to a light), a shift's reconnection check
 //                between two vertices, manifold next event estimation's
 //                seed and its solved chain's segments, the preview's test

@@ -8,7 +8,7 @@
 //
 //   - fits(): the p-value at `significance`, for counts expected exactly
 //     (a softmax, a uniform grid): a correct sampler fails one seed in a
-//     thousand, and the seeds are fixed (restir_test.cpp);
+//     thousand, and the seeds are fixed (encoding_test.cpp);
 //   - within_five_sigma(): chi^2 / dof under 1 + 5 sqrt(2 / dof), five of
 //     its standard deviations, for counts expected through a quadrature of
 //     the pdf over each bin (bsdf_test.cpp, light_test.cpp): at a million

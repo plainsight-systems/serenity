@@ -25,7 +25,7 @@
 //                                 two, the pick's
 //   pick_first + c                the tree's pick of its candidate path c
 //
-// Above every dimension a path tracer's or ReSTIR DI's stream reaches (5, 6
+// Above every dimension a path tracer's stream reaches (5, 6
 // and 7 x 2^24; sampler.metal.h's table holds every purpose), and pcg3d is a
 // bijection of (key, dimension), so these are distinct words from all of
 // theirs. Russian roulette is never replayed (Enhanced §6.2.4): the source
