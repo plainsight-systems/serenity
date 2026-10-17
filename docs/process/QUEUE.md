@@ -148,9 +148,14 @@ This file tracks active and accepted work.
    every graph's record() shown allocation-free, coverage-only tests
    removed; one src defect found and fixed (prepare_output's refusal).
 
-1. Reservoir reuse as kernels: the optimization milestone, what each pass
-   costs and where the bytes go, which waited for the full pipeline (the
-   user, 2026-10-14).
+1. Milestone 4, making the frame fast (the user, 2026-10-17;
+   docs/research/2026-10-17-milestone-4-plan.md): async compute overlap,
+   ray masks, a split scene structure, checkerboard rendering of the light.
+   Retraining, if checkerboard needs it, on the user's RTX 3090.
+
+1a. Reservoir reuse as kernels: tiling, layout and fusion of the merge
+   passes, what each costs and where the bytes go (about 4 ms of the light
+   block, memory-bound), after Milestone 4.
 
 2. The Vulkan backend on the AMD machine (Strix Halo), beside
    `src/metal/` (MEMORY.md), the denoiser's kernels with it.
