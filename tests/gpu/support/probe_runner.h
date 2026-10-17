@@ -32,6 +32,7 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
+#include "gpu/support/shared_resources.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/device/submission.h"
@@ -131,14 +132,7 @@ public:
                 out.sizes_.push_back(0);
                 continue;
             }
-            // At least 16 bytes, so an empty array still has an address.
-            const std::size_t size = std::max<std::size_t>(binding.bytes().size(), 16);
-            auto buffer = NS::TransferPtr(mtl->newBuffer(size, MTL::ResourceStorageModeShared));
-            REQUIRE(buffer);
-            std::memset(buffer->contents(), 0, size);
-            std::memcpy(buffer->contents(), binding.bytes().data(), binding.bytes().size());
-            submission_.make_resident(buffer.get());
-            out.buffers_.push_back(std::move(buffer));
+            out.buffers_.push_back(shared_buffer(device_, submission_, binding.bytes()));
             out.sizes_.push_back(binding.bytes().size());
         }
 

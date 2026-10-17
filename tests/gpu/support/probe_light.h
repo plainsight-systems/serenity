@@ -46,7 +46,7 @@ inline std::vector<Binding> with_light(const ProbeLight& light, std::initializer
 
 // Runs `kernel` over `threads` with the light and `rest` bound from 1, its
 // output of Out at 0.
-template <typename Out>
+template <GpuBytes Out>
 std::vector<Out> run_with_light(ProbeRunner& gpu, const char* kernel, std::size_t threads, const ProbeLight& light,
                                 std::initializer_list<Binding> rest) {
     std::vector<Binding> bindings{Binding::zeroed(threads * sizeof(Out))};

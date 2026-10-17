@@ -9,12 +9,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <optional>
 #include <span>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -25,6 +22,7 @@
 #include "core/frame/graph_file.h"
 #include "core/frame/schedule.h"
 #include "support/files.h"
+#include "support/schedules.h"
 #include "support/text.h"
 #include "test_paths.h"
 
@@ -37,26 +35,17 @@ namespace {
 const std::vector<PassKind> denoised = {PassKind::restir_pt_initial, PassKind::restir_pt_shade, PassKind::features,
                                         PassKind::denoise, PassKind::tone_map};
 
-Schedule schedule_of(std::vector<PassKind> passes, bool settings = true) {
-    Schedule s{std::move(passes), passes::ToneMap{0.0f, 0.04f, {}}};
-    s.restir_pt = passes::RestirPt{};
-    s.restir_pt->nee_candidates = 32;
-    s.restir_pt->max_surfaces = 9;
-    s.restir_pt->footprint = 0.02f;
-    s.restir_pt->roughness = 0.2f;
+using tests::refusal;
+
+// `kinds`, shown through the tone map, with ReSTIR PT's settings at the
+// values graphs/ are written with (support/schedules.h).
+Schedule schedule_of(std::vector<PassKind> kinds, bool settings = true) {
+    Schedule s{kinds, tests::look};
+    s.restir_pt = tests::written_restir_pt(kinds);
     if (settings) {
         s.denoise = passes::Denoise{"network"};
     }
     return s;
-}
-
-std::string refusal(const Schedule& s) {
-    return frame::invalid(s).value_or("");
-}
-
-std::string file_text(const std::filesystem::path& path) {
-    std::ifstream file{path, std::ios::binary};
-    return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
 }
 
 const std::filesystem::path fixture_network = tests::data_dir / "denoise" / "network";
@@ -65,11 +54,8 @@ const std::filesystem::path fixture_network = tests::data_dir / "denoise" / "net
 // with its weights; the NetworkError's message, or "" if it reads.
 std::string network_refusal(const std::string& from, const std::string& to,
                             std::optional<std::size_t> weights_size = std::nullopt) {
-    std::string layout = file_text(fixture_network / "layout.json");
-    const std::size_t at = layout.find(from);
-    REQUIRE(at != std::string::npos);
-    layout.replace(at, from.size(), to);
-    std::string weights = file_text(fixture_network / "weights.bin");
+    const std::string layout = tests::replaced(tests::read_bytes(fixture_network / "layout.json"), from, to);
+    std::string weights = tests::read_bytes(fixture_network / "weights.bin");
     if (weights_size) {
         weights.resize(*weights_size);
     }
@@ -84,7 +70,6 @@ TEST_CASE("the denoise pass reads the light and features and writes the radiance
     CHECK_FALSE(frame::writes_radiance(PassKind::denoise));
     CHECK_FALSE(frame::writes_target(PassKind::denoise));
     CHECK_FALSE(frame::accumulates(PassKind::denoise));
-    CHECK(frame::pass_kind("denoise") == PassKind::denoise);
     const Schedule s = schedule_of(denoised);
     CHECK(refusal(s).empty());
     CHECK(frame::denoises(s));
@@ -177,10 +162,10 @@ TEST_CASE("the fixture's exported network reads, its widths and tensors as the s
     CHECK(n.widths.bottleneck == 40);
     CHECK(n.widths.dec == std::array<std::uint32_t, 4>{32, 24, 16, 8});
     CHECK(n.enc[0].inputs == contracts::network_inputs);
-    CHECK(n.enc[0].weight.size() == std::size_t{8} * 28 * 9);
+    CHECK(n.enc[0].weight.size() == std::size_t{n.widths.enc[0]} * contracts::network_inputs * contracts::denoise_taps);
     CHECK(n.dec[0].inputs == 40 + 32);  // the bottleneck's, then the skip's
     CHECK(n.head.outputs == contracts::head_outputs);
-    CHECK(n.head.weight.size() == std::size_t{124} * 8);
+    CHECK(n.head.weight.size() == std::size_t{contracts::head_outputs} * n.widths.dec.back());
 }
 
 TEST_CASE("a network export that is not what the renderer runs is refused, naming what") {

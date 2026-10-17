@@ -20,9 +20,11 @@
 #include "gpu/support/traced_probe.h"
 #include "metal/acceleration/scene_acceleration.h"
 #include "metal/device/device.h"
+#include "metal/device/library.h"
 #include "metal/device/submission.h"
 #include "metal/scene/scene_buffers.h"
 #include "metal/scene/shape_transforms.h"
+#include "serenity/metallib/probes.h"
 #include "support/vector.h"
 
 using namespace serenity;
@@ -45,8 +47,8 @@ std::vector<TraceHit> probe(const tests::Traced& traced, const std::vector<Trace
 // A ray from `origin` along the unit vector toward `toward`.
 TraceRay ray(tests::Vec3 origin, tests::Vec3 toward) {
     const tests::Vec3 d = tests::normalized(toward);
-    return TraceRay{{static_cast<float>(origin.x), static_cast<float>(origin.y), static_cast<float>(origin.z)},
-                    {static_cast<float>(d.x), static_cast<float>(d.y), static_cast<float>(d.z)}};
+    return TraceRay{tests::float3(origin),
+                    tests::float3(d)};
 }
 
 // A tiny firefly and a sphere wider than one, and a box: every scale the
@@ -99,6 +101,7 @@ TEST_CASE("a hit, tested in a shape's own space, is at the world's distance, and
     metal::ShapeTransforms transforms(device, submission, description.shapes.transforms,
                                       metal::FrameArray::Copies::one);
     metal::SceneAcceleration acceleration(device, submission, description.shapes, {});
+    const metal::Library library(device, metallib::probes);
 
     const std::vector<TraceRay> rays = {
         ray({0, 0, 0}, {0, 0, -1}),      // the firefly, 5 away: t = 4.97
@@ -108,7 +111,7 @@ TEST_CASE("a hit, tested in a shape's own space, is at the world's distance, and
         ray({0, 0.02, 0}, {0, 0, -1}),   // the firefly off its middle: sqrt(0.03^2 - 0.02^2) short of 5
     };
     const std::vector<TraceHit> hits =
-        probe({device, submission, buffers, transforms, acceleration}, rays, std::nullopt);
+        probe({device, submission, library, buffers, transforms, acceleration}, rays, std::nullopt);
     CHECK(hits[0].found == 1u);
     CHECK(hits[0].t == doctest::Approx(firefly_distance - firefly_radius).scale(0).epsilon(1e-6));
     CHECK(hits[0].shape == 0u);
@@ -135,6 +138,7 @@ TEST_CASE("a moved shape is hit where it moved to, and not where it was") {
                                       metal::FrameArray::Copies::per_frame);
     const std::vector<std::uint32_t> moving = {0};
     metal::SceneAcceleration acceleration(device, submission, description.shapes, moving);
+    const metal::Library library(device, metallib::probes);
 
     // Each slot in turn, so both structures are built and traced.
     for (int round = 0; round < 4; ++round) {
@@ -145,7 +149,8 @@ TEST_CASE("a moved shape is hit where it moved to, and not where it was") {
             ray({x, 0, 0}, {0, 0, -1}),  // where it is now
             ray({0, 0, 0}, {0, 0, -1}),  // where it was at rest
         };
-        const std::vector<TraceHit> hits = probe({device, submission, buffers, transforms, acceleration}, rays, moved);
+        const std::vector<TraceHit> hits =
+            probe({device, submission, library, buffers, transforms, acceleration}, rays, moved);
         INFO("round " << round);
         CHECK(hits[0].found == 1u);
         CHECK(hits[0].t == doctest::Approx(firefly_distance - firefly_radius).scale(0).epsilon(1e-6));

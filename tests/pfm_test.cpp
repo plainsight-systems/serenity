@@ -23,6 +23,7 @@
 #include "core/contracts/linear_image.h"
 #include "core/output/pfm.h"
 #include "support/files.h"
+#include "support/same_bits.h"
 #include "support/text.h"
 
 using serenity::contracts::LinearImage;
@@ -32,6 +33,7 @@ using serenity::output::read_pfm;
 using serenity::output::write_pfm;
 using serenity::tests::contains;
 using serenity::tests::read_bytes;
+using serenity::tests::same_bits;
 using serenity::tests::ScratchDirectory;
 using serenity::tests::write_bytes;
 
@@ -71,11 +73,6 @@ std::vector<float> asymmetric_bottom_first() {
 }
 
 // Whether two images hold the same extent and the same bits, NaNs included.
-bool same_bits(const LinearImage& a, const LinearImage& b) {
-    return a.extent == b.extent && a.rgb.size() == b.rgb.size() &&
-           std::memcmp(a.rgb.data(), b.rgb.data(), a.rgb.size() * sizeof(float)) == 0;
-}
-
 // What read_pfm() refuses the file of `bytes` with, or "".
 std::string refusal_of(const ScratchDirectory& scratch, std::string_view bytes) {
     const std::filesystem::path path = scratch / "refused.pfm";

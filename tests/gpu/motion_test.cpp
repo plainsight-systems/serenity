@@ -3,12 +3,10 @@
 // placed by hand where their motions put them at t, with frames in flight
 // in both slots.
 
-#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <system_error>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -22,6 +20,7 @@
 #include "metal/device/offscreen.h"
 #include "metal/device/submission.h"
 #include "metal/frame/renderer.h"
+#include "support/scene_text.h"
 #include "test_paths.h"
 
 using namespace serenity;
@@ -29,15 +28,6 @@ using namespace serenity;
 namespace {
 
 constexpr frame::Extent size{96, 64};
-
-// `v` written so that reading it back gives `v` exactly.
-std::string number(float v) {
-    std::string text(32, '\0');
-    const std::to_chars_result written = std::to_chars(text.data(), text.data() + text.size(), v);
-    REQUIRE(written.ec == std::errc{});
-    text.resize(static_cast<std::size_t>(written.ptr - text.data()));
-    return text;
-}
 
 // The wandering brass scene, small, with its fireflies' motions; or, given
 // a time, the same scene still, each firefly placed where its motion puts
@@ -50,7 +40,7 @@ std::string brass(const scene::SceneDescription* placed_from = nullptr, double t
             const animation::Mover& m = placed_from->animation.movers.at(which);
             const contracts::Float3 p =
                 animation::position(placed_from->animation.motions, m.motion, frame::Seconds(time));
-            at = "[" + number(p.x) + ", " + number(p.y) + ", " + number(p.z) + "]";
+            at = "[" + tests::exact(p.x) + ", " + tests::exact(p.y) + ", " + tests::exact(p.z) + "]";
             moves = "";
         }
         return "[[shapes]]\nkind = \"sphere\"\ncenter = " + at + "\nradius = " + radius +

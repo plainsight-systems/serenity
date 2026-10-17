@@ -26,6 +26,7 @@
 #include "support/ball_jobs.h"
 #include "support/ball_on_floor.h"
 #include "support/text.h"
+#include "support/vector.h"
 
 using namespace serenity;
 using frame::Seconds;
@@ -127,9 +128,7 @@ TEST_CASE("a firefly is a function of its swarm's seed and its number alone") {
     for (std::uint32_t i = 0; i < 8; ++i) {
         const contracts::Float3 pa = animation::position(a.animation.motions.flights[i], Seconds(30.0));
         const contracts::Float3 pb = animation::position(b.animation.motions.flights[i], Seconds(30.0));
-        CHECK(pa.x == pb.x);
-        CHECK(pa.y == pb.y);
-        CHECK(pa.z == pb.z);
+        CHECK(tests::same(pa, pb));
     }
     // Another seed, other fireflies.
     CHECK(a.shapes.transforms[written_shapes].m[0][3] != c.shapes.transforms[written_shapes].m[0][3]);
@@ -269,7 +268,7 @@ TEST_CASE("an above swarm starts in its volume's top slab and holds there until 
     for (std::uint32_t i = 0; i < 8; ++i) {
         const contracts::Float3 a = scene::make_firefly(deep, first(i), obstacles).start;
         const contracts::Float3 b = scene::make_firefly(air, first(i), obstacles).start;
-        CHECK((a.x == b.x && a.y == b.y && a.z == b.z));
+        CHECK(tests::same(a, b));
     }
 }
 
@@ -570,6 +569,7 @@ TEST_CASE("perched fireflies' flights made in parallel are the ones made one by 
     for (const std::size_t workers : {std::size_t{1}, std::size_t{3}, std::size_t{8}}) {
         CAPTURE(workers);
         const std::vector<animation::Flight> together = animation::make_flights(jobs, obstacles, workers);
+        REQUIRE(together.size() == jobs.size());
         for (std::size_t k = 0; k < jobs.size(); ++k) {
             const animation::Flight alone = animation::make_flight(jobs[k], obstacles);
             CHECK(together[k].begin == alone.begin);
@@ -578,7 +578,7 @@ TEST_CASE("perched fireflies' flights made in parallel are the ones made one by 
             for (const double t : {0.5, together[k].begin - 0.1, together[k].begin + 3.0}) {
                 const contracts::Float3 a = animation::position(together[k], Seconds(t));
                 const contracts::Float3 b = animation::position(alone, Seconds(t));
-                CHECK((a.x == b.x && a.y == b.y && a.z == b.z));
+                CHECK(tests::same(a, b));
             }
         }
     }
@@ -657,32 +657,6 @@ scene::Swarm table_swarm(bool perched, std::uint64_t seed) {
     return swarm;
 }
 
-// A scene's first `count` shapes, which do not move, as contract 11 asks of
-// them: each shape kind's exact tests (core/shapes/shapes.h).
-class StillShapesOf final : public contracts::Obstacles {
-public:
-    StillShapesOf(const scene::SceneDescription& s, std::uint32_t count) : scene_(&s), count_(count) {}
-    double distance(contracts::Float3 p) const override {
-        double nearest = std::numeric_limits<double>::infinity();
-        for (std::uint32_t k = 0; k < count_; ++k) {
-            nearest = std::min(nearest, shapes::distance(scene_->shapes, k, p));
-        }
-        return nearest;
-    }
-    bool touches(const contracts::Box& box) const override {
-        for (std::uint32_t k = 0; k < count_; ++k) {
-            if (shapes::touches(scene_->shapes, k, {box.min, box.max})) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-private:
-    const scene::SceneDescription* scene_;
-    std::uint32_t count_;
-};
-
 // Which of a swarm's fireflies, its first at shape `first_shape`, the
 // reader placed somewhere other than its first draw's start: drawn again.
 std::vector<std::uint32_t> redrawn(const scene::SceneDescription& s, const scene::Swarm& swarm,
@@ -691,7 +665,7 @@ std::vector<std::uint32_t> redrawn(const scene::SceneDescription& s, const scene
     for (std::uint32_t i = 0; i < swarm.count; ++i) {
         const contracts::Float3 placed = contracts::translation(s.shapes.transforms[first_shape + i]);
         const contracts::Float3 drawn = scene::make_firefly(swarm, first(i), still).start;
-        if (!(placed.x == drawn.x && placed.y == drawn.y && placed.z == drawn.z)) {
+        if (!tests::same(placed, drawn)) {
             again.push_back(i);
         }
     }
@@ -797,7 +771,7 @@ TEST_CASE("a swarm with refused fireflies loads, each drawn again whole, as step
     for (const std::uint64_t seed : {0ull, 6ull}) {
         CAPTURE(seed);
         const scene::SceneDescription s = scene::parse(table_text(seed, seed + 100), "t");
-        const StillShapesOf still(s, table_shapes);
+        const tests::StillShapesOf still(s, table_shapes);
         std::uint32_t shape = table_shapes;
         for (const scene::Swarm& swarm : {table_swarm(true, seed), table_swarm(false, seed + 100)}) {
             for (std::uint32_t i = 0; i < swarm.count; ++i, ++shape) {
@@ -807,8 +781,7 @@ TEST_CASE("a swarm with refused fireflies loads, each drawn again whole, as step
                 again += expected->draw > 0 ? 1 : 0;
                 // Its sphere, placed at its start, and its light, its sphere's.
                 const contracts::Float3 at = contracts::translation(s.shapes.transforms[shape]);
-                CHECK((at.x == expected->firefly.start.x && at.y == expected->firefly.start.y &&
-                       at.z == expected->firefly.start.z));
+                CHECK(tests::same(at, expected->firefly.start));
                 const std::uint32_t light = s.shape_lights[shape];
                 REQUIRE(light != lights::no_light);
                 CHECK(s.sphere_lights[s.lights[light].index].shape == shape);
@@ -820,7 +793,7 @@ TEST_CASE("a swarm with refused fireflies loads, each drawn again whole, as step
                 for (const double t : {0.0, made.begin + 1.5, 77.25}) {
                     const contracts::Float3 a = animation::position(made, Seconds(t));
                     const contracts::Float3 b = animation::position(expected->flight, Seconds(t));
-                    CHECK((a.x == b.x && a.y == b.y && a.z == b.z));
+                    CHECK(tests::same(a, b));
                 }
                 const animation::ScheduleGlow& glow =
                     s.animation.glows.schedules[s.animation.glowers[motion].glow.index];
@@ -845,7 +818,7 @@ TEST_CASE("the marbles' case loads for every seed: perched and held swarms on a 
         const std::string text = table_text(seed, seed + 100);
         const scene::SceneDescription s = scene::parse(text, "t");
         CHECK(s.animation.motions.flights.size() == perched_count + above_count);
-        const StillShapesOf still(s, table_shapes);
+        const tests::StillShapesOf still(s, table_shapes);
         const std::size_t perched = redrawn(s, table_swarm(true, seed), table_shapes, still).size();
         const std::size_t above =
             redrawn(s, table_swarm(false, seed + 100), table_shapes + perched_count, still).size();

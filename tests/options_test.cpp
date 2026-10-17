@@ -251,7 +251,7 @@ TEST_CASE("headless: which frames are written, and frozen time") {
     const auto frozen = headless({"--time", "2.5"});
     REQUIRE(frozen.time.has_value());
     CHECK(frozen.time->count() == 2.5);
-    CHECK(headless({"--time", "0"}).time->count() == 0.0);
+    CHECK(headless({"--time", "0"}).time.value().count() == 0.0);
     CHECK(contains(headless_error({"--time", "-1"}), "0 or more"));
     CHECK(contains(headless_error({"--time", "nan"}), "0 or more"));
     CHECK(contains(headless_error({"--time", "1", "--step", "0.5"}), "exclusive"));

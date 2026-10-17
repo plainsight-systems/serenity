@@ -19,6 +19,7 @@
 #include "core/lights/sphere_light.h"
 #include "gpu/kernels/light_probe.h"
 #include "gpu/support/probe_runner.h"
+#include "support/statistics.h"
 #include "support/vector.h"
 
 using namespace serenity;
@@ -104,14 +105,13 @@ TEST_CASE("a near light's samples are uniform over its cone, as its pdf says, an
     CHECK(outside == 0);
     CHECK(wrong_pdf == 0);
 
-    const double expected = static_cast<double>(count) / (side * side);
-    double chi2 = 0.0;
-    for (const double c : counted) {
-        chi2 += (c - expected) * (c - expected) / expected;
-    }
-    const double dof = side * side - 1.0;
-    INFO("chi^2 / dof = " << chi2 / dof << " over " << side * side << " bins");
-    CHECK(chi2 / dof < 1.0 + 5.0 * std::sqrt(2.0 / dof));
+    // Equal bins of 1 - cos and of phi hold equal solid angles: each
+    // expects the same share, exactly (support/statistics.h, fits()).
+    const tests::ChiSquare fit =
+        tests::chi_square(counted, std::vector<double>(counted.size(), static_cast<double>(count) / counted.size()));
+    INFO("chi^2 / dof = " << fit.statistic / static_cast<double>(fit.dof) << " over " << counted.size()
+                          << " bins, p " << fit.p);
+    CHECK(tests::fits(fit));
 }
 
 TEST_CASE("a small light far off keeps its solid angle: no cancellation to zero") {

@@ -14,6 +14,7 @@
 
 #include "gpu/kernels/sampler_probe.h"
 #include "gpu/support/probe_runner.h"
+#include "support/statistics.h"
 
 using namespace serenity;
 using tests::Binding;
@@ -46,27 +47,7 @@ bool same(const PathNumbersDraw& a, const PathNumbersDraw& b) {
     return true;
 }
 
-// The correlation of a[i] and b[i] over i.
-double correlation(const std::vector<double>& a, const std::vector<double>& b) {
-    const auto n = static_cast<double>(a.size());
-    double sa = 0.0;
-    double sb = 0.0;
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        sa += a[i];
-        sb += b[i];
-    }
-    const double ma = sa / n;
-    const double mb = sb / n;
-    double cov = 0.0;
-    double va = 0.0;
-    double vb = 0.0;
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        cov += (a[i] - ma) * (b[i] - mb);
-        va += (a[i] - ma) * (a[i] - ma);
-        vb += (b[i] - mb) * (b[i] - mb);
-    }
-    return cov / std::sqrt(va * vb);
-}
+using tests::correlation;
 
 }  // namespace
 

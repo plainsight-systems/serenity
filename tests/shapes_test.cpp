@@ -68,13 +68,14 @@ TEST_CASE("a box touches a box when they overlap or meet on every axis") {
 TEST_CASE("a rotated transform, or a record past its kind's array, is refused, not read") {
     Shapes shapes = two_spheres_and_a_box();
     shapes.transforms[0].m[0][1] = 0.5f;
-    CHECK_THROWS(touches(shapes, 0, Bounds{{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}}));
+    CHECK_THROWS_AS(touches(shapes, 0, Bounds{{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}}), std::invalid_argument);
 
+    // An index past an array is refused by .at() (shapes.h).
     Shapes broken;
     broken.records = {record(ShapeKind::box, 3)};
     broken.transforms = {contracts::placed({0.0f, 0.0f, 0.0f}, 1.0f)};
-    CHECK_THROWS(object_bounds(broken, broken.records[0]));
-    CHECK_THROWS(touches(broken, 1, Bounds{}));
+    CHECK_THROWS_AS(object_bounds(broken, broken.records[0]), std::out_of_range);
+    CHECK_THROWS_AS(touches(broken, 1, Bounds{}), std::out_of_range);
 }
 
 TEST_CASE("a placed geometry's world box: the tight box of the transformed box, rounded outward") {

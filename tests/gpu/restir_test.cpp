@@ -75,79 +75,32 @@
 #include "metal/passes/restir_spatial/restir_spatial.h"
 #include "metal/passes/restir_temporal/restir_temporal.h"
 #include "serenity/metallib/shaders.h"
+#include "support/lit_floor.h"
 #include "support/references.h"
 #include "support/scene_text.h"
+#include "support/schedules.h"
+#include "support/statistics.h"
 #include "support/text.h"
 #include "support/vector.h"
 
 using namespace serenity;
 using tests::Binding;
+using tests::every_light;
+using tests::firefly;
+using tests::floor_from;
+using tests::lit_floor;
+using tests::one_firefly;
+using tests::two_fireflies;
 using tests::Vec3;
 
 namespace {
 
-// ---- statistics ----------------------------------------------------------
+// ---- statistics: support/statistics.h -----------------------------------
 
-// Q(a, x), the regularized upper incomplete gamma function (Numerical
-// Recipes' gammq: the series below a + 1, the continued fraction above).
-double upper_gamma(double a, double x) {
-    if (x <= 0.0) {
-        return 1.0;
-    }
-    const double log_front = -x + a * std::log(x) - std::lgamma(a);
-    if (x < a + 1.0) {
-        double term = 1.0 / a;
-        double sum = term;
-        for (int n = 1; n < 1000 && std::abs(term) > std::abs(sum) * 1e-15; ++n) {
-            term *= x / (a + n);
-            sum += term;
-        }
-        return 1.0 - sum * std::exp(log_front);
-    }
-    constexpr double tiny = 1e-300;
-    double b = x + 1.0 - a;
-    double c = 1.0 / tiny;
-    double d = 1.0 / b;
-    double h = d;
-    for (int i = 1; i < 1000; ++i) {
-        const double an = -i * (i - a);
-        b += 2.0;
-        d = an * d + b;
-        d = std::abs(d) < tiny ? tiny : d;
-        c = b + an / c;
-        c = std::abs(c) < tiny ? tiny : c;
-        d = 1.0 / d;
-        const double step = d * c;
-        h *= step;
-        if (std::abs(step - 1.0) < 1e-15) {
-            break;
-        }
-    }
-    return std::exp(log_front) * h;
-}
-
-// Pearson's chi-square of `counted` against `expected`, and the chance of
-// one at least as large under the expected distribution.
-struct ChiSquare {
-    double statistic = 0.0;
-    std::size_t dof = 0;
-    double p = 0.0;
-};
-
-ChiSquare chi_square(const std::vector<double>& counted, const std::vector<double>& expected) {
-    REQUIRE(counted.size() == expected.size());
-    ChiSquare result;
-    for (std::size_t i = 0; i < counted.size(); ++i) {
-        result.statistic += (counted[i] - expected[i]) * (counted[i] - expected[i]) / expected[i];
-    }
-    result.dof = counted.size() - 1;
-    result.p = upper_gamma(0.5 * static_cast<double>(result.dof), 0.5 * result.statistic);
-    return result;
-}
-
-// The significance every statistical check here is made at: a correct
-// sampler fails one in a thousand seeds, and the seeds are fixed.
-constexpr double significance = 1e-3;
+using tests::chi_square;
+using tests::ChiSquare;
+using tests::significance;
+using tests::upper_gamma;
 
 // ---- the probes' one light -----------------------------------------------
 
@@ -162,8 +115,7 @@ double angle_between(Vec3 a, Vec3 b) {
 // The angle between `a` and `b`, robust for tiny angles: atan2 of the cross
 // product's length and the dot product.
 double small_angle(Vec3 a, Vec3 b) {
-    const Vec3 c{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
-    return std::atan2(tests::length(c), dot(a, b));
+    return std::atan2(tests::length(cross(a, b)), dot(a, b));
 }
 
 }  // namespace
@@ -180,8 +132,7 @@ TEST_CASE("the equal-area octahedral map round-trips every direction within the 
     for (int i = 0; i < spiral; ++i) {
         const double z = 1.0 - 2.0 * (i + 0.5) / spiral;
         const double r = std::sqrt(1.0 - z * z);
-        directions.push_back({static_cast<float>(r * std::cos(golden * i)), static_cast<float>(r * std::sin(golden * i)),
-                              static_cast<float>(z)});
+        directions.push_back(tests::float3({r * std::cos(golden * i), r * std::sin(golden * i), z}));
     }
     for (const double hair : {0.0, 1e-7, 1e-5, 1e-3}) {
         for (const int sx : {-1, 1}) {
@@ -190,7 +141,7 @@ TEST_CASE("the equal-area octahedral map round-trips every direction within the 
                     for (const Vec3 v : {Vec3{hair, hair, 1.0}, Vec3{1.0, hair, hair}, Vec3{hair, 1.0, hair},
                                          Vec3{1.0, 1.0, hair}, Vec3{1.0, hair, 1.0}, Vec3{1.0, 1.0, 1.0}}) {
                         const Vec3 u = tests::normalized(Vec3{sx * v.x, sy * v.y, sz * v.z});
-                        directions.push_back({static_cast<float>(u.x), static_cast<float>(u.y), static_cast<float>(u.z)});
+                        directions.push_back(tests::float3(u));
                     }
                 }
             }
@@ -266,7 +217,7 @@ TEST_CASE("a packed Bsdf unpacks within contract 2's tolerances, for every kind"
         const double phi = 2.399963 * i;
         const double r = std::sqrt(1.0 - z * z);
         contracts::Bsdf b{};
-        b.normal = {static_cast<float>(r * std::cos(phi)), static_cast<float>(r * std::sin(phi)), static_cast<float>(z)};
+        b.normal = tests::float3({r * std::cos(phi), r * std::sin(phi), z});
         const float t = static_cast<float>(i % 97) / 96.0f;
         b.color = {0.02f + 0.97f * t, 0.5f * t + 0.01f, 1.0f - 0.9f * t};
         switch (i % 4) {
@@ -469,8 +420,8 @@ TEST_CASE("the target, its candidate weight and the direct light: closed forms f
     std::vector<contracts::Float3> toward;
     for (const contracts::Float3& p : floor_points) {
         const Vec3 v = tests::normalized(tests::vec(p) - tests::vec(firefly.center));
-        toward.push_back({static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z)});
-        toward.push_back({static_cast<float>(-v.x), static_cast<float>(-v.y), static_cast<float>(-v.z)});
+        toward.push_back(tests::float3(v));
+        toward.push_back(tests::float3(-v));
     }
     tests::ProbeRunner gpu;
     const auto trip_count = static_cast<std::uint32_t>(toward.size());
@@ -560,8 +511,7 @@ TEST_CASE("a candidate's MIS weights over the light and BSDF strategies sum to 1
             for (const contracts::Float3& p : floor_points) {
                 // wo: the mirror of the direction toward the light's center.
                 const Vec3 to = tests::normalized(tests::vec(firefly.center) - tests::vec(p));
-                const contracts::Float3 wo{static_cast<float>(-to.x), static_cast<float>(to.y),
-                                           static_cast<float>(-to.z)};
+                const contracts::Float3 wo = tests::float3({-to.x, to.y, -to.z});
                 for (std::uint32_t a = 0; a < grid; ++a) {
                     for (std::uint32_t b = 0; b < grid; ++b) {
                         queries.push_back({p, (a + 0.5f) / grid, wo, (b + 0.5f) / grid, n_l, n_b, {0u, 0u}});
@@ -578,8 +528,10 @@ TEST_CASE("a candidate's MIS weights over the light and BSDF strategies sum to 1
                 if (!(r.light_scattered > 0.0f && r.bsdf_scattered > 0.0f)) {
                     continue;  // y gives this surface nothing: no weight to share
                 }
-                const double light_share = n_l * double(r.light_density) * r.light_weight / (total * r.light_scattered);
-                const double bsdf_share = n_b * double(r.bsdf_density) * r.bsdf_weight / (total * r.bsdf_scattered);
+                const double light_share =
+                    n_l * static_cast<double>(r.light_density) * r.light_weight / (total * r.light_scattered);
+                const double bsdf_share =
+                    n_b * static_cast<double>(r.bsdf_density) * r.bsdf_weight / (total * r.bsdf_scattered);
                 CHECK(light_share >= 0.0);
                 CHECK(bsdf_share >= 0.0);
                 worst = std::max(worst, std::abs(light_share + bsdf_share - 1.0));
@@ -596,24 +548,26 @@ TEST_CASE("a candidate's MIS weights over the light and BSDF strategies sum to 1
 
 namespace {
 
-// RTXDI's temporal settings in basic mode (core/passes/restir_di.h).
+using frame::PassKind;
+
+// RTXDI's temporal settings in basic mode, as graphs are written with them
+// (support/schedules.h).
 passes::RestirDi temporal_settings() {
-    passes::RestirDi s{};
-    s.candidates = passes::written_candidates;
-    s.bsdf_candidates = passes::written_bsdf_candidates;
-    s.history = passes::written_history;
-    s.permutation = passes::written_permutation;
-    s.depth_threshold = passes::written_depth_threshold;
-    s.normal_threshold = passes::written_normal_threshold;
-    s.bias_correction = contracts::BiasCorrection::basic;
-    s.visibility_reuse = passes::written_visibility_reuse;
-    s.visibility_age = passes::written_visibility_age;
-    s.visibility_distance = passes::written_visibility_distance;
-    return s;
+    return tests::written_restir_di({PassKind::restir_initial, PassKind::restir_temporal, PassKind::restir_shade});
 }
 
-contracts::Reservoir reservoir_of(std::uint32_t light, std::uint32_t count, float target, float weight) {
-    return contracts::Reservoir{contracts::LightPoint{contracts::light_valid | light, 0u}, count, 0u, target, weight};
+// A reservoir of a light's sample: which light, its count M, its target
+// p-hat and its weight W, by name, so no two are swapped (I.24).
+struct Held {
+    std::uint32_t light = 0;
+    std::uint32_t count = 0;
+    float target = 0.0f;
+    float weight = 0.0f;
+};
+
+contracts::Reservoir reservoir_of(const Held& held) {
+    return contracts::Reservoir{contracts::LightPoint{contracts::light_valid | held.light, 0u}, held.count, 0u,
+                                held.target, held.weight};
 }
 
 }  // namespace
@@ -628,7 +582,8 @@ TEST_CASE("the temporal merge caps last frame's count at H times the pixel's own
     for (const std::uint32_t last_count : {5u, 100u, 180u, 181u, 5000u, 1000000u}) {
         std::vector<tests::MergeQuery> queries;
         for (std::uint32_t seed = 0; seed < 256; ++seed) {
-            queries.push_back({reservoir_of(0, own_count, 2.0f, 1.0f), reservoir_of(1, last_count, 4.0f, 0.5f),
+            queries.push_back({reservoir_of({.light = 0, .count = own_count, .target = 2.0f, .weight = 1.0f}),
+                               reservoir_of({.light = 1, .count = last_count, .target = 4.0f, .weight = 0.5f}),
                                settings, seed, 2.0f, {0u, 0u}});
         }
         const auto count = static_cast<std::uint32_t>(queries.size());
@@ -652,6 +607,17 @@ TEST_CASE("the temporal merge caps last frame's count at H times the pixel's own
 
 namespace {
 
+// The encoded unit vectors along +z and -z, as the surface records hold
+// them (unit_trip).
+std::pair<std::uint32_t, std::uint32_t> up_and_down(tests::ProbeRunner& gpu) {
+    const std::vector<contracts::Float3> normals{{0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -1.0f}};
+    const auto two = static_cast<std::uint32_t>(normals.size());
+    const std::vector<tests::UnitTrip> codes =
+        gpu.run<tests::UnitTrip>("unit_trip", two, {Binding::of(normals), Binding::of(two)});
+    REQUIRE(codes.size() == 2);
+    return {codes[0].code, codes[1].code};
+}
+
 // A surface record at depth `z` (the probe Frame's depth), facing
 // `normal_code` (an encoded unit vector), of `kind`.
 contracts::SurfaceRecord record_at(float z, std::uint32_t normal_code, contracts::BsdfKind kind) {
@@ -671,16 +637,12 @@ TEST_CASE("a reprojected pixel whose surface fails the similarity test takes no 
     // then the ring. Similar: depth within 10%, normals within cos 0.5, the
     // same material.
     tests::ProbeRunner gpu;
-    const std::vector<contracts::Float3> normals{{0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -1.0f}};
-    const auto two = static_cast<std::uint32_t>(normals.size());
-    const std::vector<tests::UnitTrip> codes =
-        gpu.run<tests::UnitTrip>("unit_trip", two, {Binding::of(normals), Binding::of(two)});
-    const std::uint32_t up = codes[0].code;
-    const std::uint32_t down = codes[1].code;
+    const auto [up, down] = up_and_down(gpu);
     using contracts::BsdfKind;
     const contracts::SurfaceRecord here = record_at(10.0f, up, BsdfKind::lambert);
     const passes::RestirDi settings = temporal_settings();
-    const std::vector<contracts::Reservoir> finals(9, reservoir_of(0, 9, 1.0f, 1.0f));
+    const std::vector<contracts::Reservoir> finals(
+        9, reservoir_of({.light = 0, .count = 9, .target = 1.0f, .weight = 1.0f}));
     const auto found = [&](const std::vector<contracts::SurfaceRecord>& last) {
         return gpu.run<tests::FoundResult>(
             "last_frame_found", 1,
@@ -714,19 +676,11 @@ TEST_CASE("a reprojected pixel whose surface fails the similarity test takes no 
 namespace {
 
 // RTXDI's spatial settings in basic mode with `neighbors` neighbors
-// (core/passes/restir_di.h), and no temporal merge.
+// (support/schedules.h), and no temporal merge.
 passes::RestirDi spatial_settings(std::uint32_t neighbors) {
-    passes::RestirDi s{};
-    s.candidates = passes::written_candidates;
-    s.bsdf_candidates = passes::written_bsdf_candidates;
+    passes::RestirDi s =
+        tests::written_restir_di({PassKind::restir_initial, PassKind::restir_spatial, PassKind::restir_shade});
     s.neighbors = neighbors;
-    s.radius = passes::written_radius;
-    s.depth_threshold = passes::written_depth_threshold;
-    s.normal_threshold = passes::written_normal_threshold;
-    s.bias_correction = contracts::BiasCorrection::basic;
-    s.visibility_reuse = passes::written_visibility_reuse;
-    s.visibility_age = passes::written_visibility_age;
-    s.visibility_distance = passes::written_visibility_distance;
     return s;
 }
 
@@ -752,20 +706,21 @@ TEST_CASE("the spatial merge: a neighbor that fails the similarity test contribu
     // another light. Where every neighbor fails a test, the merge is the
     // own reservoir as it was: its count, its sample, its W and its test.
     tests::ProbeRunner gpu;
-    const std::vector<contracts::Float3> normals{{0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -1.0f}};
-    const auto two = static_cast<std::uint32_t>(normals.size());
-    const std::vector<tests::UnitTrip> codes =
-        gpu.run<tests::UnitTrip>("unit_trip", two, {Binding::of(normals), Binding::of(two)});
-    const std::uint32_t up = codes[0].code;
-    const std::uint32_t down = codes[1].code;
+    const auto [up, down] = up_and_down(gpu);
     using contracts::BsdfKind;
     const contracts::SurfaceRecord here = record_at(10.0f, up, BsdfKind::lambert);
-    const std::vector<contracts::Reservoir> inputs(probe_side * probe_side, reservoir_of(1, 1000, 4.0f, 0.5f));
+    const std::vector<contracts::Reservoir> inputs(
+        probe_side * probe_side, reservoir_of({.light = 1, .count = 1000, .target = 4.0f, .weight = 0.5f}));
     const std::array<std::uint32_t, 2> size{probe_side, probe_side};
     const auto merged = [&](contracts::SurfaceRecord others, std::uint32_t neighbors) {
         std::vector<contracts::SurfaceRecord> records(probe_side * probe_side, others);
         records[probe_middle * probe_side + probe_middle] = here;
-        const tests::MergeQuery query{reservoir_of(0, 9, 2.0f, 1.0f), {}, spatial_settings(neighbors), 7u, 2.0f, {0u, 0u}};
+        const tests::MergeQuery query{reservoir_of({.light = 0, .count = 9, .target = 2.0f, .weight = 1.0f}),
+                                      {},
+                                      spatial_settings(neighbors),
+                                      7u,
+                                      2.0f,
+                                      {0u, 0u}};
         return gpu.run<contracts::Reservoir>("spatial_merge", probe_merges,
                                              {Binding::of(query), Binding::of(records), Binding::of(inputs),
                                               Binding::of(size)});
@@ -810,19 +765,27 @@ TEST_CASE("the spatial merge's M is its own and its accepted neighbors' counts, 
     const std::uint32_t up =
         gpu.run<tests::UnitTrip>("unit_trip", 1, {Binding::of(normals), Binding::of(std::uint32_t{1})})[0].code;
     using contracts::BsdfKind;
-    constexpr std::uint32_t most = (passes::written_history + 1) * 9;  // 189
+    // (H + 1) M, M the 8 light candidates and the BSDF one: 189.
+    constexpr std::uint32_t most =
+        (passes::written_history + 1) * (passes::written_candidates + passes::written_bsdf_candidates);
     std::vector<contracts::SurfaceRecord> records;
     std::vector<contracts::Reservoir> inputs;
     for (std::uint32_t y = 0; y < probe_side; ++y) {
         for (std::uint32_t x = 0; x < probe_side; ++x) {
             const bool right = x > probe_middle;
             records.push_back(record_at(10.0f, up, right ? BsdfKind::lambert : BsdfKind::conductor));
-            inputs.push_back(right ? reservoir_of(1, most, 4.0f, 0.5f) : reservoir_of(2, 1000000, 4.0f, 0.5f));
+            inputs.push_back(right ? reservoir_of({.light = 1, .count = most, .target = 4.0f, .weight = 0.5f})
+                                 : reservoir_of({.light = 2, .count = 1000000, .target = 4.0f, .weight = 0.5f}));
         }
     }
     records[probe_middle * probe_side + probe_middle] = record_at(10.0f, up, BsdfKind::lambert);
     constexpr std::uint32_t k = 3;
-    const tests::MergeQuery query{reservoir_of(0, most, 2.0f, 1.0f), {}, spatial_settings(k), 11u, 2.0f, {0u, 0u}};
+    const tests::MergeQuery query{reservoir_of({.light = 0, .count = most, .target = 2.0f, .weight = 1.0f}),
+                                  {},
+                                  spatial_settings(k),
+                                  11u,
+                                  2.0f,
+                                  {0u, 0u}};
     const std::array<std::uint32_t, 2> size{probe_side, probe_side};
     const std::vector<contracts::Reservoir> merged = gpu.run<contracts::Reservoir>(
         "spatial_merge", probe_merges,
@@ -844,7 +807,8 @@ TEST_CASE("the spatial merge's M is its own and its accepted neighbors' counts, 
             ++from_neighbor;
             const auto [dx, dy] = tested_offset(r.tested);
             CHECK(dx >= 1);
-            CHECK(dx * dx + dy * dy <= 33 * 33);
+            constexpr double reach = passes::written_radius + 1.0;  // the radius, and its pixel's rounding
+            CHECK(dx * dx + dy * dy <= reach * reach);
             CHECK((r.tested >> contracts::tested_age_shift) == 0u);
         } else {
             CHECK(r.tested == 0u);
@@ -967,9 +931,11 @@ TEST_CASE("a stream of weights 0 keeps nothing: no sample, W = 0, its count kept
 // ---- the shade's rule for a reservoir's test -------------------------------
 
 TEST_CASE("the shade takes a reservoir's own test where it is here and now, or recent and near in basic mode") {
+    // As contracts/reservoir.h packs it.
     const auto word = [](int x, int y, std::uint32_t age) {
-        return (static_cast<std::uint32_t>(x) & 0xffu) | ((static_cast<std::uint32_t>(y) & 0xffu) << 8u) |
-               (age << 16u);
+        const auto field = [](int v) { return static_cast<std::uint32_t>(v) & contracts::tested_field_mask; };
+        return (field(x) << contracts::tested_offset_x_shift) | (field(y) << contracts::tested_offset_y_shift) |
+               (age << contracts::tested_age_shift);
     };
     const std::vector<std::uint32_t> tested{word(0, 0, 0), word(0, 0, 1),  word(-3, 4, 4), word(-3, 4, 5),
                                             word(16, 0, 1), word(15, 0, 1), word(0, -15, 0), word(-127, -127, 255)};
@@ -999,123 +965,55 @@ TEST_CASE("the shade takes a reservoir's own test where it is here and now, or r
 
 namespace {
 
-// A graph of resampled importance sampling with `candidates` light
-// candidates and `bsdf_candidates` BSDF ones, its accumulated image shown
+// A ReSTIR DI graph of `kinds` with `settings`, its accumulated image shown
 // as it is.
-frame::Schedule ris_graph(std::uint32_t candidates, std::uint32_t bsdf_candidates = 0) {
-    return frame::parse_schedule("passes = [\"restir_initial\", \"restir_shade\", \"display\"]\n[restir_di]\n"
-                                 "candidates = " + std::to_string(candidates) + "\nbsdf_candidates = " +
-                                     std::to_string(bsdf_candidates) + "\n",
-                                 "ris graph");
+frame::Schedule restir_di_graph(const std::vector<PassKind>& kinds, const passes::RestirDi& settings) {
+    frame::Schedule schedule{kinds, std::nullopt, settings};
+    schedule.passes.push_back(PassKind::display);
+    return schedule;
 }
 
-// A renderer of `schedule` over a scene, at a size, frames accumulating
-// from frame 0, read back in the accumulated image's floats (C.8: it holds
-// what the renderer reads, so it is neither copied nor moved).
-class Rig {
-public:
-    Rig(const std::string& text, const frame::Schedule& schedule, frame::Extent image)
-        : description_(scene::parse(text, "test scene")), size_(image), renderer_(device_, submission_, schedule, &description_) {}
+// A graph of resampled importance sampling with `candidates` light
+// candidates and `bsdf_candidates` BSDF ones.
+frame::Schedule ris_graph(std::uint32_t candidates, std::uint32_t bsdf_candidates = 0) {
+    const std::vector<PassKind> kinds{PassKind::restir_initial, PassKind::restir_shade};
+    passes::RestirDi settings = tests::written_restir_di(kinds);
+    settings.candidates = candidates;
+    settings.bsdf_candidates = bsdf_candidates;
+    return restir_di_graph(kinds, settings);
+}
 
-    // Renders `frames` more frames and returns the accumulated image, RGBA
-    // floats, every sample of them finite.
-    std::vector<float> render(std::uint64_t frames) {
-        std::uint64_t sequence = 0;
-        for (std::uint64_t i = 0; i < frames; ++i, ++next_) {
-            frame::FrameInputs inputs = tests::frame_at(next_, 0, 0.0, description_.camera);
-            inputs.reused_since = 0;  // a temporal graph's history, from the first frame
-            sequence = metal::render_to_offscreen(submission_, target_, renderer_, inputs);
-        }
-        (void)submission_.wait_until_complete(sequence);
-        CHECK(renderer_.non_finite_samples() == 0);
-        std::vector<float> floats(std::size_t{size_.width} * size_.height * 4);
-        renderer_.read_accumulated(floats);
-        return floats;
-    }
-
-    const scene::SceneDescription& description() const noexcept { return description_; }
-    frame::Extent size() const noexcept { return size_; }
-
-private:
-    scene::SceneDescription description_;
-    frame::Extent size_;
-    metal::Device device_;
-    metal::Submission submission_{device_};
-    metal::Offscreen target_{device_, submission_, size_};
-    metal::Renderer renderer_;
-    std::uint64_t next_ = 0;
-};
+// The shared rig, its frames' accumulated image read back
+// (render_accumulated()).
+using Rig = tests::AccumulatingRig;
 
 // The red mean over the 3 x 3 pixels about `at`.
 double patch_red(const std::vector<float>& rgba, frame::Extent size, tests::Pixel at) {
-    double sum = 0.0;
-    for (std::uint32_t y = at.y - 1; y <= at.y + 1; ++y) {
-        for (std::uint32_t x = at.x - 1; x <= at.x + 1; ++x) {
-            sum += rgba[(std::size_t{y} * size.width + x) * 4];
-        }
-    }
-    return sum / 9.0;
+    return tests::patch_mean(rgba, size, {at.x, at.y, 1});
 }
 
-constexpr double floor_albedo = 0.8;
-
-// The lit floor of path_test.cpp: a Lambert floor in a black sky under
-// fireflies of radius 0.05 and radiance 200, seen from above.
-std::string lit_floor(const std::string& rest) {
-    return tests::camera_text("[0, 2, 3]", "[0, 0, 0]", 50) + tests::sky("[0, 0, 0]", "[0, 0, 0]") +
-           "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
-           "[materials.glow]\nkind = \"emissive\"\nradiance = [200, 200, 200]\n"
-           "[materials.black]\nkind = \"rough\"\ncolor = [0, 0, 0]\n"
-           "[[shapes]]\nkind = \"box\"\nmin = [-50, -1, -50]\nmax = [50, 0, 50]\nmaterial = \"floor\"\n" +
-           rest;
-}
-
-std::string firefly(const char* center) {
-    return std::string("[[shapes]]\nkind = \"sphere\"\ncenter = ") + center + "\nradius = 0.05\nmaterial = \"glow\"\n";
-}
-
-const std::string one_firefly = firefly("[0.3, 2.5, -0.5]");
-const std::string two_fireflies = one_firefly + firefly("[-1.2, 1.5, 0.4]");
-
-// The floor point pixel (x, y)'s center sees.
+// The floor point pixel `at`'s center sees.
 Vec3 floor_point(const scene::SceneDescription& description, frame::Extent size, tests::Pixel at) {
-    const contracts::CameraData c = camera::shader_form(description.camera, size);
-    const Vec3 d = tests::camera_direction(c, at.x + 0.5, at.y + 0.5, size);
-    return tests::vec(c.origin) + (-c.origin.y / d.y) * d;
-}
-
-// albedo x L sin^2 cos for each of `lights` (their indices among the
-// scene's sphere lights), at floor point p: what an unshadowed firefly
-// gives the floor.
-double floor_from(const scene::SceneDescription& description, Vec3 p, const std::vector<std::size_t>& lights) {
-    double sum = 0.0;
-    for (const std::size_t i : lights) {
-        const lights::SphereLightData& light = description.sphere_lights.at(i);
-        const contracts::Transform& placed = description.shapes.transforms.at(light.shape);
-        const double radius = placed.m[0][0];
-        const Vec3 to = tests::vec(contracts::translation(placed)) - p;
-        const double d2 = dot(to, to);
-        sum += floor_albedo * light.radiance.x * (radius * radius / d2) * (to.y / std::sqrt(d2));
-    }
-    return sum;
-}
-
-std::vector<std::size_t> every_light(const scene::SceneDescription& description) {
-    std::vector<std::size_t> all(description.sphere_lights.size());
-    for (std::size_t i = 0; i < all.size(); ++i) {
-        all[i] = i;
-    }
-    return all;
+    return tests::floor_point(description, size, at.x + 0.5, at.y + 0.5);
 }
 
 constexpr frame::Extent floor_size{64, 48};
+
+// The red sum of rows [from, to) of an image `width` wide.
+double rows_red(const std::vector<float>& image, std::uint32_t width, std::uint32_t from, std::uint32_t to) {
+    double sum = 0.0;
+    for (std::size_t i = std::size_t{from} * width; i < std::size_t{to} * width; ++i) {
+        sum += image[i * 4];
+    }
+    return sum;
+}
 constexpr std::array<tests::Pixel, 3> floor_pixels{tests::Pixel{32, 30}, tests::Pixel{14, 38}, tests::Pixel{50, 26}};
 
 // Every floor pixel's patch against the closed form, within `tolerance`.
 void check_floor(const std::string& text, std::uint32_t candidates, std::uint64_t frames, double tolerance,
                  std::uint32_t bsdf_candidates = 0) {
     Rig rig(text, ris_graph(candidates, bsdf_candidates), floor_size);
-    const std::vector<float> image = rig.render(frames);
+    const std::vector<float> image = rig.render_accumulated(frames);
     for (const tests::Pixel pixel : floor_pixels) {
         const double expected =
             floor_from(rig.description(), floor_point(rig.description(), rig.size(), pixel), every_light(rig.description()));
@@ -1128,7 +1026,7 @@ void check_floor(const std::string& text, std::uint32_t candidates, std::uint64_
 // of the floor's lower half (all floor), after `frames`.
 double floor_rms(const std::string& text, std::uint32_t candidates, std::uint64_t frames) {
     Rig rig(text, ris_graph(candidates), floor_size);
-    const std::vector<float> image = rig.render(frames);
+    const std::vector<float> image = rig.render_accumulated(frames);
     double sum = 0.0;
     std::size_t n = 0;
     for (std::uint32_t y = floor_size.height / 2; y < floor_size.height; ++y) {
@@ -1176,15 +1074,10 @@ TEST_CASE("light and BSDF candidates weighed by MIS converge to the same floor u
 
 namespace {
 
-// The temporal graph, RTXDI's defaults, its accumulated image shown as it
-// is.
+// The temporal graph, RTXDI's defaults (graphs/restir_temporal.toml's).
 frame::Schedule temporal_graph() {
-    return frame::parse_schedule(
-        "passes = [\"restir_initial\", \"restir_temporal\", \"restir_shade\", \"display\"]\n[restir_di]\n"
-        "candidates = 8\nbsdf_candidates = 1\nhistory = 20\npermutation = true\ndepth_threshold = 0.1\n"
-        "normal_threshold = 0.5\nbias_correction = \"basic\"\nvisibility_reuse = true\nvisibility_age = 4\n"
-        "visibility_distance = 16.0\n",
-        "temporal graph");
+    return restir_di_graph({PassKind::restir_initial, PassKind::restir_temporal, PassKind::restir_shade},
+                           temporal_settings());
 }
 
 }  // namespace
@@ -1195,7 +1088,7 @@ TEST_CASE("temporal reuse: a still floor under two fireflies converges to the sa
     // is not there to see, and the mean over frames is the closed form's,
     // within the tolerance the RIS graph is held to.
     Rig rig(lit_floor(two_fireflies), temporal_graph(), floor_size);
-    const std::vector<float> image = rig.render(1024);
+    const std::vector<float> image = rig.render_accumulated(1024);
     for (const tests::Pixel pixel : floor_pixels) {
         const double expected =
             floor_from(rig.description(), floor_point(rig.description(), rig.size(), pixel), every_light(rig.description()));
@@ -1222,14 +1115,10 @@ TEST_CASE("temporal reuse: a still floor seen at a grazing angle converges to th
     constexpr frame::Extent size{64, 48};
     Rig ris(scene, ris_graph(8, 1), size);
     Rig reused(scene, temporal_graph(), size);
-    const std::vector<float> without = ris.render(1024);
-    const std::vector<float> with = reused.render(1024);
+    const std::vector<float> without = ris.render_accumulated(1024);
+    const std::vector<float> with = reused.render_accumulated(1024);
     const auto band = [&](const std::vector<float>& image, std::uint32_t from, std::uint32_t to) {
-        double sum = 0.0;
-        for (std::size_t i = std::size_t{from} * size.width; i < std::size_t{to} * size.width; ++i) {
-            sum += image[i * 4];
-        }
-        return sum;
+        return rows_red(image, size.width, from, to);
     };
     const double ratio = band(with, 24, 48) / band(without, 24, 48);
     MESSAGE("lower half, temporal over RIS: " << ratio);
@@ -1243,8 +1132,8 @@ TEST_CASE("temporal reuse: a still floor seen at a grazing angle converges to th
 TEST_CASE("temporal reuse: the same inputs give the same image, to the bit") {
     Rig first(lit_floor(two_fireflies), temporal_graph(), {32, 24});
     Rig second(lit_floor(two_fireflies), temporal_graph(), {32, 24});
-    const std::vector<float> a = first.render(6);
-    const std::vector<float> b = second.render(6);
+    const std::vector<float> a = first.render_accumulated(6);
+    const std::vector<float> b = second.render_accumulated(6);
     REQUIRE(a.size() == b.size());
     CHECK(std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
 }
@@ -1287,7 +1176,7 @@ TEST_CASE("visibility reuse: a light hidden behind a box gives nothing, a visibl
     const contracts::CameraData c = camera::shader_form(both.description().camera, size);
     const tests::Pixel under = tests::pixel_of(c, Vec3{0.0, 0.0, 0.1}, size);
     const tests::Pixel beside = tests::pixel_of(c, Vec3{0.4, 0.0, 1.4}, size);
-    const std::vector<float> lit = both.render(2048);
+    const std::vector<float> lit = both.render_accumulated(2048);
     const Vec3 under_point = floor_point(both.description(), size, under);
     REQUIRE(std::abs(under_point.x) < 0.4);
     REQUIRE(std::abs(under_point.z) < 0.4);
@@ -1298,7 +1187,7 @@ TEST_CASE("visibility reuse: a light hidden behind a box gives nothing, a visibl
     CHECK(patch_red(lit, size, beside) == doctest::Approx(from_both).scale(0).epsilon(0.03));
 
     Rig hidden(scene_of(above), ris_graph(8), size);
-    const std::vector<float> dark = hidden.render(64);
+    const std::vector<float> dark = hidden.render_accumulated(64);
     CHECK(patch_red(dark, size, under) == 0.0);
     CHECK(patch_red(dark, size, beside) > 0.0);
 }
@@ -1306,41 +1195,38 @@ TEST_CASE("visibility reuse: a light hidden behind a box gives nothing, a visibl
 TEST_CASE("resampled importance sampling: the same inputs give the same image, to the bit") {
     Rig first(lit_floor(two_fireflies), ris_graph(8), {32, 24});
     Rig second(lit_floor(two_fireflies), ris_graph(8), {32, 24});
-    const std::vector<float> a = first.render(4);
-    const std::vector<float> b = second.render(4);
+    const std::vector<float> a = first.render_accumulated(4);
+    const std::vector<float> b = second.render_accumulated(4);
     REQUIRE(a.size() == b.size());
     CHECK(std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
     // And the comparison can fail: one frame more is another image.
-    CHECK(std::memcmp(a.data(), second.render(1).data(), a.size() * sizeof(float)) != 0);
+    CHECK(std::memcmp(a.data(), second.render_accumulated(1).data(), a.size() * sizeof(float)) != 0);
 }
 
 namespace {
 
-// A graph with the spatial merge, RTXDI's defaults, by `mode` ("basic" or
-// "raytraced"): ReSTIR DI whole (graphs/restir.toml) with `temporal`, else
-// the spatial merge alone (graphs/restir_spatial.toml); its accumulated
-// image shown as it is.
-frame::Schedule spatial_graph(bool temporal, const std::string& mode) {
-    const std::string passes = temporal ? "[\"restir_initial\", \"restir_temporal\", \"restir_spatial\", "
-                                          "\"restir_shade\", \"display\"]"
-                                        : "[\"restir_initial\", \"restir_spatial\", \"restir_shade\", \"display\"]";
-    return frame::parse_schedule(
-        "passes = " + passes + "\n[restir_di]\ncandidates = 8\nbsdf_candidates = 1\n" +
-            (temporal ? "history = 20\npermutation = true\n" : "") +
-            "neighbors = 1\nradius = 32.0\ndepth_threshold = 0.1\nnormal_threshold = 0.5\nbias_correction = \"" +
-            mode + "\"\n" +
-            (mode == "basic" ? "visibility_reuse = true\nvisibility_age = 4\nvisibility_distance = 16.0\n" : ""),
-        "spatial graph");
+// `settings` in raytraced mode: the final-visibility reuse, basic mode's,
+// off and unread.
+passes::RestirDi as_raytraced(passes::RestirDi settings) {
+    settings.bias_correction = contracts::BiasCorrection::raytraced;
+    settings.visibility_reuse = contracts::VisibilityReuse::off;
+    settings.visibility_age = 0;
+    settings.visibility_distance = 0.0f;
+    return settings;
 }
 
-// The red sum of rows [from, to) of an image `width` wide.
-double rows_red(const std::vector<float>& image, std::uint32_t width, std::uint32_t from, std::uint32_t to) {
-    double sum = 0.0;
-    for (std::size_t i = std::size_t{from} * width; i < std::size_t{to} * width; ++i) {
-        sum += image[i * 4];
-    }
-    return sum;
+// A graph with the spatial merge, RTXDI's defaults, by `mode`: ReSTIR DI
+// whole (graphs/restir.toml) with `temporal`, else the spatial merge alone
+// (graphs/restir_spatial.toml).
+frame::Schedule spatial_graph(bool temporal, contracts::BiasCorrection mode) {
+    const std::vector<PassKind> kinds =
+        temporal ? std::vector{PassKind::restir_initial, PassKind::restir_temporal, PassKind::restir_spatial,
+                               PassKind::restir_shade}
+                 : std::vector{PassKind::restir_initial, PassKind::restir_spatial, PassKind::restir_shade};
+    const passes::RestirDi settings = tests::written_restir_di(kinds);
+    return restir_di_graph(kinds, mode == contracts::BiasCorrection::raytraced ? as_raytraced(settings) : settings);
 }
+
 
 }  // namespace
 
@@ -1351,8 +1237,8 @@ TEST_CASE("spatial reuse: a still floor under two fireflies converges to the sam
     // and temporal graphs are held to, for ReSTIR DI whole and for the
     // spatial merge alone.
     for (const bool temporal : {true, false}) {
-        Rig rig(lit_floor(two_fireflies), spatial_graph(temporal, "basic"), floor_size);
-        const std::vector<float> image = rig.render(1024);
+        Rig rig(lit_floor(two_fireflies), spatial_graph(temporal, contracts::BiasCorrection::basic), floor_size);
+        const std::vector<float> image = rig.render_accumulated(1024);
         for (const tests::Pixel pixel : floor_pixels) {
             const double expected = floor_from(rig.description(), floor_point(rig.description(), rig.size(), pixel),
                                                every_light(rig.description()));
@@ -1372,11 +1258,11 @@ TEST_CASE("spatial reuse in raytraced mode: a floor under a box converges to the
     const std::string scene = box_scene(firefly("[0, 4, 0]") + firefly("[2, 0.6, 0]"));
     constexpr frame::Extent size{64, 48};
     Rig ris(scene, ris_graph(8, 1), size);
-    Rig raytraced(scene, spatial_graph(false, "raytraced"), size);
-    Rig basic(scene, spatial_graph(false, "basic"), size);
-    const std::vector<float> without = ris.render(1024);
-    const std::vector<float> traced = raytraced.render(1024);
-    const std::vector<float> shipped = basic.render(1024);
+    Rig raytraced(scene, spatial_graph(false, contracts::BiasCorrection::raytraced), size);
+    Rig basic(scene, spatial_graph(false, contracts::BiasCorrection::basic), size);
+    const std::vector<float> without = ris.render_accumulated(1024);
+    const std::vector<float> traced = raytraced.render_accumulated(1024);
+    const std::vector<float> shipped = basic.render_accumulated(1024);
     const double ratio = rows_red(traced, size.width, 24, 48) / rows_red(without, size.width, 24, 48);
     MESSAGE("lower half over RIS: raytraced " << ratio << ", basic "
                                               << rows_red(shipped, size.width, 24, 48) /
@@ -1390,59 +1276,43 @@ TEST_CASE("spatial reuse in raytraced mode: a floor under a box converges to the
 }
 
 TEST_CASE("ReSTIR DI whole: the same inputs give the same image, to the bit") {
-    Rig first(lit_floor(two_fireflies), spatial_graph(true, "basic"), {32, 24});
-    Rig second(lit_floor(two_fireflies), spatial_graph(true, "basic"), {32, 24});
-    const std::vector<float> a = first.render(6);
-    const std::vector<float> b = second.render(6);
+    Rig first(lit_floor(two_fireflies), spatial_graph(true, contracts::BiasCorrection::basic), {32, 24});
+    Rig second(lit_floor(two_fireflies), spatial_graph(true, contracts::BiasCorrection::basic), {32, 24});
+    const std::vector<float> a = first.render_accumulated(6);
+    const std::vector<float> b = second.render_accumulated(6);
     REQUIRE(a.size() == b.size());
     CHECK(std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
     // And the comparison can fail: one frame more is another image.
-    CHECK(std::memcmp(a.data(), second.render(1).data(), a.size() * sizeof(float)) != 0);
+    CHECK(std::memcmp(a.data(), second.render_accumulated(1).data(), a.size() * sizeof(float)) != 0);
 }
 
 TEST_CASE("the Metal backend runs both merges, and refuses by name raytraced mode with the temporal merge") {
     const scene::SceneDescription description = scene::parse(lit_floor(one_firefly), "test scene");
     metal::Device device;
     metal::Submission submission(device);
-    const std::string merges =
-        "[restir_di]\ncandidates = 8\nbsdf_candidates = 1\nhistory = 20\npermutation = true\nneighbors = 1\n"
-        "radius = 32.0\ndepth_threshold = 0.1\nnormal_threshold = 0.5\nbias_correction = \"basic\"\nvisibility_reuse = true\n"
-        "visibility_age = 4\nvisibility_distance = 16.0\n";
-    const auto refusal = [&](const char* passes, const std::string& settings) {
-        const frame::Schedule schedule = frame::parse_schedule(std::string("passes = ") + passes + "\n" + settings, "g");
-        return tests::error_of<metal::MetalError>([&] { return metal::Renderer(device, submission, schedule, &description); });
+    const auto refusal = [&](const std::vector<PassKind>& kinds, const passes::RestirDi& settings) {
+        const frame::Schedule schedule = restir_di_graph(kinds, settings);
+        return tests::error_of<metal::MetalError>(
+            [&] { return metal::Renderer(device, submission, schedule, &description); });
     };
-    const std::string temporal_only = tests::replaced(
-        tests::replaced(merges, "neighbors = 1\n", ""), "radius = 32.0\n", "");
-    const char* temporal_passes = "[\"restir_initial\", \"restir_temporal\", \"restir_shade\", \"display\"]";
+    using enum PassKind;
+    const std::vector<PassKind> temporal_passes{restir_initial, restir_temporal, restir_shade};
+    const passes::RestirDi temporal_only = tests::written_restir_di(temporal_passes);
     CHECK(refusal(temporal_passes, temporal_only).empty());
     // Raytraced mode's merge needs last frame's structure, not yet kept.
-    const std::string raytraced = tests::replaced(
-        tests::replaced(tests::replaced(tests::replaced(temporal_only, "\"basic\"", "\"raytraced\""),
-                                        "visibility_reuse = true\n", ""),
-                        "visibility_age = 4\n", ""),
-        "visibility_distance = 16.0\n", "");
-    CHECK(tests::contains(refusal(temporal_passes, raytraced),
+    CHECK(tests::contains(refusal(temporal_passes, as_raytraced(temporal_only)),
                           "restir_temporal pass with bias_correction = \"raytraced\" is not implemented"));
-    const std::string spatial_only =
-        tests::replaced(tests::replaced(merges, "history = 20\n", ""), "permutation = true\n", "");
     // The spatial merge, alone and after the temporal one, is built; and in
     // raytraced mode alone, its rays being this frame's.
-    const char* spatial_passes = "[\"restir_initial\", \"restir_spatial\", \"restir_shade\", \"display\"]";
+    const std::vector<PassKind> spatial_passes{restir_initial, restir_spatial, restir_shade};
+    const passes::RestirDi spatial_only = tests::written_restir_di(spatial_passes);
     CHECK(refusal(spatial_passes, spatial_only).empty());
-    CHECK(refusal("[\"restir_initial\", \"restir_temporal\", \"restir_spatial\", \"restir_shade\", \"display\"]",
-                  merges)
-              .empty());
-    const std::string spatial_raytraced = tests::replaced(
-        tests::replaced(tests::replaced(tests::replaced(spatial_only, "\"basic\"", "\"raytraced\""),
-                                        "visibility_reuse = true\n", ""),
-                        "visibility_age = 4\n", ""),
-        "visibility_distance = 16.0\n", "");
-    CHECK(refusal(spatial_passes, spatial_raytraced).empty());
+    const std::vector<PassKind> both{restir_initial, restir_temporal, restir_spatial, restir_shade};
+    CHECK(refusal(both, tests::written_restir_di(both)).empty());
+    CHECK(refusal(spatial_passes, as_raytraced(spatial_only)).empty());
     // The graph without them is built.
-    CHECK(refusal("[\"restir_initial\", \"restir_shade\", \"display\"]",
-                  "[restir_di]\ncandidates = 8\nbsdf_candidates = 1\n")
-              .empty());
+    const std::vector<PassKind> ris{restir_initial, restir_shade};
+    CHECK(refusal(ris, tests::written_restir_di(ris)).empty());
 }
 
 TEST_CASE("a ReSTIR graph refuses a scene with more media than its path state's 16 bits hold") {
@@ -1452,9 +1322,11 @@ TEST_CASE("a ReSTIR graph refuses a scene with more media than its path state's 
     const auto refusal = [&](const frame::Schedule& schedule) {
         return tests::error_of<metal::MetalError>([&] { return metal::Renderer(device, submission, schedule, &description); });
     };
-    description.media.resize(0xfffe);  // the most it holds: 0xffff is none
+    // Fewer media than path_no_medium, 0xffff, which is none: the most it
+    // holds; that many is refused.
+    description.media.resize(contracts::path_no_medium - 1u);
     CHECK(refusal(ris_graph(8)).empty());
-    description.media.resize(0xffff);
+    description.media.resize(contracts::path_no_medium);
     CHECK(tests::contains(refusal(ris_graph(8)), "keeps a medium's index in 16 bits"));
     // The path graph keeps no path state, and takes it.
     CHECK(refusal(tests::path_graph()).empty());

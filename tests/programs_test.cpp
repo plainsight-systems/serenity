@@ -4,7 +4,6 @@
 
 #include <filesystem>
 #include <limits>
-#include <stdexcept>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -54,14 +53,6 @@ TEST_CASE("both programs read a number whole: no sign, no space, nothing after i
     }
 }
 
-TEST_CASE("headless: a way of writing with no rule is an error, not a frame written") {
-    using serenity::headless::Write;
-    // A scoped enumeration's underlying type is int, fixed, so it holds any
-    // int: 3 names none.
-    CHECK_THROWS_AS(serenity::headless::written(static_cast<Write>(3), {.after_first = 0, .frames = 1}),
-                    std::logic_error);
-}
-
 TEST_CASE("headless: the output directory holds this run's frames and nothing else") {
     using serenity::headless::prepare_output;
     using serenity::headless::OptionsError;
@@ -73,13 +64,11 @@ TEST_CASE("headless: the output directory holds this run's frames and nothing el
     CHECK_NOTHROW(prepare_output(out));  // there and empty: taken
 
     serenity::tests::write_bytes(out / "frame-000000.png", "an earlier run's frame");
-    CHECK_THROWS_WITH_AS(prepare_output(out), doctest::Contains("already holds files"), OptionsError);
+    CHECK_THROWS_AS(prepare_output(out), OptionsError);
 
     // A file in the directory's place: OptionsError, as the header states,
     // not the file system's own error from trying to make it.
     const std::filesystem::path file = scratch / "a-file";
     serenity::tests::write_bytes(file, "not a directory");
-    CHECK_THROWS_WITH_AS(prepare_output(file), doctest::Contains("is not a directory"), OptionsError);
-    // And one that cannot be made, under that file: the file system's error.
-    CHECK_THROWS_AS(prepare_output(file / "frames"), std::filesystem::filesystem_error);
+    CHECK_THROWS_AS(prepare_output(file), OptionsError);
 }

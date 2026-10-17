@@ -21,22 +21,29 @@
 // binds the structure as a resource, which the probe runner does not.
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
-#include <sstream>
+#include <numbers>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <doctest/doctest.h>
 
+#include "core/animation/draw.h"
 #include "core/scene/scene.h"
 #include "gpu/kernels/leave_probe.h"
 #include "gpu/support/traced_probe.h"
 #include "metal/acceleration/scene_acceleration.h"
 #include "metal/device/device.h"
+#include "metal/device/library.h"
 #include "metal/device/submission.h"
 #include "metal/scene/scene_buffers.h"
 #include "metal/scene/shape_transforms.h"
+#include "serenity/metallib/probes.h"
+#include "support/scene_text.h"
 #include "support/vector.h"
 
 using namespace serenity;
@@ -55,29 +62,26 @@ std::vector<LeaveResult> leave(const scene::SceneDescription& description, const
     metal::ShapeTransforms transforms(device, submission, description.shapes.transforms,
                                       metal::FrameArray::Copies::one);
     metal::SceneAcceleration acceleration(device, submission, description.shapes, {});
+    const metal::Library library(device, metallib::probes);
     const auto count = static_cast<std::uint32_t>(queries.size());
-    return tests::run_traced<LeaveResult>({device, submission, buffers, transforms, acceleration}, "leave_probe",
-                                          std::size_t{count} * tests::leave_directions,
+    return tests::run_traced<LeaveResult>({device, submission, library, buffers, transforms, acceleration},
+                                          "leave_probe", std::size_t{count} * tests::leave_directions,
                                           {tests::Binding::of(queries), tests::Binding::of(count)});
 }
 
-// Numbers for placing the queries: splitmix64, seeded, so every run asks
-// the same rays (principle 2).
+// Numbers for placing the queries, the n-th of a seed drawn as the
+// animations draw theirs (core/animation/draw.h), so every run asks the
+// same rays (principle 2).
 class Numbers {
 public:
-    explicit Numbers(std::uint64_t seed) : state_(seed) {}
+    explicit Numbers(std::uint64_t seed) : seed_(seed) {}
 
-    double unit() {
-        std::uint64_t z = (state_ += 0x9e3779b97f4a7c15ull);
-        z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
-        z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
-        return static_cast<double>((z ^ (z >> 31)) >> 11) * 0x1.0p-53;
-    }
+    double unit() { return animation::draw(seed_, next_++); }
 
     // A unit vector, uniform over the sphere.
     Vec3 direction() {
         const double z = 2.0 * unit() - 1.0;
-        const double phi = 2.0 * 3.14159265358979323846 * unit();
+        const double phi = 2.0 * std::numbers::pi * unit();
         const double r = std::sqrt(1.0 - z * z);
         return {r * std::cos(phi), r * std::sin(phi), z};
     }
@@ -95,14 +99,15 @@ public:
     }
 
 private:
-    std::uint64_t state_;
+    std::uint64_t seed_;
+    std::uint64_t next_ = 0;
 };
 
 LeaveQuery query(Vec3 origin, Vec3 toward, std::uint32_t shape) {
     const Vec3 d = tests::normalized(toward - origin);
-    return LeaveQuery{{static_cast<float>(origin.x), static_cast<float>(origin.y), static_cast<float>(origin.z)},
+    return LeaveQuery{tests::float3(origin),
                       shape,
-                      {static_cast<float>(d.x), static_cast<float>(d.y), static_cast<float>(d.z)},
+                      tests::float3(d),
                       0u};
 }
 
@@ -117,15 +122,10 @@ struct Case {
     std::vector<double> distances;
 };
 
-std::string number(double v) {
-    std::ostringstream s;
-    s.precision(17);
-    s << v;
-    return s.str();
-}
+using tests::exact;
 
 std::string triple(Vec3 v) {
-    return "[" + number(v.x) + ", " + number(v.y) + ", " + number(v.z) + "]";
+    return "[" + exact(v.x) + ", " + exact(v.y) + ", " + exact(v.z) + "]";
 }
 
 std::string scene_of(const Case& c) {
@@ -143,7 +143,7 @@ ior = 1.5
 [[shapes]]
 )";
     if (c.sphere) {
-        text += "kind = \"sphere\"\ncenter = " + triple(c.center) + "\nradius = " + number(c.radius) + "\n";
+        text += "kind = \"sphere\"\ncenter = " + triple(c.center) + "\nradius = " + exact(c.radius) + "\n";
     } else {
         text += "kind = \"box\"\nmin = " + triple(c.min) + "\nmax = " + triple(c.max) + "\n";
     }
@@ -167,12 +167,12 @@ std::vector<LeaveQuery> queries_for(const Case& c, std::uint32_t per_distance) {
                 const int axis = static_cast<int>(k % 3u);
                 const double side = (k / 3u) % 2u == 0u ? 1.0 : -1.0;
                 const auto along = [](Vec3 v, int a) { return a == 0 ? v.x : (a == 1 ? v.y : v.z); };
-                double coords[3];
+                std::array<double, 3> coords{};
                 for (int a = 0; a < 3; ++a) {
                     const double lo = along(c.min, a);
                     const double hi = along(c.max, a);
-                    coords[a] = a == axis ? (side > 0.0 ? hi : lo)
-                                          : lo + (hi - lo) * (0.25 + 0.5 * numbers.unit());
+                    coords[static_cast<std::size_t>(a)] =
+                        a == axis ? (side > 0.0 ? hi : lo) : lo + (hi - lo) * (0.25 + 0.5 * numbers.unit());
                 }
                 const Vec3 target{coords[0], coords[1], coords[2]};
                 const Vec3 n{axis == 0 ? side : 0.0, axis == 1 ? side : 0.0, axis == 2 ? side : 0.0};

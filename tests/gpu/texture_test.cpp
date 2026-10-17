@@ -11,6 +11,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <concepts>
 #include <cstdint>
 #include <numbers>
 #include <vector>
@@ -23,6 +24,7 @@
 #include "core/textures/wood.h"
 #include "gpu/kernels/texture_probe.h"
 #include "gpu/support/probe_runner.h"
+#include "support/vector.h"
 
 using namespace serenity;
 using tests::Binding;
@@ -44,7 +46,7 @@ std::vector<float> noise(tests::ProbeRunner& gpu, const std::vector<TexturePoint
 }
 
 // The colors a texture of `data` gives at `points`, by `kernel`.
-template <typename Data>
+template <tests::GpuBytes Data>
 std::vector<contracts::Float3> colors(tests::ProbeRunner& gpu, const char* kernel,
                                       const std::vector<TexturePoint>& points, const Data& data) {
     const auto count = static_cast<std::uint32_t>(points.size());
@@ -52,12 +54,8 @@ std::vector<contracts::Float3> colors(tests::ProbeRunner& gpu, const char* kerne
                                       {Binding::of(points), Binding::of(count), Binding::of(data)});
 }
 
-bool same(contracts::Float3 a, contracts::Float3 b) {
-    return a.x == b.x && a.y == b.y && a.z == b.z;
-}
-
 // How many of two lists' values differ.
-template <typename T, typename Same>
+template <typename T, std::predicate<const T&, const T&> Same>
 std::size_t differing(const std::vector<T>& a, const std::vector<T>& b, Same equal) {
     REQUIRE(a.size() == b.size());
     std::size_t differ = 0;
@@ -182,7 +180,7 @@ TEST_CASE("wood is the same at every height, dark at the seams, and differs boar
     const std::vector<contracts::Float3> grain = colors(gpu, "wood_probe", points, walnut);
     std::size_t by_height = 0;
     for (std::size_t i = 0; i < grain.size(); i += 2) {
-        by_height += same(grain[i], grain[i + 1]) ? 0u : 1u;
+        by_height += tests::same(grain[i], grain[i + 1]) ? 0u : 1u;
     }
     CHECK(by_height == 0);
 
@@ -230,7 +228,7 @@ TEST_CASE("wood is the same at every height, dark at the seams, and differs boar
 
     textures::WoodData other = walnut;
     other.seed = 4u;
-    CHECK(differing(colors(gpu, "wood_probe", points, other), grain, same) > grain.size() * 9 / 10);
+    CHECK(differing(colors(gpu, "wood_probe", points, other), grain, tests::same) > grain.size() * 9 / 10);
 }
 
 namespace {

@@ -10,6 +10,7 @@
 // match against PyTorch: tests/gpu/denoise_test.cpp on the committed
 // fixture, and tests/gpu/denoise_check.cpp on a real network's frames.
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -19,6 +20,7 @@
 #include <iterator>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <Foundation/Foundation.hpp>
@@ -30,6 +32,7 @@
 #include "core/denoise/network.h"
 #include "core/frame/frame_inputs.h"
 #include "core/output/pfm.h"
+#include "gpu/support/shared_resources.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/device/submission.h"
@@ -50,8 +53,8 @@ struct DenoiseFixture {
     contracts::Float3 up{};
     contracts::Float3 backward{};
 
-    std::filesystem::path file(std::size_t k, const char* name) const {
-        return dir / ("frame-" + std::to_string(k) + "-" + name + ".pfm");
+    std::filesystem::path file(std::size_t k, std::string_view name) const {
+        return dir / ("frame-" + std::to_string(k) + "-" + std::string(name) + ".pfm");
     }
 };
 
@@ -82,21 +85,6 @@ inline DenoiseFixture read_denoise_fixture(const std::filesystem::path& dir) {
 namespace detail {
 
 using metal::Half;
-
-inline NS::SharedPtr<MTL::Texture> shared_texture(MTL::Device* device, MTL::PixelFormat format, frame::Extent size) {
-    auto descriptor = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
-    descriptor->setTextureType(MTL::TextureType2D);
-    descriptor->setPixelFormat(format);
-    descriptor->setWidth(size.width);
-    descriptor->setHeight(size.height);
-    descriptor->setStorageMode(MTL::StorageModeShared);
-    descriptor->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
-    auto texture = NS::TransferPtr(device->newTexture(descriptor.get()));
-    if (!texture) {
-        throw std::runtime_error("denoise fixture: the device made no texture");
-    }
-    return texture;
-}
 
 // `image`'s RGB into `texture` (RGBA32Float, RGBA16Float or R32Float).
 inline void upload(MTL::Texture* texture, const contracts::LinearImage& image) {
@@ -147,6 +135,98 @@ inline contracts::LinearImage download(MTL::Texture* texture) {
     return contracts::from_rgba(size, texels);
 }
 
+// The pass's images, of the formats the renderer's are, at the light size
+// and the output's, resident while this lives; and its constants.
+struct FixtureImages {
+    NS::SharedPtr<MTL::Texture> radiance_in;
+    NS::SharedPtr<MTL::Texture> albedo;
+    NS::SharedPtr<MTL::Texture> normal;
+    NS::SharedPtr<MTL::Texture> depth;
+    NS::SharedPtr<MTL::Texture> motion;
+    NS::SharedPtr<MTL::Texture> full_albedo;
+    NS::SharedPtr<MTL::Texture> radiance_out;
+    NS::SharedPtr<MTL::Buffer> constants;
+    std::vector<metal::Resident> resident;
+};
+
+inline FixtureImages make_images(const metal::Device& device, metal::Submission& submission, frame::Extent light,
+                                 frame::Extent output) {
+    constexpr MTL::TextureUsage usage = MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite;
+    FixtureImages m;
+    m.radiance_in = shared_texture(device, MTL::PixelFormatRGBA32Float, light, usage);
+    m.albedo = shared_texture(device, MTL::PixelFormatRGBA16Float, light, usage);
+    m.normal = shared_texture(device, MTL::PixelFormatRGBA16Float, light, usage);
+    m.depth = shared_texture(device, MTL::PixelFormatR32Float, light, usage);
+    m.motion = shared_texture(device, MTL::PixelFormatRGBA16Float, light, usage);
+    m.full_albedo = shared_texture(device, MTL::PixelFormatRGBA16Float, output, usage);
+    m.radiance_out = shared_texture(device, MTL::PixelFormatRGBA32Float, output, usage);
+    m.constants = shared_buffer(device, submission, {}, sizeof(contracts::DenoiseConstants));
+    // Textures and buffers are allocations (metal-cpp's MTLResource.hpp).
+    const std::array<MTL::Allocation*, 7> textures{m.radiance_in.get(), m.albedo.get(),      m.normal.get(),
+                                                   m.depth.get(),       m.motion.get(),      m.full_albedo.get(),
+                                                   m.radiance_out.get()};
+    for (MTL::Allocation* texture : textures) {
+        m.resident.push_back(submission.keep_resident(texture));
+    }
+    return m;
+}
+
+// Frame k's images, from the fixture's files.
+inline void upload_frame(const DenoiseFixture& fixture, std::size_t k, const FixtureImages& m) {
+    upload(m.radiance_in.get(), output::read_pfm(fixture.file(k, "radiance")));
+    upload(m.albedo.get(), output::read_pfm(fixture.file(k, "albedo")));
+    upload(m.normal.get(), output::read_pfm(fixture.file(k, "normal")));
+    upload(m.depth.get(), output::read_pfm(fixture.file(k, "depth")));
+    upload(m.motion.get(), output::read_pfm(fixture.file(k, "motion")));
+    upload(m.full_albedo.get(), output::read_pfm(fixture.file(k, "full_albedo")));
+}
+
+// A frame's constants: the camera's axes, the sizes, and whether its
+// history is kept.
+inline contracts::DenoiseConstants constants_of(const DenoiseFixture& fixture, const denoise::Network& network,
+                                                const metal::DenoiseImages& images, frame::Extent output,
+                                                bool history) {
+    contracts::DenoiseConstants c{};
+    c.right = fixture.right;
+    c.up = fixture.up;
+    c.backward = fixture.backward;
+    c.light_width = fixture.light.width;
+    c.light_height = fixture.light.height;
+    c.history = history ? 1u : 0u;
+    c.padded_width = images.padded().width;
+    c.padded_height = images.padded().height;
+    c.output_width = output.width;
+    c.output_height = output.height;
+    c.features = network.widths.dec.back();
+    return c;
+}
+
+// Records the pass over `m` into a command buffer of its own, commits it
+// and waits.
+inline void record_frame(metal::Submission& submission, MTL4::ArgumentTable* table, const metal::DenoisePass& pass,
+                         const FixtureImages& m, const metal::DenoiseImages& images, frame::Extent output) {
+    const auto pool = metal::scoped_pool();
+    const metal::FrameSlot begun = submission.begin();
+    MTL4::ComputeCommandEncoder* encoder = begun.commands->computeCommandEncoder();
+    encoder->setArgumentTable(table);
+    metal::FrameResources resources{};
+    resources.arguments = table;
+    resources.size = output;
+    resources.radiance = m.radiance_out.get();
+    resources.albedo = m.albedo.get();
+    resources.normal = m.normal.get();
+    resources.depth = m.depth.get();
+    resources.motion = m.motion.get();
+    resources.light_radiance = m.radiance_in.get();
+    resources.full_albedo = m.full_albedo.get();
+    resources.denoise_constants = m.constants->gpuAddress();
+    resources.denoise = &images;
+    pass.record(encoder, resources);
+    encoder->endEncoding();
+    submission.commit();
+    (void)submission.wait_until_complete(begun.sequence);
+}
+
 }  // namespace detail
 
 // Runs `fixture` through the denoise pass with its network, changed first
@@ -162,85 +242,31 @@ inline std::vector<contracts::LinearImage> run_denoise_fixture(
     metal::Library library(device, metallib::shaders);
     metal::DenoisePass pass(device, library, submission, network);
     metal::DenoiseImages images(device, submission, network.widths);
-    MTL::Device* mtl = device.handle();
     const frame::Extent light = fixture.light;
     const frame::Extent output{contracts::denoise_scale * light.width, contracts::denoise_scale * light.height};
+    const detail::FixtureImages made = detail::make_images(device, submission, light, output);
 
-    using detail::shared_texture;
-    const auto radiance_in = shared_texture(mtl, MTL::PixelFormatRGBA32Float, light);
-    const auto albedo = shared_texture(mtl, MTL::PixelFormatRGBA16Float, light);
-    const auto normal = shared_texture(mtl, MTL::PixelFormatRGBA16Float, light);
-    const auto depth = shared_texture(mtl, MTL::PixelFormatR32Float, light);
-    const auto motion = shared_texture(mtl, MTL::PixelFormatRGBA16Float, light);
-    const auto full_albedo = shared_texture(mtl, MTL::PixelFormatRGBA16Float, output);
-    const auto radiance_out = shared_texture(mtl, MTL::PixelFormatRGBA32Float, output);
-    auto constants = NS::TransferPtr(mtl->newBuffer(sizeof(contracts::DenoiseConstants), MTL::ResourceStorageModeShared));
-    std::vector<metal::Resident> resident;
-    for (MTL::Allocation* a : {static_cast<MTL::Allocation*>(radiance_in.get()), static_cast<MTL::Allocation*>(albedo.get()),
-                               static_cast<MTL::Allocation*>(normal.get()), static_cast<MTL::Allocation*>(depth.get()),
-                               static_cast<MTL::Allocation*>(motion.get()), static_cast<MTL::Allocation*>(full_albedo.get()),
-                               static_cast<MTL::Allocation*>(radiance_out.get()),
-                               static_cast<MTL::Allocation*>(constants.get())}) {
-        resident.push_back(submission.keep_resident(a));
-    }
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
     // Every binding of the pass's kernels (passes/bindings.h, denoise).
     descriptor->setMaxBufferBindCount(bindings::denoise::coarse + 1);
     descriptor->setMaxTextureBindCount(bindings::denoise::radiance + 1);
     NS::Error* error = nullptr;
-    auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
+    auto table = NS::TransferPtr(device.handle()->newArgumentTable(descriptor.get(), &error));
     if (!table) {
         throw std::runtime_error("denoise fixture: no argument table");
     }
 
     std::vector<contracts::LinearImage> outputs;
     for (std::size_t k = 0; k < fixture.frames; ++k) {
-        detail::upload(radiance_in.get(), output::read_pfm(fixture.file(k, "radiance")));
-        detail::upload(albedo.get(), output::read_pfm(fixture.file(k, "albedo")));
-        detail::upload(normal.get(), output::read_pfm(fixture.file(k, "normal")));
-        detail::upload(depth.get(), output::read_pfm(fixture.file(k, "depth")));
-        detail::upload(motion.get(), output::read_pfm(fixture.file(k, "motion")));
-        detail::upload(full_albedo.get(), output::read_pfm(fixture.file(k, "full_albedo")));
-
+        detail::upload_frame(fixture, k, made);
+        // Frame k of a history from frame 0 (reused_since 0, the default).
         frame::FrameInputs inputs{};
         inputs.index = k;
-        inputs.reused_since = 0;
         const bool history = images.prepare(inputs, light);
-        contracts::DenoiseConstants c{};
-        c.right = fixture.right;
-        c.up = fixture.up;
-        c.backward = fixture.backward;
-        c.light_width = light.width;
-        c.light_height = light.height;
-        c.history = history ? 1u : 0u;
-        c.padded_width = images.padded().width;
-        c.padded_height = images.padded().height;
-        c.output_width = output.width;
-        c.output_height = output.height;
-        c.features = network.widths.dec[3];
-        std::memcpy(constants->contents(), &c, sizeof(c));
-
-        const auto pool = metal::scoped_pool();
-        const metal::FrameSlot begun = submission.begin();
-        MTL4::ComputeCommandEncoder* encoder = begun.commands->computeCommandEncoder();
-        encoder->setArgumentTable(table.get());
-        metal::FrameResources resources{};
-        resources.arguments = table.get();
-        resources.size = output;
-        resources.radiance = radiance_out.get();
-        resources.albedo = albedo.get();
-        resources.normal = normal.get();
-        resources.depth = depth.get();
-        resources.motion = motion.get();
-        resources.light_radiance = radiance_in.get();
-        resources.full_albedo = full_albedo.get();
-        resources.denoise_constants = constants->gpuAddress();
-        resources.denoise = &images;
-        pass.record(encoder, resources);
-        encoder->endEncoding();
-        submission.commit();
-        (void)submission.wait_until_complete(begun.sequence);
-        outputs.push_back(detail::download(radiance_out.get()));
+        const contracts::DenoiseConstants c = detail::constants_of(fixture, network, images, output, history);
+        std::memcpy(made.constants->contents(), &c, sizeof(c));
+        detail::record_frame(submission, table.get(), pass, made, images, output);
+        outputs.push_back(detail::download(made.radiance_out.get()));
     }
     submission.finish();
     return outputs;

@@ -12,7 +12,9 @@
 //     converge to the path tracer's mean without it on a caustic, a glass
 //     sphere on a diffuse floor under a small light, to within MNEE's bias,
 //     measured here and stated; and the caustic is counted once, so a build
-//     that counted it both ways (MNEE's and the bounce's) fails.
+//     that counted it both ways (MNEE's and the bounce's) fails. The path
+//     tracer's reference is rendered once for both;
+//   - a request the full work list has no room for is counted lost.
 
 #include <algorithm>
 #include <array>
@@ -21,6 +23,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -29,17 +32,14 @@
 #include "core/contracts/emitter.h"
 #include "core/contracts/medium.h"
 #include "core/contracts/mnee_request.h"
-#include "core/frame/graph_file.h"
 #include "core/scene/scene.h"
 #include "core/shapes/primitive.h"
 #include "gpu/kernels/mnee_probe.h"
 #include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"
-#include "metal/device/device.h"
-#include "metal/device/offscreen.h"
-#include "metal/device/submission.h"
 #include "metal/frame/renderer.h"
 #include "support/scene_text.h"
+#include "support/schedules.h"
 #include "support/vector.h"
 
 using namespace serenity;
@@ -47,10 +47,6 @@ using tests::Binding;
 using tests::Vec3;
 
 namespace {
-
-Vec3 cross(Vec3 a, Vec3 b) {
-    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
-}
 
 // A glass sphere resting on the floor y = 0, the scene's and the probe's.
 constexpr double sphere_radius = 0.5;
@@ -160,10 +156,6 @@ std::optional<Traced> refraction_path(Vec3 x0, Vec3 y) {
     return std::nullopt;
 }
 
-contracts::Float3 f3(Vec3 v) {
-    return {static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z)};
-}
-
 // Floor points in the sphere's shadow of the light point, whose straight
 // segment to it crosses the sphere: four in the caustic's bright core, one
 // at its rim, where G is a hundredth of the core's. Over a grid of the
@@ -178,9 +170,9 @@ const std::array<Vec3, 5> receivers = {Vec3{-0.12, 0.0, 0.08}, Vec3{-0.12, 0.0, 
 TEST_CASE("MNEE's solve: through a glass sphere on a floor, the refraction path and its geometry term") {
     std::vector<tests::MneeQuery> queries;
     for (const Vec3& x0 : receivers) {
-        queries.push_back(tests::MneeQuery{f3(x0), static_cast<float>(ior), f3(light_point),
-                                           static_cast<float>(sphere_radius), f3(sphere_center), 0u,
-                                           f3(light_normal), 0u, {0.0f, 1.0f, 0.0f}, 0u});
+        queries.push_back(tests::MneeQuery{tests::float3(x0), static_cast<float>(ior), tests::float3(light_point),
+                                           static_cast<float>(sphere_radius), tests::float3(sphere_center), 0u,
+                                           tests::float3(light_normal), 0u, {0.0f, 1.0f, 0.0f}, 0u});
     }
     tests::ProbeRunner gpu;
     const std::vector<tests::MneeChain> chains =
@@ -281,45 +273,25 @@ std::string caustic_scene() {
 constexpr frame::Extent caustic_size{96, 96};
 
 // The accumulated image of `frames` frames of `graph` over the caustic.
-std::vector<float> render_caustic(const std::string& graph, std::uint64_t frames) {
-    const scene::SceneDescription description = scene::parse(caustic_scene(), "caustic");
-    metal::Device device;
-    metal::Submission submission(device);
-    metal::Offscreen target(device, submission, caustic_size);
-    metal::Renderer renderer(device, submission, frame::parse_schedule(graph, "graph"), &description);
-    std::uint64_t sequence = 0;
-    for (std::uint64_t i = 0; i < frames; ++i) {
-        sequence = metal::render_to_offscreen(submission, target, renderer,
-                                              tests::frame_at(i, 0, 0.0, description.camera));
-    }
-    (void)submission.wait_until_complete(sequence);
-    CHECK(renderer.non_finite_samples() == 0);
-    std::vector<float> rgba(std::size_t{caustic_size.width} * caustic_size.height * 4);
-    renderer.read_accumulated(rgba);
-    return rgba;
+std::vector<float> render_caustic(const frame::Schedule& graph, std::uint64_t frames) {
+    tests::AccumulatingRig rig(caustic_scene(), graph, caustic_size);
+    return rig.render_accumulated(frames);
 }
 
 // The red channel's mean over the square of half-width `half` about
 // (x, y).
 double mean_red(const std::vector<float>& rgba, std::uint32_t x, std::uint32_t y, std::uint32_t half) {
-    double sum = 0.0;
-    std::uint32_t n = 0;
-    for (std::uint32_t j = y - half; j <= y + half; ++j) {
-        for (std::uint32_t i = x - half; i <= x + half; ++i) {
-            sum += rgba[(std::size_t{j} * caustic_size.width + i) * 4];
-            ++n;
-        }
-    }
-    return sum / n;
+    return tests::patch_mean(rgba, caustic_size, {x, y, half});
 }
 
-constexpr const char* path_graph = "passes = [\"path\", \"display\"]\n";
-constexpr const char* path_mnee_graph = "passes = [\"path\", \"display\"]\nmnee = true\n";
-constexpr const char* restir_pt_mnee_graph =
-    "passes = [\"restir_pt_initial\", \"restir_pt_temporal\", \"restir_pt_spatial\", \"restir_pt_shade\", "
-    "\"restir_pt_duplication\", \"display\"]\nmnee = true\n"
-    "[restir_pt]\nnee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = 0.2\nneighbors = 3\n"
-    "sigma = 16.0\nconfidence_cap = 20.0\ncap_floor = 1.0\ncap_exponent = 0.1\n";
+// The path tracer, with MNEE and without; ReSTIR PT as graphs/restir_pt.toml
+// runs it, with MNEE, its settings the written ones (support/schedules.h).
+frame::Schedule path_graph(bool mnee) {
+    frame::Schedule graph = tests::path_graph();
+    graph.mnee = mnee;
+    return graph;
+}
+const frame::Schedule restir_pt_mnee_graph = tests::restir_pt_graph(tests::restir_pt_passes, true);
 
 // Where the caustic lies in the image (the sphere's shadow on the floor,
 // and the floor seen through the sphere above it) and the whole image,
@@ -348,7 +320,7 @@ struct Region {
 constexpr std::array<Region, 2> regions = {Region{"shadow", 47, 60, 14, 0.85, 1.03},
                                            Region{"whole", 48, 48, 47, 0.99, 1.005}};
 
-void check_caustic(const char* graph, std::uint64_t frames, const std::vector<float>& reference) {
+void check_caustic(const frame::Schedule& graph, std::uint64_t frames, const std::vector<float>& reference) {
     const std::vector<float> image = render_caustic(graph, frames);
     for (const Region& r : regions) {
         const double ratio = mean_red(image, r.x, r.y, r.half) / mean_red(reference, r.x, r.y, r.half);
@@ -384,35 +356,29 @@ TEST_CASE("MNEE: a request the full work list has no room for is counted lost, a
     // fast math, which need not keep one (docs/research/
     // 2026-10-16-codebase-guidelines-pass.md, C14). Now the MNEE pass's grid
     // kernel counts it; the path's sample keeps its other light, finite.
-    const scene::SceneDescription description = scene::parse(light_in_glass_in_a_cavity(), "cavity");
-    constexpr frame::Extent size{32, 32};
-    for (const char* graph : {path_mnee_graph, restir_pt_mnee_graph}) {
-        INFO(graph);
-        metal::Device device;
-        metal::Submission submission(device);
-        metal::Offscreen target(device, submission, size);
-        metal::Renderer renderer(device, submission, frame::parse_schedule(graph, "graph"), &description);
-        std::uint64_t sequence = 0;
-        for (std::uint64_t i = 0; i < 2; ++i) {
-            const frame::FrameInputs inputs = tests::frame_at(i, 0, 0.0, description.camera);
-            sequence = metal::render_to_offscreen(submission, target, renderer, inputs);
-        }
-        (void)submission.wait_until_complete(sequence);
-        MESSAGE("lost requests: " << renderer.mnee_lost_requests());
-        CHECK(renderer.mnee_lost_requests() > 0);
-        CHECK(renderer.non_finite_samples() == 0);
-        std::vector<float> rgba(std::size_t{size.width} * size.height * 4);
-        renderer.read_accumulated(rgba);
+    for (const auto& [name, graph] : {std::pair{"the path tracer with MNEE", path_graph(true)},
+                                      std::pair{"ReSTIR PT with MNEE", restir_pt_mnee_graph}}) {
+        INFO(name);
+        // Two frames; no sample left out for not being finite (the rig's
+        // render() checks it).
+        tests::AccumulatingRig rig(light_in_glass_in_a_cavity(), graph, {32, 32});
+        const std::vector<float> rgba = rig.render_accumulated(2);
+        MESSAGE("lost requests: " << rig.renderer().mnee_lost_requests());
+        CHECK(rig.renderer().mnee_lost_requests() > 0);
         CHECK(std::ranges::all_of(rgba, [](float v) { return std::isfinite(v); }));
     }
 }
 
-TEST_CASE("MNEE: the path tracer with it converges to the caustic the path tracer finds, counting it once") {
-    const std::vector<float> reference = render_caustic(path_graph, 8192);
-    check_caustic(path_mnee_graph, 2048, reference);
-}
-
-TEST_CASE("MNEE: ReSTIR PT with it converges to the caustic the path tracer finds, counting it once") {
-    const std::vector<float> reference = render_caustic(path_graph, 8192);
-    check_caustic(restir_pt_mnee_graph, 1024, reference);
+TEST_CASE("MNEE: the path tracer and ReSTIR PT with it converge to the caustic the path tracer finds, counting "
+          "it once") {
+    // One reference for both, the costliest render here (P.9).
+    const std::vector<float> reference = render_caustic(path_graph(false), 8192);
+    {
+        INFO("the path tracer with MNEE");
+        check_caustic(path_graph(true), 2048, reference);
+    }
+    {
+        INFO("ReSTIR PT with MNEE");
+        check_caustic(restir_pt_mnee_graph, 1024, reference);
+    }
 }

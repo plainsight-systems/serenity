@@ -74,6 +74,7 @@ TEST_CASE("ReSTIR PT's temporal reuse and duplication map: their order, their se
                                           std::string(initial_keys) + std::string(temporal_keys),
                                       "graph.toml");
     CHECK(serenity::frame::reuses_history(alone));
+    REQUIRE(alone.restir_pt.has_value());
     CHECK(alone.restir_pt->confidence_cap == 20.0f);
     CHECK(alone.restir_pt->cap_exponent == 0.0f);
     // The map without temporal reuse, whose cap is all it serves.
@@ -106,6 +107,7 @@ TEST_CASE("ReSTIR PT's temporal reuse and duplication map: their order, their se
     // A floor up to a cap the graph raised is taken.
     const auto raised = parse_schedule(with_map + "confidence_cap = 40.0\ncap_floor = 30.0\ncap_exponent = 0.5\n",
                                        "graph.toml");
+    REQUIRE(raised.restir_pt.has_value());
     CHECK(raised.restir_pt->cap_floor == 30.0f);
 }
 
@@ -160,7 +162,7 @@ TEST_CASE("eq. 3's shuffle count") {
     CHECK(serenity::sampling::shuffle_count(16.0) == 128u);
     // The least sigma, as the graph holds it: one shuffle (the paper's footnote).
     CHECK(serenity::sampling::shuffle_count(static_cast<double>(serenity::contracts::min_pairing_sigma)) == 1u);
-    CHECK_THROWS(serenity::sampling::shuffle_count(0.5));
+    CHECK_THROWS_AS(serenity::sampling::shuffle_count(0.5), std::invalid_argument);
 }
 
 TEST_CASE("a reuse texture pairs every texel with one other, both ways, at a standard deviation of sigma") {

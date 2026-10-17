@@ -4,6 +4,7 @@
 // place is named.
 
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <vector>

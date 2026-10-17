@@ -67,103 +67,33 @@
 #include "metal/device/offscreen.h"
 #include "metal/device/submission.h"
 #include "metal/frame/renderer.h"
+#include "support/lit_floor.h"
 #include "support/references.h"
 #include "support/scene_text.h"
 #include "support/vector.h"
 
 using namespace serenity;
 using tests::camera_text;
+using tests::expected_floor;
+using tests::firefly;
+using tests::furnace;
+using tests::glass_f0;
+using tests::lit_floor;
+using tests::middle_of;
+using tests::one_firefly;
+using tests::Patch;
+using tests::patch_mean;
 using tests::sky;
 using tests::Vec3;
 
 namespace {
 
-// A renderer of the path graph over a scene, at a size, rendering frames
-// that accumulate from frame 0. A fixture: the renderer reads the scene
-// it holds, so it is neither copied nor moved (C.8).
-class Rig {
-public:
-    Rig(const std::string& text, frame::Extent image) : description_(scene::parse(text, "test scene")), size_(image) {}
-
-    // Renders `frames` more frames and returns the last, as displayed, with
-    // every sample of them finite.
-    std::vector<std::uint8_t> render(std::uint64_t frames) {
-        std::uint64_t sequence = 0;
-        for (std::uint64_t i = 0; i < frames; ++i, ++next_) {
-            sequence = metal::render_to_offscreen(submission_, target_, renderer_,
-                                                  tests::frame_at(next_, 0, 0.0, description_.camera));
-        }
-        (void)submission_.wait_until_complete(sequence);
-        CHECK(renderer_.non_finite_samples() == 0);
-        return tests::read_back(target_);
-    }
-
-    // The accumulated image of the frames rendered so far, in floats.
-    std::vector<float> accumulated() {
-        std::vector<float> floats(std::size_t{size_.width} * size_.height * 4);
-        renderer_.read_accumulated(floats);
-        return floats;
-    }
-    void accumulated_into(std::span<float> out) { renderer_.read_accumulated(out); }
-
-    const scene::SceneDescription& description() const noexcept { return description_; }
-    frame::Extent size() const noexcept { return size_; }
-
-private:
-    scene::SceneDescription description_;
-    frame::Extent size_;
-    metal::Device device_;
-    metal::Submission submission_{device_};
-    metal::Offscreen target_{device_, submission_, size_};
-    metal::Renderer renderer_{device_, submission_, tests::path_graph(), &description_};
-    std::uint64_t next_ = 0;
+// The path graph's accumulating rig (gpu/support/rendering.h).
+struct Rig final : tests::AccumulatingRig {
+    Rig(std::string_view text, frame::Extent size) : AccumulatingRig(text, tests::path_graph(), size) {}
 };
-
-// A square of pixels: its middle, and how far it reaches either way.
-struct Patch {
-    std::uint32_t x;
-    std::uint32_t y;
-    std::uint32_t half;
-};
-
-// The mean linear radiance of `channel` over `patch`, which must lie within
-// the image.
-double mean_channel(const std::vector<std::uint8_t>& rgba, frame::Extent size, Patch patch, std::size_t channel) {
-    REQUIRE(patch.x >= patch.half);
-    REQUIRE(patch.y >= patch.half);
-    REQUIRE(patch.x + patch.half < size.width);
-    REQUIRE(patch.y + patch.half < size.height);
-    double sum = 0.0;
-    std::uint32_t count = 0;
-    for (std::uint32_t y = patch.y - patch.half; y <= patch.y + patch.half; ++y) {
-        for (std::uint32_t x = patch.x - patch.half; x <= patch.x + patch.half; ++x) {
-            sum += tests::linear_of(rgba[(std::size_t{y} * size.width + x) * 4 + channel]);
-            ++count;
-        }
-    }
-    return sum / count;
-}
-
-// The red channel's.
-double mean_red(const std::vector<std::uint8_t>& rgba, frame::Extent size, Patch patch) {
-    return mean_channel(rgba, size, patch, 0);
-}
-
-// A sphere of radius 1 at the origin of `material`, under a sky of 0.5
-// every way, seen from 4 away: the furnace.
-std::string furnace(const std::string& material) {
-    return camera_text("[0, 0, 4]", "[0, 0, 0]", 30) + sky("[0.5, 0.5, 0.5]", "[0.5, 0.5, 0.5]") +
-           "[materials.m]\n" + material +
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"m\"\n";
-}
 
 constexpr frame::Extent square{64, 64};
-
-// The square of half-width `half` in the middle of an image of `size`.
-constexpr Patch middle_of(frame::Extent size, std::uint32_t half) {
-    return {size.width / 2, size.height / 2, half};
-}
-
 constexpr Patch middle = middle_of(square, 6);
 
 }  // namespace
@@ -174,8 +104,8 @@ TEST_CASE("furnace: a white Lambert sphere under a uniform sky converges to the 
     Rig rig(furnace("kind = \"rough\"\ncolor = [1, 1, 1]\n"), square);
     const auto image = rig.render(1024);
     // The sphere's middle, and the sky beside it.
-    CHECK(mean_red(image, rig.size(), middle) == doctest::Approx(0.5).scale(0).epsilon(0.02));
-    CHECK(mean_red(image, rig.size(), {3, 3, 2}) == doctest::Approx(0.5).scale(0).epsilon(0.01));
+    CHECK(patch_mean(image, rig.size(), middle) == doctest::Approx(0.5).scale(0).epsilon(0.02));
+    CHECK(patch_mean(image, rig.size(), {3, 3, 2}) == doctest::Approx(0.5).scale(0).epsilon(0.01));
 }
 
 TEST_CASE("integrating sphere: light bounced many times inside a white sphere converges to its closed form") {
@@ -204,7 +134,7 @@ TEST_CASE("integrating sphere: light bounced many times inside a white sphere co
     Rig rig(text, square);
     const auto image = rig.render(2048);
     const double expected = rho * radiance * ratio * ratio / (1.0 - rho);  // 0.45, within what the display shows
-    CHECK(mean_red(image, rig.size(), middle_of(square, 8)) == doctest::Approx(expected).scale(0).epsilon(0.03));
+    CHECK(patch_mean(image, rig.size(), middle_of(square, 8)) == doctest::Approx(expected).scale(0).epsilon(0.03));
 }
 
 TEST_CASE("furnace: a glass sphere under a uniform sky converges to the sky") {
@@ -212,7 +142,7 @@ TEST_CASE("furnace: a glass sphere under a uniform sky converges to the sky") {
     // with the sky's radiance, the 1 / eta^2 of entering undone by leaving.
     Rig rig(furnace("kind = \"dielectric\"\nior = 1.5\n"), square);
     const auto image = rig.render(512);
-    CHECK(mean_red(image, rig.size(), middle) == doctest::Approx(0.5).scale(0).epsilon(0.02));
+    CHECK(patch_mean(image, rig.size(), middle) == doctest::Approx(0.5).scale(0).epsilon(0.02));
 }
 
 TEST_CASE("furnace: a white coated sphere under a uniform sky converges to the sky") {
@@ -220,17 +150,14 @@ TEST_CASE("furnace: a white coated sphere under a uniform sky converges to the s
     // share and the base's (materials/coated.h).
     Rig rig(furnace("kind = \"coated\"\ncolor = [1, 1, 1]\nior = 1.5\n"), square);
     const auto image = rig.render(1024);
-    CHECK(mean_red(image, rig.size(), middle) == doctest::Approx(0.5).scale(0).epsilon(0.02));
+    CHECK(patch_mean(image, rig.size(), middle) == doctest::Approx(0.5).scale(0).epsilon(0.02));
 }
 
 namespace {
 
-// Glass's reflectance head on, F0 = ((1.5 - 1) / (1.5 + 1))^2, and what a
-// sphere of it filled with a medium returns through its middle under a sky
-// of L: every exit, front or back, sees L, L (F + (1 - F)^2 tau /
-// (1 - F tau)), tau what one crossing keeps.
-constexpr double glass_f0 = 0.04;
-
+// What a sphere of glass (F0, support/references.h) filled with a medium
+// returns through its middle under a sky of L: every exit, front or back,
+// sees L, L (F + (1 - F)^2 tau / (1 - F tau)), tau what one crossing keeps.
 double through_filled_glass(double sky_radiance, double tau) {
     return sky_radiance *
            (glass_f0 + (1.0 - glass_f0) * (1.0 - glass_f0) * tau / (1.0 - glass_f0 * tau));
@@ -243,14 +170,14 @@ TEST_CASE("an absorbing medium at a bead's scale: its stretch measured from the 
     const auto image = rig.render(2048);
     const double expected = through_filled_glass(0.5, std::exp(-1.4));  // 2 mm of 700 per meter
     INFO("expected red " << expected);
-    CHECK(mean_red(image, rig.size(), middle_of(square, 1)) == doctest::Approx(expected).scale(0).epsilon(0.03));
+    CHECK(patch_mean(image, rig.size(), middle_of(square, 1)) == doctest::Approx(expected).scale(0).epsilon(0.03));
 }
 
 TEST_CASE("a light inside the same medium as the surface it lights: its light dimmed over the shadow ray") {
     Rig rig(tests::core_lit_inside_glass(), square);
     const auto image = rig.render(2048);
     const Patch core = middle_of(square, 2);
-    const double ratio = mean_channel(image, rig.size(), core, 0) / mean_channel(image, rig.size(), core, 1);
+    const double ratio = patch_mean(image, rig.size(), core, 0) / patch_mean(image, rig.size(), core, 1);
     const double sigma = std::log(2.0);
     INFO("red over green " << ratio);
     CHECK(ratio == doctest::Approx(std::exp(-sigma * tests::camera_to_core) * std::exp(-sigma * tests::light_to_core))
@@ -267,7 +194,7 @@ TEST_CASE("a coated sphere of black base shows its coat alone: F0 of the sky at 
     // 25 pixels some 1.5%, with 8-bit rounding beside it.
     Rig rig(text, square);
     const auto image = rig.render(4096);
-    CHECK(mean_red(image, rig.size(), middle_of(square, 2)) == doctest::Approx(glass_f0).scale(0).epsilon(0.07));
+    CHECK(patch_mean(image, rig.size(), middle_of(square, 2)) == doctest::Approx(glass_f0).scale(0).epsilon(0.07));
 }
 
 TEST_CASE("an absorbing medium in glass: through its middle, what Beer and Lambert and Fresnel leave") {
@@ -285,48 +212,12 @@ TEST_CASE("an absorbing medium in glass: through its middle, what Beer and Lambe
     const double expected = through_filled_glass(0.5, 0.25);
     INFO("expected red " << expected);
     const Patch through = middle_of(square, 1);
-    CHECK(mean_channel(image, rig.size(), through, 0) == doctest::Approx(expected).scale(0).epsilon(0.03));
-    CHECK(mean_channel(image, rig.size(), through, 1) == doctest::Approx(0.5).scale(0).epsilon(0.02));
-    CHECK(mean_channel(image, rig.size(), through, 2) == doctest::Approx(0.5).scale(0).epsilon(0.02));
+    CHECK(patch_mean(image, rig.size(), through, 0) == doctest::Approx(expected).scale(0).epsilon(0.03));
+    CHECK(patch_mean(image, rig.size(), through, 1) == doctest::Approx(0.5).scale(0).epsilon(0.02));
+    CHECK(patch_mean(image, rig.size(), through, 2) == doctest::Approx(0.5).scale(0).epsilon(0.02));
 }
 
 namespace {
-
-constexpr double floor_albedo = 0.8;
-
-std::string lit_floor(const std::string& fireflies) {
-    return camera_text("[0, 2, 3]", "[0, 0, 0]", 50) + sky("[0, 0, 0]", "[0, 0, 0]") +
-           "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
-           "[materials.glow]\nkind = \"emissive\"\nradiance = [200, 200, 200]\n"
-           "[[shapes]]\nkind = \"box\"\nmin = [-50, -1, -50]\nmax = [50, 0, 50]\nmaterial = \"floor\"\n" +
-           fireflies;
-}
-
-std::string firefly(const char* center) {
-    return std::string("[[shapes]]\nkind = \"sphere\"\ncenter = ") + center + "\nradius = 0.05\nmaterial = \"glow\"\n";
-}
-
-const std::string one_firefly = firefly("[0.3, 2.5, -0.5]");
-
-// albedo x L sin^2 cos, summed over the lights, at the floor point the
-// image's point (x, y) sees, in pixels from the top left: pixel (i, j)'s
-// center is (i + 0.5, j + 0.5).
-double expected_floor(const scene::SceneDescription& description, frame::Extent size, double x, double y) {
-    const contracts::CameraData c = camera::shader_form(description.camera, size);
-    const Vec3 d = tests::camera_direction(c, x, y, size);
-    const Vec3 p = tests::vec(c.origin) + (-c.origin.y / d.y) * d;
-    double sum = 0.0;
-    for (const lights::SphereLightData& light : description.sphere_lights) {
-        // Where its shape is, and how big: the transform's translation and
-        // scale (contracts/transform.h).
-        const contracts::Transform& placed = description.shapes.transforms.at(light.shape);
-        const double radius = placed.m[0][0];
-        const Vec3 to = tests::vec(contracts::translation(placed)) - p;
-        const double d2 = dot(to, to);
-        sum += floor_albedo * light.radiance.x * (radius * radius / d2) * (to.y / std::sqrt(d2));
-    }
-    return sum;
-}
 
 void check_floor(const std::string& text, std::uint64_t frames) {
     Rig rig(text, {64, 48});
@@ -336,7 +227,7 @@ void check_floor(const std::string& text, std::uint64_t frames) {
         // formula varies little over three pixels of floor.
         const double expected = expected_floor(rig.description(), rig.size(), pixel.x + 0.5, pixel.y + 0.5);
         INFO("pixel " << pixel.x << ", " << pixel.y << ": expected " << expected);
-        CHECK(mean_red(image, rig.size(), {pixel.x, pixel.y, 1}) == doctest::Approx(expected).scale(0).epsilon(0.03));
+        CHECK(patch_mean(image, rig.size(), {pixel.x, pixel.y, 1}) == doctest::Approx(expected).scale(0).epsilon(0.03));
     }
 }
 
@@ -371,8 +262,7 @@ TEST_CASE("MIS: a firefly millimeters across, just over a floor, converges to al
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.02, 0]\nradius = 0.003\nmaterial = \"glow\"\n";
     constexpr frame::Extent size{64, 48};
     Rig rig(text, size);
-    (void)rig.render(65536);
-    const std::vector<float> image = rig.accumulated();
+    const std::vector<float> image = rig.render_accumulated(65536);
     constexpr std::uint32_t within = 4;  // points a side in each pixel
     for (const tests::Pixel pixel : {tests::Pixel{16, 24}, tests::Pixel{48, 30}, tests::Pixel{32, 40},
                                      tests::Pixel{24, 12}, tests::Pixel{32, 24}}) {
@@ -384,7 +274,7 @@ TEST_CASE("MIS: a firefly millimeters across, just over a floor, converges to al
             }
         }
         expected /= within * within;
-        const double rendered = image[(std::size_t{pixel.y} * size.width + pixel.x) * 4];
+        const double rendered = patch_mean(image, size, {pixel.x, pixel.y, 0});
         INFO("pixel " << pixel.x << ", " << pixel.y << ": rendered " << rendered << ", expected " << expected);
         MESSAGE("pixel " << pixel.x << ", " << pixel.y << ": rendered " << rendered << ", expected " << expected
                          << ", rendered / expected - 1 = " << (rendered / expected - 1.0) * 100.0 << "%");
@@ -428,9 +318,10 @@ TEST_CASE("the accumulated image reads back only whole, and only when there is o
     Rig rig(lit_floor(one_firefly), {8, 6});
     std::vector<float> wrong(8 * 6 * 4 - 1);
     // Before any frame there is no image to read.
-    CHECK_THROWS_WITH_AS(rig.accumulated_into(wrong), doctest::Contains("no frame has made"), metal::MetalError);
+    CHECK_THROWS_WITH_AS(rig.renderer().read_accumulated(wrong), doctest::Contains("no frame has made"),
+                         metal::MetalError);
     (void)rig.render(1);
-    CHECK_THROWS_WITH_AS(rig.accumulated_into(wrong), doctest::Contains("floats given"), metal::MetalError);
+    CHECK_THROWS_WITH_AS(rig.renderer().read_accumulated(wrong), doctest::Contains("floats given"), metal::MetalError);
     metal::Device device;
     metal::Submission submission(device);
     metal::Renderer preview(device, submission, tests::preview_graph(), &rig.description());
@@ -533,7 +424,7 @@ TEST_CASE("the camera sees a light's glow, through the emitter") {
     const auto image = rig.render(4);
     for (std::size_t c = 0; c < 3; ++c) {
         INFO("channel " << c);
-        CHECK(mean_channel(image, rig.size(), middle_of(rig.size(), 2), c) ==
+        CHECK(patch_mean(image, rig.size(), middle_of(rig.size(), 2), c) ==
               doctest::Approx(radiance[c]).scale(0).epsilon(0.01));
     }
 }
@@ -639,12 +530,26 @@ struct WeightSums {
 // the surface's point, as 7751a65 did.
 enum class LightFrom : std::uint32_t { path_tracer = 0, surface_point = 1 };
 
+// How the probe's two steps weigh: step 5 choosing among `light_count`
+// lights, step 3 weighing the light a bounce strikes as one of
+// `struck_light_count`, step 5 drawing `from` (I.24: two counts by name).
+struct Weighing {
+    std::uint32_t light_count = 0;
+    std::uint32_t struck_light_count = 0;
+    LightFrom from = LightFrom::path_tracer;
+};
+
 WeightSums weight_sums(tests::ProbeRunner& gpu, const contracts::Bsdf& bsdf, const tests::ProbeLight& light,
-                       std::uint32_t light_count, std::uint32_t struck_light_count,
-                       LightFrom from = LightFrom::path_tracer) {
+                       Weighing weighing) {
     constexpr std::uint32_t draws = 4096;
-    const tests::MisQuery query{{0.0f, 0.0f, 0.0f}, draws,   mis_wo, light_count, {0.0f, 1.0f, 0.0f},
-                                struck_light_count, static_cast<std::uint32_t>(from), {0u, 0u, 0u}};
+    const tests::MisQuery query{{0.0f, 0.0f, 0.0f},
+                                draws,
+                                mis_wo,
+                                weighing.light_count,
+                                {0.0f, 1.0f, 0.0f},
+                                weighing.struck_light_count,
+                                static_cast<std::uint32_t>(weighing.from),
+                                {0u, 0u, 0u}};
     const std::vector<tests::MisDraw> results = tests::run_with_light<tests::MisDraw>(
         gpu, "mis_weights", 2 * draws, light, {tests::Binding::of(query), tests::Binding::of(bsdf)});
     WeightSums sums;
@@ -685,7 +590,7 @@ TEST_CASE("MIS: for a direction both strategies draw, the light sample's weight 
         {{"firefly 0.3 across at 1.6", mis_light}, {"firefly 3 mm across at 2 cm", near_light}}};
     for (const auto& [light_name, light] : lights) {
         for (const auto& [name, bsdf] : surfaces) {
-            const WeightSums sums = weight_sums(gpu, bsdf, light, 4, 4);
+            const WeightSums sums = weight_sums(gpu, bsdf, light, {.light_count = 4, .struck_light_count = 4});
             INFO(light_name << ", " << name << ": " << sums.both << " directions both draw (" << sums.by_bsdf_both
                             << " of them the BSDF's), worst |w_l + w_b - 1| " << sums.worst
                             << ", worst |w_b - 1| alone " << sums.worst_alone);
@@ -704,7 +609,7 @@ TEST_CASE("MIS: for a direction both strategies draw, the light sample's weight 
             // of the weight at the conductor, where the strategies share
             // it; less at the Lambert surface, where the light's density
             // dominates both.
-            const WeightSums wrong = weight_sums(gpu, bsdf, light, 4, 1);
+            const WeightSums wrong = weight_sums(gpu, bsdf, light, {.light_count = 4, .struck_light_count = 1});
             MESSAGE(light_name << ", " << name << ", step 3's P of 1 against step 5's 1 / 4: worst |w_l + w_b - 1| "
                                << wrong.worst);
             CHECK(wrong.worst > 10.0 * tolerance);
@@ -718,7 +623,8 @@ TEST_CASE("MIS: for a direction both strategies draw, the light sample's weight 
     // firefly the two points' densities differ within the rounding: why the
     // check above asks at the near one too.
     for (const auto& [name, bsdf] : surfaces) {
-        const WeightSums wrong = weight_sums(gpu, bsdf, near_light, 4, 4, LightFrom::surface_point);
+        const WeightSums wrong = weight_sums(
+            gpu, bsdf, near_light, {.light_count = 4, .struck_light_count = 4, .from = LightFrom::surface_point});
         MESSAGE("firefly 3 mm across at 2 cm, " << name << ", step 5 from the surface's point: worst |w_l + w_b - 1| "
                                                 << wrong.worst << ", worst |w_b - 1| alone " << wrong.worst_alone);
         CHECK(wrong.worst_either() > 10.0 * tolerance);
@@ -792,6 +698,54 @@ std::string glossy_floor() {
            "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.7155418, -1.4310835]\nradius = 0.3\nmaterial = \"glow\"\n";
 }
 
+constexpr std::uint32_t within = 4;  // points a side in each pixel
+
+// The light integral probe's queries at the floor points `pixels` see, 4 x 4
+// points in each, pixel k's the k-th 16, asked from where the path tracer's
+// rays leave the floor (`at_point` 0) or from the floor's point itself (1).
+std::vector<tests::DirectQuery> highlight_queries(const scene::SceneDescription& description, frame::Extent size,
+                                                  std::span<const tests::Pixel> pixels, std::uint32_t at_point) {
+    constexpr std::uint32_t cone_grid = 128;
+    const contracts::CameraData c = camera::shader_form(description.camera, size);
+    std::vector<tests::DirectQuery> queries;
+    for (const tests::Pixel pixel : pixels) {
+        for (std::uint32_t j = 0; j < within; ++j) {
+            for (std::uint32_t i = 0; i < within; ++i) {
+                const double x = pixel.x + (i + 0.5) / within;
+                const double y = pixel.y + (j + 0.5) / within;
+                const Vec3 d = tests::camera_direction(c, x, y, size);
+                const Vec3 p = tests::floor_point(description, size, x, y);
+                queries.push_back({{static_cast<float>(p.x), 0.0f, static_cast<float>(p.z)},
+                                   cone_grid,
+                                   tests::float3(-d),
+                                   1u,
+                                   {0.0f, 1.0f, 0.0f},
+                                   at_point});
+            }
+        }
+    }
+    return queries;
+}
+
+// Pixel k's integral: the mean over its points, and the share of it step
+// 5's weighted light samples carry.
+struct PixelIntegral {
+    double direct = 0.0;
+    double light_share = 0.0;
+};
+
+PixelIntegral pixel_integral(std::span<const tests::DirectIntegral> integrals, std::size_t k) {
+    constexpr std::size_t points = within * within;
+    REQUIRE((k + 1) * points <= integrals.size());
+    double sum = 0.0;
+    double light_part = 0.0;
+    for (std::size_t q = k * points; q < (k + 1) * points; ++q) {
+        sum += integrals[q].direct;
+        light_part += static_cast<double>(integrals[q].direct) * integrals[q].light_share;
+    }
+    return {sum / points, light_part / sum};
+}
+
 }  // namespace
 
 TEST_CASE("MIS: a glossy floor's highlight of a firefly converges to the light's integral, each strategy a large share") {
@@ -807,45 +761,21 @@ TEST_CASE("MIS: a glossy floor's highlight of a firefly converges to the light's
     // a light sample unweighted, is off by a third or more.
     constexpr frame::Extent size{64, 48};
     Rig rig(glossy_floor(), size);
-    const contracts::CameraData c = camera::shader_form(rig.description().camera, size);
     const contracts::Bsdf bsdf = floor_bsdf(contracts::BsdfKind::conductor, glossy_roughness * glossy_roughness);
-    constexpr std::uint32_t within = 4;  // points a side in each pixel
-    constexpr std::uint32_t cone_grid = 128;
     const std::array<tests::Pixel, 6> pixels{{{32, 24}, {32, 16}, {36, 24}, {28, 20}, {32, 20}, {35, 28}}};
-    std::vector<tests::DirectQuery> queries;
-    for (const tests::Pixel pixel : pixels) {
-        for (std::uint32_t j = 0; j < within; ++j) {
-            for (std::uint32_t i = 0; i < within; ++i) {
-                const Vec3 d = tests::camera_direction(c, pixel.x + (i + 0.5) / within, pixel.y + (j + 0.5) / within,
-                                                       size);
-                const Vec3 p = tests::vec(c.origin) + (-c.origin.y / d.y) * d;
-                queries.push_back({{static_cast<float>(p.x), 0.0f, static_cast<float>(p.z)},
-                                   cone_grid,
-                                   {static_cast<float>(-d.x), static_cast<float>(-d.y), static_cast<float>(-d.z)},
-                                   1u,
-                                   {0.0f, 1.0f, 0.0f},
-                                   0u});
-            }
-        }
-    }
+    const std::vector<tests::DirectQuery> queries = highlight_queries(rig.description(), size, pixels, 0u);
     tests::ProbeRunner gpu;
     const auto count = static_cast<std::uint32_t>(queries.size());
     const std::vector<tests::DirectIntegral> integrals = tests::run_with_light<tests::DirectIntegral>(
         gpu, "light_integral", count, highlight_light,
         {tests::Binding::of(queries), tests::Binding::of(count), tests::Binding::of(bsdf)});
 
-    (void)rig.render(65536);
-    const std::vector<float> image = rig.accumulated();
+    const std::vector<float> image = rig.render_accumulated(65536);
     for (std::size_t k = 0; k < pixels.size(); ++k) {
-        double expected = 0.0;
-        double light_part = 0.0;
-        for (std::size_t q = k * within * within; q < (k + 1) * within * within; ++q) {
-            expected += integrals[q].direct;
-            light_part += static_cast<double>(integrals[q].direct) * integrals[q].light_share;
-        }
-        const double share = light_part / expected;
-        expected /= within * within;
-        const double rendered = image[(std::size_t{pixels[k].y} * size.width + pixels[k].x) * 4];
+        const PixelIntegral integral = pixel_integral(integrals, k);
+        const double expected = integral.direct;
+        const double share = integral.light_share;
+        const double rendered = patch_mean(image, size, {pixels[k].x, pixels[k].y, 0});
         INFO("pixel " << pixels[k].x << ", " << pixels[k].y << ": rendered " << rendered << ", expected " << expected
                       << ", the light samples' share " << share);
         MESSAGE("pixel " << pixels[k].x << ", " << pixels[k].y << ": rendered " << rendered << ", expected "
@@ -895,51 +825,25 @@ TEST_CASE("MIS: a glossy floor's highlight of a firefly millimeters across conve
     // of the pixels.
     constexpr frame::Extent size{64, 48};
     Rig rig(near_glossy_floor(), size);
-    const contracts::CameraData c = camera::shader_form(rig.description().camera, size);
     const contracts::Bsdf bsdf = floor_bsdf(contracts::BsdfKind::conductor, glossy_roughness * glossy_roughness);
-    constexpr std::uint32_t within = 4;  // points a side in each pixel
-    constexpr std::uint32_t cone_grid = 128;
     const std::array<tests::Pixel, 6> pixels{{{32, 24}, {32, 20}, {32, 16}, {28, 20}, {32, 28}, {36, 28}}};
-    std::vector<tests::DirectQuery> queries;
-    for (const std::uint32_t at_point : {0u, 1u}) {
-        for (const tests::Pixel pixel : pixels) {
-            for (std::uint32_t j = 0; j < within; ++j) {
-                for (std::uint32_t i = 0; i < within; ++i) {
-                    const Vec3 d = tests::camera_direction(c, pixel.x + (i + 0.5) / within,
-                                                           pixel.y + (j + 0.5) / within, size);
-                    const Vec3 p = tests::vec(c.origin) + (-c.origin.y / d.y) * d;
-                    queries.push_back({{static_cast<float>(p.x), 0.0f, static_cast<float>(p.z)},
-                                       cone_grid,
-                                       {static_cast<float>(-d.x), static_cast<float>(-d.y), static_cast<float>(-d.z)},
-                                       1u,
-                                       {0.0f, 1.0f, 0.0f},
-                                       at_point});
-                }
-            }
-        }
-    }
+    // From where rays leave the floor, then from the floor's point.
+    std::vector<tests::DirectQuery> queries = highlight_queries(rig.description(), size, pixels, 0u);
+    const std::vector<tests::DirectQuery> from_point = highlight_queries(rig.description(), size, pixels, 1u);
+    queries.insert(queries.end(), from_point.begin(), from_point.end());
     tests::ProbeRunner gpu;
     const auto count = static_cast<std::uint32_t>(queries.size());
     const std::vector<tests::DirectIntegral> integrals = tests::run_with_light<tests::DirectIntegral>(
         gpu, "light_integral", count, near_highlight_light,
         {tests::Binding::of(queries), tests::Binding::of(count), tests::Binding::of(bsdf)});
 
-    (void)rig.render(65536);
-    const std::vector<float> image = rig.accumulated();
-    const std::size_t per_point = pixels.size() * within * within;
+    const std::vector<float> image = rig.render_accumulated(65536);
     for (std::size_t k = 0; k < pixels.size(); ++k) {
-        double expected = 0.0;
-        double at_point = 0.0;
-        double light_part = 0.0;
-        for (std::size_t q = k * within * within; q < (k + 1) * within * within; ++q) {
-            expected += integrals[q].direct;
-            at_point += integrals[per_point + q].direct;
-            light_part += static_cast<double>(integrals[q].direct) * integrals[q].light_share;
-        }
-        const double share = light_part / expected;
-        expected /= within * within;
-        at_point /= within * within;
-        const double rendered = image[(std::size_t{pixels[k].y} * size.width + pixels[k].x) * 4];
+        const PixelIntegral integral = pixel_integral(integrals, k);
+        const double expected = integral.direct;
+        const double at_point = pixel_integral(integrals, pixels.size() + k).direct;
+        const double share = integral.light_share;
+        const double rendered = patch_mean(image, size, {pixels[k].x, pixels[k].y, 0});
         INFO("pixel " << pixels[k].x << ", " << pixels[k].y << ": rendered " << rendered << ", expected " << expected
                       << ", from the floor's point " << at_point << ", the light samples' share " << share);
         MESSAGE("pixel " << pixels[k].x << ", " << pixels[k].y << ": rendered " << rendered << ", expected "
@@ -965,16 +869,7 @@ TEST_CASE("MIS: a firefly a delta lobe mirrors is counted in full: a black coate
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"black\"\n"
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 7]\nradius = 1.5\nmaterial = \"glow\"\n";
     Rig rig(text, square);
-    (void)rig.render(4096);
-    const std::vector<float> image = rig.accumulated();
-    const Patch patch = middle_of(square, 2);
-    double sum = 0.0;
-    for (std::uint32_t y = patch.y - patch.half; y <= patch.y + patch.half; ++y) {
-        for (std::uint32_t x = patch.x - patch.half; x <= patch.x + patch.half; ++x) {
-            sum += image[(std::size_t{y} * square.width + x) * 4];
-        }
-    }
-    const double mean = sum / ((2 * patch.half + 1) * (2 * patch.half + 1));
+    const double mean = patch_mean(rig.render_accumulated(4096), square, middle_of(square, 2));
     MESSAGE("the coat's middle: " << mean << ", F0 L " << glass_f0 * 25.0);
     CHECK(mean == doctest::Approx(glass_f0 * 25.0).scale(0).epsilon(0.05));
 }

@@ -131,6 +131,7 @@ TEST_CASE("every key of a graph with both merges is read, as written") {
                             "depth_threshold = 0.1\nnormal_threshold = 0.5\nbias_correction = \"raytraced\"\n"
                             "bsdf_candidates = 1\n",
         "graph.toml");
+    REQUIRE(raytraced.restir_di.has_value());
     CHECK(raytraced.restir_di->bias_correction == BiasCorrection::raytraced);
     CHECK(raytraced.restir_di->permutation == Permutation::off);
     // Basic with reuse off: age and distance not read.
@@ -139,6 +140,7 @@ TEST_CASE("every key of a graph with both merges is read, as written") {
                             "depth_threshold = 0.1\nnormal_threshold = 0.5\nbias_correction = \"basic\"\n"
                             "visibility_reuse = false\nbsdf_candidates = 1\n",
         "graph.toml");
+    REQUIRE(unreused.restir_di.has_value());
     CHECK(unreused.restir_di->visibility_reuse == VisibilityReuse::off);
     CHECK(unreused.restir_di->visibility_age == 0u);
 }

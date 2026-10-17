@@ -28,6 +28,7 @@
 #include "support/ball_jobs.h"
 #include "support/ball_on_floor.h"
 #include "support/text.h"
+#include "support/vector.h"
 
 using namespace serenity;
 using frame::Seconds;
@@ -154,9 +155,7 @@ TEST_CASE("a flight is a function of its seed") {
     const contracts::Float3 pa = animation::position(the_flight(a), Seconds(20.0));
     const contracts::Float3 pb = animation::position(the_flight(b), Seconds(20.0));
     const contracts::Float3 pc = animation::position(the_flight(c), Seconds(20.0));
-    CHECK(pa.x == pb.x);
-    CHECK(pa.y == pb.y);
-    CHECK(pa.z == pb.z);
+    CHECK(tests::same(pa, pb));
     CHECK(pa.x != pc.x);
 }
 
@@ -332,12 +331,20 @@ motion = { kind = "flight", min = [-0.9, 0.76, -0.9], max = [0.9, 2.0, 0.9], tar
     CHECK(lowest - firefly_radius >= volume_floor);
 }
 
+namespace {
+
+// One seed's loop, as the development machine's toolchain, libm and flags
+// make it (flight.h, GDSA.2).
+constexpr double pinned_loop = 0x1.016e3730c1826p+9;
+
+}  // namespace
+
 TEST_CASE("one seed's loop, pinned: the level of determinism flight.h states") {
     // On the development machine's toolchain, libm and flags (flight.h,
     // GDSA.2): a change of any of them that moves the loop fails here.
     const scene::SceneDescription s = scene::parse(flying(), "flight");
     const animation::Flight& f = the_flight(s);
-    CHECK(f.loop == 0x1.016e3730c1826p+9);
+    CHECK(f.loop == pinned_loop);
     CHECK(f.segments.size() == 138);
     CHECK(f.flashes.starts.size() == 63);
     const contracts::Float3 at_20 = animation::position(f, Seconds(20.0));
@@ -610,10 +617,6 @@ animation::FlightJob job_with(const animation::Prelude& prelude, contracts::Floa
 // above it.
 constexpr contracts::Float3 ball_top{0.0f, static_cast<float>(1.0 + body + animation::perch_gap), 0.0f};
 
-bool same(contracts::Float3 a, contracts::Float3 b) {
-    return a.x == b.x && a.y == b.y && a.z == b.z;
-}
-
 double apart(contracts::Float3 a, contracts::Float3 b) {
     const double dx = static_cast<double>(a.x) - static_cast<double>(b.x);
     const double dy = static_cast<double>(a.y) - static_cast<double>(b.y);
@@ -634,7 +637,7 @@ TEST_CASE("no prelude: the flight it was, the pinned loop's, with no opening and
     const animation::Flight& pinned = the_flight(s);
     const animation::Flight f = animation::make_flight(job_with(animation::NoPrelude{}), obstacles);
     CHECK(f.loop == pinned.loop);
-    CHECK(f.loop == 0x1.016e3730c1826p+9);
+    CHECK(f.loop == pinned_loop);
     REQUIRE(f.segments.size() == pinned.segments.size());
     int differ = 0;
     for (std::size_t k = 0; k < f.segments.size(); ++k) {
@@ -650,8 +653,8 @@ TEST_CASE("no prelude: the flight it was, the pinned loop's, with no opening and
     CHECK(f.flashes.begin == 0.0);
     CHECK(f.flashes.opening.empty());
     const animation::Extent reach = animation::extent(f);
-    CHECK(same(reach.min, f.volume.min));
-    CHECK(same(reach.max, f.volume.max));
+    CHECK(tests::same(reach.min, f.volume.min));
+    CHECK(tests::same(reach.max, f.volume.max));
     // A hold of no length is no opening either.
     const animation::Flight held = animation::make_flight(job_with(animation::Hold{.until = 0.0}), obstacles);
     CHECK(held.opening.empty());
@@ -659,7 +662,7 @@ TEST_CASE("no prelude: the flight it was, the pinned loop's, with no opening and
     CHECK(held.loop == f.loop);
     // Before 0, as before preludes: the loop repeats.
     for (const double t : {-0.5, -17.25, -600.0}) {
-        CHECK(same(animation::position(f, Seconds(t)), animation::position(f, Seconds(t + f.loop))));
+        CHECK(tests::same(animation::position(f, Seconds(t)), animation::position(f, Seconds(t + f.loop))));
     }
 }
 
@@ -680,16 +683,17 @@ TEST_CASE("a hold: still at the loop's first point until `until`, then the fligh
     // t, and the shifted flight is the same bit for bit.
     int differ = 0;
     for (int i = -8; i <= 32; ++i) {
-        differ += same(animation::position(held, Seconds(static_cast<double>(i) * 0.25)), first) ? 0 : 1;
+        differ += tests::same(animation::position(held, Seconds(static_cast<double>(i) * 0.25)), first) ? 0 : 1;
     }
     for (int i = 0; i < 4 * 700; ++i) {
         const double t = static_cast<double>(i) * 0.25;
-        differ += same(animation::position(held, Seconds(t + until)), animation::position(plain, Seconds(t))) ? 0 : 1;
+        differ +=
+            tests::same(animation::position(held, Seconds(t + until)), animation::position(plain, Seconds(t))) ? 0 : 1;
     }
     CHECK(differ == 0);
     // Its reach is its volume: the loop's first point is inside it.
-    CHECK(same(animation::extent(held).min, held.volume.min));
-    CHECK(same(animation::extent(held).max, held.volume.max));
+    CHECK(tests::same(animation::extent(held).min, held.volume.min));
+    CHECK(tests::same(animation::extent(held).max, held.volume.max));
 }
 
 TEST_CASE("a perch: at rest until `until`, then a rise from rest, smooth into the loop, clear of every surface") {
@@ -711,7 +715,7 @@ TEST_CASE("a perch: at rest until `until`, then a rise from rest, smooth into th
     // At the perch from before 0 to until.
     int away = 0;
     for (int i = -4; i <= 50; ++i) {
-        away += same(animation::position(f, Seconds(static_cast<double>(i) * 0.1)), ball_top) ? 0 : 1;
+        away += tests::same(animation::position(f, Seconds(static_cast<double>(i) * 0.1)), ball_top) ? 0 : 1;
     }
     CHECK(away == 0);
     // Continuous through both joins, in position and in velocity, by finite
@@ -732,7 +736,7 @@ TEST_CASE("a perch: at rest until `until`, then a rise from rest, smooth into th
     CHECK(norm(velocity(until - h, until)) == 0.0);
     CHECK(norm(velocity(until, until + h)) < 0.01);
     CHECK(apart(animation::position(f, Seconds(f.begin - 1e-6)), animation::position(f, Seconds(f.begin))) < 1e-5);
-    CHECK(same(animation::position(f, Seconds(f.begin)), animation::position(plain, Seconds(0.0))));
+    CHECK(tests::same(animation::position(f, Seconds(f.begin)), animation::position(plain, Seconds(0.0))));
     const std::array<double, 3> in = velocity(f.begin - h, f.begin);
     const std::array<double, 3> out = velocity(f.begin, f.begin + h);
     CHECK(norm({in[0] - out[0], in[1] - out[1], in[2] - out[2]}) < 0.02);
@@ -767,6 +771,7 @@ TEST_CASE("a flight's reach grows from its volume to hold a perch below it and t
     animation::FlightJob raised = job_with(animation::Perch{.at = ball_top, .until = 1.0}, above_ball);
     raised.params.volume.min.y = 1.2f;
     const animation::Flight f = animation::make_flight(raised, obstacles);
+    REQUIRE(f.opening.size() == 2);  // the perch and the rise
     const animation::Extent reach = animation::extent(f);
     CHECK(reach.min.y <= ball_top.y);
     CHECK(reach.min.y < f.volume.min.y);
@@ -788,9 +793,12 @@ TEST_CASE("an opening's flashes: while it waits, within [0, begin), a second apa
     for (const animation::Prelude& prelude : {animation::Prelude{animation::Perch{.at = ball_top, .until = 600.0}},
                                               animation::Prelude{animation::Hold{.until = animation::most_wait}}}) {
         const animation::Flight f = animation::make_flight(job_with(prelude, above_ball), obstacles);
+        REQUIRE_FALSE(f.opening.empty());
         const std::vector<double>& opening = f.flashes.opening;
-        // At a drifting rate of 0.02 to 0.08 a second: at least 12 over
-        // 600 s, at most some 300 over most_wait (flight.h).
+        // At a drifting rate of 0.02 to 0.08 a second, at least 12 drawn
+        // over 600 s, fewer kept where two fall within flash_spacing of each
+        // other (flight.cpp, opening_flashes): half, 6, the floor here; at
+        // most some 300 over most_wait (flight.h).
         CHECK(opening.size() >= 6);
         CHECK(opening.size() <= 300);
         CHECK(f.flashes.begin == f.begin);
@@ -855,6 +863,7 @@ TEST_CASE("an opening's flashes keep their spacing for every seed, against each 
         animation::FlightJob perched = job_with(animation::Perch{.at = ball_top, .until = 30.0}, above_ball);
         perched.params.seed = seed;
         const animation::Flight f = animation::make_flight(perched, obstacles);
+        REQUIRE_FALSE(f.opening.empty());
         on_rise += static_cast<int>(std::ranges::count_if(
             f.flashes.opening, [&](double t) { return t >= f.opening[0].start + f.opening[0].duration; }));
     }
@@ -1003,8 +1012,8 @@ TEST_CASE("a flight's first loop point is its start plus first_offset(seed), bit
                                              static_cast<float>(static_cast<double>(start.y) + offset[1]),
                                              static_cast<float>(static_cast<double>(start.z) + offset[2])};
             // Where it holds, and where its loop begins.
-            differ += same(animation::position(f, Seconds(0.5)), expected) ? 0 : 1;
-            differ += same(animation::position(f, Seconds(f.begin)), expected) ? 0 : 1;
+            differ += tests::same(animation::position(f, Seconds(0.5)), expected) ? 0 : 1;
+            differ += tests::same(animation::position(f, Seconds(f.begin)), expected) ? 0 : 1;
             far += std::ranges::any_of(offset, [](double o) { return std::abs(o) > animation::first_drift_reach; })
                        ? 1
                        : 0;
@@ -1145,9 +1154,7 @@ TEST_CASE("flights made in parallel are the flights made one by one, in order") 
             REQUIRE(together[k].segments.size() == alone.segments.size());
             const contracts::Float3 a = animation::position(together[k], Seconds(17.5));
             const contracts::Float3 b = animation::position(alone, Seconds(17.5));
-            CHECK(a.x == b.x);
-            CHECK(a.y == b.y);
-            CHECK(a.z == b.z);
+            CHECK(tests::same(a, b));
         }
         CHECK(animation::make_flights({}, obstacles, workers).empty());
     }
@@ -1167,26 +1174,27 @@ TEST_CASE("of flights made in parallel, the lowest that fails is the one reporte
     // reported must not.
     for (const std::size_t workers : {std::size_t{1}, std::size_t{2}, std::size_t{7}, std::size_t{64}}) {
         CAPTURE(workers);
-        try {
-            (void)animation::make_flights(jobs, obstacles, workers);
-            FAIL("expected an error");
-        } catch (const animation::FlightsError& error) {
-            CHECK(error.job() == 7);
-            CHECK(std::string(error.what()).starts_with("flight 7: "));
-        }
+        const std::optional<animation::FlightsError> error =
+            tests::thrown<animation::FlightsError>([&] { return animation::make_flights(jobs, obstacles, workers); });
+        REQUIRE(error.has_value());
+        CHECK(error->job() == 7);
+        CHECK(std::string(error->what()).starts_with("flight 7: "));
     }
 }
 
 namespace {
 
-// The ball and floor, but an answer near one start throws what no flight
-// expects: a failure that is not a refusal.
+// The ball and floor, but contract 11's answer at any point `breaks` holds
+// throws `what`, which no flight expects: a failure that is not a refusal.
+// Holds the predicate and the message by pointer, so it copies as the
+// other fakes do (C.12).
 class Breaking final : public contracts::Obstacles {
 public:
-    explicit Breaking(const scene::SceneDescription& s) : inner_(s) {}
+    Breaking(const scene::SceneDescription& s, bool (*breaks)(contracts::Float3), const char* what)
+        : inner_(s), breaks_(breaks), what_(what) {}
     double distance(contracts::Float3 p) const override {
-        if (p.z > 1.7f) {
-            throw std::runtime_error("the obstacles broke");
+        if (breaks_(p)) {
+            throw std::runtime_error(what_);
         }
         return inner_.distance(p);
     }
@@ -1194,26 +1202,40 @@ public:
 
 private:
     tests::BallAndFloor inner_;
+    bool (*breaks_)(contracts::Float3);
+    const char* what_;
 };
+
+// Breaking near one start: z past 1.7 m.
+Breaking breaking_near(const scene::SceneDescription& s) {
+    return Breaking(s, [](contracts::Float3 p) { return p.z > 1.7f; }, "the obstacles broke");
+}
+
+// Breaking far out: x past 5 m, met only by a job whose volume is there.
+Breaking breaking_far_out(const scene::SceneDescription& s) {
+    return Breaking(s, [](contracts::Float3 p) { return p.x > 5.0f; }, "the obstacles broke far out");
+}
+
+// The worker counts the batch tests run with: whatever the machine's cores,
+// one, a few and more than the jobs need (environmental determinism).
+constexpr std::array<std::size_t, 3> some_workers = {1, 3, 8};
 
 }  // namespace
 
 TEST_CASE("of flights made in parallel, any exception reaches the caller, the lowest job's") {
     const scene::SceneDescription s = scene::parse(tests::ball_on_floor("[10, 8, 2]"), "s");
-    const Breaking obstacles(s);
+    const Breaking obstacles = breaking_near(s);
     std::vector<animation::FlightJob> jobs;
     for (std::uint64_t k = 0; k < 24; ++k) {
         jobs.push_back(job(k, clear_start));
     }
     jobs[5].start = {1.2f, 1.0f, 1.8f};  // breaks
     jobs[9].start = inside_ball;          // refused
-    try {
-        (void)animation::make_flights(jobs, obstacles, animation::flight_workers());
-        FAIL("expected an error");
-    } catch (const animation::FlightsError&) {
-        FAIL("the refusal at 9 was reported, not the failure at 5");
-    } catch (const std::runtime_error& error) {
-        CHECK(std::string(error.what()) == "the obstacles broke");
+    for (const std::size_t workers : some_workers) {
+        CAPTURE(workers);
+        // The refusal at 9, a FlightsError, would pass on and fail the case.
+        CHECK(tests::error_of<std::runtime_error>([&] { return animation::make_flights(jobs, obstacles, workers); }) ==
+              "the obstacles broke");
     }
 }
 
@@ -1248,46 +1270,27 @@ TEST_CASE("a refusal carries its job and its reason; another std::invalid_argume
     const scene::SceneDescription s = scene::parse(tests::ball_on_floor("[10, 8, 2]"), "s");
     const tests::BallAndFloor obstacles(s);
     const std::vector<animation::FlightJob> jobs = {job(1, clear_start), job(2, inside_ball)};
-    try {
-        (void)animation::make_flights(jobs, obstacles, animation::flight_workers());
-        FAIL("expected an error");
-    } catch (const animation::FlightsError& error) {
-        CHECK(error.job() == 1);
-        CHECK(error.reason().starts_with("the flight's start"));
-        CHECK(std::string(error.what()) == "flight 1: " + std::string(error.reason()));
-    }
     const Arguing arguing;
-    try {
-        (void)animation::make_flights({job(1, clear_start)}, arguing, animation::flight_workers());
-        FAIL("expected an error");
-    } catch (const animation::MotionError&) {
-        FAIL("an Obstacles' own exception was taken for a refusal");
-    } catch (const std::invalid_argument& error) {
-        CHECK(std::string(error.what()) == "the obstacles argued");
+    for (const std::size_t workers : some_workers) {
+        CAPTURE(workers);
+        const std::optional<animation::FlightsError> error =
+            tests::thrown<animation::FlightsError>([&] { return animation::make_flights(jobs, obstacles, workers); });
+        REQUIRE(error.has_value());
+        CHECK(error->job() == 1);
+        CHECK(error->reason().starts_with("the flight's start"));
+        CHECK(std::string(error->what()) == "flight 1: " + std::string(error->reason()));
+        // Its own message, not a refusal's ("flight 0: ..."): an Obstacles'
+        // own exception is not taken for one.
+        CHECK(tests::error_of<std::invalid_argument>(
+                  [&] { return animation::make_flights({job(1, clear_start)}, arguing, workers); }) ==
+              "the obstacles argued");
     }
 }
 
 namespace {
 
-// The ball and floor, and a contract-11 answer that throws what no flight
-// expects for any point past x = 5 m: a failure that is not a refusal, met
-// only by a job whose volume is there.
-class BreaksFarOut final : public contracts::Obstacles {
-public:
-    explicit BreaksFarOut(const scene::SceneDescription& s) : inner_(s) {}
-    double distance(contracts::Float3 p) const override {
-        if (p.x > 5.0f) {
-            throw std::runtime_error("the obstacles broke far out");
-        }
-        return inner_.distance(p);
-    }
-    bool touches(const contracts::Box& box) const override { return inner_.touches(box); }
 
-private:
-    tests::BallAndFloor inner_;
-};
-
-// A job whose flight meets BreaksFarOut's failure at its first sample.
+// A job whose flight meets breaking_far_out()'s failure at its first sample.
 animation::FlightJob far_out_job() {
     animation::FlightJob j = job(77, {10.0f, 1.0f, 0.0f});
     j.params.volume = {{8.0f, tests::job_volume.min.y, tests::job_volume.min.z},
@@ -1296,8 +1299,6 @@ animation::FlightJob far_out_job() {
     j.params.weights = {0.0f, 1.0f, 2.0f};
     return j;
 }
-
-constexpr std::array<std::size_t, 3> some_workers = {1, 3, 8};
 
 }  // namespace
 
@@ -1330,7 +1331,7 @@ TEST_CASE("try_flights keeps each job's outcome: its flight, or its refusal's re
                 CHECK(made.flashes.starts == alone.flashes.starts);
                 const contracts::Float3 a = animation::position(made, Seconds(23.25));
                 const contracts::Float3 b = animation::position(alone, Seconds(23.25));
-                CHECK((a.x == b.x && a.y == b.y && a.z == b.z));
+                CHECK(tests::same(a, b));
             }
         }
     }
@@ -1338,7 +1339,7 @@ TEST_CASE("try_flights keeps each job's outcome: its flight, or its refusal's re
 
 TEST_CASE("try_flights rethrows the lowest failure that is not a refusal; make_flights the lowest of any kind") {
     const scene::SceneDescription s = scene::parse(tests::ball_on_floor("[10, 8, 2]"), "s");
-    const BreaksFarOut obstacles(s);
+    const Breaking obstacles = breaking_far_out(s);
     std::vector<animation::FlightJob> jobs;
     for (std::uint64_t k = 0; k < 12; ++k) {
         jobs.push_back(job(300 + k, clear_start));
@@ -1356,12 +1357,10 @@ TEST_CASE("try_flights rethrows the lowest failure that is not a refusal; make_f
         CHECK(tests::error_of<std::runtime_error>([&] {
                   return animation::try_flights(refusal_first, obstacles, workers);
               }) == "the obstacles broke far out");
-        try {
-            (void)animation::make_flights(refusal_first, obstacles, workers);
-            FAIL("expected an error");
-        } catch (const animation::FlightsError& error) {
-            CHECK(error.job() == 5);
-        }
+        const std::optional<animation::FlightsError> refused = tests::thrown<animation::FlightsError>(
+            [&] { return animation::make_flights(refusal_first, obstacles, workers); });
+        REQUIRE(refused.has_value());
+        CHECK(refused->job() == 5);
         CHECK(tests::error_of<std::runtime_error>([&] {
                   return animation::try_flights(failure_first, obstacles, workers);
               }) == "the obstacles broke far out");

@@ -25,12 +25,15 @@
 #include "core/passes/tone_map.h"
 #include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"
+#include "gpu/support/shared_resources.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/device/offscreen.h"
 #include "metal/device/submission.h"
+#include "metal/device/support.h"
 #include "metal/frame/frame_images.h"
 #include "metal/frame/frame_resources.h"
+#include "metal/passes/bindings.h"
 #include "metal/passes/tone_map/tone_map.h"
 #include "serenity/metallib/shaders.h"
 #include "support/references.h"
@@ -49,9 +52,8 @@ constexpr double neutral_start = 0.76;     // step 5: 0.8 - F90, F90 = 0.04
 constexpr double neutral_desaturation = 0.15;
 constexpr double f90 = 0.04;
 
-// A half float, the pyramid's storage: _Float16, a compiler extension
-// (P.2), until the toolchain's C++ has std::float16_t (C++23).
-using Half = _Float16;
+// A half float, the pyramid's storage: the backend's (metal/device/support.h).
+using metal::Half;
 
 using Color = std::array<double, 3>;
 
@@ -279,17 +281,11 @@ Toned reference(const Field& radiance, passes::ToneMap settings) {
 // levels made here that the CPU can read, B_0 read back after step 3.
 enum class Pyramid { renderers, readable };
 
-// A texture of `format` at `size`, in shared storage, resident.
-NS::SharedPtr<MTL::Texture> shared_texture(metal::Device& device, metal::Submission& submission,
-                                           MTL::PixelFormat format, frame::Extent size, MTL::TextureUsage usage) {
-    auto descriptor = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
-    descriptor->setPixelFormat(format);
-    descriptor->setWidth(size.width);
-    descriptor->setHeight(size.height);
-    descriptor->setStorageMode(MTL::StorageModeShared);
-    descriptor->setUsage(usage);
-    auto texture = NS::TransferPtr(device.handle()->newTexture(descriptor.get()));
-    REQUIRE(texture);
+// A texture of `format` at `size`, in shared storage (gpu/support/
+// shared_resources.h), resident.
+NS::SharedPtr<MTL::Texture> resident_texture(const metal::Device& device, metal::Submission& submission,
+                                             MTL::PixelFormat format, frame::Extent size, MTL::TextureUsage usage) {
+    auto texture = tests::shared_texture(device, format, size, usage);
     submission.make_resident(texture.get());
     return texture;
 }
@@ -303,7 +299,7 @@ Toned tone_map(const Field& radiance, passes::ToneMap settings, Pyramid pyramid 
     const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
     const frame::Extent size{radiance.width, radiance.height};
 
-    auto image = shared_texture(device, submission, MTL::PixelFormatRGBA32Float, size, MTL::TextureUsageShaderRead);
+    auto image = resident_texture(device, submission, MTL::PixelFormatRGBA32Float, size, MTL::TextureUsageShaderRead);
     std::vector<float> texels;
     texels.reserve(radiance.texels.size() * 4);
     for (const Color& t : radiance.texels) {
@@ -320,16 +316,16 @@ Toned tone_map(const Field& radiance, passes::ToneMap settings, Pyramid pyramid 
         frame::Extent level = size;
         for (auto& texture : readable) {
             level = half_size(level);
-            texture = shared_texture(device, submission, MTL::PixelFormatRGBA16Float, level,
-                                     MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
+            texture = resident_texture(device, submission, MTL::PixelFormatRGBA16Float, level,
+                                       MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
         }
     }
     metal::Offscreen target(device, submission, size);
     const metal::ToneMapPass pass(device, library, submission, settings);
 
     auto table_descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-    table_descriptor->setMaxBufferBindCount(1);
-    table_descriptor->setMaxTextureBindCount(3);
+    table_descriptor->setMaxBufferBindCount(bindings::tone_map::settings + 1);
+    table_descriptor->setMaxTextureBindCount(bindings::tone_map::target + 1);
     NS::Error* error = nullptr;
     auto table = NS::TransferPtr(device.handle()->newArgumentTable(table_descriptor.get(), &error));
     INFO("argument table: " << tests::reason(error));

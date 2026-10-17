@@ -30,13 +30,17 @@
 //     firefly whose densities and geometry terms are worked out here.
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
 #include <numbers>
+#include <span>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -56,6 +60,7 @@
 #include "gpu/kernels/restir_pt_probe.h"
 #include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"
+#include "gpu/support/shared_resources.h"
 #include "metal/acceleration/scene_acceleration.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
@@ -66,139 +71,54 @@
 #include "metal/scene/scene_buffers.h"
 #include "metal/scene/shape_transforms.h"
 #include "serenity/metallib/probes.h"
+#include "support/lit_floor.h"
 #include "support/references.h"
 #include "support/scene_text.h"
+#include "support/schedules.h"
 #include "support/vector.h"
 
 using namespace serenity;
 using tests::camera_text;
+using tests::firefly;
+using tests::furnace;
+using tests::lit_floor;
+using tests::one_firefly;
+using tests::patch_mean;
 using tests::sky;
+using tests::two_fireflies;
 using tests::Vec3;
 
 namespace {
 
-constexpr const char* initial_only =
-    "passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"display\"]\n"
-    "[restir_pt]\nnee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = 0.2\n";
-constexpr const char* with_spatial =
-    "passes = [\"restir_pt_initial\", \"restir_pt_spatial\", \"restir_pt_shade\", \"display\"]\n"
-    "[restir_pt]\nnee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = 0.2\nneighbors = 3\n"
-    "sigma = 16.0\n";
-constexpr const char* temporal_alone =
-    "passes = [\"restir_pt_initial\", \"restir_pt_temporal\", \"restir_pt_shade\", \"display\"]\n"
-    "[restir_pt]\nnee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = 0.2\n"
-    "confidence_cap = 20.0\n";
-// graphs/restir_pt.toml's, presenting with display.
-constexpr const char* whole_graph =
-    "passes = [\"restir_pt_initial\", \"restir_pt_temporal\", \"restir_pt_spatial\", \"restir_pt_shade\", "
-    "\"restir_pt_duplication\", \"display\"]\n"
-    "[restir_pt]\nnee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = 0.2\nneighbors = 3\n"
-    "sigma = 16.0\nconfidence_cap = 20.0\ncap_floor = 1.0\ncap_exponent = 0.1\n";
+using frame::PassKind;
+using tests::restir_pt_graph;
 
-// A renderer of a ReSTIR PT graph over a scene, at a size, its frames
-// accumulating from frame 0 (as path_test.cpp's Rig).
-class Rig {
-public:
-    Rig(const std::string& text, frame::Extent image, const char* graph)
-        : description_(scene::parse(text, "test scene")), size_(image),
-          renderer_(device_, submission_, frame::parse_schedule(graph, "graph"), &description_) {}
+// The graphs, their settings the written ones (support/schedules.h); the
+// last graphs/restir_pt.toml's, presenting with display.
+const frame::Schedule initial_only = restir_pt_graph({PassKind::restir_pt_initial, PassKind::restir_pt_shade});
+const frame::Schedule with_spatial =
+    restir_pt_graph({PassKind::restir_pt_initial, PassKind::restir_pt_spatial, PassKind::restir_pt_shade});
+const frame::Schedule temporal_alone =
+    restir_pt_graph({PassKind::restir_pt_initial, PassKind::restir_pt_temporal, PassKind::restir_pt_shade});
+const frame::Schedule whole_graph = restir_pt_graph(tests::restir_pt_passes);
 
-    std::vector<std::uint8_t> render(std::uint64_t frames) {
-        std::uint64_t sequence = 0;
-        for (std::uint64_t i = 0; i < frames; ++i, ++next_) {
-            sequence = metal::render_to_offscreen(submission_, target_, renderer_,
-                                                  tests::frame_at(next_, 0, 0.0, description_.camera));
-        }
-        (void)submission_.wait_until_complete(sequence);
-        CHECK(renderer_.non_finite_samples() == 0);
-        return tests::read_back(target_);
-    }
+using Rig = tests::AccumulatingRig;
 
-    // The accumulated image's floats (Renderer::read_accumulated).
-    std::vector<float> accumulated() {
-        std::vector<float> floats(std::size_t{size_.width} * size_.height * 4);
-        renderer_.read_accumulated(floats);
-        return floats;
-    }
-
-    const scene::SceneDescription& description() const noexcept { return description_; }
-    frame::Extent size() const noexcept { return size_; }
-
-private:
-    scene::SceneDescription description_;
-    frame::Extent size_;
-    metal::Device device_;
-    metal::Submission submission_{device_};
-    metal::Offscreen target_{device_, submission_, size_};
-    metal::Renderer renderer_;
-    std::uint64_t next_ = 0;
-};
-
-double mean_red(const std::vector<std::uint8_t>& rgba, frame::Extent size, tests::Pixel at, std::uint32_t half) {
-    double sum = 0.0;
-    std::uint32_t count = 0;
-    for (std::uint32_t y = at.y - half; y <= at.y + half; ++y) {
-        for (std::uint32_t x = at.x - half; x <= at.x + half; ++x) {
-            sum += tests::linear_of(rgba[(std::size_t{y} * size.width + x) * 4]);
-            ++count;
-        }
-    }
-    return sum / count;
-}
-
-// path_test.cpp's floor under fireflies, and its closed form.
-constexpr double floor_albedo = 0.8;
-
-std::string lit_floor(const std::string& fireflies) {
-    return camera_text("[0, 2, 3]", "[0, 0, 0]", 50) + sky("[0, 0, 0]", "[0, 0, 0]") +
-           "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
-           "[materials.glow]\nkind = \"emissive\"\nradiance = [200, 200, 200]\n"
-           "[[shapes]]\nkind = \"box\"\nmin = [-50, -1, -50]\nmax = [50, 0, 50]\nmaterial = \"floor\"\n" +
-           fireflies;
-}
-
-std::string firefly(const char* center) {
-    return std::string("[[shapes]]\nkind = \"sphere\"\ncenter = ") + center + "\nradius = 0.05\nmaterial = \"glow\"\n";
-}
-
-const std::string one_firefly = firefly("[0.3, 2.5, -0.5]");
-
-double expected_floor(const scene::SceneDescription& description, frame::Extent size, double x, double y) {
-    const contracts::CameraData c = camera::shader_form(description.camera, size);
-    const Vec3 d = tests::camera_direction(c, x, y, size);
-    const Vec3 p = tests::vec(c.origin) + (-c.origin.y / d.y) * d;
-    double sum = 0.0;
-    for (const lights::SphereLightData& light : description.sphere_lights) {
-        const contracts::Transform& placed = description.shapes.transforms.at(light.shape);
-        const double radius = placed.m[0][0];
-        const Vec3 to = tests::vec(contracts::translation(placed)) - p;
-        const double d2 = dot(to, to);
-        sum += floor_albedo * light.radiance.x * (radius * radius / d2) * (to.y / std::sqrt(d2));
-    }
-    return sum;
-}
-
-void check_floor(const std::string& text, std::uint64_t frames, const char* graph) {
-    Rig rig(text, {64, 48}, graph);
+void check_floor(std::string_view text, std::uint64_t frames, const frame::Schedule& graph) {
+    Rig rig(text, graph, {64, 48});
     const auto image = rig.render(frames);
     for (const tests::Pixel pixel : {tests::Pixel{32, 30}, tests::Pixel{14, 38}, tests::Pixel{50, 26}}) {
-        const double expected = expected_floor(rig.description(), rig.size(), pixel.x + 0.5, pixel.y + 0.5);
+        const double expected = tests::expected_floor(rig.description(), rig.size(), pixel.x + 0.5, pixel.y + 0.5);
         INFO("pixel " << pixel.x << ", " << pixel.y << ": expected " << expected);
-        CHECK(mean_red(image, rig.size(), pixel, 1) == doctest::Approx(expected).scale(0).epsilon(0.03));
+        CHECK(patch_mean(image, rig.size(), {pixel.x, pixel.y, 1}) == doctest::Approx(expected).scale(0).epsilon(0.03));
     }
 }
 
-std::string furnace(const std::string& material) {
-    return camera_text("[0, 0, 4]", "[0, 0, 0]", 30) + sky("[0.5, 0.5, 0.5]", "[0.5, 0.5, 0.5]") +
-           "[materials.m]\n" + material +
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"m\"\n";
-}
-
-void check_furnace(const std::string& material, std::uint64_t frames, const char* graph) {
-    Rig rig(furnace(material), {64, 64}, graph);
+void check_furnace(std::string_view material, std::uint64_t frames, const frame::Schedule& graph) {
+    Rig rig(furnace(material), graph, {64, 64});
     const auto image = rig.render(frames);
-    CHECK(mean_red(image, rig.size(), {32, 32}, 6) == doctest::Approx(0.5).scale(0).epsilon(0.02));
-    CHECK(mean_red(image, rig.size(), {3, 3}, 2) == doctest::Approx(0.5).scale(0).epsilon(0.01));
+    CHECK(patch_mean(image, rig.size(), {32, 32, 6}) == doctest::Approx(0.5).scale(0).epsilon(0.02));
+    CHECK(patch_mean(image, rig.size(), {3, 3, 2}) == doctest::Approx(0.5).scale(0).epsilon(0.01));
 }
 
 }  // namespace
@@ -208,7 +128,7 @@ TEST_CASE("ReSTIR PT's initial sampling alone: a floor under one firefly converg
 }
 
 TEST_CASE("ReSTIR PT's initial sampling alone: under two fireflies, the floor converges to their sum") {
-    check_floor(lit_floor(one_firefly + firefly("[-1.2, 1.5, 0.4]")), 1024, initial_only);
+    check_floor(lit_floor(two_fireflies), 1024, initial_only);
 }
 
 TEST_CASE("ReSTIR PT's initial sampling alone: a white Lambert sphere and a glass one under a uniform sky "
@@ -220,7 +140,7 @@ TEST_CASE("ReSTIR PT's initial sampling alone: a white Lambert sphere and a glas
 TEST_CASE("ReSTIR PT's spatial reuse keeps a still lit floor's mean, and the glass furnace's") {
     // Within the path tests' tolerances: 3% at three patches of floor, 2%
     // through glass, whose paths shift by replay alone.
-    check_floor(lit_floor(one_firefly + firefly("[-1.2, 1.5, 0.4]")), 512, with_spatial);
+    check_floor(lit_floor(two_fireflies), 512, with_spatial);
     check_furnace("kind = \"dielectric\"\nior = 1.5\n", 512, with_spatial);
 }
 
@@ -229,8 +149,8 @@ TEST_CASE("ReSTIR PT's temporal reuse keeps a still lit floor's mean, and the gl
     // alone, and the whole graph, the duplication map lowering the cap. The
     // map's bias (Enhanced §5) is where copies crowd, which a floor under
     // two fireflies, resampled from the start, has few of.
-    check_floor(lit_floor(one_firefly + firefly("[-1.2, 1.5, 0.4]")), 512, temporal_alone);
-    check_floor(lit_floor(one_firefly + firefly("[-1.2, 1.5, 0.4]")), 512, whole_graph);
+    check_floor(lit_floor(two_fireflies), 512, temporal_alone);
+    check_floor(lit_floor(two_fireflies), 512, whole_graph);
     check_furnace("kind = \"dielectric\"\nior = 1.5\n", 512, whole_graph);
 }
 
@@ -248,9 +168,9 @@ TEST_CASE("ReSTIR PT: the same inputs give the same image, to the bit, with its 
                              firefly("[0.8, 0.6, 0.4]") + firefly("[-0.9, 0.9, -0.3]") + firefly("[0.2, 1.1, -0.9]") +
                              firefly("[-0.4, 0.4, 0.8]") + firefly("[1.2, 0.8, -0.6]") + firefly("[-1.1, 0.5, 0.9]");
     constexpr frame::Extent image{96, 72};
-    Rig a(text, image, with_spatial);
-    Rig b(text, image, with_spatial);
-    Rig alone(text, image, initial_only);
+    Rig a(text, with_spatial, image);
+    Rig b(text, with_spatial, image);
+    Rig alone(text, initial_only, image);
     (void)a.render(3);
     (void)b.render(3);
     (void)alone.render(3);
@@ -270,8 +190,8 @@ TEST_CASE("ReSTIR PT: the same inputs give the same image, to the bit, with its 
 
     // The whole graph, temporal reuse and the duplication map at work over
     // four frames: the same to the bit, and not spatial reuse's image.
-    Rig c(text, image, whole_graph);
-    Rig d(text, image, whole_graph);
+    Rig c(text, whole_graph, image);
+    Rig d(text, whole_graph, image);
     (void)c.render(4);
     (void)d.render(4);
     (void)a.render(1);
@@ -294,9 +214,6 @@ namespace {
 // A pair at the marbles' scale: the camera 0.39 m above a table point x1,
 // x_{k-1} on the table, x_k on a marble beside it, both diffuse.
 tests::CriteriaQuery diffuse_pair(double camera_height, double apart, double scale) {
-    const auto f = [](Vec3 v) {
-        return contracts::Float3{static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z)};
-    };
     const Vec3 up{0.0, 1.0, 0.0};
     const Vec3 x1 = scale * Vec3{0.0, 0.75, 0.0};
     const Vec3 camera = x1 + scale * Vec3{0.0, camera_height, camera_height};  // seen at 45 degrees
@@ -304,19 +221,19 @@ tests::CriteriaQuery diffuse_pair(double camera_height, double apart, double sca
     const Vec3 at = before + scale * Vec3{0.0, apart, 0.0};  // straight up: cos 1 at both ends, x_k facing down
     const double cos_before = 1.0;
     tests::CriteriaQuery q{};
-    q.camera = f(camera);
+    q.camera = tests::float3(camera);
     q.footprint = 0.02f;
-    q.primary = f(x1);
+    q.primary = tests::float3(x1);
     q.min_roughness = 0.2f;
-    q.primary_normal = f(up);
+    q.primary_normal = tests::float3(up);
     q.lobe_before = contracts::lobe_reflection | contracts::lobe_diffuse;
-    q.before = f(before);
+    q.before = tests::float3(before);
     q.density_before = static_cast<float>(cos_before / std::numbers::pi);
-    q.before_normal = f(up);
+    q.before_normal = tests::float3(up);
     q.lobe_at = contracts::lobe_reflection | contracts::lobe_diffuse;
-    q.at = f(at);
+    q.at = tests::float3(at);
     q.density_at = static_cast<float>(1.0 / std::numbers::pi);
-    q.at_normal = f(-up);
+    q.at_normal = tests::float3(-up);
     q.alpha_before = 0.0f;
     return q;
 }
@@ -437,23 +354,16 @@ std::vector<tests::ShiftResult> shift(const std::string& text, frame::Extent siz
     settings.footprint = passes::written_footprint;
     settings.roughness = passes::written_roughness;
     const auto count = static_cast<std::uint32_t>(queries.size());
-    const auto buffer_of = [&](const void* bytes, std::size_t size_of) {
-        auto buffer = NS::TransferPtr(mtl->newBuffer(std::max<std::size_t>(size_of, 16), MTL::ResourceStorageModeShared));
-        REQUIRE(buffer);
-        std::memset(buffer->contents(), 0, std::max<std::size_t>(size_of, 16));
-        if (bytes != nullptr) {
-            std::memcpy(buffer->contents(), bytes, size_of);
-        }
-        submission.make_resident(buffer.get());
-        return buffer;
+    const auto buffer_of = [&](const tests::Binding& binding) {
+        return tests::shared_buffer(device, submission, binding.bytes());
     };
-    const auto out = buffer_of(nullptr, queries.size() * sizeof(tests::ShiftResult));
-    const auto in = buffer_of(queries.data(), queries.size() * sizeof(tests::ShiftQuery));
-    const auto framed = buffer_of(&camera, sizeof(camera));
-    const auto set = buffer_of(&settings, sizeof(settings));
-    const auto counted = buffer_of(&count, sizeof(count));
+    const auto out = buffer_of(tests::Binding::zeroed(queries.size() * sizeof(tests::ShiftResult)));
+    const auto in = buffer_of(tests::Binding::of(queries));
+    const auto framed = buffer_of(tests::Binding::of(camera));
+    const auto set = buffer_of(tests::Binding::of(settings));
+    const auto counted = buffer_of(tests::Binding::of(count));
     constexpr std::size_t tile_entries = std::size_t{contracts::light_tiles} * contracts::light_tile_size;
-    const auto tiles = buffer_of(nullptr, tile_entries * sizeof(contracts::LightTileEntry));
+    const auto tiles = buffer_of(tests::Binding::zeroed(tile_entries * sizeof(contracts::LightTileEntry)));
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
     descriptor->setMaxBufferBindCount(10);
     NS::Error* error = nullptr;
@@ -490,29 +400,33 @@ double luminance(contracts::Float3 c) {
     return 0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z;
 }
 
+// A floor under a firefly and a large light, a glass ball (replay through
+// it), a diffuse ball and a brass mirror; the floor 6 m across, so a point
+// on it is stored to 0.05 mm (contract 15). The shift tests' scene.
+std::string shift_scene() {
+    return camera_text("[0, 2, 3]", "[0, 0, 0]", 50) + sky("[0, 0, 0]", "[0, 0, 0]") +
+           "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
+           "[materials.glow]\nkind = \"emissive\"\nradiance = [200, 200, 200]\n"
+           "[materials.lamp]\nkind = \"emissive\"\nradiance = [4, 4, 4]\n"
+           "[[shapes]]\nkind = \"box\"\nmin = [-3, -1, -3]\nmax = [3, 0, 3]\nmaterial = \"floor\"\n" +
+           one_firefly +
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [-1.2, 1.8, -1.0]\nradius = 0.6\nmaterial = \"lamp\"\n"
+           "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
+           "[materials.white]\nkind = \"rough\"\ncolor = [0.7, 0.7, 0.7]\n"
+           "[materials.brass]\nkind = \"conductor\"\nf0 = [0.9, 0.7, 0.3]\nroughness = 0.05\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.5, 0]\nradius = 0.5\nmaterial = \"glass\"\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [1, 0.4, -0.3]\nradius = 0.4\nmaterial = \"white\"\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [-0.9, 0.4, 0.2]\nradius = 0.4\nmaterial = \"brass\"\n";
+}
+
 }  // namespace
 
 TEST_CASE("a path shifted to its own pixel keeps its F and has a Jacobian of 1, in every case the shift has") {
-    // A floor under a firefly and a large light, a glass ball (replay
-    // through it), a diffuse ball and a brass mirror; one NEE candidate, so
-    // rays the BSDF draws to a light are kept often. Every case of
-    // shift.metal.h's step 6: replayed whole; reconnected to a light NEE
-    // drew (forced) or a ray struck; at a surface whose direction NEE drew;
-    // at a surface whose BSDF drew it. The floor 6 m across, so a point on
-    // it is stored to 0.05 mm (contract 15).
-    const std::string text = camera_text("[0, 2, 3]", "[0, 0, 0]", 50) + sky("[0, 0, 0]", "[0, 0, 0]") +
-                             "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
-                             "[materials.glow]\nkind = \"emissive\"\nradiance = [200, 200, 200]\n"
-                             "[materials.lamp]\nkind = \"emissive\"\nradiance = [4, 4, 4]\n"
-                             "[[shapes]]\nkind = \"box\"\nmin = [-3, -1, -3]\nmax = [3, 0, 3]\nmaterial = \"floor\"\n" +
-                             one_firefly +
-                             "[[shapes]]\nkind = \"sphere\"\ncenter = [-1.2, 1.8, -1.0]\nradius = 0.6\nmaterial = \"lamp\"\n"
-                             "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
-                             "[materials.white]\nkind = \"rough\"\ncolor = [0.7, 0.7, 0.7]\n"
-                             "[materials.brass]\nkind = \"conductor\"\nf0 = [0.9, 0.7, 0.3]\nroughness = 0.05\n"
-                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.5, 0]\nradius = 0.5\nmaterial = \"glass\"\n"
-                             "[[shapes]]\nkind = \"sphere\"\ncenter = [1, 0.4, -0.3]\nradius = 0.4\nmaterial = \"white\"\n"
-                             "[[shapes]]\nkind = \"sphere\"\ncenter = [-0.9, 0.4, 0.2]\nradius = 0.4\nmaterial = \"brass\"\n";
+    // shift_scene(), with one NEE candidate, so rays the BSDF draws to a
+    // light are kept often. Every case of shift.metal.h's step 6: replayed
+    // whole; reconnected to a light NEE drew (forced) or a ray struck; at a
+    // surface whose direction NEE drew; at a surface whose BSDF drew it.
+    const std::string text = shift_scene();
     constexpr frame::Extent size{96, 72};
     std::vector<tests::ShiftQuery> queries;
     for (std::uint32_t frame = 0; frame < 16; ++frame) {
@@ -524,21 +438,22 @@ TEST_CASE("a path shifted to its own pixel keeps its F and has a Jacobian of 1, 
     }
     const auto results = shift(text, size, queries, 1u);
     // The cases, and in each the paths held and those shifted off.
-    enum Case { whole, forced, struck, nee_at_k, bsdf_at_k, cases };
-    const char* names[cases] = {"replayed whole", "to NEE's light", "to a struck light", "at x_k, NEE on",
-                                "at x_k, BSDF on"};
-    std::array<std::size_t, cases> held{};
-    std::array<std::size_t, cases> off{};
+    enum class Case : std::size_t { whole, forced, struck, nee_at_k, bsdf_at_k };
+    constexpr std::array<std::string_view, 5> names = {"replayed whole", "to NEE's light", "to a struck light",
+                                                       "at x_k, NEE on", "at x_k, BSDF on"};
+    std::array<std::size_t, names.size()> held{};
+    std::array<std::size_t, names.size()> off{};
     for (const tests::ShiftResult& r : results) {
         if (contracts::path_end(r.flags) == contracts::PathEnd::none || luminance(r.stored) <= 0.0) {
             continue;
         }
         const std::uint32_t k = contracts::path_rc(r.flags);
         const bool at_light = k == contracts::path_length(r.flags);
-        const Case c = k == 0u ? whole
-                       : at_light ? (contracts::path_end(r.flags) == contracts::PathEnd::nee ? forced : struck)
-                                  : (contracts::path_lobe_at(r.flags) == 0u ? nee_at_k : bsdf_at_k);
-        ++held[c];
+        const Case c = k == 0u    ? Case::whole
+                       : at_light ? (contracts::path_end(r.flags) == contracts::PathEnd::nee ? Case::forced
+                                                                                              : Case::struck)
+                                  : (contracts::path_lobe_at(r.flags) == 0u ? Case::nee_at_k : Case::bsdf_at_k);
+        ++held[static_cast<std::size_t>(c)];
         // To the stored point's rounding (contract 15) and the G-buffer's
         // packing of y1 (contract 5: its normal to 10^-4 radians, which
         // turns every replayed direction after it by as much), which a
@@ -546,15 +461,14 @@ TEST_CASE("a path shifted to its own pixel keeps its F and has a Jacobian of 1, 
         // along: 2% (1% before the G-buffer, the retraced y1 exact).
         const bool same = r.succeeded == 1u && std::abs(r.jacobian - 1.0) < 2.0e-2 &&
                           std::abs(luminance(r.shifted) - luminance(r.stored)) <= 2.0e-2 * luminance(r.stored);
-        off[c] += same ? 0u : 1u;
+        off[static_cast<std::size_t>(c)] += same ? 0u : 1u;
     }
-    for (int c = 0; c < cases; ++c) {
+    for (std::size_t c = 0; c < names.size(); ++c) {
         // A pair at the criteria's edge may fall the other way at the
         // stored point, and the shift fail: at most 1 in 200.
-        INFO(std::string(names[c]) << ": " << held[static_cast<std::size_t>(c)] << " paths, " << off[static_cast<std::size_t>(c)]
-                      << " off");
-        CHECK(held[static_cast<std::size_t>(c)] >= 20u);
-        CHECK(off[static_cast<std::size_t>(c)] * 200u <= held[static_cast<std::size_t>(c)]);
+        INFO(names[c] << ": " << held[c] << " paths, " << off[c] << " off");
+        CHECK(held[c] >= 20u);
+        CHECK(off[c] * 200u <= held[c]);
     }
 }
 
@@ -617,18 +531,27 @@ TEST_CASE("a reconnection's Jacobian is supplemental eq. 4's on a floor under a 
 
 namespace {
 
-// A reservoir holding a path of `luminance` grey F, weight W, count M,
-// drawn at (pixel, frame), ending on NEE's light at x2 (k = d = 2), its
-// cached Jacobian denominator `jacobian`.
-contracts::PathReservoir held_path(float f, float weight, std::uint32_t count, std::uint32_t pixel,
-                                   std::uint32_t frame, float jacobian) {
+// A path a reservoir holds, ending on NEE's light at x2 (k = d = 2): its
+// grey F, its weight W and count M, the (pixel, frame) it was drawn at, and
+// its cached Jacobian denominator. Named, so no two can be swapped (I.24).
+struct Held {
+    float f = 1.0f;
+    float weight = 1.0f;
+    std::uint32_t count = 1;
+    std::uint32_t pixel = 0;
+    std::uint32_t frame = 0;
+    float jacobian = 1.0f;
+};
+
+contracts::PathReservoir held_path(const Held& held) {
     contracts::PathReservoir r{};
-    r.weight = weight;
-    r.integrand = contracts::Float3{f, f, f};
-    r.seed_pixel = pixel;
-    r.seed_frame = frame;
-    r.flags = contracts::pack_path_flags(contracts::PathShape{count, 2u, 2u, contracts::PathEnd::nee, 0u, 0u, 0u});
-    r.jacobian = jacobian;
+    r.weight = held.weight;
+    r.integrand = contracts::Float3{held.f, held.f, held.f};
+    r.seed_pixel = held.pixel;
+    r.seed_frame = held.frame;
+    r.flags =
+        contracts::pack_path_flags(contracts::PathShape{held.count, 2u, 2u, contracts::PathEnd::nee, 0u, 0u, 0u});
+    r.jacobian = held.jacobian;
     return r;
 }
 
@@ -639,8 +562,10 @@ TEST_CASE("the temporal merge counts last frame's path at most c_cap times the o
     // Grey F, so p-hat is F's value. The own path: F 2, W 0.5, count 1,
     // shifted there to F 1.5 with J 0.8. Last frame's: F 3, W 0.25, count
     // 40, shifted here to F 2.5 with J 1.2 (its cached denominator 0.7).
-    const contracts::PathReservoir own = held_path(2.0f, 0.5f, 1u, 11u, 100u, 0.3f);
-    const contracts::PathReservoir last = held_path(3.0f, 0.25f, 40u, 22u, 99u, 0.7f);
+    const contracts::PathReservoir own =
+        held_path({.f = 2.0f, .weight = 0.5f, .count = 1, .pixel = 11, .frame = 100, .jacobian = 0.3f});
+    const contracts::PathReservoir last =
+        held_path({.f = 3.0f, .weight = 0.25f, .count = 40, .pixel = 22, .frame = 99, .jacobian = 0.7f});
     const auto query = [&](float cap, float floor, float exponent, float duplication, float u1) {
         tests::PathMergeQuery q{};
         q.own = own;
@@ -718,20 +643,13 @@ std::vector<float> duplication_map(const std::vector<contracts::PathReservoir>& 
     REQUIRE(pipeline->maxTotalThreadsPerThreadgroup() >= contracts::duplication_group * contracts::duplication_group);
     const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
     MTL::Device* mtl = device.handle();
-    const auto buffer_of = [&](const void* bytes, std::size_t size_of) {
-        auto buffer = NS::TransferPtr(mtl->newBuffer(std::max<std::size_t>(size_of, 16), MTL::ResourceStorageModeShared));
-        REQUIRE(buffer);
-        std::memset(buffer->contents(), 0, std::max<std::size_t>(size_of, 16));
-        if (bytes != nullptr) {
-            std::memcpy(buffer->contents(), bytes, size_of);
-        }
-        submission.make_resident(buffer.get());
-        return buffer;
+    const auto buffer_of = [&](const tests::Binding& binding) {
+        return tests::shared_buffer(device, submission, binding.bytes());
     };
-    const std::uint32_t extent[2] = {size.width, size.height};
-    const auto out = buffer_of(nullptr, image.size() * sizeof(float));
-    const auto in = buffer_of(image.data(), image.size() * sizeof(contracts::PathReservoir));
-    const auto sized = buffer_of(extent, sizeof(extent));
+    const std::array<std::uint32_t, 2> extent{size.width, size.height};
+    const auto out = buffer_of(tests::Binding::zeroed(image.size() * sizeof(float)));
+    const auto in = buffer_of(tests::Binding::of(image));
+    const auto sized = buffer_of(tests::Binding::of(extent));
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
     descriptor->setMaxBufferBindCount(3);
     NS::Error* error = nullptr;
@@ -765,25 +683,25 @@ TEST_CASE("the duplication map counts the copies of each pixel's path in its 17 
     std::vector<contracts::PathReservoir> image(std::size_t{size.width} * size.height);
     for (std::uint32_t y = 0; y < size.height; ++y) {
         for (std::uint32_t x = 0; x < size.width; ++x) {
-            image[at(x, y)] = held_path(1.0f, 1.0f, 1u, x + 65536u * y, 7u, 1.0f);  // each its own path
+            image[at(x, y)] = held_path({.pixel = x + 65536u * y, .frame = 7});  // each its own path
         }
     }
     // A 5 x 5 block of copies of one path.
     for (std::uint32_t y = 10; y < 15; ++y) {
         for (std::uint32_t x = 10; x < 15; ++x) {
-            image[at(x, y)] = held_path(1.0f, 1.0f, 1u, 12u + 65536u * 12u, 7u, 1.0f);
+            image[at(x, y)] = held_path({.pixel = 12u + 65536u * 12u, .frame = 7});
         }
     }
     // Beside it, a pixel holding the same stream with a weight of 0: no
     // path, no one's copy.
-    image[at(16, 12)] = held_path(1.0f, 0.0f, 1u, 12u + 65536u * 12u, 7u, 1.0f);
+    image[at(16, 12)] = held_path({.weight = 0.0f, .pixel = 12u + 65536u * 12u, .frame = 7});
     // Three copies in a row 8 apart: the middle sees both, each end the
     // middle only (17 apart is past the window).
     for (const std::uint32_t x : {40u, 48u, 56u}) {
-        image[at(x, 30)] = held_path(1.0f, 1.0f, 1u, 3u, 3u, 1.0f);
+        image[at(x, 30)] = held_path({.pixel = 3, .frame = 3});
     }
     // The same pixel key, another frame: another path.
-    image[at(44, 30)] = held_path(1.0f, 1.0f, 1u, 3u, 4u, 1.0f);
+    image[at(44, 30)] = held_path({.pixel = 3, .frame = 4});
     const std::vector<float> map = duplication_map(image, size);
     for (std::uint32_t y = 0; y < size.height; ++y) {
         for (std::uint32_t x = 0; x < size.width; ++x) {
@@ -797,7 +715,7 @@ TEST_CASE("the duplication map counts the copies of each pixel's path in its 17 
 
     // Every pixel one path: 1 where the window is inside the image, the
     // window's share inside it at the edges and corners.
-    std::vector<contracts::PathReservoir> same(image.size(), held_path(1.0f, 1.0f, 1u, 5u, 5u, 1.0f));
+    std::vector<contracts::PathReservoir> same(image.size(), held_path({.pixel = 5, .frame = 5}));
     const std::vector<float> full = duplication_map(same, size);
     CHECK(full[at(35, 25)] == doctest::Approx(1.0));
     CHECK(full[at(0, 0)] == doctest::Approx(80.0 / 288.0));
@@ -806,26 +724,14 @@ TEST_CASE("the duplication map counts the copies of each pixel's path in its 17 
 }
 
 TEST_CASE("a shift from the G-buffer's record gives the shift from the retraced primary hit, to its packing") {
-    // The scene of the self-shift test, each path shifted 3 pixels right and
+    // shift_scene(), as the self-shift test, each path shifted 3 pixels right and
     // 2 up: through the record the destination's tree packed (contract 5),
     // as the passes shift, and from its primary ray traced and resolved
     // again, as Phase 1 did. They differ by the record's packing (its
     // normal and wo to 10^-4 radians, its BSDF to a half's precision),
     // which replay carries along: whether each succeeds the same, and F and
     // the Jacobian within 2%, for all but 1 in 200.
-    const std::string text = camera_text("[0, 2, 3]", "[0, 0, 0]", 50) + sky("[0, 0, 0]", "[0, 0, 0]") +
-                             "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
-                             "[materials.glow]\nkind = \"emissive\"\nradiance = [200, 200, 200]\n"
-                             "[materials.lamp]\nkind = \"emissive\"\nradiance = [4, 4, 4]\n"
-                             "[[shapes]]\nkind = \"box\"\nmin = [-3, -1, -3]\nmax = [3, 0, 3]\nmaterial = \"floor\"\n" +
-                             one_firefly +
-                             "[[shapes]]\nkind = \"sphere\"\ncenter = [-1.2, 1.8, -1.0]\nradius = 0.6\nmaterial = \"lamp\"\n"
-                             "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
-                             "[materials.white]\nkind = \"rough\"\ncolor = [0.7, 0.7, 0.7]\n"
-                             "[materials.brass]\nkind = \"conductor\"\nf0 = [0.9, 0.7, 0.3]\nroughness = 0.05\n"
-                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.5, 0]\nradius = 0.5\nmaterial = \"glass\"\n"
-                             "[[shapes]]\nkind = \"sphere\"\ncenter = [1, 0.4, -0.3]\nradius = 0.4\nmaterial = \"white\"\n"
-                             "[[shapes]]\nkind = \"sphere\"\ncenter = [-0.9, 0.4, 0.2]\nradius = 0.4\nmaterial = \"brass\"\n";
+    const std::string text = shift_scene();
     constexpr frame::Extent size{96, 72};
     std::vector<tests::ShiftQuery> queries;
     for (std::uint32_t frame = 0; frame < 8; ++frame) {

@@ -7,10 +7,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -19,6 +19,7 @@
 #include "core/contracts/linear_image.h"
 #include "core/measurement/error.h"
 #include "core/measurement/reference.h"
+#include "support/same_bits.h"
 #include "support/text.h"
 
 using serenity::contracts::LinearImage;
@@ -26,6 +27,7 @@ using serenity::frame::Extent;
 using serenity::measurement::ReferenceBuilder;
 using serenity::measurement::relative_epsilon;
 using serenity::tests::contains;
+using serenity::tests::same_bits;
 
 namespace {
 
@@ -80,11 +82,6 @@ TwoPass two_pass(const std::vector<LinearImage>& of) {
         }
     }
     return sums;
-}
-
-bool same_bits(const LinearImage& a, const LinearImage& b) {
-    return a.extent == b.extent && a.rgb.size() == b.rgb.size() &&
-           std::memcmp(a.rgb.data(), b.rgb.data(), a.rgb.size() * sizeof(float)) == 0;
 }
 
 }  // namespace

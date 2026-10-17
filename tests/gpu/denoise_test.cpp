@@ -19,9 +19,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
-#include <iterator>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -35,6 +32,7 @@
 #include "gpu/support/rendering.h"
 #include "metal/device/offscreen.h"
 #include "metal/frame/renderer.h"
+#include "support/same_bits.h"
 #include "test_paths.h"
 
 using namespace serenity;
@@ -94,16 +92,6 @@ TEST_CASE("a network one weight off does not pass the denoise check") {
 // history is not.
 namespace {
 
-frame::Schedule denoised_graph() {
-    std::ifstream file{tests::graphs_dir / "restir_pt_denoised.toml"};
-    std::string text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-    const std::string from = "\"../../serenity-data/denoiser-v1-model/wide\"";
-    const std::size_t at = text.find(from);
-    REQUIRE(at != std::string::npos);
-    text.replace(at, from.size(), "\"" + (tests::data_dir / "denoise" / "network").string() + "\"");
-    return frame::parse_schedule(text, "restir_pt_denoised.toml, the fixture's network");
-}
-
 frame::FrameInputs frame_of(std::uint64_t index, std::uint64_t since, const scene::SceneDescription& scene) {
     // A changing scene: the accumulated image starts over every frame.
     frame::FrameInputs inputs = tests::frame_at(index, index, 30.0 + static_cast<double>(index) / 60.0, scene.camera);
@@ -120,7 +108,7 @@ std::vector<float> rendered(const std::vector<std::pair<frame::FrameInputs, fram
                             const scene::SceneDescription& scene) {
     metal::Device device;
     metal::Submission submission(device);
-    metal::Renderer renderer(device, submission, denoised_graph(), &scene);
+    metal::Renderer renderer(device, submission, tests::fixture_denoised_graph(), &scene);
     std::vector<float> out;
     for (const auto& [inputs, size] : frames) {
         metal::Offscreen target(device, submission, size);
@@ -138,12 +126,14 @@ TEST_CASE("the denoised graph's history starts over with ReSTIR's: at a history'
     constexpr frame::Extent size{64, 48};
     constexpr frame::Extent other{80, 40};
     const std::vector<float> fresh = rendered({{frame_of(2, 2, scene), size}}, scene);
-    // After two frames, a frame that starts its history over.
-    CHECK(rendered({{frame_of(0, 0, scene), size}, {frame_of(1, 0, scene), size}, {frame_of(2, 2, scene), size}},
-                   scene) == fresh);
+    // After two frames, a frame that starts its history over: to the bit.
+    CHECK(tests::same_bits(
+        rendered({{frame_of(0, 0, scene), size}, {frame_of(1, 0, scene), size}, {frame_of(2, 2, scene), size}}, scene),
+        fresh));
     // After a frame at another size, the frame at this one (a resize starts the history over).
-    CHECK(rendered({{frame_of(1, 1, scene), other}, {frame_of(2, 2, scene), size}}, scene) == fresh);
+    CHECK(tests::same_bits(rendered({{frame_of(1, 1, scene), other}, {frame_of(2, 2, scene), size}}, scene), fresh));
     // The same frame with its history: not the fresh one.
-    CHECK(rendered({{frame_of(0, 0, scene), size}, {frame_of(1, 0, scene), size}, {frame_of(2, 0, scene), size}},
-                   scene) != fresh);
+    CHECK_FALSE(tests::same_bits(
+        rendered({{frame_of(0, 0, scene), size}, {frame_of(1, 0, scene), size}, {frame_of(2, 0, scene), size}}, scene),
+        fresh));
 }

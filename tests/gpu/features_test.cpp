@@ -16,10 +16,11 @@
 //   - the light of a graph with the features pass is the graph's without
 //     it, to the bit.
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <numbers>
 #include <optional>
 #include <string>
@@ -36,6 +37,7 @@
 #include "metal/device/offscreen.h"
 #include "metal/device/submission.h"
 #include "metal/frame/renderer.h"
+#include "support/same_bits.h"
 #include "support/scene_text.h"
 #include "test_paths.h"
 
@@ -61,8 +63,13 @@ std::string above() {
 // projection (contract 17), some 10^-6 here.
 constexpr float still = 1e-4f;
 
-constexpr const char* paint = "[materials.paint]\nkind = \"rough\"\ncolor = [0.2, 0.4, 0.6]\n";
-constexpr float paint_color[3] = {0.2f, 0.4f, 0.6f};
+// A matte paint of `paint_color`, written from it.
+constexpr std::array<float, 3> paint_color{0.2f, 0.4f, 0.6f};
+
+std::string paint() {
+    return "[materials.paint]\nkind = \"rough\"\ncolor = [" + tests::exact(paint_color[0]) + ", " +
+           tests::exact(paint_color[1]) + ", " + tests::exact(paint_color[2]) + "]\n";
+}
 
 frame::Schedule features_graph() {
     return frame::parse_schedule("passes = [\"features\"]\n", "features graph");
@@ -96,7 +103,7 @@ TEST_CASE("features: a matte floor's albedo, normal and depth, and the sky's") {
     // A floor 1 m wide in x under the camera: the middle columns see it, the
     // outer ones (|x| > 0.5 m, 0.97 m at the image's edge) the sky.
     const scene::SceneDescription description = scene::parse(
-        above() + tests::sky("[0, 0, 0]", "[0, 0, 0]") + paint +
+        above() + tests::sky("[0, 0, 0]", "[0, 0, 0]") + paint() +
             "[[shapes]]\nkind = \"box\"\nmin = [-0.5, -0.1, -1]\nmax = [0.5, 0, 1]\nmaterial = \"paint\"\n",
         "floor");
     // The frame before at the same instant, through the same camera.
@@ -144,7 +151,7 @@ TEST_CASE("features: a floor seen through glass and in a mirror reports the floo
         // sky (albedo 1, no normal); transmitted, through the ball to the
         // floor under it.
         const scene::SceneDescription description = scene::parse(
-            above() + tests::sky("[0, 0, 0]", "[0, 0, 0]") + paint +
+            above() + tests::sky("[0, 0, 0]", "[0, 0, 0]") + paint() +
                 "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
                 "[[shapes]]\nkind = \"box\"\nmin = [-1, -0.1, -1]\nmax = [1, 0, 1]\nmaterial = \"paint\"\n"
                 "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.6, 0]\nradius = 0.4\nmaterial = \"glass\"\n",
@@ -171,7 +178,7 @@ TEST_CASE("features: a floor seen through glass and in a mirror reports the floo
         // reflects down onto the floor at (0, 0, 2).
         const scene::SceneDescription description = scene::parse(
             std::string("[camera]\nposition = [0, 1, 2]\nlook_at = [0, 0.5, 0]\nvertical_fov_degrees = 20\n") +
-                tests::sky("[0, 0, 0]", "[0, 0, 0]") + paint +
+                tests::sky("[0, 0, 0]", "[0, 0, 0]") + paint() +
                 "[materials.mirror]\nkind = \"conductor\"\nf0 = [1, 1, 1]\nroughness = 0.05\n"
                 "[[shapes]]\nkind = \"box\"\nmin = [-3, -0.1, -3]\nmax = [3, 0, 6]\nmaterial = \"paint\"\n"
                 "[[shapes]]\nkind = \"box\"\nmin = [-3, 0, -0.2]\nmax = [3, 3, 0]\nmaterial = \"mirror\"\n",
@@ -197,7 +204,7 @@ TEST_CASE("features: a camera moved sideways moves the floor by the analytic off
     // less the current one is +3.30 pixels in x, 0 in y and in depth. The
     // sky, at infinity, does not move under a camera that only moves.
     const scene::SceneDescription description = scene::parse(
-        above() + tests::sky("[0, 0, 0]", "[0, 0, 0]") + paint +
+        above() + tests::sky("[0, 0, 0]", "[0, 0, 0]") + paint() +
             "[[shapes]]\nkind = \"box\"\nmin = [-0.5, -0.1, -1]\nmax = [0.5, 0, 1]\nmaterial = \"paint\"\n",
         "floor");
     contracts::Camera before = description.camera;
@@ -233,7 +240,7 @@ TEST_CASE("features: a wandering ball's motion is where its motion placed it a f
     // the sample's jitter, within half a pixel of it, moves the answer by at
     // most |d_y| / (2 z) pixels, which the tolerance allows.
     const scene::SceneDescription description = scene::parse(
-        above() + tests::sky("[0, 0, 0]", "[0, 0, 0]") + paint +
+        above() + tests::sky("[0, 0, 0]", "[0, 0, 0]") + paint() +
             "[[shapes]]\nkind = \"box\"\nmin = [-2, -0.1, -2]\nmax = [2, 0, 2]\nmaterial = \"paint\"\n"
             "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.5, 0]\nradius = 0.2\nmaterial = \"paint\"\n"
             "motion = { kind = \"wander\", reach = 0.1, speed = 4, seed = 3 }\n",
@@ -287,21 +294,20 @@ TEST_CASE("features: a graph's light is the same to the bit with the features pa
         metal::Renderer renderer(device, submission, frame::load_schedule(tests::graphs_dir / graph), &description);
         std::uint64_t last = 0;
         for (std::uint64_t i = 0; i < 3; ++i) {
-            frame::FrameInputs inputs = tests::frame_at(i, i, static_cast<double>(i) / 60.0, description.camera);
-            inputs.reused_since = 0;
+            // Its reuse history kept from frame 0 (reused_since, the default).
+            const frame::FrameInputs inputs =
+                tests::frame_at(i, i, static_cast<double>(i) / 60.0, description.camera);
             last = metal::render_to_offscreen(submission, target, renderer, inputs);
         }
         (void)submission.wait_until_complete(last);
+        CHECK(renderer.non_finite_samples() == 0);
         std::vector<float> image(std::size_t{size.width} * size.height * 4);
         renderer.read_accumulated(image);
         return image;
     };
     const std::vector<float> without = accumulated("restir_pt.toml");
     const std::vector<float> with = accumulated("restir_pt_features.toml");
-    REQUIRE(without.size() == with.size());
-    std::size_t differing = 0;
-    for (std::size_t i = 0; i < with.size(); ++i) {
-        differing += std::memcmp(&with[i], &without[i], sizeof(float)) != 0 ? 1u : 0u;
-    }
-    CHECK(differing == 0u);
+    CHECK(tests::same_bits(with, without));
+    // And it holds light: not two black images alike.
+    CHECK(std::ranges::max(with) > 0.0f);
 }

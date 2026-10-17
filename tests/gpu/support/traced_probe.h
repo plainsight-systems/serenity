@@ -9,7 +9,9 @@
 //
 // Its own dispatch, not the probe runner's (probe_runner.h): it binds the
 // structure as a resource, and records the structure's update in the same
-// encoder as the trace when the shapes are moved, as a frame does.
+// encoder as the trace when the shapes are moved, as a frame does. The
+// probes' library is the caller's, made once for all its dispatches (P.9,
+// GPU.6), as the probe runner's is.
 //
 // Failures are the test's (P.7), as the probe runner's are.
 
@@ -19,6 +21,7 @@
 #include <initializer_list>
 #include <optional>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -28,21 +31,22 @@
 
 #include "core/contracts/transform.h"
 #include "gpu/support/probe_runner.h"
+#include "gpu/support/shared_resources.h"
 #include "metal/acceleration/scene_acceleration.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/device/submission.h"
 #include "metal/scene/scene_buffers.h"
 #include "metal/scene/shape_transforms.h"
-#include "serenity/metallib/probes.h"
 
 namespace serenity::tests {
 
 // A scene on the GPU, as a frame traces it: its arrays, its shapes'
-// transforms and its structure.
+// transforms and its structure; and the probes' library (metallib::probes).
 struct Traced {
     metal::Device& device;
     metal::Submission& submission;
+    const metal::Library& library;
     const metal::SceneBuffers& buffers;
     metal::ShapeTransforms& transforms;
     metal::SceneAcceleration& acceleration;
@@ -56,24 +60,13 @@ template <GpuBytes Out>
 std::vector<Out> run_traced(const Traced& traced, const char* kernel, std::size_t threads,
                             std::initializer_list<Binding> inputs,
                             const std::optional<std::vector<contracts::Transform>>& moved = std::nullopt) {
-    metal::Library library(traced.device, metallib::probes);
-    const auto pipeline = library.compute_pipeline(kernel);
+    const auto pipeline = traced.library.compute_pipeline(kernel);
     const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
     MTL::Device* mtl = traced.device.handle();
-    auto out = NS::TransferPtr(mtl->newBuffer(std::max<std::size_t>(threads * sizeof(Out), 16),
-                                              MTL::ResourceStorageModeShared));
-    REQUIRE(out);
-    std::memset(out->contents(), 0, threads * sizeof(Out));
-    traced.submission.make_resident(out.get());
+    const auto out = shared_buffer(traced.device, traced.submission, {}, threads * sizeof(Out));
     std::vector<NS::SharedPtr<MTL::Buffer>> buffers;
     for (const Binding& input : inputs) {
-        // At least 16 bytes, so an empty array still has an address.
-        auto buffer = NS::TransferPtr(
-            mtl->newBuffer(std::max<std::size_t>(input.bytes().size(), 16), MTL::ResourceStorageModeShared));
-        REQUIRE(buffer);
-        std::memcpy(buffer->contents(), input.bytes().data(), input.bytes().size());
-        traced.submission.make_resident(buffer.get());
-        buffers.push_back(std::move(buffer));
+        buffers.push_back(shared_buffer(traced.device, traced.submission, input.bytes()));
     }
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
     descriptor->setMaxBufferBindCount(1 + buffers.size() + 4);

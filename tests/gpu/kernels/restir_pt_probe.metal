@@ -1,7 +1,9 @@
 // ReSTIR PT's pieces on their own (tests/gpu/restir_pt_test.cpp): the
 // reconnection criteria on given pairs, the paired neighbors of a frame,
-// and a path tree's path shifted to another pixel, each through the
-// functions the passes call.
+// a path tree's path shifted to another pixel, the temporal merge and the
+// duplication map, each through the functions the passes call. Each
+// kernel's comment lists its bindings in order (gpu/support/
+// probe_runner.h), its records in restir_pt_probe.h.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -30,6 +32,8 @@ using serenity::tests::PairingResult;
 using serenity::tests::ShiftQuery;
 using serenity::tests::ShiftResult;
 
+// The reconnection criteria on given pairs. Bindings: the results at 0, the
+// queries at 1, their count at 2.
 kernel void pt_criteria(device CriteriaResult* out [[buffer(0)]], const device CriteriaQuery* queries [[buffer(1)]],
                         constant uint& count [[buffer(2)]], uint i [[thread_position_in_grid]]) {
     if (i >= count) {
@@ -54,6 +58,9 @@ kernel void pt_criteria(device CriteriaResult* out [[buffer(0)]], const device C
                             pair.forward, pair.inverse};
 }
 
+// Each pixel's partner in a frame's pairing, and its partner's. Bindings:
+// the results at 0, the query (frame, texture, image size) at 1, the reuse
+// textures at 2.
 kernel void pt_pairing(device PairingResult* out [[buffer(0)]], constant PairingQuery& q [[buffer(1)]],
                        constant ushort* textures [[buffer(2)]], uint i [[thread_position_in_grid]]) {
     if (i >= q.width * q.height) {
@@ -66,6 +73,10 @@ kernel void pt_pairing(device PairingResult* out [[buffer(0)]], constant Pairing
     out[i] = PairingResult{partner.x, partner.y, back.x, back.y};
 }
 
+// A path drawn at each query's source pixel, shifted to its destination.
+// Bindings: the results at 0, the queries at 1, the camera at 2, the
+// structure at 3, the scene's block at 4, its glows at 5 and transforms at
+// 6, the settings at 7, the queries' count at 8, the light tiles at 9.
 kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQuery* queries [[buffer(1)]],
                      constant serenity::contracts::CameraData& camera [[buffer(2)]],
                      primitive_acceleration_structure structure [[buffer(3)]],
@@ -126,8 +137,9 @@ kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQu
                          {0u, 0u, 0u}};
 }
 
-// The light tiles pt_shift's trees draw from, frame 0's, bound as pt_shift
-// binds the scene, the tiles at 9.
+// The light tiles pt_shift's trees draw from, frame 0's. Bindings: as
+// pt_shift binds the scene, the structure at 3, the block at 4, the glows
+// at 5, the transforms at 6; the tiles it writes at 9.
 kernel void pt_light_tiles(primitive_acceleration_structure structure [[buffer(3)]],
                            constant serenity::gpu::SceneBlock& block [[buffer(4)]],
                            constant float* sphere_glows [[buffer(5)]],
@@ -142,7 +154,8 @@ kernel void pt_light_tiles(primitive_acceleration_structure structure [[buffer(3
 }
 
 // The temporal merge on given inputs, its cap computed as the pass does
-// (restir_pt_temporal.metal, restir_pt_temporal).
+// (restir_pt_temporal.metal, restir_pt_temporal). Bindings: the results at
+// 0, the queries at 1, their count at 2.
 kernel void pt_temporal_merge(device PathMergeResult* out [[buffer(0)]], const device PathMergeQuery* queries [[buffer(1)]],
                               constant uint& count [[buffer(2)]], uint i [[thread_position_in_grid]]) {
     if (i >= count) {
@@ -158,6 +171,7 @@ kernel void pt_temporal_merge(device PathMergeResult* out [[buffer(0)]], const d
 
 // The duplication map of an image of reservoirs, as the pass computes it
 // (restir_pt_duplication.metal), dispatched as it is: whole groups.
+// Bindings: the map at 0, the reservoirs at 1, the image's size at 2.
 kernel void pt_duplication(device float* map [[buffer(0)]],
                            const device serenity::contracts::PathReservoir* finals [[buffer(1)]],
                            constant uint2& size [[buffer(2)]], uint2 pixel [[thread_position_in_grid]],

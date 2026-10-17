@@ -111,7 +111,7 @@ TEST_CASE("the tone map's settings are read with its pass") {
     CHECK(schedule.tone_map->bloom == 0.25f);
     // A whole number is a number.
     CHECK(parse_schedule("passes = [\"path\", \"tone_map\"]\n[tone_map]\nexposure = 1\nbloom = 0\n", "g")
-              .tone_map->exposure == 1.0f);
+              .tone_map.value().exposure == 1.0f);
 }
 
 TEST_CASE("every mistake in the tone map's settings is an error at its line") {

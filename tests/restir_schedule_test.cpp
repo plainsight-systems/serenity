@@ -16,6 +16,7 @@
 
 #include "core/frame/schedule.h"
 #include "core/passes/restir_di.h"
+#include "support/schedules.h"
 #include "support/text.h"
 
 using namespace serenity::frame;
@@ -23,49 +24,17 @@ using serenity::contracts::BiasCorrection;
 using serenity::contracts::Permutation;
 using serenity::contracts::VisibilityReuse;
 using serenity::passes::RestirDi;
-using serenity::passes::ToneMap;
+using serenity::tests::look;
+using serenity::tests::refusal;
+using serenity::tests::refused_for;
+using serenity::tests::written_restir_di;
 
 namespace {
-
-constexpr ToneMap look{0.0f, 0.04f, {0.0f, 0.0f}};
 
 constexpr PassKind initial = PassKind::restir_initial;
 constexpr PassKind temporal = PassKind::restir_temporal;
 constexpr PassKind spatial = PassKind::restir_spatial;
 constexpr PassKind shade = PassKind::restir_shade;
-
-// The settings a graph of `passes` is written with: RTXDI's defaults for
-// what its passes read, zeros for the rest (restir_di.h).
-RestirDi written_for(const std::vector<PassKind>& passes) {
-    const auto has = [&](PassKind kind) {
-        for (PassKind p : passes) {
-            if (p == kind) {
-                return true;
-            }
-        }
-        return false;
-    };
-    RestirDi s{};
-    s.candidates = serenity::passes::written_candidates;
-    s.bsdf_candidates = serenity::passes::written_bsdf_candidates;
-    if (has(temporal)) {
-        s.history = serenity::passes::written_history;
-        s.permutation = serenity::passes::written_permutation;
-    }
-    if (has(spatial)) {
-        s.neighbors = serenity::passes::written_neighbors;
-        s.radius = serenity::passes::written_radius;
-    }
-    if (has(temporal) || has(spatial)) {
-        s.depth_threshold = serenity::passes::written_depth_threshold;
-        s.normal_threshold = serenity::passes::written_normal_threshold;
-        s.bias_correction = serenity::passes::written_bias_correction;
-        s.visibility_reuse = serenity::passes::written_visibility_reuse;
-        s.visibility_age = serenity::passes::written_visibility_age;
-        s.visibility_distance = serenity::passes::written_visibility_distance;
-    }
-    return s;
-}
 
 // A ReSTIR graph of `restir` passes, shown through the tone map.
 Schedule graph(std::vector<PassKind> restir, std::optional<RestirDi> settings) {
@@ -73,19 +42,10 @@ Schedule graph(std::vector<PassKind> restir, std::optional<RestirDi> settings) {
     return Schedule{restir, look, settings};
 }
 
+// The same, its settings at the written defaults (support/schedules.h).
 Schedule written(std::vector<PassKind> restir) {
-    const RestirDi settings = written_for(restir);
+    const RestirDi settings = written_restir_di(restir);
     return graph(std::move(restir), settings);
-}
-
-std::string refusal(const Schedule& schedule) {
-    return invalid(schedule).value_or("");
-}
-
-bool refused_for(const Schedule& schedule, std::string_view part) {
-    const std::string reason = refusal(schedule);
-    INFO(reason);
-    return serenity::tests::contains(reason, part);
 }
 
 // Why the settings rule refuses `settings` for `passes`, or "".
@@ -139,25 +99,28 @@ TEST_CASE("ReSTIR DI's passes keep their order, each at most once, the initial p
     CHECK(refused_for(written({initial, initial, shade}), "restir_initial more than once"));
     // The shade twice is two passes that accumulate, refused by that rule.
     CHECK(refused_for(written({initial, shade, shade}), "passes that accumulate"));
-    CHECK(refused_for(Schedule{{initial, temporal, PassKind::path, PassKind::tone_map}, look, written_for({initial, temporal})},
+    CHECK(refused_for(Schedule{{initial, temporal, PassKind::path, PassKind::tone_map},
+                               look,
+                               written_restir_di({initial, temporal})},
                       "without both restir_initial and restir_shade"));
     // Without the shade nothing writes radiance for the tone map.
-    CHECK(refused_for(graph({initial}, written_for({initial})), "no pass before it computes light"));
+    CHECK(refused_for(graph({initial}, written_restir_di({initial})), "no pass before it computes light"));
     CHECK(refused_for(written({temporal, shade}), "without both restir_initial and restir_shade"));
     // Beside another pass that computes light or accumulates.
-    CHECK(refused_for(Schedule{{initial, PassKind::path, shade, PassKind::tone_map}, look, written_for({initial})},
+    CHECK(refused_for(Schedule{{initial, PassKind::path, shade, PassKind::tone_map}, look,
+                               written_restir_di({initial})},
                       "passes that accumulate"));
 }
 
 TEST_CASE("ReSTIR DI's settings come exactly with its passes") {
     CHECK(refused_for(graph({initial, shade}, std::nullopt), "ReSTIR DI's passes and no [restir_di] settings"));
-    CHECK(refused_for(Schedule{{PassKind::path, PassKind::tone_map}, look, written_for({initial})},
+    CHECK(refused_for(Schedule{{PassKind::path, PassKind::tone_map}, look, written_restir_di({initial})},
                       "[restir_di] settings and no ReSTIR DI pass"));
 }
 
 TEST_CASE("the candidates, read by every ReSTIR graph, in [1, 32]") {
     const std::vector<PassKind> passes{initial, shade};
-    RestirDi s = written_for(passes);
+    RestirDi s = written_restir_di(passes);
     for (const std::uint32_t m : {1u, 8u, 32u}) {
         s.candidates = m;
         CHECK(settings_refusal(s, passes).empty());
@@ -171,7 +134,7 @@ TEST_CASE("the candidates, read by every ReSTIR graph, in [1, 32]") {
 
 TEST_CASE("the BSDF candidates, read by every ReSTIR graph, in [0, 32]") {
     const std::vector<PassKind> passes{initial, shade};
-    RestirDi s = written_for(passes);
+    RestirDi s = written_restir_di(passes);
     for (const std::uint32_t n : {0u, 1u, 32u}) {
         s.bsdf_candidates = n;
         CHECK(settings_refusal(s, passes).empty());
@@ -183,7 +146,7 @@ TEST_CASE("the BSDF candidates, read by every ReSTIR graph, in [0, 32]") {
 TEST_CASE("each setting the passes do not read must be its zero") {
     const std::vector<PassKind> ris{initial, shade};
     const auto refused = [&](auto change, std::string_view part) {
-        RestirDi s = written_for(ris);
+        RestirDi s = written_restir_di(ris);
         change(s);
         const std::string reason = settings_refusal(s, ris);
         INFO(reason);
@@ -205,7 +168,7 @@ TEST_CASE("each setting the passes do not read must be its zero") {
 TEST_CASE("the merges' settings, each in its range") {
     const std::vector<PassKind> both{initial, temporal, spatial, shade};
     const auto reason_for = [&](auto change) {
-        RestirDi s = written_for(both);
+        RestirDi s = written_restir_di(both);
         change(s);
         return settings_refusal(s, both);
     };
@@ -250,7 +213,7 @@ TEST_CASE("the merges' settings, each in its range") {
 
 TEST_CASE("the final-visibility reuse's settings are read only in basic mode, and only with reuse on") {
     const std::vector<PassKind> spatial_graph{initial, spatial, shade};
-    RestirDi raytraced = written_for(spatial_graph);
+    RestirDi raytraced = written_restir_di(spatial_graph);
     raytraced.bias_correction = BiasCorrection::raytraced;
     CHECK(serenity::tests::contains(settings_refusal(raytraced, spatial_graph), "visibility_reuse, on, is read only"));
     raytraced.visibility_reuse = VisibilityReuse::off;
@@ -258,7 +221,7 @@ TEST_CASE("the final-visibility reuse's settings are read only in basic mode, an
     raytraced.visibility_distance = 0.0f;
     CHECK(settings_refusal(raytraced, spatial_graph).empty());
 
-    RestirDi off = written_for(spatial_graph);
+    RestirDi off = written_restir_di(spatial_graph);
     off.visibility_reuse = VisibilityReuse::off;
     CHECK(serenity::tests::contains(settings_refusal(off, spatial_graph), "visibility_age, 4, is read only"));
     off.visibility_age = 0;

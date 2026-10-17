@@ -46,9 +46,6 @@ TEST_CASE("output: each kind by its name, its extension and its source") {
     CHECK(serenity::output::default_format == ImageFormat::png);
     // What a diagnostic lists: every name, in the list's order.
     CHECK(serenity::output::image_format_names() == "png or pfm");
-    // A value no kind names is not reached here: the enumeration's two
-    // kinds span one bit, so none of its values is unnamed, and casting one
-    // in would be undefined behavior.
 }
 
 TEST_CASE("output: write_image writes each kind by its own writer") {

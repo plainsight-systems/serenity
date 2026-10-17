@@ -100,8 +100,8 @@ Vec3 lit_floor(const contracts::CameraData& framed, frame::Extent size, tests::P
 
 // The glass sphere's middle, under a sky of L every way: F0 of L reflected
 // where the ray enters, and (1 - F0)^2 tau of L through both surfaces, tau
-// the medium's transmittance along the way. F0 = ((1.5 - 1) / (1.5 + 1))^2.
-constexpr double glass_f0 = 0.04;
+// the medium's transmittance along the way (F0, support/references.h).
+using tests::glass_f0;
 
 double through_glass(double sky_radiance, double tau) {
     return sky_radiance * (glass_f0 + (1.0 - glass_f0) * (1.0 - glass_f0) * tau);

@@ -5,8 +5,9 @@
 // (core/frame/history.h). The program is run as its user runs it; what it
 // refuses, and the names and sizes it writes, are tests/test_headless.sh's.
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <filesystem>
 #include <format>
 #include <optional>
@@ -28,6 +29,7 @@
 #include "programs.h"
 #include "support/files.h"
 #include "support/run_program.h"
+#include "support/same_bits.h"
 #include "test_paths.h"
 
 using namespace serenity;
@@ -85,15 +87,11 @@ TEST_CASE("headless: a PFM frame is the accumulated image's radiance, bit for bi
 
         const contracts::LinearImage written = output::read_pfm(out / std::format("frame-{:06}.pfm", index));
         CHECK(written.extent == size);
-        REQUIRE(written.rgb.size() == expected.rgb.size());
-        CHECK(std::memcmp(written.rgb.data(), expected.rgb.data(), expected.rgb.size() * sizeof(float)) == 0);
+        CHECK(tests::same_bits(written, expected));
         // Not an empty image compared with another: the sphere and the
         // checks are lit.
-        float brightest = 0.0f;
-        for (const float value : written.rgb) {
-            brightest = value > brightest ? value : brightest;
-        }
-        CHECK(brightest > 0.0f);
+        REQUIRE_FALSE(written.rgb.empty());
+        CHECK(std::ranges::max(written.rgb) > 0.0f);
     }
     submission.finish();
 }

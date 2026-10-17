@@ -1,10 +1,12 @@
 #pragma once
 
-// What the tests share for text (ES.3, F.10): the message a call throws, a
-// text with one part replaced, and whether a text holds a part.
+// What the tests share for text and what calls throw (ES.3, F.10): the
+// message a call throws, or the thrown object itself; a text with one part
+// replaced; and whether a text holds a part.
 
 #include <concepts>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -23,6 +25,19 @@ std::string error_of(F&& call) {
         return error.what();
     }
     return "";
+}
+
+// What `call` throws as an E, a copy of it, for a test that reads the
+// thrown object's own fields; none if it throws nothing. Anything else it
+// throws passes on, and fails the test case, as error_of()'s does.
+template <std::copy_constructible E, std::invocable F>
+std::optional<E> thrown(F&& call) {
+    try {
+        (void)std::forward<F>(call)();
+    } catch (const E& error) {
+        return error;
+    }
+    return std::nullopt;
 }
 
 // Whether `text` holds `part`.

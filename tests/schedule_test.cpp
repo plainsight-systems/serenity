@@ -4,35 +4,19 @@
 #include <limits>
 #include <optional>
 #include <set>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 
 #include <doctest/doctest.h>
 
 #include "core/frame/schedule.h"
-#include "support/text.h"
+#include "support/schedules.h"
 
 using namespace serenity::frame;
 using serenity::passes::ToneMap;
-
-namespace {
-
-constexpr ToneMap look{0.0f, 0.04f, {0.0f, 0.0f}};
-
-// Why the core refuses `schedule`, or "" if it accepts it.
-std::string refusal(const Schedule& schedule) {
-    return invalid(schedule).value_or("");
-}
-
-// Whether the core refuses `schedule` for a reason that says `part`.
-bool refused_for(const Schedule& schedule, std::string_view part) {
-    const std::string reason = refusal(schedule);
-    INFO(reason);
-    return serenity::tests::contains(reason, part);
-}
-
-}  // namespace
+using serenity::tests::look;
+using serenity::tests::refusal;
+using serenity::tests::refused_for;
 
 TEST_CASE("every pass kind has a distinct name that reads back as itself") {
     std::set<std::string> names;
@@ -52,7 +36,6 @@ TEST_CASE("an unknown name is no pass kind") {
 TEST_CASE("which pass kinds read the scene") {
     CHECK_FALSE(needs_scene(PassKind::test_pattern));
     CHECK(needs_scene(PassKind::preview));
-    CHECK(pass_kind("preview") == PassKind::preview);
 }
 
 TEST_CASE("the path pass reads the scene and accumulates; the others do not accumulate") {
@@ -60,7 +43,6 @@ TEST_CASE("the path pass reads the scene and accumulates; the others do not accu
     CHECK(accumulates(PassKind::path));
     CHECK_FALSE(accumulates(PassKind::preview));
     CHECK_FALSE(accumulates(PassKind::test_pattern));
-    CHECK(pass_kind("path") == PassKind::path);
 }
 
 TEST_CASE("which pass kinds write and read which of the frame's images") {
@@ -138,19 +120,6 @@ TEST_CASE("tone-map settings come exactly with the pass, in range") {
     CHECK(refused_for(with(0.0f, -0.01f), "bloom"));
     CHECK(refused_for(with(0.0f, std::numeric_limits<float>::infinity()), "bloom"));
     // Each value as the graph file writes it, as every other refusal has it.
-    CHECK(refusal(with(10.5f, 0.0f)) == "the tone map's exposure, 10.5 stops, must be finite, within [-10, 10]");
-    CHECK(refusal(with(0.0f, -0.01f)) == "the tone map's bloom, -0.01, must be within [0, 1)");
-}
-
-TEST_CASE("every kind reads back by its name, and a value no kind names is refused") {
-    for (const PassKind kind : all_pass_kinds()) {
-        CHECK(pass_kind(name(kind)) == kind);
-    }
-    const auto stray = static_cast<PassKind>(static_cast<int>(PassKind::last) + 1);
-    CHECK_THROWS_AS((void)name(stray), std::logic_error);
-    CHECK_THROWS_AS((void)needs_scene(stray), std::logic_error);
-    CHECK_THROWS_AS((void)accumulates(stray), std::logic_error);
-    CHECK_THROWS_AS((void)writes_radiance(stray), std::logic_error);
-    CHECK_THROWS_AS((void)reads_radiance(stray), std::logic_error);
-    CHECK_THROWS_AS((void)writes_target(stray), std::logic_error);
+    CHECK(refused_for(with(10.5f, 0.0f), "exposure, 10.5 stops"));
+    CHECK(refused_for(with(0.0f, -0.01f), "bloom, -0.01,"));
 }

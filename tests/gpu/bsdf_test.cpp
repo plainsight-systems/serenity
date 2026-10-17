@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,7 @@
 #include "gpu/support/probe_runner.h"
 #include "metal/scene/scene_buffers.h"
 #include "support/references.h"
+#include "support/statistics.h"
 #include "support/vector.h"
 
 using namespace serenity;
@@ -61,16 +63,12 @@ struct Parameters {
 
 Bsdf make(BsdfKind kind, Vec3 normal, contracts::Float3 color, Parameters p) {
     Bsdf b{};
-    b.normal = {static_cast<float>(normal.x), static_cast<float>(normal.y), static_cast<float>(normal.z)};
+    b.normal = tests::float3(normal);
     b.kind = kind;
     b.color = color;
     b.alpha = p.alpha;
     b.ior = p.ior;
     return b;
-}
-
-contracts::Float3 packed(Vec3 v) {
-    return {static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z)};
 }
 
 constexpr std::uint32_t sample_count = 1u << 20;
@@ -79,12 +77,12 @@ constexpr std::uint32_t cell_count = grid * grid;
 
 std::vector<BsdfDraw> samples(ProbeRunner& gpu, const Bsdf& bsdf, Vec3 wo) {
     return gpu.run<BsdfDraw>("bsdf_samples", sample_count,
-                             {Binding::of(bsdf), Binding::of(tests::BsdfQuery{packed(wo), sample_count})});
+                             {Binding::of(bsdf), Binding::of(tests::BsdfQuery{tests::float3(wo), sample_count})});
 }
 
 std::vector<BsdfCell> density(ProbeRunner& gpu, const Bsdf& bsdf, Vec3 wo) {
     return gpu.run<BsdfCell>("bsdf_density", cell_count,
-                             {Binding::of(bsdf), Binding::of(tests::BsdfQuery{packed(wo), grid})});
+                             {Binding::of(bsdf), Binding::of(tests::BsdfQuery{tests::float3(wo), grid})});
 }
 
 // The solid angle of each of bsdf_density's cells: the grid's are equal.
@@ -209,32 +207,36 @@ void check_histogram(const Sampled& s) {
             counted[coarse_cell(p.direction, coarse)] += 1.0;
         }
     }
-    double chi2 = 0.0;
-    std::uint32_t bins = 0;
+    // Bins expecting fewer than 20 pooled into one.
+    std::vector<double> binned_expected;
+    std::vector<double> binned_counted;
     double pooled_expected = 0.0;
     double pooled_counted = 0.0;
     for (std::size_t b = 0; b < expected.size(); ++b) {
         if (expected[b] >= 20.0) {
-            chi2 += (counted[b] - expected[b]) * (counted[b] - expected[b]) / expected[b];
-            ++bins;
+            binned_expected.push_back(expected[b]);
+            binned_counted.push_back(counted[b]);
         } else {
             pooled_expected += expected[b];
             pooled_counted += counted[b];
         }
     }
     if (pooled_expected >= 20.0) {
-        chi2 += (pooled_counted - pooled_expected) * (pooled_counted - pooled_expected) / pooled_expected;
-        ++bins;
+        binned_expected.push_back(pooled_expected);
+        binned_counted.push_back(pooled_counted);
     } else {
         // Too few expected to weigh by Pearson: the pooled bins may hold no
         // more than a few times what they expect.
         INFO("pooled bins: " << pooled_counted << " samples, " << pooled_expected << " expected");
         CHECK(pooled_counted <= 3.0 * pooled_expected + 10.0);
     }
-    const double dof = bins - 1.0;
-    INFO("chi^2 / dof = " << chi2 / dof << " over " << bins << " bins");
-    REQUIRE(bins > 10);
-    CHECK(chi2 / dof < 1.0 + 5.0 * std::sqrt(2.0 / dof));
+    REQUIRE(binned_counted.size() > 10);
+    // Expected through the pdf's quadrature over each bin: five sigma
+    // (support/statistics.h).
+    const tests::ChiSquare fit = tests::chi_square(binned_counted, binned_expected);
+    INFO("chi^2 / dof = " << fit.statistic / static_cast<double>(fit.dof) << " over " << binned_counted.size()
+                          << " bins");
+    CHECK(tests::within_five_sigma(fit));
 }
 
 // The checks every non-delta kind passes: consistency, the pdf's integral,
@@ -246,14 +248,18 @@ void check_histogram(const Sampled& s) {
 Sampled check_sampling_follows_pdf(ProbeRunner& gpu, const Bsdf& bsdf, Vec3 wo, std::uint32_t lobe,
                                    bool beside_delta = false) {
     Sampled all{samples(gpu, bsdf, wo), density(gpu, bsdf, wo)};
-    Sampled s = all;
+    // Beside a delta lobe, a copy with its draws' pdfs zeroed; else what
+    // was drawn itself, a million draws not copied for nothing (COPY.7).
+    std::optional<Sampled> without_delta;
     if (beside_delta) {
-        for (BsdfDraw& p : s.drawn) {
+        without_delta = all;
+        for (BsdfDraw& p : without_delta->drawn) {
             if ((p.lobe & contracts::lobe_delta) != 0u) {
                 p.pdf = 0.0f;
             }
         }
     }
+    const Sampled& s = without_delta ? *without_delta : all;
     const std::uint32_t valid = check_consistent(s.drawn, lobe);
     REQUIRE(valid > sample_count / 2);
 
@@ -497,7 +503,8 @@ TEST_CASE("eta: what a transmission scales radiance by, which the path tracer's 
     ProbeRunner gpu;
     const Vec3 n = unit(0.0, 0.0, 1.0);
     const auto eta_of = [&](const Bsdf& bsdf, Vec3 wo) {
-        return gpu.run<float>("bsdf_eta_of", 1, {Binding::of(bsdf), Binding::of(tests::BsdfQuery{packed(wo), 1u})})[0];
+        return gpu.run<float>("bsdf_eta_of", 1,
+                              {Binding::of(bsdf), Binding::of(tests::BsdfQuery{tests::float3(wo), 1u})})[0];
     };
     const Bsdf glass = make(BsdfKind::dielectric, n, {1.0f, 1.0f, 1.0f}, {.ior = 1.5f});
     const Vec3 outside = unit(0.3, 0.0, 1.0);
