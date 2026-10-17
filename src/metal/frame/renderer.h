@@ -341,7 +341,8 @@ namespace serenity::metal {
 //     copying it into the slot's hand-off image (denoise_images.h,
 //     DenoiseImages::light_radiance), which the denoise pass reads in its
 //     place: RGBA32Float at the light size, 31 MB at 1728 x 1117, copied
-//     once a frame, about 0.1 ms of the light half (measured in the note);
+//     once a frame (31 MB read, 31 written: a fraction of a millisecond at
+//     the memory's bandwidth; the timestamps do not resolve it, the note);
 //   - the full-size albedo: the features kernel at the output's size writes
 //     all four of its images whole each frame, the albedo the one the
 //     denoiser reads, so, as the light-size features, a FeatureImages at
