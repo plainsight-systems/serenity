@@ -56,7 +56,9 @@ inline CameraRay camera_ray(constant serenity::contracts::CameraData& camera, fl
 // only through one, so a pinhole's paths draw what they drew before lenses.
 // The one ray every light pass, every shift's destination and the features
 // take a pixel's path from (ES.3: they must agree to the bit); `numbers` is
-// left after what it drew, for the path to go on drawing.
+// left after what it drew, for the path to go on drawing. The path pass
+// writes the same draw out instead, for its kernel's speed
+// (passes/path/path.metal).
 inline CameraRay pixel_ray(constant serenity::contracts::CameraData& camera, uint2 pixel, uint2 size,
                            thread PathNumbers& numbers) {
     const float2 within = next_numbers2(numbers);  // the point in the pixel

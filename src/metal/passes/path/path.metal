@@ -41,8 +41,18 @@ inline void trace_pixel(constant serenity::contracts::FrameConstants& frame,
         // it (metal/scene/scene_block.metal.h).
         const path::Scene scene{structure, &block, transforms, sphere_glows};
 
+        // The camera's ray as pixel_ray() draws it (camera/thin_lens.metal.h),
+        // written out here: through pixel_ray() the path pass's kernel
+        // compiled otherwise and measured 2% slower (docs/research/
+        // 2026-10-16-codebase-guidelines-pass.md, C2). The same numbers in
+        // the same order; the byte diff of every graph holds them equal.
         PathNumbers numbers = path_numbers(pixel, frame.frame_index);
-        const CameraRay ray = pixel_ray(camera, pixel, uint2(frame.width, frame.height), numbers);
+        const float2 within = next_numbers2(numbers);  // the point in the pixel
+        // The point on the lens, drawn only through one, so a pinhole's
+        // paths draw what they drew before lenses; a pinhole reads none.
+        const float2 lens = has_lens(camera) ? next_numbers2(numbers) : float2(0.0f);
+        const CameraRay ray =
+            camera_ray(camera, float2(pixel) + within, lens, uint2(frame.width, frame.height));
         const float3 sample = manifold ? path::radiance_manifold(scene, ray, numbers, queue,
                                                                  pixel.y * frame.width + pixel.x)
                                        : path::radiance(scene, ray, numbers);
