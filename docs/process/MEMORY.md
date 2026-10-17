@@ -339,3 +339,17 @@ Clarified by the user 2026-10-12:
 
 - Queue: `QUEUE.md`
 - Workflow: `workflow.md`
+
+## How this project works (2026-10-17, the user)
+
+Serenity is a tech demo, not a research project. The repository's
+`CLAUDE.md`, "How this project works", is the project's constitution and
+overrides the global operator profile and the inherited governance where
+they conflict: production practice by default; the design order
+(architecture documents, then headers with both C++ guideline corpora,
+then code); one measurement, the demo graph's frame time; an image change
+shown before and after for the user to judge; byte identity as the guard
+where the image should not change; tests that guard invariants and
+contracts, not coverage; valid findings fixed together; quality trades the
+user's call; short reports. Its default agent brief is the starting point
+for every delegated task.
