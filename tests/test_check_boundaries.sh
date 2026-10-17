@@ -2,12 +2,27 @@
 # Proves each boundary rule in tools/check_boundaries.sh fires.
 #
 # A checker nobody has seen fail is not evidence of anything. Each probe
-# writes one violating file, expects the checker to fail, and removes it.
+# writes one violating file, expects the checker to fail with the message
+# of the rule the probe breaks, and removes it: a rule gone dead whose probe
+# another rule happens to catch fails here, not passes unseen.
 set -eu
 
 cd "$(dirname "$0")/.."
 CHECK=./tools/check_boundaries.sh
 CREATED=""
+ERR="$(mktemp -t serenity-boundaries-err.XXXXXX)"
+
+# Each rule's message, as the checker prints it (its fail() calls).
+CORE_PLATFORM="src/core/ uses a platform GPU or windowing API"
+CORE_OUTWARD="src/core/ includes from a backend or a program"
+MEASURE_OUTWARD="src/measure/ includes from a backend or another program"
+METAL_ONLY="only src/metal/ may use Metal's host API"
+SDL_CONFINED="SDL may be included only from"
+TOML_CONFINED="toml++ may be included only from"
+STB_CONFINED="stb may be included only from"
+REUSE_APART="src/metal/reuse/ includes the Integrator or a Pass"
+INTEGRATOR_APART="src/metal/integrator/ includes Sample reuse or a Pass"
+SEARCH_FAILED="failed (status"
 
 # src/core/ may hold no files yet, and git keeps no empty directory.
 CORE_CREATED=0
@@ -15,6 +30,7 @@ CORE_CREATED=0
 
 cleanup() {
     for f in ${CREATED}; do rm -f "$f"; done
+    rm -f "${ERR}"
     rmdir src/metal_extra 2>/dev/null || true
     if [ "${CORE_CREATED}" = 1 ]; then rmdir src/core 2>/dev/null || true; fi
 }
@@ -22,17 +38,21 @@ trap cleanup EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+# The checker fails, saying `rule`'s message.
 expect_violation() {
-    if "${CHECK}" >/dev/null 2>&1; then
-        fail "$1: checker passed but should have failed"
+    desc="$1"; rule="$2"
+    if "${CHECK}" >/dev/null 2>"${ERR}"; then
+        fail "${desc}: checker passed but should have failed"
     fi
+    grep -qF -- "${rule}" "${ERR}" ||
+        fail "${desc}: the checker failed, but not by the rule \"${rule}\": $(cat "${ERR}")"
 }
 
 probe() {
-    desc="$1"; file="$2"; content="$3"
+    desc="$1"; rule="$2"; file="$3"; content="$4"
     CREATED="${CREATED} ${file}"
     printf '%b' "${content}" > "${file}"
-    expect_violation "${desc}"
+    expect_violation "${desc}" "${rule}"
     rm -f "${file}"
 }
 
@@ -41,57 +61,70 @@ probe() {
 
 # 1. Platform API in the core: an include, an angled framework include other
 #    than Metal's, and a metal-cpp name with no include at all.
-probe "Metal host include in core" src/core/_probe1.h '#pragma once\n#include <Metal/Metal.hpp>\n'
-probe "QuartzCore include in core" src/core/_probe2.h '#pragma once\n#include <QuartzCore/QuartzCore.hpp>\n'
-probe "Vulkan include in core" src/core/_probe3.h '#pragma once\n#include <vulkan/vulkan.h>\n'
-probe "metal-cpp name in core" src/core/_probe4.h '#pragma once\nvoid f(MTL::Device* d);\n'
-probe "MetalFX name in core" src/core/_probe13.h '#pragma once\nvoid f(MTLFX::SpatialScaler* s);\n'
-probe "Metal 4 MetalFX name in core" src/core/_probe14.h '#pragma once\nvoid f(MTL4FX::SpatialScaler* s);\n'
-probe "MetalPerformanceShaders include in core" src/core/_probe15.h '#pragma once\n#include <MetalPerformanceShaders/MetalPerformanceShaders.h>\n'
-probe "IOSurface include in core" src/core/_probe16.h '#pragma once\n#include <IOSurface/IOSurface.h>\n'
-probe "CoreVideo include in core" src/core/_probe17.h '#pragma once\n#include <CoreVideo/CoreVideo.h>\n'
-probe "Objective-C module import in core" src/core/_probe18.mm '@import Metal;\n'
+probe "Metal host include in core" "${CORE_PLATFORM}" src/core/_probe1.h '#pragma once\n#include <Metal/Metal.hpp>\n'
+probe "QuartzCore include in core" "${CORE_PLATFORM}" \
+    src/core/_probe2.h '#pragma once\n#include <QuartzCore/QuartzCore.hpp>\n'
+probe "Vulkan include in core" "${CORE_PLATFORM}" src/core/_probe3.h '#pragma once\n#include <vulkan/vulkan.h>\n'
+probe "metal-cpp name in core" "${CORE_PLATFORM}" src/core/_probe4.h '#pragma once\nvoid f(MTL::Device* d);\n'
+probe "MetalFX name in core" "${CORE_PLATFORM}" src/core/_probe13.h '#pragma once\nvoid f(MTLFX::SpatialScaler* s);\n'
+probe "Metal 4 MetalFX name in core" "${CORE_PLATFORM}" \
+    src/core/_probe14.h '#pragma once\nvoid f(MTL4FX::SpatialScaler* s);\n'
+probe "MetalPerformanceShaders include in core" "${CORE_PLATFORM}" \
+    src/core/_probe15.h '#pragma once\n#include <MetalPerformanceShaders/MetalPerformanceShaders.h>\n'
+probe "IOSurface include in core" "${CORE_PLATFORM}" \
+    src/core/_probe16.h '#pragma once\n#include <IOSurface/IOSurface.h>\n'
+probe "CoreVideo include in core" "${CORE_PLATFORM}" \
+    src/core/_probe17.h '#pragma once\n#include <CoreVideo/CoreVideo.h>\n'
+probe "Objective-C module import in core" "${CORE_PLATFORM}" src/core/_probe18.mm '@import Metal;\n'
 
 # 2. The core including a backend, by quoted and by relative path.
-probe "core includes the Metal backend" src/core/_probe5.h '#pragma once\n#include "metal/device/device.h"\n'
-probe "core includes a backend by relative path" src/core/_probe6.h '#pragma once\n#include "../metal/device/device.h"\n'
-probe "core includes the headless renderer" src/core/_probe9.h '#pragma once\n#include "headless/render.h"\n'
-probe "core includes the measuring program" src/core/_probe20.h '#pragma once\n#include "measure/options.h"\n'
+probe "core includes the Metal backend" "${CORE_OUTWARD}" \
+    src/core/_probe5.h '#pragma once\n#include "metal/device/device.h"\n'
+probe "core includes a backend by relative path" "${CORE_OUTWARD}" \
+    src/core/_probe6.h '#pragma once\n#include "../metal/device/device.h"\n'
+probe "core includes the headless renderer" "${CORE_OUTWARD}" \
+    src/core/_probe9.h '#pragma once\n#include "headless/render.h"\n'
+probe "core includes the measuring program" "${CORE_OUTWARD}" \
+    src/core/_probe20.h '#pragma once\n#include "measure/options.h"\n'
 
 # 2b. The measuring program including a backend or another program, by
 #     quoted, angled and relative path.
-probe "measure includes the Metal backend" src/measure/_probe21.h '#pragma once\n#include "metal/frame/renderer.h"\n'
-probe "measure includes the app by angle" src/measure/_probe22.h '#pragma once\n#include <app/window.h>\n'
-probe "measure includes the headless renderer by relative path" src/measure/_probe23.h \
+probe "measure includes the Metal backend" "${MEASURE_OUTWARD}" \
+    src/measure/_probe21.h '#pragma once\n#include "metal/frame/renderer.h"\n'
+probe "measure includes the app by angle" "${MEASURE_OUTWARD}" \
+    src/measure/_probe22.h '#pragma once\n#include <app/window.h>\n'
+probe "measure includes the headless renderer by relative path" "${MEASURE_OUTWARD}" src/measure/_probe23.h \
     '#pragma once\n#include "../headless/options.h"\n'
 # And rule 3 covers it: Metal's host API in src/measure/.
-probe "Metal host API in src/measure/" src/measure/_probe24.cpp 'void f(MTL::Device* d);\n'
+probe "Metal host API in src/measure/" "${METAL_ONLY}" src/measure/_probe24.cpp 'void f(MTL::Device* d);\n'
 
 # 3. The Metal host API outside src/metal/, including a directory whose name
 #    merely starts with it.
 mkdir -p src/metal_extra
-probe "Metal host API outside src/metal/" src/metal_extra/_probe7.cpp '#include <Metal/Metal.hpp>\n'
+probe "Metal host API outside src/metal/" "${METAL_ONLY}" src/metal_extra/_probe7.cpp '#include <Metal/Metal.hpp>\n'
 
 # 4. Third-party libraries outside their one place.
-probe "SDL outside src/app/" src/core/_probe10.h '#pragma once\n#include <SDL3/SDL.h>\n'
-probe "toml++ outside the frame graph reader" src/core/frame/_probe11.cpp '#include <toml++/toml.hpp>\n'
-probe "stb outside the PNG writer" src/core/frame/_probe12.cpp '#include <stb_image_write.h>\n'
+probe "SDL outside src/app/" "${SDL_CONFINED}" src/core/_probe10.h '#pragma once\n#include <SDL3/SDL.h>\n'
+probe "toml++ outside the frame graph reader" "${TOML_CONFINED}" \
+    src/core/frame/_probe11.cpp '#include <toml++/toml.hpp>\n'
+probe "stb outside the PNG writer" "${STB_CONFINED}" src/core/frame/_probe12.cpp '#include <stb_image_write.h>\n'
 
 # 4b. Sample reuse and the Integrator including each other, or a Pass: the
 #     backend's and the core's, by quoted, angled and relative path.
-probe "Sample reuse includes the Integrator" src/metal/reuse/_probe25.metal.h \
+probe "Sample reuse includes the Integrator" "${REUSE_APART}" src/metal/reuse/_probe25.metal.h \
     '#pragma once\n#include "metal/integrator/target.metal.h"\n'
-probe "Sample reuse includes a Pass" src/metal/reuse/_probe26.metal.h \
+probe "Sample reuse includes a Pass" "${REUSE_APART}" src/metal/reuse/_probe26.metal.h \
     '#pragma once\n#include "metal/passes/restir_di/restir_di.metal.h"\n'
-probe "Sample reuse includes the core's Pass settings" src/metal/reuse/_probe27.metal.h \
+probe "Sample reuse includes the core's Pass settings" "${REUSE_APART}" src/metal/reuse/_probe27.metal.h \
     '#pragma once\n#include <core/passes/restir_di.h>\n'
-probe "Sample reuse includes the Integrator by relative path" src/metal/reuse/_probe28.metal.h \
+probe "Sample reuse includes the Integrator by relative path" "${REUSE_APART}" src/metal/reuse/_probe28.metal.h \
     '#pragma once\n#include "../integrator/path.metal.h"\n'
-probe "the Integrator includes Sample reuse" src/metal/integrator/_probe29.metal.h \
+probe "the Integrator includes Sample reuse" "${INTEGRATOR_APART}" src/metal/integrator/_probe29.metal.h \
     '#pragma once\n#include "metal/reuse/reservoir.metal.h"\n'
-probe "the Integrator includes a Pass" src/metal/integrator/_probe30.metal.h \
+probe "the Integrator includes a Pass" "${INTEGRATOR_APART}" src/metal/integrator/_probe30.metal.h \
     '#pragma once\n#include "metal/passes/restir_di/restir_di.metal.h"\n'
-probe "the Integrator includes the core's Pass settings by relative path" src/metal/integrator/_probe31.metal.h \
+probe "the Integrator includes the core's Pass settings by relative path" "${INTEGRATOR_APART}" \
+    src/metal/integrator/_probe31.metal.h \
     '#pragma once\n#include "../../core/passes/restir_di.h"\n'
 # Contracts are where they meet, and are allowed.
 F=src/metal/reuse/_probe32.metal.h; CREATED="${CREATED} ${F}"
@@ -104,7 +137,7 @@ rm -f "${F}"
 F=src/core/_probe19.h; CREATED="${CREATED} ${F}"
 printf '#pragma once\n' > "${F}"
 chmod 000 "${F}"
-expect_violation "an unreadable file in core"
+expect_violation "an unreadable file in core" "${SEARCH_FAILED}"
 chmod 644 "${F}"
 rm -f "${F}"
 

@@ -7,7 +7,10 @@
 //
 // The frames are the path tracer's over the marbles at 512 x 512, long
 // enough that, without the wait, they are still running when the objects
-// that own their memory are destroyed.
+// that own their memory are destroyed: milliseconds of GPU work against the
+// microseconds between the last commit and the throw. Whether they were is
+// checked, not assumed: a GPU that finished them first would leave the
+// wait unexercised, and the test says so rather than passing.
 
 #include <cstdint>
 #include <optional>
@@ -48,15 +51,20 @@ TEST_CASE("an exception with frames in flight: the renderer and its target wait 
     metal::Device device;
     metal::Submission submission(device);
     std::uint64_t last = 0;
+    bool in_flight = false;
     const auto run = [&] {
         metal::Offscreen target(device, submission, size);
         metal::Renderer renderer(device, submission, schedule, &description);
         for (std::uint64_t index = 0; index < 2; ++index) {
             last = metal::render_to_offscreen(submission, target, renderer, inputs(description, index));
         }
+        in_flight = !submission.has_completed(last);
         throw std::runtime_error("a failure mid-run, frames in flight");
     };
     CHECK_THROWS_AS(run(), std::runtime_error);
+    // The frames were still running at the throw, so the destructors had to
+    // wait: else nothing here was tested (lengthen the frames).
+    CHECK(in_flight);
     // Both were destroyed by the throw; neither could have let its memory go
     // before the frames using it had completed.
     CHECK(submission.has_completed(last));

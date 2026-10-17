@@ -2,7 +2,10 @@
 // renderer.h and metal/acceleration/scene_acceleration.h claim: every
 // buffer, structure and descriptor a frame uses is made at construction or
 // in prepare(), and Renderer::record(), with the shapes' placing and the
-// structure's update inside it, takes no memory from the C++ heap.
+// structure's update inside it, takes no memory from the C++ heap. For
+// every pass type: every graph in graphs/ that runs from the checkout
+// alone, and the denoised graph with the test fixture's network in place
+// of the one beside the checkout (gpu/support/rendering.h).
 //
 // Counted by replacing the program's operator new: while a scope of
 // Counting is open on a thread, each allocation that thread makes through
@@ -23,7 +26,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <new>
+#include <string>
+#include <vector>
 
 #include <doctest/doctest.h>
 
@@ -141,8 +147,9 @@ using namespace serenity;
 namespace {
 
 // Records frames 0 to `frames` - 1 of `description` through `schedule`,
-// each starting its image over at its own time, the shapes moving if the
-// scene's do; returns the most any one record() allocated.
+// each starting its image over at its own time, its reuse history kept
+// from frame 0, the shapes moving if the scene's do; returns the most any
+// one record() allocated.
 std::size_t most_allocated_by_record(const scene::SceneDescription& description, const frame::Schedule& schedule,
                                      std::uint64_t frames) {
     constexpr frame::Extent size{64, 48};
@@ -183,11 +190,33 @@ TEST_CASE("the counter counts: an allocation inside a Counting scope is seen") {
     ::operator delete(memory);
 }
 
-TEST_CASE("recording a frame of moving, blinking fireflies allocates nothing of ours, the structure's update and all") {
+TEST_CASE("recording a frame of moving, blinking fireflies allocates nothing of ours, in every graph, the "
+          "structure's update and all") {
     const scene::SceneDescription flying = scene::load(tests::scenes_dir / "brass_sphere_flight.toml");
     REQUIRE(animation::moves(flying.animation));
-    CHECK(most_allocated_by_record(flying, frame::load_schedule(tests::graphs_dir / "path.toml"), 6) == 0);
-    CHECK(most_allocated_by_record(flying, tests::preview_graph(), 6) == 0);
+    // Every graph in graphs/, by name; those whose network is beside the
+    // checkout replaced by the denoised graph with the fixture's.
+    std::vector<std::filesystem::path> files;
+    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(tests::graphs_dir)) {
+        if (entry.path().extension() == ".toml") {
+            files.push_back(entry.path());
+        }
+    }
+    std::ranges::sort(files);
+    std::size_t denoised = 0;
+    for (const std::filesystem::path& file : files) {
+        const frame::Schedule schedule = frame::load_schedule(file);
+        if (schedule.denoise.has_value()) {
+            ++denoised;
+            continue;
+        }
+        INFO(file.filename().string());
+        CHECK(most_allocated_by_record(flying, schedule, 6) == 0);
+    }
+    REQUIRE(files.size() > 10);  // graphs/ found, not an empty directory
+    REQUIRE(denoised > 0);
+    INFO("restir_pt_denoised.toml, the fixture's network");
+    CHECK(most_allocated_by_record(flying, tests::fixture_denoised_graph(), 6) == 0);
 }
 
 TEST_CASE("recording a frame of a still scene allocates nothing of ours") {
