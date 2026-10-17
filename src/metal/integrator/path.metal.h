@@ -563,56 +563,28 @@ inline float handed_on(serenity::contracts::BsdfSample next, Shading here) {
 // traced from next_event_origin(). T is over `here`'s medium, which the
 // shadow ray crosses, along it (above, step 5). The term is whole before
 // the shadow ray's query, so it alone of the step is alive across it.
-// Step 5's draw, the path tracer's and MNEE's alike (next_event_manifold(),
-// below, which must draw the same numbers): one light, chosen uniformly,
-// and a point on it, from next_event_origin(); not drawn where it sends no
-// light, or lies on wo's other side, not step 5's to draw (above, "One
-// origin"), so no shadow ray follows.
-struct DrawnLight {
-    bool drawn;
-    float probability;  // P, the selection's
-    float3 origin;
-    serenity::contracts::LightSample sample;
-    float3 wi;  // read only where drawn
-};
-
-[[gnu::always_inline]] inline DrawnLight draw_next_event(Scene scene, Shading here, thread PathNumbers& numbers) {
+inline float3 next_event(Scene scene, Shading here, thread PathNumbers& numbers) {
     const SelectedLight chosen = select_light(scene.selection(), next_number(numbers));
     const float3 origin = next_event_origin(here.surface, here.wo);
     const serenity::contracts::LightSample sample =
         sample_light(scene.lights(), chosen.light, origin, next_numbers2(numbers));
     if (sample.pdf <= 0.0f || !metal::any(to_float3(sample.radiance) > 0.0f)) {
-        return DrawnLight{false, chosen.probability, origin, sample, float3(0.0f)};
+        return float3(0.0f);  // no light from it: no shadow ray (step 5)
     }
     const float3 wi = to_float3(sample.direction);
     if (!leave_alike(here.surface, wi, here.wo)) {
-        return DrawnLight{false, chosen.probability, origin, sample, wi};
+        return float3(0.0f);  // on wo's other side: not step 5's to draw (above, "One origin")
     }
-    return DrawnLight{true, chosen.probability, origin, sample, wi};
-}
-
-// The drawn light's term before its shadow ray, f |cos| L_e T / (P p) x
-// w_l, for `f` the BSDF toward it and `density` P p: step 5's, and MNEE's
-// for a clear segment.
-[[gnu::always_inline]] inline float3 unshadowed_term(Scene scene, Shading here, float3 f, DrawnLight drawn,
-                                                     float density) {
-    return f * metal::abs(metal::dot(drawn.wi, to_float3(here.bsdf.normal))) * to_float3(drawn.sample.radiance) *
-           transmittance(scene.media(), here.medium, drawn.sample.distance) / density *
-           next_event_weight(density, here.bsdf, here.wo, drawn.wi);
-}
-
-inline float3 next_event(Scene scene, Shading here, thread PathNumbers& numbers) {
-    const DrawnLight drawn = draw_next_event(scene, here, numbers);
-    if (!drawn.drawn) {
-        return float3(0.0f);  // no shadow ray (step 5)
-    }
-    const float3 f = bsdf_evaluate(here.bsdf, here.wo, drawn.wi);
+    const float3 f = bsdf_evaluate(here.bsdf, here.wo, wi);
     if (!metal::any(f > 0.0f)) {
         return float3(0.0f);
     }
-    const float3 unshadowed = unshadowed_term(scene, here, f, drawn, drawn.probability * drawn.sample.pdf);
-    if (occluded(scene.structure, scene.shapes(),
-                 metal::raytracing::ray(drawn.origin, drawn.wi, 0.0f, drawn.sample.distance), drawn.sample.primitive)) {
+    const float light_density = chosen.probability * sample.pdf;
+    const float3 unshadowed = f * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) *
+                              to_float3(sample.radiance) * transmittance(scene.media(), here.medium, sample.distance) /
+                              light_density * next_event_weight(light_density, here.bsdf, here.wo, wi);
+    if (occluded(scene.structure, scene.shapes(), metal::raytracing::ray(origin, wi, 0.0f, sample.distance),
+                 sample.primitive)) {
         return float3(0.0f);
     }
     return unshadowed;
@@ -698,23 +670,31 @@ inline float3 next_event_manifold(Scene scene, Shading here, thread PathNumbers&
     if (!mnee::receives(here.bsdf)) {
         return next_event(scene, here, numbers);
     }
-    const DrawnLight drawn = draw_next_event(scene, here, numbers);
-    if (!drawn.drawn) {
+    const SelectedLight chosen = select_light(scene.selection(), next_number(numbers));
+    const float3 origin = next_event_origin(here.surface, here.wo);
+    const serenity::contracts::LightSample sample =
+        sample_light(scene.lights(), chosen.light, origin, next_numbers2(numbers));
+    if (sample.pdf <= 0.0f || !metal::any(to_float3(sample.radiance) > 0.0f)) {
         return float3(0.0f);
     }
-    const float light_density = drawn.probability * drawn.sample.pdf;
-    const mnee::Seed seed =
-        mnee::seed_segment(scene, drawn.origin, drawn.wi, drawn.sample.distance, drawn.sample.primitive);
+    const float3 wi = to_float3(sample.direction);
+    if (!leave_alike(here.surface, wi, here.wo)) {
+        return float3(0.0f);
+    }
+    const float light_density = chosen.probability * sample.pdf;
+    const mnee::Seed seed = mnee::seed_segment(scene, origin, wi, sample.distance, sample.primitive);
     if (seed.count == 0u) {
         if (seed.blocked) {
             return float3(0.0f);
         }
-        return unshadowed_term(scene, here, bsdf_evaluate(here.bsdf, here.wo, drawn.wi), drawn, light_density);
+        return bsdf_evaluate(here.bsdf, here.wo, wi) * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) *
+               to_float3(sample.radiance) * transmittance(scene.media(), here.medium, sample.distance) /
+               light_density * next_event_weight(light_density, here.bsdf, here.wo, wi);
     }
     if (!seed.usable) {
         return float3(0.0f);
     }
-    mnee::enqueue(queue, mnee::request(here, drawn.origin, drawn.sample, seed, beta / light_density, pixel));
+    mnee::enqueue(queue, mnee::request(here, origin, sample, seed, beta / light_density, pixel));
     return float3(0.0f);
 }
 
@@ -729,20 +709,21 @@ struct Manifold {
     uint pixel;
     uint chain = mnee::off_chain;
 
-    // Step 2, Radiance's.
+    // Step 2.
     [[gnu::always_inline]] void escaped(Scene scene, thread float3& L, float3 beta, metal::raytracing::ray along,
-                                        uint surface) const {
-        Radiance{}.escaped(scene, L, beta, along, surface);
+                                        uint) const {
+        L += beta * gradient_sky(scene.sky(), along.direction);
     }
 
-    // Step 3, Radiance's, but for a light MNEE counts.
+    // Step 3, but for a light MNEE counts.
     [[gnu::always_inline]] void emitted(Scene scene, thread float3& L, float3 beta, serenity::lights::LightRecord light,
-                                        float3 point, metal::raytracing::ray along, float emission_pdf, uint surface,
-                                        serenity::contracts::SurfaceInteraction at) const {
+                                        float3 point, metal::raytracing::ray along, float emission_pdf, uint,
+                                        serenity::contracts::SurfaceInteraction) const {
         if (mnee::covered(chain)) {
             return;
         }
-        Radiance{}.emitted(scene, L, beta, light, point, along, emission_pdf, surface, at);
+        L += beta * light_emitted(scene.lights(), light, point, -along.direction) *
+             emission_weight(scene.selection(), scene.lights(), light, along.origin, along.direction, emission_pdf);
     }
 
     // Step 5.
