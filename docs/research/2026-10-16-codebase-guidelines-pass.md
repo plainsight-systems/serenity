@@ -6,9 +6,11 @@ backend's host code (area B) and the shaders (area C), each reviewed
 read-only against both corpora, every category of each listed fresh and
 walked rule by rule; then every finding decided here, fixed or judged not
 valid with the reason, and the fixes made together (the user's rule: no
-deferring a valid finding for "one intent"). The tests (area D) are the
-next pass's; this one added only the tests its fixes need. Apple M3 Max,
-the toolchain in `cmake/toolchain.json`.*
+deferring a valid finding for "one intent"). The tests (area D) followed
+in a pass of their own, on branch `codebase-pass-tests` from 998054d
+("Area D: the tests", below), under the user's direction that tests guard
+invariants, not coverage. Apple M3 Max, the toolchain in
+`cmake/toolchain.json`.*
 
 ## Behavior unchanged
 
@@ -75,8 +77,8 @@ finite, and the image is finite.
 
 ## The tests the fixes added
 
-Only what the fixes need; area D's review of the tests themselves is the
-next pass's.
+Only what the fixes need; area D's review of the tests themselves is its
+own section, below.
 
 - tests/gpu/mnee_test.cpp: `chain_after()`'s every case, `no_primitive`
   among them (C1); a light in glass in a cavity filling the list (C14).
@@ -228,6 +230,150 @@ None judged not valid.
 | P2 | GPU.3, Per.6 | mnee.metal.h | the solve recomputes each crossing's frame | not taken, by its numbers: each crossing's Vertex found once a chain and passed to `constraint_blocks()` and the step (byte-identical, the same function of the same inputs) made path_mnee 67.49 and 67.20 ms against 58.39 and 58.17 at 3456 × 2234, and restir_pt_denoised 81.16 and 77.87 against 78.25 and 76.59: the four Vertices, 84 floats, spill, as area C feared. Step 2 (s and t from the Vertex) was not tried: not byte-identical, and it would not undo the spill |
 | P3 | GPU.3; NL.2 | mnee.metal.h | the registers claim, against seed_segment's insertion | fixed by the claim: narrowed to the solve's loops. The insertion's register use cannot be read on this toolchain without the GPU tools, so it is left as it is, said so |
 
+## Area D: the tests
+
+Reviewed read-only against both corpora at 60396c6 (every category of each
+listed fresh; the reviewer's table, summarized: Core Guidelines findings in
+P, I, F, C, ES, CP, E, T, SF, SL, NL, walked clean in In, Enum, R, Per, Con,
+CPL, A, NR; performance findings in memory (MEM.9) and copy-move (COPY.7),
+the rest walked clean or not applying to test code), and for test quality:
+tests that cannot fail, that depend on timing or the machine, a check made
+twice, an unpinned interpreter. 62 findings, D1-D62; fixed on 998054d, each
+checked against the code the source pass left.
+
+**The user's direction, midway** (2026-10-16): tests guard invariants and
+contracts, not coverage. A test that cannot fail is removed, not repaired;
+one that pins incidental behavior (wording a caller does not rely on, an
+implementation detail, a second check of one invariant) is slimmed or
+removed; no test is added only for coverage. So the verdicts below follow
+it: where a finding proposed a test for coverage alone it is not added
+(D19), and the tests of its kind already there were removed.
+
+### Removed or slimmed
+
+| Test | What was done | Why |
+|---|---|---|
+| schedule_test.cpp, "a value no kind names is refused" | removed | a PassKind no code makes, refused: the defensive path of a lookup, no contract a caller meets |
+| programs_test.cpp, "a way of writing with no rule is an error" | removed | the same, for headless::Write (and its comment was D20's wrong reason) |
+| image_format_test.cpp: D19's stray ImageFormat | not added; the comment claiming undefined behavior removed | the same kind; the comment was false (a scoped enumeration holds any int) |
+| schedule_test.cpp: the second name round trip | removed (D22) | the first test makes it, over every kind |
+| schedule_test.cpp `pass_kind("preview")`, `pass_kind("path")`; denoise_core_test.cpp `pass_kind("denoise")` | removed | the spellings are the graph files', which every graphs/ file's load reads (graph_file_test, restir_graph_file_test, restir_pt_core_test, and allocation_test now loads every graph) |
+| schedule_test.cpp: the tone map's two whole messages | slimmed to the value as written ("exposure, 10.5 stops", "bloom, -0.01,") | the contract F8 set is the number's form, as the graph file writes it, not the sentence |
+| restir_pt_core_test.cpp `shuffle_count(0.5)`; programs_test.cpp `prepare_output` | the type, not the message | the header's contract is the type |
+| mnee_test.cpp: the two caustic tests | one test, one reference render (D48) | the same invariant, against the same 8192-frame reference rendered twice |
+| scene_test.cpp: each broken text parsed twice for two parts of one message | one parse, both parts (D28) | a second parse checked nothing new |
+
+Kept and strengthened, as invariants: the shared layouts' sizes, the
+estimators against closed forms and references, bit determinism (now by
+bytes, D57), the graph-file and schedule refusals, the per-frame
+allocation check (now every graph, D55), the denoiser against PyTorch, the
+generators' byte pins, the failure counters.
+
+### The one defect in src
+
+**prepare_output() never reached its "not a directory" refusal** (D21).
+It made the directory before asking whether a file stood in its place, so
+`create_directories()` threw its own `filesystem_error` and the
+`OptionsError` its header promises was dead code; programs_test's untyped
+`CHECK_THROWS` passed on either. Fixed in src/headless/options.cpp (aa87e62):
+the file is refused first. No graph's output can change: it is the
+headless renderer's output directory check.
+
+D55 found none: no pass of any graph allocates in `record()`.
+
+### Verdicts
+
+| # | ID | Finding | Verdict |
+|---|---|---|---|
+| D1 | ES.3, F.10 | the render rig, the lit floor and its closed form, the furnace, glass's F0 and the patch means written three and four times, the copies without the bounds check | fixed: `tests::AccumulatingRig`, `patch_mean` with its REQUIREs (gpu/support/rendering.h); support/lit_floor.h, its colour written from `floor_albedo`; `furnace()`, `glass_f0` |
+| D2 | ES.3 | Vec3 to Float3, the cross product and Float3 equality by hand | fixed: `float3()`, `cross()`, `same()` in support/vector.h |
+| D3 | ES.3 | three chi-square tests, two acceptance rules | fixed: support/statistics.h, both rules said once and why (a p-value for counts expected exactly, five sigma for counts expected through a quadrature of the pdf); the light's cone, whose bins expect an exact share, moved to the p-value |
+| D4 | ES.3 | same-bits comparison twice, a memcmp | fixed: support/same_bits.h |
+| D5 | ES.3 | GPU buffers and textures made four ways | fixed: gpu/support/shared_resources.h, for the probe runner, the tracing probe, ReSTIR PT's probes, the tone map and the denoise fixture |
+| D6 | ES.3 | RTXDI's and ReSTIR PT's defaults as literals | fixed for the rendering tests and denoise_core's schedules: `written_restir_di()`, `written_restir_pt()`, `restir_pt_graph()` (support/schedules.h), schedules built from passes::written_*. Not valid for the graph-file tests (restir_pt_core_test's `initial_keys`, graph_file_test): there the text is the input under test |
+| D7 | ES.3 | `look`, `refusal`, `refused_for` thrice | fixed: support/schedules.h |
+| D8 | ES.3 | two scene examples, one restating the other | fixed: `tests::scene_example`, extended in packed_range_test |
+| D9 | reproducibility | the Python tests run `python3` from PATH | fixed: `${Python3_EXECUTABLE}`, the interpreter the configure finds and checks, the repo's practice (CMakeLists.txt finds Python explicitly with a floor; the toolchain is pinned at configure). Not made version-independent: that would change the scripts' draws, and so scenes/marbles.toml. Measured: Python 3.9.6 and 3.14.5 both give the pinned bytes. No canary test added (the byte pins are that invariant's guard). make_marbles.py's docstring no longer claims Python specifies those draws |
+| D10 | test quality | test_site.py's edits unchecked | fixed |
+| D11 | SL.str.2 | `const char*` text parts | fixed |
+| D12 | ES.46, I.5 | `pixel_of` cast unchecked | fixed: the point required in front of the camera and in the image |
+| D13 | P.9, GPU.6 | the tracing probe's library made per call | fixed: the caller's, in `Traced` |
+| D14 | T.10 | unconstrained templates | fixed |
+| D15 | C.36, C.37 | programs_test's throwing destructor | fixed (aa87e62) |
+| D16 | ES.3 | png_test's own temporary file | fixed |
+| D17 | ES.3 | file reads and replacements by hand | fixed |
+| D18 | SL.con.3, R.12 | stb's buffer read before its size was checked, freed by hand | fixed |
+| D19 | test quality | a stray ImageFormat's refusal untested | not added, by the user's direction (coverage of a defensive path); the false comment removed |
+| D20 | NL.2 | Write's wrong reason | the test removed (as D19's kind) |
+| D21 | test quality | untyped `CHECK_THROWS` | fixed; found the prepare_output defect above |
+| D22 | test quality | the name round trip twice | fixed: removed |
+| D23 | ES.1 | loops the library has | fixed: `std::ranges::find` (`contains` is C++23's), `std::iota`, `std::ranges::max` |
+| D24 | ES.65 | optionals unchecked | fixed |
+| D25 | ES.45 | denoiser sizes as literals | fixed |
+| D26 | SL.con.3 | indices unchecked | fixed |
+| D27 | test quality | loops that pass empty | fixed |
+| D28 | ES.3 | each broken text parsed twice | fixed: `refused()`, `says()` |
+| D29 | CP.9 | no ThreadSanitizer run of the flight batches | not possible: TSan's runtime crashes before main on this macOS (docs/research/2026-10-10-sanitizers.md; area A's N7) |
+| D30 | determinism | batches at the machine's core count | fixed: `some_workers` |
+| D31 | E.18, ES.3 | try/catch with FAIL to reach fields | fixed: `tests::thrown<E>()`, `error_of<E>()` |
+| D32 | ES.3 | two fakes but for their predicate | fixed: one `Breaking` |
+| D33 | NL.2 | "at least 12", checked `>= 6` | fixed: the comment says why 6 |
+| D34 | ES.45 | the pinned loop twice | fixed |
+| D35 | SL.con.3 | indices unchecked | fixed |
+| D36 | ES.3 | StillShapesOf and BallAndFloor | fixed: BallAndFloor is `StillShapesOf(s, 2)` |
+| D37 | ES.45 | pi by hand | fixed |
+| D38 | ES.3, SL.1 | splitmix64 again | fixed: `animation::draw` |
+| D39 | ES.27, ES.3 | a C array; numbers written two ways | fixed: `tests::exact()` |
+| D40 | ES.45 | the test word packed with literals | fixed |
+| D41 | ES.3 | a band twice, raytraced settings and up/down codes twice | fixed |
+| D42 | ES.45 | 33 x 33, x 9, 0xfffe | fixed |
+| D43 | ES.49 | functional casts | fixed |
+| D44 | I.24 | same-typed parameters | fixed: designated initializers |
+| D45 | ES.3 | one scene twice | fixed |
+| D46 | ES.27, Enum.3 | C arrays, a plain enum | fixed |
+| D47 | SF.10 | names without their headers | fixed |
+| D48 | P.9 | one reference rendered twice | fixed |
+| D49 | ES.3, F.3 | the highlight queries and reductions twice | fixed |
+| D50 | ES.3, SF.3 | `Half` a fourth time | fixed |
+| D51 | ES.45 | the tone map's table sizes | fixed |
+| D52 | ES.48 | casts to Allocation | fixed |
+| D53 | F.3 | a 93-line fixture | fixed: in parts (and a doubled normal upload removed) |
+| D54 | ES.45 | `dec[3]`; `reused_since = 0` | fixed |
+| D55 | MEM.9 | record() checked for two graphs | fixed: every graph; none allocates |
+| D56 | timing | the lifetime test vacuous on a fast GPU | fixed as far as the backend allows: the test checks its frames were in flight and fails if not. A wait independent of the GPU's speed would gate the queue on an event, which Submission does not expose; recorded, not built |
+| D57 | test quality | "to the bit" by `==` | fixed |
+| D58 | test quality | the features test's light unchecked | fixed |
+| D59 | COPY.7 | a million draws copied per call | fixed |
+| D60 | NL.2 | probes without binding lists | fixed for restir_pt_probe.metal; mnee_probe.metal's header already lists them (the source pass) |
+| D61 | test quality | a probe counted firing for any rule | fixed |
+| D62 | test quality | the preflight test outside ctest | fixed by saying why there (tests/CMakeLists.txt): it needs the codex CLI, and a regressed guard starts a model call |
+
+### Every changed test can fail
+
+Mutated once each, seen to fail, restored:
+
+- prepare_output: the new typed check failed before the src fix
+  (`filesystem_error` where OptionsError is promised).
+- D55: a `std::vector` made in `DenoisePass::record()`: allocation_test
+  failed, 1 allocation, for the denoised graph.
+- D61: rule 1's search disabled: the new probes fail naming the rule; the
+  old ones passed, rule 3 catching the files.
+- D1: `floor_albedo` 0.8 to 0.7: the floor tests of the path tracer, ReSTIR
+  DI and ReSTIR PT fail.
+- D3: the light's cone draw bunched by `pow(u, 1.02)`: light_test fails,
+  chi^2 / dof 2.48, p 6e-34.
+- D28: one line number changed: scene_test's `refused()` fails.
+- D56: the frames waited for before the throw: lifetime_test fails,
+  `in_flight` false.
+
+### Gates and time
+
+All three presets build with no warning and test green; `make check`
+green. ctest's total time, native-debug, on AC power, ABBA, 998054d against
+the pass: 189.69 and 189.58 s against 182.18 and 181.44 s, 7.8 s (4%)
+less (the GPU suite, serenity_gpu_tests, some 160 s of it). The pass's GPU suite tests more (every graph's
+record(), D55) and renders the caustic's reference once (D48).
+
 ## Timings
 
 GPU time a frame, median of 179 frames after 21 of warm-up, two frames in
@@ -291,6 +437,7 @@ Milestone 3's figures stand: the window's frame 76.9 ms, 1080p 23.5.
 | B | Performance | 1 (P1) | 0 | 0 | 1 (P1: no gain) |
 | C | Core Guidelines | 22 (C1-C22) | 21 (C2 at three of its four sites; C10's first step) | 0 | 1 (C6: +0.5%), and C2 at the path pass (+2%) |
 | C | Performance | 3 (P1-P3) | 2 (P1 declared, P3's claim) | 0 | 1 (P2: +16%) |
+| D | Core Guidelines, performance, test quality | 62 (D1-D62) | 59 (D6 and D60 in part, as their verdicts say; D56 as far as the backend allows) | D6 for the graph-file tests | 2 not added or removed by the user's direction (D19, D20); 1 not possible (D29) |
 
 Two of them defects (C1, C14), fixed with their tests. Every graph the
 same to the bit as 60396c6's, all three presets building with no warning

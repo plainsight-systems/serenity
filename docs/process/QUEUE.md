@@ -134,15 +134,19 @@ This file tracks active and accepted work.
 
 ## Next, in order
 
-0. Before Milestone 4 starts (the user, 2026-10-15): a codebase-wide pass,
-   both C++ guideline corpora rule by rule over everything since Milestone
+0. **Done 2026-10-16.** Before Milestone 4 starts (the user, 2026-10-15):
+   a codebase-wide pass, both C++ guideline corpora rule by rule over everything since Milestone
    1 (ReSTIR DI and PT, MNEE included), as Milestone 3's close did for its
    own code. Source done 2026-10-16
    (docs/research/2026-10-16-codebase-guidelines-pass.md): the core, the
    Metal host and the shaders reviewed and every finding decided, two
    shader defects fixed (a replayed shift's out-of-bounds shape read; MNEE's
    list overflow reported through a NaN), every graph the same to the bit.
-   Tests next: area D, the tests' own review, fixed by its own pass.
+   Tests done 2026-10-16 (that note, "Area D"): the tests' own review, every
+   finding decided under the user's direction that tests guard invariants,
+   not coverage; shared fixtures, failures reported rather than undefined,
+   every graph's record() shown allocation-free, coverage-only tests
+   removed; one src defect found and fixed (prepare_output's refusal).
 
 1. Reservoir reuse as kernels: the optimization milestone, what each pass
    costs and where the bytes go, which waited for the full pipeline (the
