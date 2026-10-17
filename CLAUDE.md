@@ -30,7 +30,8 @@ section wins.
 - **Tests guard invariants and contracts** (layouts, determinism,
   refusals that protect a contract, no per-frame allocation, matches
   between implementations), not coverage. A test that can't fail is
-  removed.
+  removed. Tests never assert the shipped graphs' or scenes' current
+  settings, which change with the demo; they build their own inputs.
 - **Fix valid findings together.** No deferring for "one intent", no
   review-fix-review chains: one pass, fix what matters, move on.
 - **Quality trades are the user's call.** Any change that lowers image
