@@ -15,10 +15,10 @@ checkout, never in it, in `../serenity-data/` (from the checkout's root;
 | `denoiser-v1/` | the data set, 32.3 GB, its manifest | `scripts/make_denoiser_dataset.py` |
 | `denoiser-v1-warmup/` | the test sequences' warm-up frames | `render_warmup.py` |
 | `denoiser-v1-runs/` | each run's log, checkpoints and test results | `train.py`, `evaluate.py` |
-| `denoiser-v1-model/{wide,small}/` | the exported networks the renderer reads | `export.py`, or `make weights` from the published copies |
+| `denoiser-v1-model/wide/` | the exported network the renderer reads | `export.py`, or `make weights` from the published copy |
 
-To run the published networks without training, `make weights` (from the
-checkout's root) downloads both from the project's media host
+To run the published network without training, `make weights` (from the
+checkout's root) downloads it from the project's media host
 (`https://media.plainsight-systems.com/denoiser-v1-model/`) and checks each
 file against the SHA-256 pinned in `scripts/fetch_denoiser_weights.sh`.
 
@@ -83,17 +83,16 @@ uv run --locked python render_warmup.py --data ../../serenity-data/denoiser-v1 \
 ## Training
 
 A config holds a run's settings; paths in it are relative to it.
-`config.json` is the small network (max_lr 1e-3), `config-wide.json` the
-wide one (max_lr 5e-3), the demo's; docs/research/2026-10-15-denoiser-training.md
-has both runs (8.3 h and 5.7 h on the M3 Max).
+`config-wide.json` is the demo's network (543k parameters, max_lr 5e-3);
+docs/research/2026-10-15-denoiser-training.md has its run (5.7 h on the
+M3 Max), and the smaller network trained beside it, since removed.
 
 ```sh
 # OIDN's learning-rate finder: an exponential sweep, its curve in find_lr.csv
-uv run --locked python train.py find-lr --config config.json --out ../../serenity-data/denoiser-v1-runs/find-lr
+uv run --locked python train.py find-lr --config config-wide.json --out ../../serenity-data/denoiser-v1-runs/find-lr
 
 # the runs: log.csv every epoch, best.pt at the best validation loss, last.pt to resume
 uv run --locked python train.py train --config config-wide.json --out ../../serenity-data/denoiser-v1-runs/v1-wide
-uv run --locked python train.py train --config config.json --out ../../serenity-data/denoiser-v1-runs/v1-small-lr1e-3
 ```
 
 `train` resumes from `last.pt` if the run directory has one, and refuses a
@@ -106,7 +105,7 @@ the config's path.
 
 The real marbles are the test, read by `evaluate.py` alone, once a run has
 ended; the references are `make reference`'s at t = 8 and t = 120, in the
-checkout's `.cache/references/`. For each network:
+checkout's `.cache/references/`:
 
 ```sh
 uv run --locked python evaluate.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1-wide/best.pt \
@@ -117,11 +116,10 @@ uv run --locked python evaluate.py --checkpoint ../../serenity-data/denoiser-v1-
 
 It refuses an `--out` that already holds results. `--dry-run-on-validation`
 runs the same code on the validation split instead, to check the script
-before the test. Tables, both networks side by side:
+before the test. Its tables:
 
 ```sh
-uv run --locked python report.py wide=../../serenity-data/denoiser-v1-runs/v1-wide/test/results.json \
-    small=../../serenity-data/denoiser-v1-runs/v1-small-lr1e-3/test/results.json
+uv run --locked python report.py wide=../../serenity-data/denoiser-v1-runs/v1-wide/test/results.json
 ```
 
 A rough MPS time a frame: `uv run --locked python benchmark.py --checkpoint RUN/best.pt`.
@@ -131,8 +129,6 @@ A rough MPS time a frame: `uv run --locked python benchmark.py --checkpoint RUN/
 ```sh
 uv run --locked python export.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1-wide/best.pt \
     --out ../../serenity-data/denoiser-v1-model/wide
-uv run --locked python export.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1-small-lr1e-3/best.pt \
-    --out ../../serenity-data/denoiser-v1-model/small
 ```
 
 `weights.bin` (float32), `layout.json` (every tensor's place, the network's
@@ -160,12 +156,11 @@ runs it on every build (`tests/gpu/denoise_test.cpp`).
 
 ## Running it
 
-The denoised graphs name the exports by a path relative to `graphs/`, so
+The denoised graph names the export by a path relative to `graphs/`, so
 from the checkout's root:
 
 ```sh
-make run GRAPH=graphs/restir_pt_denoised.toml SCENE=scenes/marbles.toml        # the wide network
-make run GRAPH=graphs/restir_pt_denoised_small.toml SCENE=scenes/marbles.toml  # the small one
+make run GRAPH=graphs/restir_pt_denoised.toml SCENE=scenes/marbles.toml
 ```
 
 A graph's `[denoise] weights` names another export.

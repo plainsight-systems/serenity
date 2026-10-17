@@ -15,8 +15,7 @@ namespace serenity::passes {
 //            (weights.bin, layout.json: core/denoise/network.h). A relative
 //            path is relative to the frame graph file's directory
 //            (core/frame/graph_file.h, load_schedule), so a graph names the
-//            network beside the checkout wherever it is run from. The wide
-//            network and the small one are this one setting apart.
+//            network beside the checkout wherever it is run from.
 struct Denoise {
     std::filesystem::path weights;
 };

@@ -8,9 +8,8 @@
 # not the window's layer, brings it to every pixel (core/frame/schedule.h,
 # light_size). Needs a scene.
 #
-# The network is training/export.py's, beside the checkout: the wide one
-# below; the small one is denoiser-v1-model/small. A relative path is
-# relative to this file's directory.
+# The network is training/export.py's, beside the checkout (make weights
+# fetches it). A relative path is relative to this file's directory.
 
 mnee = true
 # Checkerboard rendering of the light (Milestone 4, step 4,

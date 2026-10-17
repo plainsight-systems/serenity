@@ -1,7 +1,7 @@
 """Training, and OIDN's learning-rate finder.
 
-    uv run python train.py find-lr --config config.json --out RUN_DIR
-    uv run python train.py train   --config config.json --out RUN_DIR
+    uv run python train.py find-lr --config config-wide.json --out RUN_DIR
+    uv run python train.py train   --config config-wide.json --out RUN_DIR
 
 Open Image Denoise's schedule (training/train.py, config.py), where the
 design does not say otherwise: Adam; batch 16; a one-cycle learning rate,
@@ -17,7 +17,7 @@ validation sequences (data.validation_tiles: 28 tiles a sequence, 112 in
 all, no augmentation), with the same loss. The checkpoint with the lowest
 validation loss is kept as best.pt; the run's every epoch is in log.csv.
 
-Reproducible: one seed (config.json) seeds PyTorch, and each epoch's crops
+Reproducible: one seed (the config's) seeds PyTorch, and each epoch's crops
 and augmentations come from numpy's generator seeded by (seed, epoch), so a
 resumed run draws what an unbroken one would. The MPS backend's own
 reductions are not promised bit-exact by PyTorch; how far two runs from

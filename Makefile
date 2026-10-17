@@ -186,7 +186,7 @@ convergence:
 	@cat $(CONVERGENCE)
 	@echo $(CONVERGENCE)
 
-## The trained denoiser networks, wide and small, from the project's media
+## The trained denoiser network, the demo's, from the project's media
 ## host into ../serenity-data/denoiser-v1-model beside the checkout, each
 ## file checked against its pinned SHA-256 (scripts/fetch_denoiser_weights.sh).
 weights:

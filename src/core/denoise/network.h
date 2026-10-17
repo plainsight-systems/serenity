@@ -29,8 +29,9 @@ namespace serenity::denoise {
 // pooled), two at the bottleneck, four decoder convolutions on each
 // upsampled level concatenated with its skip, one more at the input's
 // level, and the 1 x 1 head of contracts::head_outputs scores. Only the
-// widths vary, so the wide and the small network are one setting apart
-// (the graph's [denoise] weights, core/passes/denoise.h).
+// widths vary, read from the layout: the demo's network and the test
+// fixture's small random one load alike (the graph's [denoise] weights,
+// core/passes/denoise.h).
 //
 // What is checked, each a NetworkError naming the file and what is wrong,
 // never a network half-loaded or run on other constants (I.5, E.2):
