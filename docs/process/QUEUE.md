@@ -137,7 +137,12 @@ This file tracks active and accepted work.
 0. Before Milestone 4 starts (the user, 2026-10-15): a codebase-wide pass,
    both C++ guideline corpora rule by rule over everything since Milestone
    1 (ReSTIR DI and PT, MNEE included), as Milestone 3's close did for its
-   own code.
+   own code. Source done 2026-10-16
+   (docs/research/2026-10-16-codebase-guidelines-pass.md): the core, the
+   Metal host and the shaders reviewed and every finding decided, two
+   shader defects fixed (a replayed shift's out-of-bounds shape read; MNEE's
+   list overflow reported through a NaN), every graph the same to the bit.
+   Tests next: area D, the tests' own review, fixed by its own pass.
 
 1. Reservoir reuse as kernels: the optimization milestone, what each pass
    costs and where the bytes go, which waited for the full pipeline (the
@@ -166,7 +171,7 @@ wanted, earlier opening sequences in the data set (Parking Lot:
 - Ray offset: +0.3 ms is `offset_ray()` itself; GPU counters for why a cheaper float form was no faster.
 - Ray offset: ReSTIR's visibility offsets along the record's 16-bit-quantized normal; no test aims at it.
 - Ray offset: a sphere ~100 m+ in radius whose surface passes near the origin re-hits (fixed 15 um step there); no scene has one.
-- ReSTIR temporal: raytraced mode is refused with restir_temporal; it needs last frame's structure kept (scene_acceleration.h, Keep::last_too).
+- ReSTIR temporal: raytraced mode is refused with restir_temporal; it needs last frame's structure kept. The design, moved here from scene_acceleration.h, where it was declared but never built (2026-10-16-codebase-guidelines-pass.md, G1): only for a graph with the temporal merge in raytraced mode, whose normalization traces last frame's surface against last frame's structure (RTXDI's previous-frame BVH). A still scene's one structure is last frame's too. A moving scene keeps frames_in_flight + 1 structures, three: frame i builds structure i mod 3 (its index's, not its slot's, since a readback takes a slot) and traces (i - 1) mod 3 as last frame's; before rebuilding one it waits for the last submission that traced it (GPU.7, MEM.4), which begin() has already waited for when every submission is a frame. The boxes stay one copy a slot. The cost is one more structure and its scratch, made at construction, no extra build. ReSTIR PT's temporal shift would use it too (restir_pt.metal.h, "What is approximate").
 - ReSTIR temporal: a fixed-order ring around the reprojected pixel moved a grazing floor's mean +5.6%; a frame-drawn start fixed it; the theory says unbiased either way: why.
 - ReSTIR temporal: basic mode's edge bias at a grazing view, a box's shadow edge -7% to +10% by row, the lower floor -3% (restir-temporal.md).
 - ReSTIR temporal: the boiling filter (RTXDI's default, 0.2) still deferred.
