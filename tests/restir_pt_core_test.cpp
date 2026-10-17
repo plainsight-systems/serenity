@@ -20,14 +20,10 @@
 #include "core/passes/restir_pt.h"
 #include "core/sampling/pairing.h"
 #include "support/text.h"
-#include "test_paths.h"
 
 using serenity::frame::GraphFileError;
-using serenity::frame::load_schedule;
 using serenity::frame::parse_schedule;
-using serenity::frame::PassKind;
 using serenity::tests::contains;
-using serenity::tests::graphs_dir;
 
 namespace {
 
@@ -36,30 +32,17 @@ std::string error_for(const std::string& text) {
 }
 
 constexpr std::string_view initial_keys = "nee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = 0.2\n";
+constexpr std::string_view tone_map = "[tone_map]\nexposure = 0.0\nbloom = 0.0\n";
+
+// A graph of ReSTIR PT's passes `kinds` (their names, quoted and comma
+// separated) shown through the tone map, then [restir_pt] with the four keys
+// every such graph reads; a test appends the rest.
+std::string graph(std::string_view kinds) {
+    return "passes = [" + std::string(kinds) + ", \"tone_map\"]\n" + std::string(tone_map) + "[restir_pt]\n" +
+           std::string(initial_keys);
+}
 
 }  // namespace
-
-TEST_CASE("graphs/restir_pt.toml reads as ReSTIR PT Enhanced at its defaults, with MNEE") {
-    const auto schedule = load_schedule(graphs_dir / "restir_pt.toml");
-    REQUIRE(schedule.passes.size() == 6);
-    CHECK(schedule.passes[0] == PassKind::restir_pt_initial);
-    CHECK(schedule.passes[1] == PassKind::restir_pt_temporal);
-    CHECK(schedule.passes[2] == PassKind::restir_pt_spatial);
-    CHECK(schedule.passes[3] == PassKind::restir_pt_shade);
-    CHECK(schedule.passes[4] == PassKind::restir_pt_duplication);
-    CHECK(schedule.passes[5] == PassKind::tone_map);
-    CHECK(serenity::frame::reuses_history(schedule));
-    REQUIRE(schedule.restir_pt.has_value());
-    CHECK(schedule.restir_pt->nee_candidates == serenity::passes::written_nee_candidates);
-    CHECK(schedule.restir_pt->max_surfaces == serenity::passes::written_max_surfaces);
-    CHECK(schedule.restir_pt->footprint == serenity::passes::written_footprint);
-    CHECK(schedule.restir_pt->roughness == serenity::passes::written_roughness);
-    CHECK(schedule.restir_pt->neighbors == serenity::passes::written_path_neighbors);
-    CHECK(schedule.restir_pt->sigma == serenity::passes::written_sigma);
-    CHECK(schedule.restir_pt->confidence_cap == serenity::passes::written_confidence_cap);
-    CHECK(schedule.restir_pt->cap_floor == serenity::passes::written_cap_floor);
-    CHECK(schedule.restir_pt->cap_exponent == serenity::passes::written_cap_exponent);
-}
 
 TEST_CASE("ReSTIR PT's temporal reuse and duplication map: their order, their settings, and the map only with "
           "temporal reuse") {
@@ -67,36 +50,31 @@ TEST_CASE("ReSTIR PT's temporal reuse and duplication map: their order, their se
     constexpr std::string_view duplication_keys = "cap_floor = 1.0\ncap_exponent = 0.1\n";
     // Temporal reuse alone reads; it reuses history; the duplication map
     // after the shade with it reads.
-    const auto alone = parse_schedule("passes = [\"restir_pt_initial\", \"restir_pt_temporal\", \"restir_pt_shade\", "
-                                      "\"display\"]\n[restir_pt]\n" +
-                                          std::string(initial_keys) + std::string(temporal_keys),
-                                      "graph.toml");
+    const auto alone = parse_schedule(
+        graph("\"restir_pt_initial\", \"restir_pt_temporal\", \"restir_pt_shade\"") + std::string(temporal_keys),
+        "graph.toml");
     CHECK(serenity::frame::reuses_history(alone));
     REQUIRE(alone.restir_pt.has_value());
     CHECK(alone.restir_pt->confidence_cap == 20.0f);
     CHECK(alone.restir_pt->cap_exponent == 0.0f);
     // The map without temporal reuse, whose cap is all it serves.
-    CHECK(contains(error_for("passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"restir_pt_duplication\", "
-                             "\"display\"]\n[restir_pt]\n" +
-                             std::string(initial_keys) + std::string(duplication_keys)),
+    CHECK(contains(error_for(graph("\"restir_pt_initial\", \"restir_pt_shade\", \"restir_pt_duplication\"") +
+                             std::string(duplication_keys)),
                    "without restir_pt_temporal"));
     // Temporal reuse after the spatial: out of order.
-    CHECK(contains(error_for("passes = [\"restir_pt_initial\", \"restir_pt_spatial\", \"restir_pt_temporal\", "
-                             "\"restir_pt_shade\", \"display\"]\n[restir_pt]\n" +
-                             std::string(initial_keys) + "neighbors = 3\nsigma = 16.0\n" + std::string(temporal_keys)),
+    CHECK(contains(error_for(graph("\"restir_pt_initial\", \"restir_pt_spatial\", \"restir_pt_temporal\", "
+                                   "\"restir_pt_shade\"") +
+                             "neighbors = 3\nsigma = 16.0\n" + std::string(temporal_keys)),
                    "in the order"));
     // A cap without temporal reuse, and a floor without the map: keys nobody reads.
-    CHECK(contains(error_for("passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"display\"]\n[restir_pt]\n" +
-                             std::string(initial_keys) + std::string(temporal_keys)),
+    CHECK(contains(error_for(graph("\"restir_pt_initial\", \"restir_pt_shade\"") + std::string(temporal_keys)),
                    "read only with restir_pt_temporal"));
-    CHECK(contains(error_for("passes = [\"restir_pt_initial\", \"restir_pt_temporal\", \"restir_pt_shade\", "
-                             "\"display\"]\n[restir_pt]\n" +
-                             std::string(initial_keys) + std::string(temporal_keys) + "cap_floor = 1.0\n"),
+    CHECK(contains(error_for(graph("\"restir_pt_initial\", \"restir_pt_temporal\", \"restir_pt_shade\"") +
+                             std::string(temporal_keys) + "cap_floor = 1.0\n"),
                    "read only with restir_pt_duplication"));
     // Out of range: a cap past 60, a floor above the cap, an exponent of 0.
-    const std::string with_map = "passes = [\"restir_pt_initial\", \"restir_pt_temporal\", \"restir_pt_shade\", "
-                                 "\"restir_pt_duplication\", \"display\"]\n[restir_pt]\n" +
-                                 std::string(initial_keys);
+    const std::string with_map =
+        graph("\"restir_pt_initial\", \"restir_pt_temporal\", \"restir_pt_shade\", \"restir_pt_duplication\"");
     CHECK(contains(error_for(with_map + "confidence_cap = 61.0\n" + std::string(duplication_keys)), "confidence_cap"));
     CHECK(contains(error_for(with_map + "confidence_cap = 10.0\ncap_floor = 11.0\ncap_exponent = 0.1\n"),
                    "cap_floor"));
@@ -110,25 +88,23 @@ TEST_CASE("ReSTIR PT's temporal reuse and duplication map: their order, their se
 }
 
 TEST_CASE("ReSTIR PT's passes keep their order, and its settings come with them, in range, at their own line") {
-    CHECK(contains(error_for("passes = [\"restir_pt_shade\", \"restir_pt_initial\", \"display\"]\n[restir_pt]\n" +
-                             std::string(initial_keys)),
-                   "in the order"));
-    CHECK(contains(error_for("passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"display\"]\n"),
+    CHECK(contains(error_for(graph("\"restir_pt_shade\", \"restir_pt_initial\"")), "in the order"));
+    CHECK(contains(error_for("passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"tone_map\"]\n" +
+                             std::string(tone_map)),
                    "no [restir_pt] settings"));
-    // Line 3 is nee_candidates.
-    const std::string many = error_for("passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"display\"]\n"
+    // Line 6 is nee_candidates, after the passes and the tone map's three.
+    const std::string many = error_for("passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"tone_map\"]\n" +
+                                       std::string(tone_map) +
                                        "[restir_pt]\nnee_candidates = 33\nmax_surfaces = 9\nfootprint = 0.02\n"
                                        "roughness = 0.2\n");
     INFO(many);
-    CHECK(contains(many, "graph.toml:3:"));
+    CHECK(contains(many, "graph.toml:6:"));
     CHECK(contains(many, "nee_candidates"));
     // Neighbors without the spatial pass: a key nobody reads.
-    CHECK(contains(error_for("passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"display\"]\n[restir_pt]\n" +
-                             std::string(initial_keys) + "neighbors = 3\n"),
+    CHECK(contains(error_for(graph("\"restir_pt_initial\", \"restir_pt_shade\"") + "neighbors = 3\n"),
                    "read only with restir_pt_spatial"));
-    CHECK(contains(error_for("passes = [\"restir_pt_initial\", \"restir_pt_spatial\", \"restir_pt_shade\", "
-                             "\"display\"]\n[restir_pt]\n" +
-                             std::string(initial_keys) + "neighbors = 3\nsigma = 0.5\n"),
+    CHECK(contains(error_for(graph("\"restir_pt_initial\", \"restir_pt_spatial\", \"restir_pt_shade\"") +
+                             "neighbors = 3\nsigma = 0.5\n"),
                    "sigma"));
 }
 

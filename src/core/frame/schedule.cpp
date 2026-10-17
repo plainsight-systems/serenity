@@ -22,11 +22,11 @@ namespace {
 // through. The switches below cover every kind (-Wswitch); this list is
 // held to the enum's final kind, PassKind::last, so a kind left out of it
 // fails to compile (schedule.h).
-constexpr std::array<PassKind, 12> kinds = {
-    PassKind::test_pattern,       PassKind::preview,           PassKind::path,
-    PassKind::display,            PassKind::tone_map,          PassKind::restir_pt_initial,
-    PassKind::restir_pt_temporal, PassKind::restir_pt_spatial, PassKind::restir_pt_shade,
-    PassKind::restir_pt_duplication, PassKind::features,       PassKind::denoise};
+constexpr std::array<PassKind, 10> kinds = {
+    PassKind::test_pattern,       PassKind::path,              PassKind::tone_map,
+    PassKind::restir_pt_initial,  PassKind::restir_pt_temporal, PassKind::restir_pt_spatial,
+    PassKind::restir_pt_shade,    PassKind::restir_pt_duplication, PassKind::features,
+    PassKind::denoise};
 static_assert(kinds.size() == static_cast<std::size_t>(PassKind::last) + 1,
               "every PassKind is in `kinds`, in declaration order");
 static_assert(kinds.back() == PassKind::last, "the last PassKind is last in `kinds`");
@@ -53,12 +53,8 @@ std::string_view name(PassKind kind) {
     switch (kind) {
     case PassKind::test_pattern:
         return "test_pattern";
-    case PassKind::preview:
-        return "preview";
     case PassKind::path:
         return "path";
-    case PassKind::display:
-        return "display";
     case PassKind::tone_map:
         return "tone_map";
     case PassKind::restir_pt_initial:
@@ -83,10 +79,8 @@ bool needs_scene(PassKind kind) {
     // No default, as for name().
     switch (kind) {
     case PassKind::test_pattern:
-    case PassKind::display:
     case PassKind::tone_map:
         return false;
-    case PassKind::preview:
     case PassKind::path:
     case PassKind::restir_pt_initial:
     case PassKind::restir_pt_temporal:
@@ -104,8 +98,6 @@ bool accumulates(PassKind kind) {
     // No default, as for name().
     switch (kind) {
     case PassKind::test_pattern:
-    case PassKind::preview:
-    case PassKind::display:
     case PassKind::tone_map:
     case PassKind::restir_pt_initial:
     case PassKind::restir_pt_temporal:
@@ -125,7 +117,6 @@ bool writes_radiance(PassKind kind) {
     // No default, as for name().
     switch (kind) {
     case PassKind::test_pattern:
-    case PassKind::display:
     case PassKind::tone_map:
     case PassKind::restir_pt_initial:
     case PassKind::restir_pt_temporal:
@@ -134,7 +125,6 @@ bool writes_radiance(PassKind kind) {
     case PassKind::features:
     case PassKind::denoise:  // the frame's radiance at the output size, not a light pass's (schedule.h)
         return false;
-    case PassKind::preview:
     case PassKind::path:
     case PassKind::restir_pt_shade:
         return true;
@@ -146,7 +136,6 @@ bool reads_radiance(PassKind kind) {
     // No default, as for name().
     switch (kind) {
     case PassKind::test_pattern:
-    case PassKind::preview:
     case PassKind::path:
     case PassKind::restir_pt_initial:
     case PassKind::restir_pt_temporal:
@@ -155,7 +144,6 @@ bool reads_radiance(PassKind kind) {
     case PassKind::restir_pt_duplication:
     case PassKind::features:
         return false;
-    case PassKind::display:
     case PassKind::tone_map:
     case PassKind::denoise:
         return true;
@@ -166,7 +154,6 @@ bool reads_radiance(PassKind kind) {
 bool writes_target(PassKind kind) {
     // No default, as for name().
     switch (kind) {
-    case PassKind::preview:
     case PassKind::path:
     case PassKind::restir_pt_initial:
     case PassKind::restir_pt_temporal:
@@ -177,7 +164,6 @@ bool writes_target(PassKind kind) {
     case PassKind::denoise:
         return false;
     case PassKind::test_pattern:
-    case PassKind::display:
     case PassKind::tone_map:
         return true;
     }
@@ -191,9 +177,7 @@ bool writes_features(PassKind kind) {
 bool is_restir_pt(PassKind kind) {
     switch (kind) {
     case PassKind::test_pattern:
-    case PassKind::preview:
     case PassKind::path:
-    case PassKind::display:
     case PassKind::tone_map:
     case PassKind::features:
     case PassKind::denoise:
@@ -238,7 +222,7 @@ std::optional<std::string> presentation_broken(const std::vector<PassKind>& pass
     }
     if (presenting.empty()) {
         return "no pass in the frame graph writes the image shown (" + listed(passes) +
-               "); end it with display or tone_map (only the features pass alone shows nothing)";
+               "); end it with tone_map (only the features pass alone shows nothing)";
     }
     if (presenting.size() > 1) {
         return "the frame graph has " + std::to_string(presenting.size()) + " passes that write the image shown (" +
@@ -275,7 +259,7 @@ std::optional<std::string> radiance_broken(const std::vector<PassKind>& passes) 
     }
     if (writer && !shown) {
         return std::string(name(*writer)) +
-               " computes light and no pass after it shows it; end the frame graph with display or tone_map";
+               " computes light and no pass after it shows it; end the frame graph with tone_map";
     }
     return std::nullopt;
 }

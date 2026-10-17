@@ -70,6 +70,7 @@
 #include "support/lit_floor.h"
 #include "support/references.h"
 #include "support/scene_text.h"
+#include "support/schedules.h"
 #include "support/vector.h"
 
 using namespace serenity;
@@ -102,7 +103,7 @@ TEST_CASE("furnace: a white Lambert sphere under a uniform sky converges to the 
     // Albedo 1 and a sky of 0.5 every way: what the sphere receives it
     // returns.
     Rig rig(furnace("kind = \"rough\"\ncolor = [1, 1, 1]\n"), square);
-    const auto image = rig.render(1024);
+    const auto image = rig.render_accumulated(1024);
     // The sphere's middle, and the sky beside it.
     CHECK(patch_mean(image, rig.size(), middle) == doctest::Approx(0.5).scale(0).epsilon(0.02));
     CHECK(patch_mean(image, rig.size(), {3, 3, 2}) == doctest::Approx(0.5).scale(0).epsilon(0.01));
@@ -132,7 +133,7 @@ TEST_CASE("integrating sphere: light bounced many times inside a white sphere co
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"wall\"\n"
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.05\nmaterial = \"glow\"\n";
     Rig rig(text, square);
-    const auto image = rig.render(2048);
+    const auto image = rig.render_accumulated(2048);
     const double expected = rho * radiance * ratio * ratio / (1.0 - rho);  // 0.45, within what the display shows
     CHECK(patch_mean(image, rig.size(), middle_of(square, 8)) == doctest::Approx(expected).scale(0).epsilon(0.03));
 }
@@ -141,7 +142,7 @@ TEST_CASE("furnace: a glass sphere under a uniform sky converges to the sky") {
     // Smooth glass loses nothing: reflected or refracted, every path leaves
     // with the sky's radiance, the 1 / eta^2 of entering undone by leaving.
     Rig rig(furnace("kind = \"dielectric\"\nior = 1.5\n"), square);
-    const auto image = rig.render(512);
+    const auto image = rig.render_accumulated(512);
     CHECK(patch_mean(image, rig.size(), middle) == doctest::Approx(0.5).scale(0).epsilon(0.02));
 }
 
@@ -149,7 +150,7 @@ TEST_CASE("furnace: a white coated sphere under a uniform sky converges to the s
     // A white base under a clear coat reflects all it receives, the coat's
     // share and the base's (materials/coated.h).
     Rig rig(furnace("kind = \"coated\"\ncolor = [1, 1, 1]\nior = 1.5\n"), square);
-    const auto image = rig.render(1024);
+    const auto image = rig.render_accumulated(1024);
     CHECK(patch_mean(image, rig.size(), middle) == doctest::Approx(0.5).scale(0).epsilon(0.02));
 }
 
@@ -167,7 +168,7 @@ double through_filled_glass(double sky_radiance, double tau) {
 
 TEST_CASE("an absorbing medium at a bead's scale: its stretch measured from the surface, not the ray's start") {
     Rig rig(tests::tinted_bead(), square);
-    const auto image = rig.render(2048);
+    const auto image = rig.render_accumulated(2048);
     const double expected = through_filled_glass(0.5, std::exp(-1.4));  // 2 mm of 700 per meter
     INFO("expected red " << expected);
     CHECK(patch_mean(image, rig.size(), middle_of(square, 1)) == doctest::Approx(expected).scale(0).epsilon(0.03));
@@ -175,7 +176,7 @@ TEST_CASE("an absorbing medium at a bead's scale: its stretch measured from the 
 
 TEST_CASE("a light inside the same medium as the surface it lights: its light dimmed over the shadow ray") {
     Rig rig(tests::core_lit_inside_glass(), square);
-    const auto image = rig.render(2048);
+    const auto image = rig.render_accumulated(2048);
     const Patch core = middle_of(square, 2);
     const double ratio = patch_mean(image, rig.size(), core, 0) / patch_mean(image, rig.size(), core, 1);
     const double sigma = std::log(2.0);
@@ -193,7 +194,7 @@ TEST_CASE("a coated sphere of black base shows its coat alone: F0 of the sky at 
     // over 4096 frames each pixel's has some 8% of error, and the mean of
     // 25 pixels some 1.5%, with 8-bit rounding beside it.
     Rig rig(text, square);
-    const auto image = rig.render(4096);
+    const auto image = rig.render_accumulated(4096);
     CHECK(patch_mean(image, rig.size(), middle_of(square, 2)) == doctest::Approx(glass_f0).scale(0).epsilon(0.07));
 }
 
@@ -208,7 +209,7 @@ TEST_CASE("an absorbing medium in glass: through its middle, what Beer and Lambe
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"glass\"\n"
                              "interior = \"red_out\"\n";
     Rig rig(text, square);
-    const auto image = rig.render(2048);
+    const auto image = rig.render_accumulated(2048);
     const double expected = through_filled_glass(0.5, 0.25);
     INFO("expected red " << expected);
     const Patch through = middle_of(square, 1);
@@ -221,7 +222,7 @@ namespace {
 
 void check_floor(const std::string& text, std::uint64_t frames) {
     Rig rig(text, {64, 48});
-    const auto image = rig.render(frames);
+    const auto image = rig.render_accumulated(frames);
     for (const tests::Pixel pixel : {tests::Pixel{32, 30}, tests::Pixel{14, 38}, tests::Pixel{50, 26}}) {
         // A 3 x 3 patch's mean against the formula at its center: the
         // formula varies little over three pixels of floor.
@@ -324,9 +325,10 @@ TEST_CASE("the accumulated image reads back only whole, and only when there is o
     CHECK_THROWS_WITH_AS(rig.renderer().read_accumulated(wrong), doctest::Contains("floats given"), metal::MetalError);
     metal::Device device;
     metal::Submission submission(device);
-    metal::Renderer preview(device, submission, tests::preview_graph(), &rig.description());
+    metal::Renderer pattern(device, submission, frame::parse_schedule("passes = [\"test_pattern\"]\n", "pattern"),
+                            nullptr);
     std::vector<float> any(4);
-    CHECK_THROWS_WITH_AS(preview.read_accumulated(any), doctest::Contains("accumulates nothing"), metal::MetalError);
+    CHECK_THROWS_WITH_AS(pattern.read_accumulated(any), doctest::Contains("accumulates nothing"), metal::MetalError);
 }
 
 TEST_CASE("frame k rendered alone is frame k rendered after others (principle 2)") {
@@ -409,7 +411,8 @@ TEST_CASE("a frame recorded without being prepared is refused, and so is a graph
                     metal::MetalError);
 
     metal::Submission other(device);
-    const frame::Schedule twice{{frame::PassKind::path, frame::PassKind::path, frame::PassKind::display}, std::nullopt};
+    const frame::Schedule twice{{frame::PassKind::path, frame::PassKind::path, frame::PassKind::tone_map},
+                                tests::look};
     CHECK_THROWS_AS(metal::Renderer(device, other, twice, &description), metal::MetalError);
 }
 
@@ -421,7 +424,7 @@ TEST_CASE("the camera sees a light's glow, through the emitter") {
                              "[materials.glow]\nkind = \"emissive\"\nradiance = [0.6, 0.3, 0.1]\n"
                              "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.5\nmaterial = \"glow\"\n";
     Rig rig(text, {33, 33});
-    const auto image = rig.render(4);
+    const auto image = rig.render_accumulated(4);
     for (std::size_t c = 0; c < 3; ++c) {
         INFO("channel " << c);
         CHECK(patch_mean(image, rig.size(), middle_of(rig.size(), 2), c) ==

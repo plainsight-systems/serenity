@@ -3,20 +3,11 @@
 // Axis: Sampler.
 //
 // Numbers in [0, 1) derived from where and why they are used: the pixel, the
-// purpose (a light, the sky, a reflection), and the sample's index. There is
-// no generator state (logical-overview.md, principle 2), so any pixel can be
+// frame and the purpose (a light, the sky, a reflection). There is no
+// generator state (logical-overview.md, principle 2), so any pixel can be
 // rendered again exactly, alone.
 //
-// A pixel's samples for one purpose are the R2 sequence (Roberts' additive
-// recurrence on the plastic constant), shifted by an offset hashed from the
-// pixel and the purpose (Cranley-Patterson rotation): evenly spread within
-// the pixel's set, and uncorrelated between neighbouring pixels, so what
-// error is left is fine grain rather than bands. The frame is not an input
-// yet: the preview takes no average across frames, and a still scene stays
-// still.
-//
-// A path's numbers (the path tracer's, which averages frames) are drawn
-// another way: independent, each the first word of pcg3d (math/
+// A path's numbers are independent, each the first word of pcg3d (math/
 // hash.metal.h) of three, the pixel's key, the frame's index and the
 // dimension, the count of numbers the path drew before. Counter-based, as
 // GDSA.3 asks: the stream is (pixel, frame), 64 bits, and pcg3d is a
@@ -37,21 +28,6 @@
 
 namespace serenity {
 namespace shaders {
-
-// R2's step: 1 / p and 1 / p^2, p the plastic constant, to a float's
-// precision.
-constant constexpr float2 r2_step = float2(0.754877666f, 0.569840291f);
-
-// The offset of `pixel`'s samples for `purpose`.
-inline float2 sample_offset(uint2 pixel, uint purpose) {
-    const uint h = pcg_hash(pixel.x ^ pcg_hash(pixel.y ^ pcg_hash(purpose)));
-    return float2(unit_float(h), unit_float(pcg_hash(h)));
-}
-
-// Sample `index` of a pixel's set whose offset is `offset`.
-inline float2 sample_2d(float2 offset, uint index) {
-    return metal::fract(offset + float(index) * r2_step);
-}
 
 // A path's numbers: its stream, `key`, the pixel's key and the frame's
 // index; `dimension` counting the numbers drawn.

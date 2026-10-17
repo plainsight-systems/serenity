@@ -69,11 +69,11 @@ inline const std::vector<frame::PassKind> restir_pt_passes = {
     frame::PassKind::restir_pt_initial, frame::PassKind::restir_pt_temporal, frame::PassKind::restir_pt_spatial,
     frame::PassKind::restir_pt_shade, frame::PassKind::restir_pt_duplication};
 
-// A ReSTIR PT graph of `kinds`, its light shown as it is (display), its
+// A ReSTIR PT graph of `kinds`, its light shown through the tone map, its
 // settings the written ones.
 inline frame::Schedule restir_pt_graph(const std::vector<frame::PassKind>& kinds) {
-    frame::Schedule s{kinds, std::nullopt};
-    s.passes.push_back(frame::PassKind::display);
+    frame::Schedule s{kinds, look};
+    s.passes.push_back(frame::PassKind::tone_map);
     s.restir_pt = written_restir_pt(kinds);
     return s;
 }

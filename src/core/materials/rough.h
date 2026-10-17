@@ -6,8 +6,7 @@
 // a path takes light at rather than passes through (logical-overview.md). Its
 // color is a constant, or a texture's, named through a texture reference
 // (contracts/texture_reference.h). It scatters light by Lambert's law,
-// albedo / pi, which the preview evaluates for the light reaching it
-// straight from the lights and the sky (metal/passes/preview/preview.h).
+// albedo / pi (metal/materials/rough.metal.h).
 
 #include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"

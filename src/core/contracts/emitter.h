@@ -23,9 +23,8 @@
 //
 //       u = (0, 0) draws the light's middle as seen from the point: for a
 //       sphere, the direction to its center. Every kind maps u so, and an
-//       estimator that aims at a light with one fixed sample, as the
-//       deterministic preview does, passes (0, 0) and relies on this alone,
-//       never on a kind's mapping (I.1, I.5).
+//       estimator that aims at a light with one fixed sample passes (0, 0)
+//       and relies on this alone, never on a kind's mapping (I.1, I.5).
 //   float light_pdf(light, point, direction)
 //       the density with which sample_light() draws `direction` from
 //       `point`: what ReSTIR's resampling weights need of a candidate, and

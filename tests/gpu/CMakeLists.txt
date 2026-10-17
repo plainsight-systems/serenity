@@ -6,7 +6,6 @@ add_executable(serenity_gpu_tests
     library_test.cpp
     frame_test.cpp
     argument_table_test.cpp
-    preview_test.cpp
     light_test.cpp
     bsdf_test.cpp
     sampler_test.cpp
@@ -18,7 +17,6 @@ add_executable(serenity_gpu_tests
     film_test.cpp
     acceleration_test.cpp
     leave_test.cpp
-    motion_test.cpp
     history_test.cpp
     tone_map_test.cpp
     frame_images_test.cpp

@@ -81,7 +81,7 @@ TEST_CASE("a denoised graph's light is half its output each way, rounded up; any
     CHECK(frame::light_size(s, {3456, 2234}) == frame::Extent{1728, 1117});
     CHECK(frame::light_size(s, {1920, 1080}) == frame::Extent{960, 540});
     CHECK(frame::light_size(s, {1921, 1}) == frame::Extent{961, 1});
-    const Schedule plain{{PassKind::path, PassKind::display}, std::nullopt};
+    const Schedule plain{{PassKind::path, PassKind::tone_map}, tests::look};
     CHECK(frame::light_size(plain, {1921, 1}) == frame::Extent{1921, 1});
     CHECK_FALSE(frame::reuses_history(plain));
 }
@@ -132,7 +132,7 @@ TEST_CASE("every mistake in [denoise] is an error") {
     CHECK(tests::contains(error("[denoise]\nweights = \"a\"\nscale = 2\n"), "scale"));
     CHECK(tests::contains(tests::error_of<frame::GraphFileError>([] {
                               return frame::parse_schedule(
-                                  "passes = [\"path\", \"display\"]\n[denoise]\nweights = \"a\"\n", "g.toml");
+                                  "passes = [\"test_pattern\"]\n[denoise]\nweights = \"a\"\n", "g.toml");
                           }),
                           "no denoise pass"));
 }

@@ -38,10 +38,8 @@
 #include "metal/frame/mnee_list.h"
 #include "metal/passes/checkerboard_fill/checkerboard_fill.h"
 #include "metal/passes/denoise/denoise.h"
-#include "metal/passes/display/display.h"
 #include "metal/passes/features/features.h"
 #include "metal/passes/path/path.h"
-#include "metal/passes/preview/preview.h"
 #include "metal/passes/restir_pt_duplication/restir_pt_duplication.h"
 #include "metal/passes/restir_pt_initial/restir_pt_initial.h"
 #include "metal/passes/restir_pt_shade/restir_pt_shade.h"
@@ -443,9 +441,9 @@ public:
     FeatureImages::Read read_features() const;
 
 private:
-    using Pass = std::variant<TestPatternPass, PreviewPass, PathPass, DisplayPass, ToneMapPass, RestirPtInitialPass,
-                              RestirPtTemporalPass, RestirPtSpatialPass, RestirPtShadePass, RestirPtDuplicationPass,
-                              FeaturesPass, DenoisePass>;
+    using Pass = std::variant<TestPatternPass, PathPass, ToneMapPass, RestirPtInitialPass, RestirPtTemporalPass,
+                              RestirPtSpatialPass, RestirPtShadePass, RestirPtDuplicationPass, FeaturesPass,
+                              DenoisePass>;
 
     // A pass of the schedule, with its kind (C.1).
     struct Step {

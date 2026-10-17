@@ -24,14 +24,13 @@ namespace serenity::metal {
 // schedule says they do (core/frame/schedule.h):
 //
 //   - the radiance image: the frame's linear radiance, RGBA32Float at the
-//     frame's size, written by the pass that computes light (preview) and
-//     read by the pass that presents it (display, tone_map). 32-bit, not
-//     16: the display pass must show exactly what the light pass computed,
-//     as the passes did when they encoded the target themselves, and a
+//     frame's size, written by the denoise pass at the output's size and
+//     read by the pass that presents it (tone_map). 32-bit, not 16: a
 //     firefly's radiance of hundreds keeps its digits. A light pass that
-//     accumulates (path) has none here: its accumulated image, the same
-//     format at the same size, is the frame's radiance (accumulation.h,
-//     passes/path/path.h), so the mean is written once (GDSA.6);
+//     accumulates (path, restir_pt_shade) in a graph without the denoise
+//     pass has none here: its accumulated image, the same format at the
+//     same size, is the frame's radiance (accumulation.h, passes/path/
+//     path.h), so the mean is written once (GDSA.6);
 //   - the bloom pyramid, for the tone-map pass alone: passes::bloom_levels
 //     levels (core/passes/tone_map.h), each max(1, ceil(previous / 2)) on
 //     each axis from the frame's size, so any frame has every level;
@@ -64,17 +63,11 @@ namespace serenity::metal {
 // with yet. The radiance image is an intermediate the frame writes and reads
 // back, which GDSA.16 says to stream through on-chip memory instead: the
 // tone map cannot, since its bloom reads every pixel's neighbourhood as far
-// as B_5's 64 pixels; the display pass could fold back into the light pass,
-// as it was, and is kept apart so a graph has one presenting pass
-// (passes/display/display.h), at the cost derived below; it has not been
-// measured on its own (docs/research/2026-10-09-pass-costs.md).
+// as B_5's 64 pixels.
 //
-// Cost: at 3456 x 2234 (P = 7.7 M pixels), the radiance image is 123 MB,
-// when the light pass does not accumulate, and the pyramid 21 MB. Per
-// frame, the light pass writes the radiance image once, P texels; the
-// display pass reads it once, P texels, 247 MB of traffic in all: at the M3
-// Max's peak 400 GB/s an ideal-bandwidth floor of some 0.6 ms, the least it
-// could take, not the most. The tone-map pass reads it twice, in two
+// Cost: at 3456 x 2234 (P = 7.7 M pixels), the radiance image is 123 MB, in
+// a denoised graph, and the pyramid 21 MB. Per frame, the denoise pass
+// writes the radiance image once, P texels. The tone-map pass reads it twice, in two
 // dispatches ten apart, too far for one read to leave it cached for the
 // other: 13 filtered samples for each of B_0's P / 4 texels, then P exact
 // reads (passes/tone_map/tone_map.h); what that costs in memory traffic is

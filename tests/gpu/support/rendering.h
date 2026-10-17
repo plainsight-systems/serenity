@@ -32,14 +32,11 @@
 
 namespace serenity::tests {
 
-// The preview, shown as it is (graphs/preview.toml's passes).
-inline frame::Schedule preview_graph() {
-    return frame::parse_schedule("passes = [\"preview\", \"display\"]\n", "preview graph");
-}
-
-// The path tracer, shown as it is: its accumulated image's mean, unexposed.
+// The path tracer, shown through the tone map, no exposure and no bloom;
+// what the tests read is its accumulated image, at full precision.
 inline frame::Schedule path_graph() {
-    return frame::parse_schedule("passes = [\"path\", \"display\"]\n", "path graph");
+    return frame::parse_schedule(
+        "passes = [\"path\", \"tone_map\"]\n[tone_map]\nexposure = 0.0\nbloom = 0.0\n", "path graph");
 }
 
 // graphs/restir_pt_denoised.toml with the test fixture's network

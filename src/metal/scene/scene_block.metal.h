@@ -10,8 +10,8 @@
 // media.metal.h). A new kind's array joins its family's view here, as it
 // joins the block, so no pass changes for it. `Selection` is how the
 // estimator reading it chooses among the lights (light_selection/), made from
-// the light records and their count: UniformLight for the path tracer
-// (path.metal.h), EveryLight for the preview (direct.metal.h).
+// the light records and their count: UniformLight for the path tracer and
+// ReSTIR PT (path.metal.h), the one selection so far.
 //
 // Each view is built where it is used, not once per thread and carried
 // through the path: a view carried is pointers held in registers across

@@ -188,11 +188,9 @@ add_library(serenity_metal STATIC
     src/metal/passes/checkerboard_fill/checkerboard_fill.cpp
     src/metal/passes/denoise/denoise.cpp
     src/metal/passes/restir_pt/shift_replay.cpp
-    src/metal/passes/display/display.cpp
     src/metal/passes/features/features.cpp
     src/metal/passes/mnee/mnee.cpp
     src/metal/passes/path/path.cpp
-    src/metal/passes/preview/preview.cpp
     src/metal/passes/restir_pt_duplication/restir_pt_duplication.cpp
     src/metal/passes/restir_pt_initial/restir_pt_initial.cpp
     src/metal/passes/restir_pt_shade/restir_pt_shade.cpp
@@ -206,10 +204,8 @@ target_compile_options(serenity_metal PRIVATE ${SERENITY_SOURCE_WARNINGS})
 serenity_add_metallib(
     TARGET serenity_metal NAME shaders
     SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/test_pattern/test_pattern.metal"
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/preview/preview.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/path/path.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/mnee/mnee.metal"
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/display/display.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/tone_map/tone_map.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_initial/restir_pt_initial.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_temporal/restir_pt_temporal.metal"

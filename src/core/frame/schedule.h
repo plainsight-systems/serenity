@@ -38,16 +38,14 @@ namespace serenity::frame {
 //   - the radiance image, the frame's linear radiance at the frame's size,
 //     between a pass that computes light and the pass that presents it.
 //
-// A pass that computes light (preview, path, restir_pt_shade:
-// writes_radiance()) writes radiance; a presenting pass (display, tone_map)
-// reads it and writes the target; the test pattern, a diagnostic in display
-// values already, writes the target alone.
-// So a frame graph that computes light ends in a presenting pass, which
-// decides how its light looks: display shows it as it is, as tests and
-// diagnostics want; tone_map gives it exposure, glare and a film-like
-// roll-off, as the window and movies want (core/passes/tone_map.h). The
-// backend records the barrier between a pass that writes an image and a
-// later one that reads it (metal/frame/renderer.h).
+// A pass that computes light (path, restir_pt_shade: writes_radiance())
+// writes radiance; the presenting pass, tone_map, reads it and writes the
+// target; the test pattern, a diagnostic in display values already, writes
+// the target alone. So a frame graph that computes light ends in the
+// presenting pass, which gives its light exposure, glare and a film-like
+// roll-off (core/passes/tone_map.h). The backend records the barrier
+// between a pass that writes an image and a later one that reads it
+// (metal/frame/renderer.h).
 //
 // ReSTIR PT (Lin et al. 2022; ReSTIR PT Enhanced, Lin, Kettunen and Wyman
 // 2026) is a family of passes: its unified reservoir holds direct and
@@ -157,9 +155,7 @@ namespace serenity::frame {
 // set to it.
 enum class PassKind {
     test_pattern,  // a diagnostic image, a function of pixel and time; writes the target
-    preview,       // deterministic ray tracing, direct light only; needs a scene; writes radiance
     path,          // path tracing, naive, accumulating while the image holds still; needs a scene; writes radiance
-    display,       // radiance as it is: the largest channel above 1 scaled to 1, then sRGB; writes the target
     tone_map,      // radiance exposed, bloomed and rolled off (core/passes/tone_map.h), then sRGB; writes the target
     restir_pt_initial,      // ReSTIR PT: the path tree, resampled to one path a pixel; needs a scene
     restir_pt_temporal,     // ReSTIR PT's temporal reuse; needs a scene

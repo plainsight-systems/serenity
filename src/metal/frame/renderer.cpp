@@ -59,12 +59,10 @@ static_assert(std::is_trivially_copyable_v<contracts::CameraData>);
 // the families it has (buffer_bindings()). A new kind of material,
 // texture, medium or light adds to the scene's block, not here.
 //
-// Every graph: the path pass, the preview, the features pass, the
-// presenting passes.
+// Every graph: the path pass, the features pass, the presenting pass.
 constexpr NS::UInteger max_buffers = 8;
 constexpr NS::UInteger max_textures = 4;
 static_assert(bindings::path::non_finite < max_buffers);
-static_assert(bindings::preview::transforms < max_buffers);
 static_assert(bindings::features::last_transforms < max_buffers);
 static_assert(bindings::tone_map::target < max_textures);
 static_assert(bindings::features::motion < max_textures);
@@ -375,14 +373,8 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
         case frame::PassKind::test_pattern:
             steps_.push_back(Step{kind, Pass{std::in_place_type<TestPatternPass>, library_}});
             break;
-        case frame::PassKind::preview:
-            steps_.push_back(Step{kind, Pass{std::in_place_type<PreviewPass>, library_}});
-            break;
         case frame::PassKind::path:
             steps_.push_back(Step{kind, Pass{std::in_place_type<PathPass>, library_}});
-            break;
-        case frame::PassKind::display:
-            steps_.push_back(Step{kind, Pass{std::in_place_type<DisplayPass>, library_}});
             break;
         case frame::PassKind::tone_map:
             // The schedule has its settings with its pass (frame::invalid).

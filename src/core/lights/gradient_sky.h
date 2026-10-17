@@ -4,10 +4,9 @@
 //
 // An environment at infinity: the radiance arriving from direction d blends
 // from `horizon` at d.y = 0 to `zenith` at d.y = 1, as horizon + (zenith -
-// horizon) * smoothstep(0, 1, d.y), and is `horizon` below the horizon. The
-// first scene's night sky. Until there is light transport it is what a ray
-// that leaves the scene sees (metal/passes/preview/preview.h). The shader
-// half is metal/lights/gradient_sky.metal.h.
+// horizon) * smoothstep(0, 1, d.y), and is `horizon` below the horizon: what
+// a ray that leaves the scene sees (metal/integrator/path.metal.h, step 2).
+// The shader half is metal/lights/gradient_sky.metal.h.
 
 #include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"

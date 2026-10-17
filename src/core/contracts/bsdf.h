@@ -49,7 +49,7 @@
 //                                   = 0 and the other just below 1, each
 //                                   where its probability is not 0: an
 //                                   estimator that takes every lobe of such
-//                                   a surface (the preview) samples both
+//                                   a surface samples both
 //                                   ends and tells the two apart by their
 //                                   lobe bits, never by the kind. Stated
 //                                   here so no estimator relies on a

@@ -35,15 +35,6 @@ enum Buffer : unsigned { constants = 0 };
 enum Texture : unsigned { target = 0 };
 }  // namespace test_pattern
 
-// The preview and the path tracer read the scene alike: the frame's
-// constants and camera, the structure, the scene's block whole
-// (metal/scene/scene_block.h), and what changes per frame beside it, the
-// sphere lights' glows and the shapes' transforms.
-namespace preview {
-enum Buffer : unsigned { constants = 0, camera = 1, structure = 2, scene = 3, glows = 4, transforms = 5 };
-enum Texture : unsigned { radiance = 0 };
-}  // namespace preview
-
 namespace path {
 enum Buffer : unsigned {
     constants = 0,
@@ -77,11 +68,6 @@ enum Buffer : unsigned {
     lost = 11,
 };
 }  // namespace mnee
-
-namespace display {
-enum Buffer : unsigned { constants = 0 };
-enum Texture : unsigned { radiance = 0, target = 1 };
-}  // namespace display
 
 // The tone map's four kernels (passes/tone_map/tone_map.h): each reads its
 // input at texture 0 and writes at 1; the last reads B_0 at 1 and writes
@@ -191,14 +177,12 @@ constexpr bool scene_at(unsigned constants, unsigned structure, unsigned scene, 
 constexpr bool camera_at(unsigned camera) {
     return camera == scene_view::camera;
 }
-static_assert(scene_at(preview::constants, preview::structure, preview::scene, preview::glows, preview::transforms));
 static_assert(scene_at(path::constants, path::structure, path::scene, path::glows, path::transforms));
 static_assert(scene_at(features::constants, features::structure, features::scene,
                        features::glows, features::transforms));
 static_assert(scene_at(restir_pt::constants, restir_pt::structure, restir_pt::scene,
                        restir_pt::glows, restir_pt::transforms));
 static_assert(scene_at(mnee::constants, mnee::structure, mnee::scene, mnee::glows, mnee::transforms));
-static_assert(camera_at(preview::camera));
 static_assert(camera_at(path::camera));
 static_assert(camera_at(features::camera));
 static_assert(camera_at(restir_pt::camera));

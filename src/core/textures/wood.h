@@ -59,8 +59,7 @@
 //
 // The scene's woods are one array in this layout (core/scene/scene.h,
 // SceneDescription::woods), which every pass that reads the scene binds at
-// buffer 19 (passes/path/path.metal, passes/preview/preview.metal), the
-// first free in both, and hands to the textures (metal/textures/
+// buffer 19 (passes/path/path.metal, among them), and hands to the textures (metal/textures/
 // textures.metal.h).
 //
 // Finite everywhere a ray can hit: the world is within 10^6 m of the origin

@@ -2,8 +2,8 @@
 
 // Axis: Integrator (shared by the estimators).
 //
-// What both estimators (path.metal.h, direct.metal.h) hold of a surface
-// they shade, and how they leave it: one definition each (ES.3).
+// What the estimators (path.metal.h, ReSTIR PT's tree and shifts) hold of a
+// surface they shade, and how they leave it: one definition each (ES.3).
 //
 // Shading bundles what every question asked at a surface takes (I.23):
 // where it is (contract 1), what it scatters (contract 2), the direction

@@ -33,40 +33,28 @@ TEST_CASE("an unknown name is no pass kind") {
     CHECK_FALSE(pass_kind("").has_value());
 }
 
-TEST_CASE("which pass kinds read the scene") {
+TEST_CASE("which pass kinds read the scene, accumulate, and write and read which of the frame's images") {
     CHECK_FALSE(needs_scene(PassKind::test_pattern));
-    CHECK(needs_scene(PassKind::preview));
-}
-
-TEST_CASE("the path pass reads the scene and accumulates; the others do not accumulate") {
+    CHECK_FALSE(needs_scene(PassKind::tone_map));
     CHECK(needs_scene(PassKind::path));
     CHECK(accumulates(PassKind::path));
-    CHECK_FALSE(accumulates(PassKind::preview));
+    CHECK(accumulates(PassKind::restir_pt_shade));
     CHECK_FALSE(accumulates(PassKind::test_pattern));
-}
-
-TEST_CASE("which pass kinds write and read which of the frame's images") {
-    CHECK(writes_radiance(PassKind::preview));
+    CHECK_FALSE(accumulates(PassKind::tone_map));
     CHECK(writes_radiance(PassKind::path));
-    CHECK(reads_radiance(PassKind::display));
+    CHECK(writes_radiance(PassKind::restir_pt_shade));
     CHECK(reads_radiance(PassKind::tone_map));
-    CHECK(writes_target(PassKind::display));
     CHECK(writes_target(PassKind::tone_map));
     CHECK(writes_target(PassKind::test_pattern));
     CHECK_FALSE(reads_radiance(PassKind::test_pattern));
     CHECK_FALSE(writes_target(PassKind::path));
-    CHECK_FALSE(needs_scene(PassKind::display));
-    CHECK_FALSE(needs_scene(PassKind::tone_map));
-    CHECK_FALSE(accumulates(PassKind::tone_map));
 }
 
 TEST_CASE("which schedules are valid is the core's") {
-    CHECK(refusal(Schedule{{PassKind::path, PassKind::display}, std::nullopt}).empty());
     CHECK(refusal(Schedule{{PassKind::path, PassKind::tone_map}, look}).empty());
-    CHECK(refusal(Schedule{{PassKind::preview, PassKind::display}, std::nullopt}).empty());
     CHECK(refusal(Schedule{{PassKind::test_pattern}, std::nullopt}).empty());
     CHECK(refused_for(Schedule{}, "no passes"));
-    CHECK(refused_for(Schedule{{PassKind::path, PassKind::path, PassKind::display}, std::nullopt}, "at most one"));
+    CHECK(refused_for(Schedule{{PassKind::path, PassKind::path, PassKind::tone_map}, look}, "at most one"));
 }
 
 TEST_CASE("one pass writes the image shown, and it is the last") {
@@ -86,29 +74,27 @@ TEST_CASE("the features pass: at most once, before the image shown, or alone, sh
     CHECK(refusal(alone).empty());
     CHECK_FALSE(presents(alone));
     CHECK(writes_features(alone));
-    const Schedule beside{{PassKind::path, PassKind::features, PassKind::display}, std::nullopt};
+    const Schedule beside{{PassKind::path, PassKind::features, PassKind::tone_map}, look};
     CHECK(refusal(beside).empty());
     CHECK(presents(beside));
     CHECK(writes_features(beside));
-    CHECK_FALSE(writes_features(Schedule{{PassKind::path, PassKind::display}, std::nullopt}));
+    CHECK_FALSE(writes_features(Schedule{{PassKind::path, PassKind::tone_map}, look}));
     CHECK(refused_for(Schedule{{PassKind::features, PassKind::features}, std::nullopt}, "features more than once"));
-    CHECK(refused_for(Schedule{{PassKind::path, PassKind::display, PassKind::features}, std::nullopt},
+    CHECK(refused_for(Schedule{{PassKind::path, PassKind::tone_map, PassKind::features}, look},
                       "last pass, features"));
     CHECK(refused_for(Schedule{{PassKind::path, PassKind::features}, std::nullopt},
                       "no pass in the frame graph writes the image shown"));
 }
 
 TEST_CASE("light is computed once, before it is shown, and is shown") {
-    CHECK(refused_for(Schedule{{PassKind::display}, std::nullopt}, "no pass before it computes light"));
-    CHECK(refused_for(Schedule{{PassKind::preview, PassKind::path, PassKind::display}, std::nullopt},
-                      "two passes that compute light (preview, path)"));
+    CHECK(refused_for(Schedule{{PassKind::tone_map}, look}, "no pass before it computes light"));
     CHECK(refused_for(Schedule{{PassKind::path, PassKind::test_pattern}, std::nullopt},
                       "path computes light and no pass after it shows it"));
 }
 
 TEST_CASE("tone-map settings come exactly with the pass, in range") {
     CHECK(refused_for(Schedule{{PassKind::path, PassKind::tone_map}, std::nullopt}, "no tone-map settings"));
-    CHECK(refused_for(Schedule{{PassKind::path, PassKind::display}, look}, "no tone_map pass"));
+    CHECK(refused_for(Schedule{{PassKind::test_pattern}, look}, "no tone_map pass"));
     const auto with = [](float exposure, float bloom) {
         return Schedule{{PassKind::path, PassKind::tone_map}, ToneMap{exposure, bloom, {0.0f, 0.0f}}};
     };

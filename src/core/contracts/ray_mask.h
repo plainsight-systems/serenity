@@ -17,8 +17,8 @@
 //                tracer and ReSTIR PT, and a shift's
 //                reconnection to a light), a shift's reconnection check
 //                between two vertices, manifold next event estimation's
-//                seed and its solved chain's segments, the preview's test
-//                of the sky. Surfaces alone: a light casts no shadow.
+//                seed and its solved chain's segments. Surfaces alone: a
+//                light casts no shadow.
 //
 // One mask per question, everywhere the question is asked: a shift tests a
 // path's visibility with the mask the path was sampled with, so ReSTIR's

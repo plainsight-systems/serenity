@@ -36,8 +36,7 @@
 // bands as a solid core would.
 //
 // The scene's swirls are one array in this layout, bound at buffer 20 by
-// every pass that reads the scene (passes/path/path.metal,
-// passes/preview/preview.metal).
+// every pass that reads the scene (passes/path/path.metal, among them).
 //
 // Cost, per evaluation: an atan2, two noises and a few dozen flops, with no
 // branch. Every tuning number, the octave count included, is a named

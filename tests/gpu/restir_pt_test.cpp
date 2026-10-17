@@ -109,7 +109,7 @@ using Rig = tests::AccumulatingRig;
 
 void check_floor(std::string_view text, std::uint64_t frames, const frame::Schedule& graph) {
     Rig rig(text, graph, {64, 48});
-    const auto image = rig.render(frames);
+    const auto image = rig.render_accumulated(frames);
     for (const tests::Pixel pixel : {tests::Pixel{32, 30}, tests::Pixel{14, 38}, tests::Pixel{50, 26}}) {
         const double expected = tests::expected_floor(rig.description(), rig.size(), pixel.x + 0.5, pixel.y + 0.5);
         INFO("pixel " << pixel.x << ", " << pixel.y << ": expected " << expected);
@@ -119,7 +119,7 @@ void check_floor(std::string_view text, std::uint64_t frames, const frame::Sched
 
 void check_furnace(std::string_view material, std::uint64_t frames, const frame::Schedule& graph) {
     Rig rig(furnace(material), graph, {64, 64});
-    const auto image = rig.render(frames);
+    const auto image = rig.render_accumulated(frames);
     CHECK(patch_mean(image, rig.size(), {32, 32, 6}) == doctest::Approx(0.5).scale(0).epsilon(0.02));
     CHECK(patch_mean(image, rig.size(), {3, 3, 2}) == doctest::Approx(0.5).scale(0).epsilon(0.01));
 }

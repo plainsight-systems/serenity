@@ -52,7 +52,7 @@ namespace serenity::metal {
 // 4.3 P reads; step 3, 9 per pixel over levels 0 to 4, about 3 P; step 4, 1
 // full-size read and 9 of B_0, 10 P; 17 P reads in all, most of them of half
 // floats at reduced size, and 12 dispatches with 11 barriers. What it costs
-// a frame against the display pass, and the clamping of step 1 done on
+// a frame against a plain display of the radiance, and the clamping of step 1 done on
 // exact reads instead of filtered ones, which cost more and was not kept:
 // docs/research/2026-10-09-pass-costs.md.
 class ToneMapPass {
