@@ -197,6 +197,113 @@ What it leaves for the next steps: the light half is now the frame
 masks and the split structure, which shorten the light, are measured
 against this frame, and the overlap is measured again after each.
 
+## Step 2: ray masks
+
+Built 2026-10-17 (core/contracts/ray_mask.h, contract 19;
+src/metal/acceleration/scene_acceleration.h, "Ray masks"). Every shape is
+in one class, a light (a firefly) or a surface, and every ray carries a
+mask: **everything**, for a ray that asks what it reaches, or the
+**occluders**, the surfaces alone, for a ray that asks whether a chosen
+light is visible. A firefly casts no shadow (logical-overview.md,
+principle 11).
+
+| Ray | Mask |
+|---|---|
+| camera rays, the path's bounces (the path tracer, ReSTIR PT's initial paths), ReSTIR DI's BSDF candidate, a shift's primary hit and replay, the features' rays, the preview's camera and reflected rays | everything |
+| every shadow ray toward a light sample (path tracer, ReSTIR DI, ReSTIR PT and its shifts' reconnection to a light), a shift's reconnection check between two vertices, MNEE's seed segment and its solved chain's segments, the preview's test of the sky | occluders |
+
+**How a mask is kept.** Metal, like DXR and Vulkan, tests masks only on
+instances, and the scene is one level of boxes with no instances
+(2026-10-09-acceleration-structure.md). So on that level each mask is a
+structure: everything is the structure as it was, and the occluders a
+second primitive structure over the 37 surfaces, its boxes naming their
+shapes through a table, built once at start-up since no surface in the
+marbles moves (per frame slot when one does). Each pass binds one block
+holding both and the table (structure_block.h), where it bound the one
+structure. The values are mask bits, so Step 3's two-level structure can
+put each class's bit on its instance and pass the ray's mask to the query
+unchanged; which mask each ray carries does not move.
+
+**The literal alternative, measured and rejected:** Metal's own instance
+masks, one bottom level per class under a top level of two instances,
+each carrying its class's bit (scratch, not committed). It renders the
+same image as the committed design, bit for bit, and is slower than no
+masks at all, because every ray, the camera's included, now crosses the
+instance level. One round, 3456 × 2234, t = 120 (this round ran on a
+noisier machine than the three below; the order held at every size):
+
+| | no masks | two structures (kept) | instance masks |
+|---|---|---|---|
+| frame interval | 74.9 ms | 71.7 | 87.0 |
+| light half, alone | 50.1 | 46.6 | 62.3 |
+| features + full-size albedo (camera rays only) | 11.2 | 11.1 | 15.9 |
+
+**Measured** on the release build, the demo graph (wide network), the
+marbles, AC power, the GPU idle before every run (no serenity window,
+utilization at most 5% for 6 s), 3 rounds interleaved with c84ff47, the
+median of the rounds' medians. Frame interval as the window runs (two
+frames in flight, the halves overlapping); per-dispatch timestamps with
+frames run one at a time, so each pass is its own time alone. Scripts and
+raw data: serenity-scratch/ray-masks/ (campaign.sh, table.py, out/).
+
+| Output, time | c84ff47 | masks | frames a second |
+|---|---|---|---|
+| 3456 × 2234, t = 120 | 73.7 ms | 70.5 | 13.6 → 14.2 |
+| 3456 × 2234, t = 20 | 75.1 | 72.0 | 13.3 → 13.9 |
+| 1920 × 1080, t = 120 | 21.1 | 20.4 | 47.3 → 48.9 |
+| 1920 × 1080, t = 20 | 21.5 | 20.8 | 46.5 → 48.1 |
+
+Each pass alone, ms, 3456 × 2234 (1920 × 1080 in brackets), t = 120:
+
+| Pass | c84ff47 | masks |
+|---|---|---|
+| initial sampling | 15.6 (5.0) | 14.4 (4.7) |
+| MNEE solve | 4.5 (1.5) | 4.6 (1.5) |
+| temporal reuse | 7.3 (2.2) | 6.3 (2.0) |
+| spatial reuse | 9.4 (2.6) | 8.0 (2.3) |
+| features, full-size albedo | 11.1 (3.8) | 11.0 (3.8) |
+| light half | 49.5 (15.7) | 45.9 (14.8) |
+| image half | 27.4 (8.0) | 27.4 (8.0) |
+
+t = 20 within 1% of the same: light half 51.2 → 47.6 (16.1 → 15.2). The
+passes whose rays are visibility rays get faster, the shifts most (13 to
+15%, where a reconnection's shadow ray is most of the tracing); the
+passes that trace only camera rays do not change, as they should not;
+MNEE's solve is 2% slower (inferred, not shown: its segments are few and
+its cost arithmetic, and each candidate now reads the table). The light half is 7% shorter
+alone and the frame 4% (3% at 1920 × 1080), since overlapped the frame
+is held by both halves sharing the GPU (Step 1).
+
+**The image.** What changes is the light the fireflies' own shadows took
+away: one firefly between a surface and another, a firefly perched on
+the table shading the wood beside it. One frame of the demo, unmasked
+and masked, the same frame index, at 1920 × 1080: displayed MSE
+**4.1 × 10^-5 at t = 20** and **1.9 × 10^-5 at t = 120** (8-bit display
+values in [0, 1], over every pixel and channel). The frames side by side
+(unmasked left) and the difference amplified 8 times are in the session's
+scratchpad, m4-masks/demo-1080-t20-* and demo-1080-t120-*. Read from the
+difference image, not measured apart: most of it is the reuse's noise
+taking another course once a few visibility tests differ, spread over
+the lit table and marbles, with brighter rims under fireflies resting on
+the table.
+
+Which outputs change, by the identity set of Step 1 at a lit frame
+(frames 1200 and 1201, t = 20) against c84ff47: every graph that traces
+a shadow ray, the path tracer among them; not the test pattern, nor any
+feature image (albedo, normal, depth, motion), which are camera rays
+alone, byte for byte. With every ray made to carry everything (scratch),
+all 88 files of the set are the same bytes as c84ff47's: the change in
+the image is the masks' choice and nothing else in the plumbing.
+
+Tested where it can fail (tests/gpu/acceleration_test.cpp): a ray
+carrying the occluders is never stopped or blocked by a light and finds
+the surface beyond as its own shape at its own distance, while one
+carrying everything still finds the light; both masks keep up with
+moving shapes, slot by slot; and the two edges, a scene of surfaces alone
+(the occluders are everything) and of lights alone (they find nothing).
+
+**Not kept yet:** committed for the user's call on the image.
+
 ## Decisions after Step 2 (the user, 2026-10-17)
 
 - **Ray masks kept**: 3 to 4% on the frame for the fireflies' own

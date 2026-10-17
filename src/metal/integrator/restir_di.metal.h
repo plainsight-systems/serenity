@@ -265,7 +265,8 @@ inline Weighed weigh_struck(Lights lights, UniformLight selection, RecordedSurfa
 // the BSDF reaches, and the light it strikes first weighed (weigh_struck());
 // none from a delta lobe, which the target does not weigh, nor where the
 // ray strikes nothing or a shape that is not a light. One ray to the
-// nearest surface, always traced where the lobe is not delta.
+// nearest surface, always traced where the lobe is not delta, carrying
+// everything: it is how the candidate finds a light (contract 19).
 inline Weighed draw_bsdf_candidate(Scene scene, RecordedSurface here, CandidateCounts counts, float3 numbers) {
     const serenity::contracts::BsdfSample drawn = bsdf_sample(here.bsdf, here.wo, numbers);
     if (drawn.pdf <= 0.0f || (drawn.lobe & serenity::contracts::lobe_delta) != 0u) {
@@ -275,7 +276,7 @@ inline Weighed draw_bsdf_candidate(Scene scene, RecordedSurface here, CandidateC
     leaving.position = to_packed(here.position);
     leaving.geometric_normal = here.bsdf.normal;
     const metal::raytracing::ray along = leave(leaving, to_float3(drawn.direction), bsdf_reach(drawn.pdf));
-    const Hit hit = trace(scene.structure, scene.shapes(), along);
+    const Hit hit = trace(scene.structure, scene.shapes(), along, serenity::contracts::RayMask::everything);
     if (!hit.found) {
         return no_candidate();
     }
@@ -288,9 +289,11 @@ inline Weighed draw_bsdf_candidate(Scene scene, RecordedSurface here, CandidateC
 }
 
 // Whether `light`, as evaluate_light_point() gave it to `from`'s point, is
-// visible from `from`: one shadow ray against `scene`'s structure, leaving
-// along the surface's unpacked shading normal (contracts/surface_record.h),
-// ignoring the light's own shape. The ray leaves as every ray leaves a
+// visible from `from`: one shadow ray among the surfaces alone (contract
+// 19, the occluders: no firefly blocks it), leaving along the surface's
+// unpacked shading normal (contracts/surface_record.h). Every visibility
+// test of ReSTIR DI is this one, so its merges and its shade ask the same
+// question. The ray leaves as every ray leaves a
 // surface (integrator/surface.metal.h, leave: ES.3), from a surface holding
 // only the point and the normal leave() reads.
 inline bool visible(Scene scene, RecordedSurface from, serenity::contracts::LightReceived light) {
@@ -298,7 +301,7 @@ inline bool visible(Scene scene, RecordedSurface from, serenity::contracts::Ligh
     leaving.position = to_packed(from.position);
     leaving.geometric_normal = from.bsdf.normal;
     return !occluded(scene.structure, scene.shapes(), leave(leaving, to_float3(light.direction), light.distance),
-                     light.primitive);
+                     serenity::contracts::RayMask::occluders, light.primitive);
 }
 
 // Step 6's direct light before visibility: f |cos θ_x| L_e G x T x W at

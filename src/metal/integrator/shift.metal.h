@@ -56,6 +56,17 @@
 //   5. Reconnection: y_{k-1} joined to x_k, decoded where its shape is now
 //      (metal/shapes/shape_point.metal.h); visibility between them traced;
 //      the medium's transmittance over the segment, y_{k-1}'s medium.
+//
+//   Which shapes each ray finds (contract 19): the primary hit and the
+//   replay's rays carry everything, since a light they strike ends the
+//   shift as it ended the source path; the reconnection's visibility, to
+//   a vertex or to a light, carries the occluders: a visibility question.
+//   To a light it is the source path's own shadow ray's (nee.metal.h), so
+//   the shift tests the visibility its path was sampled with. To a
+//   surface x_k, whose source segment a ray carrying everything found
+//   clear of fireflies, a firefly on the shifted segment does not fail
+//   the shift: the fireflies' shadows left out once more, the same small
+//   change as the shadow rays' (Milestone 4's Step 2 measures it).
 //   6. The shifted integrand, and the Jacobian of supplemental eq. 4,
 //
 //        |du_y / du_x| = p_{k-1}^y(w', l_{k-1}) G(y_{k-1} -> x_k) p_k^y(w_k, l_k)
@@ -171,7 +182,7 @@ struct Primary {
 // test that holds the G-buffer's shift to it (tests/gpu/restir_pt_test.cpp).
 inline Primary primary_hit(path::Scene scene, CameraRay camera, float footprint) {
     const metal::raytracing::ray along(camera.origin, camera.direction, 0.0f, unbounded);
-    const Hit hit = trace(scene.structure, scene.shapes(), along);
+    const Hit hit = trace(scene.structure, scene.shapes(), along, serenity::contracts::RayMask::everything);
     if (!hit.found || light_at(scene.lights(), hit.primitive).is_light) {
         return Primary{false, Shading{}, 0.0f};
     }
@@ -279,7 +290,7 @@ inline bool segment_clear(path::Scene scene, serenity::contracts::SurfaceInterac
     const float length = metal::length(span);
     return !(length > 0.0f) ||
            !occluded(scene.structure, scene.shapes(), metal::raytracing::ray(start, span / length, 0.0f, length),
-                     serenity::contracts::no_primitive);
+                     serenity::contracts::RayMask::occluders, serenity::contracts::no_primitive);
 }
 
 // A light at a stored point on shape `primitive`, as seen from `origin`:
@@ -507,7 +518,7 @@ inline Shifted replay_end(path::Scene scene, Shading here, float3 beta, Before b
     }
     const float emission_pdf = path::handed_on(next, here);
     const metal::raytracing::ray along = leave(here.surface, wi);
-    const Hit hit = trace(scene.structure, scene.shapes(), along);
+    const Hit hit = trace(scene.structure, scene.shapes(), along, c::RayMask::everything);
     if (end == c::PathEnd::sky) {
         return hit.found ? failed() : shifted_to(beta * gradient_sky(scene.sky(), wi), 1.0f);
     }
@@ -584,7 +595,7 @@ inline Shifted shift_path(path::Scene scene, Primary destination, serenity::cont
                         reconnection::lobe_roughness(next.lobe, here.bsdf), (next.lobe & c::lobe_delta) != 0u,
                         next.pdf};
         const metal::raytracing::ray along = leave(here.surface, wi);
-        const Hit hit = trace(scene.structure, scene.shapes(), along);
+        const Hit hit = trace(scene.structure, scene.shapes(), along, c::RayMask::everything);
         if (!hit.found || light_at(scene.lights(), hit.primitive).is_light) {
             return failed();
         }

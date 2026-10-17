@@ -36,7 +36,7 @@ constant float leave_cosines[serenity::tests::leave_cosine_count] = {1.0f,  0.5f
 kernel void leave_probe(device LeaveResult* out [[buffer(0)]],
                         device const LeaveQuery* queries [[buffer(1)]],
                         constant uint& count [[buffer(2)]],
-                        metal::raytracing::primitive_acceleration_structure structure [[buffer(3)]],
+                        serenity::shaders::SceneStructure structure [[buffer(3)]],
                         constant serenity::shapes::ShapeRecord* records [[buffer(4)]],
                         constant serenity::contracts::Transform* transforms [[buffer(5)]],
                         constant serenity::shapes::BoxData* boxes [[buffer(6)]],
@@ -48,7 +48,7 @@ kernel void leave_probe(device LeaveResult* out [[buffer(0)]],
     const LeaveQuery query = queries[i / serenity::tests::leave_directions];
     const uint j = i % serenity::tests::leave_directions;
     const metal::raytracing::ray aimed(to_float3(query.origin), to_float3(query.direction), 0.0f, unbounded);
-    const Hit found = trace(structure, shapes, aimed);
+    const Hit found = trace(structure, shapes, aimed, serenity::contracts::RayMask::everything);
     LeaveResult result{};
     if (!found.found || found.primitive != query.shape) {
         out[i] = result;
@@ -65,7 +65,7 @@ kernel void leave_probe(device LeaveResult* out [[buffer(0)]],
     const float sine = metal::sqrt(1.0f - cosine * cosine);
     const float3 direction = metal::normalize(cosine * n + sine * (metal::cos(angle) * about.t +
                                                                    metal::sin(angle) * about.b));
-    const Hit hit = trace(structure, shapes, leave(surface, direction));
+    const Hit hit = trace(structure, shapes, leave(surface, direction), serenity::contracts::RayMask::everything);
     result.outward = leaves_outward(surface, direction) ? 1u : 0u;
     result.hit = hit.found ? 1u : 0u;
     result.hit_shape = hit.primitive;

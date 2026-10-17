@@ -147,6 +147,7 @@ depend on contracts, not on each other.
 | 16 | **MNEE's work list**: a request a pixel the estimators' loops leave for the manifold solve where a light's straight segment crosses glass (the receiver, the light sample, the crossings, the weight; 128 bytes), and the list's header: its count, capacity and the solve's indirect grid (`mnee_request.h`) | Integrator | Pass (the MNEE pass), Frame graph |
 | 17 | **The denoiser's features**: albedo, world normal, view depth and 2.5D motion a pixel, along the light's own camera rays, through glass and mirrors by primary surface replacement (`features.h`) | Film | Pass (the denoiser), the headless renderer's `--features` |
 | 18 | **The denoiser's network as it runs**: its constants (scale 2, 28 input channels, 124 scores, spacings 1, 2 and 4, the albedo floor, the PU transfer), the threadgroup shapes host and shaders share, and its per-frame constants (`denoise.h`) | Pass | the core's loader, the Metal denoise pass, host and shaders |
+| 19 | **Ray mask**: the classes of shape, a light or a surface, as bits, and the two masks a ray carries, everything or the occluders (the surfaces), with which purpose of ray carries which (`ray_mask.h`) | Acceleration | Integrator, Pass (the features) |
 
 Each is designed on its own, header first, before the code that uses it.
 Contract 7 was the first written: `src/core/contracts/frame_constants.h`.
@@ -169,6 +170,7 @@ the denoiser, the frame graph keeping the feature images and the
 denoiser's history (`metal/frame/feature_images.h`, `denoise_images.h`), and
 contract 7 growing by a second ring of constants: a denoised frame's
 passes before the denoiser run at the light size, the rest at the output's.
+Contract 19, `ray_mask.h`, came with Milestone 4's ray masks.
 The camera is one contract for every camera, as Falcor's `CameraData` is,
 since a frame has one camera and cameras differ by parameters, not code.
 
@@ -208,6 +210,23 @@ file is new:
 The passes (`src/metal/passes/`) do not change: the denoise and tone map
 passes record into the image half's encoder as they recorded into the
 frame's one.
+
+## Ray masks
+
+Which shapes each ray finds (`logical-overview.md`, principle 11; the axes
+in `change-axes.md`) adds one contract and one shared layout, and changes
+the families that already own each part:
+
+| What | Family | File |
+|---|---|---|
+| the classes of shape and the two masks, as bits a two-level structure's instances would carry; which ray purpose carries which (contract 19) | Acceleration (contract) | `src/core/contracts/ray_mask.h`, new |
+| a structure for each mask, every shape and the surfaces alone, each built once when nothing in it moves and per frame slot when something does; the surfaces' shape table; the block the shaders bind | Acceleration | `src/metal/acceleration/scene_acceleration.{h,cpp}` |
+| the block's shared layout: each structure as a shader binds it, and the table | Acceleration | `src/metal/acceleration/structure_block.h`, new |
+| a query by mask: the nearest shape, whether any blocks, and the candidates' shapes for a query of the integrator's own | Acceleration | `src/metal/acceleration/trace.metal.h` |
+| each ray's mask, at each site that traces (ReSTIR PT's passes ask through `nee.metal.h` and `mnee.metal.h`, unchanged themselves) | Integrator | `src/metal/integrator/{path,nee,shift,mnee,restir_di,direct}.metal.h` |
+| the features' camera rays: everything | Pass | `src/metal/passes/features/features.metal` |
+| the scene's view holding the block, and the kernels binding it where they bound the structure | Scene content, Pass | `src/metal/scene/scene_block.metal.h`, each pass's `.metal`, `src/metal/passes/scene_binding.h`, `src/metal/frame/frame_resources.h` |
+| handing the acceleration the shapes that are lights, as it is handed the ones that move | Frame graph | `src/metal/frame/renderer.cpp` |
 
 ## Not here yet
 

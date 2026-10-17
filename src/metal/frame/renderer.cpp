@@ -601,13 +601,18 @@ void Renderer::make_scene(const Device& device, const scene::SceneDescription& s
                                                    !animation_.glowers.empty());
     }
     // Where the families meet: the acceleration structure learns which
-    // shapes move, by the movers' targets, and nothing else of them.
+    // shapes move, by the movers' targets, and which are lights, by the
+    // scene's answer for each shape (contract 3), and nothing else of
+    // either: the lights are the shapes a ray carrying the occluders skips
+    // (contract 19).
     std::vector<std::uint32_t> moving;
     moving.reserve(animation_.movers.size());
     for (const animation::Mover& mover : animation_.movers) {
         moving.push_back(mover.target);
     }
-    acceleration_ = std::make_unique<SceneAcceleration>(device, submission_, scene.shapes, moving);
+    const std::vector<std::uint32_t> lights = scene::light_shapes(scene);
+    acceleration_ = std::make_unique<SceneAcceleration>(device, submission_, scene.shapes,
+                                                        SceneAcceleration::Roles{.moving = moving, .lights = lights});
 }
 
 Renderer::~Renderer() {
@@ -773,7 +778,7 @@ FrameResources Renderer::frame_resources(const FrameSlot& begun, const frame::Fr
         resources.scene = scene_->block_address();
         resources.transforms = transforms_->address(begun.slot);
         resources.glows = glows_->address(begun.slot);
-        resources.acceleration = acceleration_->resource(begun.slot);
+        resources.acceleration = acceleration_->address(begun.slot);
     }
     if (images_) {
         resources.radiance = images_->radiance();

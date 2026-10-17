@@ -155,7 +155,11 @@ This file tracks active and accepted work.
    Retraining, if checkerboard needs it, on the user's RTX 3090. Step 1,
    async compute overlap, built 2026-10-17 (the plan's "Step 1"): a
    denoised frame's two halves on two queues, the hand-off ringed by the
-   frame slot, every graph the same to the bit; measured there.
+   frame slot, every graph the same to the bit; measured there. Step 2,
+   ray masks, built 2026-10-17 (the plan's "Step 2"): visibility rays
+   trace a structure of the surfaces alone, so no firefly casts a shadow;
+   measured there, with the image's change. Waiting on the user's call
+   on the image before it is kept.
 
 1a. Reservoir reuse as kernels: tiling, layout and fusion of the merge
    passes, what each costs and where the bytes go (about 4 ms of the light

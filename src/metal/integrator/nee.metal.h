@@ -141,14 +141,18 @@ inline float bsdf_weight(uint m, float light_density, float bsdf_density) {
 }
 
 // Whether nothing blocks the light along `direction` for `distance` from
-// `origin`, the light's own shape `primitive` ignored (path.metal.h, step
-// 5's shadow ray).
-inline bool visible(metal::raytracing::primitive_acceleration_structure structure, Shapes shapes, float3 origin,
-                    float3 direction, float distance, uint primitive) {
-    return !occluded(structure, shapes, metal::raytracing::ray(origin, direction, 0.0f, distance), primitive);
+// `origin` (path.metal.h, step 5's shadow ray): among the surfaces alone
+// (contract 19, the occluders), so no firefly blocks it, the light's own
+// shape `primitive` among them. The one shadow ray of ReSTIR PT's initial
+// paths and of its shifts' reconnections to a light, so a shift tests the
+// visibility its path was sampled with.
+inline bool visible(SceneStructure structure, Shapes shapes, float3 origin, float3 direction, float distance,
+                    uint primitive) {
+    return !occluded(structure, shapes, metal::raytracing::ray(origin, direction, 0.0f, distance),
+                     serenity::contracts::RayMask::occluders, primitive);
 }
 
-inline bool visible(metal::raytracing::primitive_acceleration_structure structure, Shapes shapes, float3 origin,
+inline bool visible(SceneStructure structure, Shapes shapes, float3 origin,
                     serenity::contracts::LightReceived light) {
     return visible(structure, shapes, origin, to_float3(light.direction), light.distance, light.primitive);
 }

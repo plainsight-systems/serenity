@@ -8,10 +8,10 @@
 // order (kernels/trace_probe.metal, kernels/leave_probe.metal).
 //
 // Its own dispatch, not the probe runner's (probe_runner.h): it binds the
-// structure as a resource, and records the structure's update in the same
-// encoder as the trace when the shapes are moved, as a frame does. The
-// probes' library is the caller's, made once for all its dispatches (P.9,
-// GPU.6), as the probe runner's is.
+// structures' block (metal/acceleration/structure_block.h), and records
+// their update in the same encoder as the trace when the shapes are moved,
+// as a frame does. The probes' library is the caller's, made once for all
+// its dispatches (P.9, GPU.6), as the probe runner's is.
 //
 // Failures are the test's (P.7), as the probe runner's are.
 
@@ -88,7 +88,7 @@ std::vector<Out> run_traced(const Traced& traced, const char* kernel, std::size_
     for (const auto& buffer : buffers) {
         table->setAddress(buffer->gpuAddress(), index++);
     }
-    table->setResource(traced.acceleration.resource(slot.slot), index++);
+    table->setAddress(traced.acceleration.address(slot.slot), index++);  // the structures by mask
     table->setAddress(traced.buffers.block().shapes, index++);
     table->setAddress(traced.transforms.address(slot.slot), index++);
     table->setAddress(traced.buffers.block().boxes, index);

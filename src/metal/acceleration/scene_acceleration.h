@@ -2,7 +2,9 @@
 
 #include <array>
 #include <cstdint>
+#include <cstddef>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -13,6 +15,7 @@
 #include "core/shapes/shapes.h"
 #include "metal/device/device.h"
 #include "metal/device/frame_array.h"
+#include "metal/device/static_arrays.h"
 #include "metal/device/submission.h"
 
 namespace serenity::metal {
@@ -89,17 +92,76 @@ namespace serenity::metal {
 // name until it is kept (metal/frame/renderer.h; docs/process/QUEUE.md,
 // where the design for keeping it waits).
 //
+// Ray masks (contract 19, core/contracts/ray_mask.h). A ray carries a mask,
+// everything or the occluders, and finds the shapes of its mask's classes
+// alone, as it would have found them unmasked. Metal tests masks only
+// against instances (MTLAccelerationStructureInstanceDescriptor's mask,
+// tested by an intersection query over an instance structure; a primitive
+// structure's query takes none), as DXR and Vulkan do; this level has no
+// instances, for the cost measured in the note above. So each mask is a
+// structure of its own, over the shapes of its classes, and a ray traces
+// the one its mask names (trace.metal.h):
+//
+//   everything   every shape, as before masks: the structure above, built
+//                the same way over the same boxes, so a ray that carries
+//                everything traces exactly what it traced (the image of
+//                every such ray is unchanged, bit for bit).
+//   occluders    the surfaces alone, the shapes that are not lights (which
+//                the renderer hands over as their indices, learned from the
+//                scene's answer to which shapes are lights, contract 3, as
+//                it hands over the ones that move), in shape order, its
+//                primitive i named by a table of their shapes. Its own
+//                boxes and builds, kept by the same rule: built once at
+//                construction when none of its shapes moves, as in the
+//                marbles, whose movers are all fireflies; per slot by
+//                update() when one does. In the marbles: 37 boxes where
+//                everything has 653.
+//
+// Split by what the rays need and, as it happens, by update rate (CDSA.30:
+// the large still part built once, the small moving part rebuilt), but
+// unlike a two-level structure each mask's rays cross one level, so no ray
+// pays an instance level to skip the fireflies. The alternative, Metal's
+// masks themselves: one bottom level per class under a top level of two
+// instances, each carrying its class's bit, the ray's mask passed to the
+// query (Step 3's layout). Measured against this on the marbles
+// (docs/research/2026-10-17-milestone-4-plan.md, Step 2): the same image,
+// bit for bit, and slower than no masks at all, since every ray, not only
+// the visibility rays, pays the instance level. With no
+// light, occluders is everything itself, its table the identity, and
+// nothing more is built; with no surface, nothing for it to hold, and the
+// block says so (structure_block.h).
+//
+// What the shaders bind is one block a frame slot (structure_block.h): each
+// structure's resource ID and the occluders' table. Written at
+// construction, per slot when anything moves, and never again: each slot's
+// structures are the same objects every frame, rebuilt in place.
+//
+// Cost: the occluders' structure, its scratch and boxes beside
+// everything's (bytes, at construction, MEM.9), and, when it moves, one
+// more build a frame in the same encoder before the one barrier (GPU.8);
+// a table of one uint32 a surface and 32 bytes a slot. Per ray: one load of
+// the block, the same for every thread, and for the occluders one table
+// load per candidate the hardware returns.
+//
 // Throws MetalError if there are no shapes, if the device cannot make a
 // structure, its scratch memory or a buffer, or if the start-up build fails
 // on the GPU (submission.h).
 class SceneAcceleration {
 public:
-    // Builds the structure over `shapes` at rest. `moving` are the indices
-    // of the shapes that move, in increasing order: none, and the one
-    // structure is built here; some, and each slot's is built by its frame's
-    // update(). Throws MetalError if an index is not a shape's.
-    SceneAcceleration(const Device& device, Submission& submission, const shapes::Shapes& shapes,
-                      std::span<const std::uint32_t> moving);
+    // What the structures are told of the shapes beyond their geometry:
+    // which move and which are lights, each by index in increasing order.
+    // Named fields, so the two lists cannot pass in each other's places
+    // (I.24).
+    struct Roles {
+        std::span<const std::uint32_t> moving;
+        std::span<const std::uint32_t> lights;
+    };
+
+    // Builds the structures over `shapes` at rest. A structure none of
+    // whose shapes moves is built here; one with a moving shape, in each
+    // slot by its frame's update(). Throws MetalError if an index in `roles`
+    // is not a shape's, or a list is not in increasing order (I.5).
+    SceneAcceleration(const Device& device, Submission& submission, const shapes::Shapes& shapes, Roles roles);
 
     SceneAcceleration(const SceneAcceleration&) = delete;
     SceneAcceleration& operator=(const SceneAcceleration&) = delete;
@@ -108,15 +170,18 @@ public:
     ~SceneAcceleration() = default;
 
     // Records, into the frame's `encoder`, steps 1 to 3 for slot `slot`,
-    // from the frame's `transforms`, one per shape. Called once a frame,
-    // before any pass that traces, when shapes move, between
-    // Submission::begin() returning the slot and the frame's commit; throws
-    // MetalError when nothing moves, or if `transforms` is not the shape count.
+    // from the frame's `transforms`, one per shape: for each structure with
+    // a moving shape, its moving boxes and its build; then the one barrier.
+    // Called once a frame, before any pass that traces, when shapes move,
+    // between Submission::begin() returning the slot and the frame's
+    // commit; throws MetalError when nothing moves, or if `transforms` is
+    // not the shape count.
     void update(MTL4::ComputeCommandEncoder* encoder, std::uint32_t slot,
                 std::span<const contracts::Transform> transforms);
 
-    // The structure frame slot `slot` traces, as a shader binds it.
-    MTL::ResourceID resource(std::uint32_t slot) const;
+    // The structures frame slot `slot` traces, as a shader binds them: the
+    // address of its StructureBlock (structure_block.h).
+    MTL::GPUAddress address(std::uint32_t slot) const;
 
 private:
     struct Built {
@@ -127,12 +192,37 @@ private:
         Resident scratch_resident;  // when shapes move: each frame's build writes the scratch
     };
 
-    std::vector<std::uint32_t> moving_;          // the shapes that move, whose boxes update() writes
-    std::vector<shapes::Bounds> moving_bounds_;  // each one's object-space bounds, in moving_'s order
-    std::unique_ptr<FrameArray> boxes_;          // one box per shape, per structure
-    // One structure for a still scene, in entry 0, which every frame traces;
-    // one per slot when shapes move, indexed by slot.
-    std::array<Built, frames_in_flight> structures_;
+    // One structure over some of the shapes, its box i shape members[i]
+    // (for everything, every shape, so box i is shape i): one, in entry 0,
+    // which every frame traces, when none of them moves; one per slot,
+    // indexed by slot, when one does. Made whole by make_tree() alone
+    // (C.41).
+    struct Tree {
+        std::vector<std::uint32_t> moving_boxes;    // the boxes of its moving shapes, which update() writes
+        std::vector<std::uint32_t> moving_shapes;   // their shapes, whose transforms place them
+        std::vector<shapes::Bounds> moving_bounds;  // their object-space bounds, in the same order
+        std::unique_ptr<FrameArray> boxes;          // one box per member, per structure
+        std::array<Built, frames_in_flight> structures;
+
+        bool moves() const { return !moving_boxes.empty(); }
+        // The structure slot `slot` traces.
+        const Built& in(std::uint32_t slot) const { return moves() ? structures[slot] : structures[0]; }
+    };
+
+    // Makes a tree over `members`, the shapes it holds in increasing order,
+    // of which `moving` (increasing) move: its boxes at rest, descriptors,
+    // structures and scratch, resident; a still tree's scratch is added to
+    // `build_only` instead, for the constructor's one start-up build.
+    static Tree make_tree(const Device& device, Submission& submission, const shapes::Shapes& shapes,
+                          std::span<const std::uint32_t> members, std::span<const std::uint32_t> moving,
+                          MTL::ResidencySet* build_only);
+
+    Tree everything_;
+    // The occluders' own, when the scene has lights and surfaces both;
+    // otherwise none, and the block names everything's (structure_block.h).
+    std::optional<Tree> occluders_;
+    std::unique_ptr<StaticArrays> occluder_table_;  // the occluders' shapes, a uint32 a box
+    std::unique_ptr<FrameArray> blocks_;            // one StructureBlock, one per slot when anything moves
 };
 
 }  // namespace serenity::metal

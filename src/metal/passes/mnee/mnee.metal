@@ -51,7 +51,7 @@ kernel void mnee_grid(device atomic_uint* header [[buffer(binding::header)]],
 // since the requests of one path's vertices share a pixel. A light not
 // finite is counted (metal/film/failure_count.h) and left out, as the path
 // pass leaves out a sample.
-kernel void mnee_solve(primitive_acceleration_structure structure [[buffer(binding::structure)]],
+kernel void mnee_solve(serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
                        constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
                        constant float* sphere_glows [[buffer(binding::glows)]],
                        constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],

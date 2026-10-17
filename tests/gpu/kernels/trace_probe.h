@@ -13,26 +13,33 @@
 #include "core/contracts/shared_layout.h"
 
 #include "core/contracts/float3.h"
+#include "core/contracts/ray_mask.h"
 
 namespace serenity {
 namespace tests {
 
-// A ray traced from `origin` along the unit `direction`.
+// A ray traced from `origin` along the unit `direction`, carrying `mask`
+// (contract 19); `reach`, how far its shadow-ray twin looks.
 struct TraceRay {
     contracts::Float3 origin;
     contracts::Float3 direction;
+    contracts::RayMask mask;
+    float reach;
 };
 
-static_assert(sizeof(TraceRay) == 24, "TraceRay must be the same 24 bytes on the host and in shaders");
+static_assert(sizeof(TraceRay) == 32, "TraceRay must be the same 32 bytes on the host and in shaders");
 
-// What a ray hit: its distance and its shape, or found 0.
+// What a ray hit: its distance and its shape, or found 0; and whether a
+// shadow ray along it, as far as its reach, carrying the same mask, is
+// blocked (trace.metal.h, occluded()).
 struct TraceHit {
     float t;
     uint32_t shape;
     uint32_t found;
+    uint32_t occluded;
 };
 
-static_assert(sizeof(TraceHit) == 12, "TraceHit must be the same 12 bytes on the host and in shaders");
+static_assert(sizeof(TraceHit) == 16, "TraceHit must be the same 16 bytes on the host and in shaders");
 
 #if !defined(__METAL_VERSION__)
 static_assert(std::is_trivially_copyable_v<TraceRay>, "TraceRay is copied to the GPU as bytes");

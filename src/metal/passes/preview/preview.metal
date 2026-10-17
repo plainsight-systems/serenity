@@ -34,7 +34,7 @@ constant constexpr uint lens_shift = 2u;
 kernel void preview(constant serenity::contracts::FrameConstants& frame
                     [[buffer(serenity::bindings::preview::constants)]],
                     constant serenity::contracts::CameraData& camera [[buffer(serenity::bindings::preview::camera)]],
-                    primitive_acceleration_structure structure [[buffer(serenity::bindings::preview::structure)]],
+                    serenity::shaders::SceneStructure structure [[buffer(serenity::bindings::preview::structure)]],
                     constant serenity::gpu::SceneBlock& block [[buffer(serenity::bindings::preview::scene)]],
                     constant float* sphere_glows [[buffer(serenity::bindings::preview::glows)]],
                     constant serenity::contracts::Transform* transforms

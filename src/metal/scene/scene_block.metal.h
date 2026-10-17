@@ -3,7 +3,8 @@
 // Axis: Scene content (shader half of scene/scene_block.h).
 //
 // The scene as an estimator reads it: the scene's block (scene_block.h), the
-// frame's transforms and glows, and the acceleration structure; and from
+// frame's transforms and glows, and the acceleration structures, one a ray
+// mask (acceleration/trace.metal.h); and from
 // them each family's view, the shapes, materials, textures, lights and media
 // (shapes.metal.h, resolve.metal.h, textures.metal.h, emitter.metal.h,
 // media.metal.h). A new kind's array joins its family's view here, as it
@@ -24,6 +25,7 @@
 
 #include "core/contracts/transform.h"
 #include "core/lights/gradient_sky.h"
+#include "metal/acceleration/trace.metal.h"
 #include "metal/lights/emitter.metal.h"
 #include "metal/materials/resolve.metal.h"
 #include "metal/media/media.metal.h"
@@ -36,7 +38,7 @@ namespace shaders {
 
 template <typename Selection>
 struct SceneView {
-    metal::raytracing::primitive_acceleration_structure structure;
+    SceneStructure structure;  // the structures by mask (acceleration/structure_block.h)
     constant serenity::gpu::SceneBlock* block;
     constant serenity::contracts::Transform* transforms;  // as this frame places the shapes
     constant float* glows;                                // as bright as this frame lights them

@@ -47,7 +47,10 @@
 //      blocked: the segment is clear, the caller's ordinary next event
 //      estimation. Other shapes do not stop the seed (Cycles: the solved
 //      path may pass where the straight one is blocked); its visibility is
-//      tested once solved (step 4).
+//      tested once solved (step 4). The seed, as the solved chain's
+//      segments (step 4), carries the occluders (contract 19): "every
+//      shape" is every surface, and no firefly blocks it, as none blocks
+//      the shadow ray it stands in for.
 //   2. Solve (newton()): Cycles' walk, the constraint at crossing i the
 //      generalized half vector H = -(w_i + eta w_o) projected on the
 //      surface's tangent plane (eta the index past the crossing over the
@@ -303,13 +306,19 @@ inline Seed seed_segment(SceneT scene, float3 origin, float3 direction, float di
     intersection_params params;
     params.assume_geometry_type(geometry_type::bounding_box);
     params.accept_any_intersection(false);
-    intersection_query<> query;
-    query.reset(segment, scene.structure, params);
+    // Next event estimation's visibility, in place of its shadow ray: among
+    // the surfaces alone (contract 19, the occluders), as that ray's.
+    const MaskedStructure traversed = masked(scene.structure, serenity::contracts::RayMask::occluders);
+    if (traversed.empty) {
+        return seed;  // no surface: clear
+    }
+    MaskedQuery query;
+    traversed.reset(query, segment, params);
     while (query.next()) {
         if (query.get_candidate_intersection_type() != intersection_type::bounding_box) {
             continue;
         }
-        const uint shape = query.get_candidate_primitive_id();
+        const uint shape = traversed.candidate_shape(query);
         if (shape == ignore) {
             continue;
         }
@@ -729,14 +738,16 @@ inline float geometry_term(uint count, thread const float3* p, thread const Cast
     return cos_first * metal::rsqrt(distance2) / distance2 * transfer(count, p, casters, blocks, x0, y, light_normal);
 }
 
-// Whether the nearest shape along the segment from `origin` (a point just
+// Whether the nearest surface along the segment from `origin` (a point just
 // off the surface it leaves, on the segment's side) to `to` is shape
-// `shape`, within `tolerance` of `to`.
-inline bool reaches(metal::raytracing::primitive_acceleration_structure structure, Shapes shapes, float3 origin,
-                    float3 to, uint shape, float tolerance) {
+// `shape`, a caster, within `tolerance` of `to`. Among the surfaces alone
+// (contract 19, the occluders): the chain's visibility, as a shadow ray's.
+inline bool reaches(SceneStructure structure, Shapes shapes, float3 origin, float3 to, uint shape,
+                    float tolerance) {
     const float length = metal::distance(origin, to);
     const float3 d = (to - origin) / length;
-    const Hit hit = trace(structure, shapes, metal::raytracing::ray(origin, d, 0.0f, length + tolerance));
+    const Hit hit = trace(structure, shapes, metal::raytracing::ray(origin, d, 0.0f, length + tolerance),
+                          serenity::contracts::RayMask::occluders);
     return hit.found && hit.primitive == shape && metal::abs(hit.t - length) <= tolerance;
 }
 
@@ -804,7 +815,7 @@ template <typename SceneT>
     return !occluded(scene.structure, shapes,
                      metal::raytracing::ray(leave_from, metal::normalize(y - leave_from), 0.0f,
                                             metal::distance(leave_from, y)),
-                     light);
+                     serenity::contracts::RayMask::occluders, light);
 }
 
 // Steps 2 to 4 at `here` for the light sample `sample` drawn from `origin`

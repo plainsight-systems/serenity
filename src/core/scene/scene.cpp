@@ -1355,4 +1355,14 @@ SceneDescription load(const std::filesystem::path& path) {
     return parse(text, path.string());
 }
 
+std::vector<std::uint32_t> light_shapes(const SceneDescription& scene) {
+    std::vector<std::uint32_t> shapes;
+    for (std::size_t shape = 0; shape < scene.shape_lights.size(); ++shape) {
+        if (scene.shape_lights[shape] != lights::no_light) {
+            shapes.push_back(static_cast<std::uint32_t>(shape));
+        }
+    }
+    return shapes;
+}
+
 }  // namespace serenity::scene
