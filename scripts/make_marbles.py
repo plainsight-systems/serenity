@@ -5,9 +5,11 @@
     python3 scripts/make_marbles.py --seed N [--out FILE]
 
 The marbles are placed at random, none touching, from a fixed seed, so the
-same script writes the same file on any machine (Python's random.Random is
-specified to give the same sequence for the same seed). Edit the scene here,
-not in the file it writes.
+same script writes the same file on any machine whose Python draws the same
+numbers from it. Python guarantees that across versions for random() alone;
+the randint, choice, shuffle and randrange used here have drawn alike from
+3.9 to 3.14, and tests/test_make_marbles.py's byte pin fails a Python that
+draws otherwise. Edit the scene here, not in the file it writes.
 
 With no options it writes the real marbles, scenes/marbles.toml, byte for
 byte. --seed N writes generated scene N instead, for the denoiser's training

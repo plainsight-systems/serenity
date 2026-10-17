@@ -68,19 +68,30 @@ add_test(NAME serenity_tests COMMAND serenity_tests)
 # runs them, not make check alone: the boundary the core keeps
 # (tools/check_boundaries.sh), and the proofs that each of its rules and the
 # toolchain check's fire. The probe tests write files into src/ for a moment,
-# so none runs beside another that reads the tree.
+# so none runs beside another that reads the tree. The review script's
+# preflight test (tests/test_codex_review_preflight.sh) stays in make check
+# alone: it needs the codex CLI on PATH, which nothing here builds or pins,
+# and should its guard regress it starts a model call before its watchdog
+# stops it, which a test run must never do.
 add_test(NAME boundaries COMMAND sh "${PROJECT_SOURCE_DIR}/tools/check_boundaries.sh")
 add_test(NAME boundaries_fire COMMAND sh "${PROJECT_SOURCE_DIR}/tests/test_check_boundaries.sh")
 add_test(NAME toolchain_fires COMMAND sh "${PROJECT_SOURCE_DIR}/tests/test_check_toolchain.sh")
 set_tests_properties(boundaries boundaries_fire PROPERTIES RESOURCE_LOCK source_tree)
 
+# The Python tests run under the interpreter the configure found and gave a
+# floor (CMakeLists.txt, find_package(Python3)), not whichever python3 is
+# first on PATH, so the one the build checked is the one whose draws the
+# byte pins below hold: random.Random guarantees its sequence across
+# versions for random() alone, so another Python fails them.
+
 # The marbles' scene generator as its user runs it: the real scene byte for
 # byte by default, and generated scenes reproducible by seed.
-add_test(NAME make_marbles COMMAND python3 "${PROJECT_SOURCE_DIR}/tests/test_make_marbles.py")
+add_test(NAME make_marbles COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/test_make_marbles.py")
 
 # The denoiser data set's plan: the same seeds, times and splits every run,
 # pinned; the real marbles only the test.
-add_test(NAME make_denoiser_dataset COMMAND python3 "${PROJECT_SOURCE_DIR}/tests/test_make_denoiser_dataset.py")
+add_test(NAME make_denoiser_dataset
+         COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/test_make_denoiser_dataset.py")
 
 # The headless renderer as its user runs it: the frames it writes, their
 # names and sizes, what it prints, and its failures' status and messages.

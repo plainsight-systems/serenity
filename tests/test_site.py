@@ -21,6 +21,13 @@ SPEC.loader.exec_module(site)
 
 
 class SiteTests(unittest.TestCase):
+    def replaced(self, page, old, new):
+        """`page`'s text with `old` replaced by `new`; `old` must be there, or the
+        test would check the page unchanged and fail as "did not raise"."""
+        text = page.read_text()
+        self.assertIn(old, text, f'{page.name} no longer holds {old!r}')
+        return text.replace(old, new)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -164,14 +171,14 @@ class SiteTests(unittest.TestCase):
     def test_checker_rejects_missing_fragments(self):
         _, output, base = self.render()
         page = output / 'index.html'
-        page.write_text(page.read_text().replace('href="#film"', 'href="#missing"'))
+        page.write_text(self.replaced(page, 'href="#film"', 'href="#missing"'))
         with self.assertRaisesRegex(ValueError, 'missing fragment'):
             site.check_site(output, base, False)
 
     def test_checker_rejects_subpath_escape(self):
         _, output, base = self.render()
         page = output / 'index.html'
-        page.write_text(page.read_text().replace('href="/serenity/writing/"', 'href="/writing/"'))
+        page.write_text(self.replaced(page, 'href="/serenity/writing/"', 'href="/writing/"'))
         with self.assertRaisesRegex(ValueError, 'escapes site base path'):
             site.check_site(output, base, False)
 
