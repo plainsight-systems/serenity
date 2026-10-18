@@ -179,27 +179,42 @@ class Manifest:
         return np.stack(inputs), (np.stack(targets) if with_target else None)
 
 
-class SplitOnDevice:
-    """A split's sequences, whole, on the device: inputs (S, 8, 12, h, w), targets (S, 8, 6, H, W)."""
+class Split:
+    """A split's sequences, whole, in memory: inputs (S, 8, 12, h, w), targets (S, 8, 6, H, W).
 
-    def __init__(self, manifest: Manifest, split: str, device: torch.device, workers: int = 8):
+    Held on `held`: the compute device itself where the split fits beside the
+    network (the M3 Max's unified memory), or the host, pinned, where it does
+    not (the train split's 23 GB against the RTX 3090's 24 GB); each crop is
+    handed to `device`. The values are the same either way. Each sequence is
+    copied in as it is read, so the host never holds the split twice.
+    """
+
+    def __init__(self, manifest: Manifest, split: str, device: torch.device, held: torch.device,
+                 workers: int = 8):
         if split == "test":
             raise ValueError("the test split is read by evaluate.py alone, after training")
         self.sequences = manifest.sequences(split)
+        self.device = device
+        pin = held.type == "cpu" and device.type == "cuda"
+        self.inputs = self.targets = None
         with ThreadPoolExecutor(workers) as pool:
-            loaded = list(pool.map(manifest.load_sequence, self.sequences))
-        self.inputs = torch.stack([torch.from_numpy(i) for i, _ in loaded]).to(device)
-        self.targets = torch.stack([torch.from_numpy(t) for _, t in loaded]).to(device)
-        del loaded
+            for n, (inp, tgt) in enumerate(pool.map(manifest.load_sequence, self.sequences)):
+                if self.inputs is None:
+                    count = len(self.sequences)
+                    self.inputs = torch.empty((count, *inp.shape), dtype=torch.float32, device=held, pin_memory=pin)
+                    self.targets = torch.empty((count, *tgt.shape), dtype=torch.float32, device=held, pin_memory=pin)
+                self.inputs[n].copy_(torch.from_numpy(inp))
+                self.targets[n].copy_(torch.from_numpy(tgt))
 
     def __len__(self) -> int:
         return len(self.sequences)
 
     def crop(self, s: int, oy: int, ox: int) -> tuple[torch.Tensor, torch.Tensor]:
-        """Sequence s's (8, 12, 128, 128) input crop at (oy, ox) and its (8, 6, 256, 256) target crop."""
+        """Sequence s's (8, 12, 128, 128) input crop at (oy, ox) and its (8, 6, 256, 256) target crop, on
+        the compute device."""
         inp = self.inputs[s, :, :, oy:oy + CROP, ox:ox + CROP]
         tgt = self.targets[s, :, :, SCALE * oy:SCALE * (oy + CROP), SCALE * ox:SCALE * (ox + CROP)]
-        return inp, tgt
+        return inp.to(self.device, non_blocking=True), tgt.to(self.device, non_blocking=True)
 
 
 @dataclass

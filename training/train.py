@@ -45,7 +45,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from data import (FRAMES, Augmentation, Manifest, SplitOnDevice, augment, epoch_crops, validation_tiles)
+from data import (FRAMES, Augmentation, Manifest, Split, augment, epoch_crops, validation_tiles)
 from loss import sequence_loss
 from model import Denoiser, Widths, macs_per_input_pixel, parameter_count
 
@@ -73,7 +73,7 @@ def provenance(config: dict, manifest: Manifest) -> dict:
     }
 
 
-def make_batch(split: SplitOnDevice, picks: list[tuple[int, int, int]],
+def make_batch(split: Split, picks: list[tuple[int, int, int]],
                augmentations: list[Augmentation]) -> tuple[torch.Tensor, torch.Tensor]:
     """Each (sequence, oy, ox) pick's crop, augmented, stacked: (B, 8, 12, 128, 128) and (B, 8, 6, 256, 256)."""
     inputs, targets = [], []
@@ -92,10 +92,10 @@ def run_batch(model: Denoiser, inputs: torch.Tensor,
     return sequence_loss(outputs, targets[:, :, 0:3])
 
 
-def validate(model: Denoiser, split: SplitOnDevice, batch_size: int) -> tuple[float, float, float]:
+def validate(model: Denoiser, split: Split, batch_size: int) -> tuple[float, float, float]:
     tiles = validation_tiles(len(split))
     model.eval()
-    totals = torch.zeros(3, device=split.inputs.device)
+    totals = torch.zeros(3, device=split.device)
     with torch.no_grad():
         for b in range(0, len(tiles), batch_size):
             picks = tiles[b:b + batch_size]
@@ -106,14 +106,15 @@ def validate(model: Denoiser, split: SplitOnDevice, batch_size: int) -> tuple[fl
     return tuple((totals / len(tiles)).tolist())
 
 
-def setup(config: dict, need_validation: bool) -> tuple[torch.device, Manifest, SplitOnDevice,
-                                                       SplitOnDevice | None, Denoiser]:
+def setup(config: dict, need_validation: bool) -> tuple[torch.device, Manifest, Split,
+                                                       Split | None, Denoiser]:
     device = torch.device(config["device"])
+    held = torch.device(config["device"] if config["hold"] == "device" else "cpu")
     torch.manual_seed(config["seed"])
     manifest = Manifest(Path(config["data"]))
     t0 = time.time()
-    train_split = SplitOnDevice(manifest, "train", device)
-    valid = SplitOnDevice(manifest, "validation", device) if need_validation else None
+    train_split = Split(manifest, "train", device, held)
+    valid = Split(manifest, "validation", device, held) if need_validation else None
     print(f"data: {len(train_split)} training sequences"
           + (f", {len(valid)} validation" if valid else "") + f", read and checked in {time.time() - t0:.0f} s",
           flush=True)
