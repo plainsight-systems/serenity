@@ -20,7 +20,7 @@ from data import INPUT_CHANNELS, JITTER, Augmentation, albedo_factor, augment, c
 from loss import frame_weights, ms_ssim, pu
 from model import NETWORK_INPUTS, SCORES, SUBPIXELS, TAPS, Denoiser, Widths, network_input, warp_history
 from pfm import read_pfm, write_pfm
-from train import hold_on_device, pick_device
+from train import hold_on_device, pick_device, run_batch, zero_batch
 
 TINY = Widths(enc=[8, 8, 8, 8], bottleneck=8, dec=[8, 8, 8, 8])
 
@@ -241,6 +241,13 @@ class DeviceTest(unittest.TestCase):
         self.assertFalse(hold_on_device(data + 1, free, working))
         self.assertFalse(hold_on_device(data, free, working + 1))
         self.assertFalse(hold_on_device(data, free - 1, working))
+
+    def test_the_memory_probe_trains_on_the_networks_input(self):
+        # The probe's batch is what the network reads: a step on it runs (on the CPU, the smallest widths).
+        model = Denoiser(Widths(enc=[8, 8, 8, 8], bottleneck=8, dec=[8, 8, 8, 8]))
+        inputs, targets = zero_batch(1, torch.device("cpu"))
+        loss, _ = run_batch(model, inputs[:, :2], targets[:, :2])
+        self.assertTrue(torch.isfinite(loss))
 
 
 if __name__ == "__main__":
