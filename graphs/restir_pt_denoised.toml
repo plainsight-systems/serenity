@@ -1,6 +1,7 @@
-# graphs/restir_pt.toml's light, denoised and upscaled by Milestone 3's
-# trained network (docs/research/2026-10-15-denoiser-live.md): ReSTIR PT
-# with MNEE and the denoiser's features at half the output's size each way;
+# ReSTIR PT's light (src/core/passes/restir_pt.h), denoised and upscaled
+# by Milestone 3's trained network
+# (docs/research/2026-10-15-denoiser-live.md): ReSTIR PT with MNEE and
+# the denoiser's features at half the output's size each way;
 # the network (src/metal/passes/denoise/denoise.h) writes the output's
 # size from them, its own last frame moved by the motion vectors, and the
 # full-size albedo; then the tone map, at the output's size. In the window

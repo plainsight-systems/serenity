@@ -64,7 +64,7 @@ inline passes::RestirPt written_restir_pt(const std::vector<frame::PassKind>& ki
     return s;
 }
 
-// ReSTIR PT's passes as graphs/restir_pt.toml runs them.
+// ReSTIR PT's passes as the ReSTIR PT graphs run them.
 inline const std::vector<frame::PassKind> restir_pt_passes = {
     frame::PassKind::restir_pt_initial, frame::PassKind::restir_pt_temporal, frame::PassKind::restir_pt_spatial,
     frame::PassKind::restir_pt_shade, frame::PassKind::restir_pt_duplication};

@@ -10,8 +10,7 @@
 // Enhanced's defaults (Lin, Kettunen and Wyman 2026, §7 and Table 1's
 // configuration; docs/research/2026-10-11-restir-pt-layout.md, "What is
 // built"). A graph file names every setting its passes read
-// (core/frame/graph_file.h); these are what graphs/restir_pt.toml writes,
-// and what a test of the graph's parsing holds it to.
+// (core/frame/graph_file.h); these are what the ReSTIR PT graphs write.
 
 #include "core/contracts/path_reuse_settings.h"
 #include "core/contracts/shared_layout.h"

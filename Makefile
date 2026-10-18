@@ -140,7 +140,7 @@ reference:
 
 ## GRAPH's convergence (MEASURED_GRAPH: graphs/path.toml, the naive path
 ## tracer, unless GRAPH names another, as make convergence
-## GRAPH=graphs/restir_pt.toml does) against the reference above (made
+## GRAPH=graphs/restir_pt_features.toml does) against the reference above (made
 ## first, by make reference with the same SCENE, TIME, SIZE, BATCHES and
 ## BATCH_SAMPLES): CONVERGENCE_FRAMES frames of CONVERGENCE_SAMPLES samples
 ## of the graph at TIME, from the first frame index whose samples

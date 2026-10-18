@@ -32,7 +32,7 @@ NEUTRAL_TOE_CURVE = 6.25
 NEUTRAL_START = 0.76
 NEUTRAL_DESATURATION = 0.15
 
-# graphs/path.toml's and graphs/restir_pt.toml's settings, Milestone 2's.
+# graphs/path.toml's and the ReSTIR PT graphs' settings, Milestone 2's.
 EXPOSURE = 0.0
 BLOOM = 0.04
 

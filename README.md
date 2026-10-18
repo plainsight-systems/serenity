@@ -151,13 +151,6 @@ To make them yourself, [`training/README.md`](training/README.md) covers the
 whole cycle, from rendering the data set (four hours on my M3 Max) and
 training (about eight hours) to the export.
 
-The same light without the denoiser, at half the window’s resolution each
-way, stretched to the window:
-
-```bash
-make run GRAPH=graphs/restir_pt.toml SCENE=scenes/marbles.toml SCALE=0.5
-```
-
 To compare with the MIS path tracer:
 
 ```bash

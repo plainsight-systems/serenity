@@ -1,10 +1,10 @@
-# graphs/restir_pt.toml, the renderer the denoiser is for, with the
+# ReSTIR PT, the renderer the denoiser is for, with the
 # denoiser's features beside its light (src/core/contracts/features.h):
 # the network's input, the noisy linear radiance (serenity-headless
 # --format pfm) and the albedo, normal, depth and motion along the very
 # rays that radiance took (--features), at the half resolution the network
 # upscales from (docs/research/2026-10-14-denoiser-training-design.md).
-# The light is graphs/restir_pt.toml's to the bit: the features pass reads
+# The light is ReSTIR PT's alone, to the bit: the features pass reads
 # the scene alone and writes only its own images. Needs a scene.
 
 passes = ["restir_pt_initial", "restir_pt_temporal", "restir_pt_spatial", "restir_pt_shade",
