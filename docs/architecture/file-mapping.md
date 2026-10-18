@@ -130,7 +130,7 @@ depend on contracts, not on each other.
 |---|---|---|---|
 | 1 | **Surface interaction**: position, in the world and the shape's own coordinates, normals, the side arrived from, material, the medium inside; (u, v) with the first texture that needs them | Shape | Material, Texture, Integrator, Sample reuse |
 | 2 | **BSDF**: a material resolved at a surface, and evaluate, sample, pdf and lobes on it; and its packed form, 16 bytes, for ReSTIR PT's G-buffer of primary hits | Material | Integrator, Sample reuse |
-| 3 | **Emitter**: a direction toward the light drawn from numbers, the radiance along it, the distance to it, the pdf; the radiance it emits; which light, if any, a shape is; and its presampled form, ReSTIR PT's light tiles (`light_tile.h`, 32 bytes an entry) | Light | Light selection, Integrator, Sample reuse |
+| 3 | **Emitter**: a direction toward the light drawn from numbers, the radiance along it, the distance to it, the pdf; the radiance it emits; which light, if any, a shape is; and its presampled form, ReSTIR PT's light tiles (`light_tile.h`, 32 bytes an entry), drawn by power from the frame's power pyramid, whose layout it holds | Light | Light selection, Integrator, Sample reuse |
 | 4 | **Light sample**: which light and which point on it, in its own coordinates (`light_sample.h`: the light's record index with a valid bit and the point in two 16-bit numbers, equal-area octahedral for a sphere, 8 bytes, as RTXDI stores them), and what that point gives a surface | Light | Sample reuse, Integrator |
 | 5 | **Film outputs**: radiance, normal, depth, motion per pixel; and ReSTIR PT's G-buffer of primary hits, which every shift starts from (`primary_hit.h`, 48 bytes). ReSTIR DI's surface record and path state (`surface_record.h`) were removed with ReSTIR DI, 2026-10-17 | Film | Pass, Sample reuse, Integrator (the shift) |
 | 6 | **Frame images**: the images between passes and the history across frames; first, the accumulated image | Frame graph | every Pass |
@@ -286,6 +286,19 @@ for ReSTIR PT's camera rays, given to the network (the axes in
 | the jitter written into the light half's ring, not the output's | Frame graph | `src/metal/frame/renderer.cpp` |
 | two input channels of the network: the contract, the loader's check, the kernel, the PyTorch model, its data and its export | Pass, outside the build | `src/core/contracts/denoise.h`, `src/core/denoise/network.cpp`, `src/metal/passes/denoise/denoise.metal`, `training/{data,model,export,denoise_check}.py` |
 | each frame's jitter in the data set's manifest | outside the build | `scripts/make_denoiser_dataset.py` |
+
+## Light tiles drawn by power
+
+RTXDI's local-light presampling in place of a uniform draw (the axes in
+`change-axes.md`):
+
+| What | Family | File |
+|---|---|---|
+| the power pyramid's layout: its levels, where each lies, its threadgroup | Light (contract 3) | `src/core/contracts/light_tile.h` |
+| a light's power, by kind | Light | `src/metal/lights/emitter.metal.h` |
+| the pyramid's build, a draw by descending it, a light's probability | Light selection | `src/metal/light_selection/power_light.metal.h`, new |
+| the pyramid built and the tiles drawn from it each frame; every density ReSTIR PT weighs a light by asked of it, this frame's and, for the temporal reuse's last frame, last frame's | Pass, Integrator, Scene content | `src/metal/passes/restir_pt/restir_pt.metal.h`, `src/metal/passes/restir_pt_initial/`, `src/metal/passes/restir_pt_temporal/restir_pt_temporal.metal`, `src/metal/passes/restir_pt_spatial/restir_pt_spatial.metal`, `src/metal/integrator/{nee,shift}.metal.h`, `src/metal/scene/scene_block.metal.h` |
+| the two pyramids, this frame's and last frame's by parity | Frame graph | `src/metal/frame/frame_images.{h,cpp}`, `src/metal/frame/renderer.cpp`, `src/metal/frame/frame_resources.h`, `src/metal/passes/bindings.h` |
 
 ## Not here yet
 

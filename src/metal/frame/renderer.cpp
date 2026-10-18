@@ -81,8 +81,9 @@ static_assert(bindings::depth_of_field::dilated < max_denoise_buffers);
 static_assert(bindings::depth_of_field::near_filtered < max_denoise_textures);
 // A ReSTIR PT graph (its initial pass's work list and the MNEE pass bind
 // within it).
-constexpr NS::UInteger max_restir_pt_buffers = 28;
+constexpr NS::UInteger max_restir_pt_buffers = 30;
 static_assert(bindings::restir_pt::mnee_header < max_restir_pt_buffers);
+static_assert(bindings::restir_pt::last_light_power < max_restir_pt_buffers);
 static_assert(bindings::mnee::lost < max_restir_pt_buffers);
 
 // The reuse textures' seed: fixed, so every run pairs the same pixels
@@ -172,9 +173,10 @@ MTL::GPUAddress write_feature_constants(FrameArray& ring, std::uint32_t slot,
 // and with temporal reuse the ring of its reuse constants.
 Renderer::RestirPtFamily::RestirPtFamily(const Device& device, Submission& submission,
                                          const contracts::PathReuseSettings& settings,
-                                         std::span<const std::uint16_t> textures, bool spatial, bool temporal)
+                                         std::span<const std::uint16_t> textures, bool spatial, bool temporal,
+                                         std::uint32_t lights)
     : images(device, submission, spatial ? PathReuseImages::Spatial::merged : PathReuseImages::Spatial::none,
-             temporal ? PathReuseImages::Temporal::merged : PathReuseImages::Temporal::none),
+             temporal ? PathReuseImages::Temporal::merged : PathReuseImages::Temporal::none, lights),
       statics(device, submission,
               std::array<std::span<const std::byte>, 2>{std::as_bytes(std::span(&settings, 1)),
                                                         std::as_bytes(textures)}) {
@@ -197,6 +199,8 @@ void Renderer::RestirPtFamily::bind(FrameResources& resources, const FrameSlot& 
     resources.replay_counter = arrays.counter;
     resources.replay_grid = arrays.grid;
     resources.light_tiles = arrays.light_tiles;
+    resources.light_power = arrays.light_power;
+    resources.last_light_power = arrays.last_light_power;
     resources.last_primaries = arrays.last_primaries;
     resources.path_finals = arrays.finals;
     resources.last_path_finals = arrays.last_finals;
@@ -479,7 +483,7 @@ void Renderer::make_restir_pt(const Device& device, const frame::Schedule& sched
                              : static_cast<double>(settings.sigma);
     const std::vector<std::uint16_t> textures =
         spatial ? sampling::reuse_textures(sigma, pairing_seed) : std::vector<std::uint16_t>(1, 0u);
-    restir_pt_.emplace(device, submission_, settings, textures, spatial, temporal);
+    restir_pt_.emplace(device, submission_, settings, textures, spatial, temporal, scene->light_counts.lights);
 }
 
 // MNEE's work list, a ReSTIR PT graph's (its requests add to the light

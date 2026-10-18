@@ -57,7 +57,12 @@ and the camera.
     strikes with the complementary weight (principle 7). ReSTIR PT takes
     it at every vertex of its paths, by resampling candidate lights from
     the frame's light tiles, and reuses it with the indirect light, as one
-    path (below). ReSTIR DI (Bitterli et al. 2020, as RTXDI ships it),
+    path (below). The tiles are drawn each frame in proportion to each
+    firefly's power as it glows at *t*, as RTXDI presamples its local
+    lights from a power PDF and its mip chain: a firefly still asleep is
+    never drawn, a bright one often, and every candidate's density, and the
+    density MIS weighs a firefly struck by a bounced ray by, is that same
+    power over the frame's total. ReSTIR DI (Bitterli et al. 2020, as RTXDI ships it),
     which reused the direct light alone, lost to the path tracer at equal
     time on the marbles and was removed 2026-10-17, superseded by ReSTIR
     PT.

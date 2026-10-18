@@ -338,6 +338,23 @@ path tracer, which draws its own point in every pixel, and the motion
 vectors and every reprojection go through the camera without it, which
 is NRD's and DLSS's convention for them.
 
+**Drawing lights by power is two axes' business.** RTXDI's presampling
+by power (`logical-overview.md`, "Light") splits in two:
+
+- **Light** owns a light's power: what a kind emits in all, a sphere's
+  4 pi r^2 x pi x its radiance's luminance (RTXDI's `GetPower`), at its
+  glow this frame (`metal/lights/emitter.metal.h`), so a new kind of
+  light brings its own.
+- **Light selection** owns the distribution: the pyramid of the lights'
+  powers, built each frame, a light drawn from it by descending it, and
+  the probability of any one light, which every density ReSTIR PT weighs
+  by asks (`metal/light_selection/power_light.metal.h`). The tiles
+  (contract 3's presampled form) hold its draws.
+
+The path tracer keeps the uniform selection: it is the reference, its
+noise the baseline the estimators are measured against, and a
+selection of its own changes nothing ReSTIR PT computes.
+
 **Scene content and animation are two files, not one.** Both describe how the
 fireflies move, which makes merging them tempting. But animation changes when
 a new kind of motion is written, and scene content when the scene is

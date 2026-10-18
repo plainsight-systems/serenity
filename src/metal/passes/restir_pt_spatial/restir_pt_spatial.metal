@@ -57,6 +57,7 @@ kernel void restir_pt_shift(constant serenity::contracts::FrameConstants& frame 
                             device float4* shifts [[buffer(binding::shifts)]],
                             device uint* replays [[buffer(binding::replays)]],
                             device atomic_uint* counter [[buffer(binding::counter)]],
+                            const device float* light_power [[buffer(binding::light_power)]],
                             uint2 grid_place [[thread_position_in_grid]]) {
     const restir_pt::Traced traced = restir_pt::traced(frame, settings);
     const uint2 pixel = traced.pixel(grid_place);
@@ -65,7 +66,7 @@ kernel void restir_pt_shift(constant serenity::contracts::FrameConstants& frame 
     uint appended[serenity::contracts::max_path_neighbors];
     uint count = 0u;
     if (inside) {
-        const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
+        const restir_pt::Scene scene{structure, &block, transforms, sphere_glows, light_power};
         const serenity::contracts::PathReservoir reservoir = reservoirs[i];
         const bool held = serenity::contracts::path_end(reservoir.flags) != serenity::contracts::PathEnd::none;
         const serenity::contracts::PrimaryHit own = primaries[i];
@@ -117,6 +118,7 @@ kernel void restir_pt_replay(constant serenity::contracts::FrameConstants& frame
                              device float4* shifts [[buffer(binding::shifts)]],
                              const device uint* replays [[buffer(binding::replays)]],
                              const device serenity::gpu::IndirectGrid* grid [[buffer(binding::dispatch)]],
+                             const device float* light_power [[buffer(binding::light_power)]],
                              uint n [[thread_position_in_grid]]) {
     if (n >= grid->count) {
         return;
@@ -127,7 +129,7 @@ kernel void restir_pt_replay(constant serenity::contracts::FrameConstants& frame
     const uint t = restir_pt::replay_slot(item);
     const uint2 pixel = traced.slot_pixel(i);
     const Partner partner = partner_of(pairing, pixel, t, traced);
-    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
+    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows, light_power};
     shifts[i * serenity::contracts::max_path_neighbors + t] = restir_pt::stored_shift(shift::shift_path(
         scene, shift::unpack_primary_hit(primaries[traced.slot(partner.pixel)]), reservoirs[i], settings));
 }

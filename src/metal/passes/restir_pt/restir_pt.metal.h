@@ -309,13 +309,15 @@ constant constexpr uint spatial_pick_first = purpose::spatial_pick;
 constant constexpr uint ring_first = purpose::ring;
 
 // Entry `n` of frame `frame`'s light tiles, entry n % 1024 of tile
-// n / 1024: a light the selection draws, placed and packed as this frame
-// places and lights it (contracts/light_tile.h). Precondition: the scene
-// has a light (the caller tests it).
+// n / 1024: a light drawn by power from the frame's pyramid
+// (light_selection/power_light.metal.h), placed and packed as this frame
+// places and lights it (contracts/light_tile.h). Where no light has power,
+// light 0's, which no candidate keeps (its probability 0). Precondition:
+// the scene has a light (the caller tests it).
 inline serenity::contracts::LightTileEntry tile_entry(Scene scene, uint n, uint frame) {
     constexpr uint size = serenity::contracts::light_tile_size;
     PathNumbers numbers = purpose_numbers(path_numbers(uint2(n % size, n / size), frame), tile_fill_first);
-    return compact_light(scene.lights(), select_light_index(scene.selection(), next_number(numbers)).index);
+    return compact_light(scene.lights(), select_power_index(scene.power(), numbers).index);
 }
 
 // The light tile the block holding `pixel` draws in frame `frame`, among
@@ -461,7 +463,7 @@ struct TreeGather {
         const uint length = surface + 1u;
         const bool weighed = emission_pdf != path::counted_in_full;
         const float light_density =
-            weighed ? light_probability(scene.selection(), light) *
+            weighed ? power_probability(scene.power(), light_index_at(scene.lights(), at.primitive)) *
                           light_pdf(scene.lights(), light, along.origin, along.direction)
                     : 0.0f;
         const float weight =
@@ -521,15 +523,18 @@ struct TreeGather {
         PathNumbers numbers = shift::nee_numbers(stream, surface);
         float sum = 0.0f;
         nee::Candidate kept = nee::no_candidate();
-        const float probability = selection_probability(scene.selection());
+        const PowerLight power = scene.power();
         for (uint i = 0u; i < m; ++i) {
             const float choose = next_number(numbers);
             const float2 u = next_numbers2(numbers);
             const float pick = next_number(numbers);
-            const nee::Candidate candidate = nee::draw_tile_candidate(
+            const serenity::contracts::LightTileEntry entry =
                 tile[metal::min(uint(choose * float(serenity::contracts::light_tile_size)),
-                                serenity::contracts::light_tile_size - 1u)],
-                probability, here, origin, u);
+                                serenity::contracts::light_tile_size - 1u)];
+            // The entry's light's probability, its power over the frame's
+            // total (contracts/light_tile.h).
+            const nee::Candidate candidate = nee::draw_tile_candidate(
+                entry, power_probability(power, entry.ids & serenity::contracts::tile_index_mask), here, origin, u);
             if (stream_pick(sum, candidate.target > 0.0f ? candidate.target / candidate.density : 0.0f, pick)) {
                 kept = candidate;
             }

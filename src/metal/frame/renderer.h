@@ -502,7 +502,7 @@ private:
     // temporal reuse the ring of its reuse constants.
     struct RestirPtFamily {
         RestirPtFamily(const Device& device, Submission& submission, const contracts::PathReuseSettings& settings,
-                       std::span<const std::uint16_t> textures, bool spatial, bool temporal);
+                       std::span<const std::uint16_t> textures, bool spatial, bool temporal, std::uint32_t lights);
         void bind(FrameResources& resources, const FrameSlot& begun, std::uint64_t index,
                   const std::optional<contracts::Camera>& previous_camera, frame::Extent light);
 

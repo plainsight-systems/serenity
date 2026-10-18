@@ -78,6 +78,11 @@ struct FrameResources {
     MTL::GPUAddress replay_counter = 0;
     MTL::GPUAddress replay_grid = 0;
     MTL::GPUAddress light_tiles = 0;
+    // The frame's power pyramid (contracts/light_tile.h), which the light
+    // tiles are drawn from and every density weighs by, and, with temporal
+    // reuse, last frame's.
+    MTL::GPUAddress light_power = 0;
+    MTL::GPUAddress last_light_power = 0;
     MTL::GPUAddress path_constants = 0;
     MTL::GPUAddress last_primaries = 0;
     MTL::GPUAddress path_finals = 0;

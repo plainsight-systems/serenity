@@ -11,7 +11,11 @@
 // joins the block, so no pass changes for it. `Selection` is how the
 // estimator reading it chooses among the lights (light_selection/), made from
 // the light records and their count: UniformLight for the path tracer and
-// ReSTIR PT (path.metal.h), the one selection so far.
+// for the path loop's tests ReSTIR PT shares with it (path.metal.h); and
+// ReSTIR PT's own, by power (light_selection/power_light.metal.h), power(),
+// from the frame's power pyramid, which a view of ReSTIR PT's names (this
+// frame's, or last frame's for a shift to last frame's pixel), and a view
+// of any other estimator's leaves null and never asks of.
 //
 // Each view is built where it is used, not once per thread and carried
 // through the path: a view carried is pointers held in registers across
@@ -26,6 +30,7 @@
 #include "core/contracts/transform.h"
 #include "core/lights/gradient_sky.h"
 #include "metal/acceleration/trace.metal.h"
+#include "metal/light_selection/power_light.metal.h"
 #include "metal/lights/emitter.metal.h"
 #include "metal/materials/resolve.metal.h"
 #include "metal/media/media.metal.h"
@@ -42,6 +47,7 @@ struct SceneView {
     constant serenity::gpu::SceneBlock* block;
     constant serenity::contracts::Transform* transforms;  // as this frame places the shapes
     constant float* glows;                                // as bright as this frame lights them
+    const device float* light_power = nullptr;            // ReSTIR PT's: the frame's power pyramid
 
     Shapes shapes() const { return Shapes{block->shapes, transforms, block->boxes}; }
 
@@ -60,6 +66,8 @@ struct SceneView {
     serenity::lights::GradientSkyData sky() const { return *block->environment; }
 
     Selection selection() const { return Selection{block->light_records, block->light_counts->lights}; }
+
+    PowerLight power() const { return power_light(light_power, block->light_counts->lights); }
 };
 
 }  // namespace shaders

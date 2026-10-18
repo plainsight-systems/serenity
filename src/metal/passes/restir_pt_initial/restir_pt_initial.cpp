@@ -1,6 +1,7 @@
 #include "metal/passes/restir_pt_initial/restir_pt_initial.h"
 
 #include <algorithm>
+#include <string>
 
 #include "core/contracts/light_tile.h"
 #include "metal/device/error.h"
@@ -20,16 +21,21 @@ constexpr NS::UInteger tiles_group = 256;
 }  // namespace
 
 RestirPtInitialPass::RestirPtInitialPass(const Library& library)
-    : tiles_(library.compute_pipeline("restir_pt_light_tiles")),
+    : power_(library.compute_pipeline("restir_pt_light_power")),
+      tiles_(library.compute_pipeline("restir_pt_light_tiles")),
       pipeline_(library.compute_pipeline("restir_pt_initial")),
       mnee_(library) {}
 
 void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
     if (resources.path_settings == 0 || resources.path_reservoirs == 0 || resources.primaries == 0 ||
-        resources.light == 0 || resources.light_tiles == 0 || resources.mnee_requests == 0 ||
-        resources.mnee_header == 0) {
+        resources.light == 0 || resources.light_tiles == 0 || resources.light_power == 0 ||
+        resources.mnee_requests == 0 || resources.mnee_header == 0) {
         throw MetalError("RestirPtInitialPass: the frame lacks one of its ReSTIR PT's settings, path reservoirs, "
-                         "primary hits, light buffer, light tiles or MNEE's work list");
+                         "primary hits, light buffer, light tiles, power pyramid or MNEE's work list");
+    }
+    if (power_->maxTotalThreadsPerThreadgroup() < contracts::light_power_threads) {
+        throw MetalError("RestirPtInitialPass: the power pyramid's kernel takes fewer threads a threadgroup than "
+                         "its one threadgroup's " + std::to_string(contracts::light_power_threads));
     }
     namespace binding = bindings::restir_pt;
     MTL4::ArgumentTable* arguments = resources.arguments;
@@ -39,6 +45,7 @@ void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder, const Fra
     arguments->setAddress(resources.primaries, binding::primaries);
     arguments->setAddress(resources.light, binding::light);
     arguments->setAddress(resources.light_tiles, binding::light_tiles);
+    arguments->setAddress(resources.light_power, binding::light_power);
     // Unread without temporal reuse, where they are 0: bound then to arrays
     // that exist (the light buffer, this frame's transforms), since Metal's
     // validation refuses a null binding the kernel declares.
@@ -48,6 +55,11 @@ void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder, const Fra
                           binding::last_transforms);
     arguments->setAddress(resources.mnee_requests, binding::mnee_requests);
     arguments->setAddress(resources.mnee_header, binding::mnee_header);
+    // The power pyramid, one threadgroup (contracts/light_tile.h), which the
+    // tiles are drawn from (GPU.8: a write and its reader).
+    encoder->setComputePipelineState(power_.get());
+    encoder->dispatchThreadgroups(MTL::Size{1, 1, 1}, MTL::Size{contracts::light_power_threads, 1, 1});
+    barrier_after_dispatch(encoder);
     encoder->setComputePipelineState(tiles_.get());
     encoder->dispatchThreads(
         MTL::Size{contracts::light_tiles * contracts::light_tile_size, 1, 1},

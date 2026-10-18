@@ -109,6 +109,8 @@ enum Buffer : unsigned {
     last_glows = 25,          // and glows
     mnee_requests = 26,       // MNEE's work list (contract 16), the initial pass's
     mnee_header = 27,         // its count and capacity
+    light_power = 28,         // the frame's power pyramid (contracts/light_tile.h)
+    last_light_power = 29,    // last frame's, which a shift to last frame's pixel weighs by
 };
 enum Texture : unsigned { accumulated = 0 };  // the shade's: also the frame's radiance, as the path pass's
 }  // namespace restir_pt

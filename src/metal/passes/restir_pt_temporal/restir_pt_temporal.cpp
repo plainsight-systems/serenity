@@ -16,11 +16,11 @@ void RestirPtTemporalPass::record(MTL4::ComputeCommandEncoder* encoder, const Fr
         resources.replays == 0 || resources.replay_counter == 0 || resources.replay_grid == 0 ||
         resources.path_finals == 0 || resources.last_path_finals == 0 || resources.previous_positions == 0 ||
         resources.previous_pixels == 0 || resources.duplication == 0 || resources.last_transforms == 0 ||
-        resources.last_glows == 0) {
+        resources.last_glows == 0 || resources.light_power == 0 || resources.last_light_power == 0) {
         throw MetalError("RestirPtTemporalPass: the frame lacks one of its ReSTIR PT's settings and reuse constants, "
                          "path reservoirs, either frame's primary hits or final reservoirs, light buffer, shifted "
                          "paths, replaying shifts, their count or grid, previous positions or pixels, duplication map, "
-                         "or last frame's transforms or glows");
+                         "or last frame's transforms, glows or power pyramid");
     }
     namespace binding = bindings::restir_pt;
     MTL4::ArgumentTable* arguments = resources.arguments;
@@ -42,6 +42,8 @@ void RestirPtTemporalPass::record(MTL4::ComputeCommandEncoder* encoder, const Fr
     arguments->setAddress(resources.duplication, binding::duplication);
     arguments->setAddress(resources.last_transforms, binding::last_transforms);
     arguments->setAddress(resources.last_glows, binding::last_glows);
+    arguments->setAddress(resources.light_power, binding::light_power);
+    arguments->setAddress(resources.last_light_power, binding::last_light_power);
     reuse_.record(encoder, resources.traced, resources.replay_grid);
 }
 

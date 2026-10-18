@@ -312,7 +312,7 @@ inline StoredLight stored_light(path::Scene scene, uint primitive, uint point, f
         evaluate_light_point(placed, serenity::contracts::LightPoint{serenity::contracts::light_valid | index, point},
                              origin);
     return StoredLight{true, light,
-                       light_probability(scene.selection(), placed.record) * light_point_pdf(placed, origin, light)};
+                       power_probability(scene.power(), index) * light_point_pdf(placed, origin, light)};
 }
 
 // A shift's result where F and the Jacobian are finite and the Jacobian
@@ -545,7 +545,7 @@ inline Shifted replay_end(path::Scene scene, Shading here, float3 beta, Before b
         emission_pdf == path::counted_in_full
             ? 1.0f
             : nee::bsdf_weight(nee::candidate_count(settings.nee_candidates, d - 1u),
-                               light_probability(scene.selection(), glowing.light) *
+                               power_probability(scene.power(), light_index_at(scene.lights(), hit.primitive)) *
                                    light_pdf(scene.lights(), glowing.light, along.origin, wi),
                                emission_pdf);
     return shifted_to(beta * light_emitted(scene.lights(), glowing.light, point, -wi) * weight, 1.0f);

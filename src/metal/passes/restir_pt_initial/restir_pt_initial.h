@@ -42,6 +42,7 @@ public:
     void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
 
 private:
+    NS::SharedPtr<MTL::ComputePipelineState> power_;
     NS::SharedPtr<MTL::ComputePipelineState> tiles_;
     NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
     MneePass mnee_;

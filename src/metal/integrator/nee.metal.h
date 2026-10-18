@@ -98,8 +98,9 @@ inline float3 unshadowed(Shading here, serenity::contracts::LightReceived light)
 
 // A candidate drawn from a light tile's entry (contracts/light_tile.h):
 // the draw contract 3's sample_light() makes from the light the entry was
-// packed from, its density the selection's `probability` (1 / N) times the
-// cone's.
+// packed from, its density the selection's `probability` of the entry's
+// light (its power over the frame's total, light_selection/
+// power_light.metal.h) times the cone's.
 inline Candidate draw_tile_candidate(serenity::contracts::LightTileEntry entry, float probability, Shading here,
                                      float3 origin, float2 u) {
     const serenity::contracts::LightSample sample = sample_tile_light(entry, origin, u);
