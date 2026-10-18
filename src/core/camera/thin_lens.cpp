@@ -123,6 +123,18 @@ contracts::CameraData shader_form(const contracts::Camera& camera, frame::Extent
     return data;
 }
 
+float circle_of_confusion_scale(const contracts::Camera& camera, frame::Extent size) {
+    if (size.width == 0 || size.height == 0) {
+        throw std::invalid_argument("circle_of_confusion_scale: an image of no pixels has no circle of confusion");
+    }
+    if (const std::optional<std::string_view> reason = invalid(camera)) {
+        throw std::invalid_argument("circle_of_confusion_scale: the camera cannot be framed: " + std::string(*reason));
+    }
+    const double half_height = std::tan(static_cast<double>(camera.vertical_fov_degrees) * half_radians_per_degree);
+    return static_cast<float>(static_cast<double>(camera.lens_radius) * static_cast<double>(size.height) /
+                              (2.0 * static_cast<double>(camera.focus_distance) * half_height));
+}
+
 ViewAxes view_axes(const contracts::Camera& camera) {
     if (const std::optional<std::string_view> reason = invalid(camera)) {
         throw std::invalid_argument("view_axes: the camera cannot be framed: " + std::string(*reason));

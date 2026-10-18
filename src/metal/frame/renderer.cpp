@@ -18,6 +18,7 @@
 #include "core/contracts/camera.h"
 #include "core/contracts/checkerboard.h"
 #include "core/contracts/denoise.h"
+#include "core/contracts/depth_of_field.h"
 #include "core/contracts/features.h"
 #include "core/contracts/frame_constants.h"
 #include "core/contracts/light_tile.h"
@@ -25,6 +26,7 @@
 #include "core/contracts/path_reuse_settings.h"
 #include "core/contracts/primary_hit.h"
 #include "core/denoise/network.h"
+#include "core/passes/depth_of_field.h"
 #include "core/sampling/pairing.h"
 #include "core/scene/packed_range.h"
 #include "metal/device/error.h"
@@ -74,6 +76,9 @@ static_assert(bindings::denoise::radiance < max_denoise_textures);
 // The checkerboard's fill, a denoised graph's.
 static_assert(bindings::checkerboard_fill::fill_constants < max_denoise_buffers);
 static_assert(bindings::checkerboard_fill::history < max_denoise_textures);
+// The depth of field, a denoised graph's.
+static_assert(bindings::depth_of_field::dilated < max_denoise_buffers);
+static_assert(bindings::depth_of_field::near_filtered < max_denoise_textures);
 // A ReSTIR PT graph (its initial pass's work list and the MNEE pass bind
 // within it).
 constexpr NS::UInteger max_restir_pt_buffers = 28;
@@ -296,6 +301,12 @@ Renderer::CheckerboardFamily::CheckerboardFamily(const Device& device, Submissio
                 FrameArray::Copies::per_frame),
       images(device, submission) {}
 
+// The depth of field's (renderer.h): its images and its constants' ring.
+Renderer::DepthOfFieldFamily::DepthOfFieldFamily(const Device& device, Submission& submission)
+    : images(device, submission),
+      constants(device, submission, std::vector<std::byte>(sizeof(contracts::DepthOfFieldConstants)),
+                FrameArray::Copies::per_frame) {}
+
 Renderer::Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
                    const scene::SceneDescription* scene)
     : submission_(submission),
@@ -343,6 +354,10 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     // (frame::invalid).
     if (denoises_) {
         checkerboard_.emplace(device, submission_, library_);
+    }
+    // The depth of field's, a denoised graph's (frame::invalid).
+    if (frame::lens_after_network(schedule)) {
+        depth_of_field_.emplace(device, submission_);
     }
 }
 
@@ -403,6 +418,9 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
             // The schedule has its settings with its pass (frame::invalid).
             steps_.push_back(
                 Step{kind, Pass{std::in_place_type<DenoisePass>, device, library_, submission_, *network}});
+            break;
+        case frame::PassKind::depth_of_field:
+            steps_.push_back(Step{kind, Pass{std::in_place_type<DepthOfFieldPass>, library_}});
             break;
         }
     }
@@ -564,6 +582,9 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
     if (checkerboard_) {
         checkerboard_->images.prepare(light);
     }
+    if (depth_of_field_) {
+        depth_of_field_->images.prepare(size);
+    }
     if (mnee_) {
         mnee_->list.prepare(light);
     }
@@ -580,7 +601,7 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
 }
 
 bool Renderer::prepares() const noexcept {
-    return accumulation_ || images_ || restir_pt_ || mnee_ || features_ || denoise_;
+    return accumulation_ || images_ || restir_pt_ || mnee_ || features_ || denoise_ || depth_of_field_;
 }
 
 std::uint64_t Renderer::non_finite_samples() const noexcept {
@@ -753,11 +774,11 @@ void Renderer::animate(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& be
 // inputs; and the full-size albedo's features dispatch. Precondition: the
 // graph denoises.
 Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& resources, const FrameSlot& begun,
-                                                       const frame::FrameInputs& inputs, frame::Extent size,
-                                                       const Prepared& prepared) {
+                                                       const frame::FrameInputs& inputs, const contracts::Camera& lens,
+                                                       frame::Extent size, const Prepared& prepared) {
     DenoiseFamily& d = *denoise_;
     const frame::Extent light = resources.size;
-    DenoiseResources out{resources, resources, resources};
+    DenoiseResources out{resources, resources, resources, resources, false};
     FrameResources& output = out.output;
     const auto [output_constants, output_camera] =
         write_constants(d.output_constants, begun, inputs, size, prepared.accumulated_frames);
@@ -803,6 +824,19 @@ Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& res
     denoising.full_albedo = full.albedo();
     denoising.denoise_constants = d.constants.address(begun.slot);
     denoising.denoise = &d.images;
+
+    // The depth of field's: at the output's size, the radiance image the
+    // denoise pass wrote, the slot's full-size depth, its constants from the
+    // frame's own lens (renderer.h, "The depth of field").
+    DepthOfFieldFamily& f = *depth_of_field_;
+    const contracts::DepthOfFieldConstants dof = passes::depth_of_field_constants(lens, size);
+    std::memcpy(f.constants.bytes(begun.slot).data(), &dof, sizeof(dof));
+    FrameResources& blurred = out.depth_of_field;
+    blurred = output;
+    blurred.full_depth = full.depth();
+    blurred.depth_of_field_constants = f.constants.address(begun.slot);
+    blurred.depth_of_field = &f.images;
+    out.blurs = passes::blurs(dof);
     return out;
 }
 
@@ -875,11 +909,19 @@ void Renderer::record_image(MTL4::ComputeCommandEncoder* encoder, const DenoiseR
             std::visit([&](const auto& pass) { pass.record(encoder, denoised_resources.denoising); }, step.pass);
             continue;
         }
+        if (step.kind == frame::PassKind::depth_of_field) {
+            // Nothing for a pinhole's frame (renderer.h, "The depth of field").
+            if (denoised_resources.blurs) {
+                std::visit([&](const auto& pass) { pass.record(encoder, denoised_resources.depth_of_field); },
+                           step.pass);
+            }
+            continue;
+        }
         std::visit([&](const auto& pass) { pass.record(encoder, denoised_resources.output); }, step.pass);
     }
 }
 
-void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, MTL::Texture* target,
+void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given, MTL::Texture* target,
                       frame::Extent size) {
     if (begun.commands == nullptr || begun.slot >= frames_in_flight || target == nullptr || size.width == 0 ||
         size.height == 0) {
@@ -888,11 +930,14 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
     if (begun.second != nullptr && parts() == Parts::one) {
         throw MetalError("Renderer::record: a submission of two parts for a frame graph of one (Renderer::parts)");
     }
-    check_time(inputs.time, inputs.index, "its time");
-    const Prepared prepared = take_prepared(inputs, size);
-    if (needs_scene_ && !inputs.camera) {
+    check_time(given.time, given.index, "its time");
+    const Prepared prepared = take_prepared(given, size);
+    if (needs_scene_ && !given.camera) {
         throw MetalError("Renderer::record: the frame graph reads a scene, and the frame has no camera");
     }
+    // The frame as its light is traced: through a pinhole in a graph that
+    // applies the lens after the network (renderer.h, "The depth of field").
+    const frame::FrameInputs inputs = frame::traced_inputs(schedule_, given);
     // The passes before the denoise pass render at the light size, the
     // target's own in a graph without it (renderer.h).
     const frame::Extent light = frame::light_size(schedule_, size);
@@ -910,7 +955,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
     if (!denoise_) {
         encoder->endEncoding();
     } else {
-        const DenoiseResources denoised = denoise_resources(resources, begun, inputs, size, prepared);
+        const DenoiseResources denoised = denoise_resources(resources, begun, inputs, *given.camera, size, prepared);
         // The full-size albedo, in the light half (renderer.h, "Two
         // halves"): it writes the slot's own images, which nothing before
         // it in the frame reads, so no barrier before it, as none before the

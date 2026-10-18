@@ -98,15 +98,35 @@ and the camera.
   pixels, as *Marbles at Night* traced below its output resolution and
   upscaled with DLSS. A graph without the denoiser renders at the window's
   size, or a fraction of it that the window stretches.
+- **Depth of field**, in a denoised frame, is the lens, applied after the
+  network, at the output's resolution: every step before it traces a
+  pinhole, sharp at every depth, and this step blurs each pixel by the
+  circle of confusion the scene's thin lens gives its depth, the same
+  radius and plane of focus the lens rays had, so the look is the lens's.
+  It is where production puts it (Unreal's post-process order, temporal
+  upscalers "between Depth of Field and Motion Blur"; DLSS and NRD take
+  inputs without lens effects): through a lens, every ray of a pixel
+  starts at a random point on the lens, so at a defocused edge the
+  features flip between the near marble and the table behind from pixel
+  to pixel, and the network keeps that speckle. The blur follows Jimenez's
+  *Next Generation Post Processing in Call of Duty: Advanced Warfare*
+  (SIGGRAPH 2014): scatter as gather at half the output's resolution,
+  the near and far fields kept apart so that a defocused marble in front
+  bleeds over the sharp table behind it, as a lens shows it, while the
+  blurred background never spreads over what is in focus in front of it.
+  A graph without the denoiser traces the lens itself (principle 12).
 - **Tone map** turns linear radiance into display values, and the frame is
   **presented** in the window or **written** by the headless renderer.
 
 The **reference** is the same light transport without reuse: the path
 tracer, the same bounces, time frozen, and thousands of samples
 accumulated over frames, at full resolution and with no denoiser or
-upscaler. Every other image is judged against it. The denoiser was
-trained against references of the same kind, on scenes other than the
-one it is shown on.
+upscaler, through the scene's lens, as Unreal's path tracer renders its
+depth of field in the rays and its real-time renderer after them. Every
+other image is judged against it. The denoiser was trained against
+references of the same kind, on scenes other than the one it is shown on,
+through a pinhole: the network's output is sharp at every depth, and so
+are its targets (principle 12).
 
 The **state kept between frames** is drawn beside the merges rather than as a
 step, because that is what it is: ReSTIR PT's reservoirs and surface
@@ -150,7 +170,8 @@ before ("The frame").
    light step works on one pixel alone. Reuse across pixels and time lives
    in one place, and that is where the kernel work concentrates. The image
    steps after Resolve look at neighborhoods by design: the denoiser, which
-   also reads its own last output, and the tone map's bloom. So does the
+   also reads its own last output, the depth of field's blur, and the tone
+   map's bloom. So does the
    checkerboard's fill ("The frame"), which reads the frame before's light
    and the traced pixels around the ones it fills: it reconstructs an
    image, it reuses no sample.
@@ -226,6 +247,19 @@ before ("The frame").
     class to the scene's data, per shape, as Unreal's primitives carry it;
     no scene here has one.
 
+12. **The lens is traced by the reference and applied by the denoised
+    frame after the network.** A graph that denoises traces its light,
+    its features and its full-size albedo through a pinhole, the scene's
+    camera with its lens taken off, and its depth-of-field step then
+    blurs the network's output by the circle of confusion of that same
+    lens; every other graph traces the scene's lens in its rays, the path
+    tracer, the reference, among them. So the two meet where they are
+    compared: the same lens, its radius and plane of focus, one exactly
+    in the rays and one approximately in the image, as Unreal's path
+    tracer and its real-time renderer differ. The denoiser's training
+    data is rendered through a pinhole, inputs and targets alike: its
+    scenes are written without a lens.
+
 ## The design space
 
 What varies, and which principle handles it.
@@ -238,6 +272,7 @@ What varies, and which principle handles it.
 | Material | rough, glass, polished metal | rough surfaces take light; glass and metal are passed through, by the camera's path and by caustic paths |
 | Light path | direct, bounced, through glass | direct light at a rough surface two ways, weighed by MIS; every other path one way (7) |
 | Camera | still or moving | a frame input (1) |
+| Lens | a pinhole, or a thin lens of a radius and a plane of focus | scene data; traced in the rays without the denoiser, applied after it with (12) |
 | Time step | measured, or fixed | a frame input (1) |
 | Estimator | the path tracer, the reference; ReSTIR PT with manifold next event estimation, temporal, spatial or both; the denoised pipeline | interchangeable (4) |
 | Reuse settings | M candidates, k neighbors, history length | settings of the estimator, not code |
@@ -289,7 +324,7 @@ development machine, and the target is 60 frames a second: 16.7 ms for
 every step. Rays are traced at a lower resolution and upscaled. With the
 denoiser a frame has two sizes: every step up to Resolve runs at the
 **light size**, the output's halved each way and rounded up, and the
-denoiser and the tone map at the **output size**. In the window the light
+denoiser, depth of field and the tone map at the **output size**. In the window the light
 is traced at 1728 x 1117 and the network brings it to every pixel.
 
 **A denoised frame runs in two halves, on two queues** (Milestone 4,
@@ -297,7 +332,7 @@ is traced at 1728 x 1117 and the network brings it to every pixel.
 everything that traces rays: Animate, the light, the reservoirs' merges,
 the features at the light size, and the surface's color at the output
 size, which the denoiser multiplies back. The **image half** is the rest:
-Denoise and Upscale, Tone map, at the output size. The light half is
+Denoise and Upscale, Depth of field, Tone map, at the output size. The light half is
 bound by the ray tracing hardware and leaves the arithmetic units nearly
 idle; the image half is the reverse. So frame N's
 image half runs beside frame N + 1's light half, and a frame is shown

@@ -148,6 +148,7 @@ depend on contracts, not on each other.
 | 18 | **The denoiser's network as it runs**: its constants (scale 2, 28 input channels, 124 scores, spacings 1, 2 and 4, the albedo floor, the PU transfer), the threadgroup shapes host and shaders share, and its per-frame constants (`denoise.h`) | Pass | the core's loader, the Metal denoise pass, host and shaders |
 | 19 | **Ray mask**: the classes of shape, a light or a surface, as bits, and the two masks a ray carries, everything or the occluders (the surfaces), with which purpose of ray carries which (`ray_mask.h`) | Acceleration | Integrator, Pass (the features) |
 | 20 | **Checkerboard**: which pixels a denoised frame traces, the packed slot of a traced pixel's reservoir, the traced grid, the frame before's traced pixel beside one, and the fill's constants (`checkerboard.h`) | Frame graph | Sample reuse, Pass (ReSTIR PT's and the fill) |
+| 21 | **Depth of field**: the circle of confusion's scale, focus and largest radius for a frame, the half-resolution grid and its tiles, the gather's rings (`depth_of_field.h`) | Pass | the Metal depth-of-field pass, host and shaders; the frame graph, which fills its constants from the camera's lens |
 
 Each is designed on its own, header first, before the code that uses it.
 Contract 7 was the first written: `src/core/contracts/frame_constants.h`.
@@ -174,7 +175,8 @@ denoiser's history (`metal/frame/feature_images.h`, `denoise_images.h`), and
 contract 7 growing by a second ring of constants: a denoised frame's
 passes before the denoiser run at the light size, the rest at the output's.
 Contract 19, `ray_mask.h`, came with Milestone 4's ray masks, and
-contract 20, `checkerboard.h`, with its checkerboard rendering.
+contract 20, `checkerboard.h`, with its checkerboard rendering; contract
+21, `depth_of_field.h`, with the lens applied after the denoiser.
 The camera is one contract for every camera, as Falcor's `CameraData` is,
 since a frame has one camera and cameras differ by parameters, not code.
 
@@ -252,6 +254,22 @@ one contract and one pass, and changes the families that own each part:
 Contract 20 is the one place the field and the packing are written, read
 alike by the host's dispatches and every kernel, so no two can disagree
 about which pixel a thread or a slot is.
+
+## Depth of field after the denoiser
+
+The lens applied after the network (`logical-overview.md`, principle 12;
+the axes in `change-axes.md`) adds one contract and one pass, and changes
+the families that own each part:
+
+| What | Family | File |
+|---|---|---|
+| the depth-of-field pass's kind and its place, directly after the denoise pass and before the presenting pass; a denoised graph's light traced through the pinhole of its camera (`traced_inputs`) | Frame graph | `src/core/frame/schedule.{h,cpp}` |
+| the circle of confusion a thin lens gives a depth, in pixels of an image | Camera | `src/core/camera/thin_lens.{h,cpp}` |
+| the pass's constants, grid, tiles and rings (contract 21) | Pass (contract) | `src/core/contracts/depth_of_field.h`, new |
+| the blur: presort to half resolution, tiles of the largest near radius, their dilation, the gather, the median, the composite | Pass | `src/metal/passes/depth_of_field/`, new |
+| its half-resolution images and tile buffers | Frame graph | `src/metal/frame/depth_of_field_images.{h,cpp}`, new |
+| the camera traced through a pinhole in a denoised graph; the pass recorded in the image half with the full-size depth and its constants | Frame graph | `src/metal/frame/renderer.{h,cpp}`, `src/metal/frame/frame_resources.h` |
+| the data set's scenes written without a lens | outside the build | `scripts/make_denoiser_dataset.py` |
 
 ## Not here yet
 

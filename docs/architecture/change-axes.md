@@ -144,7 +144,7 @@ axis:
 |---|---|
 | Scene description | Scene content |
 | Allocate frame state | Frame graph |
-| Denoise and Upscale, Tone map | Pass: denoising and upscaling one pass (below), the tone map its own |
+| Denoise and Upscale, Depth of field, Tone map | Pass: denoising and upscaling one pass (below), the depth of field and the tone map each their own |
 | Reservoirs | Sample reuse |
 
 The boxes that are compound:
@@ -291,6 +291,29 @@ settings. And that **the
 features stay whole** while the light is halved: they are Film's guide
 images for the denoiser, and the fill's evidence for whether a moved
 pixel is the same surface; halved, both would guess at edges.
+
+**Depth of field is three axes' business, and the lens is still one
+camera's.** Applying the lens after the denoiser
+(`logical-overview.md`, principle 12) splits in three:
+
+- **Camera** owns the lens: its radius and plane of focus, the rays
+  through it, and the circle of confusion it gives a point at a depth
+  (the thin lens's, `src/core/camera/thin_lens.h`), so the rays a graph
+  traces through the lens and the blur a graph applies for it are one
+  lens's, and a test holds them to each other.
+- **Pass**: the blur, which reads the network's output, the full-size
+  depth and that circle of confusion (contract 21), and knows nothing of
+  how its input was made.
+- **Frame graph** decides which graphs trace the lens and which apply it
+  after the network: a denoised graph's light, features and full-size
+  albedo are traced through the camera with its lens taken off, and its
+  depth of field follows the denoise pass.
+
+It looks wrong that **a graph changes the camera it is given**, since the
+camera is a frame input (principle 1). The camera is unchanged: the frame
+graph chooses where its lens is applied, in the rays or after the
+network, as it chooses at what size the light is traced; the lens's
+numbers reach both places from the one camera.
 
 **Scene content and animation are two files, not one.** Both describe how the
 fireflies move, which makes merging them tempting. But animation changes when

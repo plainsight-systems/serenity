@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Renders the denoiser's data set, denoiser-v1, into a directory outside the repo.
+"""Renders the denoiser's data set, denoiser-v2, into a directory outside the repo.
 
     python3 scripts/make_denoiser_dataset.py --out DIR            render it, or resume
     python3 scripts/make_denoiser_dataset.py --out DIR --estimate  the first input and target, timed; stop
@@ -9,7 +9,15 @@
                                          new inputs, OLD's scenes, albedo and targets
 
 What it is (docs/research/2026-10-14-denoiser-training-design.md, "The data"
-and "Splits"; what was rendered, docs/research/2026-10-14-denoiser-dataset.md):
+and "Splits"; what denoiser-v1 was, docs/research/2026-10-14-denoiser-dataset.md;
+what changed for denoiser-v2, docs/research/2026-10-18-production-sweep.md):
+
+  - Every scene through a pinhole: each scene file the data set renders is
+    written with its camera's lens taken off (pinhole_scene()), inputs and
+    targets alike, as the denoised graph traces its light through a pinhole
+    and applies the lens after the network (docs/architecture/
+    logical-overview.md, principle 12): the network learns a pinhole's
+    image, sharp at every depth.
 
   - 40 generated scenes, scripts/make_marbles.py --seed 101 .. 140, never
     the real marbles (scenes/marbles.toml, the layout of seed 7); 36 train,
@@ -101,7 +109,7 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-DATASET = 'denoiser-v1'
+DATASET = 'denoiser-v2'
 
 # The scenes and splits.
 GENERATED_SEEDS = tuple(range(101, 141))
@@ -136,6 +144,21 @@ TARGET_SAMPLES = 4096
 TARGET_FIRST = 100_000  # target of frame i: headless frame TARGET_FIRST + i
 INPUT_FEATURES = ('albedo', 'normal', 'depth', 'motion')
 RENDERER = ROOT / 'build/native-release/serenity-headless'
+
+
+# The one form a scene's lens is written in (scenes/marbles.toml, scripts/
+# make_marbles.py): a line of its own in [camera].
+LENS_LINE = re.compile(r'^lens\s*=\s*\{[^}\n]*\}[ \t]*\n', re.M)
+
+
+def pinhole_scene(text: str) -> str:
+    """`text`, a scene file, with its camera's lens taken off: its one `lens = { ... }` line removed, the rest
+    as it was. Pure. Exits on a lens written in any other form, rather than render a lens it did not remove."""
+    stripped, removed = LENS_LINE.subn('', text)
+    if removed > 1 or re.search(r'^\s*lens\s*=', stripped, re.M):
+        sys.exit('a scene\'s lens is written in a form pinhole_scene() does not know; the data set is '
+                 'rendered through a pinhole')
+    return stripped
 
 
 def frame_time(index: int) -> float:
@@ -188,6 +211,7 @@ def plan(sequences: int | None = None, kept: int = KEPT, target_samples: int = T
         'dataset': DATASET,
         'trial': (sequences, kept, target_samples) != (None, KEPT, TARGET_SAMPLES),
         'fps': FPS, 'step': STEP, 'kept': kept, 'warmup_at_least': WARMUP,
+        'camera': 'each scene\'s, its lens taken off: a pinhole (pinhole_scene)',
         'input': {'graph': INPUT_GRAPH, 'size': list(INPUT_SIZE), 'samples': 1,
                   'features': list(INPUT_FEATURES)},
         'target': {'graph': TARGET_GRAPH, 'size': list(TARGET_SIZE), 'samples': target_samples,
@@ -464,10 +488,11 @@ class Dataset:
         dst = self.out / f'scenes/{s["scene"]}.toml'
         dst.parent.mkdir(parents=True, exist_ok=True)
         if s['seed'] is not None:
-            subprocess.run([sys.executable, str(ROOT / 'scripts/make_marbles.py'), '--seed', str(s['seed']),
-                            '--out', str(dst)], check=True)
+            text = subprocess.run([sys.executable, str(ROOT / 'scripts/make_marbles.py'), '--seed', str(s['seed'])],
+                                  check=True, capture_output=True, text=True).stdout
         else:
-            shutil.copyfile(ROOT / f'scenes/{s["scene"]}.toml', dst)
+            text = (ROOT / f'scenes/{s["scene"]}.toml').read_text(encoding='utf-8')
+        dst.write_text(pinhole_scene(text), encoding='utf-8')
         self.units[unit] = {'files': {str(dst.relative_to(self.out)): sha256(dst)}, 'non_finite': {},
                             'source': s['scene_source'], 'seconds': 0}
         self.save()

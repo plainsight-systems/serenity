@@ -41,13 +41,14 @@ inline frame::Schedule path_graph() {
 }
 
 // The denoised pipeline: ReSTIR PT's passes, the features, the denoise
-// pass and the tone map, ReSTIR PT's settings the written ones
+// pass, the depth of field and the tone map, ReSTIR PT's settings the written ones
 // (support/schedules.h), its network the test fixture's
 // (tests/data/denoise/network), not the one beside the checkout.
 inline frame::Schedule fixture_denoised_graph() {
     std::vector<frame::PassKind> kinds = restir_pt_passes;
     kinds.push_back(frame::PassKind::features);
     kinds.push_back(frame::PassKind::denoise);
+    kinds.push_back(frame::PassKind::depth_of_field);
     kinds.push_back(frame::PassKind::tone_map);
     frame::Schedule s{kinds, look};
     s.restir_pt = written_restir_pt(kinds);

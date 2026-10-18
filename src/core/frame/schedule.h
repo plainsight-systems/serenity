@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "core/frame/extent.h"
+#include "core/frame/frame_inputs.h"
 #include "core/passes/denoise.h"
 #include "core/passes/restir_pt.h"
 #include "core/passes/tone_map.h"
@@ -127,12 +128,31 @@ namespace serenity::frame {
 // window's layer, upscales it. Its rules (invalid()): at most once; after
 // the features pass and after ReSTIR PT's shade (its light is ReSTIR PT's
 // accumulated image, the frame's mean, traced checkerboarded, below);
-// followed by the presenting pass alone, directly; with restir_pt_spatial,
-// a sigma the traced lattice can pair at (below); and [denoise] settings
-// exactly with it. Its output
+// followed directly by depth_of_field, then the presenting pass, the last;
+// with restir_pt_spatial, a sigma the traced lattice can pair at (below);
+// and [denoise] settings exactly with it. Its output
 // feeds the next frame, so a graph with it reuses history (reuses_history),
 // started over as ReSTIR's is: at a history's first frame and when the
 // size changes.
+//
+// Depth of field after the network (contract 21, core/contracts/
+// depth_of_field.h; logical-overview.md, principle 12) is one pass:
+//
+//   depth_of_field  the scene's lens applied to the denoise pass's output:
+//                   reads the radiance it wrote and the full-size depth,
+//                   blurs each pixel by its circle of confusion, and writes
+//                   the radiance the presenting pass shows, in place, at
+//                   the output size. No settings: the lens is the camera's
+//                   (core/passes/depth_of_field.h).
+//
+// Its rules (invalid()): at most once, directly after the denoise pass,
+// which is followed by it, and directly before the presenting pass. A
+// denoised graph traces its light, its features and its full-size albedo
+// through a pinhole, the frame's camera with its lens taken off
+// (traced_inputs(), below), as the network is trained on, and this pass
+// applies the lens after it; every other graph traces the scene's lens in
+// its rays. So a scene's lens is drawn by exactly one of the two in every
+// graph, never by both and never by neither.
 //
 // Checkerboard rendering of the light (contract 20, core/contracts/
 // checkerboard.h; Milestone 4's Step 4, docs/research/2026-10-17-milestone-
@@ -164,7 +184,8 @@ enum class PassKind {
     restir_pt_duplication,  // ReSTIR PT's duplication map, for the next frame's temporal reuse
     features,               // the denoiser's albedo, normal, depth and motion (contract 17); needs a scene
     denoise,                // the trained network: light and features in, radiance at twice the size out
-    last = denoise,
+    depth_of_field,         // the scene's lens, applied after the network from depth (contract 21)
+    last = depth_of_field,
 };
 
 // Whether a pass of `kind` reads the scene. A frame graph with such a pass
@@ -224,6 +245,19 @@ bool denoises(const Schedule& schedule);
 // output's own in every other graph.
 Extent light_size(const Schedule& schedule, Extent output);
 
+// Whether `schedule` applies the camera's lens after the network, by the
+// depth_of_field pass, rather than in its rays (above): a denoised graph.
+bool lens_after_network(const Schedule& schedule);
+
+// The frame `inputs` as `schedule`'s passes before the depth of field trace
+// it (above): in a graph that applies the lens after the network, the
+// frame's camera and the frame before's with their lens taken off (a
+// radius of 0, a pinhole, the rest of each camera as it was); `inputs`
+// itself in every other. Pure (F.8): the renderer traces through this and
+// reads the lens for the depth of field from `inputs`' own camera
+// (metal/frame/renderer.h).
+FrameInputs traced_inputs(const Schedule& schedule, const FrameInputs& inputs);
+
 // Whether `schedule` has a pass that writes the target: every graph but
 // the features pass alone (above), which a window refuses.
 bool presents(const Schedule& schedule);
@@ -254,7 +288,8 @@ bool writes_features(const Schedule& schedule);
 //     passes read in its range and each they do not read its zero
 //     (core/contracts/path_reuse_settings.h);
 //   - the denoise pass's rules (above), its light ReSTIR PT's at a sigma
-//     the traced lattice can pair at, and its settings exactly with it.
+//     the traced lattice can pair at, and its settings exactly with it;
+//   - the depth of field's rules (above).
 //
 // None if `schedule` is valid; otherwise why not, in words a reader of the
 // frame graph file can act on. The graph reader refuses an invalid schedule

@@ -1,7 +1,7 @@
 """scripts/make_denoiser_dataset.py's plan, run as its user runs it (--print-plan).
 
 Contract: the plan is the same on every run, pinned by its SHA-256, so the
-data set on disk (denoiser-v1) is the one the script describes; a changed
+data set on disk (denoiser-v2, once rendered) is the one the script describes; a changed
 plan fails here and is another data set, named anew. The splits: 36
 generated scenes train and 4 validate, the brass sphere scenes train, the
 real marbles are the test and nothing else, and no generated scene is the
@@ -9,7 +9,9 @@ real marbles' seed, 7. Each sequence has at least 30 frames of history
 before its first kept frame, several start in the opening and several in
 the flood, and no target's sample indices meet an input's. A data set made
 --targets-from another takes its scenes, albedo and targets and never its
-inputs, and refuses one made by another plan. Rendering is the
+inputs, and refuses one made by another plan. Every scene is written
+through a pinhole: its lens line, and only it, taken off; a lens in a form
+the script does not know is refused. Rendering is the
 renderer's to show (docs/research/2026-10-14-denoiser-dataset.md).
 """
 
@@ -24,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts/make_denoiser_dataset.py'
 sys.path.insert(0, str(SCRIPT.parent))
 import make_denoiser_dataset  # noqa: E402
-PLAN_SHA256 = '604d537e1b06a7a67f117d4fc9dc2527af1f31400840073e0ad3b04b16f12d6f'
+PLAN_SHA256 = '5bd97f5e73ab96ecb920cd3911e88a7271d173ff3b8b08a053fcd845a9be43d7'
 
 
 def printed_plan():
@@ -90,6 +92,22 @@ class MakeDenoiserDatasetTests(unittest.TestCase):
         old = {'plan': make_denoiser_dataset.plan(sequences=1), 'units': {}}
         with self.assertRaises(SystemExit):
             make_denoiser_dataset.reusable_units(old, self.plan)
+
+    def test_every_scene_is_written_through_a_pinhole(self):
+        for text in ((ROOT / 'scenes/marbles.toml').read_text(encoding='utf-8'),
+                     subprocess.run([sys.executable, str(ROOT / 'scripts/make_marbles.py'), '--seed', '101'],
+                                    check=True, capture_output=True, text=True).stdout):
+            pinhole = make_denoiser_dataset.pinhole_scene(text)
+            camera = lambda scene: scene.split('[camera]', 1)[1].split('\n[', 1)[0]
+            self.assertIn('lens', camera(text))
+            self.assertNotIn('lens', camera(pinhole))
+            # Nothing else changed: the lens's one line is the difference.
+            lines = text.splitlines()
+            self.assertEqual([line for line in lines if not line.startswith('lens')], pinhole.splitlines())
+        scene = '[camera]\nvertical_fov_degrees = 30\n'
+        self.assertEqual(make_denoiser_dataset.pinhole_scene(scene), scene)
+        with self.assertRaises(SystemExit):
+            make_denoiser_dataset.pinhole_scene('[camera]\nlens = {\n radius = 0.1 }\n')
 
 
 if __name__ == '__main__':

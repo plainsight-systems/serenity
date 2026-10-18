@@ -112,6 +112,7 @@ TEST_CASE("a denoised graph, its light traced checkerboarded, refuses a sigma th
         if (denoised) {
             kinds.push_back(PassKind::features);
             kinds.push_back(PassKind::denoise);
+            kinds.push_back(PassKind::depth_of_field);
         }
         kinds.push_back(PassKind::tone_map);
         Schedule s{kinds, serenity::tests::look};

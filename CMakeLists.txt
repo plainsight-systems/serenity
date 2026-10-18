@@ -147,6 +147,7 @@ add_library(serenity_core STATIC
     src/core/output/image_format.cpp
     src/core/output/pfm.cpp
     src/core/output/png.cpp
+    src/core/passes/depth_of_field.cpp
     src/core/scene/packed_range.cpp
     src/core/scene/scene.cpp
     src/core/scene/swarm.cpp
@@ -180,6 +181,7 @@ add_library(serenity_metal STATIC
     src/metal/film/failure_count.cpp
     src/metal/frame/accumulation.cpp
     src/metal/frame/checkerboard_images.cpp
+    src/metal/frame/depth_of_field_images.cpp
     src/metal/frame/denoise_images.cpp
     src/metal/frame/feature_images.cpp
     src/metal/frame/frame_images.cpp
@@ -187,6 +189,7 @@ add_library(serenity_metal STATIC
     src/metal/frame/renderer.cpp
     src/metal/passes/checkerboard_fill/checkerboard_fill.cpp
     src/metal/passes/denoise/denoise.cpp
+    src/metal/passes/depth_of_field/depth_of_field.cpp
     src/metal/passes/restir_pt/shift_replay.cpp
     src/metal/passes/features/features.cpp
     src/metal/passes/mnee/mnee.cpp
@@ -215,6 +218,7 @@ serenity_add_metallib(
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/features/features.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/denoise/denoise.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/checkerboard_fill/checkerboard_fill.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/depth_of_field/depth_of_field.metal"
     INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 # ---------------------------------------------------------------------------

@@ -33,11 +33,13 @@
 #include "metal/frame/accumulation.h"
 #include "metal/frame/checkerboard_images.h"
 #include "metal/frame/denoise_images.h"
+#include "metal/frame/depth_of_field_images.h"
 #include "metal/frame/feature_images.h"
 #include "metal/frame/frame_images.h"
 #include "metal/frame/mnee_list.h"
 #include "metal/passes/checkerboard_fill/checkerboard_fill.h"
 #include "metal/passes/denoise/denoise.h"
+#include "metal/passes/depth_of_field/depth_of_field.h"
 #include "metal/passes/features/features.h"
 #include "metal/passes/path/path.h"
 #include "metal/passes/restir_pt_duplication/restir_pt_duplication.h"
@@ -352,6 +354,27 @@ namespace serenity::metal {
 // 1728 x 1117; the packed arrays use the first half of the full-size ones.
 // Its argument table is a denoised graph's.
 //
+// The depth of field (core/frame/schedule.h, depth_of_field; passes/
+// depth_of_field/depth_of_field.h; logical-overview.md, principle 12), a
+// denoised graph's. Such a graph traces through a pinhole: record() takes
+// the frame's inputs as frame::traced_inputs() gives them, the camera and
+// the frame before's with their lens taken off, for everything it frames
+// and binds, the light half's rings, the full-size albedo's, the temporal
+// reuse's previous camera and the features' (so prepare() checks the
+// cameras the frame was given, which a lens's removal leaves valid); and
+// the depth of field's constants alone from the frame's own camera, its
+// lens on, at the output's size (core/passes/depth_of_field.h), into a
+// ring of its own, 48 bytes a frame. At construction it gets its pass and
+// DepthOfFieldImages (depth_of_field_images.h), made by prepare() at the
+// output's size. The pass is recorded in the image half after the denoise
+// pass, reading and writing the radiance image in place, with the slot's
+// full-size depth (the full-size albedo's features, traced through the
+// same pinhole); the barrier before it is the one recorded before every
+// pass that reads the radiance (below, record_image()), and the tone
+// map's after it the same. A pinhole's frame (passes::blurs) records
+// nothing for it, and the image is the network's. Memory: 77 MB at
+// 3456 x 2234 (its images'). Its argument table is a denoised graph's.
+//
 // Cost of recording a ReSTIR PT frame, on the CPU, beyond the above: 80
 // bytes of reuse constants, its passes' pipeline binds and dispatches with
 // their argument-table entries; with temporal reuse, one more animation of
@@ -443,7 +466,7 @@ public:
 private:
     using Pass = std::variant<TestPatternPass, PathPass, ToneMapPass, RestirPtInitialPass, RestirPtTemporalPass,
                               RestirPtSpatialPass, RestirPtShadePass, RestirPtDuplicationPass, FeaturesPass,
-                              DenoisePass>;
+                              DenoisePass, DepthOfFieldPass>;
 
     // A pass of the schedule, with its kind (C.1).
     struct Step {
@@ -526,12 +549,22 @@ private:
         FrameArray constants;
         CheckerboardImages images;
     };
+    // The depth of field's (above): its images and its constants' ring.
+    struct DepthOfFieldFamily {
+        DepthOfFieldFamily(const Device& device, Submission& submission);
+
+        DepthOfFieldImages images;
+        FrameArray constants;
+    };
     // A denoised graph's resources from the denoise pass on (renderer.cpp,
-    // denoise_resources()); every pass's own without the pass.
+    // denoise_resources()); every pass's own without the pass; and whether
+    // the depth of field blurs this frame (passes::blurs).
     struct DenoiseResources {
         FrameResources output;
         FrameResources denoising;
         FrameResources full_features;
+        FrameResources depth_of_field;
+        bool blurs = false;
     };
 
     // The constructor's parts (F.3), in its order.
@@ -557,9 +590,11 @@ private:
                                    frame::Extent light, const Prepared& prepared, bool previous);
     void animate(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun, const frame::FrameInputs& inputs,
                  bool previous);
+    // `traced` the frame's inputs as its light is traced, `lens` the
+    // frame's own camera, its lens on (above, "The depth of field").
     DenoiseResources denoise_resources(const FrameResources& resources, const FrameSlot& begun,
-                                       const frame::FrameInputs& inputs, frame::Extent size,
-                                       const Prepared& prepared);
+                                       const frame::FrameInputs& traced, const contracts::Camera& lens,
+                                       frame::Extent size, const Prepared& prepared);
     // The light half (every step before the denoise pass; all of them in a
     // graph without it), then the full-size albedo and the checkerboard's
     // fill, which writes the hand-off;
@@ -589,6 +624,7 @@ private:
     std::optional<FeatureFamily> features_;
     std::optional<DenoiseFamily> denoise_;
     std::optional<CheckerboardFamily> checkerboard_;
+    std::optional<DepthOfFieldFamily> depth_of_field_;
     // A temporal graph's last frame (above): its transforms and glows,
     // animated at its time each frame, only when the scene changes (a still
     // scene's one copy is last frame's too); and the camera and time the
