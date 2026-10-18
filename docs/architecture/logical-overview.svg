@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="760" height="792" viewBox="0 0 760 792" role="img">
 <title>Serenity's logical flow: startup once, then every frame, with the light at each rough surface expanded</title>
-<desc>At startup the scene description is built into geometry and acceleration structures, and the frame state is allocated. Every frame takes time, frame index and camera as inputs, then runs Animate, Primary visibility, Light, Resolve, Denoise and Upscale (one trained network, from the light at half the output's size each way), Tone map, and Present or write. Light at each rough surface has three parts: direct light, by naive sampling (also the reference, with time frozen and thousands of samples) or ReSTIR DI as RTXDI ships it (candidates, temporal merge, spatial merge, shade); indirect light, by path-traced bounces, which ReSTIR PT reuses as whole paths with their direct light; and caustics through glass, by manifold next event estimation. The merges read and write the reservoirs and read the surface records, the two kinds of state kept between frames.</desc>
+<desc>At startup the scene description is built into geometry and acceleration structures, and the frame state is allocated. Every frame takes time, frame index and camera as inputs, then runs Animate, Primary visibility, Light, Resolve, Denoise and Upscale (one trained network, from the light at half the output's size each way), Tone map, and Present or write. Light at each rough surface has three parts: direct light, by the path tracer's sampling (also the reference, with time frozen and thousands of samples) or by ReSTIR PT (the path tree, temporal reuse, spatial reuse, shade), which takes it at every path vertex; indirect light, by path-traced bounces, which ReSTIR PT reuses as whole paths with their direct light; and caustics through glass, by manifold next event estimation, which ReSTIR PT always runs. The reuses read and write the path reservoirs and read the primary hits, the two kinds of state kept between frames.</desc>
 <style>
   .bg { fill: #FFFFFF; }
   .th { font: 500 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: #2C2C2A; }
@@ -98,27 +98,27 @@
 <text class="th" x="340" y="270">Light: the estimator a graph chooses</text>
 
 <g class="teal"><rect x="340" y="282" width="368" height="46" rx="6"/>
-  <text class="th" x="524" y="301" text-anchor="middle">Naive</text>
+  <text class="th" x="524" y="301" text-anchor="middle">Path tracer</text>
   <text class="ts" x="524" y="318" text-anchor="middle">per sample: a light, a point on it, a shadow ray</text></g>
 <text class="ts" x="340" y="346">Also the reference: t frozen, thousands of samples</text>
 
-<text class="th" x="340" y="374">or ReSTIR DI, as RTXDI ships it</text>
+<text class="th" x="340" y="374">or ReSTIR PT, as Enhanced ships it</text>
 
 <g class="teal"><rect x="340" y="384" width="200" height="42" rx="6"/>
-  <text class="th" x="440" y="401" text-anchor="middle">Candidates</text>
-  <text class="ts" x="440" y="417" text-anchor="middle">M candidate lights, weighted</text></g>
+  <text class="th" x="440" y="401" text-anchor="middle">Path tree</text>
+  <text class="ts" x="440" y="417" text-anchor="middle">NEE at every vertex, resampled</text></g>
 <line class="arr" x1="440" y1="426" x2="440" y2="438" marker-end="url(#a)"/>
 <g class="teal"><rect x="340" y="440" width="200" height="42" rx="6"/>
-  <text class="th" x="440" y="457" text-anchor="middle">Temporal merge</text>
-  <text class="ts" x="440" y="473" text-anchor="middle">last frame's, reprojected</text></g>
+  <text class="th" x="440" y="457" text-anchor="middle">Temporal reuse</text>
+  <text class="ts" x="440" y="473" text-anchor="middle">last frame's path, shifted here</text></g>
 <line class="arr" x1="440" y1="482" x2="440" y2="494" marker-end="url(#a)"/>
 <g class="teal"><rect x="340" y="496" width="200" height="42" rx="6"/>
-  <text class="th" x="440" y="513" text-anchor="middle">Spatial merge</text>
-  <text class="ts" x="440" y="529" text-anchor="middle">k neighbors' reservoirs</text></g>
+  <text class="th" x="440" y="513" text-anchor="middle">Spatial reuse</text>
+  <text class="ts" x="440" y="529" text-anchor="middle">paired neighbors' paths</text></g>
 <line class="arr" x1="440" y1="538" x2="440" y2="550" marker-end="url(#a)"/>
 <g class="teal"><rect x="340" y="552" width="200" height="42" rx="6"/>
   <text class="th" x="440" y="569" text-anchor="middle">Shade</text>
-  <text class="ts" x="440" y="585" text-anchor="middle">one shadow ray, then shade</text></g>
+  <text class="ts" x="440" y="585" text-anchor="middle">the light buffer folded in</text></g>
 
 <g class="teal"><rect x="340" y="610" width="368" height="46" rx="6"/>
   <text class="th" x="524" y="629" text-anchor="middle">Indirect</text>

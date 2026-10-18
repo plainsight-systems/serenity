@@ -84,8 +84,9 @@ uv run --locked python render_warmup.py --data ../../serenity-data/denoiser-v1 \
 
 A config holds a run's settings; paths in it are relative to it.
 `config-wide.json` is the demo's network (543k parameters, max_lr 5e-3);
-docs/research/2026-10-15-denoiser-training.md has its run (5.7 h on the
-M3 Max), and the smaller network trained beside it, since removed.
+docs/research/2026-10-15-denoiser-training.md has its run (8.3 h on the
+M3 Max, sharing the GPU with the other runs), and the smaller network
+trained beside it, since removed.
 
 ```sh
 # OIDN's learning-rate finder: an exponential sweep, its curve in find_lr.csv

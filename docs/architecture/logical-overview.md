@@ -45,21 +45,16 @@ and the camera.
   is light seen directly, kept for Resolve.
 - **Light** estimates what arrives at that rough surface, in three parts.
   The estimator is chosen by the frame graph:
-  - **Direct** light from every firefly, by one of two estimators:
-    - **Naive**: for each sample, pick a light, pick a point on it, trace a
-      shadow ray; weigh what it finds against the bounced ray, which counts
-      a firefly it strikes with the complementary weight (principle 7).
-    - **ReSTIR DI** (Bitterli et al. 2020), configured as NVIDIA's RTXDI
-      ships it: weigh M candidate lights by the light each would deliver,
-      ignoring shadows, and keep one in a reservoir; trace one shadow ray
-      to it, and keep it only if it is visible (visibility reuse); merge in
-      the reservoir this surface held last frame, then the reservoirs of k
-      neighbors; and shade with the light that survives, tracing its
-      shadow ray unless a recent test of it can be reused. By default the
-      merges trace no rays and are biased dark at shadow edges, as
-      production's are, most for a frame after a light is revealed;
-      an unbiased mode, whose merges trace them, checks ReSTIR against the
-      reference (`src/core/contracts/reuse_settings.h`).
+  - **Direct** light from every firefly. The path tracer, for each sample,
+    picks a light, picks a point on it and traces a shadow ray; it weighs
+    what it finds against the bounced ray, which counts a firefly it
+    strikes with the complementary weight (principle 7). ReSTIR PT takes
+    it at every vertex of its paths, by resampling candidate lights from
+    the frame's light tiles, and reuses it with the indirect light, as one
+    path (below). ReSTIR DI (Bitterli et al. 2020, as RTXDI ships it),
+    which reused the direct light alone, lost to the path tracer at equal
+    time on the marbles and was removed 2026-10-17, superseded by ReSTIR
+    PT.
   - **Indirect** light: the path bounces on from the rough surface, through
     glass, off metal and off other rough surfaces, taking direct light at
     each rough surface it reaches. **ReSTIR PT** (Lin, Kettunen and
@@ -68,8 +63,8 @@ and the camera.
     frames: one path reservoir a pixel, shifted to a neighbor's or last
     frame's surface by reconnecting where the surfaces are rough enough
     and replaying where they are not, so its reuse reaches through glass
-    and off mirrors, where most of the marbles' light arrives and ReSTIR
-    DI cannot reach (`docs/research/2026-10-11-restir-pt-layout.md`). It
+    and off mirrors, where most of the marbles' light arrives
+    (`docs/research/2026-10-11-restir-pt-layout.md`). It
     took the place planned for ReSTIR GI (Ouyang et al. 2021), and it is
     the renderer's estimator since Milestone 2.
   - **Caustics**: firefly light focused onto a rough surface through glass.
@@ -77,15 +72,15 @@ and the camera.
     manifold next event estimation (Hanika, Droske and Fascione 2015, as
     Blender Cycles builds it), which solves for the path through the glass
     directly: refraction through up to four glass surfaces, solved from a
-    work list by a pass of its own. It is a setting of the frame graph: on
-    with ReSTIR PT, where it is solved per pixel and not reused; off in the
-    reference, and opt-in on the path tracer, where at equal time more
-    ordinary samples did better (`docs/research/2026-10-12-mnee.md`).
+    work list by a pass of its own. ReSTIR PT always runs it, solved per
+    pixel and not reused; the path tracer never does: it is the reference,
+    and on it, at equal time, more ordinary samples did better
+    (`docs/research/2026-10-12-mnee.md`).
     Caustics reflected off metal, under 1% of the error where they fall,
     are left to the bounced rays.
 - **Resolve** adds the fireflies seen directly to the light, giving the
   pixel's radiance.
-- **Denoise** removes the noise that remains, with a small network trained
+- **Denoise** removes the noise that remains, with a network trained
   for this renderer (Milestone 3,
   `docs/research/2026-10-14-denoiser-training-design.md`). It reads the
   light divided by the surface's color, so it filters lighting and not
@@ -106,21 +101,22 @@ and the camera.
 - **Tone map** turns linear radiance into display values, and the frame is
   **presented** in the window or **written** by the headless renderer.
 
-The **reference** is the same light transport without reuse: the naive
-direct estimator, the same bounces, time frozen, and thousands of samples
+The **reference** is the same light transport without reuse: the path
+tracer, the same bounces, time frozen, and thousands of samples
 accumulated over frames, at full resolution and with no denoiser or
 upscaler. Every other image is judged against it. The denoiser was
 trained against references of the same kind, on scenes other than the
 one it is shown on.
 
 The **state kept between frames** is drawn beside the merges rather than as a
-step, because that is what it is: the reservoirs and the surface records of
-this frame and the last (for ReSTIR PT, a path reservoir and the primary
-hit a pixel, and a map of how many neighbors hold the same path, which
-caps how much history the next frame keeps). The merges are the only
-light steps that read them across pixels or across frames. The denoiser
-keeps one thing of its own: its last output, which the next frame blends
-in.
+step, because that is what it is: ReSTIR PT's reservoirs and surface
+records of this frame and the last (a path reservoir and a primary hit a
+pixel), and a map of how many neighbors hold the same path, which caps
+how much history the next frame keeps. The merges are the only light
+steps that read them across pixels or across frames. The denoiser keeps
+one thing of its own: its last output, which the next frame blends in;
+and the checkerboard's fill reads the light it handed off the frame
+before ("The frame").
 
 ## Principles
 
@@ -134,25 +130,20 @@ in.
    generator state, so any frame can be rendered again exactly, alone.
 
 3. **The reference shares the scene and the light transport, never the
-   reuse.** ReSTIR DI has an unbiased mode: averaged over enough frames it
-   converges to the same image as the reference, to within what its stored
-   samples' quantization leaves. Its default is production's
-   configuration, whose bias at shadow edges is stated and measured
-   against the same reference (decided 2026-10-10,
-   `docs/research/2026-10-10-restir-di-layout.md`). ReSTIR PT runs
-   Enhanced's defaults, whose merges are weighted by pairwise and Talbot
-   MIS; its means are checked region by region against the same reference
-   (`docs/research/2026-10-11-restir-pt-phase1.md`,
-   `docs/research/2026-10-11-restir-pt-phase2.md`), and
-   manifold next event estimation's bias, dark over a glass sphere's
-   shadow, is measured there too (`docs/research/2026-10-12-mnee.md`).
-   Because the reference does none of their resampling, a bug in it cannot
-   pass by matching itself.
+   reuse.** ReSTIR PT runs Enhanced's defaults, whose merges are weighted
+   by pairwise and Talbot MIS; its means are checked region by region
+   against the reference (`docs/research/2026-10-11-restir-pt-phase1.md`,
+   `docs/research/2026-10-11-restir-pt-phase2.md`), and manifold next
+   event estimation's bias, dark over a glass sphere's shadow, is measured
+   there too (`docs/research/2026-10-12-mnee.md`). Because the reference
+   does none of its resampling, a bug in it cannot pass by matching
+   itself.
 
-4. **Estimators are interchangeable.** Naive and ReSTIR, DI or PT, and
-   ReSTIR with temporal reuse, spatial reuse or both, take the same scene
-   and produce the same radiance. Any two can be run on the same frame and
-   compared side by side.
+4. **Estimators are interchangeable.** The path tracer (the reference),
+   ReSTIR PT with manifold next event estimation (with temporal reuse,
+   spatial reuse or both), and the denoised pipeline (ReSTIR PT's light,
+   denoised and upscaled) take the same scene and estimate the same image.
+   Any two can be run on the same frame and compared side by side.
 
 5. **Of the light's steps, only the merges look beyond their own pixel and
    frame,** and what they see is reservoirs and surface records. Every other
@@ -164,13 +155,12 @@ in.
    and the traced pixels around the ones it fills: it reconstructs an
    image, it reuses no sample.
 
-6. **A reservoir holds a light sample by identity, not by position.** It
-   keeps which firefly and which point on it, in the firefly's own
-   coordinates, and the sample is evaluated again wherever it is reused. The
+6. **A reservoir holds a path by identity, not by position.** ReSTIR PT's
+   path reservoir keeps the random numbers that drew its path, and its
+   reconnection vertex as a shape and a point in that shape's own
+   coordinates, and the path is evaluated again wherever it is reused. The
    fireflies move between frames, so a position kept from last frame is
-   wrong in this one. ReSTIR PT's path reservoir keeps a path the same way:
-   the random numbers that drew it, and its reconnection vertex as a shape
-   and a point in that shape's own coordinates.
+   wrong in this one.
 
 7. **Direct light at a rough surface is found two ways and weighed; every
    other light path is counted one way.** In the path tracer, a firefly's
@@ -187,17 +177,14 @@ in.
    (`docs/research/2026-10-11-restir-ris-results.md`); the BSDF's density
    matches such a lobe. A firefly struck by the camera's own path, or after
    a delta lobe, is counted in full, since no shadow ray could have reached
-   it that way. Without manifold next event estimation, as in the
-   reference, the path tracer counts the light glass and metal focus onto
-   a rough surface the one way it can: a bounced ray that reaches a firefly
+   it that way. The path tracer, the reference, runs no manifold next
+   event estimation, so it counts the light glass and metal focus onto a
+   rough surface the one way it can: a bounced ray that reaches a firefly
    through a delta lobe, which a shadow ray, blocked by the glass, cannot.
-   Where a graph sets manifold next event estimation, it takes over the
-   paths through glass from a diffuse surface, and the bounced ray stops
-   counting those. The sky is not aimed at, and is counted one way, by the
-   rays that escape to it. The exception is ReSTIR DI's first rough surface:
-   its direct light there is the reservoir's estimate alone, so the bounce
-   from it counts no firefly it strikes off a lobe that is not delta; from
-   the next surface on, its path is the path tracer's. Amended 2026-10-11 by
+   In ReSTIR PT, which always runs manifold next event estimation, it takes
+   over the paths through glass from a diffuse surface, and the bounced ray
+   stops counting those. The sky is not aimed at, and is counted one way,
+   by the rays that escape to it. Amended 2026-10-11 by
    the user's direction, superseding "every light path is counted once, no
    path found two ways" (`docs/process/MEMORY.md`).
 
@@ -209,9 +196,7 @@ in.
    a fixed number of candidates per pixel whether there are a hundred
    fireflies or ten thousand. What grows with the count is Animate and
    whatever is built over the lights each frame, and nothing built over them
-   outlives the frame, because they move. This binds the estimators. The
-   deterministic preview, a diagnostic for scenes of a few lights, sums over
-   every light so that it has no selection noise, and says so.
+   outlives the frame, because they move. This binds the estimators.
 
 10. **The core decides what is computed; a backend decides how.** Both
     backends render the same scene from the same description, and each is
@@ -254,34 +239,29 @@ What varies, and which principle handles it.
 | Light path | direct, bounced, through glass | direct light at a rough surface two ways, weighed by MIS; every other path one way (7) |
 | Camera | still or moving | a frame input (1) |
 | Time step | measured, or fixed | a frame input (1) |
-| Estimator | naive; ReSTIR DI or ReSTIR PT, temporal, spatial, both; manifold next event estimation on or off | interchangeable (4) |
+| Estimator | the path tracer, the reference; ReSTIR PT with manifold next event estimation, temporal, spatial or both; the denoised pipeline | interchangeable (4) |
 | Reuse settings | M candidates, k neighbors, history length | settings of the estimator, not code |
 | Samples per pixel | one a frame, or thousands for the reference | a setting; the reference is the light transport without reuse (3) |
-| Pixels traced a frame | every one, or half in an alternating checkerboard | a setting of a denoised ReSTIR PT graph; the other half the frame before's light, moved ("The frame") |
+| Pixels traced a frame | every one, or half in an alternating checkerboard | half in a denoised graph, the other half the frame before's light, moved ("The frame"); every one in a graph without the denoiser |
 | Resolution | traced, and output | with the denoiser, traced at half the output each way and upscaled by it; without, traced at the window's size or a fraction the window stretches; anything, headless |
-| Denoiser | none, or our own network, wide or small | a stage after Resolve, its weights data; judged against the reference, and against Open Image Denoise offline |
+| Denoiser | none, or our own network | a stage after Resolve, its weights data; judged against the reference, and against Open Image Denoise offline |
 | Backend | Metal, Vulkan | the core is shared (10) |
 
 Two consequences are worth stating outright:
 
 - **The light count reaches only Animate and the light sampling.** Primary
   visibility, the merges and shading each touch one light per pixel, or a
-  fixed number. That is the claim the naive and ReSTIR images make side by
-  side: as fireflies are added, the naive image gets noisier and ReSTIR's
-  does not.
+  fixed number. That is the claim the path tracer's and ReSTIR PT's images
+  make side by side: as fireflies are added, the path tracer's image gets
+  noisier and ReSTIR PT's does not.
 - **Unbiasedness costs rays.** Merging a reservoir from another frame or
   another pixel is unbiased only if the merge accounts for whether that
-  reservoir's sample could have been chosen here, and finding out takes a
-  shadow ray. Production does without them and accepts a small darkening at
-  shadow edges; so does Serenity's default. Rays a ReSTIR pixel traces at
-  its first rough surface, against the naive estimator's one per sample:
-  - **basic** (the default, RTXDI's): one for visibility reuse, and one to
-    shade the survivor unless a test of it from within a few frames and
-    pixels is reused: one or two;
-  - **raytraced** (unbiased, for checking against the reference): one for
-    visibility reuse, about one for the temporal merge and k for the
-    spatial merge, and none to shade, since each step keeps a light the
-    surface can see by those same rays: k + 2.
+  reservoir's path could have been found here, and finding out takes
+  rays. Production's direct-light reuse (RTXDI's default) does without
+  them and accepts a small darkening at shadow edges. ReSTIR PT's merges
+  trace them: each shift of a path to another pixel traces its
+  reconnection's visibility or replays the path through glass and
+  mirrors, and that tracing is most of what the reuse costs.
 
 ## Reservoirs are state keyed on surfaces
 
@@ -341,13 +321,14 @@ about as often as the slower half takes, not their sum.
 A graph without the denoiser has one half and runs on one queue, as
 before.
 
-**Checkerboard rendering of the light** (Milestone 4's Step 4, a setting
-of the frame graph, `docs/research/2026-10-17-milestone-4-plan.md`). Each
-frame traces the light at half the light size's pixels, a checkerboard
-whose two fields alternate frame by frame, so every pixel is traced every
-other frame; the other half of the image is the frame before's light,
-moved by the motion vectors, as console checkerboard rendering
-reconstructs the pixels it did not shade. It is RTXDI's checkerboard mode
+**Checkerboard rendering of the light** (Milestone 4's Step 4,
+`docs/research/2026-10-17-milestone-4-plan.md`) is how a denoised frame
+traces its light, not a setting; a graph without the denoiser traces
+every pixel. Each frame traces the light at half the light size's
+pixels, a checkerboard whose two fields alternate frame by frame, so
+every pixel is traced every other frame; the other half of the image is
+the frame before's light, moved by the motion vectors, as console
+checkerboard rendering reconstructs the pixels it did not shade. It is RTXDI's checkerboard mode
 for ReSTIR PT:
 
 - **What runs on the half**: ReSTIR PT's initial sampling (and with it the
@@ -362,8 +343,8 @@ for ReSTIR PT:
   guide images, traced at every pixel every frame, as RTXDI's G-buffer and
   a console's depth and ID buffers are: they are what tells a moved pixel
   from a revealed one, and what the network edges on.
-- **The fill**: at the end of the light half, where the hand-off copied
-  the light's radiance, each pixel not traced this frame takes the light
+- **The fill**: at the end of the light half, writing the hand-off of the
+  light's radiance, each pixel not traced this frame takes the light
   the frame before traced where its surface was, found by its motion and
   kept only where the depth seen there is the depth the motion predicts;
   where none is (a surface just revealed, a history's first frame), the
@@ -372,13 +353,14 @@ for ReSTIR PT:
   image, so a still scene's mean is each pixel's own traced frames.
 
 It changes what the denoiser sees, which was trained on light traced at
-every pixel: a half of each frame a frame old. Whether that is kept is the
-user's call, from the denoised frames before and after; off, every graph
-renders what it did.
+every pixel: a half of each frame a frame old. The user kept it
+(2026-10-17), from the denoised frames before and after; whether the
+network is retrained on checkerboarded light is the user's call, and it
+has not been.
 
-The target is not met yet. The denoised frame takes 78 ms in the window
-with the wide network (68 with the small one), and 24 ms at 1920 x 1080
-(`docs/research/2026-10-15-denoiser-live.md`); ReSTIR PT alone at the
+The target is not met yet. The denoised frame takes 56 ms at the
+window's size and 16.7 ms at 1920 x 1080 (Milestone 4's Step 4,
+`docs/research/2026-10-17-milestone-4-plan.md`); ReSTIR PT alone at the
 window's full size takes about 150. Making the frame fit the budget is
 later work. The headless renderer is not held to the budget: footage is
 written at any resolution and any number of samples.
@@ -407,8 +389,8 @@ manager runs a quarter of the threads it could, and the ray tracing unit,
 active 88% of the time, waits on too few threads to hide its latency
 (`docs/research/2026-10-10-path-kernel-counters.md`). So every kernel after
 it traces with little alive: one ray query at a time, and what a later step
-needs passed between kernels rather than held across the query. ReSTIR DI's
-and ReSTIR PT's passes are built this way from the start. The naive path
+needs passed between kernels rather than held across the query. ReSTIR
+PT's passes are built this way from the start. The naive path
 tracer stays one kernel: it is the baseline for time as well as for noise,
 and its counters are what the later kernels are measured against. On the
 Strix Halo this is measured again, not assumed.

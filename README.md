@@ -23,8 +23,8 @@ much each nearby noisy pixel should count, and the pixel becomes their
 weighted average. That removes most of the noise ReSTIR leaves and doubles
 the resolution each way. I tested it once on the marbles, which it never saw
 in training. Measured after tone mapping against 4,096-sample path-traced
-frames, the wider of the two networks leaves 0.29 to 0.39 of the raw input’s
-error, 18 to 38% less than Intel’s Open Image Denoise run on each frame. On
+frames, the network leaves 0.29 to 0.39 of the raw input’s error, 18 to
+38% less than Intel’s Open Image Denoise run on each frame. On
 my M3 Max a denoised 1920 × 1080 frame takes 23.5 ms (about 43 frames a
 second) and the window’s 3456 × 2234 takes 77 ms (about 13 frames a
 second), so 60 frames a second at full resolution is still ahead. Once
@@ -80,11 +80,12 @@ across neighbors and across time. Those are the same problems I work on in
 inference, met from the other side. Serenity is where I get to work on them
 with a picture at the end.
 
-So far the renderer has the MIS path tracer as its baseline, ReSTIR DI,
-ReSTIR PT with spatial and temporal reuse, MNEE for caustics, and a denoiser
-of its own. Reusing direct light alone didn’t pay off in this scene at equal
-time, because most of what the camera sees arrives through glass or off
-metal, so the work moved to reusing whole paths.
+So far the renderer has the MIS path tracer as its baseline, ReSTIR PT with
+spatial and temporal reuse, MNEE for caustics, and a denoiser of its own.
+Milestone 2 started with ReSTIR DI, which reuses direct light alone. It
+didn’t pay off in this scene at equal time, because most of what the camera
+sees arrives through glass or off metal, so the work moved to reusing whole
+paths, and ReSTIR DI has since been removed.
 
 The denoiser is where the connection to attention is closest. For each
 output pixel the network produces a score for every noisy pixel around it,
@@ -134,11 +135,12 @@ make headless # the same frames, as 60 PNGs in frames/
 ```
 
 The current renderer is ReSTIR PT and MNEE, denoised and upscaled by the
-network: the light is traced at half the window’s resolution each way, and
-the network brings it to every pixel. It reads the trained network from
+network: the light is traced at half the window’s resolution each way, half
+of those pixels each frame in an alternating checkerboard, and the network
+brings it to every pixel. It reads the trained network from
 `../serenity-data/denoiser-v1-model/wide`, beside the checkout. The weights
-aren’t committed; `make weights` downloads both networks from the project’s
-media host and checks every file against its pinned checksum.
+aren’t committed; `make weights` downloads them from the project’s media
+host and checks every file against its pinned checksum.
 
 ```bash
 make weights
@@ -147,9 +149,7 @@ make run GRAPH=graphs/restir_pt_denoised.toml SCENE=scenes/marbles.toml
 
 To make them yourself, [`training/README.md`](training/README.md) covers the
 whole cycle, from rendering the data set (four hours on my M3 Max) and
-training (about six and eight hours for the two networks) to the export.
-`graphs/restir_pt_denoised_small.toml` runs the smaller network, a little
-faster with slightly higher error.
+training (about eight hours) to the export.
 
 The same light without the denoiser, at half the window’s resolution each
 way, stretched to the window:
@@ -164,9 +164,6 @@ To compare with the MIS path tracer:
 make run GRAPH=graphs/path.toml SCENE=scenes/marbles.toml SCALE=0.5
 ```
 
-`graphs/restir.toml` runs ReSTIR DI. `graphs/path_mnee.toml` enables the
-optional glass solver on the plain path tracer; it stays off in the baseline
-because more ordinary samples worked better at equal time.
 `graphs/restir_pt_features.toml` and `graphs/features.toml` write the
 denoiser's inputs for training, through the headless renderer’s
 `--features`.
@@ -179,13 +176,8 @@ first.
 `make run GRAPH=graphs/other.toml` runs another frame graph, and `SCENE=` gives
 it a scene. The marbles are written by `scripts/make_marbles.py`; edit the
 scene there. The first lit scene, a soft brass sphere on a checkerboard at
-night lit by two fireflies:
-
-```bash
-make run GRAPH=graphs/preview.toml SCENE=scenes/brass_sphere.toml
-```
-
-The path tracer converges while the image holds still:
+night lit by two fireflies, through the path tracer, which converges while
+the image holds still:
 
 ```bash
 make run GRAPH=graphs/path.toml SCENE=scenes/brass_sphere.toml

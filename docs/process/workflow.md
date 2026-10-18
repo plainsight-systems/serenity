@@ -54,9 +54,14 @@ This repo is C++-dominant and performance-sensitive.
   reviewed for correctness, not against the C++ corpora; `training/` keeps
   its own pinned environment (`training/README.md`), and nothing the
   renderer builds or runs depends on it.
-- **A milestone closes with its write-up and `main`.** The write-up goes in
-  `docs/writeups/`, then `main` is fast-forwarded to the work branch and
-  pushed; `main` only ever fast-forwards. Milestone 3 added two steps
+- **A milestone closes with its write-up, `main` and a tag.** The write-up
+  goes in `docs/writeups/`, then `main` is fast-forwarded to the work
+  branch, tagged `milestone-N`, and pushed with the tag
+  (`git push origin main milestone-N`); `main` only ever fast-forwards.
+  The tags (`milestone-1` to `milestone-3` so far) and source control are
+  the archive of what each milestone built: what a later decision
+  supersedes is deleted, not kept (MEMORY.md, "Decided by the user
+  2026-10-17"). Milestone 3 added two steps
   before its write-up: a guidelines and performance pass over its own
   code, both corpora rule by rule, every graph shown unchanged to the bit
   (`../research/2026-10-15-milestone-3-guidelines-pass.md`), and a

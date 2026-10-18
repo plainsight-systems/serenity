@@ -35,9 +35,9 @@ uses it, and each kind arrived with the change that first needed it.
 - **Data and models live beside the checkout,** never in it:
   `../serenity-data/` holds the denoiser's data set (`denoiser-v1`, 32.3
   GB, rendered by `scripts/make_denoiser_dataset.py` with a manifest of
-  every file's checksum), the training runs, and the exported networks
-  (`denoiser-v1-model/wide` and `small`), which the denoised graphs name by
-  a path relative to `graphs/`.
+  every file's checksum), the training runs, and the exported network
+  (`denoiser-v1-model/wide`), which the denoised graph names by a path
+  relative to `graphs/`.
 
 Dependencies point one way: the app and the headless renderer depend on the
 backend and the core, the measuring program on the core alone, the backend
@@ -57,10 +57,9 @@ families, made in the scene description:
 - **A glass marble** is a sphere *shape* wearing a dielectric *material*.
 - **The table** is a box *shape* wearing a rough *material* whose color comes
   from a wood *texture*.
-- **ReSTIR DI** is the *integrator*'s direct-light strategy choosing lights by
-  *light selection* and reusing them through *sample reuse*; **ReSTIR PT** is
-  the same reuse applied to whole paths, which the *integrator* shifts from
-  one pixel or frame to another.
+- **ReSTIR PT** is the *integrator*'s paths, their direct light taken at
+  every vertex, reused whole through *sample reuse*, which the
+  *integrator* shifts from one pixel or frame to another.
 - **Manifold next event estimation** is the *integrator*'s strategy for
   light through glass, solved by a *pass* of its own from a work list.
 - **The denoiser** is a *pass* reading the radiance and the *film*'s
@@ -130,10 +129,10 @@ depend on contracts, not on each other.
 | # | Contract | Owned by | Read by |
 |---|---|---|---|
 | 1 | **Surface interaction**: position, in the world and the shape's own coordinates, normals, the side arrived from, material, the medium inside; (u, v) with the first texture that needs them | Shape | Material, Texture, Integrator, Sample reuse |
-| 2 | **BSDF**: a material resolved at a surface, and evaluate, sample, pdf and lobes on it; and its packed form, 16 bytes, for ReSTIR's surface record | Material | Integrator, Sample reuse |
+| 2 | **BSDF**: a material resolved at a surface, and evaluate, sample, pdf and lobes on it; and its packed form, 16 bytes, for ReSTIR PT's G-buffer of primary hits | Material | Integrator, Sample reuse |
 | 3 | **Emitter**: a direction toward the light drawn from numbers, the radiance along it, the distance to it, the pdf; the radiance it emits; which light, if any, a shape is; and its presampled form, ReSTIR PT's light tiles (`light_tile.h`, 32 bytes an entry) | Light | Light selection, Integrator, Sample reuse |
 | 4 | **Light sample**: which light and which point on it, in its own coordinates (`light_sample.h`: the light's record index with a valid bit and the point in two 16-bit numbers, equal-area octahedral for a sphere, 8 bytes, as RTXDI stores them), and what that point gives a surface | Light | Sample reuse, Integrator |
-| 5 | **Film outputs**: radiance, normal, depth, motion per pixel; first, ReSTIR's surface record at a pixel's first rough surface (32 bytes, G-buffer sized: position, wo packed, and contract 2's packed BSDF), the path's state there (36 bytes), and where that surface was last frame (`surface_record.h`); and ReSTIR PT's G-buffer of primary hits, which every shift starts from (`primary_hit.h`, 48 bytes) | Film | Pass, Sample reuse, Integrator (the shift) |
+| 5 | **Film outputs**: radiance, normal, depth, motion per pixel; and ReSTIR PT's G-buffer of primary hits, which every shift starts from (`primary_hit.h`, 48 bytes). ReSTIR DI's surface record and path state (`surface_record.h`) were removed with ReSTIR DI, 2026-10-17 | Film | Pass, Sample reuse, Integrator (the shift) |
 | 6 | **Frame images**: the images between passes and the history across frames; first, the accumulated image | Frame graph | every Pass |
 | 7 | **Frame constants**: the frame's time and index, the size of the image written, and the frames the accumulated image holds | Frame graph | every Pass |
 | 8 | **Camera**: where the frame is seen from, and that view framed for an image | Camera | Scene content, Frame graph, every Pass that generates rays |
@@ -142,13 +141,13 @@ depend on contracts, not on each other.
 | 11 | **Obstacles**: what a motion must keep clear of, as distances and touches against the still shapes | Animation | Scene content (answers) |
 | 12 | **Medium**: what fills a shape's inside, and the share of light a stretch through it keeps | Medium | Integrator; named by Shape |
 | 13 | **Linear image**: a rendered image's radiance on the CPU, three floats a pixel, before tone mapping | Film | Output, Measurement |
-| 14 | **Reservoir**: a light sample by identity, its contribution weight, its count, its target at its own surface and where its visibility was last tested, as stored between passes and frames (`reservoir.h`, 24 bytes, RTXDI's packed reservoir) | Sample reuse | Pass, Frame graph |
+| 14 | **Reservoir**: ReSTIR DI's light reservoir (`reservoir.h`, RTXDI's packed reservoir); removed with ReSTIR DI, 2026-10-17 | (none) | (none) |
 | 15 | **Path reservoir**: ReSTIR PT's one path a pixel by its numbers' stream and its reconnection vertex (a primitive and a point in its own coordinates), its F, contribution weight, count and cached Jacobian (`path_reservoir.h`, 64 bytes, ReSTIR PT Enhanced's Algorithm 1); its settings beside it (`path_reuse_settings.h`) | Sample reuse | Pass, Integrator (the shift), Frame graph |
-| 16 | **MNEE's work list**: a request a pixel the estimators' loops leave for the manifold solve where a light's straight segment crosses glass (the receiver, the light sample, the crossings, the weight; 128 bytes), and the list's header: its count, capacity and the solve's indirect grid (`mnee_request.h`) | Integrator | Pass (the MNEE pass), Frame graph |
+| 16 | **MNEE's work list**: a request a pixel ReSTIR PT's path loop leaves for the manifold solve where a light's straight segment crosses glass (the receiver, the light sample, the crossings, the weight; 128 bytes), and the list's header: its count, capacity and the solve's indirect grid (`mnee_request.h`) | Integrator | Pass (the MNEE pass), Frame graph |
 | 17 | **The denoiser's features**: albedo, world normal, view depth and 2.5D motion a pixel, along the light's own camera rays, through glass and mirrors by primary surface replacement (`features.h`) | Film | Pass (the denoiser), the headless renderer's `--features` |
 | 18 | **The denoiser's network as it runs**: its constants (scale 2, 28 input channels, 124 scores, spacings 1, 2 and 4, the albedo floor, the PU transfer), the threadgroup shapes host and shaders share, and its per-frame constants (`denoise.h`) | Pass | the core's loader, the Metal denoise pass, host and shaders |
 | 19 | **Ray mask**: the classes of shape, a light or a surface, as bits, and the two masks a ray carries, everything or the occluders (the surfaces), with which purpose of ray carries which (`ray_mask.h`) | Acceleration | Integrator, Pass (the features) |
-| 20 | **Checkerboard**: which pixels a frame traces with the setting on, the packed slot of a traced pixel's reservoir, the traced grid, the frame before's traced pixel beside one, and the fill's constants (`checkerboard.h`) | Frame graph | Sample reuse, Pass (ReSTIR PT's and the fill) |
+| 20 | **Checkerboard**: which pixels a denoised frame traces, the packed slot of a traced pixel's reservoir, the traced grid, the frame before's traced pixel beside one, and the fill's constants (`checkerboard.h`) | Frame graph | Sample reuse, Pass (ReSTIR PT's and the fill) |
 
 Each is designed on its own, header first, before the code that uses it.
 Contract 7 was the first written: `src/core/contracts/frame_constants.h`.
@@ -164,7 +163,10 @@ hands to Output's files and Measurement's errors. Contracts 4, 5 and 14
 came with ReSTIR DI: `light_sample.h`, `surface_record.h` and
 `reservoir.h`, with `reuse_constants.h`, Sample reuse's per-frame values,
 beside them; contract 6 grew by ReSTIR's records and reservoirs, ping-ponged
-across frames (`metal/frame/frame_images.h`). Contract 15 came with ReSTIR
+across frames (`metal/frame/frame_images.h`); ReSTIR DI's removal
+(2026-10-17) took contract 14, contract 5's surface record and
+`reuse_constants.h` with it, leaving contract 4 to ReSTIR PT's
+reconnections. Contract 15 came with ReSTIR
 PT, with contract 3's light tiles and contract 5's G-buffer of primary hits;
 contract 16 with manifold next event estimation; contracts 17 and 18 with
 the denoiser, the frame graph keeping the feature images and the
@@ -177,7 +179,7 @@ The camera is one contract for every camera, as Falcor's `CameraData` is,
 since a frame has one camera and cameras differ by parameters, not code.
 
 **How a layout crosses into a shader.** The data a contract passes to the
-GPU (a material's parameters, a light sample, a surface record) has one
+GPU (a material's parameters, a light sample, a primary hit) has one
 definition, in a core header that Metal's shading language can also
 include: plain fixed-size fields, nothing only the host has. The host writes
 the bytes the shader reads, with no second definition to drift. This shares
@@ -204,8 +206,8 @@ file is new:
 | What | Family | File |
 |---|---|---|
 | the second queue, each frame slot's second command allocator and buffer, the event the light half signals and the image half waits for, a two-part submission's commit and settling | GPU backend | `src/metal/device/submission.{h,cpp}` |
-| where the frame splits, the barriers on each side, the hand-off images kept one set per frame slot (the features at both sizes, and a copy of the light's radiance), and how many parts a frame has | Frame graph | `src/metal/frame/renderer.{h,cpp}` |
-| the per-slot radiance copy | Frame graph | `src/metal/frame/denoise_images.{h,cpp}`, beside the denoiser's other memory |
+| where the frame splits, the barriers on each side, the hand-off images kept one set per frame slot (the features at both sizes, and the light's radiance, which the checkerboard's fill writes), and how many parts a frame has | Frame graph | `src/metal/frame/renderer.{h,cpp}` |
+| the per-slot radiance hand-off | Frame graph | `src/metal/frame/denoise_images.{h,cpp}`, beside the denoiser's other memory |
 | asking the renderer for its parts and beginning the submission with them | Presentation | `src/app/main.cpp` through `render_to_window()`, `src/headless/main.cpp` through `render_to_offscreen()` (both in `renderer.cpp`), unchanged themselves |
 | a frame's time when frames overlap: from when it began, or the frame before it finished if later, to when it finished | Measurement | `src/core/measurement/frame_times.{h,cpp}` |
 
@@ -225,27 +227,27 @@ the families that already own each part:
 | a structure for each mask, every shape and the surfaces alone, each built once when nothing in it moves and per frame slot when something does; the surfaces' shape table; the block the shaders bind | Acceleration | `src/metal/acceleration/scene_acceleration.{h,cpp}` |
 | the block's shared layout: each structure as a shader binds it, and the table | Acceleration | `src/metal/acceleration/structure_block.h`, new |
 | a query by mask: the nearest shape, whether any blocks, and the candidates' shapes for a query of the integrator's own | Acceleration | `src/metal/acceleration/trace.metal.h` |
-| each ray's mask, at each site that traces (ReSTIR PT's passes ask through `nee.metal.h` and `mnee.metal.h`, unchanged themselves) | Integrator | `src/metal/integrator/{path,nee,shift,mnee,restir_di,direct}.metal.h` |
+| each ray's mask, at each site that traces (ReSTIR PT's passes ask through `nee.metal.h` and `mnee.metal.h`, unchanged themselves) | Integrator | `src/metal/integrator/{path,nee,shift,mnee}.metal.h` |
 | the features' camera rays: everything | Pass | `src/metal/passes/features/features.metal` |
 | the scene's view holding the block, and the kernels binding it where they bound the structure | Scene content, Pass | `src/metal/scene/scene_block.metal.h`, each pass's `.metal`, `src/metal/passes/scene_binding.h`, `src/metal/frame/frame_resources.h` |
 | handing the acceleration the shapes that are lights, as it is handed the ones that move | Frame graph | `src/metal/frame/renderer.cpp` |
 
 ## Checkerboard rendering
 
-Tracing half the light's pixels a frame (`logical-overview.md`, "The
-frame"; the axes in `change-axes.md`) adds one contract and one pass, and
-changes the families that own each part:
+Tracing half the light's pixels a frame, as every denoised frame does
+(`logical-overview.md`, "The frame"; the axes in `change-axes.md`), adds
+one contract and one pass, and changes the families that own each part:
 
 | What | Family | File |
 |---|---|---|
 | which pixels frame *n* traces, the packed slot two pixels of a row share, the grid the light's kernels dispatch over, the frame before's pixel beside one, the fill's constants (contract 20) | Frame graph (contract) | `src/core/contracts/checkerboard.h`, new |
-| the setting, read from the graph file and refused beside what cannot carry it | Frame graph | `src/core/frame/schedule.{h,cpp}`, `src/core/frame/graph_file.cpp` |
-| the setting as ReSTIR PT's kernels read it | Sample reuse (contract 15's sibling) | `src/core/contracts/path_reuse_settings.h` |
+| a graph's light checkerboarded exactly when it has the denoise pass, and its spatial reuse's sigma one the traced lattice can pair at | Frame graph | `src/core/frame/schedule.{h,cpp}` |
+| whether the light is checkerboarded, as ReSTIR PT's kernels read it | Sample reuse (contract 15's sibling) | `src/core/contracts/path_reuse_settings.h` |
 | each kernel's pixel and slot through the contract; the spatial partner over the traced lattice; the temporal input in the other field | Pass, Sample reuse | `src/metal/passes/restir_pt/restir_pt.metal.h`, each `src/metal/passes/restir_pt_*/*.metal`, `src/metal/reuse/pairing.metal.h` |
 | the light's kernels dispatched over the traced grid | Pass | each `src/metal/passes/restir_pt*/*.cpp`, `src/metal/frame/frame_resources.h` |
 | the fill: the hand-off written from the traced half and the frame before's | Pass | `src/metal/passes/checkerboard_fill/`, new |
 | the fill's history, every pixel's handed-off light and depth, two by the frame's parity | Frame graph | `src/metal/frame/checkerboard_images.{h,cpp}`, new |
-| the fill in place of the hand-off's copy, the frame before's slot, the reuse textures over the lattice | Frame graph | `src/metal/frame/renderer.{h,cpp}` |
+| the fill writing the hand-off, the frame before's slot, the reuse textures over the lattice | Frame graph | `src/metal/frame/renderer.{h,cpp}` |
 
 Contract 20 is the one place the field and the packing are written, read
 alike by the host's dispatches and every kernel, so no two can disagree

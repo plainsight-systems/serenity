@@ -20,7 +20,8 @@ This file tracks active and accepted work.
   both exported to ../serenity-data/denoiser-v1-model. Decided by the user
   2026-10-15 after watching both live: the wide network is the demo's
   (graphs/restir_pt_denoised.toml; the small one stays as
-  graphs/restir_pt_denoised_small.toml), and no retrain for now, the
+  graphs/restir_pt_denoised_small.toml, removed 2026-10-17 with its
+  weights and training/config.json), and no retrain for now, the
   improvement being visible; the heavier temporal weight (the table flickers
   36 to 47% more than the targets) waits for the next training round.
   Phase 4 built
@@ -74,7 +75,9 @@ This file tracks active and accepted work.
   references at t = 120 and t = 8 rendered again after the ray offset,
   2026-10-13 (that note, "Against the 2026-10-13 references"). The
   convergence runs were not repeated on them: Milestone 2 compared
-  estimators at equal frame time instead.
+  estimators at equal frame time instead. ReSTIR DI, its graphs and
+  graphs/path_mnee.toml removed 2026-10-17 (MEMORY.md, "Decided by the
+  user 2026-10-17"); the tag `milestone-2` keeps them.
 
 - **Publication feed for the Plainsight hub** (2026-10-13). Implemented
   `/writing/index.xml` from staged public articles, following Andrew's approval
@@ -114,7 +117,8 @@ This file tracks active and accepted work.
   names the passes, the Metal 4 backend records it with two frames in
   flight, to an SDL3 window at the display's resolution or to files from
   the headless renderer; the first scene, a brass sphere lit by two
-  fireflies, through the preview pass. The textbook path tracer with next
+  fireflies, through the preview pass (removed 2026-10-17, with the
+  display pass that presented it). The textbook path tracer with next
   event estimation (pbrt-v4's SimplePathIntegrator), uniform light
   selection, Russian roulette, on contracts 1 to 3, into an accumulated
   image whose pixels keep their own sample counts; checked against closed
@@ -148,6 +152,33 @@ This file tracks active and accepted work.
    every graph's record() shown allocation-free, coverage-only tests
    removed; one src defect found and fixed (prepare_output's refusal).
 
+0a. **Done 2026-10-17, on branch `cleanup`.** The codebase cleanup by the
+   user's rules of 2026-10-17 (MEMORY.md, "Decided by the user
+   2026-10-17"): ReSTIR DI removed, superseded by ReSTIR PT; the small
+   denoiser network removed; checkerboard rendering no longer a setting
+   (a denoised graph always traces its light checkerboarded, a graph
+   without the denoiser every pixel); the path tracer's MNEE and the
+   `mnee` key removed (ReSTIR PT always runs MNEE); the preview and
+   display passes removed. Tests reworked into unit tests of units of
+   code plus a handful of integration tests that render frames end to
+   end; logic once checked by rendering moved into functions tested
+   directly (src/headless/options.h, src/measure/commands.h). The graphs
+   left: features, path, restir_pt, restir_pt_denoised (the demo),
+   restir_pt_features and test_pattern.
+
+0b. **Open, for the user's decision (found 2026-10-17, during the
+   cleanup).** The ReSTIR PT graphs' headless PFM is not bit-reproducible
+   run to run, even at the cleanup's starting commit c2dbd1f: a few
+   pixels differ by about 1 ulp (at 480 x 270, 4 of 129,600 pixels, the
+   largest 1.1e-7 relative), and the denoised graph's PNGs can differ by
+   a level. The cause: MNEE's solve adds three or more requests' light to
+   a pixel by float atomics, in the order the GPU schedules them
+   (src/metal/passes/mnee/mnee.h, "Determinism", which had recorded it as
+   measured reproducible on 2026-10-16). So byte identity holds for the
+   path and features graphs, and for ReSTIR PT's only as a match at the
+   noise's level. Folding MNEE's light in a fixed order would make it hold
+   by construction; whether to is the user's call.
+
 1. Milestone 4, making the frame fast (the user, 2026-10-17;
    docs/research/2026-10-17-milestone-4-plan.md): async compute overlap,
    ray masks, checkerboard rendering of the light (the split scene skipped
@@ -158,8 +189,13 @@ This file tracks active and accepted work.
    frame slot, every graph the same to the bit; measured there. Step 2,
    ray masks, built 2026-10-17 (the plan's "Step 2"): visibility rays
    trace a structure of the surfaces alone, so no firefly casts a shadow;
-   measured there, with the image's change. Waiting on the user's call
-   on the image before it is kept.
+   measured there, with the image's change; kept by the user 2026-10-17.
+   Step 3, the split scene, skipped on Metal (the plan's "Decisions after
+   Step 2"). Step 4, checkerboard rendering of the light, built 2026-10-17
+   (the plan's "Step 4"): kept by the user in the denoised graphs, and
+   since the cleanup (0a) how every denoised graph traces its light, not
+   a setting. Whether the network is retrained on checkerboarded light is
+   the user's call; not retrained.
 
 1a. Reservoir reuse as kernels: tiling, layout and fusion of the merge
    passes, what each costs and where the bytes go (about 4 ms of the light
@@ -186,18 +222,10 @@ wanted, earlier opening sequences in the data set (Parking Lot:
 - Ray offset: one cat's-eye rim still moves ~4% between the chapter's step and one 4x smaller (pbrt-v4 bounds would shrink it).
 - Ray offset: step 5's T is over the shadow ray, short of the surface's point by one step (only for a light in the surface's medium).
 - Ray offset: +0.3 ms is `offset_ray()` itself; GPU counters for why a cheaper float form was no faster.
-- Ray offset: ReSTIR's visibility offsets along the record's 16-bit-quantized normal; no test aims at it.
+- Ray offset: ReSTIR PT's visibility offsets along the primary hit's quantized normal (primary_hit.h); no test aims at it.
 - Ray offset: a sphere ~100 m+ in radius whose surface passes near the origin re-hits (fixed 15 um step there); no scene has one.
-- ReSTIR temporal: raytraced mode is refused with restir_temporal; it needs last frame's structure kept. The design, moved here from scene_acceleration.h, where it was declared but never built (2026-10-16-codebase-guidelines-pass.md, G1): only for a graph with the temporal merge in raytraced mode, whose normalization traces last frame's surface against last frame's structure (RTXDI's previous-frame BVH). A still scene's one structure is last frame's too. A moving scene keeps frames_in_flight + 1 structures, three: frame i builds structure i mod 3 (its index's, not its slot's, since a readback takes a slot) and traces (i - 1) mod 3 as last frame's; before rebuilding one it waits for the last submission that traced it (GPU.7, MEM.4), which begin() has already waited for when every submission is a frame. The boxes stay one copy a slot. The cost is one more structure and its scratch, made at construction, no extra build. ReSTIR PT's temporal shift would use it too (restir_pt.metal.h, "What is approximate").
-- ReSTIR temporal: a fixed-order ring around the reprojected pixel moved a grazing floor's mean +5.6%; a frame-drawn start fixed it; the theory says unbiased either way: why.
-- ReSTIR temporal: basic mode's edge bias at a grazing view, a box's shadow edge -7% to +10% by row, the lower floor -3% (restir-temporal.md).
-- ReSTIR temporal: the boiling filter (RTXDI's default, 0.2) still deferred.
-- Path MIS asks a light's density of the direction (light_pdf); on a firefly's rim that test rounds out, as ReSTIR's BSDF candidate found (light_point_pdf); check whether the path tracer counts rim hits twice.
-- ReSTIR's BSDF candidate costs 7 ms at 3456 x 2234 (+19% on the RIS graph); its ray and 8 BSDF densities are most of it.
-- ReSTIR DI loses to the MIS path tracer at equal time on the marbles (MSE x 1.4 to 1.7 at 1 s): measure the direct light's error alone, and at the traced resolution.
-- ReSTIR spatial: graphs/restir.toml in basic mode is -1.45% against the reference's mean at t = 120 (-0.33% at t = 8), each merge alone within 0.16%; check against raytraced once last frame's structure is kept (restir-spatial.md).
-- ReSTIR spatial: the pass costs 3.4 ms at 3456 x 2234; GPU counters against its counted traffic (gathers within the radius; a tiled order if line-bound).
-- bsdf_candidates = 0 is Phase A but for rim points, now weighed where Phase A's direction test dropped them; not bit-identical.
+- ReSTIR temporal: a fixed-order ring around the reprojected pixel moved a grazing floor's mean +5.6% (measured on ReSTIR DI, removed 2026-10-17; the ring order, reuse/temporal.metal.h, is ReSTIR PT's now); a frame-drawn start fixed it; the theory says unbiased either way: why.
+- Path MIS asks a light's density of the direction (light_pdf); on a firefly's rim that test rounds out, as ReSTIR DI's BSDF candidate found (light_point_pdf); check whether the path tracer counts rim hits twice.
 - ReSTIR PT: roulette's survival folded into the source density has no test of its own; the marbles' accumulated mean holds it (0.186420 against the reference's 0.186422).
 - ReSTIR PT: the replay's indirect grid is ordered by a dispatch-to-dispatch barrier; confirm Metal 4 counts the indirect-argument read in that stage.
 - ReSTIR PT: a reconnection segment is dimmed by y_{k-1}'s medium, the cached suffix by x's; they differ only for a rough surface inside an absorbing medium (no scene has one).
@@ -206,15 +234,12 @@ wanted, earlier opening sequences in the data set (Parking Lot:
 - ReSTIR PT: the tree's gather costs the initial pass 14 ms over the path pass at 3456 x 2234 with one NEE candidate (44 against 30 ms); GPU counters for where (the reservoir's stores, the criteria's footprints, the shape points' encoding).
 - ReSTIR PT: a shift's shadow ray is most of its cost (the spatial pass 30 ms, 13.7 of it the reconnections' visibility, 5.7 the replays); the RT unit on bounding-box shapes, counters.
 - ReSTIR PT: the duplication map costs 4.1 ms at 3456 x 2234 (3%); 32-bit keys in two arrays were slower (130.4 against 128.7 ms); a count shared along rows.
-- ReSTIR PT: the temporal shift of a pixel's path into last frame's domain traces this frame's structure (a firefly that crossed the ray last frame and not this one is missed); keep last frame's structure (scene_acceleration.h, Keep::last_too) and trace it.
+- ReSTIR PT: the temporal shift of a pixel's path into last frame's domain traces this frame's structure (a firefly that crossed the ray last frame and not this one is missed); keep last frame's structure and trace it, as RTXDI's previous-frame BVH (restir_pt.metal.h, "What is approximate"). The design, first written for ReSTIR DI's raytraced mode (2026-10-16-codebase-guidelines-pass.md, G1): a still scene's one structure is last frame's too; a moving scene keeps frames_in_flight + 1 structures, three: frame i builds structure i mod 3 (its index's, not its slot's, since a readback takes a slot) and traces (i - 1) mod 3 as last frame's; before rebuilding one it waits for the last submission that traced it (GPU.7, MEM.4). The cost is one more structure and its scratch, made at construction, no extra build.
 - ReSTIR PT: a reconnection keeps its suffix after x_k as its source frame lit it (contract 15's cached radiance, as the 2022 code); a moved firefly's light lingers after x_k until resampled away, bounded by the cap.
 - ReSTIR PT: the temporal reuse's previous position under a moving primary surface has no test; the marbles' surfaces are still.
 - ReSTIR PT: dual motion vectors (Enhanced §6.4) for disocclusions under camera motion; the marbles' camera is fixed.
 - MNEE: from the straight seed Newton diverges over most of a ball's caustic rim (18 of 65 floor points converge; -6.5% of the light in a glass sphere's shadow; glass and metal's mean 0.94 of the reference at t = 120 in ReSTIR PT's graph, 0.98 without MNEE); Cycles' algorithm, a seed nearer the rim's path if it shows.
 - MNEE: G is not clamped (Cycles' clamp at 2 is in meters); caustic folds give fireflies (glass and metal's linear MSE at t = 8 3.7 -> 13.3 with MNEE, displayed level); a clamp relative to the straight segment's G if they show.
-- MNEE: `shift_path()` checks `settings.mnee` at run time: +1.2% to ReSTIR PT without MNEE at 3456 x 2234; a template parameter, as the tree has.
-- MNEE: the MNEE pass costs the path graph +28 ms at 3456 x 2234 (30.4 -> 58.7); GPU counters on mnee_solve (iterations, registers).
-- MNEE: the path tracer + MNEE at 1 sample loses to the path tracer at 2 at equal time (displayed 0.82 to 1.01); graphs/path_mnee.toml stays opt-in.
 - MNEE: conductors are not receivers (near-mirror lobes with no MIS); their caustics through glass stay the path tracer's.
 - Features: motion is the primary surface's; what glass and mirrors show behind or in them moves differently (production's specular motion vectors, NRD's virtual motion under PSR): not given.
 - Features: one ray a pixel a frame, as the noisy input's own; the 1920 x 1080 target's albedo is not averaged over its 4,096 samples (Open Image Denoise: aux images "should use the same pixel reconstruction filter as the beauty"): average it if the network's output shows edge or depth-of-field artifacts.
@@ -230,5 +255,5 @@ wanted, earlier opening sequences in the data set (Parking Lot:
 - Training: validation still fell about 0.0005 per 50 epochs through the anneal; a 600-epoch cycle to see if it keeps falling.
 - Training: Thomas et al. 2022's loss weights and sub-pixel handling unread (the PDF could not be fetched); check them against loss.py and model.py.
 - Training: MPS runs from one seed agree to four figures, not to the bit.
-- ReSTIR PT's radiance is not bit-reproducible on the GPU: reruns of a frame differ in 1 to 9 pixels by up to 2.4e-7 (features exact); find the order-dependent sum.
+- ReSTIR PT's radiance is not bit-reproducible on the GPU: reruns of a frame differ in 1 to 9 pixels by up to 2.4e-7 (features exact). An order-dependent sum found 2026-10-17, most likely this one: MNEE's float atomics (Next, 0b, for the user's decision).
 - Denoiser: the design's comparison with MetalFX's denoiser, "if available", was not made; Open Image Denoise was the yardstick. Whether it is still wanted is the user's call.

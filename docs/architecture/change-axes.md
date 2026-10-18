@@ -103,10 +103,12 @@ by their users:
 | the target function: a sample's contribution, ignoring visibility | light selection, every merge and shading would each carry a copy | **Integrator**: it defines what "contribution" means |
 | the reservoir and the merge rule | every reuse, direct and indirect, temporal and spatial, would change with it | **Sample reuse** |
 
-The last is the one worth insisting on. ReSTIR DI and ReSTIR PT reuse
-different samples, a light sample and a whole path, but pick among them by
-the same rule. Kept in one place, the rule is one unit that can be studied,
-measured and optimized on its own, which is what the kernel work is about.
+The last is the one worth insisting on. ReSTIR PT picks among different
+samples, a light among next event estimation's candidates, a path in the
+path tree, last frame's path and a neighbor's, but by the same rule
+wherever it picks. Kept in one place, the rule is one unit that can be
+studied, measured and optimized on its own, which is what the kernel work
+is about.
 
 ## Mechanism is code; values are data
 
@@ -161,8 +163,8 @@ The boxes that are compound:
 **Light** is the split worth insisting on. Fused, the path loop, the choice of
 lights, the reservoirs and every BSDF would be one unit, and changing the
 merge rule would mean re-verifying the materials. Split, each of the
-milestones touches its own axis: ReSTIR DI and PT are sample reuse (PT's
-shift of a path to another pixel is the integrator's), caustics are the
+milestones touches its own axis: ReSTIR PT is sample reuse (its shift of
+a path to another pixel is the integrator's), caustics are the
 integrator, a new material is a material.
 
 ## Cases that look wrong and are not
@@ -225,11 +227,12 @@ and hand that to the submission; they learn nothing else of it.
 Three things in it look wrong and are not. **The features are kept twice
 while nothing about them changed**: the second copy is the hand-off's, the
 frame graph's (contract 6), not Film's, whose contract is what a pixel's
-features are. **The light's radiance is copied when the features are
-not**: the features are written whole each frame, so a second set is
-enough, but the accumulated image carries history across frames on the
-light's queue (a still scene's mean), so the denoiser gets a copy of it
-per frame in flight instead. **The full-size albedo, the denoiser's own
+features are. **The light's radiance is not handed off as the features
+are**: the features are written whole each
+frame, so a second set is enough, but the accumulated image carries
+history across frames on the light's queue (a still scene's mean), so the
+denoiser gets an image of it per frame in flight instead, which the
+checkerboard's fill writes whole (below). **The full-size albedo, the denoiser's own
 input, runs in the light half**: its kernel traces rays, and beside the
 light half's tracing, in the image half, the two shared the ray tracing
 hardware and it took four times as long; split by the hardware each
@@ -260,28 +263,31 @@ being a light; a light whose shadow should show is the change that moves
 the class into the scene's data, as a per-shape value.
 
 **Checkerboard rendering is three axes' business, and none is the
-estimator's.** Tracing half the light's pixels a frame
-(`logical-overview.md`, "The frame") splits in three:
+estimator's.** Tracing half the light's pixels a frame, as every
+denoised frame does (`logical-overview.md`, "The frame"), splits in
+three:
 
 - **Frame graph** owns which pixels a frame traces and where their
   arrays keep them: the field rule (a pixel is traced in a frame of the
   same parity as its coordinates' sum), the packed slot two pixels of a
   row share, and the grid the light's kernels dispatch over, as one
   contract (contract 20) every pass reads alike; and the fill, which
-  writes the hand-off where the copy was, since what the image half reads
-  of the light half's is the frame graph's (contract 6).
+  writes the hand-off, since what the image half reads of the light
+  half's is the frame graph's (contract 6).
 - **Sample reuse** asks it where a neighbor and last frame's input may
   be: a spatial partner among this frame's traced pixels (the pairing
-  taken over their lattice), a temporal input among the frame before's.
-  The merges themselves, their weights and the shifts do not change.
+  taken over their lattice, so a denoised graph's sigma must be one the
+  lattice can pair at), a temporal input among the frame before's. The
+  merges themselves, their weights and the shifts do not change.
 - **Pass**: the fill's kernel, which reads the features and the frame
   before's hand-off and writes this frame's.
 
-It looks wrong that **the setting is the frame graph's and not
+It looks wrong that **the choice is the frame graph's and not
 [restir_pt]'s**, since only ReSTIR PT's passes read it: the fill and the
 hand-off are the denoised frame's, which ReSTIR PT's settings know
-nothing of, and a graph that sets it must have both; the renderer copies
-it into the path reuse settings as it copies mnee. And that **the
+nothing of, so a graph traces its light checkerboarded exactly when it
+has the denoise pass, and the renderer copies that into the path reuse
+settings. And that **the
 features stay whole** while the light is halved: they are Film's guide
 images for the denoiser, and the fill's evidence for whether a moved
 pixel is the same surface; halved, both would guess at edges.

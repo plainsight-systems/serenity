@@ -13,9 +13,11 @@ This file is the canonical entry point for durable project context.
 
 A real-time path tracer: simple procedural geometry lit by hundreds to
 thousands of moving lights, with the lighting correct as everything moves.
-Many-light sampling by ReSTIR DI (Bitterli et al. 2020), a denoiser of its own
-compared against Intel Open Image Denoise, and a reference render at
-thousands of samples per pixel to compare against. No art assets: the light
+Many-light sampling and the reuse of whole light paths by ReSTIR PT
+(ReSTIR PT Enhanced, Lin, Kettunen and Wyman 2026), caustics through
+glass by manifold next event estimation, a denoiser of its own compared
+against Intel Open Image Denoise, and a reference render at thousands of
+samples per pixel to compare against. No art assets: the light
 carries the image.
 
 The project's brief is internal planning and is not in this repository.
@@ -109,6 +111,11 @@ Decided 2026-10-08, at the repository's creation:
   ReSTIR GI, reusing direct and indirect light as whole paths
   (`research/2026-10-11-restir-pt-layout.md`); and the upscale is the
   denoiser's own, 2x each way, not MetalFX's (below, "Milestone 3").
+  Amended 2026-10-17, by the user's direction: ReSTIR DI is removed,
+  superseded by ReSTIR PT, and its modes (`basic`, `raytraced`) with it;
+  the estimators are the path tracer (the reference), ReSTIR PT with
+  manifold next event estimation, and the denoised pipeline (below,
+  "Decided by the user 2026-10-17").
 - **A window and a headless renderer arrive together**, in the first
   rendering change. The headless renderer writes frames at a fixed timestep;
   the window shows the same frames live.
@@ -129,7 +136,8 @@ Amended 2026-10-11, by the user's direction:
   estimation and by a BSDF-sampled ray striking it, each weighted by the
   power heuristic; after a delta lobe and on the camera's own ray, in full;
   the sky one way, as before; ReSTIR DI's first surface the exception, its
-  direct light the reservoir's alone. The reason: light sampling alone, at
+  direct light the reservoir's alone (the exception removed with ReSTIR
+  DI, 2026-10-17). The reason: light sampling alone, at
   the marbles' near-mirror steel (GGX alpha 10^-3), returns rare samples of
   10^5 whose variance grows as 1 / alpha^2
   (`research/2026-10-11-restir-ris-results.md`). Supersedes two earlier
@@ -173,7 +181,8 @@ Decided with the user 2026-10-14 (`research/2026-10-14-denoiser-training-design.
 - **Data and models live beside the checkout, never in it:**
   `../serenity-data/denoiser-v1` (the data set, 32.3 GB, a manifest with
   every file's SHA-256), `denoiser-v1-warmup`, `denoiser-v1-runs` and
-  `denoiser-v1-model/{wide,small}` (the exported networks the graphs name).
+  `denoiser-v1-model/{wide,small}` (the exported networks the graphs name;
+  since 2026-10-17 the renderer names `wide` alone, below).
 
 Decided by the user 2026-10-15:
 
@@ -185,6 +194,10 @@ Decided by the user 2026-10-15:
 - **The wide network is the demo's** (543k parameters,
   `graphs/restir_pt_denoised.toml`), chosen after watching both live; the
   small one (294k) stays, as `graphs/restir_pt_denoised_small.toml`.
+  Amended 2026-10-17: the small one is removed (the graph, its pinned
+  files in `scripts/fetch_denoiser_weights.sh`, `training/config.json`);
+  the wide network (`training/config-wide.json`) is the demo's, and `make
+  weights` fetches it alone (below, "Decided by the user 2026-10-17").
 - **No retrain for now:** the improvement is visible. The heavier
   temporal weight (the table flickers 36 to 47% more than the targets)
   waits for the next training round, measured then (QUEUE.md).
@@ -353,3 +366,34 @@ where the image should not change; tests that guard invariants and
 contracts, not coverage; valid findings fixed together; quality trades the
 user's call; short reports. Its default agent brief is the starting point
 for every delegated task.
+
+## Decided by the user 2026-10-17
+
+- **A decision removes the alternative.** Superseded passes, graphs,
+  modes, settings and weights are deleted, not kept "just in case".
+  Source control and the milestone tags (`milestone-1`, `milestone-2`,
+  `milestone-3`, and `milestone-N` at every future close, `workflow.md`)
+  are the archive.
+- **Past milestones' films, images and numbers are kept as made,** and
+  never rendered again to compare against.
+- **Unit tests test units of code.** Tests that run the program are
+  integration tests, and only a small handful; logic checked by rendering
+  moves into functions tested directly.
+- **Abandoned code is not carried forward.**
+
+The codebase cleanup on branch `cleanup` (2026-10-17) applied them.
+Removed: ReSTIR DI, superseded by ReSTIR PT (its passes, graphs and
+renderer family, contract 14 and contract 5's surface record, the
+`raytraced` mode); the small denoiser network
+(`graphs/restir_pt_denoised_small.toml`, its pinned weights,
+`training/config.json`); the checkerboard switch (a denoised graph's
+light is always traced checkerboarded, and a graph without the denoise
+pass traces every pixel); the path tracer's opt-in MNEE and the `mnee`
+key (ReSTIR PT always runs MNEE; the path tracer never does, and stays
+the reference and the training targets' renderer); the preview pass, and
+the display pass that presented it (`tone_map` is the one presenting
+pass). The tests were reworked into unit tests plus a handful of
+integration tests that render frames end to end; logic once checked by
+rendering moved into functions tested directly (`src/headless/options.h`,
+`src/measure/commands.h`), and no test depends on what `graphs/` or
+`scenes/` hold beyond every file there reading.
