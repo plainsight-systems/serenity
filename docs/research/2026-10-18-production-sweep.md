@@ -184,31 +184,77 @@ the repository, for the user's review), each at t = 20 and t = 120:
   fireflies and away from the dim, newly woken ones, whose own glow on the
   table is noisier frame to frame.
 
+## Decided by the user (2026-10-18)
+
+- **The data set's input graph traces exactly as the demo does.** Found
+  on the way: since 01d8aae the checkerboard was tied to the denoise pass,
+  and the data set's input graph, `graphs/restir_pt_features.toml`, has
+  none, so denoiser-v1-checkerboard's inputs (renderer 684f105) were every
+  pixel traced, not the checkerboard's half and fill the demo hands the
+  network. Now the rule is the network's input's
+  (`docs/architecture/logical-overview.md`, principle 13;
+  `frame::feeds_network`: ReSTIR PT with the features pass): the
+  checkerboard, the fill, the pinhole and the jitter follow it, so the
+  input graph's light is the denoised graph's hand-off. Without the
+  network the fill writes an image of its own, which the graph shows and
+  the headless renderer writes. `tests/gpu/features_test.cpp` renders five
+  frames of wandering fireflies through both graphs and finds the input
+  graph's light, its four features and the jitter the same to the bit as
+  what the demo hands its network, frame by frame. The scene has no glass,
+  so no MNEE request is made: MNEE adds into the light buffer by float
+  atomics in no fixed order (docs/process/QUEUE.md, 0b), so on the
+  marbles two runs of one graph already differ by float rounding in a few
+  pixels (training/render_warmup.py, RADIANCE_TOLERANCE); the test holds
+  every other part of the light to the bit. The demo graph's own output is
+  unchanged by it, to the bit (the marbles at 480 x 270, frames 40 and 41,
+  against 8a771e4), and so are features.toml's, path.toml's and
+  test_pattern.toml's against 78f1c06.
+- **The depth of field stays at half resolution**, as Jimenez's and the
+  industry's gather.
+- **The test is against the data set's own targets**, no reference
+  rendered again: `training/evaluate.py` takes `--references` as optional
+  now (the existing references are through the lens).
+- **This is the last data-set render on this Mac**; a later one waits for
+  the RTX 3090's renderer. Hence the preflight below.
+
+## The data set's preflight (2026-10-18)
+
+Every channel the network reads at runtime (contract 18) and every target
+channel, against how `scripts/make_denoiser_dataset.py` (plan sha256
+pinned in its test) makes it, at ad04432:
+
+| Channel | At runtime (the demo, 1920 x 1080) | In the data set | Holds |
+|---|---|---|---|
+| radiance 0..2 | the fill's hand-off at 960 x 540: ReSTIR PT + MNEE, checkerboarded, power tiles, ray masks, pinhole, jittered | `restir_pt_features.toml` at 960 x 540, `--samples 1`, `--format pfm`: its fill's image | the same to the bit (the test above); the script refuses an input graph whose ReSTIR PT passes or settings are not the demo's (`input_graph_mismatch`, tested) |
+| albedo, normal 3..8 | the light-size features, the same rays | `--features`, the same run | to the bit (the test); view axes from the scene's camera, both sides `view_axes` |
+| depth 9 | the features' depth; the median over the light | the same PFM; data.py's median | to the bit; one formula on both sides (the fixture test) |
+| motion 10..11 | the features' motion to the frame before | the same run, the frame before on the timeline (`--step` 1/60) | to the bit (the test) |
+| history 12..27 | the network's own last output | made by the network as it trains, recurrently; the test's warm-up frames by the same graph (render_warmup.py) | by construction |
+| jitter 28..29 | `frame::camera_jitter(graph, n)`, Halton(2, 3), k = n mod 32 + 1 | the manifest's per frame, `camera_jitter(i)` in the script | the renderer's value (the test) and both copies pinned to one table (tests/jitter_test.cpp, test_training.py, test_make_denoiser_dataset.py); the estimate's first frame, 119, records (-0.40625, -0.20370), k = 24 |
+| checkerboard parity | frame n traces x + y + n even | the timeline's indices, from frame 0, one run a sequence | the same rule, the same indices; the history from frame 0 (headless replays it) |
+| full-size albedo (target 3..5) | features kernel at 1920 x 1080, each pixel's own point, unjittered, pinhole | `features.toml` at 1920 x 1080, the input's frame indices, the pinhole scene | the same kernel, numbers and camera |
+| target radiance (0..2) | (none: the network's output) | `path.toml` at 1920 x 1080, 4,096 samples, time frozen at frame i's instant (`STEP` x i, the input's), the pinhole scene | pinhole (the scene's lens line removed, `pinhole_scene`, tested), the same instant |
+| sizes | light 960 x 540 of output 1920 x 1080 | 960 x 540 and 1920 x 1080 | yes |
+
+**The estimate**, `python3 scripts/make_denoiser_dataset.py --estimate`
+into a scratch directory, from the clean tree at ad04432, the GPU idle and
+on AC power: the first sequence's input run, 127 frames from 0 in 1.7 s,
+and its first target, 23.0 s: **3.06 h** for the whole (0.49 h of inputs,
+133,496 timeline frames; 2.56 h of 400 targets), 32.3 GB. Its first frame
+looked at (gen-0101, frame 119, t = 1.98 s, the opening): the near marbles
+sharp in input and target (pinhole), their edges aliased in the input (one
+jitter offset), the sleeping fireflies black; no hole or seam of the
+checkerboard, the two fields' mean luminance 0.00314 (traced) and 0.00383
+(filled) at frame 119, the filled field tracking the traced field of the
+frame before across the eight frames (0.00314 -> 0.00326, 0.00428 ->
+0.00405, ...) as the fireflies wake; no non-finite value; the target
+0.00340.
+
 ## For the user
 
-- **The network must be retrained**, and until it is the demo graph does
-  not run (the refusal above). The data set changes in its inputs and its
-  targets, so it is rendered whole, into a new directory (DATASET is
-  `denoiser-v2`; `--targets-from` is refused for it):
-  `python3 scripts/make_denoiser_dataset.py --out ../serenity-data/denoiser-v2`
-  (`--estimate` first for the time; denoiser-v1 took 4.0 h). The test's
-  references (t = 8, t = 120) must be rendered again through a pinhole,
-  from the data set's own copy of the marbles (`training/README.md`).
-- **The data set's inputs are not checkerboarded.** Found on the way, not
-  changed: since 01d8aae only a graph with the denoise pass traces its
-  light checkerboarded and filled, and the data set's input graph,
-  `graphs/restir_pt_features.toml`, has none; denoiser-v1-checkerboard
-  (renderer 684f105) was rendered by it, so its inputs are every pixel
-  traced, not the checkerboard's half and fill the demo hands the network.
-  denoiser-v2 would be the same. Making the input graph trace as the
-  denoised graph does (the checkerboard and its fill without the network)
-  is a change to the frame graph's rule; whether to make it before
-  rendering denoiser-v2 is the user's call.
-- **The depth of field's quality and cost.** It gathers at half the
-  output's resolution, as Jimenez's does, with his median after; inside
-  the most defocused near marbles a little half-resolution blockiness
-  shows in the 2x crops. Gathering at the output's resolution would cost
-  about four times the gather (some 3 ms more at the window's size).
+- **Render denoiser-v2 and retrain**: `python3 scripts/make_denoiser_dataset.py
+  --out ../serenity-data/denoiser-v2` (about 3.1 h). Until the network is
+  retrained the demo graph refuses every network exported so far.
 - **Kept as production does, and so stated**: the path tracer, the
   reference, keeps the lens in its rays; the full-size albedo stays
   unjittered; the motion vectors stay unjittered.

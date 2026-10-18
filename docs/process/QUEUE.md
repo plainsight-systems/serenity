@@ -194,12 +194,12 @@ This file tracks active and accepted work.
    in Milestone 4 by the user's choice (docs/research/2026-10-18-production-sweep.md):
    depth of field after the denoiser (Jimenez 2014), the light traced
    through a pinhole; the camera's Halton(2, 3) jitter, given to the
-   network; light tiles drawn by power (RTXDI). Open: render denoiser-v2
-   and retrain the network on it (the demo graph refuses every network
-   exported before, 28 inputs), the test's references again through a
-   pinhole; and whether the data set's input graph should trace the light
-   checkerboarded and filled, as the denoised graph does (the note,
-   "For the user").
+   network; light tiles drawn by power (RTXDI); the data set's input graph
+   tracing as the demo hands its network, checkerboard and fill included
+   (the user's decision). Preflight done, the estimate 3.06 h. Open: render
+   denoiser-v2 (the last on this Mac) and retrain the network on it,
+   tested against its own targets (the demo graph refuses every network
+   exported before, 28 inputs).
 
 1a. Reservoir reuse as kernels: tiling, layout and fusion of the merge
    passes, what each costs and where the bytes go (about 4 ms of the light

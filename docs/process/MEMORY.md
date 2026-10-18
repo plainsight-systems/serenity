@@ -448,5 +448,14 @@ frame lacked, chosen by the user from a sweep against shipped engines:
 - **The network must be retrained**: every export has 28 inputs and the
   renderer refuses it by name. The data set to render is denoiser-v2
   (`scripts/make_denoiser_dataset.py --out ../serenity-data/denoiser-v2`),
-  inputs and targets both new; the test's references must be rendered
-  again through a pinhole.
+  inputs and targets both new, about 3.1 h (the estimate); the last data
+  set rendered on this Mac, later ones on the RTX 3090's renderer; tested
+  against its own targets, no reference rendered again (the user,
+  2026-10-18).
+- **The training data is what the network sees** (principle 13, the
+  user's decision 2026-10-18): every graph with ReSTIR PT and the features
+  pass, the data set's input graph among them, traces its light as the
+  denoised graph does, checkerboarded and filled, pinhole, jittered; a test
+  holds the input graph's light and features to the demo's hand-off, to
+  the bit. denoiser-v1-checkerboard's inputs, found traced at every pixel,
+  were not.

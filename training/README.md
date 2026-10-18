@@ -142,11 +142,9 @@ the config's path.
 The real marbles are the test, read by `evaluate.py` alone, once a run has
 ended; the references are `make reference`'s at t = 8 and t = 120, in the
 checkout's `.cache/references/`. A network trained on denoiser-v2 sees a
-pinhole's image, and its references must be one too: render them from the
-data set's own copy of the marbles (`../serenity-data/denoiser-v2/scenes/marbles.toml`,
-written without its lens), into a references directory of their own (a
-reference is never replaced), and pass that as `--references`; the
-existing ones are through the lens:
+pinhole's image, and the references are through the lens: by the user's
+decision (2026-10-18) such a network is tested against the data set's own
+targets alone, without `--references`, which is then optional:
 
 ```sh
 uv run --locked python evaluate.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1-wide-checkerboard/best.pt \

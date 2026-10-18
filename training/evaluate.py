@@ -1,7 +1,7 @@
 """The test, once, after training: the real marbles, never trained on.
 
     uv run python evaluate.py --checkpoint RUN/best.pt --data DATA --warmup WARMUP \\
-        --references REFS --out RESULTS [--oidn /opt/homebrew/bin/oidnDenoise] [--images DIR]
+        --out RESULTS [--references REFS] [--oidn /opt/homebrew/bin/oidnDenoise] [--images DIR]
 
 The design's "Test once" (docs/research/2026-10-14-denoiser-training-design.md):
 this reads the test split, and refuses an --out that already holds results.
@@ -23,9 +23,13 @@ of the 8-bit values over 255, averaged over the region's pixels and the
 three channels:
 
 - against the 4,096-sample targets, every frame, averaged over the 8;
-- at t = 8 and t = 120 (the first frames of marbles-t008 and marbles-t120,
-  where the 65,536-sample references were rendered), against the
-  references; and the targets' own error against them, beside;
+- with --references, at t = 8 and t = 120 (the first frames of
+  marbles-t008 and marbles-t120, where the 65,536-sample references were
+  rendered), against the references; and the targets' own error against
+  them, beside. The references must be of the data set's camera: since
+  denoiser-v2 a pinhole's, which none rendered so far is, so the test of
+  a network trained on it is against its targets alone (the user,
+  2026-10-18);
 - flicker: the mean absolute change of the displayed image (0..1) from one
   frame to the next, over the 7 pairs, for each image kind and the targets.
 
@@ -143,7 +147,7 @@ def main() -> int:
     p.add_argument("--checkpoint", type=Path, required=True)
     p.add_argument("--data", type=Path, required=True)
     p.add_argument("--warmup", type=Path, help="the test sequences' warm-up frames (render_warmup.py)")
-    p.add_argument("--references", type=Path, help="the 65,536-sample references")
+    p.add_argument("--references", type=Path, help="the 65,536-sample references, of the data set's camera")
     p.add_argument("--dry-run-on-validation", action="store_true",
                    help="run this script on the validation split instead, without warm-up or references: "
                         "a check of the script before the test, not a result")
@@ -154,8 +158,8 @@ def main() -> int:
     args = p.parse_args()
 
     split = "validation" if args.dry_run_on_validation else "test"
-    if split == "test" and (args.warmup is None or args.references is None):
-        print("the test needs --warmup and --references", file=sys.stderr)
+    if split == "test" and args.warmup is None:
+        print("the test needs --warmup", file=sys.stderr)
         return 1
     if args.out.exists() and any(args.out.iterdir()):
         print(f"{args.out} already holds results: the test is run once", file=sys.stderr)
@@ -210,7 +214,7 @@ def main() -> int:
             entry["flicker"][k] = region_flicker(shown[k], region_masks)
         entry["flicker"]["targets"] = region_flicker(shown_target, region_masks)
 
-        if split == "test" and seq.name in REFERENCE_FRAMES:
+        if split == "test" and args.references is not None and seq.name in REFERENCE_FRAMES:
             tag, ref_name = REFERENCE_FRAMES[seq.name]
             reference = torch.from_numpy(read_pfm(args.references / ref_name).transpose(2, 0, 1).copy())
             ref_shown = to_display(reference, device)
