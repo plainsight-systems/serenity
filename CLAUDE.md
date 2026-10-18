@@ -32,6 +32,15 @@ section wins.
   between implementations), not coverage. A test that can't fail is
   removed. Tests never assert the shipped graphs' or scenes' current
   settings, which change with the demo; they build their own inputs.
+- **Unit tests test units of code.** Tests that run the program are
+  integration tests, a small handful. Logic checked by rendering (a file
+  name, a setting) moves into a function tested directly.
+- **A decision removes the alternative.** Superseded code, graphs,
+  settings and weights are deleted, not kept "just because". Git and the
+  milestone tags (`milestone-N`, tagged at every close) are the archive.
+- **Past milestones' films, images and numbers are kept as made**, never
+  re-rendered to compare against.
+- **Gates run once, at the end** of a piece of work, not after each step.
 - **Fix valid findings together.** No deferring for "one intent", no
   review-fix-review chains: one pass, fix what matters, move on.
 - **Quality trades are the user's call.** Any change that lowers image
