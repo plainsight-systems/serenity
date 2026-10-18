@@ -62,6 +62,8 @@ def main() -> int:
                         help="a Serenity checkout whose build/native-release/serenity-headless is the data set's binary")
     parser.add_argument("--out", type=Path, required=True, help="where the warm-up frames go (new or empty)")
     args = parser.parse_args()
+    # Absolute, as the renderer runs from the checkout: a relative path would be read from there.
+    args.data, args.checkout, args.out = args.data.resolve(), args.checkout.resolve(), args.out.resolve()
 
     manifest = json.loads((args.data / "manifest.json").read_text())
     renderer = args.checkout / "build/native-release/serenity-headless"
