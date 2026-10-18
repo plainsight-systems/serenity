@@ -7,7 +7,9 @@ generated scenes train and 4 validate, the brass sphere scenes train, the
 real marbles are the test and nothing else, and no generated scene is the
 real marbles' seed, 7. Each sequence has at least 30 frames of history
 before its first kept frame, several start in the opening and several in
-the flood, and no target's sample indices meet an input's. Rendering is the
+the flood, and no target's sample indices meet an input's. A data set made
+--targets-from another takes its scenes, albedo and targets and never its
+inputs, and refuses one made by another plan. Rendering is the
 renderer's to show (docs/research/2026-10-14-denoiser-dataset.md).
 """
 
@@ -20,6 +22,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts/make_denoiser_dataset.py'
+sys.path.insert(0, str(SCRIPT.parent))
+import make_denoiser_dataset  # noqa: E402
 PLAN_SHA256 = '604d537e1b06a7a67f117d4fc9dc2527af1f31400840073e0ad3b04b16f12d6f'
 
 
@@ -74,6 +78,18 @@ class MakeDenoiserDatasetTests(unittest.TestCase):
         for s in self.seqs:
             own = sorted(s['target_first'])
             self.assertEqual(len(set(own)), len(own))
+
+    def test_reuse_takes_scenes_albedo_and_targets_and_never_inputs(self):
+        old = {'plan': self.plan, 'units': {
+            'scene/gen-0101': {'files': {}}, 'input/gen-0101': {'files': {}},
+            'albedo/gen-0101': {'files': {}}, 'target/gen-0101/000100': {'files': {}}}}
+        taken = make_denoiser_dataset.reusable_units(old, self.plan)
+        self.assertEqual(sorted(taken), ['albedo/gen-0101', 'scene/gen-0101', 'target/gen-0101/000100'])
+
+    def test_reuse_refuses_another_plan(self):
+        old = {'plan': make_denoiser_dataset.plan(sequences=1), 'units': {}}
+        with self.assertRaises(SystemExit):
+            make_denoiser_dataset.reusable_units(old, self.plan)
 
 
 if __name__ == '__main__':

@@ -5,6 +5,8 @@
     python3 scripts/make_denoiser_dataset.py --out DIR --estimate  the first input and target, timed; stop
     python3 scripts/make_denoiser_dataset.py --out DIR --verify    check every file against the manifest
     python3 scripts/make_denoiser_dataset.py --print-plan          the plan as JSON; renders nothing
+    python3 scripts/make_denoiser_dataset.py --out DIR --targets-from OLD
+                                         new inputs, OLD's scenes, albedo and targets
 
 What it is (docs/research/2026-10-14-denoiser-training-design.md, "The data"
 and "Splits"; what was rendered, docs/research/2026-10-14-denoiser-dataset.md):
@@ -56,6 +58,16 @@ only if all its files are. A rerun verifies every recorded unit's files
 against their checksums, renders again any unit whose files are missing or
 changed, and skips the rest. A manifest made by another plan or another
 renderer commit is refused: the data set would mix two.
+
+Reusing targets (--targets-from OLD). When a change alters the inputs'
+renderer and not the targets', a new data set renders its inputs alone and
+takes OLD's scenes, full-size albedo and targets, by hard link (no copy;
+nothing writes a data set's files), each checked against OLD's checksum.
+OLD must be the same plan. The manifest records OLD and its renderer under
+'reused', and each reused unit keeps its own record, so the data set names
+both renderers. Denoiser-v1 with checkerboard inputs (Milestone 4) was made
+so: the targets' path tracer differed from OLD's only by the ray masks,
++0.1% in the mean on a lit frame, by the user's decision.
 
 The renderer: build/native-release/serenity-headless, built from this
 checkout first; its commit, whether the tree was clean, its build flags and
@@ -229,6 +241,17 @@ def git(*args: str) -> str:
     return subprocess.run(['git', '-C', str(ROOT), *args], check=True, capture_output=True, text=True).stdout
 
 
+REUSED_KINDS = ('scene', 'albedo', 'target')
+
+
+def reusable_units(old: dict, the_plan: dict) -> dict:
+    """The units a data set takes from `old` (a manifest) by --targets-from: its scenes, albedo
+    and targets, never its inputs. Pure. Exits if `old` was made by another plan."""
+    if old.get('plan') != the_plan:
+        sys.exit('--targets-from: that data set was made by another plan; its targets are not this one\'s')
+    return {unit: rec for unit, rec in old['units'].items() if unit.split('/', 1)[0] in REUSED_KINDS}
+
+
 def build_renderer() -> None:
     for cmd in (['cmake', '--preset', 'native-release', '--log-level=NOTICE'],
                 ['cmake', '--build', '--preset', 'native-release', '--target', 'serenity-headless']):
@@ -307,6 +330,7 @@ class Dataset:
         self.staging = out / '.staging'
         self.units = {}
         self.failures = {}
+        self.reused = None
 
     # The manifest.
 
@@ -323,6 +347,7 @@ class Dataset:
                      f'({self.renderer["binary_sha256"][:12]}): the data set would mix two renderers')
         self.units = old.get('units', {})
         self.failures = old.get('failures', {})
+        self.reused = old.get('reused')
         if not same_renderer:
             self.renderer = old['renderer']  # verifying: the manifest's renderer stays its own
 
@@ -331,6 +356,7 @@ class Dataset:
             'dataset': DATASET,
             'made_by': 'scripts/make_denoiser_dataset.py',
             'renderer': self.renderer,
+            **({'reused': self.reused} if self.reused else {}),
             'plan': self.plan,
             'splits': {split: [s['sequence'] for s in self.plan['sequences'] if s['split'] == split]
                        for split in ('train', 'validation', 'test')},
@@ -386,6 +412,28 @@ class Dataset:
                     del self.units[unit]
                     break
         return bad
+
+    def reuse(self, old_dir):
+        """Takes `old_dir`'s scenes, albedo and targets by hard link, each checked against its
+        checksum (see "Reusing targets"); returns how many units were taken."""
+        old = json.loads((old_dir / 'manifest.json').read_text(encoding='utf-8'))
+        taken = 0
+        for unit, rec in reusable_units(old, self.plan).items():
+            if self.done(unit):
+                continue
+            for rel, digest in rec['files'].items():
+                src, dst = old_dir / rel, self.out / rel
+                if sha256(src) != digest:
+                    sys.exit(f'--targets-from: {src} differs from its manifest\'s checksum')
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                if dst.exists():
+                    dst.unlink()
+                os.link(src, dst)
+            self.units[unit] = {**rec, 'reused_from': str(old_dir)}
+            taken += 1
+        self.reused = {'from': str(old_dir), 'renderer': old['renderer'], 'kinds': list(REUSED_KINDS)}
+        self.save()
+        return taken
 
     # The units.
 
@@ -495,6 +543,8 @@ def main() -> int:
     parser.add_argument('--frames', type=int, default=KEPT, help='trial: N frames a sequence')
     parser.add_argument('--target-samples', type=int, default=TARGET_SAMPLES, help='trial: target samples')
     parser.add_argument('--allow-dirty', action='store_true', help='trial: render from an uncommitted tree')
+    parser.add_argument('--targets-from', type=Path,
+                        help='take this data set\'s scenes, albedo and targets; render the inputs alone')
     args = parser.parse_args()
 
     the_plan = plan(args.sequences, args.frames, args.target_samples)
@@ -516,6 +566,11 @@ def main() -> int:
     bad = ds.verify()
     print(f'verified {len(ds.units)} recorded units in {time.monotonic() - t0:.0f} s'
           + (f'; {len(bad)} missing or changed, to render again: {", ".join(bad)}' if bad else ''), flush=True)
+
+    if args.targets_from is not None and not args.verify:
+        t0 = time.monotonic()
+        taken = ds.reuse(args.targets_from.resolve())
+        print(f'took {taken} units from {args.targets_from} in {time.monotonic() - t0:.0f} s', flush=True)
 
     planned = []
     for s in the_plan['sequences']:
