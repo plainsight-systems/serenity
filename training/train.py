@@ -69,68 +69,38 @@ def pick_device(asked: str | None, cuda: bool, mps: bool) -> str:
     raise SystemExit("no GPU: training needs CUDA or the Mac's GPU (MPS)")
 
 
-def held_on(device: str) -> str:
-    """Where a split is held: a CUDA card's own memory is too small for the train split (23 GB against
-    the RTX 3090's 24 GB), so the host's, pinned; the Mac's GPU shares the host's memory, so its own."""
-    return "cpu" if device == "cuda" else device
+# Training's own GPU memory beside the data: the network, its activations
+# and gradients for a batch, Adam's state. Measured 8.0 GiB reserved at
+# batch 16 on the RTX 3090 Ti (2026-10-17), with 2 GiB to spare.
+WORKING_MEMORY = 10 * 2**30
 
 
-def provenance(config: dict, manifest: Manifest) -> dict:
-    def git(*args: str) -> str:
-        return subprocess.run(["git", *args], cwd=HERE, capture_output=True, text=True, check=True).stdout.strip()
-
-    return {
-        "config": config,
-        "manifest_sha256": manifest.sha256,
-        "dataset": manifest.data["dataset"],
-        "git_commit": git("rev-parse", "HEAD"),
-        "training_dir_uncommitted": git("status", "--porcelain", "--", ".").splitlines(),
-        "torch": torch.__version__,
-        "numpy": np.__version__,
-        "python": platform.python_version(),
-        "machine": platform.platform(),
-    }
+def hold_on_device(data_bytes: int, free_bytes: int, working_bytes: int = WORKING_MEMORY) -> bool:
+    """Whether the splits are held on the GPU: if they fit in its free memory beside training's own.
+    Pure. Where not (a 24 GB card), they are held in the host's memory and each batch copied over."""
+    return data_bytes + working_bytes <= free_bytes
 
 
-def make_batch(split: Split, picks: list[tuple[int, int, int]],
-               augmentations: list[Augmentation]) -> tuple[torch.Tensor, torch.Tensor]:
-    """Each (sequence, oy, ox) pick's crop, augmented, stacked: (B, 8, 12, 128, 128) and (B, 8, 6, 256, 256)."""
-    inputs, targets = [], []
-    for (s, oy, ox), a in zip(picks, augmentations):
-        i, t = split.crop(s, oy, ox)
-        i, t = augment(i, t, a)
-        inputs.append(i)
-        targets.append(t)
-    return torch.stack(inputs), torch.stack(targets)
-
-
-def run_batch(model: Denoiser, inputs: torch.Tensor,
-              targets: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    """The batch's loss and its parts (loss.sequence_loss), the network run over each sequence."""
-    outputs, _ = model(inputs, targets[:, :, 3:6])
-    return sequence_loss(outputs, targets[:, :, 0:3])
-
-
-def validate(model: Denoiser, split: Split, batch_size: int) -> tuple[float, float, float]:
-    tiles = validation_tiles(len(split))
-    model.eval()
-    totals = torch.zeros(3, device=split.device)
-    with torch.no_grad():
-        for b in range(0, len(tiles), batch_size):
-            picks = tiles[b:b + batch_size]
-            inputs, targets = make_batch(split, picks, [Augmentation.none()] * len(picks))
-            loss, parts = run_batch(model, inputs, targets)
-            totals += torch.stack((loss, parts["spatial"], parts["temporal"])) * len(picks)
-    model.train()
-    return tuple((totals / len(tiles)).tolist())
+def free_device_bytes(device: torch.device) -> int:
+    """The GPU memory a run may use: CUDA's (and ROCm's) free memory; on the Mac, Metal's recommended
+    working set, the unified memory the GPU may take."""
+    if device.type == "cuda":
+        return torch.cuda.mem_get_info(device)[0]
+    return torch.mps.recommended_max_memory() - torch.mps.current_allocated_memory()
 
 
 def setup(config: dict, need_validation: bool) -> tuple[torch.device, Manifest, Split,
                                                        Split | None, Denoiser]:
     device = torch.device(config["device"])
-    held = torch.device(held_on(config["device"]))
     torch.manual_seed(config["seed"])
     manifest = Manifest(Path(config["data"]))
+    data_bytes = manifest.split_bytes("train") + (manifest.split_bytes("validation") if need_validation else 0)
+    free = free_device_bytes(device)
+    on_device = hold_on_device(data_bytes, free)
+    held = device if on_device else torch.device("cpu")
+    print(f"data held {'on the GPU' if on_device else 'in host memory, each batch copied to the GPU'}: "
+          f"{data_bytes / 2**30:.1f} GiB of data and {WORKING_MEMORY / 2**30:.0f} GiB of training "
+          f"against {free / 2**30:.1f} GiB free", flush=True)
     t0 = time.time()
     train_split = Split(manifest, "train", device, held)
     valid = Split(manifest, "validation", device, held) if need_validation else None

@@ -20,7 +20,7 @@ from data import Augmentation, albedo_factor, augment, validation_tiles
 from loss import frame_weights, ms_ssim, pu
 from model import SCORES, SUBPIXELS, TAPS, Denoiser, Widths, warp_history
 from pfm import read_pfm, write_pfm
-from train import pick_device
+from train import hold_on_device, pick_device
 
 TINY = Widths(enc=[8, 8, 8, 8], bottleneck=8, dec=[8, 8, 8, 8])
 
@@ -189,7 +189,8 @@ class TilingTest(unittest.TestCase):
 
 class DeviceTest(unittest.TestCase):
     """Training runs on CUDA or the Mac's GPU: the one asked for if the machine has it, else CUDA
-    where there is one, else MPS; never a device the machine lacks, never without a GPU."""
+    where there is one, else MPS; never a device the machine lacks, never without a GPU. The data
+    is held on the GPU exactly when it fits beside training's own memory, whatever the GPU."""
 
     def test_the_device_asked_for_or_the_one_there_is(self):
         self.assertEqual(pick_device(None, cuda=True, mps=False), "cuda")
@@ -199,6 +200,13 @@ class DeviceTest(unittest.TestCase):
             pick_device("cuda", cuda=False, mps=True)
         with self.assertRaises(SystemExit):
             pick_device(None, cuda=False, mps=False)
+
+    def test_the_data_is_on_the_gpu_exactly_when_it_fits(self):
+        gib = 2**30
+        self.assertTrue(hold_on_device(26 * gib, 36 * gib, working_bytes=10 * gib))
+        self.assertFalse(hold_on_device(26 * gib, 36 * gib - 1, working_bytes=10 * gib))
+        self.assertFalse(hold_on_device(26 * gib, 23 * gib))  # a 24 GB card
+        self.assertTrue(hold_on_device(26 * gib, 96 * gib))   # unified memory, or a 48 GB card
 
 
 if __name__ == "__main__":

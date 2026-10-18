@@ -156,6 +156,13 @@ class Manifest:
         plan = {s["sequence"]: s for s in self.data["plan"]["sequences"]}
         return [Sequence(n, split, plan[n]["frames"], plan[n]["scene"]) for n in names]
 
+    def split_bytes(self, split: str) -> int:
+        """What a Split of `split` holds, in bytes: 12 float32 input channels at the input's size and 6
+        target channels at the target's, a frame."""
+        (w, h), (tw, th) = self.data["plan"]["input"]["size"], self.data["plan"]["target"]["size"]
+        frames = sum(len(seq.frames) for seq in self.sequences(split))
+        return frames * 4 * (12 * w * h + 6 * tw * th)
+
     def scene_file(self, scene: str) -> Path:
         (rel, digest), = self.data["scenes"][scene]["files"].items()
         path = self.root / rel
@@ -182,11 +189,11 @@ class Manifest:
 class Split:
     """A split's sequences, whole, in memory: inputs (S, 8, 12, h, w), targets (S, 8, 6, H, W).
 
-    Held on `held`: the compute device itself where the split fits beside the
-    network (the M3 Max's unified memory), or the host, pinned, where it does
-    not (the train split's 23 GB against the RTX 3090's 24 GB); each crop is
-    handed to `device`. The values are the same either way. Each sequence is
-    copied in as it is read, so the host never holds the split twice.
+    Held on `held`: the compute device itself where the splits fit beside
+    training's own memory (train.hold_on_device), or the host, pinned, where
+    they do not; each crop is handed to `device`. The values are the same
+    either way. Each sequence is copied in as it is read, so the host never
+    holds the split twice.
     """
 
     def __init__(self, manifest: Manifest, split: str, device: torch.device, held: torch.device,

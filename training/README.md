@@ -34,9 +34,10 @@ Each step below.
   torch 2.14.1, numpy 2.5.4, pillow 12.3.0. The lock holds macOS's wheels
   and Linux's CUDA ones, so training runs on either: `train.py --device`
   `cuda` or `mps`, by default CUDA where there is one, else the Mac's GPU.
-  On CUDA the split is held in the host's memory and each batch's crops
-  handed to the GPU, as a 24 GB card cannot hold the train split; on a Mac,
-  whose GPU shares the host's memory, on the GPU. Evaluation and the
+  The data is held on the GPU where it fits beside training's own memory
+  (unified memory, as on a Mac, or a large card), and otherwise in the
+  host's memory, each batch copied to the GPU (a 24 GB card such as the
+  RTX 3090); the run prints which. Evaluation and the
   benchmark run on the Mac (`mps`).
 - PFM images are read directly (`pfm.py`), no image library.
 - For the evaluation only: `ffmpeg` (the MP4) and, optionally, Open Image
