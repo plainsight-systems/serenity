@@ -1,9 +1,10 @@
-// The denoiser's features (contract 17, core/contracts/features.h) beside
-// a light graph, an integration test: the light of a graph with the
-// features pass is the graph's without it, to the bit, as the training
-// data's light must be (graphs/restir_pt_features.toml renders it beside
-// its features). ReSTIR PT, its reuse running across three frames of
-// wandering fireflies, in graphs this test builds; and the rays both take,
+// The denoiser's features (contract 17, core/contracts/features.h) and the
+// light beside them, two integration tests. The training data is what the
+// network sees (logical-overview.md, principle 13): the data set's input
+// graph, ReSTIR PT with the features pass and no network
+// (graphs/restir_pt_features.toml), writes for a frame the very light and
+// features the denoised graph hands its network for that frame, to the bit,
+// and the jitter the network is given; and every ray of such a frame passes
 // through the frame's camera jitter.
 
 #include <algorithm>
@@ -14,6 +15,7 @@
 
 #include <doctest/doctest.h>
 
+#include "core/animation/animate.h"
 #include "core/camera/thin_lens.h"
 #include "core/frame/schedule.h"
 #include "core/sampling/jitter.h"
@@ -22,6 +24,7 @@
 #include "metal/device/device.h"
 #include "metal/device/offscreen.h"
 #include "metal/device/submission.h"
+#include "metal/frame/feature_images.h"
 #include "metal/frame/renderer.h"
 #include "support/lit_floor.h"
 #include "support/same_bits.h"
@@ -49,31 +52,65 @@ frame::Schedule light_graph(bool features) {
 
 }  // namespace
 
-TEST_CASE("features: a graph's light is the same to the bit with the features pass beside it") {
+TEST_CASE("the data set's input graph writes, frame by frame, the light, features and jitter the demo hands its "
+          "network") {
+    // Wandering fireflies about a brass ball, so the fill moves pixels and
+    // the reuse carries history; no glass, so no MNEE request is made and
+    // the light is reproducible to the bit (MNEE's float atomics add in no
+    // fixed order: docs/process/QUEUE.md, 0b). The input graph at the light
+    // size, the demo (the fixture's network: rendering.h) at twice it, the
+    // same frames from the same history.
     const scene::SceneDescription description = scene::parse(tests::wandering_fireflies(), "wandering fireflies");
-    const auto accumulated = [&](const frame::Schedule& graph) {
-        metal::Device device;
-        metal::Submission submission(device);
-        metal::Offscreen target(device, submission, size);
-        metal::Renderer renderer(device, submission, graph, &description);
-        std::uint64_t last = 0;
-        for (std::uint64_t i = 0; i < 3; ++i) {
-            // Its reuse history kept from frame 0 (reused_since, the default).
-            const frame::FrameInputs inputs =
-                tests::frame_at(i, i, static_cast<double>(i) / 60.0, description.camera);
-            last = metal::render_to_offscreen(submission, target, renderer, inputs);
+    REQUIRE(animation::moves(description.animation));
+    const frame::Schedule input = light_graph(true);
+    const frame::Schedule demo = tests::fixture_denoised_graph();
+    REQUIRE(frame::feeds_network(input));
+    REQUIRE_FALSE(frame::denoises(input));
+    metal::Device device;
+    metal::Submission submission(device);
+    metal::Offscreen input_target(device, submission, size);
+    metal::Offscreen demo_target(device, submission, {2 * size.width, 2 * size.height});
+    metal::Renderer input_renderer(device, submission, input, &description);
+    metal::Renderer demo_renderer(device, submission, demo, &description);
+    for (std::uint64_t i = 0; i < 5; ++i) {
+        // Its reuse history kept from frame 0 (reused_since, the default);
+        // the frame before, which the features' motion points to.
+        frame::FrameInputs inputs = tests::frame_at(i, i, static_cast<double>(i) / 60.0, description.camera);
+        if (i > 0) {
+            inputs.previous = frame::PreviousFrame{frame::Seconds(static_cast<double>(i - 1) / 60.0),
+                                                   description.camera};
         }
-        (void)submission.wait_until_complete(last);
-        CHECK(renderer.non_finite_samples() == 0);
-        std::vector<float> image(std::size_t{size.width} * size.height * 4);
-        renderer.read_accumulated(image);
-        return image;
-    };
-    const std::vector<float> without = accumulated(light_graph(false));
-    const std::vector<float> with = accumulated(light_graph(true));
-    CHECK(tests::same_bits(with, without));
-    // And it holds light: not two black images alike.
-    CHECK(std::ranges::max(with) > 0.0f);
+        (void)submission.wait_until_complete(metal::render_to_offscreen(submission, input_target, input_renderer,
+                                                                         inputs));
+        (void)submission.wait_until_complete(metal::render_to_offscreen(submission, demo_target, demo_renderer,
+                                                                         inputs));
+        INFO("frame " << i);
+        const metal::Renderer::NetworkInput written = input_renderer.read_network_input();
+        const metal::Renderer::NetworkInput handed = demo_renderer.read_network_input();
+        REQUIRE(written.size == size);
+        REQUIRE(handed.size == size);
+        CHECK(tests::same_bits(written.rgba, handed.rgba));
+        // What the headless renderer writes of the input graph is that light.
+        std::vector<float> shown(written.rgba.size());
+        input_renderer.read_accumulated(shown);
+        CHECK(tests::same_bits(shown, written.rgba));
+        const metal::FeatureImages::Read a = input_renderer.read_features();
+        const metal::FeatureImages::Read b = demo_renderer.read_features();
+        CHECK(tests::same_bits(a.albedo.rgb, b.albedo.rgb));
+        CHECK(tests::same_bits(a.normal.rgb, b.normal.rgb));
+        CHECK(tests::same_bits(a.depth.rgb, b.depth.rgb));
+        CHECK(tests::same_bits(a.motion.rgb, b.motion.rgb));
+        // The jitter the network reads, the data set's script's (pinned to
+        // the same values, tests/jitter_test.cpp).
+        const sampling::CameraJitter jitter = sampling::camera_jitter(i);
+        CHECK(written.jitter.x == jitter.x);
+        CHECK(written.jitter.y == jitter.y);
+        CHECK(handed.jitter.x == jitter.x);
+        CHECK(handed.jitter.y == jitter.y);
+        // And it holds light: not two black images alike.
+        CHECK(std::ranges::max(written.rgba) > 0.0f);
+    }
+    CHECK(input_renderer.non_finite_samples() == 0);
 }
 
 TEST_CASE("a ReSTIR PT frame's camera rays, the features' with them, all pass through the frame's jitter") {

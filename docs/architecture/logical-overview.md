@@ -264,17 +264,30 @@ before ("The frame").
     no scene here has one.
 
 12. **The lens is traced by the reference and applied by the denoised
-    frame after the network.** A graph that denoises traces its light,
-    its features and its full-size albedo through a pinhole, the scene's
-    camera with its lens taken off, and its depth-of-field step then
-    blurs the network's output by the circle of confusion of that same
-    lens; every other graph traces the scene's lens in its rays, the path
+    frame after the network.** A graph whose light is the network's
+    input (principle 13) traces it, its features and, denoised, its
+    full-size albedo through a pinhole, the scene's camera with its lens
+    taken off, and the denoised graph's depth-of-field step then blurs
+    the network's output by the circle of confusion of that same lens;
+    every other graph traces the scene's lens in its rays, the path
     tracer, the reference, among them. So the two meet where they are
     compared: the same lens, its radius and plane of focus, one exactly
     in the rays and one approximately in the image, as Unreal's path
     tracer and its real-time renderer differ. The denoiser's training
     data is rendered through a pinhole, inputs and targets alike: its
     scenes are written without a lens.
+
+13. **The training data is what the network sees.** The light the
+    network reads is traced one way wherever it is made: in the denoised
+    graph, live, and in the data set's input graph, offline. Both are the
+    graphs with ReSTIR PT's passes and the features pass, and every such
+    graph traces its light checkerboarded and filled (the fill writing
+    the light it hands on), through a pinhole (12), at the camera's
+    jitter, from tiles drawn by power, so the input graph's light and
+    features for a frame are the denoised graph's for the same frame, to
+    the bit, which a test holds. It is how production makes an
+    upscaler's training data: by the renderer the network runs behind,
+    not by a variant of it.
 
 ## The design space
 
@@ -294,7 +307,7 @@ What varies, and which principle handles it.
 | Reuse settings | M candidates, k neighbors, history length | settings of the estimator, not code |
 | Samples per pixel | one a frame, or thousands for the reference | a setting; the reference is the light transport without reuse (3) |
 | Point in the pixel | the frame's jitter, or each pixel's own | the jitter in ReSTIR PT's frames, the light the network reads, and given to it; each pixel's own random point in the path tracer's, the reference's box filter (2) |
-| Pixels traced a frame | every one, or half in an alternating checkerboard | half in a denoised graph, the other half the frame before's light, moved ("The frame"); every one in a graph without the denoiser |
+| Pixels traced a frame | every one, or half in an alternating checkerboard | half where the light is the network's input (13), the other half the frame before's light, moved ("The frame"); every one in any other graph |
 | Resolution | traced, and output | with the denoiser, traced at half the output each way and upscaled by it; without, traced at the window's size or a fraction the window stretches; anything, headless |
 | Denoiser | none, or our own network | a stage after Resolve, its weights data; judged against the reference, and against Open Image Denoise offline |
 | Backend | Metal, Vulkan | the core is shared (10) |
@@ -374,9 +387,9 @@ A graph without the denoiser has one half and runs on one queue, as
 before.
 
 **Checkerboard rendering of the light** (Milestone 4's Step 4,
-`docs/research/2026-10-17-milestone-4-plan.md`) is how a denoised frame
-traces its light, not a setting; a graph without the denoiser traces
-every pixel. Each frame traces the light at half the light size's
+`docs/research/2026-10-17-milestone-4-plan.md`) is how the light the
+network reads is traced, not a setting (principle 13); a graph whose
+light is not the network's traces every pixel. Each frame traces the light at half the light size's
 pixels, a checkerboard whose two fields alternate frame by frame, so
 every pixel is traced every other frame; the other half of the image is
 the frame before's light, moved by the motion vectors, as console
@@ -404,11 +417,12 @@ for ReSTIR PT:
   through as they are. The fill writes the hand-off, never the accumulated
   image, so a still scene's mean is each pixel's own traced frames.
 
-It changes what the denoiser sees, which was trained on light traced at
-every pixel: a half of each frame a frame old. The user kept it
-(2026-10-17), from the denoised frames before and after; whether the
-network is retrained on checkerboarded light is the user's call, and it
-has not been.
+It changes what the denoiser sees: a half of each frame a frame old. The
+user kept it (2026-10-17). The network was retrained after it on a data
+set whose inputs were, it was found on 2026-10-18, traced at every pixel
+(the input graph had no denoise pass, which the checkerboard was then tied
+to); since principle 13 the data set's inputs are the checkerboard's and
+the fill's, as the network sees them.
 
 The target is not met yet. The denoised frame takes 58.3 ms at the
 window's size and 17.4 ms at 1920 x 1080, with the lens applied after the

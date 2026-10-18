@@ -276,7 +276,7 @@ three:
   half's is the frame graph's (contract 6).
 - **Sample reuse** asks it where a neighbor and last frame's input may
   be: a spatial partner among this frame's traced pixels (the pairing
-  taken over their lattice, so a denoised graph's sigma must be one the
+  taken over their lattice, so such a graph's sigma must be one the
   lattice can pair at), a temporal input among the frame before's. The
   merges themselves, their weights and the shifts do not change.
 - **Pass**: the fill's kernel, which reads the features and the frame
@@ -284,10 +284,16 @@ three:
 
 It looks wrong that **the choice is the frame graph's and not
 [restir_pt]'s**, since only ReSTIR PT's passes read it: the fill and the
-hand-off are the denoised frame's, which ReSTIR PT's settings know
-nothing of, so a graph traces its light checkerboarded exactly when it
-has the denoise pass, and the renderer copies that into the path reuse
-settings. And that **the
+hand-off are the network's input, which ReSTIR PT's settings know
+nothing of, so a graph traces its light checkerboarded exactly when its
+light is the network's input, ReSTIR PT with the features pass
+(`logical-overview.md`, principle 13), the denoised graph and the data
+set's input graph alike, and the renderer copies that into the path
+reuse settings. It looks wrong too that **a graph without the network
+runs the fill**: the input graph's light is the network's input, and the
+fill is how that light is made; the fill writes the light it hands on,
+to the network where there is one, and to the presenting pass and the
+headless renderer's files where there is not. And that **the
 features stay whole** while the light is halved: they are Film's guide
 images for the denoiser, and the fill's evidence for whether a moved
 pixel is the same surface; halved, both would guess at edges.

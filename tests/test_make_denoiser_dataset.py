@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts/make_denoiser_dataset.py'
 sys.path.insert(0, str(SCRIPT.parent))
 import make_denoiser_dataset  # noqa: E402
-PLAN_SHA256 = 'f696671af8b752c7c0a345b0235fa4b8ee1e51b572fc5d3693afb26421c13e7b'
+PLAN_SHA256 = 'ef6356c5134b0e2ef71ad1308f1f8aa22b7b25e726e7e4bee2223357f863f5d7'
 
 
 def printed_plan():
@@ -105,6 +105,18 @@ class MakeDenoiserDatasetTests(unittest.TestCase):
             self.assertAlmostEqual(jy, y, places=12, msg=index)
         for s in self.seqs:
             self.assertEqual(s['jitters'], [make_denoiser_dataset.camera_jitter(i) for i in s['frames']])
+
+    def test_the_input_graph_renders_what_the_demo_hands_its_network(self):
+        """The input graph's ReSTIR PT passes and settings are the demo's, and it has the features; a graph
+        that differs in any is refused before anything renders."""
+        read = lambda g: (ROOT / g).read_text(encoding='utf-8')
+        inp, demo = read(make_denoiser_dataset.INPUT_GRAPH), read(make_denoiser_dataset.DEMO_GRAPH)
+        self.assertIsNone(make_denoiser_dataset.input_graph_mismatch(inp, demo))
+        self.assertIn('[restir_pt] settings',
+                      make_denoiser_dataset.input_graph_mismatch(inp.replace('sigma = 16.0', 'sigma = 12.0'), demo))
+        self.assertIn('no features', make_denoiser_dataset.input_graph_mismatch(inp.replace('"features", ', ''), demo))
+        self.assertIn('passes', make_denoiser_dataset.input_graph_mismatch(
+            inp.replace('"restir_pt_spatial", ', ''), demo))
 
     def test_every_scene_is_written_through_a_pinhole(self):
         for text in ((ROOT / 'scenes/marbles.toml').read_text(encoding='utf-8'),

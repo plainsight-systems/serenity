@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <set>
 #include <utility>
 
@@ -56,14 +57,24 @@ TEST_CASE("the jitter's 32 phases cover the pixel: each x in its own 1/32, each 
     CHECK(y_strata.size() == 27);
 }
 
-TEST_CASE("ReSTIR PT's graphs take the jitter; the path tracer and the features alone do not") {
+TEST_CASE("the graphs whose light is the network's input take the jitter; the path tracer and the features alone "
+          "do not") {
     using frame::PassKind;
-    std::vector<PassKind> light = tests::restir_pt_passes;
-    light.push_back(PassKind::features);
-    light.push_back(PassKind::tone_map);
-    frame::Schedule restir{light, tests::look};
-    restir.restir_pt = tests::written_restir_pt(light);
-    CHECK(frame::jitters(restir));
-    CHECK_FALSE(frame::jitters(frame::Schedule{{PassKind::path, PassKind::tone_map}, tests::look}));
-    CHECK_FALSE(frame::jitters(frame::Schedule{{PassKind::features}, std::nullopt}));
+    const auto restir = [](bool features) {
+        std::vector<PassKind> light = tests::restir_pt_passes;
+        if (features) {
+            light.push_back(PassKind::features);
+        }
+        light.push_back(PassKind::tone_map);
+        frame::Schedule s{light, tests::look};
+        s.restir_pt = tests::written_restir_pt(light);
+        return s;
+    };
+    const std::optional<sampling::CameraJitter> taken = frame::camera_jitter(restir(true), 7);
+    REQUIRE(taken.has_value());
+    CHECK(taken->x == sampling::camera_jitter(7).x);
+    CHECK(taken->y == sampling::camera_jitter(7).y);
+    CHECK_FALSE(frame::camera_jitter(restir(false), 7).has_value());
+    CHECK_FALSE(frame::camera_jitter(frame::Schedule{{PassKind::path, PassKind::tone_map}, tests::look}, 7));
+    CHECK_FALSE(frame::camera_jitter(frame::Schedule{{PassKind::features}, std::nullopt}, 7));
 }

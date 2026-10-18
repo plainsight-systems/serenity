@@ -26,8 +26,10 @@ endforeach()
 # CMAKE_OSX_SYSROOT; CMake 4 sets none by default, which leaves the SDK to
 # the environment), and CMake itself. Python runs the check and builds
 # nothing; it is found here, explicitly, rather than taken from PATH, and
-# given a floor.
-find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
+# given a floor: 3.11, for tomllib, with which the data set's script reads
+# its input graph and the demo's to hold them alike
+# (scripts/make_denoiser_dataset.py, input_graph_mismatch).
+find_package(Python3 3.11 REQUIRED COMPONENTS Interpreter)
 execute_process(
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_toolchain.py"
             --cxx "${CMAKE_CXX_COMPILER}"

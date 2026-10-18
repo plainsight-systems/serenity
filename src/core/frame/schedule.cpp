@@ -534,14 +534,14 @@ std::optional<std::string> invalid(const Schedule& schedule) {
         }
     }
 
-    // A denoised graph's light is traced checkerboarded: a sigma the traced
+    // The network's input is traced checkerboarded: a sigma the traced
     // lattice pairs at (schedule.h).
     const float least_sigma = contracts::min_pairing_sigma * contracts::checkerboard_lattice_step;
-    if (denoising && std::ranges::find(passes, PassKind::restir_pt_spatial) != passes.end() &&
+    if (feeds_network(schedule) && std::ranges::find(passes, PassKind::restir_pt_spatial) != passes.end() &&
         schedule.restir_pt->sigma < least_sigma) {
         return setting(pt, "sigma", text(schedule.restir_pt->sigma)) + "must be at least " + text(least_sigma) +
-               " pixels in a denoised graph: its light is traced checkerboarded, and the traced field's lattice "
-               "pairs at sigma over its step, " +
+               " pixels in a graph whose light is the network's input (ReSTIR PT with the features pass): it is "
+               "traced checkerboarded, and the traced field's lattice pairs at sigma over its step, " +
                text(contracts::checkerboard_lattice_step) + " pixels, at least " + text(contracts::min_pairing_sigma);
     }
     return std::nullopt;
@@ -605,8 +605,16 @@ bool denoises(const Schedule& schedule) {
     return std::ranges::find(schedule.passes, PassKind::denoise) != schedule.passes.end();
 }
 
-bool jitters(const Schedule& schedule) {
-    return std::ranges::any_of(schedule.passes, [](PassKind kind) { return is_restir_pt(kind); });
+bool feeds_network(const Schedule& schedule) {
+    return std::ranges::any_of(schedule.passes, [](PassKind kind) { return is_restir_pt(kind); }) &&
+           writes_features(schedule);
+}
+
+std::optional<sampling::CameraJitter> camera_jitter(const Schedule& schedule, std::uint64_t index) {
+    if (!feeds_network(schedule)) {
+        return std::nullopt;
+    }
+    return sampling::camera_jitter(index);
 }
 
 bool lens_after_network(const Schedule& schedule) {
@@ -615,7 +623,7 @@ bool lens_after_network(const Schedule& schedule) {
 
 FrameInputs traced_inputs(const Schedule& schedule, const FrameInputs& inputs) {
     FrameInputs traced = inputs;
-    if (!lens_after_network(schedule)) {
+    if (!feeds_network(schedule)) {
         return traced;
     }
     if (traced.camera) {

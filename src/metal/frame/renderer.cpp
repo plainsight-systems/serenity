@@ -108,8 +108,10 @@ NS::UInteger buffer_bindings(const frame::Schedule& schedule) {
 }
 
 // The textures it holds.
+// The textures it holds: a denoised graph's, or the fill's in any graph
+// whose light is the network's input.
 NS::UInteger texture_bindings(const frame::Schedule& schedule) {
-    return frame::denoises(schedule) ? max_denoise_textures : max_textures;
+    return frame::denoises(schedule) || frame::feeds_network(schedule) ? max_denoise_textures : max_textures;
 }
 
 // Shaders read a time as a float (contracts/frame_constants.h): a double
@@ -299,11 +301,11 @@ Renderer::DenoiseFamily::DenoiseFamily(const Device& device, Submission& submiss
 // Checkerboard rendering's (renderer.h): the fill, its constants' ring and
 // its history.
 Renderer::CheckerboardFamily::CheckerboardFamily(const Device& device, Submission& submission,
-                                                 const Library& library)
+                                                 const Library& library, CheckerboardImages::Filled filled)
     : fill(library),
       constants(device, submission, std::vector<std::byte>(sizeof(contracts::CheckerboardConstants)),
                 FrameArray::Copies::per_frame),
-      images(device, submission) {}
+      images(device, submission, filled) {}
 
 // The depth of field's (renderer.h): its images and its constants' ring.
 Renderer::DepthOfFieldFamily::DepthOfFieldFamily(const Device& device, Submission& submission)
@@ -318,6 +320,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
       constants_(device, submission, std::vector<std::byte>(ring_slot_size), FrameArray::Copies::per_frame),
       arguments_(make_argument_table(device.handle(), buffer_bindings(schedule), texture_bindings(schedule))),
       denoises_(frame::denoises(schedule)),
+      feeds_network_(frame::feeds_network(schedule)),
       schedule_(schedule) {
     // The core decides which schedules can be carried out (principle 10).
     if (const std::optional<std::string> reason = frame::invalid(schedule)) {
@@ -354,10 +357,11 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     if (denoises_) {
         denoise_.emplace(device, submission_, library_, *network);
     }
-    // Checkerboard rendering's, a denoised graph's, always a ReSTIR PT one
-    // (frame::invalid).
-    if (denoises_) {
-        checkerboard_.emplace(device, submission_, library_);
+    // Checkerboard rendering's, a graph's whose light is the network's input
+    // (frame::feeds_network), its own filled light without the denoise pass.
+    if (feeds_network_) {
+        checkerboard_.emplace(device, submission_, library_,
+                              denoises_ ? CheckerboardImages::Filled::none : CheckerboardImages::Filled::kept);
     }
     // The depth of field's, a denoised graph's (frame::invalid).
     if (frame::lens_after_network(schedule)) {
@@ -384,6 +388,11 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
     // (frame::invalid: the features and a light pass come before it).
     image_begins_ = static_cast<std::size_t>(std::ranges::find(schedule.passes, frame::PassKind::denoise) -
                                              schedule.passes.begin());
+    // The fill, in a graph that feeds the network: before the denoise pass,
+    // or without it before the presenting pass, the last (frame::invalid).
+    fill_at_ = !frame::feeds_network(schedule) ? schedule.passes.size()
+               : frame::denoises(schedule)     ? image_begins_
+                                               : schedule.passes.size() - 1u;
     steps_.reserve(schedule.passes.size());
     for (frame::PassKind kind : schedule.passes) {
         // No default: a kind this backend does not implement fails the build
@@ -471,14 +480,14 @@ void Renderer::make_restir_pt(const Device& device, const frame::Schedule& sched
     reuses_history_ = temporal;
     const bool spatial = has(schedule, frame::PassKind::restir_pt_spatial);
     contracts::PathReuseSettings settings = *schedule.restir_pt;
-    settings.checkerboard = denoises_ ? 1u : 0u;  // a denoised graph's light is traced checkerboarded
+    settings.checkerboard = feeds_network_ ? 1u : 0u;  // the network's input is traced checkerboarded
     // With spatial reuse, the three reuse textures, built once on the CPU
     // from the graph's sigma and a fixed seed (core/sampling/pairing.h); one
     // zero texel without. With the checkerboard the pairing is over the
     // traced lattice, so at sigma over its step, sigma pixels along each
     // axis (renderer.h; the core has refused a sigma the lattice cannot
     // take, frame::invalid).
-    const double sigma = denoises_
+    const double sigma = feeds_network_
                              ? static_cast<double>(settings.sigma) / contracts::checkerboard_lattice_step
                              : static_cast<double>(settings.sigma);
     const std::vector<std::uint16_t> textures =
@@ -583,9 +592,7 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
             set->prepare(size);
         }
     }
-    if (checkerboard_) {
-        checkerboard_->images.prepare(light);
-    }
+    const bool fill_history = checkerboard_ ? checkerboard_->images.prepare(inputs, light) : false;
     if (depth_of_field_) {
         depth_of_field_->images.prepare(size);
     }
@@ -601,7 +608,7 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
         held = accumulation_->prepare(inputs, light, motion);
     }
     const bool denoise_history = denoise_ ? denoise_->images.prepare(inputs, light) : false;
-    prepared_ = Prepared{inputs.index, size, held, reused, denoise_history};
+    prepared_ = Prepared{inputs.index, size, held, reused, denoise_history, fill_history};
 }
 
 bool Renderer::prepares() const noexcept {
@@ -620,6 +627,8 @@ void Renderer::read_accumulated(std::span<float> out) {
     MTL::Texture* image = nullptr;
     if (denoises_) {
         image = images_ ? images_->radiance() : nullptr;  // the denoised radiance, at the target's size
+    } else if (checkerboard_) {
+        image = checkerboard_->images.filled();  // the fill's light, which the graph shows (renderer.h)
     } else if (accumulation_) {
         image = accumulation_->texture();
     }
@@ -640,6 +649,23 @@ void Renderer::read_accumulated(std::span<float> out) {
     std::memcpy(out.data(), buffer->contents(), floats * sizeof(float));
 }
 
+Renderer::NetworkInput Renderer::read_network_input() {
+    if (!checkerboard_ || !last_slot_) {
+        throw MetalError("read_network_input: the frame graph's light is not the network's input, or no frame has "
+                         "been recorded");
+    }
+    MTL::Texture* image = denoise_ ? denoise_->images.light_radiance(*last_slot_) : checkerboard_->images.filled();
+    constexpr std::size_t channels = contracts::accumulated_image_channels;  // RGBA32Float, as the hand-off's
+    const frame::Extent size{static_cast<std::uint32_t>(image->width()), static_cast<std::uint32_t>(image->height())};
+    const std::size_t row_bytes = std::size_t{size.width} * channels * sizeof(float);
+    const std::array<ImageCopy, 1> copy = {ImageCopy{image, 0, row_bytes}};
+    const auto buffer =
+        read_back(image->device(), submission_, size, row_bytes * size.height, copy, "read_network_input");
+    NetworkInput out{size, std::vector<float>(std::size_t{size.width} * size.height * channels), last_jitter_};
+    std::memcpy(out.rgba.data(), buffer->contents(), out.rgba.size() * sizeof(float));
+    return out;
+}
+
 FeatureImages::Read Renderer::read_features() const {
     if (!features_ || features_->images(features_->last_slot).albedo() == nullptr) {
         throw MetalError("read_features: the frame graph has no features pass, or no frame has made its images");
@@ -651,7 +677,7 @@ FeatureImages::Read Renderer::read_features() const {
 // size where the graph prepares anything, and taken (renderer.h).
 Renderer::Prepared Renderer::take_prepared(const frame::FrameInputs& inputs, frame::Extent size) {
     if (!prepares()) {
-        return Prepared{inputs.index, size, 0u, 0u, false};
+        return Prepared{inputs.index, size, 0u, 0u, false, false};
     }
     if (!prepared_ || prepared_->index != inputs.index || !(prepared_->size == size)) {
         throw MetalError("Renderer::record: frame " + std::to_string(inputs.index) +
@@ -698,8 +724,7 @@ FrameResources Renderer::frame_resources(const FrameSlot& begun, const frame::Fr
                                          bool previous) {
     const auto [constants_address, camera_address] =
         write_constants(constants_, begun, inputs, light, prepared.accumulated_frames,
-                        frame::jitters(schedule_) ? std::optional{sampling::camera_jitter(inputs.index)}
-                                                  : std::nullopt);
+                        frame::camera_jitter(schedule_, inputs.index));
     FrameResources resources{
         .arguments = arguments_.get(),
         .constants = constants_address,
@@ -726,6 +751,10 @@ FrameResources Renderer::frame_resources(const FrameSlot& begun, const frame::Fr
         resources.accumulated_frames = prepared.accumulated_frames;
         non_finite_->begin_frame(begun.slot, begun.sequence);
         resources.non_finite_counter = non_finite_->address(begun.slot);
+    }
+    if (checkerboard_ && !denoise_) {
+        // The fill's light is what such a graph shows (renderer.h).
+        resources.radiance = checkerboard_->images.filled();
     }
     const std::optional<contracts::Camera> previous_camera = previous ? previous_camera_ : std::nullopt;
     if (mnee_) {
@@ -821,8 +850,8 @@ Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& res
     k.output_height = size.height;
     k.features = d.features;
     // The light's jitter, the frame's (renderer.h, "The camera's jitter"): a
-    // denoised graph is a ReSTIR PT one, whose frames take it.
-    const sampling::CameraJitter jitter = sampling::camera_jitter(inputs.index);
+    // denoised graph feeds the network, so its frames take it.
+    const sampling::CameraJitter jitter = frame::camera_jitter(schedule_, inputs.index).value();
     k.jitter_x = jitter.x;
     k.jitter_y = jitter.y;
     std::memcpy(d.constants.bytes(begun.slot).data(), &k, sizeof(k));
@@ -855,10 +884,13 @@ Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& res
 
 // The light half's passes in order into `encoder`, each after the barriers
 // its reads need (renderer.h): every pass before the denoise pass.
-void Renderer::record_light(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) {
-    encoder->setArgumentTable(resources.arguments);
+void Renderer::record_light(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources,
+                            std::size_t first, std::size_t last) {
+    if (first == 0) {
+        encoder->setArgumentTable(resources.arguments);
+    }
     bool restir_before = false;  // whether a ReSTIR PT pass came before, in this frame
-    for (std::size_t i = 0; i < image_begins_; ++i) {
+    for (std::size_t i = first; i < last; ++i) {
         const Step& step = steps_[i];
         if (i == first_cross_frame_) {
             // The frames in flight share the images between passes, the
@@ -884,17 +916,17 @@ void Renderer::record_light(MTL4::ComputeCommandEncoder* encoder, const FrameRes
     }
 }
 
-// The checkerboard's fill, writing the slot's hand-off image whole from the
-// light's radiance, after the shade's, the features' and the full-size
+// The checkerboard's fill, writing `hand_off` whole from the light's
+// radiance, after the shade's, the features' and, denoised, the full-size
 // albedo's dispatches (renderer.h, "Two halves", "Checkerboard rendering";
-// GPU.8: dispatch before dispatch). Precondition: the graph denoises.
+// GPU.8: dispatch before dispatch): a denoised graph's slot's hand-off, or
+// another's filled image. Precondition: the graph feeds the network.
 void Renderer::record_hand_off(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun,
-                               const FrameResources& resources, const Prepared& prepared) {
-    MTL::Texture* hand_off = denoise_->images.light_radiance(begun.slot);
+                               const FrameResources& resources, const Prepared& prepared, MTL::Texture* hand_off) {
     CheckerboardFamily& c = *checkerboard_;
     // The frame before's history is this history's frame before when the
-    // denoiser's is (renderer.h).
-    const contracts::CheckerboardConstants constants{prepared.denoise_history ? 1u : 0u, {0u, 0u, 0u}};
+    // fill's own history holds it (renderer.h).
+    const contracts::CheckerboardConstants constants{prepared.fill_history ? 1u : 0u, {0u, 0u, 0u}};
     std::memcpy(c.constants.bytes(begun.slot).data(), &constants, sizeof(constants));
     // At the light size, as the light half's passes: its constants, the
     // accumulated image and this slot's features; this slot's hand-off; the
@@ -964,8 +996,14 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given, M
         throw MetalError("Renderer::record: the command buffer made no compute encoder");
     }
     animate(encoder, begun, inputs, previous);
-    record_light(encoder, resources);
+    record_light(encoder, resources, 0, fill_at_);
     if (!denoise_) {
+        if (checkerboard_) {
+            // The fill, then the presenting pass (renderer.h, "Checkerboard
+            // rendering").
+            record_hand_off(encoder, begun, resources, prepared, checkerboard_->images.filled());
+            record_light(encoder, resources, fill_at_, steps_.size());
+        }
         encoder->endEncoding();
     } else {
         const DenoiseResources denoised = denoise_resources(resources, begun, inputs, *given.camera, size, prepared);
@@ -975,7 +1013,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given, M
         // light-size features; the fill's barrier orders it before the image
         // half in one part, the event in two.
         denoise_->full_features_pass.record(encoder, denoised.full_features);
-        record_hand_off(encoder, begun, resources, prepared);
+        record_hand_off(encoder, begun, resources, prepared, denoise_->images.light_radiance(begun.slot));
         MTL4::ComputeCommandEncoder* image = encoder;
         if (begun.second != nullptr) {
             // The image half in the second part, on the overlap queue
@@ -997,9 +1035,12 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given, M
         record_image(image, denoised);
         image->endEncoding();
     }
-    // What the next frame's temporal merge asks of this one.
+    // What the next frame's temporal merge asks of this one; what
+    // read_network_input() reads of it.
     previous_camera_ = inputs.camera;
     previous_time_ = inputs.time;
+    last_slot_ = begun.slot;
+    last_jitter_ = frame::camera_jitter(schedule_, inputs.index).value_or(sampling::CameraJitter{});
 }
 
 std::optional<WindowFrame> render_to_window(Submission& submission, Presenter& presenter, Renderer& renderer,

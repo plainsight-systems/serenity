@@ -331,8 +331,10 @@ namespace serenity::metal {
 // submission of two parts for a graph of one is refused by MetalError.
 //
 // Checkerboard rendering (contract 20, core/contracts/checkerboard.h;
-// logical-overview.md, "The frame"; Milestone 4's Step 4): how a denoised
-// graph, always a ReSTIR PT one (core/frame/schedule.h), traces its light.
+// logical-overview.md, "The frame" and principle 13; Milestone 4's Step 4):
+// how a graph whose light is the network's input (core/frame/schedule.h,
+// feeds_network: ReSTIR PT with the features pass, the denoised graph and
+// the data set's input graph alike) traces its light.
 // It gets, at construction, ReSTIR PT's settings with checkerboard 1, its
 // reuse textures built at sigma over the traced lattice's step
 // (metal/reuse/pairing.metal.h, lattice_partner), the fill
@@ -343,17 +345,24 @@ namespace serenity::metal {
 // the light half ends with a barrier from the dispatches before it (the
 // shade's accumulated image, the features' images and the full-size
 // albedo's: GPU.8, a write and its reader), then the fill, writing the
-// slot's hand-off whole. The fill reads the frame before's history, by the
-// frame's parity, and writes
+// slot's hand-off whole; in a graph without the denoise pass the fill comes
+// before the presenting pass instead, after the same barrier, and writes the
+// fill's own image (checkerboard_images.h, filled), which the presenting
+// pass shows (the barrier before it, as before every pass that reads the
+// radiance) and read_accumulated() reads back, the light the headless
+// renderer writes: what a denoised graph hands its network, to the bit
+// (tests/gpu/features_test.cpp). The fill reads the frame before's history,
+// by the frame's parity, and writes
 // this frame's, the image frame n - 1 read, which the light half's queue
 // barrier orders after that read. It is told the history holds this
 // history's frame before (contract 20's CheckerboardConstants, history 1)
-// when the denoiser's does (denoise_images.h: this history, this size,
-// the frame before), which the parity then holds whatever was submitted
-// between the two frames. A graph without the denoise pass traces every
-// pixel and has none of it. Memory: the fill's history, 62 MB at
-// 1728 x 1117; the packed arrays use the first half of the full-size ones.
-// Its argument table is a denoised graph's.
+// when its own reuse history does (checkerboard_images.h: this history,
+// this size, the frame before), which the parity then holds whatever was
+// submitted between the two frames. Any other graph traces every pixel and
+// has none of it. Memory: the fill's history, 62 MB at 1728 x 1117, and
+// without the denoise pass its own image, 31 MB more; the packed arrays use
+// the first half of the full-size ones. Its argument table holds the
+// fill's textures, as a denoised graph's does.
 //
 // The depth of field (core/frame/schedule.h, depth_of_field; passes/
 // depth_of_field/depth_of_field.h; logical-overview.md, principle 12), a
@@ -474,6 +483,22 @@ public:
     // images yet.
     FeatureImages::Read read_features() const;
 
+    // What the last recorded frame hands the network (logical-overview.md,
+    // principle 13), read back as read_accumulated() reads: the fill's
+    // light, RGBA a pixel at the light size, rows top to bottom (a denoised
+    // graph's hand-off; a graph without the denoise pass's filled image,
+    // the one it shows and writes), and the camera jitter the frame's rays
+    // took and a denoised graph's network was given. A readback (GPU.1), for
+    // a test or a tool, not a frame loop. Throws MetalError if the graph's
+    // light is not the network's input (core/frame/schedule.h,
+    // feeds_network) or no frame has been recorded.
+    struct NetworkInput {
+        frame::Extent size;
+        std::vector<float> rgba;
+        sampling::CameraJitter jitter;
+    };
+    NetworkInput read_network_input();
+
 private:
     using Pass = std::variant<TestPatternPass, PathPass, ToneMapPass, RestirPtInitialPass, RestirPtTemporalPass,
                               RestirPtSpatialPass, RestirPtShadePass, RestirPtDuplicationPass, FeaturesPass,
@@ -492,6 +517,7 @@ private:
         std::uint32_t accumulated_frames = 0;
         std::uint64_t reused_frames = 0;  // the reuse history's frames before this one
         bool denoise_history = false;     // the denoiser reads last frame's output
+        bool fill_history = false;        // the checkerboard's fill reads the frame before's light
     };
 
     // Each family's state (above), one struct each, held in place in an
@@ -554,7 +580,8 @@ private:
     // Checkerboard rendering's (above), a denoised graph's: the fill, its
     // constants' ring and its history.
     struct CheckerboardFamily {
-        CheckerboardFamily(const Device& device, Submission& submission, const Library& library);
+        CheckerboardFamily(const Device& device, Submission& submission, const Library& library,
+                           CheckerboardImages::Filled filled);
 
         CheckerboardFillPass fill;
         FrameArray constants;
@@ -611,9 +638,13 @@ private:
     // graph without it), then the full-size albedo and the checkerboard's
     // fill, which writes the hand-off;
     // and the image half, from the denoise pass on (above, "Two halves").
-    void record_light(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources);
+    // Steps [first, last) of the light half; the whole of a graph without
+    // the denoise pass, the fill between its last two in a graph that
+    // feeds the network.
+    void record_light(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources, std::size_t first,
+                      std::size_t last);
     void record_hand_off(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun,
-                         const FrameResources& resources, const Prepared& prepared);
+                         const FrameResources& resources, const Prepared& prepared, MTL::Texture* hand_off);
     void record_image(MTL4::ComputeCommandEncoder* encoder, const DenoiseResources& denoised_resources);
 
     Submission& submission_;
@@ -621,6 +652,7 @@ private:
     FrameArray constants_;  // the ring: one slot per frame in flight
     NS::SharedPtr<MTL4::ArgumentTable> arguments_;  // every frame's: Metal snapshots it at each dispatch
     bool denoises_ = false;
+    bool feeds_network_ = false;  // core/frame/schedule.h: traced checkerboarded and filled
     frame::Schedule schedule_;  // for light_size()
     bool needs_scene_ = false;  // some pass in the schedule reads the scene
     std::unique_ptr<SceneBuffers> scene_;
@@ -655,6 +687,14 @@ private:
     // The denoise pass's step, where the image half begins; steps_.size()
     // in a graph without it, all of whose steps are the light half's.
     std::size_t image_begins_ = 0;
+    // Where the fill is recorded, before this step: the denoise pass's in a
+    // denoised graph, the presenting pass's in another that feeds the
+    // network; steps_.size() in any other graph, which has no fill.
+    std::size_t fill_at_ = 0;
+    // The last recorded frame's slot and the jitter its light took, for
+    // read_network_input().
+    std::optional<std::uint32_t> last_slot_;
+    sampling::CameraJitter last_jitter_{};
 };
 
 // One frame, start to finish, for each kind of target. The window and the

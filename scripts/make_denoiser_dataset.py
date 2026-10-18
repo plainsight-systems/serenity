@@ -38,7 +38,10 @@ what changed for denoiser-v2, docs/research/2026-10-18-production-sweep.md):
     and rendered once).
   - Per frame, the input: graphs/restir_pt_features.toml (ReSTIR PT + MNEE
     and the features) at 960 x 540, one sample, its linear radiance and its
-    albedo, normal, depth and motion. One run a sequence, frames f .. f + 7.
+    albedo, normal, depth and motion: what the denoised graph hands its
+    network for that frame, to the bit (its light checkerboarded and
+    filled, through a pinhole, at the camera's jitter; docs/architecture/
+    logical-overview.md, principle 13). One run a sequence, frames f .. f + 7.
     serenity-headless replays a reusing graph's frames 0 .. f - 1 before
     frame f (core/frame/history.h), so each frame is the very frame a run
     from the start shows: its history full, at least 60 frames (t >= 1 s),
@@ -111,6 +114,7 @@ import shutil
 import subprocess
 import sys
 import time
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 DATASET = 'denoiser-v2'
@@ -140,6 +144,7 @@ WARMUP = 30       # at least this many frames of history before the first kept o
 
 # The renders.
 INPUT_GRAPH = 'graphs/restir_pt_features.toml'
+DEMO_GRAPH = 'graphs/restir_pt_denoised.toml'  # whose network's input INPUT_GRAPH renders
 INPUT_SIZE = (960, 540)
 TARGET_GRAPH = 'graphs/path.toml'
 ALBEDO_GRAPH = 'graphs/features.toml'
@@ -239,7 +244,8 @@ def plan(sequences: int | None = None, kept: int = KEPT, target_samples: int = T
         'camera': 'each scene\'s, its lens taken off: a pinhole (pinhole_scene)',
         'input': {'graph': INPUT_GRAPH, 'size': list(INPUT_SIZE), 'samples': 1,
                   'features': list(INPUT_FEATURES),
-                  'jitter': 'the camera\'s, Halton(2, 3) of 32 phases, each frame\'s in its entry (camera_jitter)'},
+                  'jitter': 'the camera\'s, Halton(2, 3) of 32 phases, each frame\'s in its entry (camera_jitter)',
+                  'traced': 'as the denoised graph hands its network: checkerboarded and filled, pinhole, jittered'},
         'target': {'graph': TARGET_GRAPH, 'size': list(TARGET_SIZE), 'samples': target_samples,
                    'first_offset': TARGET_FIRST, 'albedo_graph': ALBEDO_GRAPH},
         'sequences': seqs,
@@ -300,6 +306,29 @@ def reusable_units(old: dict, the_plan: dict) -> dict:
     if old.get('plan') != the_plan:
         sys.exit('--targets-from: that data set was made by another plan; its targets are not this one\'s')
     return {unit: rec for unit, rec in old['units'].items() if unit.split('/', 1)[0] in REUSED_KINDS}
+
+
+def input_graph_mismatch(input_text: str, demo_text: str) -> str | None:
+    """Why INPUT_GRAPH would not render the light DEMO_GRAPH hands its network, or None. Pure. The renderer
+    traces both alike (docs/architecture/logical-overview.md, principle 13), given the same light passes, in
+    the same order, with the same [restir_pt] settings; and the input graph must write the features."""
+    inp, demo = tomllib.loads(input_text), tomllib.loads(demo_text)
+    light = [p for p in demo['passes'] if p.startswith('restir_pt_')]
+    if [p for p in inp['passes'] if p.startswith('restir_pt_')] != light:
+        return f'its ReSTIR PT passes are not {DEMO_GRAPH}\'s, {light}'
+    if 'features' not in inp['passes']:
+        return 'it has no features pass'
+    if inp.get('restir_pt') != demo.get('restir_pt'):
+        return f'its [restir_pt] settings are not {DEMO_GRAPH}\'s'
+    return None
+
+
+def check_input_graph() -> None:
+    """Exits, before anything renders, if INPUT_GRAPH would not render the network's input (above)."""
+    why = input_graph_mismatch((ROOT / INPUT_GRAPH).read_text(encoding='utf-8'),
+                               (ROOT / DEMO_GRAPH).read_text(encoding='utf-8'))
+    if why:
+        sys.exit(f'{INPUT_GRAPH} would not render the light {DEMO_GRAPH} hands its network: {why}')
 
 
 def build_renderer() -> None:
@@ -609,6 +638,7 @@ def main() -> int:
         parser.error('--out must be outside the repository: the data is never committed')
 
     if not args.verify:
+        check_input_graph()
         build_renderer()
     ds = Dataset(out, the_plan, renderer_record(args.allow_dirty or args.verify))
     out.mkdir(parents=True, exist_ok=True)

@@ -12,6 +12,7 @@
 #include "core/passes/denoise.h"
 #include "core/passes/restir_pt.h"
 #include "core/passes/tone_map.h"
+#include "core/sampling/jitter.h"
 
 namespace serenity::frame {
 
@@ -147,26 +148,31 @@ namespace serenity::frame {
 //
 // Its rules (invalid()): at most once, directly after the denoise pass,
 // which is followed by it, and directly before the presenting pass. A
-// denoised graph traces its light, its features and its full-size albedo
-// through a pinhole, the frame's camera with its lens taken off
-// (traced_inputs(), below), as the network is trained on, and this pass
-// applies the lens after it; every other graph traces the scene's lens in
-// its rays. So a scene's lens is drawn by exactly one of the two in every
-// graph, never by both and never by neither.
+// graph whose light is the network's input (feeds_network(), below), the
+// denoised graph among them, traces its light, its features and its
+// full-size albedo through a pinhole, the frame's camera with its lens
+// taken off (traced_inputs()), as the network is trained on, and in the
+// denoised graph this pass applies the lens after it; every other graph
+// traces the scene's lens in its rays. So in the demo the lens is drawn
+// once, after the network, and the data set's input graph is the
+// network's input itself, a pinhole's.
 //
 // Checkerboard rendering of the light (contract 20, core/contracts/
 // checkerboard.h; Milestone 4's Step 4, docs/research/2026-10-17-milestone-
-// 4-plan.md) is how a denoised graph traces its light, not a pass or a
-// setting: ReSTIR PT's passes trace half the light size's pixels each
-// frame, a checkerboard whose fields alternate, and the frame's light half
-// ends with the fill, which writes the hand-off to the image half whole:
+// 4-plan.md) is how the light the network reads is traced, not a pass or
+// a setting: in a graph that feeds the network (feeds_network(), below)
+// ReSTIR PT's passes trace half the light size's pixels each frame, a
+// checkerboard whose fields alternate, and the light ends with the fill,
+// which writes the light it hands on whole (to the denoise pass, or in a
+// graph without it to the presenting pass and the headless renderer's
+// files):
 // the traced pixels as they are, each of the others from what the frame
 // before traced where its surface was, by its features' motion and depth,
 // or from the traced pixels around it (metal/passes/checkerboard_fill/
 // checkerboard_fill.h). With restir_pt_spatial, the graph's sigma must
 // leave the traced lattice's own at least the least one
 // (contracts::min_pairing_sigma times contracts::checkerboard_lattice_step).
-// A graph without the denoise pass traces every pixel.
+// Every other graph traces every pixel.
 //
 // `last` names the final kind, without being a kind of its own (a second
 // name for its value, which no switch needs a case for): schedule.cpp
@@ -245,29 +251,35 @@ bool denoises(const Schedule& schedule);
 // output's own in every other graph.
 Extent light_size(const Schedule& schedule, Extent output);
 
-// Whether `schedule`'s frames take the camera's jitter (core/sampling/
-// jitter.h; contracts/frame_constants.h): every camera ray of its light
-// passes through the same point of its pixel, the frame's offset in a
-// fixed sequence, in place of each pixel's own random point. Exactly the
-// graphs with ReSTIR PT's passes: their light is what the network reads,
-// rendered live by the denoised graph and for the data set by
-// graphs/restir_pt_features.toml, which must take the same, and the
-// features pass beside it traces the same rays. The path tracer, the
-// reference, draws its own point in every pixel (the box filter it
-// converges to), and the features alone, the data set's full-size albedo,
-// as the denoised graph's full-size albedo does: an output-resolution
-// image, which production upscalers write unjittered.
-bool jitters(const Schedule& schedule);
+// Whether `schedule`'s light is the network's input (logical-overview.md,
+// principle 13): it has ReSTIR PT's passes and the features pass, the
+// denoised graph live and the data set's input graph
+// (graphs/restir_pt_features.toml) offline. Such a graph traces its light
+// one way, whichever it is, so the data set's light and features for a
+// frame are the denoised graph's for that frame, to the bit
+// (tests/gpu/features_test.cpp): checkerboarded and filled (above), through
+// a pinhole (traced_inputs()), at the camera's jitter (camera_jitter()).
+bool feeds_network(const Schedule& schedule);
+
+// Frame `index`'s camera jitter in `schedule` (core/sampling/jitter.h;
+// contracts/frame_constants.h), none where its frames take none: every
+// camera ray of a graph that feeds the network passes through the same
+// point of its pixel, the frame's offset in a fixed sequence, in place of
+// each pixel's own random point, and the network reads the offset. The
+// path tracer, the reference, draws its own point in every pixel (the box
+// filter it converges to), and the features alone, the data set's
+// full-size albedo, as the denoised graph's full-size albedo does: an
+// output-resolution image, which production upscalers write unjittered.
+std::optional<sampling::CameraJitter> camera_jitter(const Schedule& schedule, std::uint64_t index);
 
 // Whether `schedule` applies the camera's lens after the network, by the
 // depth_of_field pass, rather than in its rays (above): a denoised graph.
 bool lens_after_network(const Schedule& schedule);
 
 // The frame `inputs` as `schedule`'s passes before the depth of field trace
-// it (above): in a graph that applies the lens after the network, the
-// frame's camera and the frame before's with their lens taken off (a
-// radius of 0, a pinhole, the rest of each camera as it was); `inputs`
-// itself in every other. Pure (F.8): the renderer traces through this and
+// it (above): in a graph that feeds the network, the frame's camera and
+// the frame before's with their lens taken off (a radius of 0, a pinhole,
+// the rest of each camera as it was); `inputs` itself in every other. Pure (F.8): the renderer traces through this and
 // reads the lens for the depth of field from `inputs`' own camera
 // (metal/frame/renderer.h).
 FrameInputs traced_inputs(const Schedule& schedule, const FrameInputs& inputs);

@@ -13,10 +13,12 @@ namespace serenity::metal {
 // With checkerboard rendering (contract 20, core/contracts/checkerboard.h;
 // architecture/logical-overview.md, "The frame"), ReSTIR PT traces half
 // the light size's pixels a frame. The fill makes the light the denoiser
-// reads whole: it writes the frame slot's hand-off of the light's radiance
-// (denoise_images.h, light_radiance), in place of the copy a denoised
-// frame's light half otherwise ends with (metal/frame/renderer.h, "Two
-// halves"), every pixel of it:
+// reads whole: it writes the light handed on, every pixel of it, a
+// denoised frame's slot's hand-off of the light's radiance
+// (denoise_images.h, light_radiance; metal/frame/renderer.h, "Two
+// halves"), or, in the data set's input graph, which has no network, the
+// image the presenting pass shows and the headless renderer writes
+// (metal/frame/checkerboard_images.h, filled), the same light:
 //
 //   - a pixel the frame traced: the accumulated image's, as the copy wrote
 //     it;

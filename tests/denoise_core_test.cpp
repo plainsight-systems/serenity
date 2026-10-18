@@ -243,7 +243,7 @@ TEST_CASE("a denoised graph applies its lens after the network, by depth_of_fiel
                           "depth_of_field more than once"));
 }
 
-TEST_CASE("a graph that applies the lens after the network traces through its camera's pinhole, and no other does") {
+TEST_CASE("a graph whose light is the network's input traces through its camera's pinhole, and no other does") {
     contracts::Camera lensed{};
     lensed.position = {0.0f, 0.0f, 0.0f};
     lensed.look_at = {0.0f, 0.0f, -1.0f};
@@ -265,6 +265,13 @@ TEST_CASE("a graph that applies the lens after the network traces through its ca
     CHECK(traced.previous->camera.position.x == before.position.x);
     CHECK(traced.index == inputs.index);
     CHECK(traced.time == inputs.time);
+
+    // The data set's input graph, without the network, traces as the
+    // denoised graph does (logical-overview.md, principle 13).
+    const Schedule input = schedule_of({PassKind::restir_pt_initial, PassKind::restir_pt_shade, PassKind::features,
+                                        PassKind::tone_map},
+                                       false);
+    CHECK(frame::traced_inputs(input, inputs).camera->lens_radius == 0.0f);
 
     const Schedule plain = schedule_of({PassKind::restir_pt_initial, PassKind::restir_pt_shade, PassKind::tone_map},
                                        false);
