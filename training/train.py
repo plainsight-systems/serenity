@@ -33,6 +33,7 @@ is there, and refuses a directory whose config differs.
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import json
 import math
@@ -45,7 +46,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from data import (FRAMES, Augmentation, Manifest, Split, augment, epoch_crops, validation_tiles)
+from data import (CROP, FRAMES, SCALE, Augmentation, Manifest, Split, augment, epoch_crops, validation_tiles)
 from loss import sequence_loss
 from model import Denoiser, Widths, macs_per_input_pixel, parameter_count
 
@@ -69,16 +70,38 @@ def pick_device(asked: str | None, cuda: bool, mps: bool) -> str:
     raise SystemExit("no GPU: training needs CUDA or the Mac's GPU (MPS)")
 
 
-# Training's own GPU memory beside the data: the network, its activations
-# and gradients for a batch, Adam's state. Measured 8.0 GiB reserved at
-# batch 16 on the RTX 3090 Ti (2026-10-17), with 2 GiB to spare.
-WORKING_MEMORY = 10 * 2**30
-
-
-def hold_on_device(data_bytes: int, free_bytes: int, working_bytes: int = WORKING_MEMORY) -> bool:
+def hold_on_device(data_bytes: int, free_bytes: int, working_bytes: int) -> bool:
     """Whether the splits are held on the GPU: if they fit in its free memory beside training's own.
-    Pure. Where not (a 24 GB card), they are held in the host's memory and each batch copied over."""
+    Pure. Where not, they are held in the host's memory and each batch copied over."""
     return data_bytes + working_bytes <= free_bytes
+
+
+def working_device_bytes(model: Denoiser, batch_size: int, device: torch.device) -> int:
+    """Training's own GPU memory, measured: one step (forward, backward, Adam) of a copy of `model`
+    on a zero batch of the run's shape. The copy and its optimizer are thrown away, so the run's
+    network, its gradients and every random stream are untouched."""
+    probe = copy.deepcopy(model)
+    optimizer = torch.optim.Adam(probe.parameters())
+    inputs = torch.zeros(batch_size, FRAMES, 12, CROP, CROP, device=device)
+    targets = torch.zeros(batch_size, FRAMES, 6, SCALE * CROP, SCALE * CROP, device=device)
+    targets[:, :, 3:6] = 1.0  # a white albedo
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
+    loss, _ = run_batch(probe, inputs, targets)
+    loss.backward()
+    optimizer.step()
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+        used = torch.cuda.max_memory_reserved(device)
+    else:
+        torch.mps.synchronize()
+        used = torch.mps.driver_allocated_memory()  # the allocator's cache keeps the step's peak
+    del probe, optimizer, inputs, targets, loss
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    else:
+        torch.mps.empty_cache()
+    return used
 
 
 def free_device_bytes(device: torch.device) -> int:
@@ -93,13 +116,17 @@ def setup(config: dict, need_validation: bool) -> tuple[torch.device, Manifest, 
                                                        Split | None, Denoiser]:
     device = torch.device(config["device"])
     torch.manual_seed(config["seed"])
+    model = Denoiser(Widths(**config["widths"])).to(device)
+    print(f"network: {parameter_count(model):,} parameters, "
+          f"{macs_per_input_pixel(model.widths):,.0f} multiply-adds per input pixel", flush=True)
     manifest = Manifest(Path(config["data"]))
     data_bytes = manifest.split_bytes("train") + (manifest.split_bytes("validation") if need_validation else 0)
+    working = working_device_bytes(model, config["batch_size"], device)
     free = free_device_bytes(device)
-    on_device = hold_on_device(data_bytes, free)
+    on_device = hold_on_device(data_bytes, free, working)
     held = device if on_device else torch.device("cpu")
     print(f"data held {'on the GPU' if on_device else 'in host memory, each batch copied to the GPU'}: "
-          f"{data_bytes / 2**30:.1f} GiB of data and {WORKING_MEMORY / 2**30:.0f} GiB of training "
+          f"{data_bytes / 2**30:.1f} GiB of data and {working / 2**30:.1f} GiB of training (measured) "
           f"against {free / 2**30:.1f} GiB free", flush=True)
     t0 = time.time()
     train_split = Split(manifest, "train", device, held)
@@ -107,9 +134,6 @@ def setup(config: dict, need_validation: bool) -> tuple[torch.device, Manifest, 
     print(f"data: {len(train_split)} training sequences"
           + (f", {len(valid)} validation" if valid else "") + f", read and checked in {time.time() - t0:.0f} s",
           flush=True)
-    model = Denoiser(Widths(**config["widths"])).to(device)
-    print(f"network: {parameter_count(model):,} parameters, "
-          f"{macs_per_input_pixel(model.widths):,.0f} multiply-adds per input pixel", flush=True)
     return device, manifest, train_split, valid, model
 
 

@@ -190,7 +190,7 @@ class TilingTest(unittest.TestCase):
 class DeviceTest(unittest.TestCase):
     """Training runs on CUDA or the Mac's GPU: the one asked for if the machine has it, else CUDA
     where there is one, else MPS; never a device the machine lacks, never without a GPU. The data
-    is held on the GPU exactly when it fits beside training's own memory, whatever the GPU."""
+    is held on the GPU exactly when it and training's own memory fit in the GPU's free memory."""
 
     def test_the_device_asked_for_or_the_one_there_is(self):
         self.assertEqual(pick_device(None, cuda=True, mps=False), "cuda")
@@ -202,11 +202,11 @@ class DeviceTest(unittest.TestCase):
             pick_device(None, cuda=False, mps=False)
 
     def test_the_data_is_on_the_gpu_exactly_when_it_fits(self):
-        gib = 2**30
-        self.assertTrue(hold_on_device(26 * gib, 36 * gib, working_bytes=10 * gib))
-        self.assertFalse(hold_on_device(26 * gib, 36 * gib - 1, working_bytes=10 * gib))
-        self.assertFalse(hold_on_device(26 * gib, 23 * gib))  # a 24 GB card
-        self.assertTrue(hold_on_device(26 * gib, 96 * gib))   # unified memory, or a 48 GB card
+        data, working, free = 1_000_003, 250_007, 1_250_010
+        self.assertTrue(hold_on_device(data, free, working))
+        self.assertFalse(hold_on_device(data + 1, free, working))
+        self.assertFalse(hold_on_device(data, free, working + 1))
+        self.assertFalse(hold_on_device(data, free - 1, working))
 
 
 if __name__ == "__main__":
