@@ -31,10 +31,13 @@ Each step below.
 - Python **3.12.15** (`.python-version`; `requires-python = "==3.12.*"`).
 - **uv** 0.13 resolves and installs; `uv.lock` pins every package, direct
   and transitive, by exact version and SHA-256. Direct dependencies:
-  torch 2.14.1, numpy 2.5.4, pillow 12.3.0. Training runs on the RTX 3090
-  through CUDA (the lock holds Linux's CUDA wheels), the split held in the
-  host's memory and each batch's crops handed to the GPU (`config-wide.json`'s
-  `hold`); evaluation and the benchmark run on the M3 Max through `mps`.
+  torch 2.14.1, numpy 2.5.4, pillow 12.3.0. The lock holds macOS's wheels
+  and Linux's CUDA ones, so training runs on either: `train.py --device`
+  `cuda` or `mps`, by default CUDA where there is one, else the Mac's GPU.
+  On CUDA the split is held in the host's memory and each batch's crops
+  handed to the GPU, as a 24 GB card cannot hold the train split; on a Mac,
+  whose GPU shares the host's memory, on the GPU. Evaluation and the
+  benchmark run on the Mac (`mps`).
 - PFM images are read directly (`pfm.py`), no image library.
 - For the evaluation only: `ffmpeg` (the MP4) and, optionally, Open Image
   Denoise 2.5.1's `oidnDenoise` (`brew install open-image-denoise`), as a

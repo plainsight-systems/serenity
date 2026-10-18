@@ -20,6 +20,7 @@ from data import Augmentation, albedo_factor, augment, validation_tiles
 from loss import frame_weights, ms_ssim, pu
 from model import SCORES, SUBPIXELS, TAPS, Denoiser, Widths, warp_history
 from pfm import read_pfm, write_pfm
+from train import held_on, pick_device
 
 TINY = Widths(enc=[8, 8, 8, 8], bottleneck=8, dec=[8, 8, 8, 8])
 
@@ -183,6 +184,25 @@ class TilingTest(unittest.TestCase):
         self.assertEqual(len(tiles), 28)
         self.assertEqual(tiles[0], (0, 14, 32))
         self.assertEqual(tiles[-1], (0, 14 + 3 * 128, 32 + 6 * 128))
+
+
+
+class DeviceTest(unittest.TestCase):
+    """Training runs on CUDA or the Mac's GPU: the one asked for if the machine has it, else CUDA
+    where there is one, else MPS; a CUDA run holds the split in host memory."""
+
+    def test_the_device_asked_for_or_the_one_there_is(self):
+        self.assertEqual(pick_device(None, cuda=True, mps=False), "cuda")
+        self.assertEqual(pick_device(None, cuda=False, mps=True), "mps")
+        self.assertEqual(pick_device("mps", cuda=True, mps=True), "mps")
+        with self.assertRaises(SystemExit):
+            pick_device("cuda", cuda=False, mps=True)
+        with self.assertRaises(SystemExit):
+            pick_device(None, cuda=False, mps=False)
+
+    def test_a_cuda_run_holds_the_split_on_the_host(self):
+        self.assertEqual(held_on("cuda"), "cpu")
+        self.assertEqual(held_on("mps"), "mps")
 
 
 if __name__ == "__main__":

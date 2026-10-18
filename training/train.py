@@ -56,6 +56,25 @@ def load_config(path: Path) -> dict:
     return json.loads(Path(path).read_text())
 
 
+def pick_device(asked: str | None, cuda: bool, mps: bool) -> str:
+    """The device a run trains on: `asked`, if this machine has it, else CUDA where there is
+    one, else the Mac's GPU (MPS). Pure; exits naming what is missing."""
+    have = {"cuda": cuda, "mps": mps}
+    if asked is not None:
+        if not have[asked]:
+            raise SystemExit(f"--device {asked}: this machine has no {asked} device")
+        return asked
+    if cuda or mps:
+        return "cuda" if cuda else "mps"
+    raise SystemExit("no GPU: training needs CUDA or the Mac's GPU (MPS)")
+
+
+def held_on(device: str) -> str:
+    """Where a split is held: a CUDA card's own memory is too small for the train split (23 GB against
+    the RTX 3090's 24 GB), so the host's, pinned; the Mac's GPU shares the host's memory, so its own."""
+    return "cpu" if device == "cuda" else device
+
+
 def provenance(config: dict, manifest: Manifest) -> dict:
     def git(*args: str) -> str:
         return subprocess.run(["git", *args], cwd=HERE, capture_output=True, text=True, check=True).stdout.strip()
@@ -109,7 +128,7 @@ def validate(model: Denoiser, split: Split, batch_size: int) -> tuple[float, flo
 def setup(config: dict, need_validation: bool) -> tuple[torch.device, Manifest, Split,
                                                        Split | None, Denoiser]:
     device = torch.device(config["device"])
-    held = torch.device(config["device"] if config["hold"] == "device" else "cpu")
+    held = torch.device(held_on(config["device"]))
     torch.manual_seed(config["seed"])
     manifest = Manifest(Path(config["data"]))
     t0 = time.time()
@@ -234,8 +253,13 @@ def main() -> int:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--data", type=Path,
                         help="the data set, if not where the config's path (relative to the config file) puts it")
+    parser.add_argument("--device", choices=["cuda", "mps"],
+                        help="the GPU to train on; by default CUDA where there is one, else the Mac's (MPS)")
     args = parser.parse_args()
     config = load_config(args.config)
+    # The device is the machine's, not the network's: chosen here and recorded with the run.
+    config["device"] = pick_device(args.device, torch.cuda.is_available(), torch.backends.mps.is_available())
+    print(f"device: {config['device']}", flush=True)
     # The data set's absolute path is recorded with the run; its identity is the manifest's SHA-256.
     data = args.data if args.data else (args.config.resolve().parent / config["data"])
     config["data"] = str(data.resolve())
