@@ -1,9 +1,11 @@
 # The denoiser's training toolkit
 
 Trains Milestone 3's denoiser (docs/research/2026-10-14-denoiser-training-design.md)
-on the denoiser-v1 data set, tests it once on the real marbles, and exports
-its weights for the Metal pass. The record of the run, its curve and its
-results: docs/research/2026-10-15-denoiser-training.md.
+on its data set, tests it once on the real marbles, and exports its weights
+for the Metal pass. The original run, its curve and its results:
+docs/research/2026-10-15-denoiser-training.md; the demo's network, retrained
+on checkerboard input in Milestone 4: docs/research/2026-10-17-milestone-4-plan.md,
+"Retraining on checkerboard input".
 
 Its own environment, outside the C++ build: nothing the renderer builds or
 runs depends on it. Everything it reads and writes lives beside the
@@ -12,8 +14,9 @@ checkout, never in it, in `../serenity-data/` (from the checkout's root;
 
 | Directory | What | Made by |
 |---|---|---|
-| `denoiser-v1/` | the data set, 32.3 GB, its manifest | `scripts/make_denoiser_dataset.py` |
-| `denoiser-v1-warmup/` | the test sequences' warm-up frames | `render_warmup.py` |
+| `denoiser-v1-checkerboard/` | the data set, 32.3 GB, its manifest: checkerboard inputs over denoiser-v1's targets | `scripts/make_denoiser_dataset.py --targets-from` |
+| `denoiser-v1-checkerboard-warmup/` | the test sequences' warm-up frames | `render_warmup.py` |
+| `denoiser-v1/` | the original data set, whose scenes, albedo and targets the one above takes | `scripts/make_denoiser_dataset.py` |
 | `denoiser-v1-runs/` | each run's log, checkpoints and test results | `train.py`, `evaluate.py` |
 | `denoiser-v1-checkerboard-model/wide/` | the exported network the renderer reads | `export.py`, or `make weights` from the published copy |
 
@@ -60,7 +63,13 @@ a manifest made by another commit, so a new render of the data set goes
 into a new directory. denoiser-v1 took 4.0 h on the M3 Max
 (docs/research/2026-10-14-denoiser-dataset.md):
 
+When a change alters the inputs' renderer and not the targets', a new data
+set renders its inputs alone and takes the old one's scenes, albedo and
+targets by hard link, each checked against its checksum (`--targets-from`):
+denoiser-v1-checkerboard took 0.47 h.
+
 ```sh
+python3 scripts/make_denoiser_dataset.py --out ../serenity-data/denoiser-v1-checkerboard --targets-from ../serenity-data/denoiser-v1
 python3 scripts/make_denoiser_dataset.py --print-plan                                   # the plan as JSON; renders nothing
 python3 scripts/make_denoiser_dataset.py --estimate --out ../serenity-data/denoiser-v1  # the first input and target, timed
 python3 scripts/make_denoiser_dataset.py --out ../serenity-data/denoiser-v1             # render it, or resume
@@ -71,7 +80,7 @@ its manifest's SHA-256 as it is loaded. Check it whole first (needs a
 configured build in the checkout, as the script reads its CMake cache):
 
 ```sh
-python3 scripts/make_denoiser_dataset.py --verify --out ../serenity-data/denoiser-v1
+python3 scripts/make_denoiser_dataset.py --verify --out ../serenity-data/denoiser-v1-checkerboard
 ```
 
 Training reads the train and validation splits only. The test split is read
@@ -82,24 +91,27 @@ recurrent network is scored with history, as it runs) are rendered once by
 the data set's own renderer binary, checked by its SHA-256:
 
 ```sh
-uv run --locked python render_warmup.py --data ../../serenity-data/denoiser-v1 \
-    --checkout .. --out ../../serenity-data/denoiser-v1-warmup
+uv run --locked python render_warmup.py --data ../../serenity-data/denoiser-v1-checkerboard \
+    --checkout .. --out ../../serenity-data/denoiser-v1-checkerboard-warmup
 ```
 
 ## Training
 
 A config holds a run's settings; paths in it are relative to it.
 `config-wide.json` is the demo's network (543k parameters, max_lr 5e-3);
-docs/research/2026-10-15-denoiser-training.md has its run (8.3 h on the
-M3 Max, sharing the GPU with the other runs), and the smaller network
-trained beside it, since removed.
+docs/research/2026-10-15-denoiser-training.md has its first run (8.3 h on
+the M3 Max, sharing the GPU with the other runs), and the smaller network
+trained beside it, since removed. The demo's, on checkerboard input, took
+3.5 h on an RTX 3090 Ti, its data held in host memory (the plan note
+above). The data set is rendered on a Mac (the renderer is Metal) and
+copied to the training machine; `--data` names it there.
 
 ```sh
 # OIDN's learning-rate finder: an exponential sweep, its curve in find_lr.csv
 uv run --locked python train.py find-lr --config config-wide.json --out ../../serenity-data/denoiser-v1-runs/find-lr
 
 # the runs: log.csv every epoch, best.pt at the best validation loss, last.pt to resume
-uv run --locked python train.py train --config config-wide.json --out ../../serenity-data/denoiser-v1-runs/v1-wide
+uv run --locked python train.py train --config config-wide.json --out ../../serenity-data/denoiser-v1-runs/v1-wide-checkerboard
 ```
 
 `train` resumes from `last.pt` if the run directory has one, and refuses a
@@ -115,10 +127,10 @@ ended; the references are `make reference`'s at t = 8 and t = 120, in the
 checkout's `.cache/references/`:
 
 ```sh
-uv run --locked python evaluate.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1-wide/best.pt \
-    --data ../../serenity-data/denoiser-v1 --warmup ../../serenity-data/denoiser-v1-warmup \
+uv run --locked python evaluate.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1-wide-checkerboard/best.pt \
+    --data ../../serenity-data/denoiser-v1-checkerboard --warmup ../../serenity-data/denoiser-v1-checkerboard-warmup \
     --references ../.cache/references --oidn /opt/homebrew/bin/oidnDenoise \
-    --out ../../serenity-data/denoiser-v1-runs/v1-wide/test --images IMAGES_DIR
+    --out ../../serenity-data/denoiser-v1-runs/v1-wide-checkerboard/test --images IMAGES_DIR
 ```
 
 It refuses an `--out` that already holds results. `--dry-run-on-validation`
@@ -126,7 +138,7 @@ runs the same code on the validation split instead, to check the script
 before the test. Its tables:
 
 ```sh
-uv run --locked python report.py wide=../../serenity-data/denoiser-v1-runs/v1-wide/test/results.json
+uv run --locked python report.py wide=../../serenity-data/denoiser-v1-runs/v1-wide-checkerboard/test/results.json
 ```
 
 A rough MPS time a frame: `uv run --locked python benchmark.py --checkpoint RUN/best.pt`.
@@ -134,7 +146,7 @@ A rough MPS time a frame: `uv run --locked python benchmark.py --checkpoint RUN/
 ## The export
 
 ```sh
-uv run --locked python export.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1-wide/best.pt \
+uv run --locked python export.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1-wide-checkerboard/best.pt \
     --out ../../serenity-data/denoiser-v1-checkerboard-model/wide
 ```
 
@@ -152,7 +164,7 @@ and PyTorch's outputs for it, and compares the GPU's outputs with them
 
 ```sh
 uv run --locked python denoise_check.py fixture --network ../../serenity-data/denoiser-v1-checkerboard-model/wide \
-    --data ../../serenity-data/denoiser-v1 --sequence gen-0125 --frames 8 --out CHECK_DIR
+    --data ../../serenity-data/denoiser-v1-checkerboard --sequence gen-0125 --frames 8 --out CHECK_DIR
 ../build/native-release/tests/gpu/denoise_check CHECK_DIR GPU_DIR
 uv run --locked python denoise_check.py compare --fixture CHECK_DIR --gpu GPU_DIR
 ```

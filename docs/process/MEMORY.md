@@ -397,3 +397,29 @@ integration tests that render frames end to end; logic once checked by
 rendering moved into functions tested directly (`src/headless/options.h`,
 `src/measure/commands.h`), and no test depends on what `graphs/` or
 `scenes/` hold beyond every file there reading.
+
+## Milestone 4: making the frame fast (2026-10-17/18)
+
+`research/2026-10-17-milestone-4-plan.md`; `writeups/milestone-4.md`.
+
+- **Kept by the user:** async compute overlap (a denoised frame's light
+  and image halves on two queues), ray masks (visibility rays trace a
+  structure of the surfaces alone; no firefly casts a shadow), and
+  checkerboard rendering of the light (how every denoised graph traces).
+  The split scene is skipped on Metal, kept for the Vulkan and Xbox
+  milestones.
+- **The network retrained on checkerboard input, by the user's decision,
+  2026-10-17/18:** new inputs over denoiser-v1's targets, kept by the user
+  (the masks moved them +0.1% in the mean), as
+  `../serenity-data/denoiser-v1-checkerboard`; the run
+  `denoiser-v1-runs/v1-wide-checkerboard`, exported to
+  `denoiser-v1-checkerboard-model/wide`, which the demo graph names and
+  `make weights` fetches. Kept by the user 2026-10-18.
+- **Training runs on either GPU:** `train.py --device cuda|mps`, by
+  default the machine's; the data is held on the GPU when it fits beside
+  training's own memory, measured at the start, and in host memory when
+  not. The RTX 3090 Ti (`ssh ai`, the checkout and environment under
+  `/data/serenity`) is where training runs; the data set is rendered on
+  the Mac and copied over.
+- **The final frame:** 16.7 ms at 1920 x 1080 (60 fps), 56.1 ms at the
+  window's 3456 x 2234 (17.8 fps).

@@ -179,23 +179,16 @@ This file tracks active and accepted work.
    noise's level. Folding MNEE's light in a fixed order would make it hold
    by construction; whether to is the user's call.
 
-1. Milestone 4, making the frame fast (the user, 2026-10-17;
-   docs/research/2026-10-17-milestone-4-plan.md): async compute overlap,
-   ray masks, checkerboard rendering of the light (the split scene skipped
-   on Metal, kept for the Vulkan and Xbox milestones).
-   Retraining, if checkerboard needs it, on the user's RTX 3090. Step 1,
-   async compute overlap, built 2026-10-17 (the plan's "Step 1"): a
-   denoised frame's two halves on two queues, the hand-off ringed by the
-   frame slot, every graph the same to the bit; measured there. Step 2,
-   ray masks, built 2026-10-17 (the plan's "Step 2"): visibility rays
-   trace a structure of the surfaces alone, so no firefly casts a shadow;
-   measured there, with the image's change; kept by the user 2026-10-17.
-   Step 3, the split scene, skipped on Metal (the plan's "Decisions after
-   Step 2"). Step 4, checkerboard rendering of the light, built 2026-10-17
-   (the plan's "Step 4"): kept by the user in the denoised graphs, and
-   since the cleanup (0a) how every denoised graph traces its light, not
-   a setting. Whether the network is retrained on checkerboarded light is
-   the user's call; not retrained.
+1. **Done 2026-10-18.** Milestone 4, making the frame fast
+   (docs/research/2026-10-17-milestone-4-plan.md; docs/writeups/milestone-4.md,
+   for the user's review before the tag): async compute overlap, ray
+   masks and checkerboard rendering of the light, kept by the user; the
+   split scene skipped on Metal, kept for the Vulkan and Xbox milestones.
+   The network retrained on checkerboard input on the user's RTX 3090 Ti,
+   new inputs over denoiser-v1's targets, kept by the user 2026-10-18.
+   The frame: 16.7 ms at 1920 x 1080 (60 fps), 56.1 ms in the window
+   (17.8 fps). The tag and main's fast-forward wait for the user's
+   review of the write-up.
 
 1a. Reservoir reuse as kernels: tiling, layout and fusion of the merge
    passes, what each costs and where the bytes go (about 4 ms of the light

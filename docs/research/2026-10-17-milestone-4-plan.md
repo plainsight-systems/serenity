@@ -77,9 +77,9 @@ which the user sees first.
 Any retraining runs on the user's RTX 3090 Linux machine over SSH, not on
 the Mac: it frees the Mac's GPU and should train faster than the M3 Max's
 `mps` backend. The data set is rendered on the Mac (the renderer is
-Metal) and copied over. This needs the training toolkit's environment to
-resolve for Linux with CUDA (its lockfile pinned for both), a declared
-dependency change made when the retrain is decided, not before.
+Metal) and copied over. As it turned out, the lockfile already held
+Linux's CUDA wheels, so no dependency changed; what ran is under
+"Retraining on checkerboard input" below.
 
 ## Step 1: async compute overlap
 
@@ -472,6 +472,74 @@ frame's lattice pairing is an involution over the traced field, every
 partner traced, sigma pixels apart (tests/gpu/restir_pt_test.cpp); and the
 setting's refusals.
 
-**Not kept yet:** committed off, for the user's call on the image and on
-whether the network needs retraining on checkerboard input (not
-retrained).
+**Kept** by the user 2026-10-17, on in the denoised graphs; since the
+cleanup (2026-10-17, docs/process/QUEUE.md, 0a) how every denoised graph
+traces its light, not a setting. Retrained on, below.
+
+## Retraining on checkerboard input (2026-10-17/18)
+
+By the user's decision, the network trained again on checkerboarded light.
+
+**The data set: inputs new, targets reused.** The targets are the path
+tracer's (graphs/path.toml), which checkerboard does not touch; the ray
+masks (Step 2) do, since a firefly no longer casts a shadow. One target
+rendered again at the current build (gen-0111, frame 818, t = 13.6 s, the
+flood) against denoiser-v1's: mean luminance +0.10%, 0.88% of pixels
+changed by more than 5% (the rims under fireflies at rest on the table),
+the mean absolute difference 0.10% of the mean, far below the targets'
+own noise. The user chose to keep the targets. scripts/make_denoiser_dataset.py
+--targets-from takes a data set's scenes, full-size albedo and targets by
+hard link, each checked against its checksum, and renders the inputs alone:
+denoiser-v1-checkerboard (renderer 684f105; its targets denoiser-v1's,
+ab6dc9c), 0.47 h on the Mac against the whole set's 3.98, 544 units, 32.3
+GB, every checksum matching, no non-finite value. Its test sequences'
+warm-up frames (training/render_warmup.py) match the data set's own
+frames within float rounding (at most 9 pixels by 2.4e-7).
+
+**Training on the RTX 3090 Ti** (Linux, CUDA 13.2 driver, torch
+2.14.1+cu130 from the existing lock). `train.py --device cuda|mps`, by
+default the machine's. The train and validation splits are 23.9 GiB in
+float32: on a 24 GB card they do not fit beside training's own memory, so
+training measures that memory at the start (one step of a throwaway copy
+of the network at the run's batch size: 7.8 GiB on the 3090 Ti, 8.2 on the
+M3 Max) and holds the splits on the GPU when both fit in its free memory,
+otherwise in pinned host memory, each batch's crops copied over. On the
+3090 the GPU stayed 92% busy. config-wide.json unchanged but for the device,
+no longer the config's: 300 epochs in 3.5 h (42 s each), against 8.3 h on
+the M3 Max for the original (which shared the GPU with the small
+network's run). Best validation loss 0.03662 at epoch 295 (the original,
+on full input, 0.03654).
+
+**The test, once, on the real marbles** (training/evaluate.py; the
+references at t = 8 and 120): displayed error 0.29 to 0.39 of the input's,
+each sequence and region (glass and metal, porcelain, table) within about
+2% of the original network on full input (Milestone 3); 18 to 37% below
+Open Image Denoise's. The table's frame-to-frame variation at t = 120 is
+44% above the targets', as before. Shown to the user beside the original
+network on checkerboard input, the demo before this (1920 × 1080, t = 20
+and 120, with 1:1 crops): a small difference, a little smoother on the
+table and the porcelain. Kept by the user 2026-10-18: the demo graph reads
+../serenity-data/denoiser-v1-checkerboard-model/wide, published at
+media.plainsight-systems.com/denoiser-v1-checkerboard-model/wide/ beside
+the original, which the milestone-3 tag's fetch script pins.
+
+## The close (2026-10-18)
+
+The final tree's demo graph (the retrained network), measured as Step 4
+was: the marbles, AC power, the GPU idle before every run, 3 rounds, the
+median of the rounds' medians, frame interval with two frames in flight.
+Scripts and raw data: serenity-scratch/checkerboard/ (campaign_final.sh,
+out/final_*).
+
+| Output, time | Milestone 3 | Milestone 4 | frames a second |
+|---|---|---|---|
+| 3456 × 2234, t = 120 | 77 ms | 56.1 ms | 13 → 17.8 |
+| 3456 × 2234, t = 20 | | 57.0 | 17.6 |
+| 1920 × 1080, t = 120 | 23.5 | 16.7 | 43 → 60.0 |
+| 1920 × 1080, t = 20 | | 16.9 | 59.2 |
+
+The rounds agree within 0.1 ms. The same as Step 4's, as it should be:
+since then the cleanup removed code and kept every image, and the
+retrained network has the same shape. A frame's span on the GPU, from the
+light half's start to the image half's end: 112 ms at the window's size,
+33 at 1920 × 1080.

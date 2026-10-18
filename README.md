@@ -14,9 +14,22 @@ It runs natively on Apple silicon through Metal 4, in C++20. The goal is a
 clean moving image at the display’s full resolution and 60 frames a second,
 with the light traced at a lower resolution and brought up to the display’s.
 
-[![The marbles twenty seconds into the opening, the swarm perched among them and the first fireflies rising: ReSTIR PT and MNEE, denoised and upscaled to 1920 × 1080 by the network](docs/writeups/images/marbles-denoised-20s.jpg)](https://serenity.plainsight-systems.com/#film)
+[![The marbles twenty seconds into the opening, the swarm perched among them: ReSTIR PT and MNEE traced in a checkerboard, denoised and upscaled to 1920 × 1080 by the retrained network](docs/writeups/images/marbles-m4-20s.jpg)](https://serenity.plainsight-systems.com/#film)
 
-**Current state: milestone 3.** The renderer now traces the
+**Current state: milestone 4.** A 1920 × 1080 frame of the fully lit scene
+now takes 16.7 ms on my M3 Max, 60 frames a second, and the window’s
+3456 × 2234 takes 56 ms, about 18. Three optimizations that shipped engines
+use got it there. The light and the denoiser run side by side on two GPU
+queues; shadow rays skip the 616 fireflies, which cast no shadow worth
+tracing; and each frame traces half the light’s pixels in an alternating
+checkerboard, rebuilding the other half from the frame before. I retrained
+the network on that input, for the first time on my RTX 3090, and it is
+about as accurate on the held-out marbles as the original was on complete
+frames. Running the two halves together gained the least, 4% at the
+window’s size: each slowed the other, which suggests that hardware the
+counters showed as idle was not free to use.
+
+Milestone 3 built the reconstruction. The renderer traces the
 light at a quarter of the output’s pixels and hands it to a small neural
 network I trained for it. For every output pixel, the network decides how
 much each nearby noisy pixel should count, and the pixel becomes their
@@ -24,13 +37,10 @@ weighted average. That removes most of the noise ReSTIR leaves and doubles
 the resolution each way. I tested it once on the marbles, which it never saw
 in training. Measured after tone mapping against 4,096-sample path-traced
 frames, the network leaves 0.29 to 0.39 of the raw input’s error, 18 to
-38% less than Intel’s Open Image Denoise run on each frame. On
-my M3 Max a denoised 1920 × 1080 frame takes 23.5 ms (about 43 frames a
-second) and the window’s 3456 × 2234 takes 77 ms (about 13 frames a
-second), so 60 frames a second at full resolution is still ahead. Once
+38% less than Intel’s Open Image Denoise run on each frame. Once
 every firefly is awake, the table’s light also changes more from frame to
 frame than the path-traced frames do (36 to 47% more), which I’ve left for
-the next training round.
+a training round aimed at it.
 
 Milestone 2 built the light the network starts from. ReSTIR PT reuses whole
 light paths across neighboring pixels and from the previous frame, and
@@ -45,6 +55,8 @@ the decisions, measurements, and connections to inference.
 [Milestone 3: turning samples into an image](docs/writeups/milestone-3.md)
 covers the denoiser: what it learned from, how it runs in the frame, and
 what it still leaves.
+[Milestone 4: making the frame fast](docs/writeups/milestone-4.md) follows
+where the frame’s time went and what each optimization bought.
 [Milestone 1](docs/writeups/milestone-1.md) records the original baseline.
 The design is in [`docs/architecture/`](docs/architecture/README.md).
 
@@ -99,9 +111,9 @@ projections. I trained it in PyTorch on scenes generated for the purpose and
 run it every frame in the renderer’s own Metal compute kernels, which match
 PyTorch to a few parts in ten thousand.
 
-Next I want to make the whole frame fast, treating the reuse passes as
-kernels and measuring where the time and the bytes go. After that, a Vulkan
-backend will let me run the same scene on AMD’s Strix Halo.
+Next I want to treat the reuse passes as kernels, measuring where the
+time and the bytes go when reservoirs are merged. After that, a Vulkan
+backend will let me run the same scene on my RTX 3090 and AMD’s Strix Halo.
 
 Serenity is R&D under Plainsight Systems LLC.
 
@@ -149,7 +161,8 @@ make run GRAPH=graphs/restir_pt_denoised.toml SCENE=scenes/marbles.toml
 
 To make them yourself, [`training/README.md`](training/README.md) covers the
 whole cycle, from rendering the data set (four hours on my M3 Max) and
-training (about eight hours) to the export.
+training (3.5 hours on an RTX 3090, about eight on the M3 Max) to the
+export.
 
 To compare with the MIS path tracer:
 
