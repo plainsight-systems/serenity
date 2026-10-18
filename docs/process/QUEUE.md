@@ -190,6 +190,31 @@ This file tracks active and accepted work.
    (17.8 fps). The tag and main's fast-forward wait for the user's
    review of the write-up.
 
+   **Reopened 2026-10-18, paused by the user.** A sweep of the whole frame
+   against shipped engines (docs/research/2026-10-18-production-sweep.md,
+   on branch `m4-production`) added four steps to Milestone 4, chosen by
+   the user: depth of field after the denoiser (a pinhole trace; Jimenez
+   2014's gather), Halton(2,3) jitter with its offset as two network
+   inputs, light tiles drawn by power (RTXDI), and frame pacing by the
+   display link (merged: 9a51d17, 30 to 60 frames a second preferring 60,
+   behind a backend-neutral frame source). `m4-production` (from 78f1c06,
+   unmerged) refuses the current weights by design until the retrain.
+   **Correction:** the "retrain on checkerboard input" was not: the
+   data-set input graph (graphs/restir_pt_features.toml) has no denoise
+   pass, so its light was traced every pixel (checkerboard is tied to the
+   denoise pass, src/metal/frame/renderer.cpp). The write-up, MEMORY and
+   the plan note say otherwise and must be corrected.
+   Next, when the user resumes: (1) the user's call on making the input
+   graph trace as the demo does (checkerboard and fill; recommended); (2)
+   depth of field at half resolution (recommended) or full (+3 ms in the
+   window); (3) testing against the data set's own targets, without
+   re-rendering the 65,536-sample references (recommended); (4) 57.6 fps
+   at 1080p after the steps, accepted or looked into. Then the data set
+   rendered whole as denoiser-v2 (`python3 scripts/make_denoiser_dataset.py
+   --estimate`, then the full run, about 4 h on the Mac, resumable),
+   training on the RTX 3090 (`ssh ai`, /data/serenity), the test, the
+   before/after, merge, and the write-up corrected.
+
 1a. Reservoir reuse as kernels: tiling, layout and fusion of the merge
    passes, what each costs and where the bytes go (about 4 ms of the light
    block, memory-bound), after Milestone 4.
