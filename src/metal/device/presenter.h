@@ -13,7 +13,7 @@ namespace serenity::metal {
 // Axis: GPU backend.
 //
 // The window's surface, as Metal sees it: a CAMetalLayer, configured once,
-// and the drawable a frame renders into.
+// and the size of the drawables it makes.
 //
 // The layer comes from the window library (SDL3, in src/app/) as an opaque
 // pointer, so the app hands it over without naming any Metal type; this is
@@ -27,17 +27,23 @@ namespace serenity::metal {
 // drawable it hands out is resident, and taken off at destruction, once the
 // GPU is done with the frames in flight (submission.h, Lifetime).
 //
-// Pacing comes from here. acquire() blocks until the display frees a
-// drawable, which holds the loop to the display's refresh without a timer.
-// Core Animation gives up after a second and returns none, when the window
-// cannot be shown; acquire() then returns null and the caller skips the
-// frame. That is not an error: nothing was owed to a hidden window.
+// Pacing is not here: the drawables reach the frame through the display
+// link on this layer (display_link.h), which calls the frame when the
+// display wants one, as Apple's Metal apps are paced; nothing here waits
+// for the display. Three drawables, as Apple's sample leaves the layer
+// (its default): one on screen, one waiting to be, one being rendered.
 //
-// The drawable size follows the window in pixels. resize() is called from the
-// window's resize event, never per frame.
+// The drawable size follows the window in pixels, through resize(), which
+// the window calls each frame with the size it wants. It sets the layer's
+// drawable size only when the layer's is not that size: when the window's
+// size changed, and when something else set the layer's (SDL sets it to the
+// window's full pixels on every resize, src/app/window.h, before the
+// window's frame has asked for its own). Reading the layer's size is one
+// property read a frame; setting it, only on a change, as Apple's sample
+// does. A drawable made before a change has the old size; the frame skips
+// it (metal/frame/renderer.h, render_to_window).
 //
-// Not performance-sensitive in itself: acquire() is one call a frame, and
-// its wait is the display's, not work.
+// Not performance-sensitive: one property read a frame.
 struct LayerHandle {
     void* ca_metal_layer = nullptr;  // a CAMetalLayer; must not be null
 };
@@ -57,15 +63,18 @@ public:
     // (submission.h, Lifetime).
     ~Presenter();
 
-    // Follows the window to `size`; a side of 0 (a minimized window) keeps
-    // the last size. Throws MetalError for a size Metal makes no image of
-    // (device.h, check_texture_size), as the constructor does.
+    // Follows the window to `size`, setting the layer's drawable size if the
+    // layer's is not `size` (above); a side of 0 (a minimized window) keeps
+    // the last size and changes nothing. Throws MetalError for a size Metal
+    // makes no image of (device.h, check_texture_size), as the constructor
+    // does.
     void resize(frame::Extent size);
+    // The size drawables are rendered at: the last asked for.
     frame::Extent size() const noexcept { return size_; }
 
-    // The next drawable, or null if Core Animation had none to give. Owned
-    // by Core Animation; valid until it is presented (Submission::present).
-    CA::MetalDrawable* acquire();
+    // The layer, for the display link on it (display_link.h); configured,
+    // and retained for this object's life.
+    CA::MetalLayer* layer() const noexcept { return layer_.get(); }
 
 private:
     Submission& submission_;

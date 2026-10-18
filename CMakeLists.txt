@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
 # C and Objective-C as well as C++: SDL is built with them, so they are
-# checked against the pin with the C++ compiler, below.
-project(serenity LANGUAGES C CXX OBJC)
+# checked against the pin with the C++ compiler, below. And Objective-C++,
+# for the one file that names Core Animation's Objective-C types, the
+# display link (src/metal/device/display_link.mm), which metal-cpp does
+# not bind.
+project(serenity LANGUAGES C CXX OBJC OBJCXX)
 
 # ---------------------------------------------------------------------------
 # One target for now: Apple silicon, through Metal. The Vulkan backend for the
@@ -11,7 +14,7 @@ project(serenity LANGUAGES C CXX OBJC)
 if(NOT APPLE)
     message(FATAL_ERROR "serenity: only the Metal backend exists yet, which needs macOS.")
 endif()
-foreach(language CXX C OBJC)
+foreach(language CXX C OBJC OBJCXX)
     if(NOT CMAKE_${language}_COMPILER_ID STREQUAL "AppleClang")
         message(FATAL_ERROR
             "serenity: the ${language} compiler is ${CMAKE_${language}_COMPILER_ID} "
@@ -33,6 +36,7 @@ execute_process(
             --cxx "${CMAKE_CXX_COMPILER}"
             --cc "${CMAKE_C_COMPILER}"
             --objc "${CMAKE_OBJC_COMPILER}"
+            --objcxx "${CMAKE_OBJCXX_COMPILER}"
             --sdk "${CMAKE_OSX_SYSROOT}"
             --cmake "${CMAKE_COMMAND}"
     RESULT_VARIABLE toolchain_status)
@@ -43,6 +47,9 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_OBJCXX_STANDARD 20)
+set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+set(CMAKE_OBJCXX_EXTENSIONS OFF)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "" FORCE)
@@ -164,6 +171,7 @@ target_compile_options(serenity_core PRIVATE ${SERENITY_SOURCE_WARNINGS})
 add_library(serenity_metal STATIC
     src/metal/device/metal_cpp.cpp
     src/metal/device/device.cpp
+    src/metal/device/display_link.mm
     src/metal/device/library.cpp
     src/metal/device/offscreen.cpp
     src/metal/device/presenter.cpp
@@ -201,6 +209,9 @@ add_library(serenity_metal STATIC
 )
 target_link_libraries(serenity_metal PUBLIC serenity_core metal_cpp)
 target_compile_options(serenity_metal PRIVATE ${SERENITY_SOURCE_WARNINGS})
+# The display link's Objective-C objects are held under ARC, released by
+# what holds them (display_link.mm).
+set_source_files_properties(src/metal/device/display_link.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
 serenity_add_metallib(
     TARGET serenity_metal NAME shaders
     SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/test_pattern/test_pattern.metal"

@@ -19,8 +19,8 @@ uses it, and each kind arrived with the change that first needed it.
   device, acceleration structures, and every shader with the host code that
   launches it. A Vulkan backend will sit beside it, as `src/vulkan/`.
 - **The app, `src/app/`, and the headless renderer, `src/headless/`,** are
-  the two ways to run a frame: in a window, with the measured clock, or to
-  files, with a fixed step.
+  the two ways to run a frame: in a window, when the display asks for one,
+  or to files, with a fixed step.
 - **The measuring program, `src/measure/`,** makes a reference from the
   headless renderer's files and judges images against it, on the CPU, with
   the core alone.
@@ -108,7 +108,7 @@ data or adds a kind; it does not change a family that already exists.
 | `src/metal/reuse/` | Sample reuse | the reservoir, the merge rule, and temporal and spatial reuse |
 | `src/metal/passes/` | Pass | each pass, its shader and its launcher together |
 | `src/metal/frame/` | Frame graph | running the core's schedule on Metal |
-| `src/app/` | Presentation | the macOS window, its event loop and the measured clock |
+| `src/app/` | Presentation | the macOS window, its event loop, and the frame the display asks for, at the time it gives |
 | `src/headless/` | Presentation | rendering frames to files at a fixed step |
 | `src/measure/` | Measurement | the measuring program's command line: a reference made from files, and images judged against it |
 | `scenes/` | Scene content | scene descriptions, as data |
@@ -252,6 +252,28 @@ one contract and one pass, and changes the families that own each part:
 Contract 20 is the one place the field and the packing are written, read
 alike by the host's dispatches and every kernel, so no two can disagree
 about which pixel a thread or a slot is.
+
+## Frame pacing
+
+The window paced by a Metal display link (`logical-overview.md`, "The
+frame", "Pacing"; the axes in `change-axes.md`) adds one file pair, the
+first Objective-C++ in the program, and changes the families that own
+each part:
+
+| What | Family | File |
+|---|---|---|
+| the display link on the presenter's layer: its rate and latency, the main run loop it is on, and the drawable and the presentation instant it hands to the frame, through an interface that must not throw | GPU backend | `src/metal/device/display_link.{h,mm}`, new: the header C++, the implementation Objective-C++, the one file that names Core Animation's Objective-C types |
+| the layer, its drawable size set again when something else (SDL) changed it; no drawable acquired by the presenter any more | GPU backend | `src/metal/device/presenter.{h,cpp}` |
+| a frame rendered into the drawable it is given, skipped if the drawable is not the presenter's size | Frame graph | `src/metal/frame/renderer.{h,cpp}`, `render_to_window()` |
+| the frame the display asks for: its inputs, its time from the display link's instant, the window's size followed, the title; the loop waiting for events while the run loop calls the frame; a failure in a frame ending the run from the loop | Presentation | `src/app/main.cpp` |
+| the frame's time, from the display link's instants, counted from the first | Presentation | `src/app/clock.{h,cpp}` |
+| waiting for events, and waking the wait | Presentation | `src/app/window.{h,cpp}` |
+| what a frame's GPU time is when the display paces frames | Measurement | `src/core/measurement/frame_times.h` (its header) |
+| Objective-C++ in the build, its compiler pinned with the others | build | `CMakeLists.txt`, `CMakePresets.json`, `cmake/toolchain.json`, `tools/check_toolchain.py` |
+
+The Objective-C++ stays in one file of the backend: its header is C++, so
+the app, which includes it, sees no Objective-C, and `make check` keeps
+Core Animation's names in `src/metal/` as it keeps Metal's.
 
 ## Not here yet
 

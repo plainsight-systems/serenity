@@ -15,7 +15,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 # Baseline: the real pins match this machine, or the probes prove nothing.
 "${CHECK}" >/dev/null 2>&1 || fail "the real pins do not match this machine: run ${CHECK}"
 
-for key in xcode xcode_build macos_sdk metal cxx cc objc cmake; do
+for key in xcode xcode_build macos_sdk metal cxx cc objc objcxx cmake; do
     python3 - "${key}" "${PINS}" <<'PY'
 import json, sys
 key, out = sys.argv[1], sys.argv[2]
@@ -33,7 +33,7 @@ done
 # check reads the tools CMake resolved, not fixed paths.
 printf '#!/bin/sh\necho "Apple clang version 99.0.0 (not the pinned one)"\n' > "${FAKE}"
 chmod +x "${FAKE}"
-for tool in cxx cc objc cmake; do
+for tool in cxx cc objc objcxx cmake; do
     if "${CHECK}" "--${tool}" "${FAKE}" >/dev/null 2>"${ERR}"; then
         fail "${tool}: an unpinned one passed"
     fi

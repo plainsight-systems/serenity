@@ -39,8 +39,10 @@ struct PreviousFrame {
 };
 
 struct FrameInputs {
-    // Since the run began. The window measures it from a monotonic clock, the
-    // headless renderer computes it as index times a fixed step. Double here;
+    // Since the run began. The window takes it from when the display will
+    // show the frame, as its display link says, counted from the first
+    // frame's (app/clock.h); the headless renderer computes it as index
+    // times a fixed step. Double here;
     // shaders receive it as float (contracts/frame_constants.h), whose spacing
     // is 0.24 ms after an hour and 7.8 ms after a day: what a shader
     // animates by it steps visibly after about a day of running. The scene's

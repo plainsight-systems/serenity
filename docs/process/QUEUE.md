@@ -194,6 +194,13 @@ This file tracks active and accepted work.
    passes, what each costs and where the bytes go (about 4 ms of the light
    block, memory-bound), after Milestone 4.
 
+1b. **Built 2026-10-18, on branch m4-pacing:** frame pacing by a Metal
+   display link, as Apple paces Metal apps
+   (docs/research/2026-10-18-frame-pacing.md). For the user: the pacing
+   measured before and after on AC power (not yet: on battery), and
+   whether 60 frames a second is the rate to ask for at the window's
+   sizes.
+
 2. The Vulkan backend on the AMD machine (Strix Halo), beside
    `src/metal/` (MEMORY.md), the denoiser's kernels with it.
 

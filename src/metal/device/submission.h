@@ -102,8 +102,8 @@ private:
 //   commit()      ends the command buffer, commits it, signals the event.
 //   or present(d) the same, for a frame that writes drawable d: the queue
 //                 waits for d before the work and signals it after, then d is
-//                 presented. Pacing comes from the drawable: acquiring one
-//                 blocks until the display frees it (presenter.h).
+//                 presented, by present(), the one presentation a display
+//                 link allows (display_link.h, which paces the frames).
 // Each begin() is followed by exactly one commit() or present() before the
 // next begin(). Anything else is a programming error, checked: it throws
 // MetalError.

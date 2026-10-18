@@ -7,7 +7,8 @@ namespace serenity::metal {
 namespace {
 
 // Drawables the layer may have out at once (presenter.h): one on screen,
-// one waiting to be, and one being rendered.
+// one waiting to be, and one being rendered; the layer's default, set so
+// it is stated.
 constexpr NS::UInteger drawable_count = 3;
 
 NS::SharedPtr<CA::MetalLayer> retained(LayerHandle layer) {
@@ -52,12 +53,13 @@ void Presenter::resize(frame::Extent size) {
     // As the constructor checks: past it Metal stops the program rather
     // than failing (device.h).
     check_texture_size(size, "the window's drawable");
-    layer_->setDrawableSize(CGSize{static_cast<CGFloat>(size.width), static_cast<CGFloat>(size.height)});
+    const CGSize wanted{static_cast<CGFloat>(size.width), static_cast<CGFloat>(size.height)};
+    const CGSize layer = layer_->drawableSize();
+    // Set only on a change, the window's or another's (presenter.h).
+    if (layer.width != wanted.width || layer.height != wanted.height) {
+        layer_->setDrawableSize(wanted);
+    }
     size_ = size;
-}
-
-CA::MetalDrawable* Presenter::acquire() {
-    return layer_->nextDrawable();
 }
 
 }  // namespace serenity::metal

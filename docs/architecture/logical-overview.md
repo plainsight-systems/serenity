@@ -121,7 +121,8 @@ before ("The frame").
 ## Principles
 
 1. **Time is an input.** A frame is a function of the scene description, *t*,
-   the frame's index and the camera. The window passes the time it measured
+   the frame's index and the camera. The window passes the time the display
+   will show the frame at, as the display link targets it ("Pacing", below),
    and the headless renderer a fixed step, but nothing that renders reads a
    clock. The same inputs give the same image in both.
 
@@ -357,6 +358,24 @@ every pixel: a half of each frame a frame old. The user kept it
 (2026-10-17), from the denoised frames before and after; whether the
 network is retrained on checkerboarded light is the user's call, and it
 has not been.
+
+**Pacing.** The window renders when the display asks for a frame, as
+Apple's Metal apps do: a Metal display link (Core Animation's
+`CAMetalDisplayLink`, Apple's "Achieving smooth frame rates with a Metal
+display link") on the window's layer calls the frame on the main thread's
+run loop, hands it the drawable to render into, and says when the display
+will show it. That instant is the frame's time, so what moves in the
+image moves by the time between its showings, and a frame shown late is
+not also drawn where an earlier frame should have been. The window asks
+for a frame rate it can keep (Apple: "Choose a frame rate range that
+your app can consistently maintain"), 60 frames a second, the target
+above, and a latency of two frames, the frames in flight: the frame is
+due before the display's deadline, and the GPU has one more frame's time
+to finish it. SDL's event loop and the display link share the main
+thread's run loop: the window waits for events in SDL, the run loop
+calls the frame while it waits, and the frame never waits for the
+display itself. The headless renderer is not paced: nothing shows its
+frames.
 
 The target is not met yet. The denoised frame takes 56 ms at the
 window's size and 16.7 ms at 1920 x 1080 (Milestone 4's Step 4,

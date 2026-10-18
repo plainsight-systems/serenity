@@ -22,8 +22,12 @@ namespace serenity::measurement {
 // half, submission.h, "Two parts") would each count the overlap again by
 // their spans, and a frame's span is then its latency, not its cost;
 // counted from the frame before's end, the mean is the interval between
-// frames, what the frame rate is. A frame that ends before the frame
-// before it added no time: 0. Both instants are host time, on one clock, so
+// frames, what the frame rate is, while the GPU is the frame's limit. When
+// the display asks for frames less often than the GPU could render them
+// (the window's display link, metal/device/display_link.h), the GPU waits
+// between frames, which no frame counts: the mean is then the GPU's time
+// a frame, and the interval between frames is the display's. A frame that
+// ends before the frame before it added no time: 0. Both instants are host time, on one clock, so
 // their difference is a duration on that clock (TLM.11).
 //
 // The caller adds each frame once, and only frames: it knows which

@@ -52,7 +52,7 @@ combination of axes, and none is an axis of its own.
 | Axis | Triggered by | May change |
 |---|---|---|
 | **GPU backend** | the GPU API | device, resources, pipelines, command encoding, synchronization |
-| **Presentation** | the window, display or input | the window, its event loop, the measured clock |
+| **Presentation** | the window, display or input | the window, its event loop, the frame the display asks for and its time |
 | **Output** | an image or video format | that format's writer |
 | **Measurement** | a new metric or timing | that metric |
 
@@ -152,7 +152,7 @@ The boxes that are compound:
 | Box | Axes it mixes | Splits into |
 |---|---|---|
 | **Build geometry** | Shape, Acceleration, GPU backend | each shape kind's geometry · the acceleration structures · the API calls that build them |
-| **Frame inputs** | Camera, Animation, Presentation | the camera at *t* · the time step: measured by the window, fixed when headless |
+| **Frame inputs** | Camera, Animation, Presentation | the camera at *t* · the time: the display's, for the window; a fixed step, headless |
 | **Animate** | Animation, Acceleration | placing each object and light, and setting each light's brightness, at *t* · updating the structures to match |
 | **Primary visibility** | Camera, Shape, Material, Integrator, Film | generating the ray · intersecting it · passing through glass and metal · writing the surface record |
 | **Light** | Integrator, Light selection, Sample reuse, Light, Material | the path loop and its strategies · choosing lights · reusing samples · each emitter · each BSDF |
@@ -202,6 +202,24 @@ mapper. Two of its parts live elsewhere: reading the weights, in the core
 and still on the Pass axis, so every backend runs the same numbers; and the
 full-size albedo the output is multiplied by, which is the features pass's
 kernel run again at the output's size.
+
+**The display link is the backend's, and the frame it calls is the
+window's.** Pacing the window to the display (`logical-overview.md`, "The
+frame", "Pacing") is two axes:
+
+- **GPU backend**: the display link on the layer, which Core Animation
+  makes for a `CAMetalLayer` and which hands over that layer's drawables,
+  so it is the layer's, as the drawables are: its rate, its latency, the
+  run loop it is on, and the drawable and the instant it hands over. It
+  never knows what is rendered.
+- **Presentation**: what a frame is when the display asks for one: its
+  inputs, the time the display link gave among them; the window's size
+  followed; the title. It never touches the link.
+
+The backend calls the frame through an interface of one function, which
+must not throw, since it is called from Core Animation's run loop, not
+from the program's own code; the window catches what its frame throws
+there and ends the run with it, from its own loop.
 
 **Running the denoised frame on two queues is two axes, and neither is a
 pass's.** Which work goes on which queue, and the hand-off between them

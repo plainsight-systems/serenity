@@ -13,6 +13,7 @@
         "CMAKE_CXX_COMPILER": "/usr/bin/clang++",
         "CMAKE_C_COMPILER": "/usr/bin/clang",
         "CMAKE_OBJC_COMPILER": "/usr/bin/clang",
+        "CMAKE_OBJCXX_COMPILER": "/usr/bin/clang++",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "26.0",
         "CMAKE_OSX_SYSROOT": "macosx",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
@@ -47,6 +48,7 @@
         "CMAKE_C_FLAGS": "-fsanitize=undefined -fno-sanitize-recover=all -fsanitize-ignorelist=${sourceDir}/cmake/ubsan_ignorelist.txt -fno-omit-frame-pointer",
         "CMAKE_CXX_FLAGS": "-fsanitize=undefined -fno-sanitize-recover=all -fsanitize-ignorelist=${sourceDir}/cmake/ubsan_ignorelist.txt -fno-omit-frame-pointer",
         "CMAKE_OBJC_FLAGS": "-fsanitize=undefined -fno-sanitize-recover=all -fsanitize-ignorelist=${sourceDir}/cmake/ubsan_ignorelist.txt -fno-omit-frame-pointer",
+        "CMAKE_OBJCXX_FLAGS": "-fsanitize=undefined -fno-sanitize-recover=all -fsanitize-ignorelist=${sourceDir}/cmake/ubsan_ignorelist.txt -fno-omit-frame-pointer",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=undefined"
       }
     }

@@ -196,6 +196,8 @@ make run GRAPH=graphs/path.toml SCENE=scenes/brass_sphere_wander.toml
 ```
 
 `SCALE=0.5` renders at half the window's resolution each way, for speed.
+The display paces the window, at 60 frames a second at most, through a
+Metal display link, and a window that is hidden renders nothing.
 Escape or closing the window ends it. `make movie` with the same `GRAPH` and
 `SCENE` renders ten seconds headless, `SAMPLES` samples of each frame's
 instant (64 unless given), and encodes them with ffmpeg into `media/`, which

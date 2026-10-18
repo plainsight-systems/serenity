@@ -615,15 +615,20 @@ private:
 //
 // Both prepare the frame (Renderer::prepare) before its submission begins.
 //
-// render_to_window() acquires a drawable, records the frame into it and
-// presents it, inside an autorelease pool of its own (the drawable is an
-// autoreleased object). It returns the frame's sequence and the earlier
-// submission its begin() settled, if any (submission.h), for the window to
-// measure; or none, having done nothing, when Core Animation had no drawable
-// to give (presenter.h).
+// render_to_window() records the frame into `drawable`, the one the display
+// link handed the window's frame (metal/device/display_link.h), and
+// presents it, inside an autorelease pool of its own (what recording gets
+// from Metal is autoreleased). It returns the frame's sequence and the
+// earlier submission its begin() settled, if any (submission.h), for the
+// window to measure.
 //
-// render_to_window() refuses, by MetalError, a drawable whose texture is not the
-// size the layer was given: the passes would write past it.
+// A drawable whose texture is not the presenter's size is skipped: none is
+// returned, nothing is begun, and the drawable is left to Core Animation.
+// The passes dispatch a thread per pixel of the presenter's size and would
+// write past a smaller one (I.6); and such a drawable is one the layer made
+// before its size last changed (metal/device/presenter.h, resize), which
+// the next drawable will not be. Not an error: a resize is not owed the
+// frame of the size before it. A null drawable is refused by MetalError.
 //
 // render_to_offscreen() records the frame into `target` and commits it,
 // without waiting; it returns the submission's sequence, for
@@ -635,8 +640,8 @@ struct WindowFrame {
     std::uint64_t sequence = 0;
     std::optional<Completed> settled;
 };
-std::optional<WindowFrame> render_to_window(Submission& submission, Presenter& presenter, Renderer& renderer,
-                                            const frame::FrameInputs& inputs);
+std::optional<WindowFrame> render_to_window(Submission& submission, const Presenter& presenter, Renderer& renderer,
+                                            const frame::FrameInputs& inputs, CA::MetalDrawable* drawable);
 std::uint64_t render_to_offscreen(Submission& submission, Offscreen& target, Renderer& renderer,
                                   const frame::FrameInputs& inputs);
 

@@ -80,7 +80,9 @@ Decided 2026-10-08, at the repository's creation:
   an image as Charlotte pinned emsdk. `cmake/toolchain.json` records Xcode,
   the macOS SDK the build compiles against (the presets name it,
   `CMAKE_OSX_SYSROOT`), the Metal compiler, Apple clang as each of the C,
-  C++ and Objective-C compilers CMake resolved, and CMake itself;
+  C++, Objective-C and Objective-C++ compilers CMake resolved (Objective-C++
+  since 2026-10-18, for the display link, `src/metal/device/
+  display_link.mm`), and CMake itself;
   configuring fails on any mismatch. Moving the pin is a commit of its own, with the tests rerun.
 - **Shaders are compiled at build time with pinned flags and compiled into
   the executable** (`cmake/MetalLibrary.cmake`). Never compiled from source

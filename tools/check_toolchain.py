@@ -2,7 +2,8 @@
 """Checks that this machine's toolchain is the one cmake/toolchain.json pins.
 
     tools/check_toolchain.py [--pins <path>] [--cxx <compiler>] [--cc <compiler>]
-                             [--objc <compiler>] [--sdk <name or path>] [--cmake <cmake>]
+                             [--objc <compiler>] [--objcxx <compiler>]
+                             [--sdk <name or path>] [--cmake <cmake>]
 
 Metal cannot run in a container, so the toolchain cannot be pinned by an
 image. It is pinned by version instead, and this check is what makes the pin
@@ -10,11 +11,13 @@ binding: CMake runs it at configure time and stops on a mismatch. Each
 mismatch is named with both versions, so the failure says what to install or
 which pin to move. Moving a pin is a commit of its own (cmake/toolchain.json).
 
-What is checked is what the build uses, as CMake resolved it: the C++, C and
-Objective-C compilers (SDL is built with the last two), the SDK the build
+What is checked is what the build uses, as CMake resolved it: the C++, C,
+Objective-C and Objective-C++ compilers (SDL is built with C and
+Objective-C, the display link with Objective-C++), the SDK the build
 compiles against (its root, CMAKE_OSX_SYSROOT), and CMake itself, whose
 version decides the compile lines. Run by hand, each defaults to what the
-presets select: /usr/bin/clang++, /usr/bin/clang, the macosx SDK, and the
+presets select: /usr/bin/clang++ (C++ and Objective-C++), /usr/bin/clang
+(C and Objective-C), the macosx SDK, and the
 cmake on PATH. The one on PATH may be another clang entirely (Homebrew's, on
 the development machine). Python, which runs only this check and the
 review scripts and builds nothing, is found by CMake (find_package) and
@@ -47,6 +50,7 @@ def commands(tools):
         "cxx": [tools["cxx"], "--version"],
         "cc": [tools["cc"], "--version"],
         "objc": [tools["objc"], "--version"],
+        "objcxx": [tools["objcxx"], "--version"],
         "cmake": [tools["cmake"], "--version"],
     }
 
@@ -68,6 +72,7 @@ def main(argv):
         "cxx": "/usr/bin/clang++",
         "cc": "/usr/bin/clang",
         "objc": "/usr/bin/clang",
+        "objcxx": "/usr/bin/clang++",
         "sdk": "macosx",
         "cmake": "cmake",
     }
