@@ -410,9 +410,10 @@ every pixel: a half of each frame a frame old. The user kept it
 network is retrained on checkerboarded light is the user's call, and it
 has not been.
 
-The target is not met yet. The denoised frame takes 56 ms at the
-window's size and 16.7 ms at 1920 x 1080 (Milestone 4's Step 4,
-`docs/research/2026-10-17-milestone-4-plan.md`); ReSTIR PT alone at the
+The target is not met yet. The denoised frame takes 58.3 ms at the
+window's size and 17.4 ms at 1920 x 1080, with the lens applied after the
+network (`docs/research/2026-10-18-production-sweep.md`; 56 and 16.7
+before it, Milestone 4's Step 4, `docs/research/2026-10-17-milestone-4-plan.md`); ReSTIR PT alone at the
 window's full size takes about 150. Making the frame fit the budget is
 later work. The headless renderer is not held to the budget: footage is
 written at any resolution and any number of samples.

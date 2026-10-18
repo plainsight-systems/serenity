@@ -124,6 +124,12 @@ TEST_CASE("ReSTIR PT, the whole graph, keeps the path tracer's means: a lit floo
     // crowd, which a floor under two fireflies, resampled from the start,
     // has few of.
     check_floor(lit_floor(two_fireflies), 512, whole_graph);
+    // Two of unequal power, 5.76 to 1, so the light tiles draw them
+    // unequally (contracts/light_tile.h): the means hold only if every
+    // density weighs by the draw's own probability.
+    check_floor(lit_floor(tests::one_firefly +
+                          "[[shapes]]\nkind = \"sphere\"\ncenter = [-1.2, 1.5, 0.4]\nradius = 0.12\nmaterial = \"glow\"\n"),
+                512, whole_graph);
     check_furnace("kind = \"dielectric\"\nior = 1.5\n", 512, whole_graph);
 }
 

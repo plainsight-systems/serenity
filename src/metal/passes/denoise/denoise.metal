@@ -5,7 +5,7 @@
 //
 //   denoise_depth_histogram<L>, denoise_depth_select<L>   the input's depth
 //       normalization's median (training/data.py, input_frame), exactly;
-//   denoise_input       steps 1 and 2's input: the 28 channels a pixel;
+//   denoise_input       steps 1 and 2's input: the 30 channels a pixel;
 //   conv3x3_n<NT>       step 2's 3 x 3 convolutions, with ReLU;
 //   denoise_maxpool     the U-Net's 2 x 2 max pool (its nearest upsampling
 //                       is conv3x3's, as a decoder reads the level below);
