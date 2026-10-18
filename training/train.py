@@ -70,6 +70,56 @@ def pick_device(asked: str | None, cuda: bool, mps: bool) -> str:
     raise SystemExit("no GPU: training needs CUDA or the Mac's GPU (MPS)")
 
 
+def provenance(config: dict, manifest: Manifest) -> dict:
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=HERE, capture_output=True, text=True, check=True).stdout.strip()
+
+    return {
+        "config": config,
+        "manifest_sha256": manifest.sha256,
+        "dataset": manifest.data["dataset"],
+        "git_commit": git("rev-parse", "HEAD"),
+        "training_dir_uncommitted": git("status", "--porcelain", "--", ".").splitlines(),
+        "torch": torch.__version__,
+        "numpy": np.__version__,
+        "python": platform.python_version(),
+        "machine": platform.platform(),
+    }
+
+
+def make_batch(split: Split, picks: list[tuple[int, int, int]],
+               augmentations: list[Augmentation]) -> tuple[torch.Tensor, torch.Tensor]:
+    """Each (sequence, oy, ox) pick's crop, augmented, stacked: (B, 8, 12, 128, 128) and (B, 8, 6, 256, 256)."""
+    inputs, targets = [], []
+    for (s, oy, ox), a in zip(picks, augmentations):
+        i, t = split.crop(s, oy, ox)
+        i, t = augment(i, t, a)
+        inputs.append(i)
+        targets.append(t)
+    return torch.stack(inputs), torch.stack(targets)
+
+
+def run_batch(model: Denoiser, inputs: torch.Tensor,
+              targets: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """The batch's loss and its parts (loss.sequence_loss), the network run over each sequence."""
+    outputs, _ = model(inputs, targets[:, :, 3:6])
+    return sequence_loss(outputs, targets[:, :, 0:3])
+
+
+def validate(model: Denoiser, split: Split, batch_size: int) -> tuple[float, float, float]:
+    tiles = validation_tiles(len(split))
+    model.eval()
+    totals = torch.zeros(3, device=split.device)
+    with torch.no_grad():
+        for b in range(0, len(tiles), batch_size):
+            picks = tiles[b:b + batch_size]
+            inputs, targets = make_batch(split, picks, [Augmentation.none()] * len(picks))
+            loss, parts = run_batch(model, inputs, targets)
+            totals += torch.stack((loss, parts["spatial"], parts["temporal"])) * len(picks)
+    model.train()
+    return tuple((totals / len(tiles)).tolist())
+
+
 def hold_on_device(data_bytes: int, free_bytes: int, working_bytes: int) -> bool:
     """Whether the splits are held on the GPU: if they fit in its free memory beside training's own.
     Pure. Where not, they are held in the host's memory and each batch copied over."""
