@@ -29,10 +29,11 @@ asks, as Apple paces Metal apps (`logical-overview.md`, "The frame",
   3.4.18's `Cocoa_PumpEventsUntilDate`), which is one of the common modes,
   so the display link calls the frame while the window waits in
   `SDL_WaitEventTimeout`. A frame that fails cannot throw through Core
-  Animation's run loop; it keeps the failure and wakes the wait with an
-  event of the window's own (`SDL_RegisterEvents`, `SDL_PushEvent`, which
-  posts SDL's wake-up event while a wait is under way), and the loop
-  rethrows it.
+  Animation's run loop; Metal's frame source keeps the failure, calls no
+  frame after it, and rethrows it from its loop when the window's wait
+  returns, each wait at most 100 ms. (A first version woke the wait with
+  an SDL event of the window's own; the seam below removed it, since the
+  window would then have known it was being woken by a frame.)
 - **The window's size is followed by the frame**: SDL's Metal view sets
   the layer's drawable size to the window's full pixels on every resize
   (its event watch on `SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED`), and a frame
@@ -56,6 +57,41 @@ unchanged; every graph's headless output is the same bytes as 78f1c06's
 PFM where a graph has radiance to write, `--features` where it has the
 features pass, the denoised graph also at 1920 x 1080 frames 120 and 121
 and with time frozen at t = 20).
+
+## The seam: a frame source
+
+At the user's direction, the window's loop is not shaped by the display
+link: a Vulkan backend (Linux, the RTX 3090 and Strix Halo) or a
+Direct3D 12 one (Xbox Series X) paces by waiting on a swapchain image
+and presenting it from its own loop, and a window inverted around the
+display link's callback would have to be rewritten, not swapped. So the
+core holds an interface (`src/core/presentation/frame_source.h`): a
+**frame source** owns the loop and calls its **client**, the window, for
+its events (waiting at most as long as the source says) and for each
+frame's inputs, given the instant it will be shown; the client is told
+what the frame reported once shown. Metal's source
+(`src/metal/frame/display_frames.{h,cpp}`) waits in the window's events
+while the display link calls frames; the drawable never leaves it. The
+window's side (`src/app/window_frames.{h,cpp}`) names no backend, and
+`main.cpp` only composes them; `make check` (rule 6) keeps every other
+file of `src/app/` free of any backend and all of it free of the display
+link.
+
+Checked against production:
+
+- **SDL3's main callbacks** (`SDL_AppIterate`, `SDL_AppEvent`; SDL's
+  `docs/README-main-functions.md`) are the shape followed: SDL notes that
+  some platforms "would rather be in charge of that `while` loop", and on
+  iOS SDL drives `SDL_AppIterate` from a `CADisplayLink` with a frame rate
+  range (`src/main/ios/SDL_sysmain_callbacks.m`), on the desktop from a
+  plain loop; the app's code is the same either way. The frame source is
+  that "in charge" side, and the client the app's callbacks.
+- **Unreal** keeps the loop in its engine (it pumps the platform's
+  messages, ticks, renders) and the pacing behind its RHI's viewport
+  present, which waits on the swapchain: what a Vulkan or Direct3D 12
+  source would run inside `run()`. Its loop shape is not taken for the
+  window itself, since on Metal the display link, not a loop, decides
+  when a frame comes.
 
 ## Alternatives
 

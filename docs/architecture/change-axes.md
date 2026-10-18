@@ -52,7 +52,7 @@ combination of axes, and none is an axis of its own.
 | Axis | Triggered by | May change |
 |---|---|---|
 | **GPU backend** | the GPU API | device, resources, pipelines, command encoding, synchronization |
-| **Presentation** | the window, display or input | the window, its event loop, the frame the display asks for and its time |
+| **Presentation** | the window, display or input | the window, its event loop, the frame asked for and its time, the frame source's interface |
 | **Output** | an image or video format | that format's writer |
 | **Measurement** | a new metric or timing | that metric |
 
@@ -203,23 +203,34 @@ and still on the Pass axis, so every backend runs the same numbers; and the
 full-size albedo the output is multiplied by, which is the features pass's
 kernel run again at the output's size.
 
-**The display link is the backend's, and the frame it calls is the
-window's.** Pacing the window to the display (`logical-overview.md`, "The
-frame", "Pacing") is two axes:
+**How frames are paced is the backend's; what a frame is, the
+window's; a frame source is the seam.** Pacing the window to the display
+(`logical-overview.md`, "The frame", "Pacing") is two axes, and the
+boundary between them is an interface in the core, so that neither side
+is shaped by the other:
 
-- **GPU backend**: the display link on the layer, which Core Animation
-  makes for a `CAMetalLayer` and which hands over that layer's drawables,
-  so it is the layer's, as the drawables are: its rate, its latency, the
-  run loop it is on, and the drawable and the instant it hands over. It
-  never knows what is rendered.
-- **Presentation**: what a frame is when the display asks for one: its
-  inputs, the time the display link gave among them; the window's size
-  followed; the title. It never touches the link.
+- **Presentation** (`src/app/`): what a frame is when one is asked for:
+  its inputs, the instant it will be shown among them; the size the
+  window wants; the histories; the title; the window's events. It
+  implements the frame source's client and never knows how frames are
+  paced: not whether they are called from a run loop while it waits for
+  events, nor what they are rendered into.
+- **GPU backend**: the frame source, which owns the loop: when frames
+  come, what they render into (Metal's drawable, a swapchain's image),
+  the rate and latency, how long the window may wait for events between
+  them, and what a frame failing means for the loop. Metal's is a
+  display link on the layer, which calls frames from Core Animation's
+  run loop, through a callback that must not throw, so the source keeps
+  a frame's failure and ends the run with it from its own loop; a
+  Vulkan or Direct3D 12 source would wait on its swapchain and present
+  in a loop of its own.
 
-The backend calls the frame through an interface of one function, which
-must not throw, since it is called from Core Animation's run loop, not
-from the program's own code; the window catches what its frame throws
-there and ends the run with it, from its own loop.
+The interface (`src/core/presentation/frame_source.h`) names neither
+side's types: an instant, a size, the frame's inputs, and what a shown
+frame reports for the title (its GPU time once settled, the bug
+counters). Only the program's `main` composes a backend's source with
+the window; `make check` keeps every other file of `src/app/` free of
+any backend, and all of it free of the display link.
 
 **Running the denoised frame on two queues is two axes, and neither is a
 pass's.** Which work goes on which queue, and the hand-off between them

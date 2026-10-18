@@ -22,6 +22,8 @@ TOML_CONFINED="toml++ may be included only from"
 STB_CONFINED="stb may be included only from"
 REUSE_APART="src/metal/reuse/ includes the Integrator or a Pass"
 INTEGRATOR_APART="src/metal/integrator/ includes Sample reuse or a Pass"
+APP_NEUTRAL="src/app/ includes a backend outside main.cpp"
+APP_PACING="src/app/ reaches Metal's display link"
 SEARCH_FAILED="failed (status"
 
 # src/core/ may hold no files yet, and git keeps no empty directory.
@@ -131,6 +133,22 @@ F=src/metal/reuse/_probe32.metal.h; CREATED="${CREATED} ${F}"
 printf '#pragma once\n#include "core/contracts/path_reuse_settings.h"\n' > "${F}"
 "${CHECK}" >/dev/null 2>&1 || fail "a contract included by Sample reuse was refused"
 rm -f "${F}"
+
+# 4c. The window shaped by a backend's pacing: a backend included by an app
+#     file but main.cpp, by quoted, angled and relative path; the display
+#     link included, or its types named, anywhere in src/app/.
+probe "an app file includes the Metal backend" "${APP_NEUTRAL}" src/app/_probe33.h \
+    '#pragma once\n#include "metal/device/presenter.h"\n'
+probe "an app file includes a backend by angle" "${APP_NEUTRAL}" src/app/_probe34.h \
+    '#pragma once\n#include <vulkan/frame/swapchain_frames.h>\n'
+probe "an app file includes the Metal backend by relative path" "${APP_NEUTRAL}" src/app/_probe35.cpp \
+    '#include "../metal/frame/display_frames.h"\n'
+probe "an app file includes the display link" "${APP_PACING}" src/app/_probe36.cpp \
+    '#include "metal/device/display_link.h"\n'
+probe "an app file names the display link" "${APP_PACING}" src/app/_probe37.cpp \
+    'void f(serenity::metal::DisplayLink& link);\n'
+probe "an app file names the display link's update" "${APP_PACING}" src/app/_probe38.h \
+    '#pragma once\nstruct DisplayUpdate;\n'
 
 # 5. A search that cannot read a file fails the check, rather than finding
 #    nothing in it and passing.

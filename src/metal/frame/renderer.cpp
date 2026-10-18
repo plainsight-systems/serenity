@@ -944,23 +944,19 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
     previous_time_ = inputs.time;
 }
 
-std::optional<WindowFrame> render_to_window(Submission& submission, const Presenter& presenter, Renderer& renderer,
-                                            const frame::FrameInputs& inputs, CA::MetalDrawable* drawable) {
-    if (drawable == nullptr) {
-        throw MetalError("render_to_window: no drawable");
+WindowFrame render_to_window(Submission& submission, const Presenter& presenter, Renderer& renderer,
+                             const frame::FrameInputs& inputs, CA::MetalDrawable* drawable) {
+    // The passes dispatch a thread per pixel of the presenter's size, and
+    // write the drawable's texture (renderer.h; I.6).
+    if (!presenter.renders_into(drawable)) {
+        throw MetalError("render_to_window: the drawable is not the " + frame::to_string(presenter.size()) +
+                         " the presenter renders at");
     }
     const auto pool = scoped_pool();
-    // The passes dispatch a thread per pixel of the presenter's size, and
-    // write the drawable's texture: one of another size, made before the
-    // layer's size last changed, is skipped (renderer.h; I.6).
     const frame::Extent size = presenter.size();
-    MTL::Texture* texture = drawable->texture();
-    if (texture == nullptr || texture->width() != size.width || texture->height() != size.height) {
-        return std::nullopt;
-    }
     renderer.prepare(inputs, size);
     const FrameSlot begun = submission.begin(renderer.parts());
-    renderer.record(begun, inputs, texture, size);
+    renderer.record(begun, inputs, drawable->texture(), size);
     submission.present(drawable);
     return WindowFrame{begun.sequence, begun.settled};
 }

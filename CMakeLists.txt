@@ -189,6 +189,7 @@ add_library(serenity_metal STATIC
     src/metal/frame/accumulation.cpp
     src/metal/frame/checkerboard_images.cpp
     src/metal/frame/denoise_images.cpp
+    src/metal/frame/display_frames.cpp
     src/metal/frame/feature_images.cpp
     src/metal/frame/frame_images.cpp
     src/metal/frame/mnee_list.cpp
@@ -237,7 +238,7 @@ add_library(serenity_app_options STATIC src/app/options.cpp src/app/clock.cpp)
 target_link_libraries(serenity_app_options PUBLIC serenity_core)
 target_compile_options(serenity_app_options PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
-add_executable(serenity src/app/main.cpp src/app/window.cpp)
+add_executable(serenity src/app/main.cpp src/app/window.cpp src/app/window_frames.cpp)
 target_link_libraries(serenity PRIVATE serenity_app_options serenity_metal SDL3::SDL3-static)
 target_compile_options(serenity PRIVATE ${SERENITY_SOURCE_WARNINGS})
 

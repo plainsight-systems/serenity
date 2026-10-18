@@ -122,10 +122,8 @@ TEST_CASE("the window's presenter takes its layer's residency set off the queue 
     {
         metal::Presenter presenter(device, submission, metal::LayerHandle{layer}, size);
         metal::Renderer renderer(device, submission, schedule, &description);
-        if (const auto shown =
-                metal::render_to_window(submission, presenter, renderer, inputs(description, 0), layer->nextDrawable())) {
-            last = shown->sequence;
-        }
+        last = metal::render_to_window(submission, presenter, renderer, inputs(description, 0), layer->nextDrawable())
+                   .sequence;
     }
     REQUIRE(last.has_value());
     CHECK(submission.has_completed(*last));

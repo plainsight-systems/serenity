@@ -5,20 +5,22 @@
 #include <QuartzCore/QuartzCore.hpp>
 
 #include "core/frame/frame_inputs.h"
+#include "core/presentation/frame_source.h"
 #include "metal/device/presenter.h"
 
 namespace serenity::metal {
 
 // Axis: GPU backend.
 //
-// The window's frames, paced by the display: a Metal display link
+// Frames paced by the display: a Metal display link
 // (Core Animation's CAMetalDisplayLink, macOS 14) on the presenter's layer,
 // as Apple paces Metal apps ("Achieving smooth frame rates with a Metal
 // display link", its sample's GameView; logical-overview.md, "The frame",
 // "Pacing"). The display link is the layer's: Core Animation makes it for
 // a CAMetalLayer, and it hands over that layer's drawables, so it is the
 // backend's, beside the presenter (change-axes.md). What a frame renders is
-// the caller's, behind Client.
+// the caller's, behind Client: Metal's frame source (metal/frame/
+// display_frames.h), which the window sees only as a frame source.
 //
 // What it does, as Apple's sample does on the main thread
 // (RENDER_ON_MAIN_THREAD):
@@ -38,13 +40,13 @@ namespace serenity::metal {
 //
 // The run loop, not this object, decides when frames are called: only while
 // the main thread runs its run loop, which SDL does while it waits for
-// events (src/app/window.h, wait). Nothing here blocks or waits for the
+// events (metal/frame/display_frames.h, run). Nothing here blocks or waits for the
 // display; the display link's drawable is ready when the frame is called.
 // So the window's pacing is the display's, and nothing in the frame waits
 // on a drawable as Presenter used to (nextDrawable).
 //
 // The rate. CAMetalDisplayLink calls the frame at a rate within the
-// FrameRate asked for (preferredFrameRateRange), one the display can show
+// presentation::FrameRate asked for (preferredFrameRateRange), one the display can show
 // and the system allows (Low Power Mode and thermal state lower it); the
 // caller asks for one its frames can keep up with (Apple: "Choose a frame
 // rate range that your app can consistently maintain"). A FrameRate whose
@@ -72,8 +74,8 @@ namespace serenity::metal {
 // frame() is noexcept (F.6, E.12): it is called from Core Animation's run
 // loop, through Objective-C and AppKit frames that an exception must not
 // unwind; a client that can fail catches there, where it can stop its run
-// and say why (E.17: the boundary is where the handling is), as the window
-// does (src/app/main.cpp). One indirect call a frame; nothing is allocated
+// and say why (E.17: the boundary is where the handling is), as Metal's
+// frame source does (display_frames.h). One indirect call a frame; nothing is allocated
 // for it by this object (MEM.9): the update and its drawable are Core
 // Animation's.
 //
@@ -84,22 +86,14 @@ namespace serenity::metal {
 // (R.1).
 //
 // Copying and moving are deleted (C.21): an object is one link, made once
-// for the window's life and invalidated once, as the Window is (src/app/
-// window.h). Its Objective-C objects, the link and its delegate, are held
+// for a run of frames and invalidated once. Its Objective-C objects, the link and its delegate, are held
 // behind the pointer to State, defined in display_link.mm: I.27's form,
 // here to keep a language out of the header rather than for an ABI, so
-// this header is C++ and whoever includes it (the app) sees no
-// Objective-C.
+// this header is C++ and whoever includes it sees no Objective-C. The app
+// never includes it (make check, rule 6).
 //
 // Not performance-sensitive in itself: one callback a frame, whose cost is
 // the frame's.
-
-// A rate range in frames a second (Hz), as CAFrameRateRange takes it.
-struct FrameRate {
-    float minimum = 0.0F;
-    float maximum = 0.0F;
-    float preferred = 0.0F;
-};
 
 // One frame the display asks for.
 struct DisplayUpdate {
@@ -129,7 +123,7 @@ public:
     // run loop, and calls `client` for each frame from then on. Throws
     // MetalError off the main thread, for a rate refused above, or if Core
     // Animation makes no link.
-    DisplayLink(const Presenter& presenter, FrameRate rate, Client& client);
+    DisplayLink(const Presenter& presenter, presentation::FrameRate rate, Client& client);
 
     DisplayLink(const DisplayLink&) = delete;
     DisplayLink& operator=(const DisplayLink&) = delete;

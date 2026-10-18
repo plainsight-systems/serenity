@@ -19,8 +19,8 @@ uses it, and each kind arrived with the change that first needed it.
   device, acceleration structures, and every shader with the host code that
   launches it. A Vulkan backend will sit beside it, as `src/vulkan/`.
 - **The app, `src/app/`, and the headless renderer, `src/headless/`,** are
-  the two ways to run a frame: in a window, when the display asks for one,
-  or to files, with a fixed step.
+  the two ways to run a frame: in a window, when the backend's frame
+  source asks for one, or to files, with a fixed step.
 - **The measuring program, `src/measure/`,** makes a reference from the
   headless renderer's files and judges images against it, on the CPU, with
   the core alone.
@@ -108,7 +108,8 @@ data or adds a kind; it does not change a family that already exists.
 | `src/metal/reuse/` | Sample reuse | the reservoir, the merge rule, and temporal and spatial reuse |
 | `src/metal/passes/` | Pass | each pass, its shader and its launcher together |
 | `src/metal/frame/` | Frame graph | running the core's schedule on Metal |
-| `src/app/` | Presentation | the macOS window, its event loop, and the frame the display asks for, at the time it gives |
+| `src/core/presentation/` | Presentation | the seam between the window and a backend's pacing: the frame source and its client |
+| `src/app/` | Presentation | the macOS window, its event loop, and each frame's inputs, at the instant the backend's frame source gives |
 | `src/headless/` | Presentation | rendering frames to files at a fixed step |
 | `src/measure/` | Measurement | the measuring program's command line: a reference made from files, and images judged against it |
 | `scenes/` | Scene content | scene descriptions, as data |
@@ -208,7 +209,7 @@ file is new:
 | the second queue, each frame slot's second command allocator and buffer, the event the light half signals and the image half waits for, a two-part submission's commit and settling | GPU backend | `src/metal/device/submission.{h,cpp}` |
 | where the frame splits, the barriers on each side, the hand-off images kept one set per frame slot (the features at both sizes, and the light's radiance, which the checkerboard's fill writes), and how many parts a frame has | Frame graph | `src/metal/frame/renderer.{h,cpp}` |
 | the per-slot radiance hand-off | Frame graph | `src/metal/frame/denoise_images.{h,cpp}`, beside the denoiser's other memory |
-| asking the renderer for its parts and beginning the submission with them | Presentation | `src/app/main.cpp` through `render_to_window()`, `src/headless/main.cpp` through `render_to_offscreen()` (both in `renderer.cpp`), unchanged themselves |
+| asking the renderer for its parts and beginning the submission with them | Presentation | the window through `render_to_window()` (since 2026-10-18 from Metal's frame source, `src/metal/frame/display_frames.cpp`), `src/headless/main.cpp` through `render_to_offscreen()` (both in `renderer.cpp`), unchanged themselves |
 | a frame's time when frames overlap: from when it began, or the frame before it finished if later, to when it finished | Measurement | `src/core/measurement/frame_times.{h,cpp}` |
 
 The passes (`src/metal/passes/`) do not change: the denoise and tone map
@@ -255,25 +256,32 @@ about which pixel a thread or a slot is.
 
 ## Frame pacing
 
-The window paced by a Metal display link (`logical-overview.md`, "The
-frame", "Pacing"; the axes in `change-axes.md`) adds one file pair, the
-first Objective-C++ in the program, and changes the families that own
-each part:
+The window paced by its backend behind a frame source
+(`logical-overview.md`, "The frame", "Pacing"; the axes in
+`change-axes.md`), Metal's through a display link, adds the seam, the
+Metal source, the first Objective-C++ in the program, and changes the
+families that own each part:
 
 | What | Family | File |
 |---|---|---|
-| the display link on the presenter's layer: its rate and latency, the main run loop it is on, and the drawable and the presentation instant it hands to the frame, through an interface that must not throw | GPU backend | `src/metal/device/display_link.{h,mm}`, new: the header C++, the implementation Objective-C++, the one file that names Core Animation's Objective-C types |
-| the layer, its drawable size set again when something else (SDL) changed it; no drawable acquired by the presenter any more | GPU backend | `src/metal/device/presenter.{h,cpp}` |
-| a frame rendered into the drawable it is given, skipped if the drawable is not the presenter's size | Frame graph | `src/metal/frame/renderer.{h,cpp}`, `render_to_window()` |
-| the frame the display asks for: its inputs, its time from the display link's instant, the window's size followed, the title; the loop waiting for events while the run loop calls the frame; a failure in a frame ending the run from the loop | Presentation | `src/app/main.cpp` |
-| the frame's time, from the display link's instants, counted from the first | Presentation | `src/app/clock.{h,cpp}` |
-| waiting for events, and waking the wait | Presentation | `src/app/window.{h,cpp}` |
+| the seam: a frame source, which owns the loop, and its client, which handles the window's events and gives each frame's inputs; a frame rate range; what a shown frame reports | Presentation (contract) | `src/core/presentation/frame_source.h`, new |
+| the window's side of it: the size wanted, the frame's inputs from the instant it will be shown, the histories, the frame times, the title | Presentation | `src/app/window_frames.{h,cpp}`, new, backend-neutral |
+| composing a backend's source with the window, and nothing of how it paces | Presentation | `src/app/main.cpp` |
+| the frame's time, from the source's instants, counted from the first | Presentation | `src/app/clock.{h,cpp}` |
+| waiting for events at most a given time | Presentation | `src/app/window.{h,cpp}` |
+| Metal's frame source: the loop, waiting in the window's events while the display link calls frames; the size followed and a drawable of the size before skipped; the frame rendered into the drawable; a frame's failure kept and rethrown from the loop; which submissions are frames | Frame graph | `src/metal/frame/display_frames.{h,cpp}`, new |
+| the display link on the presenter's layer: its rate and latency, the main run loop it is on, the drawable and the instant it hands over, through a callback that must not throw | GPU backend | `src/metal/device/display_link.{h,mm}`, new: the header C++, the implementation Objective-C++, the one file that names Core Animation's Objective-C types |
+| the layer, its drawable size set again when something else (SDL) changed it; whether a drawable is the size it renders at | GPU backend | `src/metal/device/presenter.{h,cpp}` |
+| a frame rendered into a drawable, refused if the drawable is not the presenter's size | Frame graph | `src/metal/frame/renderer.{h,cpp}`, `render_to_window()` |
 | what a frame's GPU time is when the display paces frames | Measurement | `src/core/measurement/frame_times.h` (its header) |
+| the app's files but `main.cpp` free of any backend, and all of `src/app/` of the display link | build | `tools/check_boundaries.sh`, rule 6, and its proof |
 | Objective-C++ in the build, its compiler pinned with the others | build | `CMakeLists.txt`, `CMakePresets.json`, `cmake/toolchain.json`, `tools/check_toolchain.py` |
 
-The Objective-C++ stays in one file of the backend: its header is C++, so
-the app, which includes it, sees no Objective-C, and `make check` keeps
-Core Animation's names in `src/metal/` as it keeps Metal's.
+The Objective-C++ stays in one file of the backend, and its header in
+the backend too: the app includes the Metal source's header, from
+`main.cpp` alone, and sees neither Objective-C nor the display link. A
+Vulkan source would sit beside it, as `src/vulkan/frame/`, implementing
+the same interface with its own loop.
 
 ## Not here yet
 

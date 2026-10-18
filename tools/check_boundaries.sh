@@ -37,7 +37,7 @@ METAL_DIR=src/metal/
 status=0
 fail() { echo "BOUNDARY VIOLATION: $1" >&2; status=1; }
 
-for dir in src src/core src/metal src/measure src/metal/reuse src/metal/integrator; do
+for dir in src src/core src/metal src/measure src/metal/reuse src/metal/integrator src/app; do
     [ -d "${dir}" ] || { echo "check_boundaries: ${dir} is missing; nothing would be checked" >&2; exit 2; }
 done
 
@@ -122,6 +122,23 @@ hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal/|core/)?
 if [ -n "${hits}" ]; then
     echo "${hits}" | sed 's/^/  /' >&2
     fail "src/metal/integrator/ includes Sample reuse or a Pass. The Integrator sees reservoirs as contract 15 alone."
+fi
+
+# 6. The window is not shaped by how a backend paces frames
+#    (change-axes.md, "a frame source is the seam"): every file of src/app/
+#    but main.cpp, which composes the window with a backend, includes from
+#    no backend, by quoted, angled or relative path; and no file of
+#    src/app/, main.cpp included, includes Metal's display link or names
+#    its types, which only Metal's frame source uses.
+hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal|vulkan)/' --exclude=main.cpp src/app/)"
+if [ -n "${hits}" ]; then
+    echo "${hits}" | sed 's/^/  /' >&2
+    fail "src/app/ includes a backend outside main.cpp. The window meets a backend through the frame source alone."
+fi
+hits="$(search -rnE 'display_link\.h|(^|[^[:alnum:]_])(DisplayLink|DisplayUpdate)([^[:alnum:]_]|$)' src/app/)"
+if [ -n "${hits}" ]; then
+    echo "${hits}" | sed 's/^/  /' >&2
+    fail "src/app/ reaches Metal's display link. How frames are paced is the backend's frame source's."
 fi
 
 if [ "${status}" -eq 0 ]; then

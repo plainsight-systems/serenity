@@ -377,6 +377,22 @@ calls the frame while it waits, and the frame never waits for the
 display itself. The headless renderer is not paced: nothing shows its
 frames.
 
+**How frames are paced is the backend's, behind a frame source.** The
+window does not know whether the display calls it, as Metal's display
+link does, or whether its own loop waits on a swapchain image and
+presents it, as a Vulkan or Direct3D 12 backend will. It hands a
+**frame source** two things to call: its events, which it handles
+waiting at most as long as the source says, and each frame, given the
+instant it will be shown, for which it returns the frame's inputs. The
+source owns the loop: Metal's waits in the window's events while the
+display link calls frames; a swapchain's would poll the events, acquire,
+render and present in turn. The window holds the frame's inputs, its
+size, the histories and the title; the source holds what it renders
+into and when. This is the shape of SDL3's main callbacks
+(`SDL_AppIterate`, `SDL_AppEvent`): the platform that would rather own
+the loop owns it, on iOS through a display link, and the app's code is
+the same either way.
+
 The target is not met yet. The denoised frame takes 56 ms at the
 window's size and 16.7 ms at 1920 x 1080 (Milestone 4's Step 4,
 `docs/research/2026-10-17-milestone-4-plan.md`); ReSTIR PT alone at the

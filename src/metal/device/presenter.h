@@ -40,8 +40,9 @@ namespace serenity::metal {
 // window's full pixels on every resize, src/app/window.h, before the
 // window's frame has asked for its own). Reading the layer's size is one
 // property read a frame; setting it, only on a change, as Apple's sample
-// does. A drawable made before a change has the old size; the frame skips
-// it (metal/frame/renderer.h, render_to_window).
+// does. A drawable made before a change has the old size: renders_into()
+// says so, and the frame source leaves it unrendered (metal/frame/
+// display_frames.h).
 //
 // Not performance-sensitive: one property read a frame.
 struct LayerHandle {
@@ -71,6 +72,10 @@ public:
     void resize(frame::Extent size);
     // The size drawables are rendered at: the last asked for.
     frame::Extent size() const noexcept { return size_; }
+
+    // Whether `drawable`'s texture is size(): one a frame may be rendered
+    // into; not one made before the size changed, nor none (I.6).
+    bool renders_into(CA::MetalDrawable* drawable) const;
 
     // The layer, for the display link on it (display_link.h); configured,
     // and retained for this object's life.

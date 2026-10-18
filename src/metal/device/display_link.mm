@@ -24,7 +24,7 @@ namespace {
 static_assert(frames_in_flight == 2, "the display link's latency is the frames in flight, which it takes as 1 or 2");
 constexpr float frame_latency = 2.0F;
 
-void check(FrameRate rate) {
+void check(presentation::FrameRate rate) {
     const bool positive = std::isfinite(rate.minimum) && std::isfinite(rate.maximum) && rate.minimum > 0.0F;
     if (!positive || !(rate.minimum <= rate.preferred && rate.preferred <= rate.maximum)) {
         throw MetalError("DisplayLink: a frame rate range must be positive and in order (minimum <= preferred <= "
@@ -88,7 +88,7 @@ struct DisplayLink::State {
     ~State() { [link invalidate]; }
 };
 
-DisplayLink::DisplayLink(const Presenter& presenter, FrameRate rate, Client& client)
+DisplayLink::DisplayLink(const Presenter& presenter, presentation::FrameRate rate, Client& client)
     : state_(std::make_unique<State>()) {
     // The frames are called on the main run loop, the one SDL runs
     // (display_link.h, Threads).

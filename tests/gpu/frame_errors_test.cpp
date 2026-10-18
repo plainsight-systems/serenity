@@ -4,7 +4,7 @@
 // refusal changes nothing (E.4). And every refusal the backend's memory
 // owners state: an image Metal cannot make or read back at another size, an
 // array of no bytes, a slot or an array index that is not one. And the
-// window's: a drawable not the size it renders at, skipped; a display link
+// window's: a drawable not the size it renders at, refused; a display link
 // at a rate it cannot ask for, or off the main thread.
 
 #include <cstddef>
@@ -22,6 +22,7 @@
 #include <QuartzCore/QuartzCore.hpp>
 
 #include "core/frame/graph_file.h"
+#include "core/presentation/frame_source.h"
 #include "core/scene/scene.h"
 #include "gpu/support/rendering.h"
 #include "metal/device/device.h"
@@ -106,7 +107,7 @@ TEST_CASE("the accumulated image refused at a size it cannot have keeps what it 
     CHECK(accumulation.texture() == image);
 }
 
-TEST_CASE("a window's drawable not the presenter's size is skipped, and the presenter restores the layer's size") {
+TEST_CASE("a window's drawable must be the presenter's size, and the presenter restores the layer's size") {
     metal::Device device;
     metal::Submission submission(device);
     const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -118,21 +119,28 @@ TEST_CASE("a window's drawable not the presenter's size is skipped, and the pres
     metal::Renderer renderer(device, submission, frame::parse_schedule("passes = [\"test_pattern\"]\n", "test"),
                              nullptr);
     const frame::FrameInputs inputs = tests::frame_at(0, 0, 0.0, std::nullopt);
-    REQUIRE(metal::render_to_window(submission, presenter, renderer, inputs, layer->nextDrawable()).has_value());
-    CHECK_THROWS_AS((void)metal::render_to_window(submission, presenter, renderer, inputs, nullptr), metal::MetalError);
+    CA::MetalDrawable* fits = layer->nextDrawable();
+    CHECK(presenter.renders_into(fits));
+    (void)metal::render_to_window(submission, presenter, renderer, inputs, fits);
+    CHECK_FALSE(presenter.renders_into(nullptr));
     // The layer's drawables changed size behind the presenter's back, as
-    // SDL changes them on a resize: one of them is skipped, written by
-    // nothing (the passes would write past a smaller one)...
+    // SDL changes them on a resize: one of them is not rendered into, and
+    // refused, before anything is begun (the passes would write past a
+    // smaller one)...
     layer->setDrawableSize(CGSize{32.0, 32.0});
+    CA::MetalDrawable* stale = layer->nextDrawable();
+    CHECK_FALSE(presenter.renders_into(stale));
     const std::uint64_t next = submission.next_sequence();
-    CHECK_FALSE(metal::render_to_window(submission, presenter, renderer, inputs, layer->nextDrawable()).has_value());
-    CHECK(submission.next_sequence() == next);  // skipped before anything was begun
+    CHECK_THROWS_AS((void)metal::render_to_window(submission, presenter, renderer, inputs, stale), metal::MetalError);
+    CHECK_THROWS_AS((void)metal::render_to_window(submission, presenter, renderer, inputs, nullptr),
+                    metal::MetalError);
+    CHECK(submission.next_sequence() == next);
     // ...and following the window to the size it has sets the layer's back,
-    // so the next drawable is rendered.
+    // so the next drawable is one to render into.
     presenter.resize({16, 16});
     CHECK(layer->drawableSize().width == 16.0);
     CHECK(layer->drawableSize().height == 16.0);
-    CHECK(metal::render_to_window(submission, presenter, renderer, inputs, layer->nextDrawable()).has_value());
+    CHECK(presenter.renders_into(layer->nextDrawable()));
     CHECK_NOTHROW((void)submission.finish());
 }
 
@@ -149,20 +157,20 @@ TEST_CASE("a display link is refused a frame rate not positive and in order, and
     } client;
     const float nan = std::numeric_limits<float>::quiet_NaN();
     const float infinity = std::numeric_limits<float>::infinity();
-    for (const metal::FrameRate wrong : {metal::FrameRate{0.0F, 0.0F, 0.0F}, metal::FrameRate{-60.0F, 60.0F, 60.0F},
-                                         metal::FrameRate{60.0F, 30.0F, 45.0F}, metal::FrameRate{30.0F, 60.0F, 90.0F},
-                                         metal::FrameRate{30.0F, 60.0F, 20.0F}, metal::FrameRate{30.0F, 60.0F, nan},
-                                         metal::FrameRate{30.0F, infinity, 60.0F}}) {
+    for (const presentation::FrameRate wrong : {presentation::FrameRate{0.0F, 0.0F, 0.0F}, presentation::FrameRate{-60.0F, 60.0F, 60.0F},
+                                         presentation::FrameRate{60.0F, 30.0F, 45.0F}, presentation::FrameRate{30.0F, 60.0F, 90.0F},
+                                         presentation::FrameRate{30.0F, 60.0F, 20.0F}, presentation::FrameRate{30.0F, 60.0F, nan},
+                                         presentation::FrameRate{30.0F, infinity, 60.0F}}) {
         INFO("rate " << wrong.minimum << " to " << wrong.maximum << ", preferred " << wrong.preferred);
         CHECK_THROWS_AS(metal::DisplayLink(presenter, wrong, client), metal::MetalError);
     }
-    CHECK_NOTHROW(metal::DisplayLink(presenter, metal::FrameRate{60.0F, 60.0F, 60.0F}, client));
+    CHECK_NOTHROW(metal::DisplayLink(presenter, presentation::FrameRate{60.0F, 60.0F, 60.0F}, client));
     // Off the main thread its frames would be called on a run loop nobody
     // runs (display_link.h).
     bool refused = false;
     std::thread([&] {
         try {
-            const metal::DisplayLink link(presenter, metal::FrameRate{60.0F, 60.0F, 60.0F}, client);
+            const metal::DisplayLink link(presenter, presentation::FrameRate{60.0F, 60.0F, 60.0F}, client);
         } catch (const metal::MetalError&) {
             refused = true;
         }

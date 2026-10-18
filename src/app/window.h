@@ -6,6 +6,7 @@
 #include <string>
 
 #include "core/frame/extent.h"
+#include "core/frame/frame_inputs.h"
 
 struct SDL_Window;
 
@@ -35,34 +36,27 @@ namespace serenity::app {
 // must match the pixels.
 //
 // SDL sets the view's layer's drawable size to the window's full pixels on
-// every resize (its Metal view's event watch); the renderer's presenter sets
-// it back to the size it renders at on its next frame
+// every resize (its Metal view's event watch); Metal's presenter sets it
+// back to the size it renders at on its next frame
 // (metal/device/presenter.h, resize).
 //
-// Events and frames share the main thread's run loop (logical-overview.md,
-// "The frame", "Pacing"). wait() blocks in SDL until an event comes, and
-// SDL waits by running the main run loop in its default mode
-// (nextEventMatchingMask), so the display link on the layer calls the
-// window's frames during the wait (metal/device/display_link.h): the
-// arrangement of Apple's display link sample on the main thread, with SDL's
-// wait as the run loop. A wait is bounded, at a tenth of a second: SDL
-// turns an interrupt (Control-C, SIGINT) into its quit event only when it
-// next pumps its events, which a wait with no bound would not do until
-// another event came. Ten empty returns a second, each a pump. wake() ends a wait from inside it, from a frame,
-// by an event of the Window's own (SDL_RegisterEvents), which SDL wakes its
-// wait for (SDL_PushEvent, its wake-up event): how a frame that failed ends
-// the run from the loop, not from the run loop's callout.
+// wait() handles the events, waiting at most as long as it is asked, for
+// the frame source (core/presentation/frame_source.h, FrameClient::events),
+// which decides how long that is: Metal's waits here while its display
+// link calls frames from the main run loop, which SDL runs while it waits
+// (nextEventMatchingMask, in the run loop's default mode); a swapchain's
+// would ask for no wait at all. The Window knows neither. Its own bound,
+// a tenth of a second, holds whatever it is asked: SDL turns an interrupt
+// (Control-C, SIGINT) into its quit event only when it next pumps its
+// events, which a longer wait would not do until another event came.
 //
 // Failure throws WindowError with SDL's description (E.2, E.5, E.14): a window
 // opened off the main thread, which SDL requires, a size SDL cannot take,
-// or SDL unable to start its video subsystem, make the window, make the
-// view, or give the Window its event. wake() cannot report a failure to the
-// frame it is called from, which must not throw (display_link.h): if SDL
-// cannot queue its event, wake() ends the program (std::terminate), rather
-// than leave the loop waiting for a wake that never comes (E.26).
+// or SDL unable to start its video subsystem, make the window, or make the
+// view.
 //
-// Not performance-sensitive: wait() returns once an event comes, and
-// drains the events that came with it.
+// Not performance-sensitive: wait() returns once an event comes or its
+// time passes, and drains the events that came with it.
 
 class WindowError : public std::runtime_error {
 public:
@@ -90,16 +84,12 @@ public:
 
     // What happened since the last wait.
     struct Events {
-        bool quit = false;   // the window was closed, or Escape pressed
-        bool woken = false;  // wake() was called
+        bool quit = false;  // the window was closed, Escape pressed, or the program interrupted
     };
-    // Blocks until an event comes or the bound passes, the display link
-    // calling frames meanwhile (above), and returns what came; nothing, if
-    // nothing did.
-    Events wait();
-    // Ends the wait under way, or the next one, with `woken`. For a frame,
-    // so noexcept (above).
-    void wake() noexcept;
+    // Blocks until an event comes, or `longest` passes (at most the
+    // Window's own bound, above), and returns what came; nothing, if
+    // nothing did. A `longest` of 0 does not wait.
+    Events wait(frame::Seconds longest);
 
     frame::Extent size_in_pixels() const;
 
@@ -134,7 +124,6 @@ private:
     SdlVideo video_;
     std::unique_ptr<SDL_Window, DestroyWindow> window_;
     std::unique_ptr<void, DestroyView> view_;
-    std::uint32_t wake_event_;  // the Window's own event type, for wake()
 };
 
 }  // namespace serenity::app

@@ -62,4 +62,12 @@ void Presenter::resize(frame::Extent size) {
     size_ = size;
 }
 
+bool Presenter::renders_into(CA::MetalDrawable* drawable) const {
+    if (drawable == nullptr) {
+        return false;
+    }
+    const MTL::Texture* texture = drawable->texture();
+    return texture != nullptr && texture->width() == size_.width && texture->height() == size_.height;
+}
+
 }  // namespace serenity::metal
