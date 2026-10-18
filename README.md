@@ -16,18 +16,15 @@ with the light traced at a lower resolution and brought up to the display’s.
 
 [![The marbles twenty seconds into the opening, the swarm perched among them: ReSTIR PT and MNEE traced in a checkerboard, denoised and upscaled to 1920 × 1080 by the retrained network](docs/writeups/images/marbles-m4-20s.jpg)](https://serenity.plainsight-systems.com/#film)
 
-**Current state: milestone 4.** A 1920 × 1080 frame of the fully lit scene
-now takes 16.7 ms on my M3 Max, 60 frames a second, and the window’s
-3456 × 2234 takes 56 ms, about 18. Three optimizations that shipped engines
-use got it there. The light and the denoiser run side by side on two GPU
-queues; shadow rays skip the 616 fireflies, which cast no shadow worth
-tracing; and each frame traces half the light’s pixels in an alternating
+**Current state: milestone 4.** The fully lit scene now runs at 60
+frames a second at 1920 × 1080 on my M3 Max, and about 18 at the full size
+of its display. Milestone 3 finished the pipeline; this milestone applied
+the standard optimizations real-time renderers use once the image is
+right. The light and the denoiser run at the same time on two GPU queues;
+shadow rays skip the 616 fireflies, which cast no shadow worth tracing;
+and each frame traces half the light’s pixels in an alternating
 checkerboard, rebuilding the other half from the frame before. I retrained
-the network on that input, for the first time on my RTX 3090, and it is
-about as accurate on the held-out marbles as the original was on complete
-frames. Running the two halves together gained the least, 4% at the
-window’s size: each slowed the other, which suggests that hardware the
-counters showed as idle was not free to use.
+the network on that input, for the first time on my RTX 3090.
 
 Milestone 3 built the reconstruction. The renderer traces the
 light at a quarter of the output’s pixels and hands it to a small neural
