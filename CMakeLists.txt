@@ -240,8 +240,9 @@ target_compile_options(serenity-headless PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
 # The measuring program (src/measure/options.h): the core alone, no Metal,
 # so a reference is made and judged on any machine the core builds on. Its
-# command line in a library of its own, as the two above, for the tests.
-add_library(serenity_measure_options STATIC src/measure/options.cpp)
+# command line and its commands in a library of its own, as the two above,
+# for the tests.
+add_library(serenity_measure_options STATIC src/measure/options.cpp src/measure/commands.cpp)
 target_link_libraries(serenity_measure_options PUBLIC serenity_core)
 target_compile_options(serenity_measure_options PRIVATE ${SERENITY_SOURCE_WARNINGS})
 

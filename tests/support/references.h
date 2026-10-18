@@ -44,27 +44,6 @@ struct Pixel {
     std::uint32_t y = 0;
 };
 
-// The pixel the pinhole camera `c` sees `point` in, of an image of `size`:
-// camera_direction() inverted. `point` must be in front of the camera and
-// inside the image: one behind it, or out of frame, has no pixel, and is a
-// failed test rather than a cast out of an unsigned's range (ES.46, I.5).
-inline Pixel pixel_of(const contracts::CameraData& c, Vec3 point, frame::Extent size) {
-    const Vec3 d = normalized(point - vec(c.origin));
-    const double ahead = dot(d, vec(c.forward));
-    REQUIRE(ahead > 0.0);
-    const Vec3 on_plane = (1.0 / ahead) * d;
-    const double sx = dot(on_plane, vec(c.right)) / dot(vec(c.right), vec(c.right));
-    const double sy = dot(on_plane, vec(c.up)) / dot(vec(c.up), vec(c.up));
-    const double x = (sx + 1.0) * 0.5 * size.width;
-    const double y = (1.0 - sy) * 0.5 * size.height;
-    INFO("point at (" << x << ", " << y << ") of " << size.width << " x " << size.height);
-    REQUIRE(x >= 0.0);
-    REQUIRE(x < size.width);
-    REQUIRE(y >= 0.0);
-    REQUIRE(y < size.height);
-    return {static_cast<std::uint32_t>(x), static_cast<std::uint32_t>(y)};
-}
-
 // The unpolarized Fresnel reflectance of light arriving at a smooth boundary
 // at cos_i, with eta = n_from / n_to; 1 past the critical angle.
 inline double fresnel_reflectance(double cos_i, double eta) {
@@ -82,8 +61,5 @@ inline double fresnel_reflectance(double cos_i, double eta) {
 inline double fresnel_from_air(double cos_i, double ior) {
     return fresnel_reflectance(cos_i, 1.0 / ior);
 }
-
-// Glass's (ior 1.5) reflectance head on: F0 = ((1.5 - 1) / (1.5 + 1))^2.
-inline constexpr double glass_f0 = 0.04;
 
 }  // namespace serenity::tests

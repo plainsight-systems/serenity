@@ -8,12 +8,12 @@
 //     sphere's center and both ends); and the generalized geometry term it
 //     gives is the solid angle at the receiver per area at the light, found
 //     here by moving the light's point and solving again;
-//   - the estimator: ReSTIR PT, MNEE always on, converges to the path
-//     tracer's mean on a caustic, a glass sphere on a diffuse floor under a
-//     small light, to within MNEE's bias, measured here and stated; and the
-//     caustic is counted once, so a build that counted it both ways
-//     (MNEE's and the bounce's) fails;
-//   - a request the full work list has no room for is counted lost.
+//   - the estimator, an integration test: ReSTIR PT, MNEE always on,
+//     converges to the path tracer's mean on a caustic, a glass sphere on a
+//     diffuse floor under a small light, to within MNEE's bias, measured
+//     here and stated; the caustic is counted once, so a build that
+//     counted it both ways (MNEE's and the bounce's) fails; and a request
+//     the full work list has no room for is counted lost.
 
 #include <algorithm>
 #include <array>
@@ -345,21 +345,23 @@ std::string light_in_glass_in_a_cavity() {
 
 }  // namespace
 
-TEST_CASE("MNEE: a request the full work list has no room for is counted lost, apart from samples not finite") {
-    // Until 2026-10-16 a lost request made its path's sample a NaN, under
-    // fast math, which need not keep one (docs/research/
-    // 2026-10-16-codebase-guidelines-pass.md, C14). Now the MNEE pass's grid
-    // kernel counts it; the path's sample keeps its other light, finite.
-    // Two frames; no sample left out for not being finite (the rig's
-    // render() checks it).
-    tests::AccumulatingRig rig(light_in_glass_in_a_cavity(), restir_pt_mnee_graph, {32, 32});
-    const std::vector<float> rgba = rig.render_accumulated(2);
-    MESSAGE("lost requests: " << rig.renderer().mnee_lost_requests());
-    CHECK(rig.renderer().mnee_lost_requests() > 0);
-    CHECK(std::ranges::all_of(rgba, [](float v) { return std::isfinite(v); }));
-}
-
-TEST_CASE("MNEE: ReSTIR PT with it converges to the caustic the path tracer finds, counting it once") {
-    const std::vector<float> reference = render_caustic(tests::path_graph(), 8192);
-    check_caustic(restir_pt_mnee_graph, 1024, reference);
+TEST_CASE("MNEE in ReSTIR PT: the caustic counted once, converging to the path tracer's; a full list's requests "
+          "counted lost") {
+    SUBCASE("ReSTIR PT with MNEE converges to the caustic the path tracer finds") {
+        const std::vector<float> reference = render_caustic(tests::path_graph(), 8192);
+        check_caustic(restir_pt_mnee_graph, 1024, reference);
+    }
+    SUBCASE("a request the full work list has no room for is counted lost, apart from samples not finite") {
+        // Until 2026-10-16 a lost request made its path's sample a NaN,
+        // under fast math, which need not keep one (docs/research/
+        // 2026-10-16-codebase-guidelines-pass.md, C14). Now the MNEE pass's
+        // grid kernel counts it; the path's sample keeps its other light,
+        // finite. Two frames; no sample left out for not being finite (the
+        // rig's render() checks it).
+        tests::AccumulatingRig rig(light_in_glass_in_a_cavity(), restir_pt_mnee_graph, {32, 32});
+        const std::vector<float> rgba = rig.render_accumulated(2);
+        MESSAGE("lost requests: " << rig.renderer().mnee_lost_requests());
+        CHECK(rig.renderer().mnee_lost_requests() > 0);
+        CHECK(std::ranges::all_of(rgba, [](float v) { return std::isfinite(v); }));
+    }
 }

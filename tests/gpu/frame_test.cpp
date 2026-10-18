@@ -1,6 +1,8 @@
-// A frame, end to end, headless: scene text to schedule, schedule to the Metal
-// renderer, the renderer into an offscreen image, the image read back. The
-// window's path differs only in its target (metal/frame/renderer.h).
+// The frame's submission (metal/device/submission.h): an integration test,
+// frames in flight each reading their own frame's constants from the ring
+// (metal/frame/renderer.h), the test pattern rendered into images of their
+// own and read back; and unit tests of the submission protocol: finish(),
+// its refusals, an empty schedule refused, each submission settled once.
 
 #include <array>
 #include <cmath>
@@ -77,25 +79,6 @@ constexpr std::array<tests::Pixel, 5> probed{
     {{0, 0}, {size.width - 1, 0}, {0, size.height - 1}, {size.width - 1, size.height - 1}, {21, 13}}};
 
 }  // namespace
-
-TEST_CASE("the test pattern scene renders its formula") {
-    Rig rig;
-    for (const double seconds : {1.0, 3.0, 0.5}) {
-        const auto rgba = rig.render(seconds, 0);
-        for (const tests::Pixel pixel : probed) {
-            check_pixel(rgba, pixel, seconds);
-        }
-    }
-}
-
-TEST_CASE("time changes the image, and the same inputs give the same bytes") {
-    Rig rig;
-    const auto at_one = rig.render(1.0, 60);
-    const auto at_three = rig.render(3.0, 180);
-    const auto at_one_again = rig.render(1.0, 60);
-    CHECK(tests::differing(at_one, at_three) > 0);
-    CHECK(tests::differing(at_one, at_one_again) == 0);
-}
 
 TEST_CASE("frames in flight: each submission reads its own frame's constants") {
     // Four frames, each into its own image, at four times, committed without

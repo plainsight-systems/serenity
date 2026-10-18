@@ -27,6 +27,7 @@
 #include "metal/frame/renderer.h"
 #include "support/files.h"
 #include "support/references.h"
+#include "support/schedules.h"
 #include "support/text.h"
 #include "test_paths.h"
 
@@ -39,13 +40,19 @@ inline frame::Schedule path_graph() {
         "passes = [\"path\", \"tone_map\"]\n[tone_map]\nexposure = 0.0\nbloom = 0.0\n", "path graph");
 }
 
-// graphs/restir_pt_denoised.toml with the test fixture's network
-// (tests/data/denoise/network) in place of the one beside the checkout.
+// The denoised pipeline: ReSTIR PT's passes, the features, the denoise
+// pass and the tone map, ReSTIR PT's settings the written ones
+// (support/schedules.h), its network the test fixture's
+// (tests/data/denoise/network), not the one beside the checkout.
 inline frame::Schedule fixture_denoised_graph() {
-    const std::string text = replaced(read_bytes(graphs_dir / "restir_pt_denoised.toml"),
-                                      "\"../../serenity-data/denoiser-v1-model/wide\"",
-                                      "\"" + (data_dir / "denoise" / "network").string() + "\"");
-    return frame::parse_schedule(text, "restir_pt_denoised.toml, the fixture's network");
+    std::vector<frame::PassKind> kinds = restir_pt_passes;
+    kinds.push_back(frame::PassKind::features);
+    kinds.push_back(frame::PassKind::denoise);
+    kinds.push_back(frame::PassKind::tone_map);
+    frame::Schedule s{kinds, look};
+    s.restir_pt = written_restir_pt(kinds);
+    s.denoise = passes::Denoise{data_dir / "denoise" / "network"};
+    return s;
 }
 
 // Frame `index` at `seconds`, its image accumulated since frame `since`,
@@ -61,20 +68,6 @@ inline std::vector<std::uint8_t> read_back(const metal::Offscreen& target) {
     std::vector<std::uint8_t> rgba(target.rgba_size());
     target.read_rgba(rgba);
     return rgba;
-}
-
-// Frame `inputs` of `description` through `schedule`, at `size`, on a device,
-// queue and renderer of its own, read back.
-inline std::vector<std::uint8_t> render_once(const scene::SceneDescription& description,
-                                             const frame::Schedule& schedule, frame::Extent size,
-                                             const frame::FrameInputs& inputs) {
-    metal::Device device;
-    metal::Submission submission(device);
-    metal::Offscreen target(device, submission, size);
-    metal::Renderer renderer(device, submission, schedule, &description);
-    (void)submission.wait_until_complete(metal::render_to_offscreen(submission, target, renderer, inputs));
-    CHECK(renderer.non_finite_samples() == 0);
-    return read_back(target);
 }
 
 // A renderer of `schedule` over a scene, at a size, rendering frames that

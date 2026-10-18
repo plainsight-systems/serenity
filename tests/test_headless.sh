@@ -1,22 +1,33 @@
 #!/bin/sh
 # serenity-headless, run as its user runs it (src/headless/main.cpp,
-# headless/options.h): which frames it writes, under which names, what it
-# prints, the size of what it writes; and that a failure ends the run with
-# its message on stderr, status 1 and nothing written.
+# headless/options.h): an integration test, kept small. A good run writes
+# the frames --write selects, under their names, and prints their paths; a
+# command line or a graph it cannot run is refused before anything renders
+# or is made; a frame that left samples out ends the run, written nowhere.
+# Each failure: status 1, its message on stderr, nothing on stdout. What the
+# names, the written frames and the refusals are is unit-tested in
+# tests/options_test.cpp; what a PFM holds, in tests/gpu/headless_pfm_test.cpp.
 #
-# Usage: test_headless.sh SERENITY_HEADLESS GRAPHS_DIR SCRATCH_DIR
-# SCRATCH_DIR is removed and made anew; the test writes nothing outside it.
+# Usage: test_headless.sh SERENITY_HEADLESS SCRATCH_DIR
+# SCRATCH_DIR is removed and made anew; the test writes nothing outside it,
+# and runs graphs it writes there, not graphs/'s.
 set -eu
 
-[ "$#" -eq 3 ] || { echo "usage: $0 SERENITY_HEADLESS GRAPHS_DIR SCRATCH_DIR" >&2; exit 2; }
+[ "$#" -eq 2 ] || { echo "usage: $0 SERENITY_HEADLESS SCRATCH_DIR" >&2; exit 2; }
 BIN=$1
-GRAPHS=$2
-SCRATCH=$3
+SCRATCH=$2
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 rm -rf "${SCRATCH}"
 mkdir -p "${SCRATCH}"
+
+# The two graphs it runs: the test pattern, and the path tracer shown
+# through the tone map.
+GRAPHS="${SCRATCH}/graphs"
+mkdir -p "${GRAPHS}"
+printf 'passes = ["test_pattern"]\n' >"${GRAPHS}/test_pattern.toml"
+printf 'passes = ["path", "tone_map"]\n[tone_map]\nexposure = 0.0\nbloom = 0.0\n' >"${GRAPHS}/path.toml"
 
 # The names in directory $1, sorted, on one line.
 names() { (cd "$1" && ls | tr '\n' ' ' | sed 's/ $//'); }
@@ -44,21 +55,6 @@ for f in "${OUT}"/*.png; do
     [ "$(png_size "${f}")" = "16x8" ] || fail "${f} is $(png_size "${f}"), not 16x8"
 done
 
-# The same frames again: the same bytes (principle 1).
-AGAIN="${SCRATCH}/again"
-"${BIN}" --graph "${GRAPHS}/test_pattern.toml" --out "${AGAIN}" --size 16x8 --first 7 --frames 5 \
-    --write doubling >/dev/null || fail "the second run exited with $?"
-for n in 7 8 10 11; do
-    name=$(printf 'frame-%06d.png' "${n}")
-    cmp -s "${OUT}/${name}" "${AGAIN}/${name}" || fail "${name} differs between two runs of one command"
-done
-
-# The last only, of three.
-LAST="${SCRATCH}/last"
-"${BIN}" --graph "${GRAPHS}/test_pattern.toml" --out "${LAST}" --size 4x4 --frames 3 --write last >/dev/null ||
-    fail "--write last exited with $?"
-[ "$(names "${LAST}")" = "frame-000002.png" ] || fail "--write last wrote '$(names "${LAST}")'"
-
 # Refused: status 1, a message naming the program on stderr, nothing on
 # stdout, and nothing written.
 expect_refusal() {
@@ -78,71 +74,6 @@ printf 'passes = ["no_such_pass"]\n' >"${SCRATCH}/broken.toml"
 expect_refusal "a graph that does not read" --graph "${SCRATCH}/broken.toml" --out "${SCRATCH}/broken"
 grep -q 'no_such_pass' "${SCRATCH}/stderr" || fail "a broken graph's message does not name the pass"
 [ ! -e "${SCRATCH}/broken" ] || fail "a broken graph made its output directory"
-
-# --format pfm: the accumulated image's radiance, of the path graph over a
-# lit scene, written doubling (of three frames, all three), each named
-# frame-NNNNNN.pfm and holding its header and 6 x 4 x 3 floats. That each is
-# the accumulated image, bit for bit, is tests/gpu/headless_pfm_test.cpp's.
-cat >"${SCRATCH}/lit.toml" <<'SCENE'
-[camera]
-position = [0, 1, 3]
-look_at = [0, 0, 0]
-vertical_fov_degrees = 50
-[environment]
-kind = "gradient"
-zenith = [0.2, 0.3, 0.5]
-horizon = [0.6, 0.6, 0.6]
-[materials.ball]
-kind = "rough"
-color = [0.7, 0.4, 0.2]
-[[shapes]]
-kind = "sphere"
-center = [0, 0, 0]
-radius = 0.6
-material = "ball"
-SCENE
-PFM="${SCRATCH}/pfm"
-"${BIN}" --graph "${GRAPHS}/path.toml" --scene "${SCRATCH}/lit.toml" --out "${PFM}" --size 6x4 --frames 3 \
-    --samples 2 --time 0 --write doubling --format pfm >"${SCRATCH}/stdout" || fail "a pfm run exited with $?"
-PFM_EXPECTED="frame-000000.pfm frame-000001.pfm frame-000002.pfm"
-[ "$(names "${PFM}")" = "${PFM_EXPECTED}" ] || fail "a pfm run wrote '$(names "${PFM}")', not '${PFM_EXPECTED}'"
-for n in 0 1 2; do printf '%s/frame-%06d.pfm\n' "${PFM}" "${n}"; done >"${SCRATCH}/expected"
-cmp -s "${SCRATCH}/stdout" "${SCRATCH}/expected" || fail "a pfm run printed '$(cat "${SCRATCH}/stdout")'"
-printf 'PF\n6 4\n-1.0\n' >"${SCRATCH}/pfm_header"
-for f in "${PFM}"/*.pfm; do
-    # The header, 12 bytes, and 6 x 4 x 3 floats, 288.
-    [ "$(wc -c <"${f}" | tr -d ' ')" = "300" ] || fail "${f} is $(wc -c <"${f}") bytes, not 300"
-    head -c 12 "${f}" | cmp -s - "${SCRATCH}/pfm_header" || fail "${f}'s header is not 'PF 6 4 -1.0'"
-done
-
-# Refused before anything renders or is made: a kind written from the
-# accumulated image (pfm) of a graph that accumulates nothing, naming the
-# graph; a name that is none of Output's kinds (which are Output's to list,
-# tests/image_format_test.cpp); and an accumulating run whose last sample,
-# frame 4194304's 1024th, is past index 2^32 - 1.
-expect_refusal "pfm of a graph that accumulates nothing" --graph "${GRAPHS}/test_pattern.toml" \
-    --out "${SCRATCH}/pattern-pfm" --format pfm
-grep -q "is written from the accumulated image, and the graph ${GRAPHS}/test_pattern.toml accumulates nothing" \
-    "${SCRATCH}/stderr" || fail "a pfm of the test pattern: '$(cat "${SCRATCH}/stderr")'"
-[ ! -e "${SCRATCH}/pattern-pfm" ] || fail "a pfm of a graph that accumulates nothing made its output directory"
-expect_refusal "an unknown format" --graph "${GRAPHS}/test_pattern.toml" --out "${SCRATCH}/kind" --format no-such-kind
-grep -q -- "--format needs .*, not 'no-such-kind'" "${SCRATCH}/stderr" ||
-    fail "an unknown format: '$(cat "${SCRATCH}/stderr")'"
-[ ! -e "${SCRATCH}/kind" ] || fail "an unknown format made its output directory"
-expect_refusal "a sample past 2^32 - 1" --graph "${GRAPHS}/path.toml" --scene "${SCRATCH}/lit.toml" \
-    --out "${SCRATCH}/wrapped" --size 4x4 --first 4194304 --samples 1024
-grep -q 'at 1024 samples a frame, is past sample index 2^32 - 1' "${SCRATCH}/stderr" ||
-    fail "a sample past 2^32 - 1: '$(cat "${SCRATCH}/stderr")'"
-[ ! -e "${SCRATCH}/wrapped" ] || fail "a run past sample index 2^32 - 1 made its output directory"
-
-# The same range of a graph that accumulates nothing renders one sample a
-# frame, whatever --samples says (core/frame/history.h): frame 4194304's one
-# sample, index 4194304, far under 2^32. Accepted, and written.
-ONE="${SCRATCH}/one-sample"
-"${BIN}" --graph "${GRAPHS}/test_pattern.toml" --out "${ONE}" --size 4x4 --first 4194304 --samples 1024 \
-    >"${SCRATCH}/stdout" 2>"${SCRATCH}/stderr" ||
-    fail "a graph that accumulates nothing, from frame 4194304 at --samples 1024: '$(cat "${SCRATCH}/stderr")'"
-[ "$(names "${ONE}")" = "frame-4194304.png" ] || fail "from frame 4194304 wrote '$(names "${ONE}")'"
 
 # A frame that left samples out for not being finite fails the run once it
 # has completed, naming the count, before it is written: a light at the
@@ -179,58 +110,6 @@ expect_refusal "samples not finite" --graph "${GRAPHS}/path.toml" --scene "${SCR
 grep -q 'frame 0: [1-9][0-9]* samples were not finite' "${SCRATCH}/stderr" ||
     fail "samples not finite: '$(cat "${SCRATCH}/stderr")'"
 [ -z "$(names "${SCRATCH}/blinding")" ] || fail "a frame with samples not finite was written"
-
-# --features: the feature images beside each frame written (contract 17,
-# headless/options.h), four PFMs a frame, named after it, at the run's size.
-# The features graph alone shows nothing and writes only them, at a size of
-# their own; a light graph with the features pass writes its frame and its
-# features, each at the run's size. What the images hold is
-# tests/gpu/features_test.cpp's.
-FEATURES="${SCRATCH}/features"
-"${BIN}" --graph "${GRAPHS}/features.toml" --scene "${SCRATCH}/lit.toml" --out "${FEATURES}" --size 12x8 \
-    --frames 2 --features >"${SCRATCH}/stdout" || fail "a features run exited with $?"
-FEATURES_EXPECTED=""
-for n in 0 1; do
-    for f in albedo depth motion normal; do
-        FEATURES_EXPECTED="${FEATURES_EXPECTED} $(printf 'frame-%06d-%s.pfm' "${n}" "${f}")"
-    done
-done
-FEATURES_EXPECTED="${FEATURES_EXPECTED# }"
-[ "$(names "${FEATURES}")" = "${FEATURES_EXPECTED}" ] ||
-    fail "a features run wrote '$(names "${FEATURES}")', not '${FEATURES_EXPECTED}'"
-for n in 0 1; do
-    for f in albedo normal depth motion; do printf '%s/frame-%06d-%s.pfm\n' "${FEATURES}" "${n}" "${f}"; done
-done >"${SCRATCH}/expected"
-cmp -s "${SCRATCH}/stdout" "${SCRATCH}/expected" || fail "a features run printed '$(cat "${SCRATCH}/stdout")'"
-printf 'PF\n12 8\n-1.0\n' >"${SCRATCH}/features_header"
-for f in "${FEATURES}"/*.pfm; do
-    # The header, 13 bytes, and 12 x 8 x 3 floats, 1152.
-    [ "$(wc -c <"${f}" | tr -d ' ')" = "1165" ] || fail "${f} is $(wc -c <"${f}") bytes, not 1165"
-    head -c 13 "${f}" | cmp -s - "${SCRATCH}/features_header" || fail "${f}'s header is not 'PF 12 8 -1.0'"
-done
-LIGHT="${SCRATCH}/light-features"
-"${BIN}" --graph "${GRAPHS}/restir_pt_features.toml" --scene "${SCRATCH}/lit.toml" --out "${LIGHT}" --size 6x4 \
-    --format pfm --features >/dev/null || fail "a light graph's features run exited with $?"
-LIGHT_EXPECTED="frame-000000-albedo.pfm frame-000000-depth.pfm frame-000000-motion.pfm frame-000000-normal.pfm frame-000000.pfm"
-[ "$(names "${LIGHT}")" = "${LIGHT_EXPECTED}" ] ||
-    fail "a light graph's features run wrote '$(names "${LIGHT}")', not '${LIGHT_EXPECTED}'"
-for f in "${LIGHT}"/*.pfm; do
-    head -c 12 "${f}" | cmp -s - "${SCRATCH}/pfm_header" || fail "${f}'s header is not 'PF 6 4 -1.0'"
-done
-expect_refusal "features of a graph without them" --graph "${GRAPHS}/path.toml" --scene "${SCRATCH}/lit.toml" \
-    --out "${SCRATCH}/no-features" --features
-grep -q "has no features pass" "${SCRATCH}/stderr" || fail "features of the path graph: '$(cat "${SCRATCH}/stderr")'"
-[ ! -e "${SCRATCH}/no-features" ] || fail "features of a graph without them made its output directory"
-expect_refusal "the features graph without --features" --graph "${GRAPHS}/features.toml" \
-    --scene "${SCRATCH}/lit.toml" --out "${SCRATCH}/nothing"
-grep -q "shows no image, only features" "${SCRATCH}/stderr" ||
-    fail "the features graph without --features: '$(cat "${SCRATCH}/stderr")'"
-[ ! -e "${SCRATCH}/nothing" ] || fail "the features graph without --features made its output directory"
-
-# An output directory holding an earlier run's frame: refused, the frame
-# left as it was.
-expect_refusal "a directory holding a frame" --graph "${GRAPHS}/test_pattern.toml" --out "${OUT}" --size 16x8
-[ "$(names "${OUT}")" = "${EXPECTED}" ] || fail "a refused run changed what its directory held"
 
 rm -rf "${SCRATCH}"
 echo "serenity-headless: every check passed"

@@ -11,8 +11,10 @@
 
 #include "app/options.h"
 #include "core/frame/frame_inputs.h"
+#include "core/frame/schedule.h"
 #include "core/output/image_format.h"
 #include "headless/options.h"
+#include "support/schedules.h"
 #include "support/text.h"
 
 using serenity::tests::contains;
@@ -255,4 +257,59 @@ TEST_CASE("headless: which frames are written, and frozen time") {
     CHECK(contains(headless_error({"--time", "-1"}), "0 or more"));
     CHECK(contains(headless_error({"--time", "nan"}), "0 or more"));
     CHECK(contains(headless_error({"--time", "1", "--step", "0.5"}), "exclusive"));
+}
+
+TEST_CASE("headless: each frame's file is named by its index, six digits at least, and its kind's extension") {
+    using serenity::headless::frame_path;
+    using serenity::output::ImageFormat;
+    CHECK(frame_path("out", 7, ImageFormat::png) == std::filesystem::path("out") / "frame-000007.png");
+    CHECK(frame_path("out", 0, ImageFormat::pfm) == std::filesystem::path("out") / "frame-000000.pfm");
+    CHECK(frame_path("out", 4194304, ImageFormat::png) == std::filesystem::path("out") / "frame-4194304.png");
+    const auto features = serenity::headless::feature_paths("out", 12);
+    CHECK(features[0] == std::filesystem::path("out") / "frame-000012-albedo.pfm");
+    CHECK(features[1] == std::filesystem::path("out") / "frame-000012-normal.pfm");
+    CHECK(features[2] == std::filesystem::path("out") / "frame-000012-depth.pfm");
+    CHECK(features[3] == std::filesystem::path("out") / "frame-000012-motion.pfm");
+}
+
+TEST_CASE("headless: a frame's time is its index's, or the frozen one; the frame before's likewise, none before 0") {
+    using serenity::headless::frame_time;
+    using serenity::headless::previous_time;
+    const auto stepped = headless({"--step", "0.5"});
+    CHECK(frame_time(stepped, 0).count() == 0.0);
+    CHECK(frame_time(stepped, 3).count() == 1.5);
+    CHECK_FALSE(previous_time(stepped, 0).has_value());
+    CHECK(previous_time(stepped, 3).value().count() == 1.0);
+    const auto frozen = headless({"--time", "2.5"});
+    CHECK(frame_time(frozen, 0).count() == 2.5);
+    CHECK(frame_time(frozen, 9).count() == 2.5);
+    CHECK(previous_time(frozen, 0).value().count() == 2.5);
+}
+
+TEST_CASE("headless: what the options ask of the graph, refused by name before anything renders") {
+    using serenity::frame::PassKind;
+    using serenity::frame::Schedule;
+    using serenity::headless::check_graph;
+    using serenity::headless::OptionsError;
+    const Schedule pattern{{PassKind::test_pattern}, std::nullopt};
+    const Schedule path{{PassKind::path, PassKind::tone_map}, serenity::tests::look};
+    const Schedule path_features{{PassKind::path, PassKind::features, PassKind::tone_map}, serenity::tests::look};
+    const Schedule features_alone{{PassKind::features}, std::nullopt};
+    const auto refusal = [](const serenity::headless::Options& options, const Schedule& schedule) {
+        return serenity::tests::error_of<OptionsError>([&] {
+            check_graph(options, schedule);
+            return 0;
+        });
+    };
+    // Accepted: a PNG of anything shown, a PFM of what accumulates, features
+    // of a graph with them, the features alone with --features.
+    CHECK(refusal(headless({}), pattern).empty());
+    CHECK(refusal(headless({"--format", "pfm"}), path).empty());
+    CHECK(refusal(headless({"--features"}), path_features).empty());
+    CHECK(refusal(headless({"--features"}), features_alone).empty());
+    // Refused, naming the graph (headless_args' "s").
+    CHECK(contains(refusal(headless({"--format", "pfm"}), pattern),
+                   "is written from the accumulated image, and the graph s accumulates nothing"));
+    CHECK(contains(refusal(headless({"--features"}), path), "the graph s has no features pass"));
+    CHECK(contains(refusal(headless({}), features_alone), "shows no image, only features"));
 }

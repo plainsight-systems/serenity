@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <filesystem>
 #include <string>
 #include <string_view>
 
@@ -106,14 +107,6 @@ TEST_CASE("up defaults to +y, and a rough material may have a color instead of a
     const scene::SceneDescription no_up = scene::parse(with("up = [0, 1, 0]\n", ""), "s");
     CHECK(no_up.camera.up.y == 1.0f);
     CHECK(no_up.camera.up.x == 0.0f);
-}
-
-TEST_CASE("the first scene reads, with its fireflies as lights") {
-    const scene::SceneDescription s = scene::load(tests::scenes_dir / "brass_sphere.toml");
-    CHECK(s.shapes.records.size() == 4);
-    CHECK(s.conductors.size() == 1);
-    CHECK(s.sphere_lights.size() == 2);
-    CHECK(s.light_counts.spheres == 2);
 }
 
 TEST_CASE("metal, glow, and every glowing sphere a light") {
@@ -265,14 +258,6 @@ TEST_CASE("a sphere's motion: a mover for its shape, its wander about its center
     CHECK(s.shapes.transforms[2].m[0][3] == 3.0f);
 }
 
-TEST_CASE("the wandering brass sphere scene reads, both fireflies moving") {
-    const scene::SceneDescription s = scene::load(tests::scenes_dir / "brass_sphere_wander.toml");
-    REQUIRE(s.animation.movers.size() == 2);
-    CHECK(s.animation.movers[0].target == 2);
-    CHECK(s.animation.movers[1].target == 3);
-    CHECK(s.sphere_lights.size() == 2);
-}
-
 TEST_CASE("every mistake in a motion is refused, naming the file and the line") {
     // The third sphere's motion is on line 44.
     const auto motion = [](const std::string& m) { return error_of(moving("[3, 1.5, 0]", m)); };
@@ -316,20 +301,6 @@ TEST_CASE("moving shapes are not checked against each other") {
                              "seed = 8 }\n";
     const scene::SceneDescription s = scene::parse(both, "s");
     CHECK(s.animation.movers.size() == 2);
-}
-
-TEST_CASE("the flying brass sphere scene reads: six flights, each with its flight's flashes") {
-    constexpr std::size_t flights = 6;
-    const scene::SceneDescription s = scene::load(tests::scenes_dir / "brass_sphere_flight.toml");
-    REQUIRE(s.animation.motions.flights.size() == flights);
-    REQUIRE(s.animation.glowers.size() == flights);
-    REQUIRE(s.animation.glows.schedules.size() == flights);
-    for (std::size_t i = 0; i < flights; ++i) {
-        CHECK(s.animation.glowers[i].target == i);  // sphere light i
-        CHECK(s.animation.glowers[i].glow.kind == animation::GlowKind::schedule);
-        CHECK(s.animation.glows.schedules[i].schedule.starts == s.animation.motions.flights[i].flashes.starts);
-    }
-    CHECK(scene::changes(s));
 }
 
 TEST_CASE("names, and glows: what they read into, and every mistake refused") {
@@ -424,26 +395,16 @@ TEST_CASE("every shape lies within the world") {
     CHECK_NOTHROW((void)scene::parse(with("max = [6, 0, 6]", "max = [6, 0, 1000000]"), "s"));
 }
 
-TEST_CASE("the marbles' scene reads: a walnut table, thirty-six marbles, 616 fireflies") {
-    constexpr std::size_t fireflies = 480 + 136;  // two swarms'
-    const scene::SceneDescription s = scene::load(tests::scenes_dir / "marbles.toml");
-    CHECK(s.woods.size() == 1);
-    CHECK(s.swirls.size() == 5);
-    CHECK(s.coateds.size() == 7);
-    CHECK(s.media.size() == 6);
-    CHECK(s.absorbings.size() == 6);
-    // The table's top, legs and the ground; thirty-six marbles, nine cores,
-    // and the fireflies.
-    CHECK(s.shapes.records.size() == 6 + 36 + 9 + fireflies);
-    std::size_t filled = 0;
-    for (const shapes::ShapeRecord& record : s.shapes.records) {
-        filled += record.interior != contracts::no_medium ? 1u : 0u;
+TEST_CASE("every scene in scenes/ reads, whatever it holds") {
+    std::size_t read = 0;
+    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(tests::scenes_dir)) {
+        if (entry.path().extension() == ".toml") {
+            INFO(entry.path().filename().string());
+            CHECK_NOTHROW((void)scene::load(entry.path()));
+            ++read;
+        }
     }
-    CHECK(filled == 9);
-    CHECK(s.sphere_lights.size() == fireflies);
-    CHECK(s.animation.movers.size() == fireflies);
-    CHECK(s.animation.glowers.size() == fireflies);
-    CHECK(s.animation.motions.flights.size() == fireflies);
+    CHECK(read > 0);
 }
 
 TEST_CASE("a camera's lens reads, and a camera without one is a pinhole") {

@@ -1,10 +1,12 @@
 #include "headless/options.h"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -243,6 +245,45 @@ void prepare_output(const std::filesystem::path& out) {
                            " already holds files, which would sit beside this run's frames as if they were its own; "
                            "empty it or name another");
     }
+}
+
+void check_graph(const Options& options, const frame::Schedule& schedule) {
+    if (output::source(options.format) == output::ImageSource::accumulated && !frame::accumulates(schedule)) {
+        throw OptionsError("--format " + std::string{output::extension(options.format)} +
+                           " is written from the accumulated image, and the graph " + options.graph.string() +
+                           " accumulates nothing");
+    }
+    if (options.features && !frame::writes_features(schedule)) {
+        throw OptionsError("--features writes the feature images, and the graph " + options.graph.string() +
+                           " has no features pass");
+    }
+    if (!frame::presents(schedule) && !options.features) {
+        throw OptionsError("the graph " + options.graph.string() +
+                           " shows no image, only features: ask for them with --features");
+    }
+}
+
+std::filesystem::path frame_path(const std::filesystem::path& out, std::uint64_t index, output::ImageFormat format) {
+    return out / std::format("frame-{:06}.{}", index, output::extension(format));
+}
+
+std::array<std::filesystem::path, 4> feature_paths(const std::filesystem::path& out, std::uint64_t index) {
+    const auto path = [&](std::string_view feature) { return out / std::format("frame-{:06}-{}.pfm", index, feature); };
+    return {path("albedo"), path("normal"), path("depth"), path("motion")};
+}
+
+frame::Seconds frame_time(const Options& options, std::uint64_t index) {
+    return options.time ? *options.time : options.step * static_cast<double>(index);
+}
+
+std::optional<frame::Seconds> previous_time(const Options& options, std::uint64_t index) {
+    if (options.time) {
+        return *options.time;
+    }
+    if (index == 0) {
+        return std::nullopt;
+    }
+    return options.step * static_cast<double>(index - 1);
 }
 
 }  // namespace serenity::headless

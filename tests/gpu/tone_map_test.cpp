@@ -7,8 +7,7 @@
 // itself here. The pass is given radiance written here, so every image is
 // one chosen to show a property: a uniform field, a lone light, light past
 // the half-float range, alone and over a broad field, frames as small as a
-// pixel. The pass among others, in a renderer, is the frame graph's
-// (frame_images_test.cpp).
+// pixel: unit tests of the pass, on images written for it.
 
 #include <algorithm>
 #include <array>

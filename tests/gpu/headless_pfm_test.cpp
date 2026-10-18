@@ -3,7 +3,7 @@
 // renderer reads it back (metal/frame/renderer.h, read_accumulated) after
 // the same samples rendered here, in this process, by the core's plan
 // (core/frame/history.h). The program is run as its user runs it; what it
-// refuses, and the names and sizes it writes, are tests/test_headless.sh's.
+// refuses, and the names it writes, are tests/options_test.cpp's.
 
 #include <algorithm>
 #include <cstddef>
@@ -30,17 +30,21 @@
 #include "support/files.h"
 #include "support/run_program.h"
 #include "support/same_bits.h"
-#include "test_paths.h"
+#include "support/scene_text.h"
 
 using namespace serenity;
 
 TEST_CASE("headless: a PFM frame is the accumulated image's radiance, bit for bit") {
-    // Frames 3 and 4 of the path graph over the brass sphere, time frozen,
-    // three samples a frame: frame 4's file holds frames 3 and 4's six
-    // samples (a still scene, or frozen time, converges over the run).
+    // Frames 3 and 4 of the path graph over a brass ball under still
+    // fireflies, time frozen, three samples a frame: frame 4's file holds
+    // frames 3 and 4's six samples (a still scene, or frozen time, converges
+    // over the run). The graph and the scene are this test's, written for
+    // the program to read.
     const tests::ScratchDirectory scratch("gpu-headless-pfm");
-    const std::filesystem::path graph = tests::graphs_dir / "path.toml";
-    const std::filesystem::path scene_file = tests::scenes_dir / "brass_sphere.toml";
+    const std::filesystem::path graph = scratch / "path.toml";
+    const std::filesystem::path scene_file = scratch / "scene.toml";
+    tests::write_bytes(graph, "passes = [\"path\", \"tone_map\"]\n[tone_map]\nexposure = 0.0\nbloom = 0.0\n");
+    tests::write_bytes(scene_file, tests::still_fireflies());
     const std::filesystem::path out = scratch / "frames";
     constexpr frame::Extent size{24, 16};
     const tests::Ran ran = tests::run_program(
@@ -88,8 +92,8 @@ TEST_CASE("headless: a PFM frame is the accumulated image's radiance, bit for bi
         const contracts::LinearImage written = output::read_pfm(out / std::format("frame-{:06}.pfm", index));
         CHECK(written.extent == size);
         CHECK(tests::same_bits(written, expected));
-        // Not an empty image compared with another: the sphere and the
-        // checks are lit.
+        // Not an empty image compared with another: the ball and the checks
+        // are lit.
         REQUIRE_FALSE(written.rgb.empty());
         CHECK(std::ranges::max(written.rgb) > 0.0f);
     }

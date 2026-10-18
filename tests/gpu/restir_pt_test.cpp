@@ -1,16 +1,13 @@
-// ReSTIR PT, Phases 1 and 2 (metal/passes/restir_pt/restir_pt.metal.h), on
-// the GPU, as the passes run it:
+// ReSTIR PT (metal/passes/restir_pt/restir_pt.metal.h), on the GPU:
 //
-//   - initial sampling alone converges to the closed forms the path tests
-//     hold the path tracer to (tests/gpu/path_test.cpp), within their
-//     tolerances: a floor under one firefly and under two, and the white,
-//     glass furnaces (the sky reached after one bounce, and only through
-//     delta lobes);
-//   - spatial reuse keeps those means: the floor under a firefly, and the
-//     glass furnace, whose paths shift by replay alone; and temporal reuse,
-//     alone and with spatial reuse and the duplication map, as the graph
-//     runs it;
-//   - the same inputs give the same image, to the bit, with each reuse;
+//   - an integration test: the whole graph, every reuse and the duplication
+//     map at work, keeps the closed forms the path tracer is held to
+//     (tests/gpu/path_test.cpp), within their tolerances: a floor under two
+//     fireflies, and the glass furnace, whose paths shift by replay alone;
+//
+// and unit tests of its pieces, on the probe kernel (kernels/
+// restir_pt_probe.metal), each run on its own:
+//
 //   - the temporal merge counts last frame's path at most c_cap times the
 //     own tree's count, c_cap lowered by the duplication score as Enhanced
 //     §5 states, and weighs and keeps by Talbot MIS;
@@ -96,13 +93,8 @@ namespace {
 using frame::PassKind;
 using tests::restir_pt_graph;
 
-// The graphs, their settings the written ones (support/schedules.h); the
-// last graphs/restir_pt.toml's, presenting with display.
-const frame::Schedule initial_only = restir_pt_graph({PassKind::restir_pt_initial, PassKind::restir_pt_shade});
-const frame::Schedule with_spatial =
-    restir_pt_graph({PassKind::restir_pt_initial, PassKind::restir_pt_spatial, PassKind::restir_pt_shade});
-const frame::Schedule temporal_alone =
-    restir_pt_graph({PassKind::restir_pt_initial, PassKind::restir_pt_temporal, PassKind::restir_pt_shade});
+// The whole graph, its settings the written ones (support/schedules.h),
+// shown through the tone map.
 const frame::Schedule whole_graph = restir_pt_graph(tests::restir_pt_passes);
 
 using Rig = tests::AccumulatingRig;
@@ -126,90 +118,13 @@ void check_furnace(std::string_view material, std::uint64_t frames, const frame:
 
 }  // namespace
 
-TEST_CASE("ReSTIR PT's initial sampling alone: a floor under one firefly converges to albedo L sin^2 cos") {
-    check_floor(lit_floor(one_firefly), 512, initial_only);
-}
-
-TEST_CASE("ReSTIR PT's initial sampling alone: under two fireflies, the floor converges to their sum") {
-    check_floor(lit_floor(two_fireflies), 1024, initial_only);
-}
-
-TEST_CASE("ReSTIR PT's initial sampling alone: a white Lambert sphere and a glass one under a uniform sky "
-          "converge to the sky") {
-    check_furnace("kind = \"rough\"\ncolor = [1, 1, 1]\n", 1024, initial_only);
-    check_furnace("kind = \"dielectric\"\nior = 1.5\n", 512, initial_only);
-}
-
-TEST_CASE("ReSTIR PT's spatial reuse keeps a still lit floor's mean, and the glass furnace's") {
-    // Within the path tests' tolerances: 3% at three patches of floor, 2%
-    // through glass, whose paths shift by replay alone.
-    check_floor(lit_floor(two_fireflies), 512, with_spatial);
-    check_furnace("kind = \"dielectric\"\nior = 1.5\n", 512, with_spatial);
-}
-
-TEST_CASE("ReSTIR PT's temporal reuse keeps a still lit floor's mean, and the glass furnace's") {
-    // As the spatial reuse's test, the same tolerances: temporal reuse
-    // alone, and the whole graph, the duplication map lowering the cap. The
-    // map's bias (Enhanced §5) is where copies crowd, which a floor under
-    // two fireflies, resampled from the start, has few of.
-    check_floor(lit_floor(two_fireflies), 512, temporal_alone);
+TEST_CASE("ReSTIR PT, the whole graph, keeps the path tracer's means: a lit floor, and the glass furnace") {
+    // The path tests' tolerances: 3% at three patches of floor, 2% through
+    // glass. The duplication map's bias (Enhanced §5) is where copies
+    // crowd, which a floor under two fireflies, resampled from the start,
+    // has few of.
     check_floor(lit_floor(two_fireflies), 512, whole_graph);
     check_furnace("kind = \"dielectric\"\nior = 1.5\n", 512, whole_graph);
-}
-
-TEST_CASE("ReSTIR PT: the same inputs give the same image, to the bit, with its spatial reuse at work") {
-    // A floor seen from above under six fireflies and beside a glass ball,
-    // so most pixels' partners are similar and merged, and some paths
-    // replay through the glass.
-    // The fireflies dim, so the floor stays below what the display clips.
-    const std::string text = camera_text("[0, 3, 0.5]", "[0, 0, 0]", 50) + sky("[0, 0, 0]", "[0, 0, 0]") +
-                             "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
-                             "[materials.glow]\nkind = \"emissive\"\nradiance = [2, 2, 2]\n"
-                             "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
-                             "[[shapes]]\nkind = \"box\"\nmin = [-50, -1, -50]\nmax = [50, 0, 50]\nmaterial = \"floor\"\n"
-                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0.3, 0.3, 0]\nradius = 0.3\nmaterial = \"glass\"\n" +
-                             firefly("[0.8, 0.6, 0.4]") + firefly("[-0.9, 0.9, -0.3]") + firefly("[0.2, 1.1, -0.9]") +
-                             firefly("[-0.4, 0.4, 0.8]") + firefly("[1.2, 0.8, -0.6]") + firefly("[-1.1, 0.5, 0.9]");
-    constexpr frame::Extent image{96, 72};
-    Rig a(text, with_spatial, image);
-    Rig b(text, with_spatial, image);
-    Rig alone(text, initial_only, image);
-    (void)a.render(3);
-    (void)b.render(3);
-    (void)alone.render(3);
-    const std::vector<float> first = a.accumulated();
-    const std::vector<float> second = b.accumulated();
-    const std::vector<float> without = alone.accumulated();
-    std::size_t differ = 0;
-    std::size_t merged = 0;
-    for (std::size_t i = 0; i < first.size(); ++i) {
-        differ += std::memcmp(&first[i], &second[i], sizeof(float)) != 0 ? 1u : 0u;
-        merged += first[i] != without[i] ? 1u : 0u;
-    }
-    CHECK(differ == 0u);
-    // And the merge is at work: the same frames without it differ.
-    INFO(merged << " of " << first.size() << " values changed by the merge");
-    CHECK(merged > first.size() / 4);
-
-    // The whole graph, temporal reuse and the duplication map at work over
-    // four frames: the same to the bit, and not spatial reuse's image.
-    Rig c(text, whole_graph, image);
-    Rig d(text, whole_graph, image);
-    (void)c.render(4);
-    (void)d.render(4);
-    (void)a.render(1);
-    const std::vector<float> third = c.accumulated();
-    const std::vector<float> fourth = d.accumulated();
-    const std::vector<float> spatial_only = a.accumulated();
-    std::size_t differ_whole = 0;
-    std::size_t reused = 0;
-    for (std::size_t i = 0; i < third.size(); ++i) {
-        differ_whole += std::memcmp(&third[i], &fourth[i], sizeof(float)) != 0 ? 1u : 0u;
-        reused += third[i] != spatial_only[i] ? 1u : 0u;
-    }
-    CHECK(differ_whole == 0u);
-    INFO(reused << " of " << third.size() << " values changed by temporal reuse");
-    CHECK(reused > third.size() / 4);
 }
 
 namespace {

@@ -1,7 +1,9 @@
-// serenity-measure (measure/options.h): its command line, every mistake
-// refused by name; and the program run as its user runs it, on PFMs this
-// test writes: the reference's file and its printed floors, the error's
-// CSV, and a run that fails printing no result, partial or whole.
+// serenity-measure (measure/options.h, commands.h): its command line,
+// every mistake refused by name; its commands on PFMs this test writes, the
+// reference's file and its floors, the error's CSV, a failing file refusing
+// the whole; and, once, the program run as its user runs it, an integration
+// test: a result printed, and a failure's message with status 1 and nothing
+// printed as a result.
 
 #include <cstddef>
 #include <filesystem>
@@ -17,6 +19,7 @@
 #include "core/measurement/error.h"
 #include "core/measurement/reference.h"
 #include "core/output/pfm.h"
+#include "measure/commands.h"
 #include "measure/options.h"
 #include "programs.h"
 #include "support/files.h"
@@ -94,40 +97,35 @@ TEST_CASE("measure: every mistake is refused by name") {
     CHECK(contains(refusal({"error", "--reference", "r", "--out", "o", "x"}), "unknown option '--out' for error"));
 }
 
-TEST_CASE("measure: a reference written, and its floors printed, from the batches given") {
+TEST_CASE("measure: a reference written, and its floors returned, from the batches given; never over a file") {
     const ScratchDirectory scratch("measure-reference");
     const std::vector<LinearImage> batches{image(1.0f), image(1.5f), image(0.75f)};
     serenity::measurement::ReferenceBuilder expected;
-    std::vector<std::string> args{"reference", "--out", (scratch / "reference.pfm").string()};
+    serenity::measure::MakeReference command{.out = scratch / "reference.pfm", .batches = {}};
     for (std::size_t b = 0; b < batches.size(); ++b) {
         const std::filesystem::path path = scratch / ("batch-" + std::to_string(b) + ".pfm");
         serenity::output::write_pfm(path, batches[b]);
         expected.add(batches[b]);
-        args.push_back(path.string());
+        command.batches.push_back(path);
     }
-    const Ran ran = measure(args, scratch);
-    CHECK(ran.status == 0);
-    CHECK(ran.err.empty());
-    CHECK(ran.out == std::format("batches 3\nmse_floor {:.9g}\nrelative_mse_floor {:.9g}\n", expected.mse_floor(),
-                                 expected.relative_mse_floor()));
+    CHECK(serenity::measure::run(command) == std::format("batches 3\nmse_floor {:.9g}\nrelative_mse_floor {:.9g}\n",
+                                                         expected.mse_floor(), expected.relative_mse_floor()));
     CHECK(serenity::output::read_pfm(scratch / "reference.pfm").rgb == expected.mean().rgb);
 
     // Asked again, its file there: refused, the file as it was.
     const std::string before = serenity::tests::read_bytes(scratch / "reference.pfm");
-    check_failed(measure(args, scratch), "something is already there");
+    CHECK_THROWS_WITH(serenity::measure::run(command), doctest::Contains("something is already there"));
     CHECK(serenity::tests::read_bytes(scratch / "reference.pfm") == before);
-
-    // Another run's file, made after this run was asked for and before it
-    // writes (here, before it starts: its only check is the exclusive
-    // create itself): refused, that file untouched.
-    const std::filesystem::path theirs = scratch / "theirs.pfm";
-    serenity::tests::write_bytes(theirs, "another run's reference");
-    args[2] = theirs.string();
-    check_failed(measure(args, scratch), "something is already there");
-    CHECK(serenity::tests::read_bytes(theirs) == "another run's reference");
 }
 
 TEST_CASE("measure: the error's CSV, a row an image in the order given, a path with a comma quoted") {
+    using serenity::measure::csv_field;
+    CHECK(csv_field("plain.pfm") == "plain.pfm");
+    // RFC 4180: the field quoted, each quote in it doubled; a line break
+    // quoted as a comma is.
+    CHECK(csv_field("far, \"quoted\".pfm") == "\"far, \"\"quoted\"\".pfm\"");
+    CHECK(csv_field("two\nlines") == "\"two\nlines\"");
+
     const ScratchDirectory scratch("measure-error");
     const LinearImage reference = image(1.0f);
     serenity::output::write_pfm(scratch / "reference.pfm", reference);
@@ -135,50 +133,55 @@ TEST_CASE("measure: the error's CSV, a row an image in the order given, a path w
     const std::filesystem::path far = scratch / "far, \"quoted\".pfm";
     serenity::output::write_pfm(near, image(1.125f));
     serenity::output::write_pfm(far, image(2.0f));
-
-    const Ran ran = measure({"error", "--reference", (scratch / "reference.pfm").string(), far.string(), near.string()},
-                            scratch);
-    CHECK(ran.status == 0);
-    CHECK(ran.err.empty());
-    const auto row = [&](const std::string& field, const LinearImage& judged) {
+    const auto row = [&](const std::filesystem::path& path, const LinearImage& judged) {
         const auto error = serenity::measurement::error_against({.image = judged, .reference = reference});
-        return std::format("{},{:.9g},{:.9g}\n", field, error.mse, error.relative_mse);
+        return std::format("{},{:.9g},{:.9g}\n", csv_field(path.string()), error.mse, error.relative_mse);
     };
-    // RFC 4180: the field quoted, each quote in it doubled.
-    std::string far_field = "\"";
-    for (const char c : far.string()) {
-        far_field += c == '"' ? std::string{"\"\""} : std::string{c};
-    }
-    far_field += "\"";
-    CHECK(contains(far_field, "far, \"\"quoted\"\".pfm\""));
-    CHECK(ran.out == "image,mse,relative_mse\n" + row(far_field, image(2.0f)) + row(near.string(), image(1.125f)));
+    CHECK(serenity::measure::run(serenity::measure::MeasureError{.reference = scratch / "reference.pfm",
+                                                                 .images = {far, near}}) ==
+          "image,mse,relative_mse\n" + row(far, image(2.0f)) + row(near, image(1.125f)));
 }
 
-TEST_CASE("measure: a file that fails ends the run with nothing printed as a result") {
+TEST_CASE("measure: a file that fails refuses the whole command, a reference unwritten") {
     const ScratchDirectory scratch("measure-failing");
     serenity::output::write_pfm(scratch / "reference.pfm", image(1.0f));
     serenity::output::write_pfm(scratch / "good.pfm", image(1.25f));
     serenity::tests::write_bytes(scratch / "bad.pfm", "Pf\n2 2\n-1.0\n");
     serenity::output::write_pfm(scratch / "small.pfm", LinearImage{Extent{1, 1}, {1.0f, 1.0f, 1.0f}});
+    const auto error = [&](const std::filesystem::path& reference, std::vector<std::filesystem::path> images) {
+        return serenity::tests::error_of<std::exception>([&] {
+            return serenity::measure::run(serenity::measure::MeasureError{.reference = reference, .images = images});
+        });
+    };
+    const std::filesystem::path good = scratch / "good.pfm";
+    CHECK(contains(error(scratch / "reference.pfm", {good, scratch / "bad.pfm"}), "bad.pfm"));
+    CHECK(contains(error(scratch / "reference.pfm", {good, scratch / "none.pfm"}), "none.pfm"));
+    CHECK(contains(error(scratch / "reference.pfm", {good, scratch / "small.pfm"}),
+                   "the image is 1 x 1, the reference 2 x 2"));
+    CHECK(contains(error(scratch / "bad.pfm", {good}), "bad.pfm"));
+
+    // A batch that fails: no reference written.
+    const std::filesystem::path out = scratch / "made.pfm";
+    CHECK_THROWS_WITH(serenity::measure::run(serenity::measure::MakeReference{.out = out,
+                                                                              .batches = {good, scratch / "bad.pfm"}}),
+                      doctest::Contains("bad.pfm"));
+    CHECK_THROWS_WITH(serenity::measure::run(
+                          serenity::measure::MakeReference{.out = out, .batches = {good, scratch / "small.pfm"}}),
+                      doctest::Contains("where the first batch is 2 x 2"));
+    CHECK_FALSE(std::filesystem::exists(out));
+}
+
+TEST_CASE("measure: the program prints its command's result, or its failure's message alone, status 1") {
+    const ScratchDirectory scratch("measure-program");
+    serenity::output::write_pfm(scratch / "reference.pfm", image(1.0f));
+    serenity::output::write_pfm(scratch / "good.pfm", image(1.25f));
     const std::string reference = (scratch / "reference.pfm").string();
     const std::string good = (scratch / "good.pfm").string();
-
-    // The good image's row is never printed: the last file fails.
-    check_failed(measure({"error", "--reference", reference, good, (scratch / "bad.pfm").string()}, scratch),
-                 "bad.pfm");
+    const Ran ran = measure({"error", "--reference", reference, good}, scratch);
+    CHECK(ran.status == 0);
+    CHECK(ran.err.empty());
+    CHECK(ran.out == serenity::measure::run(serenity::measure::MeasureError{.reference = reference, .images = {good}}));
+    // The last file fails: the good image's row is never printed.
     check_failed(measure({"error", "--reference", reference, good, (scratch / "none.pfm").string()}, scratch),
                  "none.pfm");
-    check_failed(measure({"error", "--reference", reference, good, (scratch / "small.pfm").string()}, scratch),
-                 "the image is 1 x 1, the reference 2 x 2");
-    check_failed(measure({"error", "--reference", (scratch / "bad.pfm").string(), good}, scratch), "bad.pfm");
-
-    // A batch that fails: no reference written, no floor printed.
-    const std::filesystem::path out = scratch / "made.pfm";
-    check_failed(measure({"reference", "--out", out.string(), good, (scratch / "bad.pfm").string()}, scratch),
-                 "bad.pfm");
-    check_failed(measure({"reference", "--out", out.string(), good, (scratch / "small.pfm").string()}, scratch),
-                 "where the first batch is 2 x 2");
-    CHECK_FALSE(std::filesystem::exists(out));
-    // And a command line refused, before any file is read.
-    check_failed(measure({"reference", "--out", out.string(), good}, scratch), "two batches or more");
 }

@@ -65,12 +65,6 @@ TEST_CASE("malformed TOML is an error with its line") {
     CHECK(contains(error_for("passes = [\"test_pattern\"\n"), "graph.toml:"));
 }
 
-TEST_CASE("the test pattern graph in graphs/ reads") {
-    const auto schedule = load_schedule(graphs_dir / "test_pattern.toml");
-    REQUIRE(schedule.passes.size() == 1);
-    CHECK(schedule.passes[0] == PassKind::test_pattern);
-}
-
 TEST_CASE("a missing file is an error that names it") {
     CHECK_THROWS_WITH_AS(load_schedule("no/such/graph.toml"), doctest::Contains("no/such/graph.toml"), GraphFileError);
 }

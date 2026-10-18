@@ -1,6 +1,19 @@
 # GPU tests: the Metal backend, run on this machine's GPU. With no Metal
 # device, or one without ray tracing, they fail, never skip: a GPU test that
 # passes because it ran nothing would claim what was never checked.
+#
+# Unit tests of the backend's pieces, each run on its own: the shader
+# functions through the probe kernels below, the device layer (device,
+# library, argument table, submission), the tone-map pass on images written
+# for it, and the renderer's refusals. And a handful of integration tests,
+# frames rendered end to end, each for an invariant no unit shows: the path
+# tracer's mean on closed forms (it renders the training targets and the
+# references), ReSTIR PT keeping it, MNEE counting the caustic once, the
+# Metal denoiser matching PyTorch, the denoised pipeline running and
+# deterministic, its two halves' hand-off, frames in flight each reading
+# their own constants, nothing allocated recording a frame, the GPU waited
+# for before what it uses is freed, the features beside the light changing
+# it in no bit, and the headless program's PFMs being the accumulated image.
 add_executable(serenity_gpu_tests
     device_test.cpp
     library_test.cpp
@@ -17,9 +30,7 @@ add_executable(serenity_gpu_tests
     film_test.cpp
     acceleration_test.cpp
     leave_test.cpp
-    history_test.cpp
     tone_map_test.cpp
-    frame_images_test.cpp
     texture_test.cpp
     camera_test.cpp
     shape_test.cpp

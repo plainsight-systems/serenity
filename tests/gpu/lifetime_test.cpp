@@ -5,12 +5,14 @@
 // (MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1), a use of freed memory is a
 // GPU fault that settling reports.
 //
-// The frames are the path tracer's over the marbles at 512 x 512, long
-// enough that, without the wait, they are still running when the objects
-// that own their memory are destroyed: milliseconds of GPU work against the
-// microseconds between the last commit and the throw. Whether they were is
-// checked, not assumed: a GPU that finished them first would leave the
-// wait unexercised, and the test says so rather than passing.
+// The frames are the path tracer's inside a white cavity at 512 x 512,
+// whose paths bounce long, so that, without the wait, they are still
+// running when the objects that own their memory are destroyed:
+// milliseconds of GPU work against the microseconds between the last
+// commit and the throw. Whether they were is checked, not assumed: a GPU
+// that finished them first would leave the wait unexercised, and the test
+// says so rather than passing. The first and the last test are integration
+// tests; the two between, units of the submission.
 
 #include <cstdint>
 #include <optional>
@@ -22,21 +24,32 @@
 #include <Metal/Metal.hpp>
 #include <QuartzCore/QuartzCore.hpp>
 
-#include "core/frame/graph_file.h"
 #include "core/scene/scene.h"
+#include "gpu/support/rendering.h"
 #include "metal/device/device.h"
 #include "metal/device/error.h"
 #include "metal/device/offscreen.h"
 #include "metal/device/presenter.h"
 #include "metal/device/submission.h"
 #include "metal/frame/renderer.h"
-#include "test_paths.h"
+#include "support/scene_text.h"
 
 using namespace serenity;
 
 namespace {
 
 constexpr frame::Extent size{512, 512};
+
+// Inside a white sphere that keeps nine tenths of what it receives, a small
+// light at its middle, the camera between: every path bounces some ten
+// times before the roulette ends it.
+std::string white_cavity() {
+    return tests::camera_text("[0, 0, 0.5]", "[0, 0, 1]", 60) + tests::sky("[0, 0, 0]", "[0, 0, 0]") +
+           "[materials.wall]\nkind = \"rough\"\ncolor = [0.9, 0.9, 0.9]\n"
+           "[materials.glow]\nkind = \"emissive\"\nradiance = [20, 20, 20]\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"wall\"\n"
+           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.05\nmaterial = \"glow\"\n";
+}
 
 frame::FrameInputs inputs(const scene::SceneDescription& description, std::uint64_t index) {
     return frame::FrameInputs{.time = frame::Seconds{0.0}, .index = index, .accumulated_since = 0,
@@ -46,8 +59,8 @@ frame::FrameInputs inputs(const scene::SceneDescription& description, std::uint6
 }  // namespace
 
 TEST_CASE("an exception with frames in flight: the renderer and its target wait for the GPU before releasing") {
-    const scene::SceneDescription description = scene::load(tests::scenes_dir / "marbles.toml");
-    const frame::Schedule schedule = frame::load_schedule(tests::graphs_dir / "path.toml");
+    const scene::SceneDescription description = scene::parse(white_cavity(), "white cavity");
+    const frame::Schedule schedule = tests::path_graph();
     metal::Device device;
     metal::Submission submission(device);
     std::uint64_t last = 0;
@@ -97,8 +110,8 @@ TEST_CASE("wait_idle() returns once every committed submission has completed") {
 }
 
 TEST_CASE("the window's presenter takes its layer's residency set off the queue only after the GPU is done") {
-    const scene::SceneDescription description = scene::load(tests::scenes_dir / "marbles.toml");
-    const frame::Schedule schedule = frame::load_schedule(tests::graphs_dir / "path.toml");
+    const scene::SceneDescription description = scene::parse(white_cavity(), "white cavity");
+    const frame::Schedule schedule = tests::path_graph();
     metal::Device device;
     metal::Submission submission(device);
     auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());

@@ -26,7 +26,9 @@ target_link_libraries(serenity_test_support INTERFACE doctest::doctest)
 target_compile_options(serenity_test_support INTERFACE
     ${SERENITY_WARNINGS} -Wconversion -Wsign-conversion -Wshadow -Wold-style-cast)
 
-# The tests that need no GPU: the core, and the three programs' command lines.
+# The tests that need no GPU: unit tests of the core, and of the three
+# programs' command lines and of what they do with them; measure_test also
+# runs serenity-measure once, as its user does, an integration test.
 add_executable(serenity_tests
     schedule_test.cpp
     denoise_core_test.cpp
@@ -92,11 +94,11 @@ add_test(NAME make_marbles COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR
 add_test(NAME make_denoiser_dataset
          COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/test_make_denoiser_dataset.py")
 
-# The headless renderer as its user runs it: the frames it writes, their
-# names and sizes, what it prints, and its failures' status and messages.
+# The headless renderer as its user runs it, an integration test: a good
+# run's frames and what it prints, and its failures' status and messages.
 # On the GPU, under Metal's validation as the GPU tests are (tests/gpu).
 add_test(NAME headless
     COMMAND sh "${PROJECT_SOURCE_DIR}/tests/test_headless.sh" $<TARGET_FILE:serenity-headless>
-            "${PROJECT_SOURCE_DIR}/graphs" "${CMAKE_CURRENT_BINARY_DIR}/headless_test")
+            "${CMAKE_CURRENT_BINARY_DIR}/headless_test")
 set_tests_properties(headless PROPERTIES
     ENVIRONMENT "MTL_DEBUG_LAYER=1;MTL_SHADER_VALIDATION=1;MTL_DEBUG_LAYER_ERROR_MODE=assert")

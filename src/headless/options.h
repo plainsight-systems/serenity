@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -8,8 +9,9 @@
 #include <string>
 
 #include "core/frame/extent.h"
-#include "core/output/image_format.h"
 #include "core/frame/frame_inputs.h"
+#include "core/frame/schedule.h"
+#include "core/output/image_format.h"
 
 namespace serenity::headless {
 
@@ -187,5 +189,30 @@ void check_samples(const Options& options, std::uint64_t samples_per_frame);
 // throws OptionsError if it is not an empty directory (see above), or
 // std::filesystem::filesystem_error if it cannot be created or read.
 void prepare_output(const std::filesystem::path& out);
+
+// What `options` ask of `schedule`, refused by OptionsError naming the
+// graph, after the graph is read and before anything renders or the
+// directory is made (above): a kind written from the accumulated image
+// only from a graph that accumulates; --features only from a graph with
+// the features pass; and a graph that shows nothing only with --features.
+void check_graph(const Options& options, const frame::Schedule& schedule);
+
+// The file frame `index` is written to in `out`, as `format`'s kind:
+// frame-NNNNNN, the index zero-padded to six digits, and the kind's
+// extension (above).
+std::filesystem::path frame_path(const std::filesystem::path& out, std::uint64_t index, output::ImageFormat format);
+
+// The feature images' files beside frame `index`'s, in the order they are
+// written: frame-NNNNNN-albedo.pfm, -normal.pfm, -depth.pfm, -motion.pfm
+// (above, --features).
+std::array<std::filesystem::path, 4> feature_paths(const std::filesystem::path& out, std::uint64_t index);
+
+// Frame `index`'s time: index x step, or the time --time froze (above).
+frame::Seconds frame_time(const Options& options, std::uint64_t index);
+
+// The time of the frame before frame `index` on the timeline, which its
+// features' motion points back to (above, --features): the same instant
+// under --time, (index - 1) x step otherwise; none before frame 0.
+std::optional<frame::Seconds> previous_time(const Options& options, std::uint64_t index);
 
 }  // namespace serenity::headless

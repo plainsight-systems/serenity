@@ -51,32 +51,6 @@ struct MisDraw {
 
 static_assert(sizeof(MisDraw) == 32, "MisDraw must be the same 32 bytes on the host and in shaders");
 
-// A surface point the light-integral probe integrates the light at, its
-// wo, the side of the grid it integrates over the light's cone with, N, the
-// surface's geometric normal, and where the integral is seen from: where
-// step 5 draws from (at_point 0), or the surface's point (1).
-struct DirectQuery {
-    contracts::Float3 point;
-    uint32_t grid;
-    contracts::Float3 wo;
-    uint32_t light_count;
-    contracts::Float3 normal;
-    uint32_t at_point;
-};
-
-static_assert(sizeof(DirectQuery) == 48, "DirectQuery must be the same 48 bytes on the host and in shaders");
-
-// The light's integral over the BSDF at a point, f |cos| L_e over the cone
-// (its red channel), and the share of it step 5's weighted light samples
-// carry in expectation; the rest is step 3's.
-struct DirectIntegral {
-    float direct;
-    float light_share;
-    uint32_t padding[2];
-};
-
-static_assert(sizeof(DirectIntegral) == 16, "DirectIntegral must be the same 16 bytes on the host and in shaders");
-
 // Two densities the power heuristic is asked of (heuristic_weights).
 struct HeuristicQuery {
     float drawn;
@@ -100,8 +74,6 @@ static_assert(sizeof(HeuristicWeights) == 16, "HeuristicWeights must be the same
 #if !defined(__METAL_VERSION__)
 static_assert(std::is_trivially_copyable_v<MisQuery>, "MisQuery is copied to the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<MisDraw>, "MisDraw is copied from the GPU as bytes");
-static_assert(std::is_trivially_copyable_v<DirectQuery>, "DirectQuery is copied to the GPU as bytes");
-static_assert(std::is_trivially_copyable_v<DirectIntegral>, "DirectIntegral is copied from the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<HeuristicQuery>, "HeuristicQuery is copied to the GPU as bytes");
 static_assert(std::is_trivially_copyable_v<HeuristicWeights>, "HeuristicWeights is copied from the GPU as bytes");
 #endif

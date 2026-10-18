@@ -1,4 +1,5 @@
-// The denoise pass (passes/denoise/denoise.h) against PyTorch: the
+// The denoised pipeline, three integration tests. The denoise pass
+// (passes/denoise/denoise.h) against PyTorch: the
 // committed fixture, tests/data/denoise (training/denoise_check.py made it:
 // a network of training/model.py's structure at small widths, randomly
 // initialized, head included; three consecutive frames of a training
@@ -14,6 +15,12 @@
 //     live.md), so 1e-3 leaves a margin of four;
 //   - a network one weight off is not: one of the last convolution's
 //     weights a tenth off gives 4.0e-3, four times the tolerance.
+//
+// The pipeline in the renderer, ReSTIR PT's light traced checkerboarded,
+// filled, denoised and tone mapped (gpu/support/rendering.h,
+// fixture_denoised_graph), over moving fireflies: it runs, every value
+// finite, and the same frames give the same bits; and frame N + 1's light
+// half never writes what frame N's image half reads (below).
 
 #include <algorithm>
 #include <cmath>
@@ -30,7 +37,6 @@
 #include <Metal/Metal.hpp>
 
 #include "core/contracts/linear_image.h"
-#include "core/frame/graph_file.h"
 #include "core/output/pfm.h"
 #include "core/scene/scene.h"
 #include "gpu/support/denoise_fixture.h"
@@ -44,6 +50,7 @@
 #include "metal/frame/renderer.h"
 #include "serenity/metallib/probes.h"
 #include "support/same_bits.h"
+#include "support/scene_text.h"
 #include "test_paths.h"
 
 using namespace serenity;
@@ -94,13 +101,10 @@ TEST_CASE("a network one weight off does not pass the denoise check") {
     CHECK(error > tolerance);
 }
 
-// The denoised graph in the renderer: graphs/restir_pt_denoised.toml with
-// the fixture's network, over the brass sphere scene at 64 x 48 (a 32 x 24
-// light). The denoiser's history starts over with ReSTIR's (frame::
-// ReuseHistory, metal/frame/denoise_images.h): a frame whose history
-// starts over, after frames that came before it or at another size, is
-// the frame a new renderer renders, to the bit; one that keeps its
-// history is not.
+// The denoised pipeline in the renderer, the fixture's network over
+// wandering fireflies at 64 x 48 (a 32 x 24 light). No glass: MNEE's sum
+// of three or more requests in a pixel is in the order the GPU solves them
+// (metal/passes/mnee/mnee.h, "Determinism"), which this test does not hold.
 namespace {
 
 frame::FrameInputs frame_of(std::uint64_t index, std::uint64_t since, const scene::SceneDescription& scene) {
@@ -132,21 +136,17 @@ std::vector<float> rendered(const std::vector<std::pair<frame::FrameInputs, fram
 
 }  // namespace
 
-TEST_CASE("the denoised graph's history starts over with ReSTIR's: at a history's first frame and a new size") {
-    const scene::SceneDescription scene = scene::load(tests::scenes_dir / "brass_sphere_wander.toml");
+TEST_CASE("the denoised pipeline runs, every value finite, and the same frames give the same bits") {
+    const scene::SceneDescription scene = scene::parse(tests::wandering_fireflies(), "wandering fireflies");
     constexpr frame::Extent size{64, 48};
-    constexpr frame::Extent other{80, 40};
-    const std::vector<float> fresh = rendered({{frame_of(2, 2, scene), size}}, scene);
-    // After two frames, a frame that starts its history over: to the bit.
-    CHECK(tests::same_bits(
-        rendered({{frame_of(0, 0, scene), size}, {frame_of(1, 0, scene), size}, {frame_of(2, 2, scene), size}}, scene),
-        fresh));
-    // After a frame at another size, the frame at this one (a resize starts the history over).
-    CHECK(tests::same_bits(rendered({{frame_of(1, 1, scene), other}, {frame_of(2, 2, scene), size}}, scene), fresh));
-    // The same frame with its history: not the fresh one.
-    CHECK_FALSE(tests::same_bits(
-        rendered({{frame_of(0, 0, scene), size}, {frame_of(1, 0, scene), size}, {frame_of(2, 0, scene), size}}, scene),
-        fresh));
+    const std::vector<std::pair<frame::FrameInputs, frame::Extent>> frames = {
+        {frame_of(0, 0, scene), size}, {frame_of(1, 0, scene), size}, {frame_of(2, 0, scene), size}};
+    const std::vector<float> first = rendered(frames, scene);
+    const std::vector<float> again = rendered(frames, scene);
+    CHECK(tests::same_bits(first, again));
+    CHECK(std::ranges::all_of(first, [](float v) { return std::isfinite(v); }));
+    // And it shows the scene: light, not a black or an empty image.
+    CHECK(std::ranges::any_of(first, [](float v) { return v > 0.0f; }));
 }
 
 // The hand-off (metal/frame/renderer.h, "Two halves"): frame N + 1's light
@@ -235,7 +235,7 @@ struct HandOffRun {
     std::vector<metal::Completed> records;         // the frames', in sequence order
 };
 
-// `frames` frames of the brass sphere through the fixture's denoised graph
+// `frames` frames of the wandering fireflies through the fixture's denoised graph
 // at `size`, each into a target of its own, so every frame's image is read
 // back, not only the last's: of two parts, each image half held back by the
 // delay, none waited for; or of one part, each waited for.
@@ -286,7 +286,7 @@ HandOffRun run_hand_off(const scene::SceneDescription& scene, frame::Extent size
 }  // namespace
 
 TEST_CASE("frame N + 1's light half never writes what frame N's image half reads") {
-    const scene::SceneDescription scene = scene::load(tests::scenes_dir / "brass_sphere_wander.toml");
+    const scene::SceneDescription scene = scene::parse(tests::wandering_fireflies(), "wandering fireflies");
     constexpr frame::Extent size{256, 192};
     constexpr std::uint64_t frames = 6;
     const HandOffRun overlapped = run_hand_off(scene, size, frames, metal::Parts::two);

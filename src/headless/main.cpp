@@ -63,27 +63,6 @@ std::span<const char* const> arguments(int argc, char** argv) {
     return {argv + 1, static_cast<std::size_t>(argc - 1)};
 }
 
-// What the options ask of the graph, refused before anything renders or is
-// made (headless/options.h): an accumulated image only from a graph that
-// accumulates (its kind's source, Output's to say, core/output/
-// image_format.h; this program names no kind); features from a graph that
-// writes them (--features); and a graph that shows nothing only with them.
-void check_graph(const headless::Options& options, const frame::Schedule& schedule, output::ImageSource source) {
-    if (source == output::ImageSource::accumulated && !frame::accumulates(schedule)) {
-        throw headless::OptionsError("--format " + std::string{output::extension(options.format)} +
-                                     " is written from the accumulated image, and the graph " +
-                                     options.graph.string() + " accumulates nothing");
-    }
-    if (options.features && !frame::writes_features(schedule)) {
-        throw headless::OptionsError("--features writes the feature images, and the graph " +
-                                     options.graph.string() + " has no features pass");
-    }
-    if (!frame::presents(schedule) && !options.features) {
-        throw headless::OptionsError("the graph " + options.graph.string() +
-                                     " shows no image, only features: ask for them with --features");
-    }
-}
-
 // One run: what parse(), the graph and the plan decided, and the GPU
 // objects it renders and reads back with, made once; a frame rendered and
 // written by its members (F.3), which main() calls in the plan's order.
@@ -168,8 +147,7 @@ private:
         if (!frame::presents(schedule_)) {
             return std::nullopt;  // nothing shown to write
         }
-        const std::string_view extension = output::extension(options_.format);
-        const std::filesystem::path path = options_.out / std::format("frame-{:06}.{}", index, extension);
+        const std::filesystem::path path = headless::frame_path(options_.out, index, options_.format);
         switch (source_) {
         case output::ImageSource::displayed:
             target_.read_rgba(rgba_);
@@ -188,32 +166,31 @@ private:
     // feature_images.h), once a written frame (GPU.1).
     std::vector<std::filesystem::path> write_features(std::uint64_t index) {
         const metal::FeatureImages::Read read = renderer_.read_features();
-        const std::array<std::pair<std::string_view, const contracts::LinearImage*>, 4> images = {
-            std::pair{"albedo", &read.albedo}, std::pair{"normal", &read.normal},
-            std::pair{"depth", &read.depth}, std::pair{"motion", &read.motion}};
-        std::vector<std::filesystem::path> paths;
-        for (const auto& [feature, image] : images) {
-            paths.push_back(options_.out / std::format("frame-{:06}-{}.pfm", index, feature));
-            output::write_pfm(paths.back(), *image);
+        // In feature_paths()'s order.
+        const std::array<const contracts::LinearImage*, 4> images = {&read.albedo, &read.normal, &read.depth,
+                                                                     &read.motion};
+        const std::array<std::filesystem::path, 4> paths = headless::feature_paths(options_.out, index);
+        for (std::size_t i = 0; i < paths.size(); ++i) {
+            output::write_pfm(paths[i], *images[i]);
         }
-        return paths;
+        return {paths.begin(), paths.end()};
     }
 
     // The frame before frame `index` on the timeline, which its features'
-    // motion points back to (headless/options.h, --features): the same
-    // instant under --time, none before frame 0.
+    // motion points back to (headless::previous_time), seen by the scene's
+    // camera; none without a scene.
     std::optional<frame::PreviousFrame> previous(std::uint64_t index) const {
-        if (!loaded_ || (!options_.time && index == 0)) {
+        const std::optional<frame::Seconds> time = headless::previous_time(options_, index);
+        if (!loaded_ || !time) {
             return std::nullopt;
         }
-        const frame::Seconds time = options_.time ? *options_.time : options_.step * static_cast<double>(index - 1);
-        return frame::PreviousFrame{.time = time, .camera = loaded_->camera};
+        return frame::PreviousFrame{.time = *time, .camera = loaded_->camera};
     }
 
     // Frame `index`'s samples, each committed; the last one's sequence.
     // The plan has at least one sample a frame (core/frame/history.h).
     std::uint64_t render_samples(std::uint64_t index) {
-        const frame::Seconds time = options_.time ? *options_.time : options_.step * static_cast<double>(index);
+        const frame::Seconds time = headless::frame_time(options_, index);
         std::optional<std::uint64_t> last;
         for (std::uint64_t s = 0; s < plan_.samples; ++s) {
             const frame::Sample sample = plan_.sample({.frame = index, .sample = s});
@@ -255,7 +232,7 @@ int main(int argc, char** argv) {
         const headless::Options options = headless::parse(arguments(argc, argv));
         const frame::Schedule schedule = frame::load_schedule(options.graph);
         const output::ImageSource source = output::source(options.format);
-        check_graph(options, schedule, source);
+        headless::check_graph(options, schedule);
         const std::optional<scene::SceneDescription> loaded =
             options.scene.empty() ? std::nullopt : std::optional{scene::load(options.scene)};
 

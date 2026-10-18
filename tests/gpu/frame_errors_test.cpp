@@ -30,12 +30,12 @@
 #include "metal/film/failure_count.h"
 #include "metal/frame/accumulation.h"
 #include "metal/frame/renderer.h"
-#include "test_paths.h"
+#include "support/scene_text.h"
 
 using namespace serenity;
 
 TEST_CASE("a frame with no camera is refused before its submission begins, and the run goes on") {
-    const scene::SceneDescription description = scene::load(tests::scenes_dir / "brass_sphere.toml");
+    const scene::SceneDescription description = scene::parse(tests::still_fireflies(), "still fireflies");
     metal::Device device;
     metal::Submission submission(device);
     metal::Offscreen target(device, submission, {16, 16});
@@ -50,7 +50,7 @@ TEST_CASE("a frame with no camera is refused before its submission begins, and t
 }
 
 TEST_CASE("a glowing light that is not one of the scene's is refused when the renderer is built") {
-    scene::SceneDescription description = scene::load(tests::scenes_dir / "brass_sphere_flight.toml");
+    scene::SceneDescription description = scene::parse(tests::flying_fireflies(), "flying fireflies");
     REQUIRE_FALSE(description.animation.glowers.empty());
     description.animation.glowers.back().target = description.light_counts.spheres;
     metal::Device device;
@@ -82,7 +82,7 @@ TEST_CASE("an image is read back only into exactly its bytes") {
 }
 
 TEST_CASE("the accumulated image refused at a size it cannot have keeps what it held") {
-    const scene::SceneDescription description = scene::load(tests::scenes_dir / "brass_sphere.toml");
+    const scene::SceneDescription description = scene::parse(tests::still_fireflies(), "still fireflies");
     metal::Device device;
     metal::Submission submission(device);
     metal::Accumulation accumulation(device, submission);

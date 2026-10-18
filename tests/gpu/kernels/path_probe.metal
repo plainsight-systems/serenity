@@ -26,8 +26,6 @@
 
 using namespace serenity::shaders;
 using serenity::contracts::Bsdf;
-using serenity::tests::DirectIntegral;
-using serenity::tests::DirectQuery;
 using serenity::tests::HeuristicQuery;
 using serenity::tests::HeuristicWeights;
 using serenity::tests::MisDraw;
@@ -109,58 +107,6 @@ kernel void mis_weights(device MisDraw* out [[buffer(0)]],
         draw.by_bsdf = 1u;
     }
     out[i] = draw;
-}
-
-// At each query's point, of `bsdf` seen from its wo, the light's integral
-// f |cos| L_e over its cone, red channel, by the midpoint rule over a grid
-// of query.grid x query.grid cells of u, which sample_light() maps to the
-// cone uniformly in solid angle, so the integral is the cells' mean times
-// the cone's solid angle, 1 / the sample's pdf; and the share of it that
-// step 5's light samples carry once weighted, the mean of the same terms
-// times w_l over their mean. Seen from where step 5 draws
-// (next_event_origin(), the point the path tracer's rays toward the light
-// leave from, so the integral its estimate converges to), or from the
-// surface's point (at_point 1). Unshadowed: the probe's scene has nothing
-// between the point and the light. Inputs: the lights (1 to 5), the
-// queries, their count, the Bsdf.
-kernel void light_integral(device DirectIntegral* out [[buffer(0)]],
-                           constant serenity::lights::LightRecord* records [[buffer(1)]],
-                           constant serenity::lights::SphereLightData* spheres [[buffer(2)]],
-                           constant serenity::contracts::Transform* transforms [[buffer(3)]],
-                           constant float* glows [[buffer(4)]],
-                           constant uint* shape_lights [[buffer(5)]],
-                           device const DirectQuery* queries [[buffer(6)]],
-                           constant uint& count [[buffer(7)]],
-                           constant Bsdf& bsdf [[buffer(8)]],
-                           uint i [[thread_position_in_grid]]) {
-    if (i >= count) {
-        return;
-    }
-    const Lights lights{records, shape_lights, spheres, transforms, glows};
-    const DirectQuery query = queries[i];
-    const UniformLight selection{records, query.light_count};
-    const serenity::lights::LightRecord light = records[0];
-    serenity::contracts::SurfaceInteraction surface{};
-    surface.position = query.point;
-    surface.geometric_normal = query.normal;
-    const float3 wo = to_float3(query.wo);
-    const float3 seen_from = query.at_point != 0u ? to_float3(surface.position) : path::next_event_origin(surface, wo);
-    const uint n = query.grid;
-    float sum = 0.0f;
-    float weighted = 0.0f;
-    float solid_angle = 0.0f;
-    for (uint cell = 0; cell < n * n; ++cell) {
-        const float2 u = (float2(cell % n, cell / n) + 0.5f) / float(n);
-        const serenity::contracts::LightSample sample = sample_light(lights, light, seen_from, u);
-        const float3 wi = to_float3(sample.direction);
-        const float term = bsdf_evaluate(bsdf, wo, wi).x * metal::abs(metal::dot(wi, to_float3(bsdf.normal))) *
-                           to_float3(sample.radiance).x;
-        sum += term;
-        const float light_density = light_probability(selection, light) * sample.pdf;
-        weighted += term > 0.0f ? term * path::next_event_weight(light_density, bsdf, wo, wi) : 0.0f;
-        solid_angle = 1.0f / sample.pdf;
-    }
-    out[i] = DirectIntegral{sum / float(n * n) * solid_angle, sum > 0.0f ? weighted / sum : 0.0f, {0u, 0u}};
 }
 
 // For each query, the path tracer's power_heuristic() both ways, and the

@@ -108,12 +108,21 @@ TEST_CASE("the denoise pass's rules") {
     CHECK(tests::contains(refusal(stray), "[denoise] settings and no denoise pass"));
 }
 
-TEST_CASE("the denoised graph in graphs/ reads, its weights relative to its own directory") {
-    const Schedule s = frame::load_schedule(tests::graphs_dir / "restir_pt_denoised.toml");
-    CHECK(s.passes.back() == PassKind::tone_map);
-    CHECK(s.passes[s.passes.size() - 2] == PassKind::denoise);
-    REQUIRE(s.denoise.has_value());
-    CHECK(s.denoise->weights == tests::graphs_dir / "../../serenity-data/denoiser-v1-model/wide");
+TEST_CASE("a denoised graph's weights are read relative to its file's directory, an absolute path as it is") {
+    const tests::ScratchDirectory scratch("denoise-weights");
+    const std::string graph =
+        "passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"features\", \"denoise\", \"tone_map\"]\n"
+        "[tone_map]\nexposure = 0.0\nbloom = 0.0\n"
+        "[restir_pt]\nnee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = 0.2\n";
+    std::filesystem::create_directories(scratch / "graphs");
+    tests::write_bytes(scratch / "graphs" / "relative.toml", graph + "[denoise]\nweights = \"../model/net\"\n");
+    tests::write_bytes(scratch / "graphs" / "absolute.toml", graph + "[denoise]\nweights = \"/model/net\"\n");
+    const Schedule relative = frame::load_schedule(scratch / "graphs" / "relative.toml");
+    REQUIRE(relative.denoise.has_value());
+    CHECK(relative.denoise->weights == scratch / "graphs" / "../model/net");
+    const Schedule absolute = frame::load_schedule(scratch / "graphs" / "absolute.toml");
+    REQUIRE(absolute.denoise.has_value());
+    CHECK(absolute.denoise->weights == "/model/net");
 }
 
 TEST_CASE("every mistake in [denoise] is an error") {

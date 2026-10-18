@@ -2,9 +2,11 @@
 
 // Scene files written in the tests (core/scene/scene.h), in parts (ES.3,
 // F.10): a number written exactly, a camera, a sky, and the scenes more than
-// one test file reads or renders.
+// one test file reads or renders; the tests' own, so none leans on what
+// scenes/ holds.
 
 #include <array>
+#include <cstddef>
 #include <charconv>
 #include <string>
 #include <string_view>
@@ -86,58 +88,56 @@ inline std::string furnace(std::string_view material) {
            "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"m\"\n";
 }
 
-// A light at the most radiance a float holds, inside a closed white sphere,
-// the camera between them: a path tracer's light overflows a float. The
-// cavity loses light only to the light, so its wall's radiance is the
-// light's own, and a path's sum over its surfaces passes the largest float
-// in about a third of the samples. A sum, not one term: the path tracer's
-// MIS bounds a light sample's term at a Lambert surface by half the light's
-// radiance times the albedo (integrator/path.metal.h), so lights merely
-// close over a floor, under a black sky, no longer overflow it.
-inline std::string blinding_lights() {
-    return camera_text("[0, 0, 0.8]", "[0, 0, 1]", 60) + sky("[0, 0, 0]", "[0, 0, 0]") +
-           "[materials.wall]\nkind = \"rough\"\ncolor = [1, 1, 1]\n"
-           "[materials.blinding]\nkind = \"emissive\"\nradiance = [3e38, 3e38, 3e38]\n"
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"wall\"\n"
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.5\nmaterial = \"blinding\"\n";
+// A brass ball on a checkered floor under a dusk sky, and fireflies about
+// it: the tests' own scene of moving, glowing lights (core/animation/), so
+// no test leans on what scenes/ holds. `fireflies`' shapes follow the ball's
+// and the floor's (shapes 0 and 1).
+inline std::string brass_ball_under(std::string_view fireflies) {
+    return camera_text("[0.0, 1.1, 4.2]", "[0.0, 0.75, 0.0]", 38) +
+           sky("[0.01, 0.015, 0.06]", "[0.06, 0.08, 0.175]") +
+           "[textures.floor_checks]\nkind = \"checker\"\nsize = 0.4\na = [0.75, 0.72, 0.65]\nb = [0.05, 0.05, 0.06]\n"
+           "[materials.brass]\nkind = \"conductor\"\nf0 = [0.91, 0.78, 0.42]\nroughness = 0.35\n"
+           "[materials.floor]\nkind = \"rough\"\ntexture = \"floor_checks\"\n"
+           "[materials.firefly]\nkind = \"emissive\"\nradiance = [320.0, 280.0, 70.0]\n"
+           "[[shapes]]\nkind = \"sphere\"\nname = \"brass\"\ncenter = [0.0, 0.75, 0.0]\nradius = 0.75\n"
+           "material = \"brass\"\n"
+           "[[shapes]]\nkind = \"box\"\nmin = [-200.0, -0.1, -200.0]\nmax = [200.0, 0.0, 200.0]\nmaterial = \"floor\"\n" +
+           std::string(fireflies);
 }
 
-// Glass of radius 1 filled with a medium keeping half its red over 1 m;
-// inside it an opaque white core of radius 0.3, and a light of radius 0.05
-// at (0, 0.45, 0.45), which nothing hides from the core's front. The sky is
-// black, so the middle of the image is the core, lit by that light, seen
-// through the glass. Red is dimmed over the camera's stretch to the core,
-// 0.7, and over the light's to the core, |(0, 0.45, 0.15)| - 0.05 = 0.424;
-// green over neither.
-inline std::string core_lit_inside_glass() {
-    return camera_text("[0, 0, 4]", "[0, 0, 0]", 30) + sky("[0, 0, 0]", "[0, 0, 0]") +
-           "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
-           "[materials.white]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
-           "[materials.glow]\nkind = \"emissive\"\nradiance = [40, 40, 40]\n"
-           "[media.red_out]\nkind = \"absorbing\"\ntint = [0.5, 1, 1]\ntint_distance = 1\n"
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 1\nmaterial = \"glass\"\n"
-           "interior = \"red_out\"\n"
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 0]\nradius = 0.3\nmaterial = \"white\"\n"
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0.45, 0.45]\nradius = 0.05\nmaterial = \"glow\"\n";
+// Three fireflies flying about the ball and flashing as they fly: every
+// frame, shapes move (the structure rebuilt) and lights glow.
+inline std::string flying_fireflies() {
+    // Each one's center, then its flight's behaviours and seed.
+    const std::array<std::array<std::string_view, 2>, 3> each = {
+        std::array<std::string_view, 2>{"[-1.05, 0.55, 0.85]", "circle = 3, swoop = 1, drift = 1, seed = 1"},
+        std::array<std::string_view, 2>{"[0.95, 1.45, -0.55]", "circle = 3, swoop = 1, drift = 1, seed = 2"},
+        std::array<std::string_view, 2>{"[-1.6, 1.2, -1.2]", "circle = 1, swoop = 2, drift = 1, seed = 3"}};
+    std::string fireflies;
+    for (const auto& [center, behaviours] : each) {
+        fireflies += "[[shapes]]\nkind = \"sphere\"\ncenter = " + std::string(center) +
+                     "\nradius = 0.03\nmaterial = \"firefly\"\n"
+                     "motion = { kind = \"flight\", min = [-2.2, 0.12, -2.2], max = [2.2, 2.2, 2.2], "
+                     "targets = [\"brass\"], speed = 0.45, clearance = 0.06, " +
+                     std::string(behaviours) + " }\nglow = { kind = \"flight\", flash = 0.35, dim = 0.25 }\n";
+    }
+    return brass_ball_under(fireflies);
 }
 
-// The stretches core_lit_inside_glass()'s red is dimmed over, in meters:
-// the camera's to the core, and the light's.
-inline constexpr double camera_to_core = 0.7;
-inline constexpr double light_to_core = 0.424;
+// Two fireflies wandering about, steady: shapes that move, no glow.
+inline std::string wandering_fireflies() {
+    return brass_ball_under(
+        "[[shapes]]\nkind = \"sphere\"\ncenter = [-1.05, 0.55, 0.85]\nradius = 0.035\nmaterial = \"firefly\"\n"
+        "motion = { kind = \"wander\", reach = 0.25, speed = 0.25, seed = 1 }\n"
+        "[[shapes]]\nkind = \"sphere\"\ncenter = [0.95, 1.45, -0.55]\nradius = 0.03\nmaterial = \"firefly\"\n"
+        "motion = { kind = \"wander\", reach = 0.25, speed = 0.3, seed = 2 }\n");
+}
 
-// A bead of radius 1 mm, filled with a medium keeping exp(-0.7) of its red
-// over 1 mm: 700 per meter, seen along z, 5 m from the origin. There a ray
-// starts 256 ulps of 5 off a surface it leaves along z, 0.12 mm
-// (integrator/surface.metal.h), 8% of a crossing's light; the stretch must
-// be measured from the surface itself. (At the origin the step is 15 um,
-// 1%, too little to tell.)
-inline std::string tinted_bead() {
-    return camera_text("[0, 0, 5.004]", "[0, 0, 5]", 30) + sky("[0.5, 0.5, 0.5]", "[0.5, 0.5, 0.5]") +
-           "[materials.glass]\nkind = \"dielectric\"\nior = 1.5\n"
-           "[media.red_out]\nkind = \"absorbing\"\ntint = [0.4965853, 1, 1]\ntint_distance = 0.001\n"
-           "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, 5]\nradius = 0.001\nmaterial = \"glass\"\n"
-           "interior = \"red_out\"\n";
+// Two fireflies held still: nothing moves or glows.
+inline std::string still_fireflies() {
+    return brass_ball_under(
+        "[[shapes]]\nkind = \"sphere\"\ncenter = [-1.05, 0.55, 0.85]\nradius = 0.035\nmaterial = \"firefly\"\n"
+        "[[shapes]]\nkind = \"sphere\"\ncenter = [0.95, 1.45, -0.55]\nradius = 0.03\nmaterial = \"firefly\"\n");
 }
 
 }  // namespace serenity::tests

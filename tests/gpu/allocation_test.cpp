@@ -3,9 +3,10 @@
 // buffer, structure and descriptor a frame uses is made at construction or
 // in prepare(), and Renderer::record(), with the shapes' placing and the
 // structure's update inside it, takes no memory from the C++ heap. For
-// every pass type: every graph in graphs/ that runs from the checkout
-// alone, and the denoised graph with the test fixture's network in place
-// of the one beside the checkout (gpu/support/rendering.h).
+// every pass type, in graphs this test builds: the test pattern, the path
+// tracer, ReSTIR PT with the features beside it, the features alone, and
+// the denoised pipeline on the test fixture's network
+// (gpu/support/rendering.h). An integration test.
 //
 // Counted by replacing the program's operator new: while a scope of
 // Counting is open on a thread, each allocation that thread makes through
@@ -35,14 +36,15 @@
 
 #include <Foundation/Foundation.hpp>
 
-#include "core/frame/graph_file.h"
+#include "core/frame/schedule.h"
 #include "core/scene/scene.h"
 #include "gpu/support/rendering.h"
 #include "metal/device/device.h"
 #include "metal/device/offscreen.h"
 #include "metal/device/submission.h"
 #include "metal/frame/renderer.h"
-#include "test_paths.h"
+#include "support/scene_text.h"
+#include "support/schedules.h"
 
 namespace {
 
@@ -190,37 +192,33 @@ TEST_CASE("the counter counts: an allocation inside a Counting scope is seen") {
     ::operator delete(memory);
 }
 
-TEST_CASE("recording a frame of moving, blinking fireflies allocates nothing of ours, in every graph, the "
-          "structure's update and all") {
-    const scene::SceneDescription flying = scene::load(tests::scenes_dir / "brass_sphere_flight.toml");
-    REQUIRE(animation::moves(flying.animation));
-    // Every graph in graphs/, by name; those whose network is beside the
-    // checkout replaced by the denoised graph with the fixture's.
-    std::vector<std::filesystem::path> files;
-    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(tests::graphs_dir)) {
-        if (entry.path().extension() == ".toml") {
-            files.push_back(entry.path());
+TEST_CASE("recording a frame allocates nothing of ours, in every kind of graph, the structure's update and all") {
+    using frame::PassKind;
+    std::vector<PassKind> light = tests::restir_pt_passes;
+    light.push_back(PassKind::features);
+    light.push_back(PassKind::tone_map);
+    frame::Schedule restir_pt_features{light, tests::look};
+    restir_pt_features.restir_pt = tests::written_restir_pt(light);
+    const std::vector<std::pair<const char*, frame::Schedule>> graphs = {
+        {"the test pattern", frame::Schedule{{PassKind::test_pattern}, std::nullopt}},
+        {"the path tracer", tests::path_graph()},
+        {"ReSTIR PT with the features", restir_pt_features},
+        {"the features alone", frame::Schedule{{PassKind::features}, std::nullopt}},
+        {"the denoised pipeline", tests::fixture_denoised_graph()},
+    };
+    SUBCASE("fireflies that fly and flash: every frame places shapes, rebuilds the structure, lights glows") {
+        const scene::SceneDescription flying = scene::parse(tests::flying_fireflies(), "flying fireflies");
+        REQUIRE(animation::moves(flying.animation));
+        REQUIRE_FALSE(flying.animation.glowers.empty());
+        for (const auto& [name, graph] : graphs) {
+            INFO(name);
+            CHECK(most_allocated_by_record(flying, graph, 6) == 0);
         }
     }
-    std::ranges::sort(files);
-    std::size_t denoised = 0;
-    for (const std::filesystem::path& file : files) {
-        const frame::Schedule schedule = frame::load_schedule(file);
-        if (schedule.denoise.has_value()) {
-            ++denoised;
-            continue;
-        }
-        INFO(file.filename().string());
-        CHECK(most_allocated_by_record(flying, schedule, 6) == 0);
+    SUBCASE("a still scene") {
+        const scene::SceneDescription still = scene::parse(tests::still_fireflies(), "still fireflies");
+        REQUIRE_FALSE(scene::changes(still));
+        CHECK(most_allocated_by_record(still, tests::path_graph(), 4) == 0);
+        CHECK(most_allocated_by_record(still, tests::fixture_denoised_graph(), 4) == 0);
     }
-    REQUIRE_FALSE(files.empty());  // graphs/ found, not an empty directory
-    REQUIRE(denoised > 0);
-    INFO("restir_pt_denoised.toml, the fixture's network");
-    CHECK(most_allocated_by_record(flying, tests::fixture_denoised_graph(), 6) == 0);
-}
-
-TEST_CASE("recording a frame of a still scene allocates nothing of ours") {
-    const scene::SceneDescription still = scene::load(tests::scenes_dir / "brass_sphere.toml");
-    REQUIRE_FALSE(scene::changes(still));
-    CHECK(most_allocated_by_record(still, frame::load_schedule(tests::graphs_dir / "path.toml"), 4) == 0);
 }
