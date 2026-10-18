@@ -199,8 +199,9 @@ This file tracks active and accepted work.
    (docs/research/2026-10-18-frame-pacing.md), behind a backend-neutral
    frame source the window names, so the Vulkan and Direct3D 12 backends
    pace with their own loops; 30 to 60 frames a second, preferring 60
-   (the user). Left: the pacing measured before and after on AC power
-   (not yet: on battery).
+   (the user). Measured at 1920 x 1200: the presented interval's std
+   9.1 -> 3.7 ms, the frames 16.7 or 25 ms apart (the GPU's 18.8 ms is
+   over 60's budget).
 
 2. The Vulkan backend on the AMD machine (Strix Halo), beside
    `src/metal/` (MEMORY.md), the denoiser's kernels with it.

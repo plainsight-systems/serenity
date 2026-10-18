@@ -133,11 +133,27 @@ Checked against production:
 
 ## Measurement
 
-Not taken: the machine was on battery throughout this change, and the
-brief measures on AC power only. What to run, once on AC with the GPU
-otherwise idle and the window visible: the demo graph
-(`graphs/restir_pt_denoised.toml` over `scenes/marbles.toml`) at
-`--scale 0.75` (1920 x 1200 from the 2560 x 1600 window) for 20 s with the
-build before and after, each frame's presentation instant (`MTLDrawable`
-`presentedTime`) and GPU instants logged by scratch instrumentation, and
-the presented interval's median, p5, p95 and standard deviation compared.
+The demo graph (`graphs/restir_pt_denoised.toml` over `scenes/marbles.toml`)
+in the window at `--scale 0.75`, 1920 x 1200 from the 2560 x 1600 window,
+25 s each, on AC power with the GPU otherwise idle (no other serenity or
+measuring process, under 5% for 6 s before each run), the window raised
+and visible; release build; the first 3 s of frames dropped. Before:
+78f1c06 (`nextDrawable()`); after: this change at 75dcfe5, asking 30 to
+60 frames a second, preferring 60. Each drawable's `presentedTime` and
+each frame's GPU instants logged by scratch instrumentation, not kept.
+
+| | presented interval: median | p5 | p95 | std | GPU interval: median | p5 | p95 | std |
+|---|---|---|---|---|---|---|---|---|
+| before | 25.0 ms | 8.3 | 33.3 | 9.06 | 19.4 ms | 8.8 | 31.6 | 8.42 |
+| after | 16.7 ms | 16.7 | 25.0 | 3.65 | 18.8 ms | 18.3 | 19.4 | 0.47 |
+
+Before, the frames reached the 120 Hz display 8.3, 16.7, 25 and 33.3 ms
+apart (357, 162, 409 and 165 of them): the loop ran ahead into three
+drawables and the display showed what was ready. After, 16.7 ms (850)
+or 25 ms (294) apart, and the GPU's interval between frames is even, at
+18.8 ms (it was 19.6 on average, unevenly). The mean frame rate is about
+the same (19.6 and 18.8 ms, 51 and 53 fps): the change is in evenness. The GPU's 18.8 ms is
+over 60 frames a second's 16.7 at this size, so the display link shows
+frames at 60 and, a quarter of the time, at 40: a rate the frame could
+hold at this size would be 40 (25 ms every frame); the range 30 to 60 is
+the user's.
