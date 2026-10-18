@@ -36,7 +36,13 @@ and the camera.
   fireflies are small glowing spheres: geometry that rays can hit, and
   lights that the estimators sample. Rays that only test whether a light
   is visible skip them (principle 11).
-- **Primary visibility** traces a ray from the camera through each pixel. At
+- **Primary visibility** traces a ray from the camera through each pixel:
+  in ReSTIR PT's frames, the light the network reads, through the same
+  point of every pixel, the frame's **jitter**, a fixed low-discrepancy
+  sequence (Halton in bases 2 and 3) of 32 phases, as temporal upscalers
+  take it (DLSS's guide: about 8 times the square of the upscale ratio);
+  in the path tracer's, through a point of its own in each pixel, drawn
+  at random, the box filter a reference converges to. At
   glass it reflects or refracts, chosen by the Fresnel term; at polished metal
   it reflects; it stops at the first rough surface, or when it leaves the
   scene. What it finds is the pixel's **surface record**: position, normal,
@@ -89,7 +95,10 @@ and the camera.
   to the surface seen in them. Per output pixel it predicts weights over
   three 3 x 3 neighborhoods of the noisy light, at spacings of 1, 2 and 4
   pixels, softmax-normalized, and a blend with its own last output moved
-  by the motion vectors: a kernel-predicting network, its weights computed
+  by the motion vectors, and the frame's jitter, as DLSS, TSR and FSR take
+  it, so it knows where in each pixel its light was traced (the motion
+  vectors stay unjittered, NRD's and DLSS's convention): a
+  kernel-predicting network, its weights computed
   fresh from every frame as attention computes its weights from the tokens
   in front of it. Then the surface's color is multiplied back.
 - **Upscale** brings the image to the output's resolution, and the same
@@ -147,7 +156,9 @@ before ("The frame").
 
 2. **Randomness is a function of pixel, frame and purpose.** Every random
    number is derived from where and when it is used. There is no shared
-   generator state, so any frame can be rendered again exactly, alone.
+   generator state, so any frame can be rendered again exactly, alone. The
+   camera's jitter is a function of the frame alone: its index's phase in
+   a fixed sequence.
 
 3. **The reference shares the scene and the light transport, never the
    reuse.** ReSTIR PT runs Enhanced's defaults, whose merges are weighted
@@ -277,6 +288,7 @@ What varies, and which principle handles it.
 | Estimator | the path tracer, the reference; ReSTIR PT with manifold next event estimation, temporal, spatial or both; the denoised pipeline | interchangeable (4) |
 | Reuse settings | M candidates, k neighbors, history length | settings of the estimator, not code |
 | Samples per pixel | one a frame, or thousands for the reference | a setting; the reference is the light transport without reuse (3) |
+| Point in the pixel | the frame's jitter, or each pixel's own | the jitter in ReSTIR PT's frames, the light the network reads, and given to it; each pixel's own random point in the path tracer's, the reference's box filter (2) |
 | Pixels traced a frame | every one, or half in an alternating checkerboard | half in a denoised graph, the other half the frame before's light, moved ("The frame"); every one in a graph without the denoiser |
 | Resolution | traced, and output | with the denoiser, traced at half the output each way and upscaled by it; without, traced at the window's size or a fraction the window stretches; anything, headless |
 | Denoiser | none, or our own network | a stage after Resolve, its weights data; judged against the reference, and against Open Image Denoise offline |

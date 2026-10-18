@@ -288,6 +288,10 @@ kernel void denoise_input(constant contracts::DenoiseConstants& k [[buffer(bindi
             values[contracts::input_history + 2u * subpixels + q] = pu(m.color.b);
             values[contracts::input_validity + q] = m.valid;
         }
+        // The frame's camera jitter, in input pixels, at every pixel of the
+        // light (contract 18), 0 in the padding as every input is.
+        values[contracts::input_jitter + 0u] = k.jitter_x;
+        values[contracts::input_jitter + 1u] = k.jitter_y;
     }
     for (uint c = 0; c < quads; ++c) {
         out[c] = half4(float4(values[4u * c], values[4u * c + 1u], values[4u * c + 2u], values[4u * c + 3u]));

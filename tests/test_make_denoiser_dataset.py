@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts/make_denoiser_dataset.py'
 sys.path.insert(0, str(SCRIPT.parent))
 import make_denoiser_dataset  # noqa: E402
-PLAN_SHA256 = '5bd97f5e73ab96ecb920cd3911e88a7271d173ff3b8b08a053fcd845a9be43d7'
+PLAN_SHA256 = 'f696671af8b752c7c0a345b0235fa4b8ee1e51b572fc5d3693afb26421c13e7b'
 
 
 def printed_plan():
@@ -92,6 +92,19 @@ class MakeDenoiserDatasetTests(unittest.TestCase):
         old = {'plan': make_denoiser_dataset.plan(sequences=1), 'units': {}}
         with self.assertRaises(SystemExit):
             make_denoiser_dataset.reusable_units(old, self.plan)
+
+    def test_each_frame_has_the_renderers_jitter(self):
+        """The renderer's (src/core/sampling/jitter.h), pinned to the table its test and training's hold
+        (tests/jitter_test.cpp, training/test_training.py)."""
+        table = {0: (0.0, -1.0 / 6.0), 1: (-0.25, 1.0 / 6.0), 2: (0.25, -7.0 / 18.0),
+                 31: (-0.484375, 0.2901234567901234), 32: (0.0, -1.0 / 6.0), 7200: (0.0, -1.0 / 6.0),
+                 7201: (-0.25, 1.0 / 6.0)}
+        for index, (x, y) in table.items():
+            jx, jy = make_denoiser_dataset.camera_jitter(index)
+            self.assertAlmostEqual(jx, x, places=12, msg=index)
+            self.assertAlmostEqual(jy, y, places=12, msg=index)
+        for s in self.seqs:
+            self.assertEqual(s['jitters'], [make_denoiser_dataset.camera_jitter(i) for i in s['frames']])
 
     def test_every_scene_is_written_through_a_pinhole(self):
         for text in ((ROOT / 'scenes/marbles.toml').read_text(encoding='utf-8'),

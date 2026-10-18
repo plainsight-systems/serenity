@@ -186,6 +186,11 @@ TEST_CASE("the fixture's exported network reads, its widths and tensors as the s
 TEST_CASE("a network export that is not what the renderer runs is refused, naming what") {
     CHECK(tests::contains(network_refusal("\"format\": \"serenity-denoiser-weights/1\"", "\"format\": \"other\""),
                           "format"));
+    // A network trained before the camera's jitter was an input: 28 inputs,
+    // as every export before contract 18's 30 (the demo's
+    // denoiser-v1-checkerboard-model among them).
+    CHECK(tests::contains(network_refusal("  \"channels\": 30,", "  \"channels\": 28,"),
+                          "inputs.channels is not the 30 this renderer runs with"));
     CHECK(tests::contains(network_refusal("\"albedo_floor\": 0.02", "\"albedo_floor\": 0.03"),
                           "inputs.albedo_floor is not the 0.02 this renderer runs with"));
     CHECK(tests::contains(network_refusal("   2,\n   4\n", "   2,\n   8\n"),

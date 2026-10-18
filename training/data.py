@@ -1,4 +1,4 @@
-"""The denoiser-v1 data set, read from its manifest, as the network sees it.
+"""The denoiser data set (denoiser-v2), read from its manifest, as the network sees it.
 
 Contract
 --------
@@ -9,7 +9,7 @@ Contract
   mismatch is refused, not trained on.
 - The data set is never written.
 
-Per frame, at the input's 960 x 540 (INPUT_CHANNELS, 12 channels):
+Per frame, at the input's 960 x 540 (INPUT_CHANNELS, 14 channels):
 
   demod   0:3   noisy radiance / albedo factor, linear (below)
   albedo  3:6   the input albedo, clipped to [0, 1] as OIDN clips it
@@ -20,6 +20,13 @@ Per frame, at the input's 960 x 540 (INPUT_CHANNELS, 12 channels):
                 non-sky pixels (z > 0); the sky's 0 stays 0
   motion  10:12 NRD's IN_MV dx, dy in input pixels, "old = new + MV"
                 (docs/research/2026-10-14-denoiser-features.md); dz unused
+  jitter  12:14 the frame's camera jitter (x, y) in input pixels, the same
+                at every pixel: the offset from each pixel's center its ray
+                passed through, x right, y down, in [-1/2, 1/2) (the
+                renderer's core/sampling/jitter.h); from the manifest's
+                frame entry (scripts/make_denoiser_dataset.py). A data set
+                without it (denoiser-v1, rendered before the jitter) is
+                refused (MissingJitter), not read as unjittered.
 
 and at the target's 1920 x 1080 (TARGET_CHANNELS, 6 channels): the
 4,096-sample radiance (0:3) and the full-size albedo (3:6, clipped).
@@ -52,7 +59,9 @@ and dy negated; transpose: (dx, dy) swapped and (right, up) becoming (-up,
 -right), since image rows run down and view up runs up); a random
 permutation of the color channels, the same for the input's radiance and
 albedo and the target's radiance and albedo; a random permutation of the
-normal's three axes, after the flips; and with probability 0.01 the input
+normal's three axes, after the flips; the jitter carried by the flips and
+the transpose as the motion is (a flip negates its axis's offset, the
+transpose swaps them); and with probability 0.01 the input
 and target radiance zeroed ("prevents ghosting artifacts when the main
 feature is entirely black", OIDN), which here is the dark opening. Not
 taken from OIDN: its random zero padding of 10% of the crops, there to
@@ -80,7 +89,8 @@ INPUT_SIZE = (540, 960)  # (H, W)
 TARGET_SIZE = (1080, 1920)
 SCALE = 2
 FRAMES = 8
-INPUT_CHANNELS = 12
+INPUT_CHANNELS = 14
+JITTER = slice(12, 14)
 TARGET_CHANNELS = 6
 ALBEDO_FLOOR = 0.02  # NRD_MATERIAL_FACTOR_MIN_SCALE
 CROP = 128  # input pixels; the target's is 256
@@ -94,6 +104,10 @@ def albedo_factor(albedo: Image) -> Image:
 
 
 class ChecksumError(RuntimeError):
+    pass
+
+
+class MissingJitter(RuntimeError):
     pass
 
 
@@ -115,8 +129,9 @@ def read_checked(root: Path, entry: dict) -> np.ndarray:
 
 
 def input_frame(radiance: np.ndarray, albedo: np.ndarray, normal: np.ndarray, depth: np.ndarray,
-                motion: np.ndarray, axes: np.ndarray) -> np.ndarray:
-    """One frame's 12 input channels, (12, H, W) float32, from its five PFMs (H, W, 3) and the view axes."""
+                motion: np.ndarray, axes: np.ndarray, jitter: tuple[float, float]) -> np.ndarray:
+    """One frame's 14 input channels, (14, H, W) float32, from its five PFMs (H, W, 3), the view axes and the
+    frame's camera jitter."""
     albedo = np.clip(albedo, 0.0, 1.0)
     demod = radiance / albedo_factor(albedo)
     normal_view = normal @ axes.T  # (H, W, 3): right, up, backward
@@ -124,8 +139,39 @@ def input_frame(radiance: np.ndarray, albedo: np.ndarray, normal: np.ndarray, de
     surface = z > 0
     median = float(np.median(z[surface])) if surface.any() else 1.0
     depth_n = np.where(surface, np.log1p(z / median), 0.0)
-    out = np.concatenate([demod, albedo, normal_view, depth_n[..., None], motion[..., :2]], axis=2)
+    planes = np.broadcast_to(np.asarray(jitter, dtype=np.float32), (*z.shape, 2))
+    out = np.concatenate([demod, albedo, normal_view, depth_n[..., None], motion[..., :2], planes], axis=2)
     return np.ascontiguousarray(out.transpose(2, 0, 1), dtype=np.float32)
+
+
+JITTER_PHASES = 32  # contracts::jitter_phases
+
+
+def radical_inverse(k: int, base: int) -> float:
+    """`k`'s digits in `base` mirrored about the point."""
+    result, scale = 0.0, 1.0 / base
+    while k > 0:
+        result += (k % base) * scale
+        k //= base
+        scale /= base
+    return result
+
+
+def camera_jitter(index: int) -> tuple[float, float]:
+    """Frame `index`'s camera jitter, the renderer's (src/core/sampling/jitter.h): Halton(2, 3) at
+    k = index mod 32 + 1, less 1/2, rounded to float32 as the renderer's. For frames no manifest lists
+    (evaluate.py's warm-up); a manifest's frames carry their own (frame_jitter)."""
+    k = index % JITTER_PHASES + 1
+    return (float(np.float32(radical_inverse(k, 2) - 0.5)), float(np.float32(radical_inverse(k, 3) - 0.5)))
+
+
+def frame_jitter(entry: dict) -> tuple[float, float]:
+    """A manifest frame's camera jitter, or MissingJitter: a data set rendered before the jitter."""
+    jitter = entry["input"].get("jitter")
+    if jitter is None:
+        raise MissingJitter(f"frame {entry['sequence']} {entry['frame']} has no camera jitter: its data set was "
+                            "rendered before the network read it (denoiser-v1); render denoiser-v2")
+    return float(jitter[0]), float(jitter[1])
 
 
 def target_frame(radiance: np.ndarray, albedo: np.ndarray) -> np.ndarray:
@@ -157,11 +203,11 @@ class Manifest:
         return [Sequence(n, split, plan[n]["frames"], plan[n]["scene"]) for n in names]
 
     def split_bytes(self, split: str) -> int:
-        """What a Split of `split` holds, in bytes: 12 float32 input channels at the input's size and 6
-        target channels at the target's, a frame."""
+        """What a Split of `split` holds, in bytes: INPUT_CHANNELS float32 input channels at the input's size and
+        6 target channels at the target's, a frame."""
         (w, h), (tw, th) = self.data["plan"]["input"]["size"], self.data["plan"]["target"]["size"]
         frames = sum(len(seq.frames) for seq in self.sequences(split))
-        return frames * 4 * (12 * w * h + 6 * tw * th)
+        return frames * 4 * (INPUT_CHANNELS * w * h + 6 * tw * th)
 
     def scene_file(self, scene: str) -> Path:
         (rel, digest), = self.data["scenes"][scene]["files"].items()
@@ -171,14 +217,15 @@ class Manifest:
         return path
 
     def load_sequence(self, seq: Sequence, with_target: bool = True) -> tuple[np.ndarray, np.ndarray | None]:
-        """(8, 12, 540, 960) inputs and (8, 6, 1080, 1920) targets, checked against the manifest."""
+        """(8, 14, 540, 960) inputs and (8, 6, 1080, 1920) targets, checked against the manifest."""
         axes = view_axes(self.scene_file(seq.scene))
         inputs, targets = [], []
         for i in seq.frames:
             f = self.frames[(seq.name, i)]
             fi = f["input"]["files"]
             inputs.append(input_frame(*(read_checked(self.root, fi[k])
-                                        for k in ("radiance", "albedo", "normal", "depth", "motion")), axes))
+                                        for k in ("radiance", "albedo", "normal", "depth", "motion")), axes,
+                                      frame_jitter(f)))
             if with_target:
                 ft = f["target"]["files"]
                 targets.append(target_frame(read_checked(self.root, ft["radiance"]),
@@ -187,7 +234,7 @@ class Manifest:
 
 
 class Split:
-    """A split's sequences, whole, in memory: inputs (S, 8, 12, h, w), targets (S, 8, 6, H, W).
+    """A split's sequences, whole, in memory: inputs (S, 8, 14, h, w), targets (S, 8, 6, H, W).
 
     Held on `held`: the compute device itself where the splits fit beside
     training's own memory (train.hold_on_device), or the host, pinned, where
@@ -217,7 +264,7 @@ class Split:
         return len(self.sequences)
 
     def crop(self, s: int, oy: int, ox: int) -> tuple[torch.Tensor, torch.Tensor]:
-        """Sequence s's (8, 12, 128, 128) input crop at (oy, ox) and its (8, 6, 256, 256) target crop, on
+        """Sequence s's (8, 14, 128, 128) input crop at (oy, ox) and its (8, 6, 256, 256) target crop, on
         the compute device."""
         inp = self.inputs[s, :, :, oy:oy + CROP, ox:ox + CROP]
         tgt = self.targets[s, :, :, SCALE * oy:SCALE * (oy + CROP), SCALE * ox:SCALE * (ox + CROP)]
@@ -245,22 +292,25 @@ class Augmentation:
 
 
 def augment(inp: torch.Tensor, tgt: torch.Tensor, a: Augmentation) -> tuple[torch.Tensor, torch.Tensor]:
-    """`a` applied to one sequence's (T, 12, h, w) input and (T, 6, H, W) target; new tensors."""
+    """`a` applied to one sequence's (T, 14, h, w) input and (T, 6, H, W) target; new tensors."""
     inp = inp.clone()
     tgt = tgt.clone()
     if a.hflip:
         inp, tgt = inp.flip(-1), tgt.flip(-1)
         inp[:, 6] = -inp[:, 6]    # normal: right
         inp[:, 10] = -inp[:, 10]  # motion: dx
+        inp[:, 12] = -inp[:, 12]  # jitter: x
     if a.vflip:
         inp, tgt = inp.flip(-2), tgt.flip(-2)
         inp[:, 7] = -inp[:, 7]    # normal: up
         inp[:, 11] = -inp[:, 11]  # motion: dy
+        inp[:, 13] = -inp[:, 13]  # jitter: y
     if a.transpose:
         inp, tgt = inp.transpose(-1, -2), tgt.transpose(-1, -2)
         right, up = inp[:, 6].clone(), inp[:, 7].clone()
         inp[:, 6], inp[:, 7] = -up, -right
         inp[:, [10, 11]] = inp[:, [11, 10]]
+        inp[:, [12, 13]] = inp[:, [13, 12]]
     c = list(a.colors)
     inp[:, 0:3] = inp[:, c]
     inp[:, 3:6] = inp[:, [3 + i for i in c]]

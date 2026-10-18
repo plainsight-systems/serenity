@@ -45,7 +45,7 @@ inline void initial_pixel(constant serenity::contracts::FrameConstants& frame,
     const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
     PathNumbers numbers;
     const CameraRay ray = restir_pt::primary_ray(camera, pixel, frame.frame_index, uint2(frame.width, frame.height),
-                                                 numbers);
+                                                 frame_jitter(frame), numbers);
     // confidence_cap is 0 exactly in a graph without restir_pt_temporal,
     // where neither array is bound (contracts/path_reuse_settings.h).
     const bool temporal = settings.confidence_cap > 0.0f;

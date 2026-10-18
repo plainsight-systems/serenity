@@ -134,7 +134,7 @@ depend on contracts, not on each other.
 | 4 | **Light sample**: which light and which point on it, in its own coordinates (`light_sample.h`: the light's record index with a valid bit and the point in two 16-bit numbers, equal-area octahedral for a sphere, 8 bytes, as RTXDI stores them), and what that point gives a surface | Light | Sample reuse, Integrator |
 | 5 | **Film outputs**: radiance, normal, depth, motion per pixel; and ReSTIR PT's G-buffer of primary hits, which every shift starts from (`primary_hit.h`, 48 bytes). ReSTIR DI's surface record and path state (`surface_record.h`) were removed with ReSTIR DI, 2026-10-17 | Film | Pass, Sample reuse, Integrator (the shift) |
 | 6 | **Frame images**: the images between passes and the history across frames; first, the accumulated image | Frame graph | every Pass |
-| 7 | **Frame constants**: the frame's time and index, the size of the image written, and the frames the accumulated image holds | Frame graph | every Pass |
+| 7 | **Frame constants**: the frame's time and index, the size of the image written, the frames the accumulated image holds, and the camera's jitter where the frame takes it | Frame graph | every Pass |
 | 8 | **Camera**: where the frame is seen from, and that view framed for an image | Camera | Scene content, Frame graph, every Pass that generates rays |
 | 9 | **Texture reference**: which texture a parameter takes its value from, or none | Texture | Material |
 | 10 | **Transform**: where an instance of a geometry is, from its own coordinates to the world's | Shape | Animation, Light, Acceleration |
@@ -145,7 +145,7 @@ depend on contracts, not on each other.
 | 15 | **Path reservoir**: ReSTIR PT's one path a pixel by its numbers' stream and its reconnection vertex (a primitive and a point in its own coordinates), its F, contribution weight, count and cached Jacobian (`path_reservoir.h`, 64 bytes, ReSTIR PT Enhanced's Algorithm 1); its settings beside it (`path_reuse_settings.h`) | Sample reuse | Pass, Integrator (the shift), Frame graph |
 | 16 | **MNEE's work list**: a request a pixel ReSTIR PT's path loop leaves for the manifold solve where a light's straight segment crosses glass (the receiver, the light sample, the crossings, the weight; 128 bytes), and the list's header: its count, capacity and the solve's indirect grid (`mnee_request.h`) | Integrator | Pass (the MNEE pass), Frame graph |
 | 17 | **The denoiser's features**: albedo, world normal, view depth and 2.5D motion a pixel, along the light's own camera rays, through glass and mirrors by primary surface replacement (`features.h`) | Film | Pass (the denoiser), the headless renderer's `--features` |
-| 18 | **The denoiser's network as it runs**: its constants (scale 2, 28 input channels, 124 scores, spacings 1, 2 and 4, the albedo floor, the PU transfer), the threadgroup shapes host and shaders share, and its per-frame constants (`denoise.h`) | Pass | the core's loader, the Metal denoise pass, host and shaders |
+| 18 | **The denoiser's network as it runs**: its constants (scale 2, 30 input channels, the frame's jitter among them, 124 scores, spacings 1, 2 and 4, the albedo floor, the PU transfer), the threadgroup shapes host and shaders share, and its per-frame constants (`denoise.h`) | Pass | the core's loader, the Metal denoise pass, host and shaders |
 | 19 | **Ray mask**: the classes of shape, a light or a surface, as bits, and the two masks a ray carries, everything or the occluders (the surfaces), with which purpose of ray carries which (`ray_mask.h`) | Acceleration | Integrator, Pass (the features) |
 | 20 | **Checkerboard**: which pixels a denoised frame traces, the packed slot of a traced pixel's reservoir, the traced grid, the frame before's traced pixel beside one, and the fill's constants (`checkerboard.h`) | Frame graph | Sample reuse, Pass (ReSTIR PT's and the fill) |
 | 21 | **Depth of field**: the circle of confusion's scale, focus and largest radius for a frame, the half-resolution grid and its tiles, the gather's rings (`depth_of_field.h`) | Pass | the Metal depth-of-field pass, host and shaders; the frame graph, which fills its constants from the camera's lens |
@@ -270,6 +270,22 @@ the families that own each part:
 | its half-resolution images and tile buffers | Frame graph | `src/metal/frame/depth_of_field_images.{h,cpp}`, new |
 | the camera traced through a pinhole in a denoised graph; the pass recorded in the image half with the full-size depth and its constants | Frame graph | `src/metal/frame/renderer.{h,cpp}`, `src/metal/frame/frame_resources.h` |
 | the data set's scenes written without a lens | outside the build | `scripts/make_denoiser_dataset.py` |
+
+## The camera's jitter
+
+A fixed low-discrepancy sequence in place of each pixel's random point
+for ReSTIR PT's camera rays, given to the network (the axes in
+`change-axes.md`):
+
+| What | Family | File |
+|---|---|---|
+| the sequence, its phases and frame *n*'s offset, constexpr | Sampler | `src/core/sampling/jitter.h`, new |
+| which graphs' frames take it (every ReSTIR PT graph's light and features) | Frame graph | `src/core/frame/schedule.{h,cpp}` |
+| the offset and whether the frame takes it, in the frame's constants | Frame graph (contract 7) | `src/core/contracts/frame_constants.h` |
+| the camera ray's point in the pixel: the frame's jitter or the pixel's own | Camera | `src/metal/camera/thin_lens.metal.h` |
+| the jitter written into the light half's ring, not the output's | Frame graph | `src/metal/frame/renderer.cpp` |
+| two input channels of the network: the contract, the loader's check, the kernel, the PyTorch model, its data and its export | Pass, outside the build | `src/core/contracts/denoise.h`, `src/core/denoise/network.cpp`, `src/metal/passes/denoise/denoise.metal`, `training/{data,model,export,denoise_check}.py` |
+| each frame's jitter in the data set's manifest | outside the build | `scripts/make_denoiser_dataset.py` |
 
 ## Not here yet
 

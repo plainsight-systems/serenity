@@ -103,6 +103,9 @@ def layout(model: Denoiser, tensors: list[dict], state: dict) -> dict:
                 {"channels": [12, 24], "what": "pixel_unshuffle(pu(moved history), 2): channel 12 + c * 4 + dy * 2 + dx "
                                                "is color c of output pixel (2y + dy, 2x + dx)"},
                 {"channels": [24, 28], "what": "pixel_unshuffle(history validity, 2), same order"},
+                {"channels": [28, 30], "what": "the frame's camera jitter (x, y) in input pixels: the offset from each "
+                                               "pixel's center its ray passed through, x right, y down, in [-0.5, 0.5); "
+                                               "the same at every pixel of the image, 0 in the padding"},
             ],
             "albedo_floor": ALBEDO_FLOOR,
             "pu": {"y0": PU_Y0, "y1": PU_Y1, "a": PU_A, "b": PU_B, "c": PU_C, "d": PU_D, "e": PU_E, "f": PU_F,

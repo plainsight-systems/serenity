@@ -49,7 +49,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 
-from data import INPUT_SIZE, SCALE, Manifest, file_sha256, input_frame, read_checked
+from data import INPUT_SIZE, SCALE, Manifest, camera_jitter, file_sha256, input_frame, read_checked
 from model import Denoiser, UNet, Widths
 from pfm import read_pfm, write_pfm
 from regions import REGIONS, masks, view_axes
@@ -77,7 +77,9 @@ def warmup_inputs(warmup: Path, record: dict, sequence: str, axes: np.ndarray) -
         for suffix in ("", "-albedo", "-normal", "-depth", "-motion"):
             name = f"frame-{i:06d}{suffix}.pfm"
             parts.append(read_checked(warmup / sequence, {"path": name, "sha256": entry["files"][name]}))
-        frames.append(input_frame(*parts, axes))
+        # The warm-up's frames are in no manifest: their jitter the renderer's
+        # for their index (data.camera_jitter).
+        frames.append(input_frame(*parts, axes, camera_jitter(i)))
     return frames
 
 

@@ -9,6 +9,7 @@
 #include <metal_stdlib>
 
 #include "core/contracts/camera.h"
+#include "core/contracts/frame_constants.h"
 #include "metal/device/layout.metal.h"
 #include "metal/math/warp.metal.h"
 #include "metal/sampler/sampler.metal.h"
@@ -50,18 +51,34 @@ inline CameraRay camera_ray(constant serenity::contracts::CameraData& camera, fl
     return CameraRay{start, metal::normalize(focus - start)};
 }
 
+// Where in its pixel a frame's camera rays pass (contracts/frame_constants.h):
+// the frame's jitter, the same offset from every pixel's center, where the
+// frame takes it; else each pixel's own point, drawn from its numbers.
+struct PixelJitter {
+    bool on;
+    float2 offset;  // pixels, from the pixel's center
+};
+
+inline PixelJitter frame_jitter(constant serenity::contracts::FrameConstants& frame) {
+    return PixelJitter{frame.jittered != 0u, float2(frame.jitter_x, frame.jitter_y)};
+}
+
 // The camera's ray through pixel `pixel` of an image of `size`, drawn from
 // `numbers`, a pixel's path numbers at their start (sampler.metal.h,
-// path_numbers): the point in the pixel, then the point on the lens, drawn
-// only through one, so a pinhole's paths draw what they drew before lenses.
+// path_numbers): the point in the pixel, the frame's jitter where `jitter`
+// is on (drawing nothing for it) and else drawn, then the point on the
+// lens, drawn only through one, so a pinhole's paths draw what they drew
+// before lenses and an unjittered frame's what it drew before the jitter.
 // The one ray every light pass, every shift's destination and the features
 // take a pixel's path from (ES.3: they must agree to the bit); `numbers` is
 // left after what it drew, for the path to go on drawing. The path pass
 // writes the same draw out instead, for its kernel's speed
 // (passes/path/path.metal).
 inline CameraRay pixel_ray(constant serenity::contracts::CameraData& camera, uint2 pixel, uint2 size,
-                           thread PathNumbers& numbers) {
-    const float2 within = next_numbers2(numbers);  // the point in the pixel
+                           PixelJitter jitter, thread PathNumbers& numbers) {
+    // The point in the pixel. Which of the two is the frame's, the same for
+    // every thread of a dispatch, so the branch costs no divergence (GPU.4).
+    const float2 within = jitter.on ? float2(0.5f) + jitter.offset : next_numbers2(numbers);
     const float2 lens = has_lens(camera) ? next_numbers2(numbers) : float2(0.0f);
     return camera_ray(camera, float2(pixel) + within, lens, size);
 }

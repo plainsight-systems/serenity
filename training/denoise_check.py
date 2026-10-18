@@ -16,8 +16,11 @@ A fixture is a directory the GPU side reads without Python: the network
 k the renderer's own images, as the denoise pass is given them at its light
 size, cropped if asked: frame-K-radiance.pfm (the light pass's accumulated
 image: the data set's noisy input), -albedo, -normal (world space), -depth,
--motion, and -full_albedo at twice the size; the camera's view axes and
-the sizes in fixture.json; and -expected.pfm, what model.Denoiser.frame
+-motion, and -full_albedo at twice the size; the camera's view axes, the
+sizes and each frame's camera jitter in fixture.json (the frame's own from
+the manifest; for a data set rendered before the jitter, denoiser-v1, drawn
+from --seed, uniform in [-1/2, 1/2): the fixture checks the arithmetic,
+and any jitter exercises its channels); and -expected.pfm, what model.Denoiser.frame
 computes from them, in float32 on the CPU, frame after frame with its own
 history, the input zero-padded to a multiple of 16 as evaluate.py pads it.
 The input channels are data.input_frame's, so the depth's median is over
@@ -39,7 +42,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from data import SCALE, Manifest, input_frame, read_checked
+from data import SCALE, Manifest, MissingJitter, frame_jitter, input_frame, read_checked
 from export import layout, read_back, serialize
 from model import Denoiser, UNet, Widths
 from pfm import read_pfm, write_pfm
@@ -116,7 +119,8 @@ def fixture(args: argparse.Namespace) -> int:
         shutil.copytree(args.network, args.out / "network")
 
     crop = args.crop  # x, y, w, h at the input's size
-    frames, albedos = [], []
+    frames, albedos, jitters = [], [], []
+    drawn = np.random.default_rng(args.seed)
     for k, i in enumerate(seq.frames[:args.frames]):
         f = manifest.frames[(seq.name, i)]
         parts = [read_checked(manifest.root, f["input"]["files"][n])
@@ -129,7 +133,12 @@ def fixture(args: argparse.Namespace) -> int:
         for name, image in zip(("radiance", "albedo", "normal", "depth", "motion"), parts):
             write_pfm(args.out / f"frame-{k}-{name}.pfm", image)
         write_pfm(args.out / f"frame-{k}-full_albedo.pfm", full)
-        frames.append(input_frame(*parts, axes))
+        try:
+            jitter = frame_jitter(f)
+        except MissingJitter:
+            jitter = tuple(float(v) for v in drawn.uniform(-0.5, 0.5, 2))
+        jitters.append([float(np.float32(jitter[0])), float(np.float32(jitter[1]))])
+        frames.append(input_frame(*parts, axes, (jitters[-1][0], jitters[-1][1])))
         albedos.append(np.clip(full, 0.0, 1.0))
     for k, out in enumerate(expected_outputs(model, frames, albedos)):
         write_pfm(args.out / f"frame-{k}-expected.pfm", out)
@@ -137,6 +146,7 @@ def fixture(args: argparse.Namespace) -> int:
     (args.out / "fixture.json").write_text(json.dumps({
         "frames": len(frames), "light": [w, h],
         "axes": {"right": axes[0].tolist(), "up": axes[1].tolist(), "backward": axes[2].tolist()},
+        "jitter": jitters,
         "sequence": seq.name, "data_frames": seq.frames[:args.frames], "crop": crop,
         "made_by": "training/denoise_check.py fixture",
     }, indent=1))

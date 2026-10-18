@@ -315,6 +315,29 @@ graph chooses where its lens is applied, in the rays or after the
 network, as it chooses at what size the light is traced; the lens's
 numbers reach both places from the one camera.
 
+**The camera's jitter is three axes' business.** The point in the pixel
+every camera ray of a ReSTIR PT frame takes (`logical-overview.md`,
+"Primary visibility") splits in three:
+
+- **Sampler** owns the sequence: Halton in bases 2 and 3, its phase count,
+  and the offset of frame *n* (`src/core/sampling/jitter.h`), a function
+  of the frame's index alone, as every number the sampler gives is of
+  where and when it is used.
+- **Frame graph** decides which frames take it, a ReSTIR PT graph's light
+  and its features, never the full-size albedo, which is at the output's
+  resolution as the network's output is and so unjittered, and carries it
+  to the shaders in the frame's constants (contract 7), which the camera's
+  ray generation reads.
+- **Pass**: the denoiser reads it as two input channels (contract 18),
+  trained so.
+
+It looks wrong that **the jitter is not the camera's**, since DLSS's
+guide puts it in the projection matrix. It is a sample position, not a
+property of the lens or the view: the camera is the same for the
+path tracer, which draws its own point in every pixel, and the motion
+vectors and every reprojection go through the camera without it, which
+is NRD's and DLSS's convention for them.
+
 **Scene content and animation are two files, not one.** Both describe how the
 fireflies move, which makes merging them tempting. But animation changes when
 a new kind of motion is written, and scene content when the scene is

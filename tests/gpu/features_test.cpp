@@ -3,22 +3,27 @@
 // features pass is the graph's without it, to the bit, as the training
 // data's light must be (graphs/restir_pt_features.toml renders it beside
 // its features). ReSTIR PT, its reuse running across three frames of
-// wandering fireflies, in graphs this test builds.
+// wandering fireflies, in graphs this test builds; and the rays both take,
+// through the frame's camera jitter.
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
 #include <doctest/doctest.h>
 
+#include "core/camera/thin_lens.h"
 #include "core/frame/schedule.h"
+#include "core/sampling/jitter.h"
 #include "core/scene/scene.h"
 #include "gpu/support/rendering.h"
 #include "metal/device/device.h"
 #include "metal/device/offscreen.h"
 #include "metal/device/submission.h"
 #include "metal/frame/renderer.h"
+#include "support/lit_floor.h"
 #include "support/same_bits.h"
 #include "support/scene_text.h"
 #include "support/schedules.h"
@@ -69,4 +74,45 @@ TEST_CASE("features: a graph's light is the same to the bit with the features pa
     CHECK(tests::same_bits(with, without));
     // And it holds light: not two black images alike.
     CHECK(std::ranges::max(with) > 0.0f);
+}
+
+TEST_CASE("a ReSTIR PT frame's camera rays, the features' with them, all pass through the frame's jitter") {
+    // The features' depth of the lit floor at each pixel is the floor's
+    // depth along the ray through the pixel's center plus the frame's
+    // jitter (core/sampling/jitter.h), every pixel the same offset: a
+    // pixel's own random point would be up to half a pixel away, and the
+    // floor's depth changes some 1% a pixel.
+    const scene::SceneDescription description = scene::parse(tests::lit_floor(tests::one_firefly), "lit floor");
+    metal::Device device;
+    metal::Submission submission(device);
+    metal::Offscreen target(device, submission, size);
+    metal::Renderer renderer(device, submission, light_graph(true), &description);
+    const contracts::CameraData camera = camera::shader_form(description.camera, size);
+    const tests::Vec3 origin = tests::vec(camera.origin);
+    const tests::Vec3 forward = tests::vec(camera.forward);
+    for (std::uint64_t i = 0; i < 3; ++i) {
+        const std::uint64_t last = metal::render_to_offscreen(
+            submission, target, renderer, tests::frame_at(i, i, static_cast<double>(i) / 60.0, description.camera));
+        (void)submission.wait_until_complete(last);
+        const contracts::LinearImage depth = renderer.read_features().depth;
+        const sampling::CameraJitter jitter = sampling::camera_jitter(i);
+        double worst = 0.0;
+        std::size_t floor_pixels = 0;
+        for (std::uint32_t y = 0; y < size.height; ++y) {
+            for (std::uint32_t x = 0; x < size.width; ++x) {
+                const float seen = depth.rgb[(std::size_t{y} * size.width + x) * 3];
+                if (seen <= 0.0f) {
+                    continue;  // the sky
+                }
+                const tests::Vec3 at = tests::floor_point(description, size, x + 0.5 + jitter.x, y + 0.5 + jitter.y);
+                const double expected = tests::dot(at - origin, forward);
+                worst = std::max(worst, std::abs(seen - expected) / expected);
+                ++floor_pixels;
+            }
+        }
+        INFO("frame " << i << ": jitter (" << jitter.x << ", " << jitter.y << "), worst relative depth error "
+                      << worst);
+        CHECK(floor_pixels > size.width * size.height / 2);
+        CHECK(worst < 1e-5);
+    }
 }

@@ -278,17 +278,20 @@ inline Traced traced(constant serenity::contracts::FrameConstants& frame,
 constant constexpr int checkerboard_ring_reach = 2;
 
 // The camera's ray through `pixel` in frame `frame`, its numbers the path
-// pass's (metal/passes/path/path.metal): the one ray a pixel's tree starts
-// from and every shift to that pixel starts from again.
+// pass's (metal/passes/path/path.metal), through the frame's `jitter`
+// (camera/thin_lens.metal.h; a ReSTIR PT frame takes it, core/frame/
+// schedule.h, jitters): the one ray a pixel's tree starts from and every
+// shift to that pixel starts from again.
 inline CameraRay primary_ray(constant serenity::contracts::CameraData& camera, uint2 pixel, uint frame, uint2 size,
-                             thread PathNumbers& numbers) {
+                             PixelJitter jitter, thread PathNumbers& numbers) {
     numbers = path_numbers(pixel, frame);
-    return pixel_ray(camera, pixel, size, numbers);
+    return pixel_ray(camera, pixel, size, jitter, numbers);
 }
 
-inline CameraRay primary_ray(constant serenity::contracts::CameraData& camera, uint2 pixel, uint frame, uint2 size) {
+inline CameraRay primary_ray(constant serenity::contracts::CameraData& camera, uint2 pixel, uint frame, uint2 size,
+                             PixelJitter jitter) {
     PathNumbers numbers;
-    return primary_ray(camera, pixel, frame, size, numbers);
+    return primary_ray(camera, pixel, frame, size, jitter, numbers);
 }
 
 // The numbers the passes draw beyond the tree's and the shift's

@@ -121,11 +121,14 @@ kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQu
     const ShiftQuery q = queries[i];
     const uint2 size = uint2(q.width, q.height);
     const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
+    // Each pixel's own point, as before the jitter: the shifts' cases do not
+    // depend on where in the pixel the ray passes.
+    const PixelJitter unjittered{false, float2(0.0f)};
     // A pixel's tree as the initial pass draws it: its reservoir and its
     // G-buffer record.
     const auto tree_at = [&](uint2 pixel) {
         PathNumbers numbers;
-        const CameraRay ray = restir_pt::primary_ray(camera, pixel, q.frame, size, numbers);
+        const CameraRay ray = restir_pt::primary_ray(camera, pixel, q.frame, size, unjittered, numbers);
         restir_pt::TreeGather tree =
             restir_pt::start_tree(settings, numbers, scene.shapes(), restir_pt::block_tile(tiles, pixel, q.frame),
                                   mnee::Queue{mnee_requests, mnee_header}, 0u);
@@ -136,8 +139,8 @@ kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQu
     const uint2 destination = uint2(q.destination_x, q.destination_y);
     const serenity::contracts::PathReservoir reservoir = restir_pt::finish_tree(tree_at(source));
     const serenity::contracts::PrimaryHit record = tree_at(destination).primary;
-    const CameraRay source_ray = restir_pt::primary_ray(camera, source, q.frame, size);
-    const CameraRay destination_ray = restir_pt::primary_ray(camera, destination, q.frame, size);
+    const CameraRay source_ray = restir_pt::primary_ray(camera, source, q.frame, size, unjittered);
+    const CameraRay destination_ray = restir_pt::primary_ray(camera, destination, q.frame, size, unjittered);
     const shift::Shifted shifted = shift::shift_path(scene, shift::unpack_primary_hit(record), reservoir, settings);
     const shift::Shifted retraced =
         shift::shift_path(scene, shift::primary_hit(scene, destination_ray, settings.footprint), reservoir, settings);

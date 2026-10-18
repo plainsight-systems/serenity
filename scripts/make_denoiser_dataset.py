@@ -18,6 +18,10 @@ what changed for denoiser-v2, docs/research/2026-10-18-production-sweep.md):
     and applies the lens after the network (docs/architecture/
     logical-overview.md, principle 12): the network learns a pinhole's
     image, sharp at every depth.
+  - Every input frame's camera jitter in the manifest (camera_jitter()):
+    the input graph is ReSTIR PT's, whose frames take the renderer's jitter
+    (src/core/sampling/jitter.h), and the network reads it as two input
+    channels (training/data.py, frame_jitter).
 
   - 40 generated scenes, scripts/make_marbles.py --seed 101 .. 140, never
     the real marbles (scenes/marbles.toml, the layout of seed 7); 36 train,
@@ -161,6 +165,26 @@ def pinhole_scene(text: str) -> str:
     return stripped
 
 
+JITTER_PHASES = 32  # the renderer's contracts::jitter_phases
+
+
+def radical_inverse(k: int, base: int) -> float:
+    result, scale = 0.0, 1.0 / base
+    while k > 0:
+        result += (k % base) * scale
+        k //= base
+        scale /= base
+    return result
+
+
+def camera_jitter(index: int) -> list[float]:
+    """Frame `index`'s camera jitter (x, y) in input pixels, the renderer's (src/core/sampling/jitter.h):
+    Halton(2, 3) at k = index mod 32 + 1, less 1/2. Pure. The renderer rounds it to float; this keeps
+    double, which the network's input is read in float32 from (training/data.py)."""
+    k = index % JITTER_PHASES + 1
+    return [radical_inverse(k, 2) - 0.5, radical_inverse(k, 3) - 0.5]
+
+
 def frame_time(index: int) -> float:
     """Frame `index`'s time, as serenity-headless computes it (step x index, in double)."""
     return STEP * index
@@ -207,13 +231,15 @@ def plan(sequences: int | None = None, kept: int = KEPT, target_samples: int = T
         s['frames'] = list(range(s['start'], s['start'] + kept))
         s['times'] = [frame_time(i) for i in s['frames']]
         s['target_first'] = [TARGET_FIRST + i for i in s['frames']]
+        s['jitters'] = [camera_jitter(i) for i in s['frames']]
     return {
         'dataset': DATASET,
         'trial': (sequences, kept, target_samples) != (None, KEPT, TARGET_SAMPLES),
         'fps': FPS, 'step': STEP, 'kept': kept, 'warmup_at_least': WARMUP,
         'camera': 'each scene\'s, its lens taken off: a pinhole (pinhole_scene)',
         'input': {'graph': INPUT_GRAPH, 'size': list(INPUT_SIZE), 'samples': 1,
-                  'features': list(INPUT_FEATURES)},
+                  'features': list(INPUT_FEATURES),
+                  'jitter': 'the camera\'s, Halton(2, 3) of 32 phases, each frame\'s in its entry (camera_jitter)'},
         'target': {'graph': TARGET_GRAPH, 'size': list(TARGET_SIZE), 'samples': target_samples,
                    'first_offset': TARGET_FIRST, 'albedo_graph': ALBEDO_GRAPH},
         'sequences': seqs,
@@ -396,7 +422,7 @@ class Dataset:
         for s in self.plan['sequences']:
             seq_dir = f'{s["split"]}/{s["sequence"]}'
             inp, alb = self.units.get(f'input/{s["sequence"]}'), self.units.get(f'albedo/{s["sequence"]}')
-            for i, t, first in zip(s['frames'], s['times'], s['target_first']):
+            for i, t, first, jitter in zip(s['frames'], s['times'], s['target_first'], s['jitters']):
                 tgt = self.units.get(f'target/{s["sequence"]}/{i:06d}')
                 if not (inp and alb and tgt):
                     continue
@@ -410,7 +436,7 @@ class Dataset:
                     'seed': s['seed'], 'split': s['split'], 'stratum': s['stratum'],
                     'frame': i, 'time': t,
                     'input': {'graph': INPUT_GRAPH, 'size': list(INPUT_SIZE), 'samples': 1, 'frame_index': i,
-                              'history_from_frame': 0,
+                              'history_from_frame': 0, 'jitter': jitter,
                               'files': {k: {'path': p, 'sha256': inp['files'][p]} for k, p in inputs.items()}},
                     'target': {'graph': TARGET_GRAPH, 'size': list(TARGET_SIZE), 'samples': n,
                                'time_frozen': t, 'headless_frame': first,

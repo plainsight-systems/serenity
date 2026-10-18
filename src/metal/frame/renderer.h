@@ -19,6 +19,7 @@
 #include "core/frame/frame_inputs.h"
 #include "core/denoise/network.h"
 #include "core/frame/schedule.h"
+#include "core/sampling/jitter.h"
 #include "core/scene/scene.h"
 #include "metal/acceleration/scene_acceleration.h"
 #include "metal/device/device.h"
@@ -375,6 +376,16 @@ namespace serenity::metal {
 // nothing for it, and the image is the network's. Memory: 77 MB at
 // 3456 x 2234 (its images'). Its argument table is a denoised graph's.
 //
+// The camera's jitter (core/sampling/jitter.h; core/frame/schedule.h,
+// jitters), a ReSTIR PT graph's. The frame's offset is written into the
+// light's ring of frame constants (contract 7), which every pass before the
+// denoise pass reads, so ReSTIR PT's camera rays and the light-size
+// features' take it alike; never into the output size's, so a denoised
+// graph's full-size albedo keeps each pixel's own point, unjittered as the
+// network's output is. The denoise pass's constants carry it too (contract
+// 18). A graph of any other kind writes `jittered` 0, and its pixels draw
+// what they drew before the jitter, to the bit.
+//
 // Cost of recording a ReSTIR PT frame, on the CPU, beyond the above: 80
 // bytes of reuse constants, its passes' pipeline binds and dispatches with
 // their argument-table entries; with temporal reuse, one more animation of
@@ -582,10 +593,11 @@ private:
 
     // record()'s parts (F.3), in its order.
     Prepared take_prepared(const frame::FrameInputs& inputs, frame::Extent size);
-    static std::pair<MTL::GPUAddress, MTL::GPUAddress> write_constants(FrameArray& ring, const FrameSlot& begun,
-                                                                       const frame::FrameInputs& inputs,
-                                                                       frame::Extent at,
-                                                                       std::uint32_t accumulated_frames);
+    // `jitter` the camera's, for a ring whose frames take it (above, "The
+    // camera's jitter"), none for one whose do not.
+    static std::pair<MTL::GPUAddress, MTL::GPUAddress> write_constants(
+        FrameArray& ring, const FrameSlot& begun, const frame::FrameInputs& inputs, frame::Extent at,
+        std::uint32_t accumulated_frames, std::optional<sampling::CameraJitter> jitter);
     FrameResources frame_resources(const FrameSlot& begun, const frame::FrameInputs& inputs, MTL::Texture* target,
                                    frame::Extent light, const Prepared& prepared, bool previous);
     void animate(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun, const frame::FrameInputs& inputs,

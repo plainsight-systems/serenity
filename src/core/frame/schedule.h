@@ -245,6 +245,20 @@ bool denoises(const Schedule& schedule);
 // output's own in every other graph.
 Extent light_size(const Schedule& schedule, Extent output);
 
+// Whether `schedule`'s frames take the camera's jitter (core/sampling/
+// jitter.h; contracts/frame_constants.h): every camera ray of its light
+// passes through the same point of its pixel, the frame's offset in a
+// fixed sequence, in place of each pixel's own random point. Exactly the
+// graphs with ReSTIR PT's passes: their light is what the network reads,
+// rendered live by the denoised graph and for the data set by
+// graphs/restir_pt_features.toml, which must take the same, and the
+// features pass beside it traces the same rays. The path tracer, the
+// reference, draws its own point in every pixel (the box filter it
+// converges to), and the features alone, the data set's full-size albedo,
+// as the denoised graph's full-size albedo does: an output-resolution
+// image, which production upscalers write unjittered.
+bool jitters(const Schedule& schedule);
+
 // Whether `schedule` applies the camera's lens after the network, by the
 // depth_of_field pass, rather than in its rays (above): a denoised graph.
 bool lens_after_network(const Schedule& schedule);

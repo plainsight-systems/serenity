@@ -605,6 +605,10 @@ bool denoises(const Schedule& schedule) {
     return std::ranges::find(schedule.passes, PassKind::denoise) != schedule.passes.end();
 }
 
+bool jitters(const Schedule& schedule) {
+    return std::ranges::any_of(schedule.passes, [](PassKind kind) { return is_restir_pt(kind); });
+}
+
 bool lens_after_network(const Schedule& schedule) {
     return std::ranges::find(schedule.passes, PassKind::depth_of_field) != schedule.passes.end();
 }

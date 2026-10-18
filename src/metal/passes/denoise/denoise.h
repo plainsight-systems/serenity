@@ -26,8 +26,9 @@ namespace serenity::metal {
 //
 //    1. the depth's median over the light's surface pixels, exactly, in
 //       three histogram and select dispatches each (6);
-//    2. the network's 28 input channels a pixel, last frame's output moved
-//       by the motion vectors among them, and the demodulated light (1);
+//    2. the network's 30 input channels a pixel, last frame's output moved
+//       by the motion vectors and the frame's camera jitter among them, and
+//       the demodulated light (1);
 //    3. the U-Net: 11 convolutions, 3 x 3 with ReLU, on simdgroup matrices
 //       (half in, float sums), each decoder's reading the level below,
 //       upsampled, and its skip where they are; and 4 max pools (15);
@@ -39,7 +40,7 @@ namespace serenity::metal {
 // reads what the one before wrote), the first after the renderer's barrier
 // before the pass (metal/frame/renderer.cpp). The weights are the network's,
 // converted once at construction: each 3 x 3 convolution's to half floats
-// laid out [tap][input channel][output channel], the input's 28 channels
+// laid out [tap][input channel][output channel], the input's 30 channels
 // padded to 32 with zeros; the head's to half floats laid out [feature]
 // [output], its 124 outputs padded to head_columns; biases in float
 // (StaticArrays).

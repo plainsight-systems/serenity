@@ -660,17 +660,19 @@ Renderer::Prepared Renderer::take_prepared(const frame::FrameInputs& inputs, fra
 
 // The frame's constants and its camera framed for `at`, into `ring`'s
 // slot; their addresses.
-std::pair<MTL::GPUAddress, MTL::GPUAddress> Renderer::write_constants(FrameArray& ring, const FrameSlot& begun,
-                                                                      const frame::FrameInputs& inputs,
-                                                                      frame::Extent at,
-                                                                      std::uint32_t accumulated_frames) {
+std::pair<MTL::GPUAddress, MTL::GPUAddress> Renderer::write_constants(
+    FrameArray& ring, const FrameSlot& begun, const frame::FrameInputs& inputs, frame::Extent at,
+    std::uint32_t accumulated_frames, std::optional<sampling::CameraJitter> jitter) {
+    const sampling::CameraJitter offset = jitter.value_or(sampling::CameraJitter{});
     const contracts::FrameConstants constants{
         static_cast<float>(inputs.time.count()),
         static_cast<std::uint32_t>(inputs.index),
         at.width,
         at.height,
         accumulated_frames,
-        {0u, 0u, 0u},
+        offset.x,
+        offset.y,
+        jitter ? 1u : 0u,
     };
     const std::span<std::byte> bytes = ring.bytes(begun.slot);
     const MTL::GPUAddress address = ring.address(begun.slot);
@@ -691,7 +693,9 @@ FrameResources Renderer::frame_resources(const FrameSlot& begun, const frame::Fr
                                          MTL::Texture* target, frame::Extent light, const Prepared& prepared,
                                          bool previous) {
     const auto [constants_address, camera_address] =
-        write_constants(constants_, begun, inputs, light, prepared.accumulated_frames);
+        write_constants(constants_, begun, inputs, light, prepared.accumulated_frames,
+                        frame::jitters(schedule_) ? std::optional{sampling::camera_jitter(inputs.index)}
+                                                  : std::nullopt);
     FrameResources resources{
         .arguments = arguments_.get(),
         .constants = constants_address,
@@ -781,7 +785,7 @@ Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& res
     DenoiseResources out{resources, resources, resources, resources, false};
     FrameResources& output = out.output;
     const auto [output_constants, output_camera] =
-        write_constants(d.output_constants, begun, inputs, size, prepared.accumulated_frames);
+        write_constants(d.output_constants, begun, inputs, size, prepared.accumulated_frames, std::nullopt);
     output.constants = output_constants;
     output.camera = output_camera;
     output.size = size;
@@ -812,6 +816,11 @@ Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& res
     k.output_width = size.width;
     k.output_height = size.height;
     k.features = d.features;
+    // The light's jitter, the frame's (renderer.h, "The camera's jitter"): a
+    // denoised graph is a ReSTIR PT one, whose frames take it.
+    const sampling::CameraJitter jitter = sampling::camera_jitter(inputs.index);
+    k.jitter_x = jitter.x;
+    k.jitter_y = jitter.y;
     std::memcpy(d.constants.bytes(begun.slot).data(), &k, sizeof(k));
 
     FrameResources& denoising = out.denoising;
