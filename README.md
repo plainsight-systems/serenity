@@ -110,7 +110,8 @@ PyTorch to a few parts in ten thousand.
 
 Next I want to treat the reuse passes as kernels, measuring where the
 time and the bytes go when reservoirs are merged. After that, a Vulkan
-backend will let me run the same scene on my RTX 3090 and AMD’s Strix Halo.
+backend will let me run the same scene on my RTX 3090 and AMD’s Strix Halo,
+and a Direct3D 12 backend on the Xbox Series X.
 
 Serenity is R&D under Plainsight Systems LLC.
 
