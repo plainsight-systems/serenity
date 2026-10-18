@@ -42,10 +42,13 @@ asks, as Apple paces Metal apps (`logical-overview.md`, "The frame",
   the layer's size back when it differs (set only on a change, as the
   sample's `resizeDrawable`), and a drawable made at the size before is
   skipped, not written past.
-- 60 frames a second, the project's target (`logical-overview.md`, "The
-  frame"), asked as minimum, maximum and preferred alike, as the sample
-  asks 120 for its own; Apple's guidance for the range is a rate the app
-  "can consistently maintain".
+- A range of 30 to 60 frames a second, preferring 60, the project's
+  target (`logical-overview.md`, "The frame"), by the user's decision
+  (2026-10-18): Apple's guidance for the range is a rate the app "can
+  consistently maintain", and 60 holds at about 1080p but not at the
+  window's full size, where a variable-refresh display then shows a slow
+  frame late rather than repeating one. First built as 60 alone, as the
+  sample asks 120 for its own.
 
 The headless renderer and the measuring program do not present and are
 unchanged; every graph's headless output is the same bytes as 78f1c06's

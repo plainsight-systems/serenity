@@ -368,8 +368,8 @@ will show it. That instant is the frame's time, so what moves in the
 image moves by the time between its showings, and a frame shown late is
 not also drawn where an earlier frame should have been. The window asks
 for a frame rate it can keep (Apple: "Choose a frame rate range that
-your app can consistently maintain"), 60 frames a second, the target
-above, and a latency of two frames, the frames in flight: the frame is
+your app can consistently maintain"): 30 to 60 frames a second,
+preferring 60, the target above, and a latency of two frames, the frames in flight: the frame is
 due before the display's deadline, and the GPU has one more frame's time
 to finish it. SDL's event loop and the display link share the main
 thread's run loop: the window waits for events in SDL, the run loop

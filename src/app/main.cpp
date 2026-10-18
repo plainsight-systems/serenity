@@ -10,9 +10,9 @@
 // The display paces the frames (logical-overview.md, "The frame",
 // "Pacing"): a display link on the window's layer calls WindowFrames::frame
 // whenever the display wants a frame, handing it the drawable to render
-// into and when the display will show it (metal/device/display_link.h), at
-// 60 frames a second, the project's target (logical-overview.md, "The
-// frame"), the rate asked of it. The loop below only waits for the
+// into and when the display will show it (metal/device/display_link.h),
+// preferring 60 frames a second, the project's target (logical-overview.md,
+// "The frame"), and down to 30. The loop below only waits for the
 // window's events; SDL waits by running the main run loop, which calls the
 // frames meanwhile (app/window.h, wait), as Apple's display link sample
 // renders on the main thread. A graph that shows no image (the features
@@ -92,9 +92,11 @@ using namespace serenity;
 // The window's size when it opens, in points.
 constexpr app::Points initial_window{1280, 800};
 
-// The frame rate asked of the display link: the project's target, 60
-// frames a second, and only it (logical-overview.md, "The frame").
-constexpr metal::FrameRate frame_rate{.minimum = 60.0F, .maximum = 60.0F, .preferred = 60.0F};
+// The frame rate asked of the display link: 60 frames a second, the
+// project's target (logical-overview.md, "The frame"), down to 30 where a
+// frame takes longer, so a variable-refresh display shows a slow frame late
+// rather than a repeated one (the user, 2026-10-18).
+constexpr metal::FrameRate frame_rate{.minimum = 30.0F, .maximum = 60.0F, .preferred = 60.0F};
 
 // How often the title's frame times are refreshed.
 constexpr frame::Seconds title_period{1.0};
