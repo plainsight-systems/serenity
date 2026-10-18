@@ -3,9 +3,10 @@
 #
 # Usage:  ./scripts/fetch_denoiser_weights.sh [directory]
 #
-# The network Milestone 3 trained (training/README.md), the demo's, is
+# The network the demo runs (training/README.md), Milestone 3's retrained
+# on checkerboard input in Milestone 4, is
 # published on the project's media host, not committed. This writes it into
-# <directory>/wide/ (default ../serenity-data/denoiser-v1-model beside the
+# <directory>/wide/ (default ../serenity-data/denoiser-v1-checkerboard-model beside the
 # checkout, where graphs/restir_pt_denoised.toml reads it) and checks every
 # file against the SHA-256 pinned below, so a
 # fresh clone runs the same network the write-ups measured. A file already
@@ -14,14 +15,14 @@
 
 set -euo pipefail
 
-base_url="https://media.plainsight-systems.com/denoiser-v1-model"
+base_url="https://media.plainsight-systems.com/denoiser-v1-checkerboard-model"
 root="$(cd "$(dirname "$0")/.." && pwd)"
-out="${1:-$root/../serenity-data/denoiser-v1-model}"
+out="${1:-$root/../serenity-data/denoiser-v1-checkerboard-model}"
 
-# network file sha256 (training/export.py's export, 2026-10-15)
+# network file sha256 (training/export.py's export, 2026-10-18)
 pinned="
-wide  weights.bin 6f31158ceb8ad41527b11472e20079267287be9e6f34cb44b5c01860987dd4af
-wide  layout.json 8b8828f261ca6529c7b1d6f75470678d4aad18fbac3cd7e020c4e9155f6c99f9
+wide  weights.bin 9cf0344f150a9de8bddaf9dcdab217f4a324023fc888a4e09a133ddc8e59a889
+wide  layout.json a7509f8d419464a7d3d71def902aaa75594d19e945d8b511a1ce6dd76ebc170b
 "
 
 sha256() { shasum -a 256 "$1" | cut -d ' ' -f 1; }

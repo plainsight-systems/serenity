@@ -36,7 +36,7 @@ uses it, and each kind arrived with the change that first needed it.
   `../serenity-data/` holds the denoiser's data set (`denoiser-v1`, 32.3
   GB, rendered by `scripts/make_denoiser_dataset.py` with a manifest of
   every file's checksum), the training runs, and the exported network
-  (`denoiser-v1-model/wide`), which the denoised graph names by a path
+  (`denoiser-v1-checkerboard-model/wide`), which the denoised graph names by a path
   relative to `graphs/`.
 
 Dependencies point one way: the app and the headless renderer depend on the

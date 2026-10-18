@@ -138,7 +138,7 @@ The current renderer is ReSTIR PT and MNEE, denoised and upscaled by the
 network: the light is traced at half the window’s resolution each way, half
 of those pixels each frame in an alternating checkerboard, and the network
 brings it to every pixel. It reads the trained network from
-`../serenity-data/denoiser-v1-model/wide`, beside the checkout. The weights
+`../serenity-data/denoiser-v1-checkerboard-model/wide`, beside the checkout. The weights
 aren’t committed; `make weights` downloads them from the project’s media
 host and checks every file against its pinned checksum.
 
