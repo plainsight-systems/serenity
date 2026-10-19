@@ -91,7 +91,7 @@ namespace serenity::animation {
 // second, past any firefly's.
 inline constexpr double least_period = 1e-3;
 
-enum class GlowKind {
+enum class GlowKind : std::uint8_t {
   rhythm,
   schedule,
 };

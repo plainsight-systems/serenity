@@ -2,6 +2,7 @@
 
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -22,7 +23,7 @@ namespace serenity::metal {
 // Written once (ES.3, P.5) where eleven passes each wrote it and its test.
 
 // Whether a pass reads the camera, and so binds it (I.4).
-enum class SceneCamera { bound, none };
+enum class SceneCamera : std::uint8_t { bound, none };
 
 // Binds the frame's scene into `resources.arguments`, and the camera when
 // `camera` says. Throws MetalError, naming `pass`, if the frame lacks its

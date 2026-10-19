@@ -307,7 +307,7 @@ struct FlightParams {
       flight_most_steps;  // step 3's bound on one segment's samples; > 0
 };
 
-enum class Behaviour {
+enum class Behaviour : std::uint8_t {
   transit,
   circle,
   swoop,

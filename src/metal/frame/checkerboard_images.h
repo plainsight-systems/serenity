@@ -63,7 +63,7 @@ namespace serenity::metal {
 class CheckerboardImages {
  public:
   // Whether the graph keeps `filled` (above).
-  enum class Filled { none, kept };
+  enum class Filled : std::uint8_t { none, kept };
 
   CheckerboardImages(const Device& device, Submission& submission,
                      Filled filled);

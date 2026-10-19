@@ -36,14 +36,14 @@ namespace serenity::output {
 // Not performance-sensitive: a lookup in a table of two rows, once a run;
 // write_image() is its writer's cost.
 
-enum class ImageFormat {
+enum class ImageFormat : std::uint8_t {
   png,
   pfm,
 };
 
 // What a frame is read back as for a kind's writer: a source, which a
 // backend knows how to read, where a kind is Output's.
-enum class ImageSource {
+enum class ImageSource : std::uint8_t {
   displayed,    // the frame as shown, 8-bit RGBA (metal/device/offscreen.h)
   accumulated,  // the accumulated image's radiance (contract 13, from_rgba)
 };

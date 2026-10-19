@@ -40,7 +40,7 @@ namespace serenity::animation {
 // positions they give reach the GPU, as the translations of the moving
 // shapes' transforms (core/animation/animate.h).
 
-enum class MotionKind {
+enum class MotionKind : std::uint8_t {
   wander,  // a drift about a fixed point (wander.h)
   flight,  // flying free among the still shapes (flight.h)
 };

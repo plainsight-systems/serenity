@@ -601,7 +601,7 @@ TEST_CASE(
   }
   const auto results = shift(text, size, queries, 1u);
   // The cases, and in each the paths held and those shifted off.
-  enum class Case : std::size_t { whole, forced, struck, nee_at_k, bsdf_at_k };
+  enum class Case : std::uint8_t { whole, forced, struck, nee_at_k, bsdf_at_k };
   constexpr std::array<std::string_view, 5> names = {
       "replayed whole", "to NEE's light", "to a struck light", "at x_k, NEE on",
       "at x_k, BSDF on"};

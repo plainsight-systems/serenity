@@ -154,7 +154,7 @@ struct WeightSums {
 
 // Where step 5 draws from, for the probe: as the path tracer draws, or from
 // the surface's point, as 7751a65 did.
-enum class LightFrom : std::uint32_t { path_tracer = 0, surface_point = 1 };
+enum class LightFrom : std::uint8_t { path_tracer = 0, surface_point = 1 };
 
 // How the probe's two steps weigh: step 5 choosing among `light_count`
 // lights, step 3 weighing the light a bounce strikes as one of

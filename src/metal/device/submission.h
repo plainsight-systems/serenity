@@ -35,7 +35,7 @@ struct Completed {
 // on the main queue; or two, the second on the overlap queue, after the
 // first. A type, not a count or a flag, so no other number can be asked
 // for (I.4).
-enum class Parts { one, two };
+enum class Parts : std::uint8_t { one, two };
 
 // A submission begun: the command buffer to record into, its slot, and its
 // sequence number, for wait_until_complete(). `settled` is the earlier

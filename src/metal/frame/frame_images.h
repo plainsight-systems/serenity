@@ -79,10 +79,10 @@ class FrameImages {
   // Whether the frame's radiance is an image of its own, or the light
   // pass's accumulated image (accumulation.h), which this then does not
   // make. Types, not bools, so the call says which (I.4).
-  enum class Radiance { image, accumulated };
+  enum class Radiance : std::uint8_t { image, accumulated };
 
   // Whether the schedule has the tone-map pass, which needs the pyramid.
-  enum class Bloom { none, pyramid };
+  enum class Bloom : std::uint8_t { none, pyramid };
 
   // The radiance image as `radiance` says, and the pyramid as `bloom`
   // says (a schedule with no light pass makes no FrameImages).
@@ -190,8 +190,8 @@ class FrameImages {
 // frame.
 class PathReuseImages {
  public:
-  enum class Spatial { none, merged };
-  enum class Temporal { none, merged };
+  enum class Spatial : std::uint8_t { none, merged };
+  enum class Temporal : std::uint8_t { none, merged };
 
   // `lights`: the scene's light records, which the power pyramids hold.
   PathReuseImages(const Device& device, Submission& submission, Spatial spatial,

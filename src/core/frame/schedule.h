@@ -179,7 +179,7 @@ namespace serenity::frame {
 // asserts its list of every kind against it, so a kind missing from the
 // list fails to compile (P.5). A kind is added before `last`, and `last`
 // set to it.
-enum class PassKind {
+enum class PassKind : std::uint8_t {
   test_pattern,  // a diagnostic image, a function of pixel and time; writes the
                  // target
   path,  // path tracing, naive, accumulating while the image holds still; needs

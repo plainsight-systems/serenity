@@ -137,10 +137,10 @@ class HistoryError : public std::runtime_error {
 
 // Whether the scene changes from one instant to another (anything moves or
 // glows): two named values, not a bool, so a call says which it means (I.4).
-enum class SceneMotion { still, changing };
+enum class SceneMotion : std::uint8_t { still, changing };
 
 // Whether what a window shows changed since its last frame (its size).
-enum class View { same, changed };
+enum class View : std::uint8_t { same, changed };
 
 // What a frame joining the image is told.
 struct Joined {

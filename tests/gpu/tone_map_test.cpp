@@ -295,7 +295,7 @@ Toned reference(const Field& radiance, passes::ToneMap settings) {
 
 // Which pyramid the pass runs over: the renderer's own (frame_images.h), or
 // levels made here that the CPU can read, B_0 read back after step 3.
-enum class Pyramid { renderers, readable };
+enum class Pyramid : std::uint8_t { renderers, readable };
 
 // A texture of `format` at `size`, in shared storage (gpu/support/
 // shared_resources.h), resident.

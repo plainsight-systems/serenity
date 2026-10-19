@@ -125,7 +125,7 @@ TEST_CASE(
   const std::vector<PassKind> light = {PassKind::restir_pt_initial,
                                        PassKind::restir_pt_spatial,
                                        PassKind::restir_pt_shade};
-  enum class Kind { light, input, denoised };
+  enum class Kind : std::uint8_t { light, input, denoised };
   const auto graph = [&](Kind kind, float sigma) {
     std::vector<PassKind> kinds = light;
     const bool denoised = kind == Kind::denoised;

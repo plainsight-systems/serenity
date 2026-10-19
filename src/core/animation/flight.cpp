@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <exception>
 #include <limits>
 #include <numbers>
@@ -411,7 +412,7 @@ bool clear(const Context& c, const Segment& s) {
 // Which number of an episode's draws a draw is: its value is the draw's
 // last counter, so the order is the flights' keying, and an enumerator is
 // added only at the end.
-enum class Purpose : std::uint64_t {
+enum class Purpose : std::uint8_t {
   choose,
   target,
   radius,

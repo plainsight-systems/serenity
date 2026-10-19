@@ -556,7 +556,7 @@ class Renderer {
   // frame slot (above, "Two halves"); its constants' ring; and the shapes
   // as the previous frame placed them, when shapes move.
   struct FeatureFamily {
-    enum class Sets { one, per_slot };
+    enum class Sets : std::uint8_t { one, per_slot };
     FeatureFamily(const Device& device, Submission& submission,
                   const scene::SceneDescription& scene, bool moves, Sets sets);
     void prepare(frame::Extent light);

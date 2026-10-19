@@ -49,7 +49,7 @@ class FrameArray {
  public:
   // How many copies: one every frame shares, or one per frame in flight.
   // A type, not a count, so no other number can be asked for (I.4).
-  enum class Copies { one, per_frame };
+  enum class Copies : std::uint8_t { one, per_frame };
 
   FrameArray(const Device& device, Submission& submission,
              std::span<const std::byte> initial, Copies copies);

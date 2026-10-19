@@ -3,6 +3,7 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <string_view>
 
 #include "core/frame/extent.h"
@@ -47,7 +48,7 @@ struct ResidentTexture {
 };
 
 // Whether a shared buffer starts as zeros or as whatever it holds (I.4).
-enum class Zeroed { no, yes };
+enum class Zeroed : std::uint8_t { no, yes };
 
 // A buffer of `bytes` in `storage`, made resident through `submission`;
 // a shared one zeroed when `zeroed` says. Throws MetalError, naming `what`,

@@ -140,7 +140,7 @@ class OptionsError : public std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
-enum class Write {
+enum class Write : std::uint8_t {
   all,
   last,
   doubling,

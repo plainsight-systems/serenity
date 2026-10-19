@@ -25,7 +25,7 @@ constexpr double weight_span = 0.5;
 constexpr double least_ratio = 0.4;
 constexpr double ratio_span = 1.2;
 
-enum class Draw : std::uint64_t { weight = 0, ratio = 1, phase = 2 };
+enum class Draw : std::uint8_t { weight = 0, ratio = 1, phase = 2 };
 
 // A number in [0, 1) that is a function of the seed, the axis, the term and
 // which of the term's numbers it is, alone: the top 53 bits of the hash, a
