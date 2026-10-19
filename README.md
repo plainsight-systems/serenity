@@ -110,10 +110,11 @@ projections. I trained it in PyTorch on scenes generated for the purpose and
 run it every frame in the renderer’s own Metal compute kernels, which match
 PyTorch to a few parts in ten thousand.
 
-Next I want to treat the reuse passes as kernels, measuring where the
-time and the bytes go when reservoirs are merged. After that, a Vulkan
-backend will let me run the same scene on my RTX 3090 and AMD’s Strix Halo,
-and a Direct3D 12 backend on the Xbox Series X.
+Next, Serenity leaves the Mac: a Vulkan backend for my RTX 3090 and AMD’s
+Strix Halo, and a Direct3D 12 backend for the Xbox Series X. The reuse
+passes come after that, treated as kernels and tuned for each GPU, since
+where the time and the bytes go when reservoirs merge depends on the
+hardware.
 
 Serenity is R&D under Plainsight Systems LLC.
 

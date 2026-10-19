@@ -210,25 +210,20 @@ This file tracks active and accepted work.
    (no reference renders, the user's decision), kept by the user
    2026-10-19.
 
-1a. Reservoir reuse as kernels: tiling, layout and fusion of the merge
-   passes, what each costs and where the bytes go (about 4 ms of the light
-   block, memory-bound), after Milestone 4.
+2. **Next (the user, 2026-10-19): the other backends, before any kernel
+   tuning,** since the reuse kernels' tiling, layout and fusion depend on
+   the hardware. First the shader strategy and the shared GPU interface,
+   an architectural decision for the user (one shader source compiled per
+   API, as Unreal's HLSL and Slang do, against today's Metal-only
+   shaders and the two-thin-backends decision), checked against Unreal
+   and Slang; then Vulkan on the RTX 3090, headless first so data sets
+   render there (the user's rule: no more data-set renders on the Mac);
+   then the window and AMD's Strix Halo; then Direct3D 12 on the Xbox
+   Series X (where the split scene and console async compute return).
 
-1b. **Built 2026-10-18, on branch m4-pacing:** frame pacing by a Metal
-   display link, as Apple paces Metal apps
-   (docs/research/2026-10-18-frame-pacing.md), behind a backend-neutral
-   frame source the window names, so the Vulkan and Direct3D 12 backends
-   pace with their own loops; 30 to 60 frames a second, preferring 60
-   (the user). Measured at 1920 x 1200: the presented interval's std
-   9.1 -> 3.7 ms, the frames 16.7 or 25 ms apart (the GPU's 18.8 ms is
-   over 60's budget).
-
-2. The Vulkan backend on the AMD machine (Strix Halo), beside
-   `src/metal/` (MEMORY.md), the denoiser's kernels with it.
-
-3. Two further targets, added by the user 2026-10-16: the user's NVIDIA
-   RTX 3090, and the Xbox Series X. Which backends they take (Vulkan,
-   Direct3D 12) and in what order is planned with Milestone 4.
+3. Reservoir reuse as kernels, tuned per target: tiling, layout and
+   fusion of the merge passes, what each costs and where the bytes go, on
+   each backend.
 
 Not scheduled: the denoiser's next training round (the user, 2026-10-15:
 no retrain for now). Its planned investment is heavier sampling of the

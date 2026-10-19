@@ -190,10 +190,17 @@ least, and taught me the most.
 The network and the reuse steps are now the larger costs. The reuse steps
 merge reservoirs much as attention merges partial softmax results, and so
 far I have treated them as passes rather than as kernels. Their tiling,
-data layout and fusion are the questions that brought me to Serenity, and
-they come next.
+data layout and fusion are the questions that brought me to Serenity.
 
-After that, Serenity leaves the Mac. A Vulkan backend will put the same
-scene on my RTX 3090 and AMD's Strix Halo, and a Direct3D 12 backend on the
-Xbox Series X, where the split scene and console async compute come back
-into play.
+Those answers depend on the hardware, though. Apple's GPUs, NVIDIA's and
+AMD's each have their own on-chip memory, register budgets and ways of
+grouping threads, so a kernel tuned for one is not tuned for the others.
+FlashAttention is the familiar example: the same algorithm, its kernels
+rewritten for each GPU generation. Tuning the reuse steps on Metal alone
+would mean doing it again later.
+
+So the next step is for Serenity to leave the Mac. A Vulkan backend will
+put the same scene on my RTX 3090 and AMD's Strix Halo, and a Direct3D 12
+backend on the Xbox Series X, where the split scene and console async
+compute come back into play. Then the reuse steps can be tuned as
+kernels, for each of them.
