@@ -232,14 +232,13 @@ This file tracks active and accepted work.
 
 2. **Next (the user, 2026-10-19): the other backends, before any kernel
    tuning,** since the reuse kernels' tiling, layout and fusion depend on
-   the hardware. First the shader strategy and the shared GPU interface,
-   an architectural decision for the user (one shader source compiled per
-   API, as Unreal's HLSL and Slang do, against today's Metal-only
-   shaders and the two-thin-backends decision), checked against Unreal
-   and Slang; then Vulkan on the RTX 3090, headless first so data sets
+   the hardware. Decided by the user 2026-10-19: each vendor's own API,
+   no portable layer (MEMORY.md, "Metal now, Vulkan later", superseded).
+   First CUDA with OptiX on the RTX 3090 Ti, headless first so data sets
    render there (the user's rule: no more data-set renders on the Mac);
-   then the window and AMD's Strix Halo; then Direct3D 12 on the Xbox
-   Series X (where the split scene and console async compute return).
+   then its window; then HIP with HIPRT on AMD's Strix Halo; then
+   Direct3D 12 on the Xbox Series X (where the split scene and console
+   async compute return).
 
 3. Reservoir reuse as kernels, tuned per target: tiling, layout and
    fusion of the merge passes, what each costs and where the bytes go, on
@@ -253,9 +252,6 @@ wanted, earlier opening sequences in the data set (Parking Lot:
 
 ## Parking Lot
 
-- **Whether MoltenVK supports Vulkan ray tracing.** Believed not; verify
-  before the Vulkan backend, since it decides whether that backend could also
-  run on the Mac.
 - Ray offset: one cat's-eye rim still moves ~4% between the chapter's step and one 4x smaller (pbrt-v4 bounds would shrink it).
 - Ray offset: step 5's T is over the shadow ray, short of the surface's point by one step (only for a light in the surface's medium).
 - Ray offset: +0.3 ms is `offset_ray()` itself; GPU counters for why a cheaper float form was no faster.

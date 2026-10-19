@@ -60,6 +60,22 @@ Decided 2026-10-08, at the repository's creation:
   here there are two machines and a handful of kernels whose per-vendor
   differences are the subject. Revisit when the Vulkan backend exists and
   the cost of the duplication can be measured.
+  Superseded by the user 2026-10-19, at the start of the backends: **each
+  vendor's own API, with no portable layer over vendors.** Metal on the
+  Apple M3 Max; CUDA with OptiX on the NVIDIA RTX 3090 Ti; HIP with HIPRT
+  on AMD's Strix Halo; Direct3D 12 on the Xbox Series X. Shaders and
+  kernels are written in each API's own language, with no one-source layer
+  (Slang, HLSL cross-compiled, Metal Shader Converter). The reason: each
+  backend's kernels are tuned for its hardware next, and a layer that
+  emits code for several vendors (a shader language, or a portable API
+  such as Vulkan) stands between the tuning and the hardware. CUDA reaches
+  PTX and the tensor cores' matrix instructions, OptiX the RT cores, and
+  CUDA is where attention kernels are written, which makes the demo's
+  parallel literal on that machine. A window on the 3090 needs a thin
+  bridge to a graphics API for presentation only; headless needs none.
+  Vulkan is not a target. The guard across backends is the core's CPU
+  computations the GPU tests check each backend against, not output
+  matched to the bit between machines.
 - **Metal 4** for the host API and the shading language (`-std=metal4.0`),
   not Metal 3. Its explicit command allocation, residency and barriers are
   close to Vulkan's model, which the second backend will need anyway; its
