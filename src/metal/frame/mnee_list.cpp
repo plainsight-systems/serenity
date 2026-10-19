@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <span>
 #include <string>
 
 #include "core/contracts/mnee_request.h"
@@ -51,7 +52,9 @@ void MneeList::prepare(frame::Extent size) {
        MTL::ResourceStorageModePrivate, "requests");
   make(header_, header_bytes, MTL::ResourceStorageModeShared, "header");
   std::memset(header_.buffer->contents(), 0, header_bytes);
-  const auto words = static_cast<std::uint32_t*>(header_.buffer->contents());
+  const std::span<std::uint32_t> words(
+      static_cast<std::uint32_t*>(header_.buffer->contents()),
+      header_bytes / sizeof(std::uint32_t));
   words[contracts::mnee_capacity_word] = static_cast<std::uint32_t>(capacity);
   size_ = size;
 }

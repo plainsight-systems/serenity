@@ -68,13 +68,13 @@ TEST_CASE(
   CHECK(big_endian(bytes, 16) == size.width);
   CHECK(big_endian(bytes, 20) == size.height);
 
+  const std::vector<stbi_uc> encoded(bytes.begin(), bytes.end());
   int width = 0;
   int height = 0;
   int channels = 0;
   const Decoded decoded(
-      stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(bytes.data()),
-                            static_cast<int>(bytes.size()), &width, &height,
-                            &channels, 0),
+      stbi_load_from_memory(encoded.data(), static_cast<int>(encoded.size()),
+                            &width, &height, &channels, 0),
       &stbi_image_free);
   REQUIRE(decoded != nullptr);
   // The decoded size first: stb's buffer holds width x height x channels
@@ -82,8 +82,9 @@ TEST_CASE(
   REQUIRE(width == static_cast<int>(size.width));
   REQUIRE(height == static_cast<int>(size.height));
   REQUIRE(channels == 4);
-  const std::vector<std::uint8_t> pixels(decoded.get(),
-                                         decoded.get() + rgba.size());
+  const std::span<const stbi_uc> decoded_bytes(decoded.get(), rgba.size());
+  const std::vector<std::uint8_t> pixels(decoded_bytes.begin(),
+                                         decoded_bytes.end());
   CHECK(pixels == rgba);
 }
 

@@ -211,8 +211,9 @@ std::vector<float> tensor(const JsonArray& tensors, std::vector<bool>& taken,
                          " does not lie inside weights.bin as its count says");
     }
     std::vector<float> values(static_cast<std::size_t>(count));
-    std::memcpy(values.data(), weights.data() + offset,
-                values.size() * sizeof(float));
+    const std::span<const std::byte> tensor = weights.subspan(
+        static_cast<std::size_t>(offset), values.size() * sizeof(float));
+    std::memcpy(values.data(), tensor.data(), tensor.size());
     for (float v : values) {
       if (!std::isfinite(v)) {
         refuse(source,

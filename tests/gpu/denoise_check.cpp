@@ -11,6 +11,7 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -26,7 +27,7 @@ int main(int argc, char** argv) {
     return 2;
   }
   try {
-    const std::vector<char*> args(argv, argv + argc);
+    const std::span<char* const> args(argv, static_cast<std::size_t>(argc));
     const tests::DenoiseFixture fixture = tests::read_denoise_fixture(args[1]);
     const std::filesystem::path out = args[2];
     std::filesystem::create_directories(out);

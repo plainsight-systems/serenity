@@ -1,5 +1,6 @@
 #include "metal/device/static_arrays.h"
 
+#include <algorithm>
 #include <cstring>
 #include <string>
 
@@ -27,12 +28,13 @@ StaticArrays::StaticArrays(const Device& device, Submission& submission,
     throw MetalError("the device made no buffer of " + std::to_string(total) +
                      " bytes for static arrays");
   }
-  auto* bytes = static_cast<std::byte*>(buffer_->contents());
-  std::memset(bytes, 0, buffer_alignment);
+  const std::span<std::byte> bytes(static_cast<std::byte*>(buffer_->contents()),
+                                   total);
+  std::ranges::fill(bytes.first(buffer_alignment), std::byte{0});
   addresses_.assign(arrays.size(), buffer_->gpuAddress());
   for (std::size_t i = 0; i < arrays.size(); ++i) {
     if (!arrays[i].empty()) {
-      std::memcpy(bytes + offsets[i], arrays[i].data(), arrays[i].size());
+      std::ranges::copy(arrays[i], bytes.subspan(offsets[i]).begin());
       addresses_[i] = buffer_->gpuAddress() + offsets[i];
     }
   }

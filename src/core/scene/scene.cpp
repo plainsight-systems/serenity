@@ -11,6 +11,7 @@
 #include <initializer_list>
 #include <limits>
 #include <map>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -175,9 +176,9 @@ bool within(contracts::Float3 a, float low, float high) {
 template <std::floating_point T>
 std::string words(T value) {
   std::array<char, 64> buffer{};
-  const auto [end, error] =
-      std::to_chars(buffer.data(), buffer.data() + buffer.size(), value,
-                    std::chars_format::fixed);
+  const auto [end, error] = std::to_chars(std::to_address(buffer.begin()),
+                                          std::to_address(buffer.end()), value,
+                                          std::chars_format::fixed);
   return error == std::errc{} ? std::string(buffer.data(), end)
                               : std::to_string(value);
 }

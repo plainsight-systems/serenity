@@ -87,17 +87,21 @@ FeatureImages::Read FeatureImages::read() const {
 
   // Copied out of the buffer as the values they are (ES.48: no cast of its
   // bytes to another type).
-  const auto* const bytes = static_cast<const std::byte*>(buffer->contents());
+  const std::span<const std::byte> bytes(
+      static_cast<const std::byte*>(buffer->contents()), total);
   const auto halves = [&](std::size_t offset) {
     std::vector<Half> texels(pixels * rgba);
-    std::memcpy(texels.data(), bytes + offset, half_bytes);
+    std::memcpy(texels.data(), bytes.subspan(offset, half_bytes).data(),
+                half_bytes);
     return widened(size_, std::span<const Half>(texels), rgba,
                    [](std::span<const Half> texel, std::size_t c) {
                      return static_cast<float>(texel[c]);
                    });
   };
   std::vector<float> depths(pixels);
-  std::memcpy(depths.data(), bytes + offsets[3], pixels * sizeof(float));
+  const std::span<const std::byte> depth_bytes =
+      bytes.subspan(offsets[3], pixels * sizeof(float));
+  std::memcpy(depths.data(), depth_bytes.data(), depth_bytes.size());
   return Read{
       .albedo = halves(offsets[0]),
       .normal = halves(offsets[1]),

@@ -67,7 +67,8 @@ std::span<const char* const> arguments(int argc, char** argv) {
   if (argc < 1) {
     return {};
   }
-  return {argv + 1, static_cast<std::size_t>(argc - 1)};
+  return std::span<const char* const>(argv, static_cast<std::size_t>(argc))
+      .subspan(1);
 }
 
 }  // namespace

@@ -80,6 +80,9 @@ class FrameArray {
                        std::to_string(copy.size()) + " bytes is not whole " +
                        std::to_string(sizeof(T)) + "-byte values");
     }
+    // Metal's buffer is untyped memory (MTL::Buffer::contents()): viewing
+    // it as the Ts copied into it is the one cast Metal interop needs.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return {reinterpret_cast<T*>(copy.data()), copy.size() / sizeof(T)};
   }
 

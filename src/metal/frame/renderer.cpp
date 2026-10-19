@@ -837,12 +837,14 @@ std::pair<MTL::GPUAddress, MTL::GPUAddress> Renderer::write_constants(
   };
   const std::span<std::byte> bytes = ring.bytes(begun.slot);
   const MTL::GPUAddress address = ring.address(begun.slot);
-  std::memcpy(bytes.data() + constants_offset, &constants, sizeof(constants));
+  std::memcpy(bytes.subspan(constants_offset, sizeof(constants)).data(),
+              &constants, sizeof(constants));
   MTL::GPUAddress camera_address = 0;
   if (inputs.camera) {
     const contracts::CameraData camera =
         camera::shader_form(*inputs.camera, at);
-    std::memcpy(bytes.data() + camera_offset, &camera, sizeof(camera));
+    std::memcpy(bytes.subspan(camera_offset, sizeof(camera)).data(), &camera,
+                sizeof(camera));
     camera_address = address + camera_offset;
   }
   return {address + constants_offset, camera_address};

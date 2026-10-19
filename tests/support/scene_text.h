@@ -10,6 +10,7 @@
 #include <array>
 #include <charconv>
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -21,8 +22,8 @@ namespace serenity::tests {
 template <typename Real>
 std::string exact(Real v) {
   std::array<char, 32> text{};
-  const std::to_chars_result written =
-      std::to_chars(text.data(), text.data() + text.size(), v);
+  const std::to_chars_result written = std::to_chars(
+      std::to_address(text.begin()), std::to_address(text.end()), v);
   REQUIRE(written.ec == std::errc{});
   return {text.data(), written.ptr};
 }

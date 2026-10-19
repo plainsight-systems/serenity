@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "gpu/kernels/sampler_probe.h"
@@ -73,7 +74,7 @@ TEST_CASE(
                                                           {2627, 65, 1, 0},
                                                           {65, 2627, 0, 0}});
   for (const PathNumbersDraw& path : numbers) {
-    for (const float u : path.u) {
+    for (const float u : std::span(path.u)) {
       CHECK(u >= 0.0f);
       CHECK(u < 1.0f);
     }

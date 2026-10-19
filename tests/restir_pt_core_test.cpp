@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -185,7 +186,7 @@ TEST_CASE(
     "a reuse texture pairs every texel with one other, both ways, at a "
     "standard deviation of sigma") {
   using serenity::contracts::pairing_widths;
-  for (const std::uint32_t width : pairing_widths) {
+  for (const std::uint32_t width : std::span(pairing_widths)) {
     const std::vector<std::uint16_t> texture =
         serenity::sampling::reuse_texture(width, 16.0, 7u);
     REQUIRE(texture.size() == std::size_t{width} * width);

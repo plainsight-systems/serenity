@@ -113,9 +113,9 @@ void DenoiseImages::allocate(frame::Extent light) {
   make(final_, level(0), w.dec[bottom], "last features");
   // The demodulated light and the histories: a float4 a pixel.
   const std::size_t input_pixels = std::size_t{padded_.width} * padded_.height;
-  make(demod_, input_pixels * sizeof(float[4]), "demodulated light");
+  make(demod_, input_pixels * 4 * sizeof(float), "demodulated light");
   for (Buffer& h : history_buffers_) {
-    make(h, input_pixels * contracts::denoise_subpixels * sizeof(float[4]),
+    make(h, input_pixels * contracts::denoise_subpixels * 4 * sizeof(float),
          "history");
   }
   make(histogram_, contracts::median_bins * sizeof(std::uint32_t),
@@ -218,10 +218,13 @@ void DenoiseImages::plan() {
                 param_stride % alignof(contracts::ResampleParams) == 0);
   make(params_, param_stride * (convolutions + resamplings),
        "dispatch parameters");
-  std::byte* bytes = static_cast<std::byte*>(params_.buffer->contents());
+  const std::span<std::byte> bytes(
+      static_cast<std::byte*>(params_.buffer->contents()),
+      param_stride * (convolutions + resamplings));
   std::size_t at = 0;
   const auto place = [&](auto& dispatch) {
-    std::memcpy(bytes + at, &dispatch.params, sizeof(dispatch.params));
+    std::memcpy(bytes.subspan(at, sizeof(dispatch.params)).data(),
+                &dispatch.params, sizeof(dispatch.params));
     dispatch.params_address = params_.buffer->gpuAddress() + at;
     at += param_stride;
   };

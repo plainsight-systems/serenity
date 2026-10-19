@@ -1,5 +1,6 @@
 #include "metal/film/failure_count.h"
 
+#include <span>
 #include <string>
 
 #include "metal/device/error.h"
@@ -17,11 +18,17 @@ FailureCount::FailureCount(const Device& device, Submission& submission,
 }
 
 std::uint32_t* FailureCount::counter(std::uint32_t slot) noexcept {
-  return static_cast<std::uint32_t*>(counters_.buffer->contents()) + slot;
+  const std::span<std::uint32_t> counts(
+      static_cast<std::uint32_t*>(counters_.buffer->contents()),
+      frames_in_flight);
+  return &counts[slot];
 }
 
 const std::uint32_t* FailureCount::counter(std::uint32_t slot) const noexcept {
-  return static_cast<const std::uint32_t*>(counters_.buffer->contents()) + slot;
+  const std::span<const std::uint32_t> counts(
+      static_cast<const std::uint32_t*>(counters_.buffer->contents()),
+      frames_in_flight);
+  return &counts[slot];
 }
 
 void FailureCount::begin_frame(std::uint32_t slot, std::uint64_t sequence) {

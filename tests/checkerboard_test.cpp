@@ -15,6 +15,7 @@
 
 #include <doctest/doctest.h>
 
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
@@ -31,11 +32,11 @@ using serenity::frame::Schedule;
 namespace {
 
 // Odd and even sizes, and one a frame's light at 1920 x 1080 is.
-constexpr std::uint32_t widths[] = {1, 2, 7, 8, 960};
-constexpr std::uint32_t heights[] = {1, 3, 540};
+constexpr std::array<std::uint32_t, 5> widths = {1, 2, 7, 8, 960};
+constexpr std::array<std::uint32_t, 3> heights = {1, 3, 540};
 // Frames about the index's wrap at 2^32, and two plain ones.
-constexpr std::uint32_t frames[] = {0u, 1u, 41u,
-                                    std::numeric_limits<std::uint32_t>::max()};
+constexpr std::array<std::uint32_t, 4> frames = {
+    0u, 1u, 41u, std::numeric_limits<std::uint32_t>::max()};
 
 }  // namespace
 

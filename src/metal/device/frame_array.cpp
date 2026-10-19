@@ -1,5 +1,6 @@
 #include "metal/device/frame_array.h"
 
+#include <algorithm>
 #include <cstring>
 #include <string>
 
@@ -38,9 +39,10 @@ FrameArray::FrameArray(const Device& device, Submission& submission,
     throw MetalError("FrameArray: the device made no buffer of " +
                      std::to_string(stride_ * total) + " bytes");
   }
-  auto* bytes = static_cast<std::byte*>(buffer_->contents());
+  const std::span<std::byte> all(static_cast<std::byte*>(buffer_->contents()),
+                                 stride_ * total);
   for (std::uint32_t copy = 0; copy < total; ++copy) {
-    std::memcpy(bytes + copy * stride_, initial.data(), size_);
+    std::ranges::copy(initial, all.subspan(copy * stride_, size_).begin());
   }
   resident_ = submission.keep_resident(buffer_.get());
 }
@@ -53,7 +55,10 @@ std::size_t FrameArray::offset(std::uint32_t slot) const {
 }
 
 std::span<std::byte> FrameArray::bytes(std::uint32_t slot) {
-  return {static_cast<std::byte*>(buffer_->contents()) + offset(slot), size_};
+  const std::size_t at = offset(slot);
+  return std::span<std::byte>(static_cast<std::byte*>(buffer_->contents()),
+                              at + size_)
+      .subspan(at);
 }
 
 MTL::GPUAddress FrameArray::address(std::uint32_t slot) const {

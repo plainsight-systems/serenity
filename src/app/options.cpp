@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -22,9 +23,9 @@ constexpr std::string_view usage =
 // and sets no errno (E.28), and takes no sign or space before the number.
 std::optional<double> number(std::string_view text) {
   double value = 0.0;
-  const auto [end, error] =
-      std::from_chars(text.data(), text.data() + text.size(), value);
-  if (error != std::errc{} || end != text.data() + text.size()) {
+  const auto [end, error] = std::from_chars(std::to_address(text.begin()),
+                                            std::to_address(text.end()), value);
+  if (error != std::errc{} || end != std::to_address(text.end())) {
     return std::nullopt;
   }
   return value;

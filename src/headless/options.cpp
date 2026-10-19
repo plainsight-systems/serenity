@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <format>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -46,9 +47,9 @@ bool past_last_sample(std::uint64_t first, std::uint64_t frames,
 template <typename T>
 std::optional<T> parsed(std::string_view text) {
   T value{};
-  const auto [end, error] =
-      std::from_chars(text.data(), text.data() + text.size(), value);
-  if (error != std::errc{} || end != text.data() + text.size()) {
+  const auto [end, error] = std::from_chars(std::to_address(text.begin()),
+                                            std::to_address(text.end()), value);
+  if (error != std::errc{} || end != std::to_address(text.end())) {
     return std::nullopt;
   }
   return value;

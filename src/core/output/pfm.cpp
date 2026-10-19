@@ -1,11 +1,11 @@
 #include "core/output/pfm.h"
 
-#include <algorithm>
 #include <bit>
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <ios>
 #include <limits>
@@ -15,6 +15,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <vector>
 
 #include "core/frame/extent.h"
 
@@ -39,16 +40,6 @@ constexpr std::string_view scale_written =
 // bytes, so a line past this is no header of this format, and a binary file
 // is not scanned to its end for a newline (SL.io.2).
 constexpr std::size_t longest_header_line = 32;
-
-// The bytes an image's floats are, for the input stream's char interface:
-// char may alias any object ([basic.lval]), and the floats are this
-// machine's own (above). Reading into them writes the object
-// representation of floats that already exist (LIFE.4). The only cast in
-// this file, kept here (I.30); the writer's C stream takes the floats as
-// they are.
-std::span<char> writable_bytes_of(std::span<float> floats) {
-  return {reinterpret_cast<char*>(floats.data()), floats.size_bytes()};
-}
 
 // A C stream that closes itself however its scope ends (R.1, E.6); the
 // writer closes it explicitly, to see the close's result.
@@ -107,10 +98,10 @@ std::string header_line(std::istream& in, const std::filesystem::path& path,
 // sign or space.
 std::optional<std::uint32_t> side(std::string_view text) {
   std::uint64_t value = 0;
-  const auto [end, error] =
-      std::from_chars(text.data(), text.data() + text.size(), value);
-  if (error != std::errc{} || end != text.data() + text.size() || value == 0 ||
-      value > contracts::max_image_side) {
+  const auto [end, error] = std::from_chars(std::to_address(text.begin()),
+                                            std::to_address(text.end()), value);
+  if (error != std::errc{} || end != std::to_address(text.end()) ||
+      value == 0 || value > contracts::max_image_side) {
     return std::nullopt;
   }
   return static_cast<std::uint32_t>(value);  // at most max_image_side (ES.46)
@@ -120,9 +111,9 @@ std::optional<std::uint32_t> side(std::string_view text) {
 // floats, and a magnitude other than 1 a factor on every value (pfm.h).
 void check_scale(std::string_view text, const std::filesystem::path& path) {
   double value = 0.0;
-  const auto [end, error] =
-      std::from_chars(text.data(), text.data() + text.size(), value);
-  if (error != std::errc{} || end != text.data() + text.size()) {
+  const auto [end, error] = std::from_chars(std::to_address(text.begin()),
+                                            std::to_address(text.end()), value);
+  if (error != std::errc{} || end != std::to_address(text.end())) {
     refuse(path, "its scale '" + std::string{text} + "' is not a number");
   }
   if (value != -1.0) {  // a NaN is not -1 either
@@ -246,25 +237,29 @@ contracts::LinearImage read_pfm(const std::filesystem::path& path) {
                      frame::to_string(extent) + " floats");
   }
 
+  // The file's rows from the bottom; the image's from the top (pfm.h).
+  // Each row is read as the input stream's chars, into one row's buffer, and
+  // copied into its place: memcpy writes the object representation of floats
+  // that already exist, this machine's own (above; LIFE.4), with no cast of
+  // their storage to char (ES.48).
   contracts::LinearImage image = contracts::make_linear_image(extent);
-  const std::span<char> bytes = writable_bytes_of(image.rgb);
-  in.read(bytes.data(), stream_size(bytes.size()));
-  // Checked again as read, in case the file changed since its size was
-  // taken.
-  if (in.gcount() != stream_size(bytes.size())) {
-    refuse(path, "it is truncated: it ended within its floats");
+  const std::size_t row_floats = std::size_t{extent.width} * channels;
+  const std::span<float> rgb = image.rgb;
+  std::vector<char> row(row_floats * sizeof(float));
+  for (std::size_t from_bottom = 0; from_bottom < extent.height;
+       ++from_bottom) {
+    in.read(row.data(), stream_size(row.size()));
+    // Checked again as read, in case the file changed since its size was
+    // taken.
+    if (in.gcount() != stream_size(row.size())) {
+      refuse(path, "it is truncated: it ended within its floats");
+    }
+    const std::span<float> to = rgb.subspan(
+        (extent.height - 1u - from_bottom) * row_floats, row_floats);
+    std::memcpy(to.data(), row.data(), row.size());
   }
   if (in.peek() != std::ifstream::traits_type::eof()) {
     refuse(path, "bytes follow its floats");
-  }
-
-  // The file's rows from the bottom; the image's from the top (pfm.h).
-  const std::size_t row_floats = std::size_t{extent.width} * channels;
-  const std::span<float> rgb = image.rgb;
-  for (std::size_t top = 0, bottom = extent.height - 1u; top < bottom;
-       ++top, --bottom) {
-    std::ranges::swap_ranges(rgb.subspan(top * row_floats, row_floats),
-                             rgb.subspan(bottom * row_floats, row_floats));
   }
   return image;
 }

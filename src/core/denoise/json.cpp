@@ -2,6 +2,7 @@
 
 #include <charconv>
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <system_error>
 
@@ -181,9 +182,10 @@ class Reader {
           unsigned code = 0;
           const std::string_view hex = text_.substr(at_, 4);
           const auto [end, error] =
-              std::from_chars(hex.data(), hex.data() + hex.size(), code, 16);
+              std::from_chars(std::to_address(hex.begin()),
+                              std::to_address(hex.end()), code, 16);
           if (hex.size() != 4 || error != std::errc{} ||
-              end != hex.data() + 4) {
+              end != std::to_address(hex.end())) {
             fail("a \\u escape without four hex digits");
           }
           if (code > 0x7f) {
@@ -233,10 +235,11 @@ class Reader {
         fail("a number's exponent has no digits");
       }
     }
+    const std::string_view number = text_.substr(start, at_ - start);
     double value = 0.0;
-    const auto [end, error] =
-        std::from_chars(text_.data() + start, text_.data() + at_, value);
-    if (error != std::errc{} || end != text_.data() + at_) {
+    const auto [end, error] = std::from_chars(
+        std::to_address(number.begin()), std::to_address(number.end()), value);
+    if (error != std::errc{} || end != std::to_address(number.end())) {
       fail("a number out of range");
     }
     return value;
