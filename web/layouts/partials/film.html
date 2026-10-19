@@ -8,7 +8,7 @@ Dimensions come from the actual file, including the wide comparison. */}}
     <source src="{{ partial "media-url.html" $film }}" type="video/mp4">
     Your browser cannot play this video. <a href="{{ partial "media-url.html" $film }}">Open the film</a>.
   </video>
-  <figcaption><span>{{ $film.provenance }}</span><span>Playback rate is not rendering speed.</span></figcaption>
+  <figcaption><span>{{ $film.provenance }}</span>{{ if not (strings.Contains $film.provenance "encoded at") }}<span>Playback rate is not rendering speed.</span>{{ end }}</figcaption>
 </figure>
 <div class="media-links" aria-label="Film files">
   {{ range slice (printf "%s_small" .Key) (printf "%s_original" .Key) }}
