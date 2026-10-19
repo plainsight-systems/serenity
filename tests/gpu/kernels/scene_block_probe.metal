@@ -1,4 +1,4 @@
-// Reads the scene's arrays through its block (metal/scene/scene_block.h), as
+// Reads the scene's arrays through its block (core/scene/scene_block.h), as
 // a shader reads them, for tests/gpu/scene_block_test.cpp: query i names a
 // field of the block, an element of the array it points to, and a 32-bit
 // word of that element, and the probe writes that word. Each element is
@@ -8,7 +8,7 @@
 
 #include <metal_stdlib>
 
-#include "metal/scene/scene_block.h"
+#include "core/scene/scene_block.h"
 #include "scene_block_probe.h"
 
 using serenity::tests::BlockQuery;

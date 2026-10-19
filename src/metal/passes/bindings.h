@@ -26,7 +26,7 @@ namespace bindings {
 
 // The scene as every pass that reads it binds it (metal/passes/
 // scene_binding.h, bind_scene()): the frame's constants and camera, the
-// structure, the scene's block whole (metal/scene/scene_block.h), and what
+// structure, the scene's block whole (core/scene/scene_block.h), and what
 // changes per frame beside it, the sphere lights' glows and the shapes'
 // transforms. Each such pass's namespace below repeats these indices, for
 // its kernels' parameter lists to name, and is asserted to (below, at the

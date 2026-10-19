@@ -47,9 +47,9 @@ inline constexpr std::size_t constant_offset_alignment = 4;
 // Where the backend starts every array and copy it places in a buffer: 256
 // bytes, a choice, not Metal's requirement (above), which it exceeds, as it
 // exceeds every shared layout's alignment; the scene block measured fast so
-// (scene_block.h). Each placement inside a 256-byte start (a ring slot's
-// camera, a dispatch's parameters, a grid beside its count) asserts the
-// alignment it needs, not this one.
+// (metal/scene/scene_block.metal.h). Each placement inside a 256-byte start (a
+// ring slot's camera, a dispatch's parameters, a grid beside its count) asserts
+// the alignment it needs, not this one.
 inline constexpr std::size_t buffer_alignment = 256;
 static_assert(buffer_alignment % constant_offset_alignment == 0);
 

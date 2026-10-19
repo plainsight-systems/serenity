@@ -161,6 +161,7 @@ add_library(serenity_core STATIC
     src/core/passes/depth_of_field.cpp
     src/core/scene/packed_range.cpp
     src/core/scene/scene.cpp
+    src/core/scene/scene_arrays.cpp
     src/core/scene/swarm.cpp
     src/core/sampling/pairing.cpp
     src/core/shapes/shapes.cpp

@@ -1,4 +1,4 @@
-// The scene's block (metal/scene/scene_block.h, scene_buffers.h): every
+// The scene's block (core/scene/scene_block.h, scene_buffers.h): every
 // field holds the address of its own array, and a shader reading an array
 // through it, at the stride of its own type, reads what the scene reader
 // wrote. Checked two ways:
@@ -13,7 +13,7 @@
 //     the emissive and the medium arrays, the arrays no other render test
 //     reads all of, each shape showing what only its own array gives.
 
-#include "metal/scene/scene_block.h"
+#include "core/scene/scene_block.h"
 
 #include <doctest/doctest.h>
 
@@ -158,8 +158,8 @@ std::vector<std::uint32_t> words(const T& one) {
   return words(std::span<const T>(&one, 1));
 }
 
-// Each of the block's fields, in its order (scene_block.h): a name, the size
-// of one element, and the words the scene reader wrote.
+// Each of the block's fields, in its order (core/scene/scene_block.h): a name,
+// the size of one element, and the words the scene reader wrote.
 struct Field {
   const char* name;
   std::size_t element_size;

@@ -47,7 +47,7 @@ struct FrameResources {
   MTL::GPUAddress non_finite_counter = 0;
 
   // The scene's block, the address of each still array
-  // (metal/scene/scene_block.h); the shapes' transforms as this frame places
+  // (core/scene/scene_block.h); the shapes' transforms as this frame places
   // them (metal/scene/shape_transforms.h); the sphere lights' glows as it
   // lights them (metal/scene/light_glows.h); and the structures this frame
   // traces, a block of them by ray mask (metal/acceleration/

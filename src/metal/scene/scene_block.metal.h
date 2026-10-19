@@ -1,6 +1,6 @@
 #pragma once
 
-// Axis: Scene content (shader half of scene/scene_block.h).
+// Axis: Scene content (shader half of core/scene/scene_block.h).
 //
 // The scene as an estimator reads it: the scene's block (scene_block.h), the
 // frame's transforms and glows, and the acceleration structures, one a ray
@@ -22,19 +22,29 @@
 // every ray query and BSDF (GPU.3); built at its use, it is loaded then from
 // the block (docs/research/2026-10-10-scene-block.md). The frame's
 // transforms and glows are in the constant address space, as the block's
-// arrays are, for the same reason (scene_block.h).
+// arrays are, for the same reason (below).
+//
+// The block's arrays in the constant address space, as in Apple's example:
+// every array is small, fixed once loaded, and read by every thread at
+// every bounce, the reuse that address space is for (WWDC16 606); each
+// starts 256-byte aligned (metal/device/static_arrays.h), past the 4 bytes a
+// constant buffer's offset needs (metal/device/support.h,
+// constant_offset_alignment). Read as device memory instead, the block made
+// frames slower than binding each array on its own; read as constant,
+// nearly as fast. The measurements, and how Falcor and Unreal bind their
+// scenes: docs/research/2026-10-10-scene-block.md.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
 
 #include "core/contracts/transform.h"
 #include "core/lights/gradient_sky.h"
+#include "core/scene/scene_block.h"
 #include "metal/acceleration/trace.metal.h"
 #include "metal/light_selection/power_light.metal.h"
 #include "metal/lights/emitter.metal.h"
 #include "metal/materials/resolve.metal.h"
 #include "metal/media/media.metal.h"
-#include "metal/scene/scene_block.h"
 #include "metal/shapes/shapes.metal.h"
 #include "metal/textures/textures.metal.h"
 

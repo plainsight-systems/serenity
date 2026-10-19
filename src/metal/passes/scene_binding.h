@@ -19,7 +19,7 @@ namespace serenity::metal {
 // (bindings.h): the frame's constants and camera, the structures (one a
 // ray mask, metal/acceleration/structure_block.h), the
 // scene's block whole, and what changes per frame beside it, the sphere
-// lights' glows and the shapes' transforms (metal/scene/scene_block.h).
+// lights' glows and the shapes' transforms (core/scene/scene_block.h).
 // Written once (ES.3, P.5) where eleven passes each wrote it and its test.
 
 // Whether a pass reads the camera, and so binds it (I.4).

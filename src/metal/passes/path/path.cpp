@@ -19,7 +19,7 @@ void PathPass::record(MTL4::ComputeCommandEncoder* encoder,
   }
   // Bindings: passes/bindings.h, as path.metal declares them: the scene's
   // block whole, and what changes per frame beside it
-  // (metal/scene/scene_block.h).
+  // (core/scene/scene_block.h).
   namespace binding = bindings::path;
   MTL4::ArgumentTable* arguments = resources.arguments;
   bind_scene(resources, SceneCamera::bound, "PathPass");

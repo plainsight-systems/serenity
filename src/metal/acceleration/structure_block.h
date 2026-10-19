@@ -11,9 +11,9 @@
 // acceleration structure in an argument buffer: the host writes its
 // gpuResourceID, 64 bits, where the shader reads a
 // primitive_acceleration_structure (Metal Shading Language, 2.17); the
-// table, as scene_block.h's arrays, a GPU address the shader reads as a
-// pointer. Structure<T> and Array<T> pick each side's type, template
-// aliases rather than macros (ES.30), as scene_block.h does.
+// table, as core/scene/scene_block.h's arrays, a GPU address the shader reads
+// as a pointer. Structure<T> and Array<T> pick each side's type, template
+// aliases rather than macros (ES.30), as core/scene/scene_block.h does.
 //
 //   everything        every shape, primitive i shape i (shapes/primitive.h),
 //                     as before masks: the rays that carry everything trace
@@ -29,11 +29,11 @@
 //
 // The constant address space: 32 bytes every thread of every tracing pass
 // reads before its queries, the same for all of them, the reuse that space
-// is for (scene_block.h, WWDC16 606). Fields largest first, all 8 bytes but
-// the count (CACHE.5), padded to 32 so the size is one statement on both
-// sides. Written once a slot: at construction when nothing moves, and
-// never again, since each slot's structures stay the same objects however
-// often they are rebuilt (scene_acceleration.h).
+// is for (metal/scene/scene_block.metal.h, WWDC16 606). Fields largest first,
+// all 8 bytes but the count (CACHE.5), padded to 32 so the size is one
+// statement on both sides. Written once a slot: at construction when nothing
+// moves, and never again, since each slot's structures stay the same objects
+// however often they are rebuilt (scene_acceleration.h).
 
 #if defined(__METAL_VERSION__)
 #include <metal_raytracing>

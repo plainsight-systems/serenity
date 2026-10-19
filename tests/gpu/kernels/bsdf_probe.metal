@@ -7,10 +7,10 @@
 #include "bsdf_probe.h"
 #include "core/contracts/bsdf.h"
 #include "core/contracts/surface_interaction.h"
+#include "core/scene/scene_block.h"
 #include "metal/materials/bsdf.metal.h"
 #include "metal/materials/resolve.metal.h"
 #include "metal/math/hash.metal.h"
-#include "metal/scene/scene_block.h"
 
 using namespace serenity::shaders;
 using serenity::contracts::Bsdf;
