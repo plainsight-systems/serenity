@@ -98,8 +98,9 @@ TEST_CASE(
   double widest_step = 0.0;
   int outside = 0;
   contracts::Float3 last = animation::position(f, Seconds(0.0));
-  const auto steps = static_cast<long>(std::ceil((f.loop + 1.0) / 0.001));
-  for (long i = 1; i <= steps; ++i) {
+  const auto steps =
+      static_cast<std::int64_t>(std::ceil((f.loop + 1.0) / 0.001));
+  for (std::int64_t i = 1; i <= steps; ++i) {
     const contracts::Float3 p =
         animation::position(f, Seconds(static_cast<double>(i) * 0.001));
     nearest = std::min(nearest, tests::distance_to_still(s, p) - body);

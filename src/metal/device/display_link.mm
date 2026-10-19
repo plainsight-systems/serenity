@@ -23,7 +23,7 @@ namespace {
 // submission keeps in flight (display_link.h).
 static_assert(frames_in_flight == 2,
               "the display link's latency is the frames in flight, which it takes as 1 or 2");
-constexpr float frame_latency = 2.0F;
+constexpr float kFrameLatency = 2.0F;  // Google's Objective-C name for a constant
 
 void check(presentation::FrameRate rate) {
   const bool positive =
@@ -108,7 +108,7 @@ DisplayLink::DisplayLink(const Presenter& presenter, presentation::FrameRate rat
   }
   state_->link.preferredFrameRateRange =
       CAFrameRateRangeMake(rate.minimum, rate.maximum, rate.preferred);
-  state_->link.preferredFrameLatency = frame_latency;
+  state_->link.preferredFrameLatency = kFrameLatency;
   state_->link.delegate = state_->delegate;
   // Common modes, as Apple's sample adds it: the default mode, which SDL
   // waits for events in, and the modes AppKit runs while a window is

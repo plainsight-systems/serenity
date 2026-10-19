@@ -22,6 +22,9 @@ namespace serenity::metal {
 // out. First the few names everything else uses.
 
 // The frames in flight: two (Submission, below, "The frames in flight").
+// C++, named as C++ constants are; Objective-C's naming rule reaches it
+// only through display_link.mm, which includes it for CAMetalDisplayLink.
+// NOLINTNEXTLINE(google-objc-global-variable-declaration)
 inline constexpr std::uint32_t frames_in_flight = 2;
 
 // A submission settled (Submission, below, "Settling").

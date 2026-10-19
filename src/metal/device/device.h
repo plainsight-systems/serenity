@@ -30,6 +30,9 @@ struct DeviceInfo {
 // set tables). Past it, Metal does not return a null texture but stops the
 // program on a failed assertion (seen on this machine), so every image is
 // checked against it first (check_texture_size).
+// C++, named as C++ constants are; Objective-C's naming rule reaches it
+// only through display_link.mm, which includes it for CAMetalDisplayLink.
+// NOLINTNEXTLINE(google-objc-global-variable-declaration)
 inline constexpr std::uint32_t max_texture_side = 16384;
 
 // Throws MetalError, naming `what`, if `size` has a zero side or one longer

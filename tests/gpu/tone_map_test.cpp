@@ -107,14 +107,14 @@ Color bilinear(const Field& f, Uv at) {
   const double fy = std::floor(y);
   const double tx = x - fx;
   const double ty = y - fy;
-  const auto texel = [&](long i, long j) {
-    return f.at(static_cast<std::uint32_t>(
-                    std::clamp<long>(i, 0, static_cast<long>(f.width) - 1)),
-                static_cast<std::uint32_t>(
-                    std::clamp<long>(j, 0, static_cast<long>(f.height) - 1)));
+  const auto texel = [&](std::int64_t i, std::int64_t j) {
+    return f.at(static_cast<std::uint32_t>(std::clamp<std::int64_t>(
+                    i, 0, static_cast<std::int64_t>(f.width) - 1)),
+                static_cast<std::uint32_t>(std::clamp<std::int64_t>(
+                    j, 0, static_cast<std::int64_t>(f.height) - 1)));
   };
-  const auto i = static_cast<long>(fx);
-  const auto j = static_cast<long>(fy);
+  const auto i = static_cast<std::int64_t>(fx);
+  const auto j = static_cast<std::int64_t>(fy);
   Color out{};
   for (std::size_t c = 0; c < 3; ++c) {
     const double top =

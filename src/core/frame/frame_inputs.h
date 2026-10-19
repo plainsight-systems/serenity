@@ -28,6 +28,9 @@ using Seconds = std::chrono::duration<double>;
 // pixel's count is a float, exact to 2^24 (metal/film/accumulate.metal.h).
 // A caller starts over (accumulated_since = index) before index -
 // accumulated_since would pass it.
+// C++, named as C++ constants are; Objective-C's naming rule reaches it
+// only through display_link.mm, which includes it for CAMetalDisplayLink.
+// NOLINTNEXTLINE(google-objc-global-variable-declaration)
 inline constexpr std::uint64_t max_accumulated_frames =
     (std::uint64_t{1} << 24) - 1;
 
