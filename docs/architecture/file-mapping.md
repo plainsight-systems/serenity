@@ -17,7 +17,11 @@ uses it, and each kind arrived with the change that first needed it.
   It uses no GPU or windowing API.
 - **The Metal backend, `src/metal/`,** is the only code that uses Metal: the
   device, acceleration structures, and every shader with the host code that
-  launches it. A Vulkan backend will sit beside it, as `src/vulkan/`.
+  launches it. **The CUDA backend, `src/cuda/`,** beside it, is the only
+  code that uses CUDA and OptiX, on NVIDIA's RTX 3090 Ti, mirroring
+  `src/metal/`'s families (`docs/research/2026-10-19-cuda-backend.md`).
+  Each vendor has its own API and no layer spans them
+  (`../process/MEMORY.md`).
 - **The app, `src/app/`, and the headless renderer, `src/headless/`,** are
   the two ways to run a frame: in a window, when the backend's frame
   source asks for one, or to files, with a fixed step.
@@ -186,8 +190,11 @@ GPU (a material's parameters, a light sample, a primary hit) has one
 definition, in a core header that Metal's shading language can also
 include: plain fixed-size fields, nothing only the host has. The host writes
 the bytes the shader reads, with no second definition to drift. This shares
-layouts only, never math. The Vulkan backend's shaders will mirror these
-definitions in their own language.
+layouts only, never math. CUDA's device code includes the same headers,
+and only these: CUDA is C++ and could include the core's math too, which
+would leave the GPU tests checking one source compiled twice, so
+`tools/check_boundaries.sh` keeps `src/cuda/`'s device code to
+`core/contracts/`.
 
 ## The algorithm over the families
 
@@ -281,9 +288,9 @@ families that own each part:
 
 The Objective-C++ stays in one file of the backend, and its header in
 the backend too: the app includes the Metal source's header, from
-`main.cpp` alone, and sees neither Objective-C nor the display link. A
-Vulkan source would sit beside it, as `src/vulkan/frame/`, implementing
-the same interface with its own loop.
+`main.cpp` alone, and sees neither Objective-C nor the display link. The
+CUDA backend's source, when its window comes, sits beside it, as
+`src/cuda/frame/`, implementing the same interface with its own loop.
 
 ## Depth of field after the denoiser
 
@@ -344,8 +351,11 @@ The light the network reads traced alike wherever it is made
 
 ## Not here yet
 
-- **The Vulkan backend.** It arrives as `src/vulkan/`, mirroring
-  `src/metal/`'s families, when the AMD machine's milestone comes. The
-  denoiser's kernels are to be written for it too, on Vulkan's cooperative
-  matrices (`docs/research/2026-10-15-denoiser-live.md`), reading the same
-  exported weights through the same core loader.
+- **The CUDA backend's files,** tabled here phase by phase as its
+  headers are written (`docs/research/2026-10-19-cuda-backend.md`): a
+  pass that traces is an OptiX launch whose ray generation program is the
+  pass, one that does not is a CUDA kernel; the denoiser on the tensor
+  cores, reading the same exported weights through the same core loader;
+  the headless renderer behind a backend-neutral seam, as the window's.
+- **HIP with HIPRT** on AMD's Strix Halo and **Direct3D 12** on the Xbox
+  Series X, later milestones, each its own backend.

@@ -110,8 +110,9 @@ projections. I trained it in PyTorch on scenes generated for the purpose and
 run it every frame in the renderer’s own Metal compute kernels, which match
 PyTorch to a few parts in ten thousand.
 
-Next, Serenity leaves the Mac: a Vulkan backend for my RTX 3090 and AMD’s
-Strix Halo, and a Direct3D 12 backend for the Xbox Series X. The reuse
+Next, Serenity leaves the Mac, onto each vendor’s own API: CUDA and OptiX
+for my RTX 3090, HIP for AMD’s Strix Halo, and Direct3D 12 for the Xbox
+Series X. The reuse
 passes come after that, treated as kernels and tuned for each GPU, since
 where the time and the bytes go when reservoirs merge depends on the
 hardware.
@@ -256,9 +257,9 @@ in `../serenity-data/`, beside the checkout, and are never committed.
 | `docs/process/` | decisions and the work queue |
 
 The rule that shapes the layout: the core never knows which GPU it runs on.
-Only `src/metal/` uses Metal, and the Vulkan backend will sit beside it, so
-both machines render the same scene from the same core. `make check` enforces
-it.
+Only `src/metal/` uses Metal, and the CUDA backend sits beside it as
+`src/cuda/`, so both machines render the same scene from the same core.
+`make check` enforces it.
 
 ## Credits
 

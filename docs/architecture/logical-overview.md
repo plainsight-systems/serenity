@@ -236,9 +236,11 @@ before ("The frame").
    whatever is built over the lights each frame, and nothing built over them
    outlives the frame, because they move. This binds the estimators.
 
-10. **The core decides what is computed; a backend decides how.** Both
-    backends render the same scene from the same description, and each is
-    judged against the reference.
+10. **The core decides what is computed; a backend decides how.** Every
+    backend renders the same scene from the same description, in its
+    vendor's own API, and each is judged against the core's CPU
+    computations and the reference, never against another machine's
+    output to the bit.
 
 11. **A ray finds what its question needs, and a firefly casts no
     shadow.** Every shape is in one of two classes: a light (a firefly) or
@@ -251,7 +253,7 @@ before ("The frame").
     finds surfaces only. Each estimator asks the same question the same
     way wherever it asks it, so a shift tests a path's visibility as the
     path was sampled. This is production's per-object "casts shadows"
-    switch, kept by an instance mask (DXR's and Vulkan's mask bits,
+    switch, kept by an instance mask (DXR's and OptiX's mask bits,
     Unreal's ray-traced shadows), applied to every light: of the
     scene's 653 shapes, 616 are fireflies 1.5 mm across, which every
     visibility ray would otherwise search among for the shadows of
@@ -311,7 +313,7 @@ What varies, and which principle handles it.
 | Pixels traced a frame | every one, or half in an alternating checkerboard | half where the light is the network's input (13), the other half the frame before's light, moved ("The frame"); every one in any other graph |
 | Resolution | traced, and output | with the denoiser, traced at half the output each way and upscaled by it; without, traced at the window's size or a fraction the window stretches; anything, headless |
 | Denoiser | none, or our own network | a stage after Resolve, its weights data; judged against the reference, and against Open Image Denoise offline |
-| Backend | Metal, Vulkan | the core is shared (10) |
+| Backend | Metal (Apple), CUDA with OptiX (NVIDIA); later HIP with HIPRT (AMD), Direct3D 12 (Xbox) | the core is shared (10) |
 
 Two consequences are worth stating outright:
 
@@ -446,7 +448,7 @@ frames.
 **How frames are paced is the backend's, behind a frame source.** The
 window does not know whether the display calls it, as Metal's display
 link does, or whether its own loop waits on a swapchain image and
-presents it, as a Vulkan or Direct3D 12 backend will. It hands a
+presents it, as a CUDA or Direct3D 12 backend will. It hands a
 **frame source** two things to call: its events, which it handles
 waiting at most as long as the source says, and each frame, given the
 instant it will be shown, for which it returns the frame's inputs. The
@@ -470,12 +472,21 @@ written at any resolution and any number of samples.
 ## Platform constraints
 
 **Rays are traced in hardware.** The development machine is an Apple M3 Max,
-whose GPU traces rays in hardware, through Metal 4. The second backend
-targets an AMD Strix Halo through Vulkan's ray tracing. Neither is assumed to
-behave like the other; each is measured on its own.
+whose GPU traces rays in hardware, through Metal 4. The second is an
+NVIDIA RTX 3090 Ti, through CUDA and OptiX, whose RT cores intersect
+triangles and whose SMs run every other primitive's intersection; then
+AMD's Strix Halo (HIP, HIPRT) and the Xbox Series X (Direct3D 12). None is
+assumed to behave like another; each is measured on its own.
+
+**OptiX traces only inside its own programs.** Metal's kernels run ray
+queries inline; OptiX has none from a plain CUDA kernel, so on the 3090
+a pass that traces is an OptiX launch whose ray generation program is the
+pass, and the rest are CUDA kernels on the same stream, as Blender
+Cycles' OptiX device splits its work
+(`docs/research/2026-10-19-cuda-backend.md`).
 
 **A mask needs an instance level, and the scene has none.** Metal, like
-DXR and Vulkan, tests a ray's mask against an instance's, never against a
+DXR and OptiX, tests a ray's mask against an instance's, never against a
 primitive's, and the scene's structure is one level of boxes, because on
 this GPU the instance level cost each ray more than it saved
 (`docs/research/2026-10-09-acceleration-structure.md`). So principle 11's

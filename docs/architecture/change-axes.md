@@ -127,13 +127,15 @@ the renderer builds depends on it.
 The core decides what is computed, and each backend decides how, in its own
 shaders. So shape, material, texture, light, medium, camera, sampler, light
 selection, integrator, sample reuse and every pass are each implemented once
-per backend: today for Metal, later for Vulkan too.
+per backend: Metal's, CUDA's, and each later vendor's.
 
 That makes each of them a family over backends as well as over kinds. The
 test extends: **optimizing a kind on one backend touches no other backend.**
 A change to *what* a kind computes touches each backend's implementation of
-it. That duplication is the cost of two thin backends without a shared
-interface, accepted in `../process/MEMORY.md`.
+it. That duplication is the cost of thin backends, each in its vendor's
+own API, without a shared interface, accepted in `../process/MEMORY.md`:
+each backend's kernels are tuned for its hardware, and no layer stands
+between them.
 
 ## The logical boxes, by axis
 
@@ -222,7 +224,7 @@ is shaped by the other:
   display link on the layer, which calls frames from Core Animation's
   run loop, through a callback that must not throw, so the source keeps
   a frame's failure and ends the run with it from its own loop; a
-  Vulkan or Direct3D 12 source would wait on its swapchain and present
+  CUDA or Direct3D 12 source would wait on its swapchain and present
   in a loop of its own.
 
 The interface (`src/core/presentation/frame_source.h`) names neither
@@ -246,8 +248,8 @@ pass's.** Which work goes on which queue, and the hand-off between them
   queue is made or waited on.
 
 Neither leaks further. The core's schedule says nothing of queues: it says
-what a frame computes, and a backend that cannot overlap (or the Vulkan
-one, with its own queue families) runs the same schedule its own way. No
+what a frame computes, and a backend that cannot overlap (or CUDA, with
+its streams) runs the same schedule its own way. No
 pass knows which queue it is on: each records into the encoder it is
 given, after the barriers the frame graph records, as before. The window
 and the headless renderer ask the renderer how many parts its frames have
