@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "core/contracts/denoise.h"
+#include "core/denoise/unet.h"
 #include "metal/device/error.h"
 #include "metal/device/support.h"
 #include "metal/passes/bindings.h"
@@ -83,16 +84,10 @@ DenoisePass::DenoisePass(const Device& device, const Library& library,
             library.compute_pipeline("conv3x3_n4")},
       maxpool_(library.compute_pipeline("denoise_maxpool")),
       output_(library.compute_pipeline("denoise_output")) {
-  // The convolutions in DenoiseImages' order (denoise_images.h): the
+  // The convolutions in the order they run (core/denoise/unet.h): the
   // encoders, the bottleneck's two, the decoders, the last.
-  std::array<const denoise::Convolution*, DenoiseImages::convolutions> convs{};
-  for (std::size_t l = 0; l < DenoiseImages::levels; ++l) {
-    convs.at(l) = &network.enc.at(l);
-    convs.at(DenoiseImages::first_decoder + l) = &network.dec.at(l);
-  }
-  convs[DenoiseImages::first_bottleneck] = &network.bottleneck_a;
-  convs[DenoiseImages::first_bottleneck + 1] = &network.bottleneck_b;
-  convs[DenoiseImages::last_convolution] = &network.dec_final;
+  const std::array<const denoise::Convolution*, DenoiseImages::convolutions>
+      convs = denoise::in_order(network);
   std::vector<std::vector<Half>> weights;
   weights.reserve(convs.size());
   for (const denoise::Convolution* c : convs) {
@@ -231,11 +226,11 @@ void DenoisePass::record_unet(MTL4::ComputeCommandEncoder* encoder,
                   1, 1},
         MTL::Size{pool_threads, 1, 1});
   };
-  for (std::size_t l = 0; l < DenoiseImages::levels; ++l) {
+  for (std::size_t l = 0; l < denoise::unet_levels; ++l) {
     convolve(l);
     max_pool(images.pool(l));
   }
-  for (std::size_t i = DenoiseImages::first_bottleneck;
+  for (std::size_t i = denoise::first_bottleneck;
        i < DenoiseImages::convolutions; ++i) {
     convolve(i);
   }

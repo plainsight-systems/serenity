@@ -146,6 +146,7 @@ add_library(serenity_core STATIC
     src/core/camera/thin_lens.cpp
     src/core/denoise/json.cpp
     src/core/denoise/network.cpp
+    src/core/denoise/unet.cpp
     src/core/materials/coated.cpp
     src/core/film/linear_image.cpp
     src/core/frame/frame_constants.cpp

@@ -8,6 +8,7 @@
 
 #include "core/contracts/denoise.h"
 #include "core/denoise/network.h"
+#include "core/denoise/unet.h"
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
 #include "core/frame/history.h"
@@ -30,8 +31,11 @@ namespace serenity::metal {
 //     each a skip; the max pools', the bottleneck's two, the decoders' and
 //     the last convolution's. No concatenation and no upsampled copy: a
 //     decoder convolution reads the level below, upsampled, and the skip,
-//     each where it is (conv3x3). The padded grid is the light's size rounded
-//     up to contracts::unet_alignment, as training/evaluate.py pads;
+//     each where it is (conv3x3). Which activations there are, their
+//     sizes and channels, and which each dispatch reads and writes, are the
+//     core's (core/denoise/unet.h), the padded grid among them; their
+//     layout here, a pitch with the border and slack past the end, is
+//     Metal's;
 //   - the demodulated light, a float4 an input pixel of the padded grid;
 //   - the history, last frame's output and this frame's, a float4 an output
 //     pixel of twice the padded grid, two of them by the frame's parity;
@@ -79,14 +83,10 @@ class DenoiseImages {
   // frame's output.
   bool prepare(const frame::FrameInputs& inputs, frame::Extent light);
 
-  // The conv3x3 dispatches, in order: enc 0..3, bottleneck a and b,
-  // dec 0..3, dec_final. The pools, levels 1..4.
-  static constexpr std::size_t levels = contracts::unet_levels;
-  static constexpr std::size_t first_bottleneck = levels;
-  static constexpr std::size_t first_decoder = first_bottleneck + 2;
-  static constexpr std::size_t last_convolution = first_decoder + levels;
-  static constexpr std::size_t convolutions = last_convolution + 1;
-  static constexpr std::size_t resamplings = levels;
+  // The conv3x3 dispatches and the pools, in the core's order
+  // (core/denoise/unet.h).
+  static constexpr std::size_t convolutions = denoise::unet_convolutions;
+  static constexpr std::size_t resamplings = denoise::unet_pools;
 
   struct Conv {
     contracts::ConvParams params{};
@@ -133,11 +133,11 @@ class DenoiseImages {
   void make(Buffer& buffer, std::size_t bytes, std::string_view what);
   void make(Activations& a, frame::Extent size, std::uint32_t stride,
             std::string_view what);
-  // At a new size, the light's `light`: every buffer and image made
-  // (allocate), then every dispatch's parameters planned and written once
-  // (plan).
-  void allocate(frame::Extent light);
-  void plan();
+  // At a new size, the light's `light`: the core's network at that size
+  // (core/denoise/unet.h), every buffer and image made (allocate), then
+  // every dispatch's parameters filled and written once (plan).
+  void allocate(const denoise::UNet& net, frame::Extent light);
+  void plan(const denoise::UNet& net);
 
   NS::SharedPtr<MTL::Device> device_;
   Submission& submission_;
@@ -148,13 +148,8 @@ class DenoiseImages {
   // the prepared frame's: its parity picks the history
   std::uint64_t index_ = 0;
 
-  Activations input_;
-  std::array<Activations, levels> skip_;  // levels 0..3, the encoders' outputs
-  std::array<Activations, levels> pooled_;  // levels 1..4
-  Activations bottleneck_a_;
-  Activations bottleneck_b_;
-  std::array<Activations, levels> decoded_;  // levels 0..3, dec 3..0's outputs
-  Activations final_;
+  // by the core's index (core/denoise/unet.h)
+  std::array<Activations, denoise::unet_activations> activations_;
   Buffer demod_;
   std::array<Buffer, 2> history_buffers_;
   Buffer histogram_;

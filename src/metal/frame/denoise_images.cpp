@@ -11,11 +11,6 @@ namespace serenity::metal {
 
 namespace {
 
-constexpr std::uint32_t align(std::uint32_t side) {
-  return (side + contracts::unet_alignment - 1u) / contracts::unet_alignment *
-         contracts::unet_alignment;
-}
-
 // Pixels past a bordered level's last row that a convolution's matrix loads
 // may reach: its 32-pixel rows run past the level's right edge, by up to 31
 // pixels and the border, into the next row; at the last row, past the end.
@@ -83,34 +78,21 @@ bool DenoiseImages::prepare(const frame::FrameInputs& inputs,
   }
   light_ = {};
   const auto pool = scoped_pool();
-  padded_ = {align(light.width), align(light.height)};
-  allocate(light);
-  plan();
+  const denoise::UNet net = denoise::unet(widths_, light);
+  padded_ = net.padded;
+  allocate(net, light);
+  plan(net);
   light_ = light;
   history_ = joined;
   index_ = inputs.index;
   return held > 0;
 }
 
-void DenoiseImages::allocate(frame::Extent light) {
-  const denoise::Widths& w = widths_;
-  const auto level = [&](std::uint32_t l) {
-    return frame::Extent{padded_.width >> l, padded_.height >> l};
-  };
-  // the lowest level with a skip
-  constexpr std::uint32_t bottom = contracts::unet_levels - 1u;
-
-  make(input_, level(0), contracts::input_channels, "network's input");
-  for (std::uint32_t l = 0; l < levels; ++l) {
-    make(skip_.at(l), level(l), w.enc.at(l), "skip");
-    make(pooled_.at(l), level(l + 1), w.enc.at(l), "max pool");
-    make(decoded_.at(l), level(l), w.dec.at(bottom - l), "decoder's output");
+void DenoiseImages::allocate(const denoise::UNet& net, frame::Extent light) {
+  for (std::size_t i = 0; i < activations_.size(); ++i) {
+    const denoise::Activation& a = net.activations.at(i);
+    make(activations_.at(i), a.size, a.channels, "activations");
   }
-  make(bottleneck_a_, level(contracts::unet_levels), w.bottleneck,
-       "bottleneck");
-  make(bottleneck_b_, level(contracts::unet_levels), w.bottleneck,
-       "bottleneck");
-  make(final_, level(0), w.dec[bottom], "last features");
   // The demodulated light and the histories: a float4 a pixel.
   const std::size_t input_pixels = std::size_t{padded_.width} * padded_.height;
   make(demod_, input_pixels * 4 * sizeof(float), "demodulated light");
@@ -138,77 +120,53 @@ MTL::Texture* DenoiseImages::light_radiance(std::uint32_t slot) const {
   return light_radiance_.at(slot).texture.get();
 }
 
-void DenoiseImages::plan() {
-  const denoise::Widths& w = widths_;
-  constexpr std::uint32_t bottom = contracts::unet_levels - 1u;
-  // The channels upsampled into level l's decoder: the bottleneck's at
-  // the bottom level, the decoder's below it otherwise.
-  const auto up = [&](std::uint32_t l) {
-    return l == bottom ? w.bottleneck : w.dec.at(bottom - 1 - l);
+void DenoiseImages::plan(const denoise::UNet& net) {
+  const auto activation = [&](std::size_t i) -> const Activations& {
+    return activations_.at(i);
   };
-
-  const auto address = [](const Activations& a) { return a.memory.address(); };
-  // No concatenation (denoise_images.h): every input and output from its
-  // channel 0, the parameters' offsets left 0.
-  const auto make_conv = [&](const Activations& in, std::uint32_t in_channels,
-                             const Activations& out, std::uint32_t outputs) {
+  // Each convolution and pool of the core's network as this backend's
+  // dispatch: its parameters from where each activation lies (above).
+  for (std::size_t i = 0; i < convs_.size(); ++i) {
+    const denoise::Convolution3x3& n = net.convolutions.at(i);
+    const Activations& in = activation(n.input);
+    const Activations& out = activation(n.output);
     Conv c{};
     c.params.width = in.size.width;
     c.params.height = in.size.height;
     c.params.in_pitch = in.pitch;
     c.params.in_stride = in.stride;
-    c.params.in_blocks = in_channels / contracts::channel_block;
+    c.params.in_blocks = n.in_channels / contracts::channel_block;
     c.params.out_pitch = out.pitch;
     c.params.out_stride = out.stride;
-    c.params.out_blocks = outputs / contracts::channel_block;
+    c.params.out_blocks = n.out_channels / contracts::channel_block;
     c.params.chunk_blocks = chunk_blocks(c.params.out_blocks);
     c.params.relu = 1u;
-    c.input = address(in);
-    c.output = address(out);
-    c.coarse = address(in);
-    return c;
-  };
-  const auto make_pool = [&](const Activations& in, const Activations& out,
-                             std::uint32_t channels) {
+    if (n.up_channels != 0) {
+      c.params.up_blocks = n.up_channels / contracts::channel_block;
+      c.params.up_pitch = activation(n.coarse).pitch;
+      c.params.up_stride = activation(n.coarse).stride;
+    }
+    c.input = in.memory.address();
+    c.output = out.memory.address();
+    c.coarse = activation(n.coarse).memory.address();
+    convs_.at(i) = c;
+  }
+  for (std::size_t i = 0; i < pools_.size(); ++i) {
+    const denoise::MaxPool& n = net.pools.at(i);
+    const Activations& in = activation(n.input);
+    const Activations& out = activation(n.output);
     Resample r{};
     r.params.width = out.size.width;
     r.params.height = out.size.height;
-    r.params.channels = channels;
+    r.params.channels = n.channels;
     r.params.in_pitch = in.pitch;
     r.params.in_stride = in.stride;
     r.params.out_pitch = out.pitch;
     r.params.out_stride = out.stride;
-    r.input = address(in);
-    r.output = address(out);
-    return r;
-  };
-  // Encoders: each into its skip.
-  convs_[0] = make_conv(input_, contracts::input_channels, skip_[0], w.enc[0]);
-  for (std::uint32_t l = 1; l < levels; ++l) {
-    convs_.at(l) =
-        make_conv(pooled_.at(l - 1), w.enc.at(l - 1), skip_.at(l), w.enc.at(l));
+    r.input = in.memory.address();
+    r.output = out.memory.address();
+    pools_.at(i) = r;
   }
-  for (std::uint32_t l = 0; l < levels; ++l) {
-    pools_.at(l) = make_pool(skip_.at(l), pooled_.at(l), w.enc.at(l));
-  }
-  convs_[first_bottleneck] =
-      make_conv(pooled_[bottom], w.enc[bottom], bottleneck_a_, w.bottleneck);
-  convs_[first_bottleneck + 1] =
-      make_conv(bottleneck_a_, w.bottleneck, bottleneck_b_, w.bottleneck);
-  // Decoders: dec i at level bottom - i, from the level below's output.
-  for (std::uint32_t i = 0; i < levels; ++i) {
-    const std::uint32_t l = bottom - i;
-    const Activations& below = i == 0 ? bottleneck_b_ : decoded_.at(l + 1);
-    Conv& c = convs_.at(first_decoder + i);
-    c = make_conv(skip_.at(l), up(l) + w.enc.at(l), decoded_.at(l),
-                  w.dec.at(i));
-    c.params.up_blocks = up(l) / contracts::channel_block;
-    c.params.up_pitch = below.pitch;
-    c.params.up_stride = below.stride;
-    c.coarse = address(below);
-  }
-  convs_[last_convolution] =
-      make_conv(decoded_[0], w.dec[bottom], final_, w.dec[bottom]);
 
   // Every dispatch's parameters, in one buffer, each at a stride bound as
   // `constant` (Metal's constant offset alignment, support.h).
@@ -239,10 +197,10 @@ void DenoiseImages::plan() {
 }
 
 MTL::GPUAddress DenoiseImages::input() const noexcept {
-  return input_.memory.address();
+  return activations_.at(denoise::input_activation).memory.address();
 }
 MTL::GPUAddress DenoiseImages::features() const noexcept {
-  return final_.memory.address();
+  return activations_.at(denoise::final_activation).memory.address();
 }
 MTL::GPUAddress DenoiseImages::demod() const noexcept {
   return demod_.address();
