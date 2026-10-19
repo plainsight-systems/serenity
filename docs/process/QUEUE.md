@@ -179,16 +179,16 @@ This file tracks active and accepted work.
    noise's level. Folding MNEE's light in a fixed order would make it hold
    by construction; whether to is the user's call.
 
-1. **Done 2026-10-18.** Milestone 4, making the frame fast
+1. **Closed 2026-10-19, tagged `milestone-4`.** Milestone 4, making the frame fast
    (docs/research/2026-10-17-milestone-4-plan.md; docs/writeups/milestone-4.md,
    for the user's review before the tag): async compute overlap, ray
    masks and checkerboard rendering of the light, kept by the user; the
    split scene skipped on Metal, kept for the Vulkan and Xbox milestones.
    The network retrained on checkerboard input on the user's RTX 3090 Ti,
    new inputs over denoiser-v1's targets, kept by the user 2026-10-18.
-   The frame: 16.7 ms at 1920 x 1080 (60 fps), 56.1 ms in the window
-   (17.8 fps). The tag and main's fast-forward wait for the user's
-   review of the write-up.
+   The frame before the production sweep: 16.7 ms at 1920 x 1080 (60
+   fps), 56.1 ms in the window (17.8 fps); after it, 17.5 ms (57 fps) and
+   58.5 ms (17.1 fps), accepted by the user.
 
    **Reopened 2026-10-18 by the production sweep, then resumed and
    closed out by the user's decisions.** A sweep of the whole frame
