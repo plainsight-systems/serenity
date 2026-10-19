@@ -151,6 +151,7 @@ add_library(serenity_core STATIC
     src/core/frame/frame_constants.cpp
     src/core/frame/graph_file.cpp
     src/core/frame/history.cpp
+    src/core/frame/refusals.cpp
     src/core/frame/schedule.cpp
     src/core/measurement/error.cpp
     src/core/measurement/frame_times.cpp

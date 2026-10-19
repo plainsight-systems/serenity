@@ -1,11 +1,9 @@
 #include "metal/frame/renderer.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -21,15 +19,12 @@
 #include "core/contracts/depth_of_field.h"
 #include "core/contracts/features.h"
 #include "core/contracts/frame_constants.h"
-#include "core/contracts/light_tile.h"
-#include "core/contracts/mnee_request.h"
 #include "core/contracts/path_reuse_settings.h"
-#include "core/contracts/primary_hit.h"
 #include "core/denoise/network.h"
 #include "core/frame/frame_constants.h"
+#include "core/frame/refusals.h"
 #include "core/passes/depth_of_field.h"
 #include "core/sampling/pairing.h"
-#include "core/scene/packed_range.h"
 #include "metal/device/error.h"
 #include "metal/device/readback.h"
 #include "metal/device/support.h"
@@ -140,36 +135,12 @@ NS::UInteger texture_bindings(const frame::Schedule& schedule) {
              : max_textures;
 }
 
-// Shaders read a time as a float (contracts/frame_constants.h): a double
-// past float's range would reach them as infinity. `which` names the time
-// for the error: frame `index`'s own, or the frame before's.
-void check_time(frame::Seconds time, std::uint64_t index,
-                std::string_view which) {
-  const double seconds = time.count();
-  if (!std::isfinite(seconds) ||
-      std::abs(seconds) > std::numeric_limits<float>::max()) {
-    throw MetalError("frame " + std::to_string(index) + ": " +
-                     std::string(which) + ", " + std::to_string(seconds) +
-                     " s, is past what the shaders' float holds");
-  }
-}
-
-// What ReSTIR PT's G-buffer packs of `scene` (contracts/primary_hit.h;
-// core/scene/packed_range.h), refused rather than wrapped (I.5): fewer
-// media than `media_limit`, which a medium's 16-bit index holds with its
-// "none", and every material value within the packed BSDF's range.
-void check_packable(const scene::SceneDescription& scene,
-                    std::size_t media_limit) {
-  if (scene.media.size() >= media_limit) {
-    throw MetalError("Renderer: the scene has " +
-                     std::to_string(scene.media.size()) +
-                     " media, and ReSTIR PT's G-buffer keeps a medium's index "
-                     "in 16 bits, under " +
-                     std::to_string(media_limit));
-  }
-  if (const std::optional<std::string> outside =
-          scene::outside_packed_bsdf(scene)) {
-    throw MetalError("Renderer: the scene's " + *outside);
+// A refusal the core gives (core/frame/refusals.h), thrown as this
+// backend's error: `prefix` and the reason. None, nothing.
+void refuse(const std::optional<std::string>& reason,
+            std::string_view prefix = "Renderer: ") {
+  if (reason) {
+    throw MetalError(std::string(prefix) + *reason);
   }
 }
 
@@ -390,15 +361,9 @@ Renderer::Renderer(const Device& device, Submission& submission,
       feeds_network_(frame::feeds_network(schedule)),
       schedule_(schedule) {
   // The core decides which schedules can be carried out (principle 10).
-  if (const std::optional<std::string> reason = frame::invalid(schedule)) {
-    throw MetalError("Renderer: " + *reason);
-  }
+  refuse(frame::invalid(schedule));
   needs_scene_ = std::ranges::any_of(schedule.passes, frame::needs_scene);
-  if (needs_scene_ && scene == nullptr) {
-    throw MetalError(
-        "Renderer: the frame graph's passes read a scene, and none was given "
-        "(--scene)");
-  }
+  refuse(frame::scene_refusal(schedule, scene));
   const auto pool = scoped_pool();
   // The network, read once (core/denoise/network.h); its weights go to the
   // GPU with its pass, its widths size its buffers.
@@ -564,17 +529,7 @@ void Renderer::make_restir_pt(const Device& device,
   }
   // What the G-buffer and the light tiles pack (contracts/primary_hit.h,
   // light_tile.h), refused rather than wrapped (I.5).
-  check_packable(*scene, contracts::primary_no_medium);
-  if (scene->shapes.records.size() > contracts::tile_largest_id + 1u ||
-      scene->light_counts.lights > contracts::tile_largest_id + 1u) {
-    throw MetalError(
-        "Renderer: the scene has " +
-        std::to_string(scene->shapes.records.size()) + " shapes and " +
-        std::to_string(scene->light_counts.lights) +
-        " lights, and ReSTIR PT's light tiles keep each index in 16 bits, at "
-        "most " +
-        std::to_string(contracts::tile_largest_id + 1u) + " of either");
-  }
+  refuse(frame::restir_pt_refusal(*scene));
   const bool temporal = has(schedule, frame::PassKind::restir_pt_temporal);
   reuses_history_ = temporal;
   const bool spatial = has(schedule, frame::PassKind::restir_pt_spatial);
@@ -605,13 +560,7 @@ void Renderer::make_mnee(const Device& device, const frame::Schedule& schedule,
   if (!schedule.restir_pt) {
     return;
   }
-  if (scene->shapes.records.size() > contracts::mnee_largest_shape + 1u) {
-    throw MetalError("Renderer: the scene has " +
-                     std::to_string(scene->shapes.records.size()) +
-                     " shapes, and MNEE's requests keep a shape's index in 16 "
-                     "bits, at most " +
-                     std::to_string(contracts::mnee_largest_shape + 1u));
-  }
+  refuse(frame::mnee_refusal(*scene));
   mnee_.emplace(device, submission_);
 }
 
@@ -627,14 +576,7 @@ void Renderer::make_scene(const Device& device,
       moves ? FrameArray::Copies::per_frame : FrameArray::Copies::one);
   // Checked here, not by animate() in a frame, so nothing about the scene
   // can fail once a frame's submission has begun (renderer.h).
-  for (const animation::Glower& glower : animation_.glowers) {
-    if (glower.target >= scene.light_counts.spheres) {
-      throw MetalError(
-          "Renderer: a glowing light's target, " +
-          std::to_string(glower.target) + ", is not one of the scene's " +
-          std::to_string(scene.light_counts.spheres) + " sphere lights");
-    }
-  }
+  refuse(frame::glower_refusal(scene));
   glows_ = std::make_unique<LightGlows>(device, submission_,
                                         scene.light_counts.spheres,
                                         !animation_.glowers.empty());
@@ -670,23 +612,16 @@ Renderer::~Renderer() {
 }
 
 void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
-  check_time(inputs.time, inputs.index, "its time");
-  if (needs_scene_ && !inputs.camera) {
-    throw MetalError(
-        "Renderer: frame " + std::to_string(inputs.index) +
-        ": the frame graph reads a scene, and the frame has no camera");
-  }
+  refuse(frame::time_refusal(inputs.time, inputs.index, "its time"), "");
+  refuse(frame::camera_refusal(inputs, needs_scene_));
   // The frame before, which the features' motion is measured from: its
   // camera framed and its time placing the shapes in record(), so both are
   // checked here, before the submission begins.
   if (features_ && inputs.previous) {
-    check_time(inputs.previous->time, inputs.index, "the frame before's time");
-    if (const std::optional<std::string_view> reason =
-            camera::invalid(inputs.previous->camera)) {
-      throw MetalError("Renderer: frame " + std::to_string(inputs.index) +
-                       ": the frame before's camera cannot be framed: " +
-                       std::string(*reason));
-    }
+    refuse(frame::time_refusal(inputs.previous->time, inputs.index,
+                               "the frame before's time"),
+           "");
+    refuse(frame::previous_camera_refusal(inputs));
   }
   if (!prepares()) {
     return;
@@ -1153,7 +1088,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given,
         "Renderer::record: a submission of two parts for a frame graph of one "
         "(Renderer::parts)");
   }
-  check_time(given.time, given.index, "its time");
+  refuse(frame::time_refusal(given.time, given.index, "its time"), "");
   const Prepared prepared = take_prepared(given, size);
   if (needs_scene_ && !given.camera) {
     throw MetalError(
