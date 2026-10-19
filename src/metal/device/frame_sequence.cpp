@@ -61,11 +61,11 @@ std::uint64_t FrameSequence::drain_from() const {
   return next_ > frames_in_flight ? next_ - frames_in_flight : 0;
 }
 
-bool FrameSequence::is_settled(std::uint64_t sequence) const noexcept {
+bool FrameSequence::is_settled(std::uint64_t sequence) const {
   return settled_through_.at(sequence % frames_in_flight) >= sequence + 1;
 }
 
-void FrameSequence::settled(std::uint64_t sequence) noexcept {
+void FrameSequence::settled(std::uint64_t sequence) {
   settled_through_.at(sequence % frames_in_flight) = sequence + 1;
 }
 

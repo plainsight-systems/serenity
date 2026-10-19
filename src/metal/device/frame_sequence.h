@@ -24,6 +24,12 @@ namespace serenity::metal {
 // is abandoned, never committed (submission.h, Residency).
 //
 // Throws MetalError (error.h) for a misuse, with the submission's words.
+//
+// The frames in flight: two (submission.h, "The frames in flight"). C++,
+// named as C++ constants are; Objective-C's naming rule reaches it only
+// through display_link.mm, which includes the submission for
+// CAMetalDisplayLink (docs/process/workflow.md, the deviations).
+// NOLINTNEXTLINE(google-objc-global-variable-declaration)
 inline constexpr std::uint32_t frames_in_flight = 2;
 
 class FrameSequence {
@@ -57,8 +63,8 @@ class FrameSequence {
   void finish() noexcept { finished_ = true; }
 
   // Whether submission `sequence` is settled, and that it now is.
-  bool is_settled(std::uint64_t sequence) const noexcept;
-  void settled(std::uint64_t sequence) noexcept;
+  bool is_settled(std::uint64_t sequence) const;
+  void settled(std::uint64_t sequence);
 
   // Memory a submission may use was released: an open one is abandoned.
   void released() noexcept;
