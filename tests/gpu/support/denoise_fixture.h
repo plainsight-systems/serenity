@@ -119,7 +119,7 @@ inline void upload(MTL::Texture* texture, const contracts::LinearImage& image) {
         std::memcpy(&texels[p * 4], &image.rgb[p * 3], 3 * sizeof(float));
       }
       texture->replaceRegion(region, 0, texels.data(),
-                             size.width * 4 * sizeof(float));
+                             std::size_t{size.width} * 4 * sizeof(float));
       return;
     }
     case MTL::PixelFormatRGBA16Float: {
@@ -130,7 +130,7 @@ inline void upload(MTL::Texture* texture, const contracts::LinearImage& image) {
         }
       }
       texture->replaceRegion(region, 0, texels.data(),
-                             size.width * 4 * sizeof(Half));
+                             std::size_t{size.width} * 4 * sizeof(Half));
       return;
     }
     case MTL::PixelFormatR32Float: {
@@ -152,7 +152,7 @@ inline contracts::LinearImage download(MTL::Texture* texture) {
   const frame::Extent size{static_cast<std::uint32_t>(texture->width()),
                            static_cast<std::uint32_t>(texture->height())};
   std::vector<float> texels(std::size_t{size.width} * size.height * 4);
-  texture->getBytes(texels.data(), size.width * 4 * sizeof(float),
+  texture->getBytes(texels.data(), std::size_t{size.width} * 4 * sizeof(float),
                     MTL::Region::Make2D(0, 0, size.width, size.height), 0);
   return contracts::from_rgba(size, texels);
 }

@@ -178,7 +178,7 @@ WeightSums weight_sums(tests::ProbeRunner& gpu, const contracts::Bsdf& bsdf,
                               {0u, 0u, 0u}};
   const std::vector<tests::MisDraw> results =
       tests::run_with_light<tests::MisDraw>(
-          gpu, "mis_weights", 2 * draws, light,
+          gpu, "mis_weights", std::size_t{2} * draws, light,
           {tests::Binding::of(query), tests::Binding::of(bsdf)});
   WeightSums sums;
   for (const tests::MisDraw& d : results) {

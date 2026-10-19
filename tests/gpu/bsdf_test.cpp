@@ -99,7 +99,8 @@ constexpr double cell_solid_angle = 4.0 * std::numbers::pi / cell_count;
 // The direction at the middle of bsdf_density's cell `i`, as the kernel
 // computes it (kernels/bsdf_probe.metal), in double.
 Vec3 cell_direction(std::uint32_t i) {
-  const double z = 1.0 - 2.0 * (i / grid + 0.5) / grid;
+  const std::uint32_t row = i / grid;  // the cell's row: whole rows above
+  const double z = 1.0 - 2.0 * (row + 0.5) / grid;
   const double phi = 2.0 * std::numbers::pi * (i % grid + 0.5) / grid;
   const double r = std::sqrt(std::max(0.0, 1.0 - z * z));
   return {r * std::cos(phi), r * std::sin(phi), z};

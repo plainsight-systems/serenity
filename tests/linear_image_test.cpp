@@ -60,7 +60,7 @@ TEST_CASE(
   // A different value in every float of a 3 x 2 image: a pixel moved, a
   // channel swapped or the count kept shows.
   constexpr Extent extent{3, 2};
-  std::vector<float> rgba(3 * 2 * 4);
+  std::vector<float> rgba(std::size_t{3} * 2 * 4);
   for (std::size_t i = 0; i < rgba.size(); ++i) {
     rgba[i] = static_cast<float>(i) + 0.5f;
   }
@@ -83,8 +83,8 @@ TEST_CASE(
 TEST_CASE(
     "linear image: from_rgba refuses a length that is not 4 x width x height") {
   for (const std::size_t wrong :
-       {std::size_t{0}, std::size_t{3 * 2 * 3}, std::size_t{3 * 2 * 4 - 1},
-        std::size_t{3 * 2 * 4 + 1}}) {
+       {std::size_t{0}, std::size_t{3} * 2 * 3, std::size_t{3} * 2 * 4 - 1,
+        std::size_t{3} * 2 * 4 + 1}) {
     INFO(wrong << " floats");
     CHECK_THROWS_AS(from_rgba(Extent{3, 2}, std::vector<float>(wrong, 0.0f)),
                     std::invalid_argument);

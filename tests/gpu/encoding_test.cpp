@@ -275,9 +275,10 @@ TEST_CASE(
                                         contracts::Float3{1.5f, 0.3f, -0.7f},
                                         contracts::Float3{0.0f, 2.0f, 0.6f}}) {
     for (int i = 0; i < grid * grid; ++i) {
+      const int row = i / grid;  // the cell's row: whole rows before it
       queries.push_back({point,
                          (static_cast<float>(i % grid) + 0.5f) / grid,
-                         (static_cast<float>(i / grid) + 0.5f) / grid,
+                         (static_cast<float>(row) + 0.5f) / grid,
                          {0u, 0u, 0u}});
     }
   }

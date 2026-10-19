@@ -76,7 +76,9 @@ void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder,
   barrier_after_dispatch(encoder);
   encoder->setComputePipelineState(tiles_.get());
   encoder->dispatchThreads(
-      MTL::Size{contracts::light_tiles * contracts::light_tile_size, 1, 1},
+      MTL::Size{
+          NS::UInteger{contracts::light_tiles} * contracts::light_tile_size, 1,
+          1},
       MTL::Size{std::min<NS::UInteger>(tiles_->maxTotalThreadsPerThreadgroup(),
                                        tiles_group),
                 1, 1});

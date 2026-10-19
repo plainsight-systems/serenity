@@ -199,13 +199,15 @@ TEST_CASE(
     for (int y = 0; y < w; ++y) {
       for (int x = 0; x < w; ++x) {
         const auto d = serenity::sampling::unpack_offset(
-            texture[static_cast<std::size_t>(y * w + x)]);
+            texture[(static_cast<std::size_t>(y) * width) +
+                    static_cast<std::size_t>(x)]);
         self += (d.x == 0 && d.y == 0) ? 1u : 0u;
         // The partner, wrapped, reads the negation: an involution.
         const int px = ((x + d.x) % w + w) % w;
         const int py = ((y + d.y) % w + w) % w;
         const auto back = serenity::sampling::unpack_offset(
-            texture[static_cast<std::size_t>(py * w + px)]);
+            texture[(static_cast<std::size_t>(py) * width) +
+                    static_cast<std::size_t>(px)]);
         REQUIRE(back.x == -d.x);
         REQUIRE(back.y == -d.y);
         squares += static_cast<double>(d.x * d.x + d.y * d.y);

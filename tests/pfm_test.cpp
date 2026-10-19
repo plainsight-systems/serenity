@@ -44,7 +44,7 @@ namespace {
 // not symmetric top to bottom, so a row unturned or width and height
 // swapped shows.
 LinearImage asymmetric() {
-  LinearImage image{Extent{3, 2}, std::vector<float>(3 * 2 * 3)};
+  LinearImage image{Extent{3, 2}, std::vector<float>(std::size_t{3} * 2 * 3)};
   for (std::size_t i = 0; i < image.rgb.size(); ++i) {
     image.rgb[i] = 0.25f + static_cast<float>(i);
   }

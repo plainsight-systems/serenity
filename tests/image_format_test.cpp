@@ -71,7 +71,7 @@ TEST_CASE(
     "output: a kind given the other source is refused, and nothing is "
     "written") {
   const ScratchDirectory scratch("image-format-source");
-  const std::vector<std::uint8_t> rgba(2 * 1 * 4, 7);
+  const std::vector<std::uint8_t> rgba(std::size_t{2} * 1 * 4, 7);
   const LinearImage image{Extent{2, 1}, std::vector<float>(6, 1.0f)};
   CHECK(contains(serenity::tests::error_of<std::invalid_argument>([&] {
                    write_image(ImageFormat::pfm, scratch / "a.pfm",

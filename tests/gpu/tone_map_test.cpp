@@ -337,7 +337,8 @@ Toned tone_map(const Field& radiance, passes::ToneMap settings,
                    static_cast<float>(t[2]), 1.0f});
   }
   image->replaceRegion(MTL::Region(0, 0, size.width, size.height), 0,
-                       texels.data(), size.width * 4 * sizeof(float));
+                       texels.data(),
+                       std::size_t{size.width} * 4 * sizeof(float));
 
   metal::FrameImages renderers(device, submission,
                                metal::FrameImages::Radiance::image,
@@ -390,7 +391,7 @@ Toned tone_map(const Field& radiance, passes::ToneMap settings,
     const auto width = static_cast<std::uint32_t>(b0->width());
     const auto height = static_cast<std::uint32_t>(b0->height());
     std::vector<Half> halves(std::size_t{width} * height * 4);
-    b0->getBytes(halves.data(), width * 4 * sizeof(Half),
+    b0->getBytes(halves.data(), std::size_t{width} * 4 * sizeof(Half),
                  MTL::Region(0, 0, width, height), 0);
     out.base = field(width, height, {});
     for (std::size_t i = 0; i < out.base.texels.size(); ++i) {

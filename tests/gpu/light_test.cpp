@@ -50,7 +50,7 @@ TEST_CASE(
       contracts::placed(near_center, near_radius);
   tests::ProbeRunner gpu;
   const std::vector<tests::LightDraw> drawn = gpu.run<tests::LightDraw>(
-      "light_cone", n * n,
+      "light_cone", std::size_t{n} * n,
       {Binding::of(white_light), Binding::of(LightQuery{{0.0f, 0.0f, 0.0f}, n}),
        Binding::of(placed)});
 
@@ -129,8 +129,9 @@ TEST_CASE(
   // Equal bins of 1 - cos and of phi hold equal solid angles: each
   // expects the same share, exactly (support/statistics.h, fits()).
   const tests::ChiSquare fit = tests::chi_square(
-      counted, std::vector<double>(counted.size(), static_cast<double>(count) /
-                                                       counted.size()));
+      counted, std::vector<double>(counted.size(),
+                                   static_cast<double>(count) /
+                                       static_cast<double>(counted.size())));
   INFO("chi^2 / dof = " << fit.statistic / static_cast<double>(fit.dof)
                         << " over " << counted.size() << " bins, p " << fit.p);
   CHECK(tests::fits(fit));
