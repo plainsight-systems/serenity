@@ -229,7 +229,8 @@ backend.
    blocks, the refusals, the U-Net's dispatches, the depth of field's,
    bloom's and ReSTIR PT's sizes, and the structures' plan: `src/metal/`
    437 lines smaller (649 out, 212 in, mostly its calls into the core),
-   the core 1,120 larger in ten files with their prose, with unit tests for the
+   the core 1,120 larger: eight new units and two grids added to the depth
+   of field's, with their prose, and unit tests for the
    refusals, the U-Net's wiring and the structures' plan; rule 7 of the
    boundary check (shaders include shared layouts only). Every graph's
    94 output files the same to the bit and the refusals' words the same;
