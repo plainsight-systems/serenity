@@ -15,16 +15,25 @@ namespace serenity::sampling {
 namespace {
 
 // splitmix64 (Steele, Lea and Flood 2014): a counter-based generator whose
-// output is a fixed function of its state, the same on every platform.
+// output is a fixed function of its state, the same on every platform. Its
+// increment (2^64 over the golden ratio) and finalizer, as its authors give
+// them (ES.45; animation/draw.h finalizes counters with the same).
 class Generator {
+  static constexpr std::uint64_t gamma = 0x9e3779b97f4a7c15ull;
+  static constexpr unsigned shift_1 = 30u;
+  static constexpr std::uint64_t multiplier_1 = 0xbf58476d1ce4e5b9ull;
+  static constexpr unsigned shift_2 = 27u;
+  static constexpr std::uint64_t multiplier_2 = 0x94d049bb133111ebull;
+  static constexpr unsigned shift_3 = 31u;
+
  public:
   explicit Generator(std::uint64_t seed) : state_(seed) {}
 
   std::uint64_t next() {
-    std::uint64_t z = (state_ += 0x9e3779b97f4a7c15ull);
-    z = (z ^ (z >> 30u)) * 0xbf58476d1ce4e5b9ull;
-    z = (z ^ (z >> 27u)) * 0x94d049bb133111ebull;
-    return z ^ (z >> 31u);
+    std::uint64_t z = (state_ += gamma);
+    z = (z ^ (z >> shift_1)) * multiplier_1;
+    z = (z ^ (z >> shift_2)) * multiplier_2;
+    return z ^ (z >> shift_3);
   }
 
   // A number in [0, n), n at most 24: the bias of taking the remainder of
@@ -80,7 +89,7 @@ std::uint16_t packed(int x, int y) {
       static_cast<std::uint8_t>(static_cast<std::int8_t>(x)));
   const auto high = static_cast<std::uint32_t>(
       static_cast<std::uint8_t>(static_cast<std::int8_t>(y)));
-  return static_cast<std::uint16_t>(low | (high << 8u));
+  return static_cast<std::uint16_t>(low | (high << offset_y_shift));
 }
 
 }  // namespace

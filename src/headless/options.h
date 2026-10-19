@@ -146,14 +146,18 @@ enum class Write : std::uint8_t {
   doubling,
 };
 
+// The defaults (above): frames a sixtieth of a second apart, at 1920 x 1080.
+inline constexpr double default_rate = 60.0;  // frames a second
+inline constexpr frame::Extent default_size{1920, 1080};
+
 // What parse() read: plain values, which parse() alone makes and checks
 // (C.2: a struct, since nothing here keeps an invariant after it).
 struct Options {
   std::uint64_t frames = 1;
   std::uint64_t first = 0;
-  frame::Seconds step{1.0 / 60.0};
+  frame::Seconds step{1.0 / default_rate};
   std::optional<frame::Seconds> time;  // frozen at this, when given
-  frame::Extent size{1920, 1080};
+  frame::Extent size{default_size};
   std::filesystem::path graph;
   std::filesystem::path scene;  // empty when none was given
   std::filesystem::path out;

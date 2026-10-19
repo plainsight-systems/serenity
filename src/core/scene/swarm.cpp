@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <numbers>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -52,7 +53,7 @@ Range shrunk(const Swarm& swarm, std::uint32_t i) {
 double needed_of(const Swarm& swarm) {
   return static_cast<double>(swarm.flight.clearance) +
          static_cast<double>(swarm.radius) + animation::flight_delta +
-         animation::first_drift_reach * std::sqrt(3.0);
+         animation::first_drift_reach * std::numbers::sqrt3;
 }
 
 // A point drawn within the swarm's volume, or a perch box, both inside the

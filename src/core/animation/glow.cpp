@@ -158,8 +158,11 @@ double wake_factor(const std::optional<Wake>& wake, double t) {
   if (since >= w.ramp) {
     return 1.0;
   }
+  // Smoothstep, 3x^2 - 2x^3: level at both ends of the ramp.
+  constexpr double smoothstep_square = 3.0;
+  constexpr double smoothstep_cube = 2.0;
   const double x = since / w.ramp;
-  return x * x * (3.0 - 2.0 * x);
+  return x * x * (smoothstep_square - smoothstep_cube * x);
 }
 
 // The kind's glow `g` scaled by its wake's factor `w`: g itself with no

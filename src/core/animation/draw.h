@@ -16,11 +16,30 @@ namespace serenity::animation {
 // (wander.cpp), whose bits its tests pin. Both are constexpr (F.4): pure
 // integer arithmetic, the same at compile time as at run time.
 
+// splitmix64's increment (2^64 over the golden ratio) and its finalizer's
+// shifts and multipliers, as its authors give them (ES.45).
+inline constexpr std::uint64_t splitmix64_gamma = 0x9e3779b97f4a7c15ull;
+inline constexpr int splitmix64_shift_1 = 30;
+inline constexpr std::uint64_t splitmix64_multiplier_1 = 0xbf58476d1ce4e5b9ull;
+inline constexpr int splitmix64_shift_2 = 27;
+inline constexpr std::uint64_t splitmix64_multiplier_2 = 0x94d049bb133111ebull;
+inline constexpr int splitmix64_shift_3 = 31;
+
+// A double in [0, 1) from 64 bits: the top 53, a double's mantissa, times
+// 2^-53.
+inline constexpr int unit_dropped_bits = 64 - 53;
+inline constexpr double unit_scale = 0x1.0p-53;
+
 constexpr std::uint64_t splitmix64(std::uint64_t x) noexcept {
-  x += 0x9e3779b97f4a7c15ull;
-  x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ull;
-  x = (x ^ (x >> 27)) * 0x94d049bb133111ebull;
-  return x ^ (x >> 31);
+  x += splitmix64_gamma;
+  x = (x ^ (x >> splitmix64_shift_1)) * splitmix64_multiplier_1;
+  x = (x ^ (x >> splitmix64_shift_2)) * splitmix64_multiplier_2;
+  return x ^ (x >> splitmix64_shift_3);
+}
+
+// The double in [0, 1) the top 53 bits of `bits` are.
+constexpr double unit_of(std::uint64_t bits) noexcept {
+  return static_cast<double>(bits >> unit_dropped_bits) * unit_scale;
 }
 
 constexpr double draw(std::uint64_t seed, std::uint64_t a, std::uint64_t b = 0,
@@ -29,7 +48,7 @@ constexpr double draw(std::uint64_t seed, std::uint64_t a, std::uint64_t b = 0,
   h = splitmix64(h ^ a);
   h = splitmix64(h ^ b);
   h = splitmix64(h ^ c);
-  return static_cast<double>(h >> 11) * 0x1.0p-53;
+  return unit_of(h);
 }
 
 }  // namespace serenity::animation

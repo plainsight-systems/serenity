@@ -36,7 +36,7 @@ void DepthOfFieldImages::prepare(frame::Extent size) {
   tiles_.reset();
   dilated_.reset();
   const auto pool = scoped_pool();
-  constexpr std::array<std::string_view, 5> what = {
+  constexpr std::array<std::string_view, image_count> what = {
       "depth of field's presort", "depth of field's far field",
       "depth of field's near field", "depth of field's filtered far field",
       "depth of field's filtered near field"};

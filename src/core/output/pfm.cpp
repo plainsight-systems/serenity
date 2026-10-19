@@ -60,9 +60,11 @@ bool write_all(std::FILE* file, std::string_view text) {
 // A byte count as the stream's: every count here is at most a 16384 x 16384
 // image's 3 GiB, far inside a 64-bit streamsize (ES.46).
 std::streamsize stream_size(std::size_t bytes) {
-  static_assert(
-      std::numeric_limits<std::streamsize>::max() >= 0x7fff'ffff'ffffLL,
-      "the stream counts the bytes of an image of max_image_side");
+  static_assert(static_cast<std::uintmax_t>(
+                    std::numeric_limits<std::streamsize>::max()) >=
+                    std::uintmax_t{contracts::max_image_side} *
+                        contracts::max_image_side * channels * sizeof(float),
+                "the stream counts the bytes of an image of max_image_side");
   return static_cast<std::streamsize>(bytes);
 }
 

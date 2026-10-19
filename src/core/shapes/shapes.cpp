@@ -165,8 +165,9 @@ Bounds world_bounds(const Bounds& object,
     const int a = static_cast<int>(j);
     const auto lo = static_cast<double>(contracts::component(object.min, a));
     const auto hi = static_cast<double>(contracts::component(object.max, a));
-    center.at(j) = 0.5 * (lo + hi);
-    half.at(j) = 0.5 * (hi - lo);
+    constexpr double halved = 0.5;
+    center.at(j) = halved * (lo + hi);
+    half.at(j) = halved * (hi - lo);
   }
   std::array<float, 3> lows{};
   std::array<float, 3> highs{};

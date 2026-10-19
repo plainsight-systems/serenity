@@ -30,6 +30,15 @@ constexpr int most_backtracks =
     64;  // redraws of earlier episodes, in all (step 4)
 constexpr double delta = flight_delta;  // the sampling bound, meters (step 3)
 constexpr double pi = std::numbers::pi;
+constexpr double two_pi = 2.0 * pi;  // a turn, in radians
+constexpr double half = 0.5;         // a midpoint's weight, and an even chance
+// A cubic Bezier's degree: its middle Bernstein weights, and the scale of
+// its derivative's control points.
+constexpr double cubic = 3.0;
+// A Hermite tangent's share of the Bezier control point beside its end:
+// B1 = P0 + T0 / 3, B2 = P1 - T1 / 3.
+constexpr double third = 1.0 / 3.0;
+constexpr double seconds_an_hour = 3600.0;
 
 // The behaviours' numbers (flight.h), named (ES.45). A range is drawn
 // uniformly between its least and its most.
@@ -222,8 +231,8 @@ constexpr void put_triple(Segment& s, Vec3 v) noexcept {
 
 constexpr Vec3 bezier(Vec3 b0, Vec3 b1, Vec3 b2, Vec3 b3, double u) noexcept {
   const double w = 1.0 - u;
-  return (w * w * w) * b0 + (3.0 * w * w * u) * b1 + (3.0 * w * u * u) * b2 +
-         (u * u * u) * b3;
+  return (w * w * w) * b0 + (cubic * w * w * u) * b1 +
+         (cubic * w * u * u) * b2 + (u * u * u) * b3;
 }
 
 // A transit's Bezier control points, its Hermite form as a Bezier: B0 = P0,
@@ -233,8 +242,8 @@ constexpr Vec3 bezier(Vec3 b0, Vec3 b1, Vec3 b2, Vec3 b3, double u) noexcept {
 constexpr std::array<Vec3, 4> controls_of_transit(const Segment& s) noexcept {
   const Vec3 p0 = triple_at<TransitAt::p0>(s);
   const Vec3 p1 = triple_at<TransitAt::p1>(s);
-  return {p0, p0 + (1.0 / 3.0) * triple_at<TransitAt::t0>(s),
-          p1 - (1.0 / 3.0) * triple_at<TransitAt::t1>(s), p1};
+  return {p0, p0 + third * triple_at<TransitAt::t0>(s),
+          p1 - third * triple_at<TransitAt::t1>(s), p1};
 }
 
 // A point as contract 11 asks about it and position() places it. Its
@@ -288,9 +297,9 @@ Vec3 evaluate(const Segment& s, double tau) {
       const Vec3 a = triple_at<DriftAt::amplitude>(s);
       const Vec3 f = triple_at<DriftAt::frequency>(s);
       const Vec3 p = triple_at<DriftAt::phase>(s);
-      return c + Vec3{a.x * std::sin(2.0 * pi * f.x * tau + p.x),
-                      a.y * std::sin(2.0 * pi * f.y * tau + p.y),
-                      a.z * std::sin(2.0 * pi * f.z * tau + p.z)};
+      return c + Vec3{a.x * std::sin(two_pi * f.x * tau + p.x),
+                      a.y * std::sin(two_pi * f.y * tau + p.y),
+                      a.z * std::sin(two_pi * f.z * tau + p.z)};
     }
     case Behaviour::still:
       return triple_at<StillAt::at>(s);
@@ -301,8 +310,11 @@ Vec3 evaluate(const Segment& s, double tau) {
 // The velocity, by a central difference of the closed form, which is
 // defined, and smooth, past either end of the segment; a still segment's
 // is exactly 0, its closed form a constant.
+// The central difference's 1 / 2h.
+constexpr double velocity_scale = 1.0 / (2.0 * velocity_step);
+
 Vec3 velocity(const Segment& s, double tau) {
-  return (1.0 / (2.0 * velocity_step)) *
+  return velocity_scale *
          (evaluate(s, tau + velocity_step) - evaluate(s, tau - velocity_step));
 }
 
@@ -312,7 +324,7 @@ double speed_bound(const Segment& s) {
   switch (s.behaviour) {
     case Behaviour::transit: {
       const std::array<Vec3, 4> b = controls_of_transit(s);
-      return 3.0 *
+      return cubic *
              std::max({length(b[1] - b[0]), length(b[2] - b[1]),
                        length(b[3] - b[2])}) /
              s.duration;
@@ -322,7 +334,7 @@ double speed_bound(const Segment& s) {
       const Vec3 b1 = triple_at<SwoopAt::b1>(s);
       const Vec3 b2 = triple_at<SwoopAt::b2>(s);
       const Vec3 b3 = triple_at<SwoopAt::b3>(s);
-      return 3.0 *
+      return cubic *
              std::max({length(b1 - b0), length(b2 - b1), length(b3 - b2)}) /
              s.duration;
     }
@@ -330,13 +342,13 @@ double speed_bound(const Segment& s) {
       const auto n = [&](std::size_t i) { return s.numbers.at(i); };
       const double r0 = n(CircleAt::r0);
       return r0 * (1.0 + n(CircleAt::breathe)) * std::abs(n(CircleAt::omega)) +
-             r0 * n(CircleAt::breathe) * 2.0 * pi * n(CircleAt::breathe_rate) +
-             n(CircleAt::bob) * 2.0 * pi * n(CircleAt::bob_rate);
+             r0 * n(CircleAt::breathe) * two_pi * n(CircleAt::breathe_rate) +
+             n(CircleAt::bob) * two_pi * n(CircleAt::bob_rate);
     }
     case Behaviour::drift: {
       const Vec3 a = triple_at<DriftAt::amplitude>(s);
       const Vec3 f = triple_at<DriftAt::frequency>(s);
-      return 2.0 * pi * length(Vec3{a.x * f.x, a.y * f.y, a.z * f.z});
+      return two_pi * length(Vec3{a.x * f.x, a.y * f.y, a.z * f.z});
     }
     case Behaviour::still:
       return 0.0;
@@ -482,14 +494,14 @@ Vec3 nearby(const Context& c, const Draws& d, Vec3 from, double reach,
   const Extent& box = c.params.volume;
   const double m = c.body + delta + static_cast<double>(c.params.clearance);
   const auto mid = [](float lo, float hi) {
-    return 0.5 * (static_cast<double>(lo) + hi);
+    return half * (static_cast<double>(lo) + hi);
   };
   const Vec3 middle{mid(box.min.x, box.max.x), mid(box.min.y, box.max.y),
                     mid(box.min.z, box.max.z)};
   const Vec3 toward = from + pull_to_middle * (middle - from);
   const auto pick = [&](Purpose p, double at, double lo, double hi) {
     const double v = at + reach * (2.0 * d(p) - 1.0);
-    return lo < hi ? std::clamp(v, lo, hi) : 0.5 * (lo + hi);
+    return lo < hi ? std::clamp(v, lo, hi) : half * (lo + hi);
   };
   return {pick(Purpose::where_x, toward.x, box.min.x + m + room.around,
                box.max.x - m - room.around),
@@ -515,9 +527,9 @@ DriftShape drift_shape(const Draws& d) {
                                   first_drift_reach),
                         d.between(Purpose::amplitude_z, drift_least_reach,
                                   first_drift_reach)},
-          .phase = {d.between(Purpose::phase_x, 0.0, 2.0 * pi),
-                    d.between(Purpose::phase_y, 0.0, 2.0 * pi),
-                    d.between(Purpose::phase_z, 0.0, 2.0 * pi)}};
+          .phase = {d.between(Purpose::phase_x, 0.0, two_pi),
+                    d.between(Purpose::phase_y, 0.0, two_pi),
+                    d.between(Purpose::phase_z, 0.0, two_pi)}};
 }
 
 Segment drift_about(const FlightParams& params, const Draws& d, Vec3 center) {
@@ -532,7 +544,7 @@ Segment drift_about(const FlightParams& params, const Draws& d, Vec3 center) {
   for (std::size_t i = 0; i < 3; ++i) {
     s.numbers.at(DriftAt::amplitude + i) = shape.amplitude.at(i);
     s.numbers.at(DriftAt::frequency + i) =
-        v / (2.0 * pi * shape.amplitude.at(i) * std::sqrt(3.0));
+        v / (two_pi * shape.amplitude.at(i) * std::numbers::sqrt3);
     s.numbers.at(DriftAt::phase + i) = shape.phase.at(i);
   }
   return s;
@@ -563,7 +575,7 @@ Segment circle_about(const Context& c, const Draws& d) {
       tilt_most,
       std::asin(std::clamp(room / ((1.0 + breathe_most) * r0), 0.0, 1.0)));
   const double alpha = d.between(Purpose::tilt, 0.0, steepest);
-  const double beta = d.between(Purpose::azimuth, 0.0, 2.0 * pi);
+  const double beta = d.between(Purpose::azimuth, 0.0, two_pi);
   const Vec3 axis{std::cos(beta), 0.0, std::sin(beta)};
   const Vec3 w = normalized(std::cos(alpha) * world_up +
                             std::sin(alpha) * cross(axis, world_up));
@@ -576,18 +588,18 @@ Segment circle_about(const Context& c, const Draws& d) {
   put_triple<CircleAt::u>(s, u);
   put_triple<CircleAt::v>(s, v);
   s.numbers[CircleAt::r0] = r0;
-  s.numbers[CircleAt::theta0] = d.between(Purpose::turn, 0.0, 2.0 * pi);
+  s.numbers[CircleAt::theta0] = d.between(Purpose::turn, 0.0, two_pi);
   const double omega = static_cast<double>(params.speed) / r0;
-  s.numbers[CircleAt::omega] = d(Purpose::direction) < 0.5 ? omega : -omega;
+  s.numbers[CircleAt::omega] = d(Purpose::direction) < half ? omega : -omega;
   s.numbers[CircleAt::breathe] = d.between(Purpose::breathe, 0.0, breathe_most);
   s.numbers[CircleAt::breathe_rate] =
       d.between(Purpose::breathe_rate, breathe_rate_least, breathe_rate_most);
   s.numbers[CircleAt::breathe_phase] =
-      d.between(Purpose::breathe_phase, 0.0, 2.0 * pi);
+      d.between(Purpose::breathe_phase, 0.0, two_pi);
   s.numbers[CircleAt::bob] = d.between(Purpose::bob, 0.0, bob_most);
   s.numbers[CircleAt::bob_rate] =
       d.between(Purpose::bob_rate, bob_rate_least, bob_rate_most);
-  s.numbers[CircleAt::bob_phase] = d.between(Purpose::bob_phase, 0.0, 2.0 * pi);
+  s.numbers[CircleAt::bob_phase] = d.between(Purpose::bob_phase, 0.0, two_pi);
   // Four to nine seconds: a wide orbit makes part of a loop, a tight one
   // more than one, at the cruising speed either way.
   s.duration = d.between(Purpose::loops, circle_shortest, circle_longest);
@@ -595,7 +607,7 @@ Segment circle_about(const Context& c, const Draws& d) {
 }
 
 Segment swoop_from(const Context& c, const Draws& d, Vec3 from) {
-  const double h = d.between(Purpose::heading, 0.0, 2.0 * pi);
+  const double h = d.between(Purpose::heading, 0.0, two_pi);
   const Vec3 forward{std::cos(h), 0.0, std::sin(h)};
   const double depth = d.between(Purpose::dip, dip_least, dip_most);
   const double climb = d.between(Purpose::rise, climb_least, climb_most);
@@ -1094,7 +1106,8 @@ Extent reach_of(const Extent& volume, const std::vector<Segment>& opening) {
 }
 
 // The refusal below says "an hour": most_wait, which this ties it to (ES.45).
-static_assert(most_wait == 3600.0, "check_prelude's message says 'an hour'");
+static_assert(most_wait == seconds_an_hour,
+              "check_prelude's message says 'an hour'");
 
 // Step P1's numbers: a wait from 0 to most_wait, and a perch's point
 // finite. Checked before any loop is made.

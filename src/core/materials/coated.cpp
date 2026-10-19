@@ -7,6 +7,11 @@ namespace serenity::materials {
 
 namespace {
 
+// Unpolarized light: the mean of the s and p reflectances.
+constexpr double unpolarized = 0.5;
+// Simpson's rule: the weighted sum times h / 3.
+constexpr double simpson_divisor = 3.0;
+
 // The unpolarized Fresnel reflectance at a smooth boundary, cos_i the cosine
 // of incidence and eta = n_from / n_to: 1 past the critical angle. The
 // shaders' (metal/materials/dielectric.metal.h), in double, for load.
@@ -18,7 +23,7 @@ double fresnel(double cos_i, double eta) noexcept {
   const double cos_t = std::sqrt(1.0 - sin2_t);
   const double r_s = (eta * cos_i - cos_t) / (eta * cos_i + cos_t);
   const double r_p = (cos_i - eta * cos_t) / (cos_i + eta * cos_t);
-  return 0.5 * (r_s * r_s + r_p * r_p);
+  return unpolarized * (r_s * r_s + r_p * r_p);
 }
 
 }  // namespace
@@ -51,7 +56,7 @@ double internal_escape(double ior) {
         (i == 0 || i == intervals) ? 1.0 : (i % 2 == 1 ? 4.0 : 2.0);
     sum += weight * value;
   }
-  return sum * h / 3.0;
+  return sum * h / simpson_divisor;
 }
 
 double internal_reflectance(double ior) { return 1.0 - internal_escape(ior); }

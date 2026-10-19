@@ -10,6 +10,11 @@ namespace serenity::denoise {
 
 namespace {
 
+// JSON's string bounds: a control character, below 0x20, must be escaped;
+// a \\u escape past ASCII's last code is one no layout writes.
+constexpr unsigned first_printable = 0x20;
+constexpr unsigned last_ascii = 0x7f;
+
 // A recursive-descent reader over `text`, `at` the next byte (F.3: one
 // function a production of the grammar).
 class Reader {
@@ -146,7 +151,7 @@ class Reader {
       if (c == '"') {
         return out;
       }
-      if (static_cast<unsigned char>(c) < 0x20) {
+      if (static_cast<unsigned char>(c) < first_printable) {
         fail("a control character in a string");
       }
       if (c != '\\') {
@@ -188,7 +193,7 @@ class Reader {
               end != std::to_address(hex.end())) {
             fail("a \\u escape without four hex digits");
           }
-          if (code > 0x7f) {
+          if (code > last_ascii) {
             fail("a \\u escape past ASCII, which no layout writes");
           }
           at_ += 4;

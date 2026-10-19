@@ -176,7 +176,8 @@ bool within(contracts::Float3 a, float low, float high) {
 // double (T.1), each read back in its own precision.
 template <std::floating_point T>
 std::string words(T value) {
-  std::array<char, 64> buffer{};
+  constexpr std::size_t longest = 64;  // a fixed double's, far past 1e6's
+  std::array<char, longest> buffer{};
   const auto [end, error] = std::to_chars(std::to_address(buffer.begin()),
                                           std::to_address(buffer.end()), value,
                                           std::chars_format::fixed);
@@ -190,14 +191,16 @@ static_assert(animation::flash_spacing == 1.0,
               "a flash's messages say 'under a second'");
 
 // The wait messages say "an hour": most_wait, which this ties them to.
-static_assert(animation::most_wait == 3600.0,
+constexpr double seconds_an_hour = 3600.0;
+static_assert(animation::most_wait == seconds_an_hour,
               "a wait's messages say 'an hour'");
 
 // What the world's bound says in an error: "within 1000 km of the origin
 // on every axis", from world_extent (I.22: built when an error is, not at
 // static initialization).
 std::string world_words() {
-  return "within " + words(world_extent / 1000.0) +
+  constexpr double meters_a_kilometer = 1000.0;
+  return "within " + words(world_extent / meters_a_kilometer) +
          " km of the origin on every axis";
 }
 
@@ -1226,7 +1229,8 @@ animation::GlowRecord ShapeReading::make_glow(
                   words(animation::least_period) + " s");
     }
     rhythm.flash = read_positive(r_, t, "flash", what);
-    if (rhythm.flash > rhythm.period / 2.0) {
+    constexpr double most_flash_share = 0.5;  // of its period
+    if (rhythm.flash > most_flash_share * rhythm.period) {
       r_.fail(r_.required(t, "flash", what),
               what + "'s flash must be at most half its period");
     }

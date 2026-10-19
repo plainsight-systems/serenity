@@ -3,6 +3,7 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 #include <array>
+#include <cstddef>
 
 #include "core/frame/extent.h"
 #include "metal/device/device.h"
@@ -74,7 +75,9 @@ class DepthOfFieldImages {
   NS::SharedPtr<MTL::Device> device_;
   Submission& submission_;
   frame::Extent size_;
-  std::array<ResidentTexture, 5> images_;
+  // The presort, the far and near fields, and each filtered.
+  static constexpr std::size_t image_count = 5;
+  std::array<ResidentTexture, image_count> images_;
   ResidentBuffer tiles_;
   ResidentBuffer dilated_;
 };

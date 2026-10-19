@@ -80,9 +80,15 @@ struct Offset {
   int x;
   int y;
 };
+// A packed offset's layout: x in the low byte, y in the high, each a signed
+// byte.
+inline constexpr unsigned offset_x_mask = 0xffu;
+inline constexpr unsigned offset_y_shift = 8u;
+
 constexpr Offset unpack_offset(std::uint16_t packed) {
-  return Offset{static_cast<int>(static_cast<std::int8_t>(packed & 0xffu)),
-                static_cast<int>(static_cast<std::int8_t>(packed >> 8u))};
+  return Offset{
+      static_cast<int>(static_cast<std::int8_t>(packed & offset_x_mask)),
+      static_cast<int>(static_cast<std::int8_t>(packed >> offset_y_shift))};
 }
 
 }  // namespace serenity::sampling

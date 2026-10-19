@@ -35,8 +35,11 @@ namespace serenity::sampling {
 // with the same formula (scripts/make_denoiser_dataset.py, camera_jitter),
 // both held to one table of values by their tests.
 
-static_assert(contracts::jitter_phases ==
-                  8u * contracts::denoise_scale * contracts::denoise_scale,
+// DLSS's rule: eight phases for each output pixel a rendered one covers.
+inline constexpr std::uint32_t jitter_phases_a_pixel = 8u;
+static_assert(contracts::jitter_phases == jitter_phases_a_pixel *
+                                              contracts::denoise_scale *
+                                              contracts::denoise_scale,
               "the jitter's phases are DLSS's rule for the network's upscale");
 
 struct CameraJitter {
@@ -60,8 +63,9 @@ constexpr double radical_inverse(std::uint64_t k, std::uint64_t base) noexcept {
 // Frame `index`'s offset (above).
 constexpr CameraJitter camera_jitter(std::uint64_t index) noexcept {
   const std::uint64_t k = index % contracts::jitter_phases + 1u;
-  return {static_cast<float>(radical_inverse(k, 2) - 0.5),
-          static_cast<float>(radical_inverse(k, 3) - 0.5)};
+  constexpr double pixel_center = 0.5;  // the offset is from the center
+  return {static_cast<float>(radical_inverse(k, 2) - pixel_center),
+          static_cast<float>(radical_inverse(k, 3) - pixel_center)};
 }
 
 }  // namespace serenity::sampling

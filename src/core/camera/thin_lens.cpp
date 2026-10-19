@@ -54,6 +54,11 @@ constexpr double tiny = 1e-6;
 // Half a field of view's angle in radians, per degree of the whole.
 constexpr double half_radians_per_degree = std::numbers::pi / 360.0;
 
+// A field of view's whole angle is less than a half turn, in degrees; and
+// an image's height is its two halves'.
+constexpr float half_turn_degrees = 180.0f;
+constexpr double halves = 2.0;
+
 // The camera's forward and right axes, unit length, for a camera invalid()
 // passes: the two the framing and the view axes each build their up from.
 struct Basis {
@@ -88,7 +93,7 @@ std::optional<std::string_view> invalid(const contracts::Camera& camera) {
     return "up is parallel to the direction the camera looks";
   }
   if (!(camera.vertical_fov_degrees > 0.0f &&
-        camera.vertical_fov_degrees < 180.0f)) {
+        camera.vertical_fov_degrees < half_turn_degrees)) {
     return "vertical_fov_degrees is not strictly between 0 and 180";
   }
   if (!(std::isfinite(camera.lens_radius) && camera.lens_radius >= 0.0f)) {
@@ -148,7 +153,7 @@ float circle_of_confusion_scale(const contracts::Camera& camera,
   return static_cast<float>(
       static_cast<double>(camera.lens_radius) *
       static_cast<double>(size.height) /
-      (2.0 * static_cast<double>(camera.focus_distance) * half_height));
+      (halves * static_cast<double>(camera.focus_distance) * half_height));
 }
 
 ViewAxes view_axes(const contracts::Camera& camera) {

@@ -16,6 +16,7 @@ namespace serenity::animation {
 namespace {
 
 constexpr double two_pi = 2.0 * std::numbers::pi;
+constexpr double sine_mean_square = 0.5;  // sin^2's mean over a period
 constexpr double float_max = std::numeric_limits<float>::max();
 
 // Step 1's draws: the weight in [0.5, 1) and the frequency ratio in
@@ -36,7 +37,7 @@ double wander_draw(std::uint64_t seed, int axis, int term, Draw which) {
                             (static_cast<std::uint64_t>(term) << 8) |
                             static_cast<std::uint64_t>(which);
   const std::uint64_t bits = splitmix64(splitmix64(seed) ^ key);
-  return static_cast<double>(bits >> 11) * 0x1.0p-53;
+  return unit_of(bits);
 }
 
 // The box `center` +/- `grown` on each axis, in double, rounded outward
@@ -106,7 +107,7 @@ Wander make_wander(const WanderParams& params, float body,
           static_cast<double>(reach) * weights.at(i) / total;
       const double v =
           two_pi * wander.frequency.at(a).at(i) * wander.amplitude.at(a).at(i);
-      mean_square_speed += 0.5 * v * v;
+      mean_square_speed += sine_mean_square * v * v;
     }
   }
   // Step 3: every frequency scaled so the root-mean-square speed is `speed`.
