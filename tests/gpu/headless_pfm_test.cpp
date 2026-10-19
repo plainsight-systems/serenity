@@ -32,7 +32,12 @@
 #include "support/same_bits.h"
 #include "support/scene_text.h"
 
-using namespace serenity;
+namespace contracts = serenity::contracts;
+namespace frame = serenity::frame;
+namespace metal = serenity::metal;
+namespace output = serenity::output;
+namespace scene = serenity::scene;
+namespace tests = serenity::tests;
 
 TEST_CASE(
     "headless: a PFM frame is the accumulated image's radiance, bit for bit") {

@@ -45,7 +45,9 @@
 #include "support/scene_text.h"
 #include "support/vector.h"
 
-using namespace serenity;
+namespace contracts = serenity::contracts;
+namespace frame = serenity::frame;
+namespace tests = serenity::tests;
 using tests::expected_floor;
 using tests::furnace;
 using tests::lit_floor;

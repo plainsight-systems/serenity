@@ -20,7 +20,11 @@
 #include "support/references.h"
 #include "support/vector.h"
 
-using namespace serenity;
+namespace animation = serenity::animation;
+namespace camera = serenity::camera;
+namespace contracts = serenity::contracts;
+namespace frame = serenity::frame;
+namespace tests = serenity::tests;
 using tests::Binding;
 using tests::CameraProbeRay;
 using tests::CameraQuery;

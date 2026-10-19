@@ -26,7 +26,10 @@
 #include "gpu/support/probe_runner.h"
 #include "support/vector.h"
 
-using namespace serenity;
+namespace animation = serenity::animation;
+namespace contracts = serenity::contracts;
+namespace tests = serenity::tests;
+namespace textures = serenity::textures;
 using tests::Binding;
 using tests::TexturePoint;
 

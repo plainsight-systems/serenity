@@ -16,7 +16,10 @@
 #include "gpu/kernels/shape_probe.h"
 #include "gpu/support/probe_runner.h"
 
-using namespace serenity;
+namespace contracts = serenity::contracts;
+namespace scene = serenity::scene;
+namespace shapes = serenity::shapes;
+namespace tests = serenity::tests;
 using tests::Binding;
 using tests::ShapeQuery;
 

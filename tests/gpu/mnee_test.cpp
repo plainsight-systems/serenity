@@ -41,7 +41,9 @@
 #include "support/schedules.h"
 #include "support/vector.h"
 
-using namespace serenity;
+namespace frame = serenity::frame;
+namespace shapes = serenity::shapes;
+namespace tests = serenity::tests;
 using tests::Binding;
 using tests::Vec3;
 
@@ -238,7 +240,7 @@ TEST_CASE(
   // case, the no_primitive ones among them, under validation; that the
   // record is read only behind the refraction's test is the source's,
   // and the compiled kernels' (that note).
-  namespace c = contracts;
+  namespace c = serenity::contracts;
   const std::vector<shapes::ShapeRecord> records = {
       shapes::ShapeRecord{shapes::ShapeKind::sphere, 0u, 0u, c::no_medium},
       shapes::ShapeRecord{shapes::ShapeKind::box, 0u, 0u, c::no_medium}};

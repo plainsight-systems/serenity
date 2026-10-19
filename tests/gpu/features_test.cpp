@@ -31,7 +31,14 @@
 #include "support/scene_text.h"
 #include "support/schedules.h"
 
-using namespace serenity;
+namespace animation = serenity::animation;
+namespace camera = serenity::camera;
+namespace contracts = serenity::contracts;
+namespace frame = serenity::frame;
+namespace metal = serenity::metal;
+namespace sampling = serenity::sampling;
+namespace scene = serenity::scene;
+namespace tests = serenity::tests;
 
 namespace {
 

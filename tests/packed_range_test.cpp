@@ -17,7 +17,9 @@
 #include "support/scene_text.h"
 #include "support/text.h"
 
-using namespace serenity;
+namespace materials = serenity::materials;
+namespace scene = serenity::scene;
+namespace tests = serenity::tests;
 using tests::contains;
 using tests::replaced;
 

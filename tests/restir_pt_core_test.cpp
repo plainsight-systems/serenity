@@ -141,7 +141,19 @@ TEST_CASE(
 }
 
 TEST_CASE("a path reservoir's flags read back as packed") {
-  using namespace serenity::contracts;
+  using serenity::contracts::lobe_diffuse;
+  using serenity::contracts::lobe_glossy;
+  using serenity::contracts::lobe_reflection;
+  using serenity::contracts::pack_path_flags;
+  using serenity::contracts::path_count;
+  using serenity::contracts::path_end;
+  using serenity::contracts::path_face;
+  using serenity::contracts::path_length;
+  using serenity::contracts::path_lobe_at;
+  using serenity::contracts::path_lobe_before;
+  using serenity::contracts::path_rc;
+  using serenity::contracts::PathEnd;
+  using serenity::contracts::PathShape;
   const PathShape shape{7u,
                         10u,
                         4u,

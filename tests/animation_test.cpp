@@ -18,7 +18,10 @@
 #include "core/animation/wander.h"
 #include "support/text.h"
 
-using namespace serenity;
+namespace animation = serenity::animation;
+namespace contracts = serenity::contracts;
+namespace frame = serenity::frame;
+namespace tests = serenity::tests;
 using animation::Wander;
 using animation::WanderParams;
 using frame::Seconds;

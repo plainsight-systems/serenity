@@ -18,7 +18,15 @@
 #include "support/text.h"
 #include "test_paths.h"
 
-using namespace serenity;
+namespace animation = serenity::animation;
+namespace contracts = serenity::contracts;
+namespace frame = serenity::frame;
+namespace lights = serenity::lights;
+namespace materials = serenity::materials;
+namespace scene = serenity::scene;
+namespace shapes = serenity::shapes;
+namespace tests = serenity::tests;
+namespace textures = serenity::textures;
 using tests::contains;
 using tests::replaced;
 

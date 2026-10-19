@@ -14,7 +14,10 @@
 #include "core/camera/thin_lens.h"
 #include "core/passes/depth_of_field.h"
 
-using namespace serenity;
+namespace camera = serenity::camera;
+namespace contracts = serenity::contracts;
+namespace frame = serenity::frame;
+namespace passes = serenity::passes;
 
 namespace {
 

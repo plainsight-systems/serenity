@@ -11,8 +11,8 @@
 
 #include "core/contracts/medium.h"
 
-using namespace serenity;
-using namespace serenity::shapes;
+namespace contracts = serenity::contracts;
+namespace serenity::shapes {
 
 namespace {
 
@@ -140,3 +140,5 @@ TEST_CASE(
       std::logic_error);
   CHECK_THROWS_AS(object_bounds(shapes, shapes.records[0]), std::logic_error);
 }
+
+}  // namespace serenity::shapes

@@ -46,7 +46,11 @@
 #include "support/scene_text.h"
 #include "support/vector.h"
 
-using namespace serenity;
+namespace animation = serenity::animation;
+namespace metal = serenity::metal;
+namespace metallib = serenity::metallib;
+namespace scene = serenity::scene;
+namespace tests = serenity::tests;
 using tests::LeaveQuery;
 using tests::LeaveResult;
 using tests::Vec3;

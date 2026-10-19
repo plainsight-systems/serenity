@@ -43,7 +43,11 @@
 #include "support/statistics.h"
 #include "support/vector.h"
 
-using namespace serenity;
+namespace contracts = serenity::contracts;
+namespace materials = serenity::materials;
+namespace metal = serenity::metal;
+namespace scene = serenity::scene;
+namespace tests = serenity::tests;
 using contracts::Bsdf;
 using contracts::BsdfKind;
 using tests::Binding;
@@ -738,7 +742,14 @@ TEST_CASE(
 TEST_CASE(
     "lobes: each kind's, from the shader, and an estimator aims at lights only "
     "where one is not delta") {
-  using namespace contracts;
+  using contracts::aims_at_lights;
+  using contracts::Bsdf;
+  using contracts::BsdfKind;
+  using contracts::lobe_delta;
+  using contracts::lobe_diffuse;
+  using contracts::lobe_glossy;
+  using contracts::lobe_reflection;
+  using contracts::lobe_transmission;
   const Vec3 n = unit(0.0, 0.0, 1.0);
   const std::vector<Bsdf> bsdfs = {
       make(BsdfKind::none, n, {1.0f, 1.0f, 1.0f}, {}),

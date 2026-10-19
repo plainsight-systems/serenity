@@ -11,7 +11,7 @@
 #include <optional>
 #include <stdexcept>
 
-using namespace serenity;
+namespace frame = serenity::frame;
 using frame::Extent;
 using frame::FrameInputs;
 using frame::History;

@@ -18,7 +18,9 @@
 #include "gpu/support/denoise_fixture.h"
 
 int main(int argc, char** argv) {
-  using namespace serenity;
+  namespace contracts = serenity::contracts;
+  namespace output = serenity::output;
+  namespace tests = serenity::tests;
   if (argc != 3) {
     std::cerr << "usage: denoise_check FIXTURE OUT\n";
     return 2;

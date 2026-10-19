@@ -143,7 +143,11 @@ void operator delete(void* memory, std::align_val_t) noexcept {
   std::free(memory);
 }
 
-using namespace serenity;
+namespace animation = serenity::animation;
+namespace frame = serenity::frame;
+namespace metal = serenity::metal;
+namespace scene = serenity::scene;
+namespace tests = serenity::tests;
 
 namespace {
 

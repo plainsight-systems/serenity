@@ -13,7 +13,7 @@
 
 #include "support/schedules.h"
 
-using namespace serenity::frame;
+namespace serenity::frame {
 using serenity::passes::ToneMap;
 using serenity::tests::look;
 using serenity::tests::refusal;
@@ -134,3 +134,5 @@ TEST_CASE("tone-map settings come exactly with the pass, in range") {
   CHECK(refused_for(with(10.5f, 0.0f), "exposure, 10.5 stops"));
   CHECK(refused_for(with(0.0f, -0.01f), "bloom, -0.01,"));
 }
+
+}  // namespace serenity::frame

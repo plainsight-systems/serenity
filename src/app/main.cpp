@@ -48,7 +48,11 @@
 
 namespace {
 
-using namespace serenity;
+namespace app = serenity::app;
+namespace frame = serenity::frame;
+namespace metal = serenity::metal;
+namespace presentation = serenity::presentation;
+namespace scene = serenity::scene;
 
 // The window's size when it opens, in points.
 constexpr app::Points initial_window{1280, 800};

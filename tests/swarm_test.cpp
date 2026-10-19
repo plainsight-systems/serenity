@@ -29,7 +29,13 @@
 #include "support/text.h"
 #include "support/vector.h"
 
-using namespace serenity;
+namespace animation = serenity::animation;
+namespace contracts = serenity::contracts;
+namespace frame = serenity::frame;
+namespace lights = serenity::lights;
+namespace scene = serenity::scene;
+namespace shapes = serenity::shapes;
+namespace tests = serenity::tests;
 using frame::Seconds;
 using tests::clear_start;
 using tests::contains;

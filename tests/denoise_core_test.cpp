@@ -26,7 +26,11 @@
 #include "support/text.h"
 #include "test_paths.h"
 
-using namespace serenity;
+namespace contracts = serenity::contracts;
+namespace denoise = serenity::denoise;
+namespace frame = serenity::frame;
+namespace passes = serenity::passes;
+namespace tests = serenity::tests;
 using frame::PassKind;
 using frame::Schedule;
 

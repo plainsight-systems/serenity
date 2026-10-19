@@ -38,7 +38,12 @@
 #include "serenity/metallib/shaders.h"
 #include "support/references.h"
 
-using namespace serenity;
+namespace bindings = serenity::bindings;
+namespace frame = serenity::frame;
+namespace metal = serenity::metal;
+namespace metallib = serenity::metallib;
+namespace passes = serenity::passes;
+namespace tests = serenity::tests;
 
 namespace {
 

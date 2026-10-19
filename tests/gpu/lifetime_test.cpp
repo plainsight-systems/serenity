@@ -33,7 +33,10 @@
 #include "metal/frame/renderer.h"
 #include "support/scene_text.h"
 
-using namespace serenity;
+namespace frame = serenity::frame;
+namespace metal = serenity::metal;
+namespace scene = serenity::scene;
+namespace tests = serenity::tests;
 
 namespace {
 

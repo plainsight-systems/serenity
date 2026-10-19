@@ -35,7 +35,15 @@
 #include "support/scene_text.h"
 #include "support/vector.h"
 
-using namespace serenity;
+namespace gpu = serenity::gpu;
+namespace lights = serenity::lights;
+namespace materials = serenity::materials;
+namespace media = serenity::media;
+namespace metal = serenity::metal;
+namespace scene = serenity::scene;
+namespace shapes = serenity::shapes;
+namespace tests = serenity::tests;
+namespace textures = serenity::textures;
 using tests::Binding;
 using tests::BlockQuery;
 

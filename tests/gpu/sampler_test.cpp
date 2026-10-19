@@ -16,7 +16,7 @@
 #include "gpu/support/probe_runner.h"
 #include "support/statistics.h"
 
-using namespace serenity;
+namespace tests = serenity::tests;
 using tests::Binding;
 using tests::path_numbers_drawn;
 using tests::PathNumbersDraw;

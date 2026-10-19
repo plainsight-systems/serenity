@@ -23,7 +23,9 @@
 #include "metal/device/submission.h"
 #include "serenity/metallib/probes.h"
 
-using namespace serenity;
+namespace metal = serenity::metal;
+namespace metallib = serenity::metallib;
+namespace tests = serenity::tests;
 
 TEST_CASE(
     "rebinding an argument table between dispatches gives each dispatch its "

@@ -22,7 +22,9 @@
 #include "support/statistics.h"
 #include "support/vector.h"
 
-using namespace serenity;
+namespace contracts = serenity::contracts;
+namespace lights = serenity::lights;
+namespace tests = serenity::tests;
 using tests::Binding;
 using tests::LightQuery;
 using tests::Vec3;

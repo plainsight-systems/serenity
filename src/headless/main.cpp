@@ -50,7 +50,12 @@
 #include "metal/device/submission.h"
 #include "metal/frame/renderer.h"
 
-using namespace serenity;  // this program's own translation unit (SF.6)
+namespace contracts = serenity::contracts;
+namespace frame = serenity::frame;
+namespace headless = serenity::headless;
+namespace metal = serenity::metal;
+namespace output = serenity::output;
+namespace scene = serenity::scene;
 
 namespace {
 

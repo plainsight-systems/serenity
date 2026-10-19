@@ -37,7 +37,11 @@
 #include "metal/frame/renderer.h"
 #include "support/scene_text.h"
 
-using namespace serenity;
+namespace frame = serenity::frame;
+namespace metal = serenity::metal;
+namespace presentation = serenity::presentation;
+namespace scene = serenity::scene;
+namespace tests = serenity::tests;
 
 TEST_CASE(
     "a frame with no camera is refused before its submission begins, and the "

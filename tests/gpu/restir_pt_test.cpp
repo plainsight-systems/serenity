@@ -77,7 +77,16 @@
 #include "support/schedules.h"
 #include "support/vector.h"
 
-using namespace serenity;
+namespace camera = serenity::camera;
+namespace contracts = serenity::contracts;
+namespace frame = serenity::frame;
+namespace lights = serenity::lights;
+namespace metal = serenity::metal;
+namespace metallib = serenity::metallib;
+namespace passes = serenity::passes;
+namespace sampling = serenity::sampling;
+namespace scene = serenity::scene;
+namespace tests = serenity::tests;
 using tests::camera_text;
 using tests::firefly;
 using tests::furnace;

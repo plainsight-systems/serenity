@@ -25,7 +25,9 @@
 #include "metal/frame/renderer.h"
 #include "support/references.h"
 
-using namespace serenity;
+namespace frame = serenity::frame;
+namespace metal = serenity::metal;
+namespace tests = serenity::tests;
 
 namespace {
 

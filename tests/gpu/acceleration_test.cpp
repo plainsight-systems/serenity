@@ -30,7 +30,11 @@
 #include "serenity/metallib/probes.h"
 #include "support/vector.h"
 
-using namespace serenity;
+namespace contracts = serenity::contracts;
+namespace metal = serenity::metal;
+namespace metallib = serenity::metallib;
+namespace scene = serenity::scene;
+namespace tests = serenity::tests;
 using tests::TraceHit;
 using tests::TraceRay;
 

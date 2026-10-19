@@ -18,7 +18,10 @@
 #include "core/frame/schedule.h"
 #include "support/schedules.h"
 
-using namespace serenity;
+namespace contracts = serenity::contracts;
+namespace frame = serenity::frame;
+namespace sampling = serenity::sampling;
+namespace tests = serenity::tests;
 
 TEST_CASE(
     "the camera's jitter is Halton(2, 3) from k = 1, its 32 phases repeating, "

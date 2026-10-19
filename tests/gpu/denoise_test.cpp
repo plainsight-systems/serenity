@@ -52,7 +52,14 @@
 #include "support/scene_text.h"
 #include "test_paths.h"
 
-using namespace serenity;
+namespace contracts = serenity::contracts;
+namespace denoise = serenity::denoise;
+namespace frame = serenity::frame;
+namespace metal = serenity::metal;
+namespace metallib = serenity::metallib;
+namespace output = serenity::output;
+namespace scene = serenity::scene;
+namespace tests = serenity::tests;
 
 namespace {
 

@@ -13,7 +13,7 @@
 #include "gpu/kernels/film_probe.h"
 #include "gpu/support/probe_runner.h"
 
-using namespace serenity;
+namespace tests = serenity::tests;
 using tests::Binding;
 using tests::Float4;
 
