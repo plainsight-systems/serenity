@@ -5,7 +5,12 @@ on its data set, tests it once on the real marbles, and exports its weights
 for the Metal pass. The original run, its curve and its results:
 docs/research/2026-10-15-denoiser-training.md; the demo's network, retrained
 on checkerboard input in Milestone 4: docs/research/2026-10-17-milestone-4-plan.md,
-"Retraining on checkerboard input".
+"Retraining on checkerboard input". Since the production sweep
+(docs/research/2026-10-18-production-sweep.md) the network reads 30
+inputs, the camera's jitter among them, from light traced through a
+pinhole and tiles drawn by power: every network exported before (28
+inputs, the published one among them) is refused by the renderer until it
+is retrained on denoiser-v2.
 
 Its own environment, outside the C++ build: nothing the renderer builds or
 runs depends on it. Everything it reads and writes lives beside the
@@ -14,7 +19,8 @@ checkout, never in it, in `../serenity-data/` (from the checkout's root;
 
 | Directory | What | Made by |
 |---|---|---|
-| `denoiser-v1-checkerboard/` | the data set, 32.3 GB, its manifest: checkerboard inputs over denoiser-v1's targets | `scripts/make_denoiser_dataset.py --targets-from` |
+| `denoiser-v2/` | the data set to train next (not yet rendered): pinhole scenes, each input frame's jitter in the manifest, tiles by power | `scripts/make_denoiser_dataset.py` |
+| `denoiser-v1-checkerboard/` | the data set the published network was trained on, 32.3 GB: inputs over denoiser-v1's targets; no jitter, so training refuses it now | `scripts/make_denoiser_dataset.py --targets-from` |
 | `denoiser-v1-checkerboard-warmup/` | the test sequences' warm-up frames | `render_warmup.py` |
 | `denoiser-v1/` | the original data set, whose scenes, albedo and targets the one above takes | `scripts/make_denoiser_dataset.py` |
 | `denoiser-v1-runs/` | each run's log, checkpoints and test results | `train.py`, `evaluate.py` |
@@ -61,7 +67,18 @@ renders from a clean, committed tree, recording the commit and the
 binary's SHA-256 in the manifest; it resumes where it stopped, and refuses
 a manifest made by another commit, so a new render of the data set goes
 into a new directory. denoiser-v1 took 4.0 h on the M3 Max
-(docs/research/2026-10-14-denoiser-dataset.md):
+(docs/research/2026-10-14-denoiser-dataset.md). denoiser-v2 changes the
+inputs and the targets alike (every scene written through a pinhole, the
+inputs jittered and their tiles drawn by power), so it is rendered whole,
+not --targets-from another; its plan is another, and --targets-from
+refuses denoiser-v1 for it anyway:
+
+```sh
+python3 scripts/make_denoiser_dataset.py --estimate --out ../serenity-data/denoiser-v2  # the first input and target, timed
+python3 scripts/make_denoiser_dataset.py --out ../serenity-data/denoiser-v2             # render it, or resume
+```
+
+Earlier data sets, for the record:
 
 When a change alters the inputs' renderer and not the targets', a new data
 set renders its inputs alone and takes the old one's scenes, albedo and
@@ -124,7 +141,10 @@ the config's path.
 
 The real marbles are the test, read by `evaluate.py` alone, once a run has
 ended; the references are `make reference`'s at t = 8 and t = 120, in the
-checkout's `.cache/references/`:
+checkout's `.cache/references/`. A network trained on denoiser-v2 sees a
+pinhole's image, and the references are through the lens: by the user's
+decision (2026-10-18) such a network is tested against the data set's own
+targets alone, without `--references`, which is then optional:
 
 ```sh
 uv run --locked python evaluate.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1-wide-checkerboard/best.pt \

@@ -23,6 +23,7 @@
 #include "support/schedules.h"
 
 namespace contracts = serenity::contracts;
+namespace frame = serenity::frame;
 using serenity::frame::PassKind;
 using serenity::frame::Schedule;
 
@@ -104,14 +105,20 @@ TEST_CASE("the frame before's pixel beside a pixel is one that frame traced, at 
     }
 }
 
-TEST_CASE("a denoised graph, its light traced checkerboarded, refuses a sigma the traced lattice cannot pair at") {
+TEST_CASE("a graph whose light is the network's input, traced checkerboarded, refuses a sigma the lattice cannot "
+          "pair at") {
     const std::vector<PassKind> light = {PassKind::restir_pt_initial, PassKind::restir_pt_spatial,
                                          PassKind::restir_pt_shade};
-    const auto graph = [&](bool denoised, float sigma) {
+    enum class Kind { light, input, denoised };
+    const auto graph = [&](Kind kind, float sigma) {
         std::vector<PassKind> kinds = light;
-        if (denoised) {
+        const bool denoised = kind == Kind::denoised;
+        if (kind != Kind::light) {
             kinds.push_back(PassKind::features);
+        }
+        if (denoised) {
             kinds.push_back(PassKind::denoise);
+            kinds.push_back(PassKind::depth_of_field);
         }
         kinds.push_back(PassKind::tone_map);
         Schedule s{kinds, serenity::tests::look};
@@ -123,7 +130,12 @@ TEST_CASE("a denoised graph, its light traced checkerboarded, refuses a sigma th
         return s;
     };
     // 0.8 pixels, the least a full image pairs at, is a lattice step's 0.57.
-    CHECK(serenity::tests::refusal(graph(false, 0.8f)).empty());
-    CHECK(serenity::tests::refused_for(graph(true, 0.8f), "must be at least 1.13137 pixels in a denoised graph"));
-    CHECK(serenity::tests::refusal(graph(true, 1.2f)).empty());
+    CHECK(serenity::tests::refusal(graph(Kind::light, 0.8f)).empty());
+    CHECK_FALSE(frame::feeds_network(graph(Kind::light, 0.8f)));
+    for (const Kind kind : {Kind::input, Kind::denoised}) {
+        CHECK(frame::feeds_network(graph(kind, 1.2f)));
+        CHECK(serenity::tests::refused_for(graph(kind, 0.8f), "must be at least 1.13137 pixels in a graph whose light "
+                                                              "is the network's input"));
+        CHECK(serenity::tests::refusal(graph(kind, 1.2f)).empty());
+    }
 }

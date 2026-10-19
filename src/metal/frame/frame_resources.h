@@ -21,7 +21,8 @@ namespace serenity::metal {
 // pass takes what it needs and refuses, by MetalError, to run without what it
 // needs.
 
-class DenoiseImages;  // denoise_images.h
+class DenoiseImages;       // denoise_images.h
+class DepthOfFieldImages;  // depth_of_field_images.h
 
 struct FrameResources {
     MTL4::ArgumentTable* arguments = nullptr;
@@ -77,6 +78,11 @@ struct FrameResources {
     MTL::GPUAddress replay_counter = 0;
     MTL::GPUAddress replay_grid = 0;
     MTL::GPUAddress light_tiles = 0;
+    // The frame's power pyramid (contracts/light_tile.h), which the light
+    // tiles are drawn from and every density weighs by, and, with temporal
+    // reuse, last frame's.
+    MTL::GPUAddress light_power = 0;
+    MTL::GPUAddress last_light_power = 0;
     MTL::GPUAddress path_constants = 0;
     MTL::GPUAddress last_primaries = 0;
     MTL::GPUAddress path_finals = 0;
@@ -133,6 +139,15 @@ struct FrameResources {
     MTL::GPUAddress checkerboard_constants = 0;
     MTL::Texture* previous_light = nullptr;
     MTL::Texture* history_light = nullptr;
+
+    // With the depth of field (passes/depth_of_field/depth_of_field.h),
+    // given to it alone, beside the radiance image above, which it reads
+    // and writes at the output size: the full-size depth (contract 17), its
+    // constants (contract 21's DepthOfFieldConstants) and its images
+    // (depth_of_field_images.h). Null and 0 otherwise.
+    MTL::Texture* full_depth = nullptr;
+    MTL::GPUAddress depth_of_field_constants = 0;
+    const DepthOfFieldImages* depth_of_field = nullptr;
 };
 
 }  // namespace serenity::metal

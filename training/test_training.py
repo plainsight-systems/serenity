@@ -16,11 +16,11 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from data import Augmentation, albedo_factor, augment, validation_tiles
+from data import INPUT_CHANNELS, JITTER, Augmentation, albedo_factor, augment, camera_jitter, validation_tiles
 from loss import frame_weights, ms_ssim, pu
-from model import SCORES, SUBPIXELS, TAPS, Denoiser, Widths, warp_history
+from model import NETWORK_INPUTS, SCORES, SUBPIXELS, TAPS, Denoiser, Widths, network_input, warp_history
 from pfm import read_pfm, write_pfm
-from train import hold_on_device, pick_device
+from train import hold_on_device, pick_device, run_batch, zero_batch
 
 TINY = Widths(enc=[8, 8, 8, 8], bottleneck=8, dec=[8, 8, 8, 8])
 
@@ -68,7 +68,7 @@ class WarpTest(unittest.TestCase):
         h, w = 16, 16
         prev = moving_scene(0, 2 * h, 2 * w).float()
         cur = moving_scene(1, 2 * h, 2 * w).float()
-        inp = torch.zeros(2, 12, h, w)
+        inp = torch.zeros(2, INPUT_CHANNELS, h, w)
         inp[:, 10], inp[:, 11] = -1.0, 1.0
         tgt = torch.zeros(2, 6, 2 * h, 2 * w)
         tgt[0, 0:3], tgt[1, 0:3] = prev, cur
@@ -85,15 +85,27 @@ class WarpTest(unittest.TestCase):
     def test_augmentation_mirrors_normals(self):
         """A view-space normal pointing right points left after a horizontal flip; after a transpose,
         a normal pointing right points down (-up), one pointing up points left (-right)."""
-        inp = torch.zeros(1, 12, 4, 4)
+        inp = torch.zeros(1, INPUT_CHANNELS, 4, 4)
         inp[:, 6] = 1.0  # right
         i, _ = augment(inp, torch.zeros(1, 6, 8, 8), Augmentation(True, False, False, (0, 1, 2), (0, 1, 2), False))
         self.assertEqual(float(i[0, 6, 0, 0]), -1.0)
         i, _ = augment(inp, torch.zeros(1, 6, 8, 8), Augmentation(False, False, True, (0, 1, 2), (0, 1, 2), False))
         self.assertEqual((float(i[0, 6, 0, 0]), float(i[0, 7, 0, 0])), (0.0, -1.0))
 
+    def test_augmentation_carries_the_jitter(self):
+        """The jitter is an offset in the image, as the motion is: a flip negates its axis's, the
+        transpose swaps them, so the network sees where in the flipped pixel the ray passed."""
+        inp = torch.zeros(1, INPUT_CHANNELS, 4, 4)
+        inp[:, 12], inp[:, 13] = 0.25, -0.125
+        cases = {(True, False, False): (-0.25, -0.125), (False, True, False): (0.25, 0.125),
+                 (False, False, True): (-0.125, 0.25)}
+        for (hflip, vflip, transpose), expected in cases.items():
+            i, _ = augment(inp, torch.zeros(1, 6, 8, 8),
+                           Augmentation(hflip, vflip, transpose, (0, 1, 2), (0, 1, 2), False))
+            self.assertEqual((float(i[0, 12, 1, 2]), float(i[0, 13, 1, 2])), expected)
+
     def test_color_permutation_is_shared(self):
-        inp = torch.zeros(1, 12, 2, 2)
+        inp = torch.zeros(1, INPUT_CHANNELS, 2, 2)
         tgt = torch.zeros(1, 6, 4, 4)
         inp[:, 0], inp[:, 3], tgt[:, 0], tgt[:, 3] = 1.0, 2.0, 3.0, 4.0  # red everywhere
         i, t = augment(inp, tgt, Augmentation(False, False, False, (2, 0, 1), (0, 1, 2), False))
@@ -101,6 +113,28 @@ class WarpTest(unittest.TestCase):
         self.assertEqual([float(i[0, c, 0, 0]) for c in (3, 4, 5)], [0.0, 2.0, 0.0])
         self.assertEqual([float(t[0, c, 0, 0]) for c in (0, 1, 2)], [0.0, 3.0, 0.0])
         self.assertEqual([float(t[0, c, 0, 0]) for c in (3, 4, 5)], [0.0, 4.0, 0.0])
+
+
+class JitterTest(unittest.TestCase):
+    def test_the_renderers_jitter(self):
+        """data.camera_jitter is the renderer's (src/core/sampling/jitter.h), pinned to the table its
+        test and the data set script's hold too (tests/jitter_test.cpp, tests/test_make_denoiser_dataset.py)."""
+        table = {0: (0.0, -1.0 / 6.0), 1: (-0.25, 1.0 / 6.0), 2: (0.25, -7.0 / 18.0), 31: (-0.484375, 0.2901235),
+                 32: (0.0, -1.0 / 6.0), 7200: (0.0, -1.0 / 6.0), 7201: (-0.25, 1.0 / 6.0)}
+        for index, (x, y) in table.items():
+            jx, jy = camera_jitter(index)
+            self.assertAlmostEqual(jx, x, places=6, msg=index)
+            self.assertAlmostEqual(jy, y, places=6, msg=index)
+
+    def test_the_jitter_reaches_the_network_where_contract_18_puts_it(self):
+        """The U-Net's input is contract 18's 30 channels, the jitter's at 28 and 29."""
+        inp = torch.rand(1, INPUT_CHANNELS, 8, 8)
+        inp[:, JITTER] = torch.tensor([0.3, -0.2])[None, :, None, None]
+        net_in = network_input(inp, torch.rand(1, 3, 16, 16), torch.ones(1, 1, 16, 16))
+        self.assertEqual(net_in.shape[1], NETWORK_INPUTS)
+        self.assertEqual(NETWORK_INPUTS, 30)
+        torch.testing.assert_close(net_in[:, 28:30], inp[:, JITTER])
+        torch.testing.assert_close(net_in[:, 24:28], torch.ones(1, 4, 8, 8))  # the validity before it
 
 
 class KernelTest(unittest.TestCase):
@@ -117,7 +151,7 @@ class KernelTest(unittest.TestCase):
         bias[4] = 50.0                      # spacing 1, center tap (index 4 of 3 x 3)
         bias[3 * TAPS + 0] = 50.0           # all weight on spacing 1
         model = self.scored(bias.reshape(-1))
-        inp = torch.rand(1, 12, 16, 16)
+        inp = torch.rand(1, INPUT_CHANNELS, 16, 16)
         albedo = torch.rand(1, 3, 32, 32)
         out, _, _ = model.frame(inp, albedo, None)
         expected = F.interpolate(inp[:, 0:3], scale_factor=2, mode="nearest") * albedo_factor(albedo)
@@ -128,7 +162,7 @@ class KernelTest(unittest.TestCase):
         bias = torch.zeros(SCORES, SUBPIXELS)
         bias[3 * TAPS + 0] = 50.0
         model = self.scored(bias.reshape(-1))
-        inp = torch.zeros(1, 12, 16, 16)
+        inp = torch.zeros(1, INPUT_CHANNELS, 16, 16)
         inp[:, 0:3] = torch.rand(1, 3, 16, 16)
         _, _, parts = model.frame(inp, torch.ones(1, 3, 32, 32), None)
         corner = inp[0, 0:3, 0:2, 0:2].mean(dim=(1, 2))
@@ -141,7 +175,7 @@ class KernelTest(unittest.TestCase):
         bias[5, 1] = 50.0   # top-right output pixel: the tap to the right
         bias[4, 0] = bias[4, 2] = bias[4, 3] = 50.0
         model = self.scored(bias.reshape(-1))
-        inp = torch.zeros(1, 12, 16, 16)
+        inp = torch.zeros(1, INPUT_CHANNELS, 16, 16)
         inp[:, 0:3] = torch.rand(1, 3, 16, 16)
         _, _, parts = model.frame(inp, torch.ones(1, 3, 32, 32), None)
         f = parts["filtered"][0]
@@ -152,7 +186,7 @@ class KernelTest(unittest.TestCase):
         bias = torch.zeros(SCORES, SUBPIXELS)
         bias[SCORES - 1] = 50.0  # alpha -> 1
         model = self.scored(bias.reshape(-1))
-        inp = torch.zeros(1, 12, 16, 16)
+        inp = torch.zeros(1, INPUT_CHANNELS, 16, 16)
         inp[:, 0:3] = 1.0
         history = torch.full((1, 3, 32, 32), 5.0)
         _, demod_out, _ = model.frame(inp, torch.ones(1, 3, 32, 32), history)
@@ -207,6 +241,13 @@ class DeviceTest(unittest.TestCase):
         self.assertFalse(hold_on_device(data + 1, free, working))
         self.assertFalse(hold_on_device(data, free, working + 1))
         self.assertFalse(hold_on_device(data, free - 1, working))
+
+    def test_the_memory_probe_trains_on_the_networks_input(self):
+        # The probe's batch is what the network reads: a step on it runs (on the CPU, the smallest widths).
+        model = Denoiser(Widths(enc=[8, 8, 8, 8], bottleneck=8, dec=[8, 8, 8, 8]))
+        inputs, targets = zero_batch(1, torch.device("cpu"))
+        loss, _ = run_batch(model, inputs[:, :2], targets[:, :2])
+        self.assertTrue(torch.isfinite(loss))
 
 
 if __name__ == "__main__":

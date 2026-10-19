@@ -18,6 +18,7 @@
 #include "core/contracts/camera.h"
 #include "core/contracts/checkerboard.h"
 #include "core/contracts/denoise.h"
+#include "core/contracts/depth_of_field.h"
 #include "core/contracts/features.h"
 #include "core/contracts/frame_constants.h"
 #include "core/contracts/light_tile.h"
@@ -25,6 +26,7 @@
 #include "core/contracts/path_reuse_settings.h"
 #include "core/contracts/primary_hit.h"
 #include "core/denoise/network.h"
+#include "core/passes/depth_of_field.h"
 #include "core/sampling/pairing.h"
 #include "core/scene/packed_range.h"
 #include "metal/device/error.h"
@@ -74,10 +76,14 @@ static_assert(bindings::denoise::radiance < max_denoise_textures);
 // The checkerboard's fill, a denoised graph's.
 static_assert(bindings::checkerboard_fill::fill_constants < max_denoise_buffers);
 static_assert(bindings::checkerboard_fill::history < max_denoise_textures);
+// The depth of field, a denoised graph's.
+static_assert(bindings::depth_of_field::dilated < max_denoise_buffers);
+static_assert(bindings::depth_of_field::near_filtered < max_denoise_textures);
 // A ReSTIR PT graph (its initial pass's work list and the MNEE pass bind
 // within it).
-constexpr NS::UInteger max_restir_pt_buffers = 28;
+constexpr NS::UInteger max_restir_pt_buffers = 30;
 static_assert(bindings::restir_pt::mnee_header < max_restir_pt_buffers);
+static_assert(bindings::restir_pt::last_light_power < max_restir_pt_buffers);
 static_assert(bindings::mnee::lost < max_restir_pt_buffers);
 
 // The reuse textures' seed: fixed, so every run pairs the same pixels
@@ -102,8 +108,10 @@ NS::UInteger buffer_bindings(const frame::Schedule& schedule) {
 }
 
 // The textures it holds.
+// The textures it holds: a denoised graph's, or the fill's in any graph
+// whose light is the network's input.
 NS::UInteger texture_bindings(const frame::Schedule& schedule) {
-    return frame::denoises(schedule) ? max_denoise_textures : max_textures;
+    return frame::denoises(schedule) || frame::feeds_network(schedule) ? max_denoise_textures : max_textures;
 }
 
 // Shaders read a time as a float (contracts/frame_constants.h): a double
@@ -167,9 +175,10 @@ MTL::GPUAddress write_feature_constants(FrameArray& ring, std::uint32_t slot,
 // and with temporal reuse the ring of its reuse constants.
 Renderer::RestirPtFamily::RestirPtFamily(const Device& device, Submission& submission,
                                          const contracts::PathReuseSettings& settings,
-                                         std::span<const std::uint16_t> textures, bool spatial, bool temporal)
+                                         std::span<const std::uint16_t> textures, bool spatial, bool temporal,
+                                         std::uint32_t lights)
     : images(device, submission, spatial ? PathReuseImages::Spatial::merged : PathReuseImages::Spatial::none,
-             temporal ? PathReuseImages::Temporal::merged : PathReuseImages::Temporal::none),
+             temporal ? PathReuseImages::Temporal::merged : PathReuseImages::Temporal::none, lights),
       statics(device, submission,
               std::array<std::span<const std::byte>, 2>{std::as_bytes(std::span(&settings, 1)),
                                                         std::as_bytes(textures)}) {
@@ -192,6 +201,8 @@ void Renderer::RestirPtFamily::bind(FrameResources& resources, const FrameSlot& 
     resources.replay_counter = arrays.counter;
     resources.replay_grid = arrays.grid;
     resources.light_tiles = arrays.light_tiles;
+    resources.light_power = arrays.light_power;
+    resources.last_light_power = arrays.last_light_power;
     resources.last_primaries = arrays.last_primaries;
     resources.path_finals = arrays.finals;
     resources.last_path_finals = arrays.last_finals;
@@ -290,11 +301,17 @@ Renderer::DenoiseFamily::DenoiseFamily(const Device& device, Submission& submiss
 // Checkerboard rendering's (renderer.h): the fill, its constants' ring and
 // its history.
 Renderer::CheckerboardFamily::CheckerboardFamily(const Device& device, Submission& submission,
-                                                 const Library& library)
+                                                 const Library& library, CheckerboardImages::Filled filled)
     : fill(library),
       constants(device, submission, std::vector<std::byte>(sizeof(contracts::CheckerboardConstants)),
                 FrameArray::Copies::per_frame),
-      images(device, submission) {}
+      images(device, submission, filled) {}
+
+// The depth of field's (renderer.h): its images and its constants' ring.
+Renderer::DepthOfFieldFamily::DepthOfFieldFamily(const Device& device, Submission& submission)
+    : images(device, submission),
+      constants(device, submission, std::vector<std::byte>(sizeof(contracts::DepthOfFieldConstants)),
+                FrameArray::Copies::per_frame) {}
 
 Renderer::Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
                    const scene::SceneDescription* scene)
@@ -303,6 +320,7 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
       constants_(device, submission, std::vector<std::byte>(ring_slot_size), FrameArray::Copies::per_frame),
       arguments_(make_argument_table(device.handle(), buffer_bindings(schedule), texture_bindings(schedule))),
       denoises_(frame::denoises(schedule)),
+      feeds_network_(frame::feeds_network(schedule)),
       schedule_(schedule) {
     // The core decides which schedules can be carried out (principle 10).
     if (const std::optional<std::string> reason = frame::invalid(schedule)) {
@@ -339,10 +357,15 @@ Renderer::Renderer(const Device& device, Submission& submission, const frame::Sc
     if (denoises_) {
         denoise_.emplace(device, submission_, library_, *network);
     }
-    // Checkerboard rendering's, a denoised graph's, always a ReSTIR PT one
-    // (frame::invalid).
-    if (denoises_) {
-        checkerboard_.emplace(device, submission_, library_);
+    // Checkerboard rendering's, a graph's whose light is the network's input
+    // (frame::feeds_network), its own filled light without the denoise pass.
+    if (feeds_network_) {
+        checkerboard_.emplace(device, submission_, library_,
+                              denoises_ ? CheckerboardImages::Filled::none : CheckerboardImages::Filled::kept);
+    }
+    // The depth of field's, a denoised graph's (frame::invalid).
+    if (frame::lens_after_network(schedule)) {
+        depth_of_field_.emplace(device, submission_);
     }
 }
 
@@ -365,6 +388,11 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
     // (frame::invalid: the features and a light pass come before it).
     image_begins_ = static_cast<std::size_t>(std::ranges::find(schedule.passes, frame::PassKind::denoise) -
                                              schedule.passes.begin());
+    // The fill, in a graph that feeds the network: before the denoise pass,
+    // or without it before the presenting pass, the last (frame::invalid).
+    fill_at_ = !frame::feeds_network(schedule) ? schedule.passes.size()
+               : frame::denoises(schedule)     ? image_begins_
+                                               : schedule.passes.size() - 1u;
     steps_.reserve(schedule.passes.size());
     for (frame::PassKind kind : schedule.passes) {
         // No default: a kind this backend does not implement fails the build
@@ -403,6 +431,9 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
             // The schedule has its settings with its pass (frame::invalid).
             steps_.push_back(
                 Step{kind, Pass{std::in_place_type<DenoisePass>, device, library_, submission_, *network}});
+            break;
+        case frame::PassKind::depth_of_field:
+            steps_.push_back(Step{kind, Pass{std::in_place_type<DepthOfFieldPass>, library_}});
             break;
         }
     }
@@ -449,19 +480,19 @@ void Renderer::make_restir_pt(const Device& device, const frame::Schedule& sched
     reuses_history_ = temporal;
     const bool spatial = has(schedule, frame::PassKind::restir_pt_spatial);
     contracts::PathReuseSettings settings = *schedule.restir_pt;
-    settings.checkerboard = denoises_ ? 1u : 0u;  // a denoised graph's light is traced checkerboarded
+    settings.checkerboard = feeds_network_ ? 1u : 0u;  // the network's input is traced checkerboarded
     // With spatial reuse, the three reuse textures, built once on the CPU
     // from the graph's sigma and a fixed seed (core/sampling/pairing.h); one
     // zero texel without. With the checkerboard the pairing is over the
     // traced lattice, so at sigma over its step, sigma pixels along each
     // axis (renderer.h; the core has refused a sigma the lattice cannot
     // take, frame::invalid).
-    const double sigma = denoises_
+    const double sigma = feeds_network_
                              ? static_cast<double>(settings.sigma) / contracts::checkerboard_lattice_step
                              : static_cast<double>(settings.sigma);
     const std::vector<std::uint16_t> textures =
         spatial ? sampling::reuse_textures(sigma, pairing_seed) : std::vector<std::uint16_t>(1, 0u);
-    restir_pt_.emplace(device, submission_, settings, textures, spatial, temporal);
+    restir_pt_.emplace(device, submission_, settings, textures, spatial, temporal, scene->light_counts.lights);
 }
 
 // MNEE's work list, a ReSTIR PT graph's (its requests add to the light
@@ -561,8 +592,9 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
             set->prepare(size);
         }
     }
-    if (checkerboard_) {
-        checkerboard_->images.prepare(light);
+    const bool fill_history = checkerboard_ ? checkerboard_->images.prepare(inputs, light) : false;
+    if (depth_of_field_) {
+        depth_of_field_->images.prepare(size);
     }
     if (mnee_) {
         mnee_->list.prepare(light);
@@ -576,11 +608,11 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
         held = accumulation_->prepare(inputs, light, motion);
     }
     const bool denoise_history = denoise_ ? denoise_->images.prepare(inputs, light) : false;
-    prepared_ = Prepared{inputs.index, size, held, reused, denoise_history};
+    prepared_ = Prepared{inputs.index, size, held, reused, denoise_history, fill_history};
 }
 
 bool Renderer::prepares() const noexcept {
-    return accumulation_ || images_ || restir_pt_ || mnee_ || features_ || denoise_;
+    return accumulation_ || images_ || restir_pt_ || mnee_ || features_ || denoise_ || depth_of_field_;
 }
 
 std::uint64_t Renderer::non_finite_samples() const noexcept {
@@ -595,6 +627,8 @@ void Renderer::read_accumulated(std::span<float> out) {
     MTL::Texture* image = nullptr;
     if (denoises_) {
         image = images_ ? images_->radiance() : nullptr;  // the denoised radiance, at the target's size
+    } else if (checkerboard_) {
+        image = checkerboard_->images.filled();  // the fill's light, which the graph shows (renderer.h)
     } else if (accumulation_) {
         image = accumulation_->texture();
     }
@@ -615,6 +649,23 @@ void Renderer::read_accumulated(std::span<float> out) {
     std::memcpy(out.data(), buffer->contents(), floats * sizeof(float));
 }
 
+Renderer::NetworkInput Renderer::read_network_input() {
+    if (!checkerboard_ || !last_slot_) {
+        throw MetalError("read_network_input: the frame graph's light is not the network's input, or no frame has "
+                         "been recorded");
+    }
+    MTL::Texture* image = denoise_ ? denoise_->images.light_radiance(*last_slot_) : checkerboard_->images.filled();
+    constexpr std::size_t channels = contracts::accumulated_image_channels;  // RGBA32Float, as the hand-off's
+    const frame::Extent size{static_cast<std::uint32_t>(image->width()), static_cast<std::uint32_t>(image->height())};
+    const std::size_t row_bytes = std::size_t{size.width} * channels * sizeof(float);
+    const std::array<ImageCopy, 1> copy = {ImageCopy{image, 0, row_bytes}};
+    const auto buffer =
+        read_back(image->device(), submission_, size, row_bytes * size.height, copy, "read_network_input");
+    NetworkInput out{size, std::vector<float>(std::size_t{size.width} * size.height * channels), last_jitter_};
+    std::memcpy(out.rgba.data(), buffer->contents(), out.rgba.size() * sizeof(float));
+    return out;
+}
+
 FeatureImages::Read Renderer::read_features() const {
     if (!features_ || features_->images(features_->last_slot).albedo() == nullptr) {
         throw MetalError("read_features: the frame graph has no features pass, or no frame has made its images");
@@ -626,7 +677,7 @@ FeatureImages::Read Renderer::read_features() const {
 // size where the graph prepares anything, and taken (renderer.h).
 Renderer::Prepared Renderer::take_prepared(const frame::FrameInputs& inputs, frame::Extent size) {
     if (!prepares()) {
-        return Prepared{inputs.index, size, 0u, 0u, false};
+        return Prepared{inputs.index, size, 0u, 0u, false, false};
     }
     if (!prepared_ || prepared_->index != inputs.index || !(prepared_->size == size)) {
         throw MetalError("Renderer::record: frame " + std::to_string(inputs.index) +
@@ -639,17 +690,19 @@ Renderer::Prepared Renderer::take_prepared(const frame::FrameInputs& inputs, fra
 
 // The frame's constants and its camera framed for `at`, into `ring`'s
 // slot; their addresses.
-std::pair<MTL::GPUAddress, MTL::GPUAddress> Renderer::write_constants(FrameArray& ring, const FrameSlot& begun,
-                                                                      const frame::FrameInputs& inputs,
-                                                                      frame::Extent at,
-                                                                      std::uint32_t accumulated_frames) {
+std::pair<MTL::GPUAddress, MTL::GPUAddress> Renderer::write_constants(
+    FrameArray& ring, const FrameSlot& begun, const frame::FrameInputs& inputs, frame::Extent at,
+    std::uint32_t accumulated_frames, std::optional<sampling::CameraJitter> jitter) {
+    const sampling::CameraJitter offset = jitter.value_or(sampling::CameraJitter{});
     const contracts::FrameConstants constants{
         static_cast<float>(inputs.time.count()),
         static_cast<std::uint32_t>(inputs.index),
         at.width,
         at.height,
         accumulated_frames,
-        {0u, 0u, 0u},
+        offset.x,
+        offset.y,
+        jitter ? 1u : 0u,
     };
     const std::span<std::byte> bytes = ring.bytes(begun.slot);
     const MTL::GPUAddress address = ring.address(begun.slot);
@@ -670,7 +723,8 @@ FrameResources Renderer::frame_resources(const FrameSlot& begun, const frame::Fr
                                          MTL::Texture* target, frame::Extent light, const Prepared& prepared,
                                          bool previous) {
     const auto [constants_address, camera_address] =
-        write_constants(constants_, begun, inputs, light, prepared.accumulated_frames);
+        write_constants(constants_, begun, inputs, light, prepared.accumulated_frames,
+                        frame::camera_jitter(schedule_, inputs.index));
     FrameResources resources{
         .arguments = arguments_.get(),
         .constants = constants_address,
@@ -697,6 +751,10 @@ FrameResources Renderer::frame_resources(const FrameSlot& begun, const frame::Fr
         resources.accumulated_frames = prepared.accumulated_frames;
         non_finite_->begin_frame(begun.slot, begun.sequence);
         resources.non_finite_counter = non_finite_->address(begun.slot);
+    }
+    if (checkerboard_ && !denoise_) {
+        // The fill's light is what such a graph shows (renderer.h).
+        resources.radiance = checkerboard_->images.filled();
     }
     const std::optional<contracts::Camera> previous_camera = previous ? previous_camera_ : std::nullopt;
     if (mnee_) {
@@ -753,14 +811,14 @@ void Renderer::animate(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& be
 // inputs; and the full-size albedo's features dispatch. Precondition: the
 // graph denoises.
 Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& resources, const FrameSlot& begun,
-                                                       const frame::FrameInputs& inputs, frame::Extent size,
-                                                       const Prepared& prepared) {
+                                                       const frame::FrameInputs& inputs, const contracts::Camera& lens,
+                                                       frame::Extent size, const Prepared& prepared) {
     DenoiseFamily& d = *denoise_;
     const frame::Extent light = resources.size;
-    DenoiseResources out{resources, resources, resources};
+    DenoiseResources out{resources, resources, resources, resources, false};
     FrameResources& output = out.output;
     const auto [output_constants, output_camera] =
-        write_constants(d.output_constants, begun, inputs, size, prepared.accumulated_frames);
+        write_constants(d.output_constants, begun, inputs, size, prepared.accumulated_frames, std::nullopt);
     output.constants = output_constants;
     output.camera = output_camera;
     output.size = size;
@@ -791,6 +849,11 @@ Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& res
     k.output_width = size.width;
     k.output_height = size.height;
     k.features = d.features;
+    // The light's jitter, the frame's (renderer.h, "The camera's jitter"): a
+    // denoised graph feeds the network, so its frames take it.
+    const sampling::CameraJitter jitter = frame::camera_jitter(schedule_, inputs.index).value();
+    k.jitter_x = jitter.x;
+    k.jitter_y = jitter.y;
     std::memcpy(d.constants.bytes(begun.slot).data(), &k, sizeof(k));
 
     FrameResources& denoising = out.denoising;
@@ -803,15 +866,31 @@ Renderer::DenoiseResources Renderer::denoise_resources(const FrameResources& res
     denoising.full_albedo = full.albedo();
     denoising.denoise_constants = d.constants.address(begun.slot);
     denoising.denoise = &d.images;
+
+    // The depth of field's: at the output's size, the radiance image the
+    // denoise pass wrote, the slot's full-size depth, its constants from the
+    // frame's own lens (renderer.h, "The depth of field").
+    DepthOfFieldFamily& f = *depth_of_field_;
+    const contracts::DepthOfFieldConstants dof = passes::depth_of_field_constants(lens, size);
+    std::memcpy(f.constants.bytes(begun.slot).data(), &dof, sizeof(dof));
+    FrameResources& blurred = out.depth_of_field;
+    blurred = output;
+    blurred.full_depth = full.depth();
+    blurred.depth_of_field_constants = f.constants.address(begun.slot);
+    blurred.depth_of_field = &f.images;
+    out.blurs = passes::blurs(dof);
     return out;
 }
 
 // The light half's passes in order into `encoder`, each after the barriers
 // its reads need (renderer.h): every pass before the denoise pass.
-void Renderer::record_light(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) {
-    encoder->setArgumentTable(resources.arguments);
+void Renderer::record_light(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources,
+                            std::size_t first, std::size_t last) {
+    if (first == 0) {
+        encoder->setArgumentTable(resources.arguments);
+    }
     bool restir_before = false;  // whether a ReSTIR PT pass came before, in this frame
-    for (std::size_t i = 0; i < image_begins_; ++i) {
+    for (std::size_t i = first; i < last; ++i) {
         const Step& step = steps_[i];
         if (i == first_cross_frame_) {
             // The frames in flight share the images between passes, the
@@ -837,17 +916,17 @@ void Renderer::record_light(MTL4::ComputeCommandEncoder* encoder, const FrameRes
     }
 }
 
-// The checkerboard's fill, writing the slot's hand-off image whole from the
-// light's radiance, after the shade's, the features' and the full-size
+// The checkerboard's fill, writing `hand_off` whole from the light's
+// radiance, after the shade's, the features' and, denoised, the full-size
 // albedo's dispatches (renderer.h, "Two halves", "Checkerboard rendering";
-// GPU.8: dispatch before dispatch). Precondition: the graph denoises.
+// GPU.8: dispatch before dispatch): a denoised graph's slot's hand-off, or
+// another's filled image. Precondition: the graph feeds the network.
 void Renderer::record_hand_off(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun,
-                               const FrameResources& resources, const Prepared& prepared) {
-    MTL::Texture* hand_off = denoise_->images.light_radiance(begun.slot);
+                               const FrameResources& resources, const Prepared& prepared, MTL::Texture* hand_off) {
     CheckerboardFamily& c = *checkerboard_;
     // The frame before's history is this history's frame before when the
-    // denoiser's is (renderer.h).
-    const contracts::CheckerboardConstants constants{prepared.denoise_history ? 1u : 0u, {0u, 0u, 0u}};
+    // fill's own history holds it (renderer.h).
+    const contracts::CheckerboardConstants constants{prepared.fill_history ? 1u : 0u, {0u, 0u, 0u}};
     std::memcpy(c.constants.bytes(begun.slot).data(), &constants, sizeof(constants));
     // At the light size, as the light half's passes: its constants, the
     // accumulated image and this slot's features; this slot's hand-off; the
@@ -875,11 +954,19 @@ void Renderer::record_image(MTL4::ComputeCommandEncoder* encoder, const DenoiseR
             std::visit([&](const auto& pass) { pass.record(encoder, denoised_resources.denoising); }, step.pass);
             continue;
         }
+        if (step.kind == frame::PassKind::depth_of_field) {
+            // Nothing for a pinhole's frame (renderer.h, "The depth of field").
+            if (denoised_resources.blurs) {
+                std::visit([&](const auto& pass) { pass.record(encoder, denoised_resources.depth_of_field); },
+                           step.pass);
+            }
+            continue;
+        }
         std::visit([&](const auto& pass) { pass.record(encoder, denoised_resources.output); }, step.pass);
     }
 }
 
-void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, MTL::Texture* target,
+void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given, MTL::Texture* target,
                       frame::Extent size) {
     if (begun.commands == nullptr || begun.slot >= frames_in_flight || target == nullptr || size.width == 0 ||
         size.height == 0) {
@@ -888,11 +975,14 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
     if (begun.second != nullptr && parts() == Parts::one) {
         throw MetalError("Renderer::record: a submission of two parts for a frame graph of one (Renderer::parts)");
     }
-    check_time(inputs.time, inputs.index, "its time");
-    const Prepared prepared = take_prepared(inputs, size);
-    if (needs_scene_ && !inputs.camera) {
+    check_time(given.time, given.index, "its time");
+    const Prepared prepared = take_prepared(given, size);
+    if (needs_scene_ && !given.camera) {
         throw MetalError("Renderer::record: the frame graph reads a scene, and the frame has no camera");
     }
+    // The frame as its light is traced: through a pinhole in a graph that
+    // applies the lens after the network (renderer.h, "The depth of field").
+    const frame::FrameInputs inputs = frame::traced_inputs(schedule_, given);
     // The passes before the denoise pass render at the light size, the
     // target's own in a graph without it (renderer.h).
     const frame::Extent light = frame::light_size(schedule_, size);
@@ -906,18 +996,24 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         throw MetalError("Renderer::record: the command buffer made no compute encoder");
     }
     animate(encoder, begun, inputs, previous);
-    record_light(encoder, resources);
+    record_light(encoder, resources, 0, fill_at_);
     if (!denoise_) {
+        if (checkerboard_) {
+            // The fill, then the presenting pass (renderer.h, "Checkerboard
+            // rendering").
+            record_hand_off(encoder, begun, resources, prepared, checkerboard_->images.filled());
+            record_light(encoder, resources, fill_at_, steps_.size());
+        }
         encoder->endEncoding();
     } else {
-        const DenoiseResources denoised = denoise_resources(resources, begun, inputs, size, prepared);
+        const DenoiseResources denoised = denoise_resources(resources, begun, inputs, *given.camera, size, prepared);
         // The full-size albedo, in the light half (renderer.h, "Two
         // halves"): it writes the slot's own images, which nothing before
         // it in the frame reads, so no barrier before it, as none before the
         // light-size features; the fill's barrier orders it before the image
         // half in one part, the event in two.
         denoise_->full_features_pass.record(encoder, denoised.full_features);
-        record_hand_off(encoder, begun, resources, prepared);
+        record_hand_off(encoder, begun, resources, prepared, denoise_->images.light_radiance(begun.slot));
         MTL4::ComputeCommandEncoder* image = encoder;
         if (begun.second != nullptr) {
             // The image half in the second part, on the overlap queue
@@ -939,9 +1035,12 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& inputs, 
         record_image(image, denoised);
         image->endEncoding();
     }
-    // What the next frame's temporal merge asks of this one.
+    // What the next frame's temporal merge asks of this one; what
+    // read_network_input() reads of it.
     previous_camera_ = inputs.camera;
     previous_time_ = inputs.time;
+    last_slot_ = begun.slot;
+    last_jitter_ = frame::camera_jitter(schedule_, inputs.index).value_or(sampling::CameraJitter{});
 }
 
 WindowFrame render_to_window(Submission& submission, const Presenter& presenter, Renderer& renderer,

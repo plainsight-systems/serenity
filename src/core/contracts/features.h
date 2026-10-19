@@ -9,7 +9,9 @@
 //
 // Four images at the frame's size, one value a pixel each, all from the
 // camera's ray the light passes trace at that pixel and frame (the path
-// pass's point in the pixel and on the lens, metal/passes/path/path.metal),
+// pass's point in the pixel and on the lens, metal/passes/path/path.metal;
+// in a ReSTIR PT graph the frame's camera jitter, contracts/
+// frame_constants.h, the same for both),
 // so at the light graph's size each feature is of the very ray its noisy
 // sample took, as production's guide buffers are (Open Image Denoise: "All
 // auxiliary images should use the same pixel reconstruction filter as the

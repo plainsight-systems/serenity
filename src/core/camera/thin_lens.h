@@ -39,6 +39,24 @@ std::optional<std::string_view> invalid(const contracts::Camera& camera);
 // std::invalid_argument otherwise.
 contracts::CameraData shader_form(const contracts::Camera& camera, frame::Extent size);
 
+// The circle of confusion's scale for `camera` in an image of `size`
+// (contract 21, core/contracts/depth_of_field.h): a point at view depth z
+// blurs through the lens to a disc of radius scale |z - F| / z pixels, F
+// the focus distance. The rays through the lens's points meet at the point
+// where the pinhole ray meets the plane of focus (contracts/camera.h), so
+// the rays toward a point at depth z cross that plane in a disc of radius
+// r |z - F| / z (similar triangles, apex at the point, base the lens), and
+// the image shows a length L on the plane of focus as L H / (2 F
+// tan(fov / 2)) pixels; so
+//
+//   scale = r H / (2 F tan(fov / 2)),
+//
+// in double, narrowed once, as the framing (F.8). 0 for a pinhole. The
+// depth-of-field pass blurs by it; tests/gpu/camera_test.cpp holds it to
+// the lens rays camera/thin_lens.metal.h traces (a test of a match between
+// implementations). Precondition as shader_form()'s, checked.
+float circle_of_confusion_scale(const contracts::Camera& camera, frame::Extent size);
+
 // The camera's view axes, each unit length: right, up, and backward
 // (toward the viewer, -forward), the axes the denoiser's network reads
 // normals in (core/contracts/denoise.h; training/regions.py, view_axes,

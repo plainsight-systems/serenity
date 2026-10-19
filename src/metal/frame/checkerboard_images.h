@@ -7,6 +7,8 @@
 #include <Metal/Metal.hpp>
 
 #include "core/frame/extent.h"
+#include "core/frame/frame_inputs.h"
+#include "core/frame/history.h"
 #include "metal/device/device.h"
 #include "metal/device/resident.h"
 #include "metal/device/submission.h"
@@ -36,18 +38,35 @@ namespace serenity::metal {
 // (renderer.h, "Checkerboard rendering"; GPU.8); the image half reads the
 // hand-off, never these (CP.3).
 //
+// Whether the other image holds this frame's frame before is the core's
+// reuse history (core/frame/history.h, ReuseHistory), kept here, as the
+// denoiser keeps its own (denoise_images.h): prepare() joins the frame to
+// it, so every graph whose light is the network's input asks the same rule
+// of the same inputs, the denoised graph and the data set's input graph
+// alike (logical-overview.md, principle 13), and the fill is told the same.
+//
+// A graph without the denoise pass hands its filled light to the presenting
+// pass and the headless renderer instead of the network: for it, `filled`,
+// one more RGBA32Float image at the light size, which the fill writes as it
+// writes a denoised graph's hand-off (renderer.h, "Checkerboard
+// rendering"); one, not one per frame slot, since such a graph's frames
+// run on one queue, each after the frame before by its queue barrier.
+//
 // Made when the light's size is first known and remade when it changes,
 // before the frame's submission begins, draining the submission first, as
 // the feature images are (feature_images.h, the same reasons: GPU.9, MEM.9);
 // private, the GPU's alone, written whole by the fill before any frame
 // reads them as history. Memory, at P light pixels: 2 x 16 P bytes, 62 MB
-// at 1728 x 1117.
+// at 1728 x 1117; with `filled`, 16 P bytes more.
 //
 // Throws MetalError if the size is not one Metal makes an image of
 // (metal/device/device.h, max_texture_side), or the device cannot make one.
 class CheckerboardImages {
 public:
-    CheckerboardImages(const Device& device, Submission& submission);
+    // Whether the graph keeps `filled` (above).
+    enum class Filled { none, kept };
+
+    CheckerboardImages(const Device& device, Submission& submission, Filled filled);
 
     CheckerboardImages(const CheckerboardImages&) = delete;
     CheckerboardImages& operator=(const CheckerboardImages&) = delete;
@@ -55,20 +74,29 @@ public:
     CheckerboardImages& operator=(CheckerboardImages&&) = delete;
     ~CheckerboardImages() = default;
 
-    // Ready for a frame of the light's `size`: made, or remade, if not made
-    // at it.
-    void prepare(frame::Extent size);
+    // Ready for frame `inputs` at the light's `size`: made, or remade, if
+    // not made at it; and whether the image before(inputs.index) holds its
+    // frame before (above). Throws MetalError if the core's history rule
+    // refuses the frame.
+    bool prepare(const frame::FrameInputs& inputs, frame::Extent size);
 
     // The image frame `index` writes, and the one it reads, its frame
     // before's (above). Null before the first prepare().
     MTL::Texture* written(std::uint64_t index) const noexcept { return light_[index % 2u].texture.get(); }
     MTL::Texture* before(std::uint64_t index) const noexcept { return light_[(index + 1u) % 2u].texture.get(); }
 
+    // The filled light of a graph without the denoise pass (above); null in
+    // a denoised graph and before the first prepare().
+    MTL::Texture* filled() const noexcept { return filled_.texture.get(); }
+
 private:
     NS::SharedPtr<MTL::Device> device_;
     Submission& submission_;
+    Filled kept_;
     frame::Extent size_;
+    frame::ReuseHistory history_;
     std::array<ResidentTexture, 2> light_;
+    ResidentTexture filled_;
 };
 
 }  // namespace serenity::metal

@@ -23,6 +23,11 @@
 // sharp, and the nearer or farther a thing is from it, the larger the disc
 // it spreads into, as a camera's lens does; a firefly far behind the marbles
 // becomes a soft disc of light (bokeh), which is how its distance reads.
+// Where the lens is drawn is the frame graph's (logical-overview.md,
+// principle 12): in the rays, by this formula, in every graph but a
+// denoised one, which traces the camera with its radius set to 0 and
+// applies the same lens after the network, from depth (core/frame/
+// schedule.h, traced_inputs; contract 21).
 //
 // Ray generation is the shader half (metal/camera/thin_lens.metal.h). Point
 // (px, py) of a W x H image, in pixels from its top-left corner, is seen

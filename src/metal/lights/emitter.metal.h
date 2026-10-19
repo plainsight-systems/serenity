@@ -178,6 +178,19 @@ inline float light_point_pdf(PlacedLight light, float3 point, serenity::contract
     return 0.0f;
 }
 
+// A placed light's power, what it emits in all, RTXDI's GetPower(): the
+// weight ReSTIR PT's selection draws it by (light_selection/
+// power_light.metal.h). A sphere's: its surface 4 pi r^2, times pi (a
+// Lambertian emitter's radiance to its exitance), times its radiance's
+// luminance, at this frame's glow.
+inline float light_power(PlacedLight light) {
+    switch (light.record.kind) {
+    case serenity::lights::LightKind::sphere:
+        return sphere_light_power(light.sphere);
+    }
+    return 0.0f;
+}
+
 // Contract 3's density for a placed light: as light_pdf() above, the
 // density with which sample_light() draws `direction` from `point`.
 inline float light_pdf(PlacedLight light, float3 point, float3 direction) {

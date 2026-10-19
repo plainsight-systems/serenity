@@ -38,6 +38,8 @@ add_executable(serenity_tests
     scene_test.cpp
     packed_range_test.cpp
     thin_lens_test.cpp
+    depth_of_field_test.cpp
+    jitter_test.cpp
     shapes_test.cpp
     animation_test.cpp
     history_test.cpp

@@ -2,7 +2,9 @@
 
 // Axis: Light selection (uniform).
 //
-// The naive estimator's selection: one light, each with probability 1 / N,
+// The naive estimator's selection, the path tracer's, the reference's
+// (ReSTIR PT's is by power, power_light.metal.h): one light, each with
+// probability 1 / N,
 // from one number. It chooses among light records (core/lights/light.h) and
 // names no light kind; what a chosen light gives is the emitter's (contract
 // 3, metal/lights/emitter.metal.h). Its cost is the same for ten lights or
@@ -43,9 +45,8 @@ inline float selection_probability(UniformLight selection) {
     return 1.0f / float(selection.count);
 }
 
-// For ReSTIR PT's light tiles, which keep a light by its record's index
-// (contracts/light_tile.h): the index `u`, a number in [0, 1), chooses,
-// and its probability. Precondition: count is at least 1; the estimator
+// The index `u`, a number in [0, 1), chooses, and its probability.
+// ReSTIR PT draws its tiles by power instead (power_light.metal.h). Precondition: count is at least 1; the estimator
 // tests it before asking (path.metal.h, step 5).
 struct SelectedIndex {
     uint index;         // into the light records

@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -120,5 +121,73 @@ TEST_CASE("without a lens, the ray is the pinhole's, whatever lens point is give
         CHECK(traced[i].direction.x == doctest::Approx(d.x).scale(1.0).epsilon(1e-5));
         CHECK(traced[i].direction.y == doctest::Approx(d.y).scale(1.0).epsilon(1e-5));
         CHECK(traced[i].direction.z == doctest::Approx(d.z).scale(1.0).epsilon(1e-5));
+    }
+}
+
+namespace {
+
+// Where the pinhole ray through `point` crosses the image, in pixels:
+// contracts/camera.h's formula solved for (px, py), as the shaders'
+// camera_pixel() solves it.
+std::pair<double, double> image_point(const contracts::CameraData& data, Vec3 point) {
+    const Vec3 v = point - tests::vec(data.origin);
+    const Vec3 d = (1.0 / dot(v, tests::vec(data.forward))) * v;
+    const Vec3 right = tests::vec(data.right);
+    const Vec3 up = tests::vec(data.up);
+    const double sx = dot(d, right) / dot(right, right);
+    const double sy = dot(d, up) / dot(up, up);
+    return {(sx + 1.0) * 0.5 * image.width, (1.0 - sy) * 0.5 * image.height};
+}
+
+}  // namespace
+
+TEST_CASE("the depth of field's circle of confusion is the blur the lens rays trace") {
+    // A point at view depth z, through the lens: each lens point's ray
+    // through it lands on the image where that ray meets the plane of
+    // focus; the lens's edge draws the blur's circle, whose radius the
+    // depth of field takes as circle_of_confusion_scale |z - F| / z
+    // (core/camera/thin_lens.h).
+    constexpr float lens_radius = 0.012f;
+    const contracts::Camera camera = framed_camera(lens_radius);
+    const contracts::CameraData data = camera::shader_form(camera, image);
+    const double scale = camera::circle_of_confusion_scale(camera, image);
+    const Vec3 origin = tests::vec(data.origin);
+    const Vec3 forward = tests::vec(data.forward);
+    // Lens points on its edge: concentric_disk maps the square's edge to the
+    // disk's (metal/math/warp.metal.h).
+    constexpr std::uint32_t edge = 16;
+    for (const double depth : {0.5, 0.9, 2.5, 8.0}) {
+        const Vec3 at = tests::camera_direction(data, 517.0f, 311.0f, image);
+        const Vec3 point = origin + (depth / dot(at, forward)) * at;
+        const auto [cx, cy] = image_point(data, point);
+        // Each edge point's start on the lens, from the GPU's rays.
+        std::vector<CameraQuery> starts;
+        for (std::uint32_t i = 0; i < edge; ++i) {
+            starts.push_back({517.0f, 311.0f, 1.0f, static_cast<float>(i) / static_cast<float>(edge)});
+        }
+        const std::vector<CameraProbeRay> from = rays(data, starts);
+        std::vector<CameraQuery> through;
+        double widest = 0.0;
+        for (std::uint32_t i = 0; i < edge; ++i) {
+            const Vec3 start = tests::vec(from[i].origin);
+            const Vec3 toward = point - start;
+            const Vec3 focus =
+                start + ((data.focus_distance - dot(start - origin, forward)) / dot(toward, forward)) * toward;
+            const auto [x, y] = image_point(data, focus);
+            widest = std::max(widest, std::hypot(x - cx, y - cy));
+            through.push_back(
+                {static_cast<float>(x), static_cast<float>(y), 1.0f, static_cast<float>(i) / static_cast<float>(edge)});
+        }
+        // The GPU's ray from that lens point through that image point passes
+        // through the point: the blur is the traced lens's.
+        const std::vector<CameraProbeRay> traced = rays(data, through);
+        for (std::uint32_t i = 0; i < edge; ++i) {
+            const Vec3 d = tests::vec(traced[i].direction);
+            const Vec3 off = point - tests::vec(traced[i].origin);
+            CHECK(tests::length(off - dot(off, d) * d) < 1e-5 * depth);
+        }
+        const double expected = scale * std::abs(depth - static_cast<double>(data.focus_distance)) / depth;
+        INFO("depth " << depth << ": the lens's blur " << widest << " pixels, the circle of confusion " << expected);
+        CHECK(widest == doctest::Approx(expected).epsilon(1e-3));
     }
 }

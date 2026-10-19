@@ -128,6 +128,12 @@ private:
 //   light               the frame's light buffer, a float4 a pixel, 16 bytes;
 //   light tiles         the frame's (contracts/light_tile.h), 4 MB whatever
 //                       the size;
+//   power pyramids      each frame's lights' powers and their sums, which
+//                       the tiles are drawn from (contracts/light_tile.h),
+//                       light_power_floats() floats for the scene's lights,
+//                       5.3 KB for 616; two, ping-ponged by the frame's
+//                       parity, with temporal reuse, whose shifts to last
+//                       frame's pixel weigh by last frame's;
 //
 // with restir_pt_spatial or restir_pt_temporal:
 //
@@ -187,7 +193,9 @@ public:
     enum class Spatial { none, merged };
     enum class Temporal { none, merged };
 
-    PathReuseImages(const Device& device, Submission& submission, Spatial spatial, Temporal temporal);
+    // `lights`: the scene's light records, which the power pyramids hold.
+    PathReuseImages(const Device& device, Submission& submission, Spatial spatial, Temporal temporal,
+                    std::uint32_t lights);
 
     PathReuseImages(const PathReuseImages&) = delete;
     PathReuseImages& operator=(const PathReuseImages&) = delete;
@@ -212,6 +220,8 @@ public:
         MTL::GPUAddress counter = 0;
         MTL::GPUAddress grid = 0;
         MTL::GPUAddress light_tiles = 0;
+        MTL::GPUAddress light_power = 0;
+        MTL::GPUAddress last_light_power = 0;
         MTL::GPUAddress finals = 0;
         MTL::GPUAddress last_finals = 0;
         MTL::GPUAddress previous_positions = 0;
@@ -245,6 +255,7 @@ private:
     Array replays_;
     Array counter_;  // shared storage, zeroed once
     Array light_tiles_;  // contracts/light_tile.h: a frame's, whatever its size
+    std::array<Array, 2> light_power_;  // [0] for even frames; [0] alone without temporal reuse
     std::array<Array, 2> finals_;
     Array previous_positions_;
     Array previous_pixels_;

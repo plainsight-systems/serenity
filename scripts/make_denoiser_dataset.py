@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Renders the denoiser's data set, denoiser-v1, into a directory outside the repo.
+"""Renders the denoiser's data set, denoiser-v2, into a directory outside the repo.
 
     python3 scripts/make_denoiser_dataset.py --out DIR            render it, or resume
     python3 scripts/make_denoiser_dataset.py --out DIR --estimate  the first input and target, timed; stop
@@ -9,7 +9,19 @@
                                          new inputs, OLD's scenes, albedo and targets
 
 What it is (docs/research/2026-10-14-denoiser-training-design.md, "The data"
-and "Splits"; what was rendered, docs/research/2026-10-14-denoiser-dataset.md):
+and "Splits"; what denoiser-v1 was, docs/research/2026-10-14-denoiser-dataset.md;
+what changed for denoiser-v2, docs/research/2026-10-18-production-sweep.md):
+
+  - Every scene through a pinhole: each scene file the data set renders is
+    written with its camera's lens taken off (pinhole_scene()), inputs and
+    targets alike, as the denoised graph traces its light through a pinhole
+    and applies the lens after the network (docs/architecture/
+    logical-overview.md, principle 12): the network learns a pinhole's
+    image, sharp at every depth.
+  - Every input frame's camera jitter in the manifest (camera_jitter()):
+    the input graph is ReSTIR PT's, whose frames take the renderer's jitter
+    (src/core/sampling/jitter.h), and the network reads it as two input
+    channels (training/data.py, frame_jitter).
 
   - 40 generated scenes, scripts/make_marbles.py --seed 101 .. 140, never
     the real marbles (scenes/marbles.toml, the layout of seed 7); 36 train,
@@ -26,7 +38,10 @@ and "Splits"; what was rendered, docs/research/2026-10-14-denoiser-dataset.md):
     and rendered once).
   - Per frame, the input: graphs/restir_pt_features.toml (ReSTIR PT + MNEE
     and the features) at 960 x 540, one sample, its linear radiance and its
-    albedo, normal, depth and motion. One run a sequence, frames f .. f + 7.
+    albedo, normal, depth and motion: what the denoised graph hands its
+    network for that frame, to the bit (its light checkerboarded and
+    filled, through a pinhole, at the camera's jitter; docs/architecture/
+    logical-overview.md, principle 13). One run a sequence, frames f .. f + 7.
     serenity-headless replays a reusing graph's frames 0 .. f - 1 before
     frame f (core/frame/history.h), so each frame is the very frame a run
     from the start shows: its history full, at least 60 frames (t >= 1 s),
@@ -99,9 +114,10 @@ import shutil
 import subprocess
 import sys
 import time
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
-DATASET = 'denoiser-v1'
+DATASET = 'denoiser-v2'
 
 # The scenes and splits.
 GENERATED_SEEDS = tuple(range(101, 141))
@@ -128,6 +144,7 @@ WARMUP = 30       # at least this many frames of history before the first kept o
 
 # The renders.
 INPUT_GRAPH = 'graphs/restir_pt_features.toml'
+DEMO_GRAPH = 'graphs/restir_pt_denoised.toml'  # whose network's input INPUT_GRAPH renders
 INPUT_SIZE = (960, 540)
 TARGET_GRAPH = 'graphs/path.toml'
 ALBEDO_GRAPH = 'graphs/features.toml'
@@ -136,6 +153,41 @@ TARGET_SAMPLES = 4096
 TARGET_FIRST = 100_000  # target of frame i: headless frame TARGET_FIRST + i
 INPUT_FEATURES = ('albedo', 'normal', 'depth', 'motion')
 RENDERER = ROOT / 'build/native-release/serenity-headless'
+
+
+# The one form a scene's lens is written in (scenes/marbles.toml, scripts/
+# make_marbles.py): a line of its own in [camera].
+LENS_LINE = re.compile(r'^lens\s*=\s*\{[^}\n]*\}[ \t]*\n', re.M)
+
+
+def pinhole_scene(text: str) -> str:
+    """`text`, a scene file, with its camera's lens taken off: its one `lens = { ... }` line removed, the rest
+    as it was. Pure. Exits on a lens written in any other form, rather than render a lens it did not remove."""
+    stripped, removed = LENS_LINE.subn('', text)
+    if removed > 1 or re.search(r'^\s*lens\s*=', stripped, re.M):
+        sys.exit('a scene\'s lens is written in a form pinhole_scene() does not know; the data set is '
+                 'rendered through a pinhole')
+    return stripped
+
+
+JITTER_PHASES = 32  # the renderer's contracts::jitter_phases
+
+
+def radical_inverse(k: int, base: int) -> float:
+    result, scale = 0.0, 1.0 / base
+    while k > 0:
+        result += (k % base) * scale
+        k //= base
+        scale /= base
+    return result
+
+
+def camera_jitter(index: int) -> list[float]:
+    """Frame `index`'s camera jitter (x, y) in input pixels, the renderer's (src/core/sampling/jitter.h):
+    Halton(2, 3) at k = index mod 32 + 1, less 1/2. Pure. The renderer rounds it to float; this keeps
+    double, which the network's input is read in float32 from (training/data.py)."""
+    k = index % JITTER_PHASES + 1
+    return [radical_inverse(k, 2) - 0.5, radical_inverse(k, 3) - 0.5]
 
 
 def frame_time(index: int) -> float:
@@ -184,12 +236,16 @@ def plan(sequences: int | None = None, kept: int = KEPT, target_samples: int = T
         s['frames'] = list(range(s['start'], s['start'] + kept))
         s['times'] = [frame_time(i) for i in s['frames']]
         s['target_first'] = [TARGET_FIRST + i for i in s['frames']]
+        s['jitters'] = [camera_jitter(i) for i in s['frames']]
     return {
         'dataset': DATASET,
         'trial': (sequences, kept, target_samples) != (None, KEPT, TARGET_SAMPLES),
         'fps': FPS, 'step': STEP, 'kept': kept, 'warmup_at_least': WARMUP,
+        'camera': 'each scene\'s, its lens taken off: a pinhole (pinhole_scene)',
         'input': {'graph': INPUT_GRAPH, 'size': list(INPUT_SIZE), 'samples': 1,
-                  'features': list(INPUT_FEATURES)},
+                  'features': list(INPUT_FEATURES),
+                  'jitter': 'the camera\'s, Halton(2, 3) of 32 phases, each frame\'s in its entry (camera_jitter)',
+                  'traced': 'as the denoised graph hands its network: checkerboarded and filled, pinhole, jittered'},
         'target': {'graph': TARGET_GRAPH, 'size': list(TARGET_SIZE), 'samples': target_samples,
                    'first_offset': TARGET_FIRST, 'albedo_graph': ALBEDO_GRAPH},
         'sequences': seqs,
@@ -250,6 +306,29 @@ def reusable_units(old: dict, the_plan: dict) -> dict:
     if old.get('plan') != the_plan:
         sys.exit('--targets-from: that data set was made by another plan; its targets are not this one\'s')
     return {unit: rec for unit, rec in old['units'].items() if unit.split('/', 1)[0] in REUSED_KINDS}
+
+
+def input_graph_mismatch(input_text: str, demo_text: str) -> str | None:
+    """Why INPUT_GRAPH would not render the light DEMO_GRAPH hands its network, or None. Pure. The renderer
+    traces both alike (docs/architecture/logical-overview.md, principle 13), given the same light passes, in
+    the same order, with the same [restir_pt] settings; and the input graph must write the features."""
+    inp, demo = tomllib.loads(input_text), tomllib.loads(demo_text)
+    light = [p for p in demo['passes'] if p.startswith('restir_pt_')]
+    if [p for p in inp['passes'] if p.startswith('restir_pt_')] != light:
+        return f'its ReSTIR PT passes are not {DEMO_GRAPH}\'s, {light}'
+    if 'features' not in inp['passes']:
+        return 'it has no features pass'
+    if inp.get('restir_pt') != demo.get('restir_pt'):
+        return f'its [restir_pt] settings are not {DEMO_GRAPH}\'s'
+    return None
+
+
+def check_input_graph() -> None:
+    """Exits, before anything renders, if INPUT_GRAPH would not render the network's input (above)."""
+    why = input_graph_mismatch((ROOT / INPUT_GRAPH).read_text(encoding='utf-8'),
+                               (ROOT / DEMO_GRAPH).read_text(encoding='utf-8'))
+    if why:
+        sys.exit(f'{INPUT_GRAPH} would not render the light {DEMO_GRAPH} hands its network: {why}')
 
 
 def build_renderer() -> None:
@@ -372,7 +451,7 @@ class Dataset:
         for s in self.plan['sequences']:
             seq_dir = f'{s["split"]}/{s["sequence"]}'
             inp, alb = self.units.get(f'input/{s["sequence"]}'), self.units.get(f'albedo/{s["sequence"]}')
-            for i, t, first in zip(s['frames'], s['times'], s['target_first']):
+            for i, t, first, jitter in zip(s['frames'], s['times'], s['target_first'], s['jitters']):
                 tgt = self.units.get(f'target/{s["sequence"]}/{i:06d}')
                 if not (inp and alb and tgt):
                     continue
@@ -386,7 +465,7 @@ class Dataset:
                     'seed': s['seed'], 'split': s['split'], 'stratum': s['stratum'],
                     'frame': i, 'time': t,
                     'input': {'graph': INPUT_GRAPH, 'size': list(INPUT_SIZE), 'samples': 1, 'frame_index': i,
-                              'history_from_frame': 0,
+                              'history_from_frame': 0, 'jitter': jitter,
                               'files': {k: {'path': p, 'sha256': inp['files'][p]} for k, p in inputs.items()}},
                     'target': {'graph': TARGET_GRAPH, 'size': list(TARGET_SIZE), 'samples': n,
                                'time_frozen': t, 'headless_frame': first,
@@ -464,10 +543,11 @@ class Dataset:
         dst = self.out / f'scenes/{s["scene"]}.toml'
         dst.parent.mkdir(parents=True, exist_ok=True)
         if s['seed'] is not None:
-            subprocess.run([sys.executable, str(ROOT / 'scripts/make_marbles.py'), '--seed', str(s['seed']),
-                            '--out', str(dst)], check=True)
+            text = subprocess.run([sys.executable, str(ROOT / 'scripts/make_marbles.py'), '--seed', str(s['seed'])],
+                                  check=True, capture_output=True, text=True).stdout
         else:
-            shutil.copyfile(ROOT / f'scenes/{s["scene"]}.toml', dst)
+            text = (ROOT / f'scenes/{s["scene"]}.toml').read_text(encoding='utf-8')
+        dst.write_text(pinhole_scene(text), encoding='utf-8')
         self.units[unit] = {'files': {str(dst.relative_to(self.out)): sha256(dst)}, 'non_finite': {},
                             'source': s['scene_source'], 'seconds': 0}
         self.save()
@@ -558,6 +638,7 @@ def main() -> int:
         parser.error('--out must be outside the repository: the data is never committed')
 
     if not args.verify:
+        check_input_graph()
         build_renderer()
     ds = Dataset(out, the_plan, renderer_record(args.allow_dirty or args.verify))
     out.mkdir(parents=True, exist_ok=True)

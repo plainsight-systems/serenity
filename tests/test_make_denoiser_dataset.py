@@ -1,7 +1,7 @@
 """scripts/make_denoiser_dataset.py's plan, run as its user runs it (--print-plan).
 
 Contract: the plan is the same on every run, pinned by its SHA-256, so the
-data set on disk (denoiser-v1) is the one the script describes; a changed
+data set on disk (denoiser-v2, once rendered) is the one the script describes; a changed
 plan fails here and is another data set, named anew. The splits: 36
 generated scenes train and 4 validate, the brass sphere scenes train, the
 real marbles are the test and nothing else, and no generated scene is the
@@ -9,7 +9,9 @@ real marbles' seed, 7. Each sequence has at least 30 frames of history
 before its first kept frame, several start in the opening and several in
 the flood, and no target's sample indices meet an input's. A data set made
 --targets-from another takes its scenes, albedo and targets and never its
-inputs, and refuses one made by another plan. Rendering is the
+inputs, and refuses one made by another plan. Every scene is written
+through a pinhole: its lens line, and only it, taken off; a lens in a form
+the script does not know is refused. Rendering is the
 renderer's to show (docs/research/2026-10-14-denoiser-dataset.md).
 """
 
@@ -24,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts/make_denoiser_dataset.py'
 sys.path.insert(0, str(SCRIPT.parent))
 import make_denoiser_dataset  # noqa: E402
-PLAN_SHA256 = '604d537e1b06a7a67f117d4fc9dc2527af1f31400840073e0ad3b04b16f12d6f'
+PLAN_SHA256 = 'ef6356c5134b0e2ef71ad1308f1f8aa22b7b25e726e7e4bee2223357f863f5d7'
 
 
 def printed_plan():
@@ -90,6 +92,47 @@ class MakeDenoiserDatasetTests(unittest.TestCase):
         old = {'plan': make_denoiser_dataset.plan(sequences=1), 'units': {}}
         with self.assertRaises(SystemExit):
             make_denoiser_dataset.reusable_units(old, self.plan)
+
+    def test_each_frame_has_the_renderers_jitter(self):
+        """The renderer's (src/core/sampling/jitter.h), pinned to the table its test and training's hold
+        (tests/jitter_test.cpp, training/test_training.py)."""
+        table = {0: (0.0, -1.0 / 6.0), 1: (-0.25, 1.0 / 6.0), 2: (0.25, -7.0 / 18.0),
+                 31: (-0.484375, 0.2901234567901234), 32: (0.0, -1.0 / 6.0), 7200: (0.0, -1.0 / 6.0),
+                 7201: (-0.25, 1.0 / 6.0)}
+        for index, (x, y) in table.items():
+            jx, jy = make_denoiser_dataset.camera_jitter(index)
+            self.assertAlmostEqual(jx, x, places=12, msg=index)
+            self.assertAlmostEqual(jy, y, places=12, msg=index)
+        for s in self.seqs:
+            self.assertEqual(s['jitters'], [make_denoiser_dataset.camera_jitter(i) for i in s['frames']])
+
+    def test_the_input_graph_renders_what_the_demo_hands_its_network(self):
+        """The input graph's ReSTIR PT passes and settings are the demo's, and it has the features; a graph
+        that differs in any is refused before anything renders."""
+        read = lambda g: (ROOT / g).read_text(encoding='utf-8')
+        inp, demo = read(make_denoiser_dataset.INPUT_GRAPH), read(make_denoiser_dataset.DEMO_GRAPH)
+        self.assertIsNone(make_denoiser_dataset.input_graph_mismatch(inp, demo))
+        self.assertIn('[restir_pt] settings',
+                      make_denoiser_dataset.input_graph_mismatch(inp.replace('sigma = 16.0', 'sigma = 12.0'), demo))
+        self.assertIn('no features', make_denoiser_dataset.input_graph_mismatch(inp.replace('"features", ', ''), demo))
+        self.assertIn('passes', make_denoiser_dataset.input_graph_mismatch(
+            inp.replace('"restir_pt_spatial", ', ''), demo))
+
+    def test_every_scene_is_written_through_a_pinhole(self):
+        for text in ((ROOT / 'scenes/marbles.toml').read_text(encoding='utf-8'),
+                     subprocess.run([sys.executable, str(ROOT / 'scripts/make_marbles.py'), '--seed', '101'],
+                                    check=True, capture_output=True, text=True).stdout):
+            pinhole = make_denoiser_dataset.pinhole_scene(text)
+            camera = lambda scene: scene.split('[camera]', 1)[1].split('\n[', 1)[0]
+            self.assertIn('lens', camera(text))
+            self.assertNotIn('lens', camera(pinhole))
+            # Nothing else changed: the lens's one line is the difference.
+            lines = text.splitlines()
+            self.assertEqual([line for line in lines if not line.startswith('lens')], pinhole.splitlines())
+        scene = '[camera]\nvertical_fov_degrees = 30\n'
+        self.assertEqual(make_denoiser_dataset.pinhole_scene(scene), scene)
+        with self.assertRaises(SystemExit):
+            make_denoiser_dataset.pinhole_scene('[camera]\nlens = {\n radius = 0.1 }\n')
 
 
 if __name__ == '__main__':

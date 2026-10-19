@@ -53,7 +53,10 @@ kernel void restir_pt_temporal_shift(
     const device serenity::contracts::Float3* previous_positions [[buffer(binding::previous_positions)]],
     device uint* previous_pixels [[buffer(binding::previous_pixels)]],
     constant serenity::contracts::Transform* last_transforms [[buffer(binding::last_transforms)]],
-    constant float* last_glows [[buffer(binding::last_glows)]], uint2 grid_place [[thread_position_in_grid]]) {
+    constant float* last_glows [[buffer(binding::last_glows)]],
+    const device float* light_power [[buffer(binding::light_power)]],
+    const device float* last_light_power [[buffer(binding::last_light_power)]],
+    uint2 grid_place [[thread_position_in_grid]]) {
     const restir_pt::Traced traced = restir_pt::traced(frame, settings);
     const uint2 pixel = traced.pixel(grid_place);
     const bool inside = traced.inside(pixel);
@@ -70,8 +73,8 @@ kernel void restir_pt_temporal_shift(
         }
         previous_pixels[i] = j;
         if (j != restir_pt::no_pixel) {
-            const restir_pt::Scene now{structure, &block, transforms, sphere_glows};
-            const restir_pt::Scene then{structure, &block, last_transforms, last_glows};
+            const restir_pt::Scene now{structure, &block, transforms, sphere_glows, light_power};
+            const restir_pt::Scene then{structure, &block, last_transforms, last_glows, last_light_power};
             const serenity::contracts::PathReservoir last = last_finals[j];
             const serenity::contracts::PathReservoir own = reservoirs[i];
             if (!restir_pt::holds_path(last)) {
@@ -117,7 +120,9 @@ kernel void restir_pt_temporal_replay(
     const device serenity::contracts::PathReservoir* last_finals [[buffer(binding::last_finals)]],
     const device uint* previous_pixels [[buffer(binding::previous_pixels)]],
     constant serenity::contracts::Transform* last_transforms [[buffer(binding::last_transforms)]],
-    constant float* last_glows [[buffer(binding::last_glows)]], uint n [[thread_position_in_grid]]) {
+    constant float* last_glows [[buffer(binding::last_glows)]],
+    const device float* light_power [[buffer(binding::light_power)]],
+    const device float* last_light_power [[buffer(binding::last_light_power)]], uint n [[thread_position_in_grid]]) {
     if (n >= grid->count) {
         return;
     }
@@ -127,7 +132,7 @@ kernel void restir_pt_temporal_replay(
     const uint j = previous_pixels[i];
     const bool here = slot == last_here;
     const restir_pt::Scene scene{structure, &block, here ? transforms : last_transforms,
-                                 here ? sphere_glows : last_glows};
+                                 here ? sphere_glows : last_glows, here ? light_power : last_light_power};
     shifts[i * slots + slot] = restir_pt::stored_shift(
         shift::shift_path(scene, shift::unpack_primary_hit(here ? primaries[i] : last_primaries[j]),
                           here ? last_finals[j] : reservoirs[i], settings));

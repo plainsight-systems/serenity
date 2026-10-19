@@ -38,7 +38,9 @@ namespace serenity::denoise {
 //
 //   - layout.json is JSON (json.h), of format "serenity-denoiser-weights/1",
 //     float32, little-endian;
-//   - its constants are contract 18's: 28 input channels, scale 2, 124
+//   - its constants are contract 18's: 30 input channels (a network
+//     trained before the camera's jitter was an input has 28, and is
+//     refused by this, named: inputs.channels), scale 2, 124
 //     scores, spacings 1, 2 and 4, the masked score, the albedo floor and
 //     PU's ten constants, its normalization among them, each equal as a
 //     float;

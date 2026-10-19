@@ -33,7 +33,7 @@ using frame::Schedule;
 namespace {
 
 const std::vector<PassKind> denoised = {PassKind::restir_pt_initial, PassKind::restir_pt_shade, PassKind::features,
-                                        PassKind::denoise, PassKind::tone_map};
+                                        PassKind::denoise, PassKind::depth_of_field, PassKind::tone_map};
 
 using tests::refusal;
 
@@ -88,21 +88,23 @@ TEST_CASE("a denoised graph's light is half its output each way, rounded up; any
 
 TEST_CASE("the denoise pass's rules") {
     CHECK(tests::contains(refusal(schedule_of({PassKind::restir_pt_initial, PassKind::restir_pt_shade, PassKind::denoise,
-                                               PassKind::tone_map})),
+                                               PassKind::depth_of_field, PassKind::tone_map})),
                           "no features pass comes before it"));
     CHECK(tests::contains(refusal(schedule_of({PassKind::restir_pt_initial, PassKind::restir_pt_shade,
                                                PassKind::features, PassKind::denoise, PassKind::denoise,
-                                               PassKind::tone_map})),
+                                               PassKind::depth_of_field, PassKind::tone_map})),
                           "denoise more than once"));
     // Its light is ReSTIR PT's, traced checkerboarded: the path tracer's is
     // refused.
-    Schedule path{{PassKind::path, PassKind::features, PassKind::denoise, PassKind::tone_map}, tests::look};
+    Schedule path{{PassKind::path, PassKind::features, PassKind::denoise, PassKind::depth_of_field, PassKind::tone_map},
+                  tests::look};
     path.denoise = passes::Denoise{"network"};
     CHECK(tests::contains(refusal(path), "no restir_pt_shade comes before it"));
     CHECK(tests::contains(refusal(schedule_of({PassKind::restir_pt_initial, PassKind::restir_pt_temporal,
                                                PassKind::restir_pt_shade, PassKind::features, PassKind::denoise,
-                                               PassKind::restir_pt_duplication, PassKind::tone_map})),
-                          "directly before"));
+                                               PassKind::restir_pt_duplication, PassKind::depth_of_field,
+                                               PassKind::tone_map})),
+                          "followed directly by depth_of_field"));
     CHECK(tests::contains(refusal(schedule_of(denoised, false)), "no [denoise] settings"));
     Schedule stray = schedule_of({PassKind::restir_pt_initial, PassKind::restir_pt_shade, PassKind::tone_map});
     CHECK(tests::contains(refusal(stray), "[denoise] settings and no denoise pass"));
@@ -111,7 +113,7 @@ TEST_CASE("the denoise pass's rules") {
 TEST_CASE("a denoised graph's weights are read relative to its file's directory, an absolute path as it is") {
     const tests::ScratchDirectory scratch("denoise-weights");
     const std::string graph =
-        "passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"features\", \"denoise\", \"tone_map\"]\n"
+        "passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"features\", \"denoise\", \"depth_of_field\", \"tone_map\"]\n"
         "[tone_map]\nexposure = 0.0\nbloom = 0.0\n"
         "[restir_pt]\nnee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = 0.2\n";
     std::filesystem::create_directories(scratch / "graphs");
@@ -127,7 +129,7 @@ TEST_CASE("a denoised graph's weights are read relative to its file's directory,
 
 TEST_CASE("every mistake in [denoise] is an error") {
     const std::string passes =
-        "passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"features\", \"denoise\", \"tone_map\"]\n"
+        "passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"features\", \"denoise\", \"depth_of_field\", \"tone_map\"]\n"
         "[tone_map]\nexposure = 0.0\nbloom = 0.04\n"
         "[restir_pt]\nnee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = 0.2\n";
     const auto error = [&](const std::string& rest) {
@@ -184,6 +186,11 @@ TEST_CASE("the fixture's exported network reads, its widths and tensors as the s
 TEST_CASE("a network export that is not what the renderer runs is refused, naming what") {
     CHECK(tests::contains(network_refusal("\"format\": \"serenity-denoiser-weights/1\"", "\"format\": \"other\""),
                           "format"));
+    // A network trained before the camera's jitter was an input: 28 inputs,
+    // as every export before contract 18's 30 (the demo's
+    // denoiser-v1-checkerboard-model among them).
+    CHECK(tests::contains(network_refusal("  \"channels\": 30,", "  \"channels\": 28,"),
+                          "inputs.channels is not the 30 this renderer runs with"));
     CHECK(tests::contains(network_refusal("\"albedo_floor\": 0.02", "\"albedo_floor\": 0.03"),
                           "inputs.albedo_floor is not the 0.02 this renderer runs with"));
     CHECK(tests::contains(network_refusal("   2,\n   4\n", "   2,\n   8\n"),
@@ -215,4 +222,60 @@ TEST_CASE("an export whose file cannot be read whole is refused as unreadable, n
     CHECK(tests::contains(
         tests::error_of<denoise::NetworkError>([&] { return denoise::load_network(scratch / "missing"); }),
         "cannot read layout.json"));
+}
+
+TEST_CASE("a denoised graph applies its lens after the network, by depth_of_field directly after the denoise pass") {
+    CHECK(frame::reads_radiance(PassKind::depth_of_field));
+    CHECK_FALSE(frame::writes_radiance(PassKind::depth_of_field));
+    CHECK_FALSE(frame::writes_target(PassKind::depth_of_field));
+    CHECK(frame::needs_scene(PassKind::depth_of_field));
+    CHECK(frame::lens_after_network(schedule_of(denoised)));
+    // The network without the lens after it, which would drop the lens.
+    CHECK(tests::contains(refusal(schedule_of({PassKind::restir_pt_initial, PassKind::restir_pt_shade,
+                                               PassKind::features, PassKind::denoise, PassKind::tone_map})),
+                          "followed directly by depth_of_field"));
+    // The lens after anything but the network.
+    Schedule path{{PassKind::path, PassKind::depth_of_field, PassKind::tone_map}, tests::look};
+    CHECK(tests::contains(refusal(path), "directly after the denoise pass"));
+    CHECK(tests::contains(refusal(schedule_of({PassKind::restir_pt_initial, PassKind::restir_pt_shade,
+                                               PassKind::features, PassKind::depth_of_field, PassKind::denoise,
+                                               PassKind::depth_of_field, PassKind::tone_map})),
+                          "depth_of_field more than once"));
+}
+
+TEST_CASE("a graph whose light is the network's input traces through its camera's pinhole, and no other does") {
+    contracts::Camera lensed{};
+    lensed.position = {0.0f, 0.0f, 0.0f};
+    lensed.look_at = {0.0f, 0.0f, -1.0f};
+    lensed.up = {0.0f, 1.0f, 0.0f};
+    lensed.vertical_fov_degrees = 30.0f;
+    lensed.lens_radius = 0.01f;
+    lensed.focus_distance = 2.0f;
+    contracts::Camera before = lensed;
+    before.position = {0.1f, 0.0f, 0.0f};
+    frame::FrameInputs inputs{.time = frame::Seconds(1.0), .index = 7, .accumulated_since = 7, .camera = lensed};
+    inputs.previous = frame::PreviousFrame{frame::Seconds(0.9), before};
+
+    const frame::FrameInputs traced = frame::traced_inputs(schedule_of(denoised), inputs);
+    CHECK(traced.camera->lens_radius == 0.0f);
+    CHECK(traced.previous->camera.lens_radius == 0.0f);
+    // The rest of each camera, and of the frame, as given.
+    CHECK(traced.camera->focus_distance == lensed.focus_distance);
+    CHECK(traced.camera->vertical_fov_degrees == lensed.vertical_fov_degrees);
+    CHECK(traced.previous->camera.position.x == before.position.x);
+    CHECK(traced.index == inputs.index);
+    CHECK(traced.time == inputs.time);
+
+    // The data set's input graph, without the network, traces as the
+    // denoised graph does (logical-overview.md, principle 13).
+    const Schedule input = schedule_of({PassKind::restir_pt_initial, PassKind::restir_pt_shade, PassKind::features,
+                                        PassKind::tone_map},
+                                       false);
+    CHECK(frame::traced_inputs(input, inputs).camera->lens_radius == 0.0f);
+
+    const Schedule plain = schedule_of({PassKind::restir_pt_initial, PassKind::restir_pt_shade, PassKind::tone_map},
+                                       false);
+    const frame::FrameInputs kept = frame::traced_inputs(plain, inputs);
+    CHECK(kept.camera->lens_radius == lensed.lens_radius);
+    CHECK(kept.previous->camera.lens_radius == before.lens_radius);
 }

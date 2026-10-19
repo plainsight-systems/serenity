@@ -52,6 +52,8 @@ struct DenoiseFixture {
     contracts::Float3 right{};
     contracts::Float3 up{};
     contracts::Float3 backward{};
+    // Each frame's camera jitter (x, y), in light pixels (contract 18).
+    std::vector<std::array<float, 2>> jitters;
 
     std::filesystem::path file(std::size_t k, std::string_view name) const {
         return dir / ("frame-" + std::to_string(k) + "-" + std::string(name) + ".pfm");
@@ -79,6 +81,14 @@ inline DenoiseFixture read_denoise_fixture(const std::filesystem::path& dir) {
     f.right = vector(doc.at("axes").at("right"));
     f.up = vector(doc.at("axes").at("up"));
     f.backward = vector(doc.at("axes").at("backward"));
+    const denoise::JsonArray& jitters = doc.at("jitter").array("jitter");
+    if (jitters.size() != f.frames) {
+        throw std::runtime_error("denoise fixture: a jitter a frame, and fixture.json has another count");
+    }
+    for (const denoise::Json& j : jitters) {
+        const denoise::JsonArray& xy = j.array("a jitter");
+        f.jitters.push_back({static_cast<float>(xy.at(0).number("x")), static_cast<float>(xy.at(1).number("y"))});
+    }
     return f;
 }
 
@@ -181,11 +191,11 @@ inline void upload_frame(const DenoiseFixture& fixture, std::size_t k, const Fix
     upload(m.full_albedo.get(), output::read_pfm(fixture.file(k, "full_albedo")));
 }
 
-// A frame's constants: the camera's axes, the sizes, and whether its
-// history is kept.
-inline contracts::DenoiseConstants constants_of(const DenoiseFixture& fixture, const denoise::Network& network,
-                                                const metal::DenoiseImages& images, frame::Extent output,
-                                                bool history) {
+// Frame `k`'s constants: the camera's axes, the sizes, whether its
+// history is kept, and its jitter.
+inline contracts::DenoiseConstants constants_of(const DenoiseFixture& fixture, std::size_t k,
+                                                const denoise::Network& network, const metal::DenoiseImages& images,
+                                                frame::Extent output, bool history) {
     contracts::DenoiseConstants c{};
     c.right = fixture.right;
     c.up = fixture.up;
@@ -198,6 +208,8 @@ inline contracts::DenoiseConstants constants_of(const DenoiseFixture& fixture, c
     c.output_width = output.width;
     c.output_height = output.height;
     c.features = network.widths.dec.back();
+    c.jitter_x = fixture.jitters.at(k)[0];
+    c.jitter_y = fixture.jitters.at(k)[1];
     return c;
 }
 
@@ -263,7 +275,7 @@ inline std::vector<contracts::LinearImage> run_denoise_fixture(
         frame::FrameInputs inputs{};
         inputs.index = k;
         const bool history = images.prepare(inputs, light);
-        const contracts::DenoiseConstants c = detail::constants_of(fixture, network, images, output, history);
+        const contracts::DenoiseConstants c = detail::constants_of(fixture, k, network, images, output, history);
         std::memcpy(made.constants->contents(), &c, sizeof(c));
         detail::record_frame(submission, table.get(), pass, made, images, output);
         outputs.push_back(detail::download(made.radiance_out.get()));

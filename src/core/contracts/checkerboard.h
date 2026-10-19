@@ -6,7 +6,9 @@
 // dispatches them (architecture/logical-overview.md, "The frame";
 // Milestone 4's Step 4, docs/research/2026-10-17-milestone-4-plan.md).
 //
-// In a denoised graph (core/frame/schedule.h, denoises), frame n traces
+// In a graph whose light is the network's input (core/frame/schedule.h,
+// feeds_network: the denoised graph and the data set's input graph), frame
+// n traces
 // the light at the pixels (x, y) of the light size whose x + y + n
 // is even, half of them, a checkerboard whose two fields alternate frame by
 // frame: so every pixel is traced in every other frame, and in one of any

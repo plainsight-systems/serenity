@@ -46,7 +46,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from data import (CROP, FRAMES, SCALE, Augmentation, Manifest, Split, augment, epoch_crops, validation_tiles)
+from data import (CROP, FRAMES, INPUT_CHANNELS, SCALE, TARGET_CHANNELS, Augmentation, Manifest, Split, augment, epoch_crops, validation_tiles)
 from loss import sequence_loss
 from model import Denoiser, Widths, macs_per_input_pixel, parameter_count
 
@@ -126,15 +126,22 @@ def hold_on_device(data_bytes: int, free_bytes: int, working_bytes: int) -> bool
     return data_bytes + working_bytes <= free_bytes
 
 
+def zero_batch(batch_size: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+    """A batch of the run's shape, as make_batch() gives it, of zeros and a white albedo: what the
+    working-memory probe trains on. Its channels are data.py's, so it follows the network's input."""
+    inputs = torch.zeros(batch_size, FRAMES, INPUT_CHANNELS, CROP, CROP, device=device)
+    targets = torch.zeros(batch_size, FRAMES, TARGET_CHANNELS, SCALE * CROP, SCALE * CROP, device=device)
+    targets[:, :, 3:6] = 1.0  # a white albedo
+    return inputs, targets
+
+
 def working_device_bytes(model: Denoiser, batch_size: int, device: torch.device) -> int:
     """Training's own GPU memory, measured: one step (forward, backward, Adam) of a copy of `model`
     on a zero batch of the run's shape. The copy and its optimizer are thrown away, so the run's
     network, its gradients and every random stream are untouched."""
     probe = copy.deepcopy(model)
     optimizer = torch.optim.Adam(probe.parameters())
-    inputs = torch.zeros(batch_size, FRAMES, 12, CROP, CROP, device=device)
-    targets = torch.zeros(batch_size, FRAMES, 6, SCALE * CROP, SCALE * CROP, device=device)
-    targets[:, :, 3:6] = 1.0  # a white albedo
+    inputs, targets = zero_batch(batch_size, device)
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
     loss, _ = run_batch(probe, inputs, targets)

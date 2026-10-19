@@ -56,6 +56,7 @@
 #include "core/contracts/transform.h"
 #include "core/lights/sphere_light.h"
 #include "metal/device/layout.metal.h"
+#include "metal/math/srgb.metal.h"
 #include "metal/math/transform.metal.h"
 #include "metal/math/warp.metal.h"
 
@@ -70,6 +71,13 @@ struct SphereLight {
     float3 radiance;
     uint primitive;  // its shape, which a shadow ray toward it ignores
 };
+
+// Its power (emitter.metal.h, light_power): 4 pi r^2 x pi x luminance,
+// RTXDI's SphereLight::GetPower without its shaping.
+inline float sphere_light_power(SphereLight light) {
+    constexpr float pi = 3.14159265358979f;
+    return 4.0f * pi * light.radius * light.radius * pi * luminance(light.radiance);
+}
 
 inline SphereLight sphere_light(serenity::lights::SphereLightData light, serenity::contracts::Transform placed,
                                 float glow) {

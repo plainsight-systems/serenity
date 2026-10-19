@@ -36,7 +36,13 @@ and the camera.
   fireflies are small glowing spheres: geometry that rays can hit, and
   lights that the estimators sample. Rays that only test whether a light
   is visible skip them (principle 11).
-- **Primary visibility** traces a ray from the camera through each pixel. At
+- **Primary visibility** traces a ray from the camera through each pixel:
+  in ReSTIR PT's frames, the light the network reads, through the same
+  point of every pixel, the frame's **jitter**, a fixed low-discrepancy
+  sequence (Halton in bases 2 and 3) of 32 phases, as temporal upscalers
+  take it (DLSS's guide: about 8 times the square of the upscale ratio);
+  in the path tracer's, through a point of its own in each pixel, drawn
+  at random, the box filter a reference converges to. At
   glass it reflects or refracts, chosen by the Fresnel term; at polished metal
   it reflects; it stops at the first rough surface, or when it leaves the
   scene. What it finds is the pixel's **surface record**: position, normal,
@@ -51,7 +57,12 @@ and the camera.
     strikes with the complementary weight (principle 7). ReSTIR PT takes
     it at every vertex of its paths, by resampling candidate lights from
     the frame's light tiles, and reuses it with the indirect light, as one
-    path (below). ReSTIR DI (Bitterli et al. 2020, as RTXDI ships it),
+    path (below). The tiles are drawn each frame in proportion to each
+    firefly's power as it glows at *t*, as RTXDI presamples its local
+    lights from a power PDF and its mip chain: a firefly still asleep is
+    never drawn, a bright one often, and every candidate's density, and the
+    density MIS weighs a firefly struck by a bounced ray by, is that same
+    power over the frame's total. ReSTIR DI (Bitterli et al. 2020, as RTXDI ships it),
     which reused the direct light alone, lost to the path tracer at equal
     time on the marbles and was removed 2026-10-17, superseded by ReSTIR
     PT.
@@ -89,7 +100,10 @@ and the camera.
   to the surface seen in them. Per output pixel it predicts weights over
   three 3 x 3 neighborhoods of the noisy light, at spacings of 1, 2 and 4
   pixels, softmax-normalized, and a blend with its own last output moved
-  by the motion vectors: a kernel-predicting network, its weights computed
+  by the motion vectors, and the frame's jitter, as DLSS, TSR and FSR take
+  it, so it knows where in each pixel its light was traced (the motion
+  vectors stay unjittered, NRD's and DLSS's convention): a
+  kernel-predicting network, its weights computed
   fresh from every frame as attention computes its weights from the tokens
   in front of it. Then the surface's color is multiplied back.
 - **Upscale** brings the image to the output's resolution, and the same
@@ -98,15 +112,35 @@ and the camera.
   pixels, as *Marbles at Night* traced below its output resolution and
   upscaled with DLSS. A graph without the denoiser renders at the window's
   size, or a fraction of it that the window stretches.
+- **Depth of field**, in a denoised frame, is the lens, applied after the
+  network, at the output's resolution: every step before it traces a
+  pinhole, sharp at every depth, and this step blurs each pixel by the
+  circle of confusion the scene's thin lens gives its depth, the same
+  radius and plane of focus the lens rays had, so the look is the lens's.
+  It is where production puts it (Unreal's post-process order, temporal
+  upscalers "between Depth of Field and Motion Blur"; DLSS and NRD take
+  inputs without lens effects): through a lens, every ray of a pixel
+  starts at a random point on the lens, so at a defocused edge the
+  features flip between the near marble and the table behind from pixel
+  to pixel, and the network keeps that speckle. The blur follows Jimenez's
+  *Next Generation Post Processing in Call of Duty: Advanced Warfare*
+  (SIGGRAPH 2014): scatter as gather at half the output's resolution,
+  the near and far fields kept apart so that a defocused marble in front
+  bleeds over the sharp table behind it, as a lens shows it, while the
+  blurred background never spreads over what is in focus in front of it.
+  A graph without the denoiser traces the lens itself (principle 12).
 - **Tone map** turns linear radiance into display values, and the frame is
   **presented** in the window or **written** by the headless renderer.
 
 The **reference** is the same light transport without reuse: the path
 tracer, the same bounces, time frozen, and thousands of samples
 accumulated over frames, at full resolution and with no denoiser or
-upscaler. Every other image is judged against it. The denoiser was
-trained against references of the same kind, on scenes other than the
-one it is shown on.
+upscaler, through the scene's lens, as Unreal's path tracer renders its
+depth of field in the rays and its real-time renderer after them. Every
+other image is judged against it. The denoiser was trained against
+references of the same kind, on scenes other than the one it is shown on,
+through a pinhole: the network's output is sharp at every depth, and so
+are its targets (principle 12).
 
 The **state kept between frames** is drawn beside the merges rather than as a
 step, because that is what it is: ReSTIR PT's reservoirs and surface
@@ -128,7 +162,9 @@ before ("The frame").
 
 2. **Randomness is a function of pixel, frame and purpose.** Every random
    number is derived from where and when it is used. There is no shared
-   generator state, so any frame can be rendered again exactly, alone.
+   generator state, so any frame can be rendered again exactly, alone. The
+   camera's jitter is a function of the frame alone: its index's phase in
+   a fixed sequence.
 
 3. **The reference shares the scene and the light transport, never the
    reuse.** ReSTIR PT runs Enhanced's defaults, whose merges are weighted
@@ -151,7 +187,8 @@ before ("The frame").
    light step works on one pixel alone. Reuse across pixels and time lives
    in one place, and that is where the kernel work concentrates. The image
    steps after Resolve look at neighborhoods by design: the denoiser, which
-   also reads its own last output, and the tone map's bloom. So does the
+   also reads its own last output, the depth of field's blur, and the tone
+   map's bloom. So does the
    checkerboard's fill ("The frame"), which reads the frame before's light
    and the traced pixels around the ones it fills: it reconstructs an
    image, it reuses no sample.
@@ -227,6 +264,32 @@ before ("The frame").
     class to the scene's data, per shape, as Unreal's primitives carry it;
     no scene here has one.
 
+12. **The lens is traced by the reference and applied by the denoised
+    frame after the network.** A graph whose light is the network's
+    input (principle 13) traces it, its features and, denoised, its
+    full-size albedo through a pinhole, the scene's camera with its lens
+    taken off, and the denoised graph's depth-of-field step then blurs
+    the network's output by the circle of confusion of that same lens;
+    every other graph traces the scene's lens in its rays, the path
+    tracer, the reference, among them. So the two meet where they are
+    compared: the same lens, its radius and plane of focus, one exactly
+    in the rays and one approximately in the image, as Unreal's path
+    tracer and its real-time renderer differ. The denoiser's training
+    data is rendered through a pinhole, inputs and targets alike: its
+    scenes are written without a lens.
+
+13. **The training data is what the network sees.** The light the
+    network reads is traced one way wherever it is made: in the denoised
+    graph, live, and in the data set's input graph, offline. Both are the
+    graphs with ReSTIR PT's passes and the features pass, and every such
+    graph traces its light checkerboarded and filled (the fill writing
+    the light it hands on), through a pinhole (12), at the camera's
+    jitter, from tiles drawn by power, so the input graph's light and
+    features for a frame are the denoised graph's for the same frame, to
+    the bit, which a test holds. It is how production makes an
+    upscaler's training data: by the renderer the network runs behind,
+    not by a variant of it.
+
 ## The design space
 
 What varies, and which principle handles it.
@@ -239,11 +302,13 @@ What varies, and which principle handles it.
 | Material | rough, glass, polished metal | rough surfaces take light; glass and metal are passed through, by the camera's path and by caustic paths |
 | Light path | direct, bounced, through glass | direct light at a rough surface two ways, weighed by MIS; every other path one way (7) |
 | Camera | still or moving | a frame input (1) |
+| Lens | a pinhole, or a thin lens of a radius and a plane of focus | scene data; traced in the rays without the denoiser, applied after it with (12) |
 | Time step | measured, or fixed | a frame input (1) |
 | Estimator | the path tracer, the reference; ReSTIR PT with manifold next event estimation, temporal, spatial or both; the denoised pipeline | interchangeable (4) |
 | Reuse settings | M candidates, k neighbors, history length | settings of the estimator, not code |
 | Samples per pixel | one a frame, or thousands for the reference | a setting; the reference is the light transport without reuse (3) |
-| Pixels traced a frame | every one, or half in an alternating checkerboard | half in a denoised graph, the other half the frame before's light, moved ("The frame"); every one in a graph without the denoiser |
+| Point in the pixel | the frame's jitter, or each pixel's own | the jitter in ReSTIR PT's frames, the light the network reads, and given to it; each pixel's own random point in the path tracer's, the reference's box filter (2) |
+| Pixels traced a frame | every one, or half in an alternating checkerboard | half where the light is the network's input (13), the other half the frame before's light, moved ("The frame"); every one in any other graph |
 | Resolution | traced, and output | with the denoiser, traced at half the output each way and upscaled by it; without, traced at the window's size or a fraction the window stretches; anything, headless |
 | Denoiser | none, or our own network | a stage after Resolve, its weights data; judged against the reference, and against Open Image Denoise offline |
 | Backend | Metal, Vulkan | the core is shared (10) |
@@ -290,7 +355,7 @@ development machine, and the target is 60 frames a second: 16.7 ms for
 every step. Rays are traced at a lower resolution and upscaled. With the
 denoiser a frame has two sizes: every step up to Resolve runs at the
 **light size**, the output's halved each way and rounded up, and the
-denoiser and the tone map at the **output size**. In the window the light
+denoiser, depth of field and the tone map at the **output size**. In the window the light
 is traced at 1728 x 1117 and the network brings it to every pixel.
 
 **A denoised frame runs in two halves, on two queues** (Milestone 4,
@@ -298,7 +363,7 @@ is traced at 1728 x 1117 and the network brings it to every pixel.
 everything that traces rays: Animate, the light, the reservoirs' merges,
 the features at the light size, and the surface's color at the output
 size, which the denoiser multiplies back. The **image half** is the rest:
-Denoise and Upscale, Tone map, at the output size. The light half is
+Denoise and Upscale, Depth of field, Tone map, at the output size. The light half is
 bound by the ray tracing hardware and leaves the arithmetic units nearly
 idle; the image half is the reverse. So frame N's
 image half runs beside frame N + 1's light half, and a frame is shown
@@ -323,9 +388,9 @@ A graph without the denoiser has one half and runs on one queue, as
 before.
 
 **Checkerboard rendering of the light** (Milestone 4's Step 4,
-`docs/research/2026-10-17-milestone-4-plan.md`) is how a denoised frame
-traces its light, not a setting; a graph without the denoiser traces
-every pixel. Each frame traces the light at half the light size's
+`docs/research/2026-10-17-milestone-4-plan.md`) is how the light the
+network reads is traced, not a setting (principle 13); a graph whose
+light is not the network's traces every pixel. Each frame traces the light at half the light size's
 pixels, a checkerboard whose two fields alternate frame by frame, so
 every pixel is traced every other frame; the other half of the image is
 the frame before's light, moved by the motion vectors, as console
@@ -353,11 +418,12 @@ for ReSTIR PT:
   through as they are. The fill writes the hand-off, never the accumulated
   image, so a still scene's mean is each pixel's own traced frames.
 
-It changes what the denoiser sees, which was trained on light traced at
-every pixel: a half of each frame a frame old. The user kept it
-(2026-10-17), from the denoised frames before and after; whether the
-network is retrained on checkerboarded light is the user's call, and it
-has not been.
+It changes what the denoiser sees: a half of each frame a frame old. The
+user kept it (2026-10-17). The network was retrained after it on a data
+set whose inputs were, it was found on 2026-10-18, traced at every pixel
+(the input graph had no denoise pass, which the checkerboard was then tied
+to); since principle 13 the data set's inputs are the checkerboard's and
+the fill's, as the network sees them.
 
 **Pacing.** The window renders when the display asks for a frame, as
 Apple's Metal apps do: a Metal display link (Core Animation's
@@ -393,9 +459,10 @@ into and when. This is the shape of SDL3's main callbacks
 the loop owns it, on iOS through a display link, and the app's code is
 the same either way.
 
-The target is not met yet. The denoised frame takes 56 ms at the
-window's size and 16.7 ms at 1920 x 1080 (Milestone 4's Step 4,
-`docs/research/2026-10-17-milestone-4-plan.md`); ReSTIR PT alone at the
+The target is not met yet. The denoised frame takes 58.3 ms at the
+window's size and 17.4 ms at 1920 x 1080, with the lens applied after the
+network (`docs/research/2026-10-18-production-sweep.md`; 56 and 16.7
+before it, Milestone 4's Step 4, `docs/research/2026-10-17-milestone-4-plan.md`); ReSTIR PT alone at the
 window's full size takes about 150. Making the frame fit the budget is
 later work. The headless renderer is not held to the budget: footage is
 written at any resolution and any number of samples.

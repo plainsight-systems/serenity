@@ -124,6 +124,12 @@ TEST_CASE("ReSTIR PT, the whole graph, keeps the path tracer's means: a lit floo
     // crowd, which a floor under two fireflies, resampled from the start,
     // has few of.
     check_floor(lit_floor(two_fireflies), 512, whole_graph);
+    // Two of unequal power, 5.76 to 1, so the light tiles draw them
+    // unequally (contracts/light_tile.h): the means hold only if every
+    // density weighs by the draw's own probability.
+    check_floor(lit_floor(tests::one_firefly +
+                          "[[shapes]]\nkind = \"sphere\"\ncenter = [-1.2, 1.5, 0.4]\nradius = 0.12\nmaterial = \"glow\"\n"),
+                512, whole_graph);
     check_furnace("kind = \"dielectric\"\nior = 1.5\n", 512, whole_graph);
 }
 
@@ -311,6 +317,7 @@ std::vector<tests::ShiftResult> shift(const std::string& text, frame::Extent siz
     metal::Library library(device, metallib::probes);
     const auto pipeline = library.compute_pipeline("pt_shift");
     const auto fill = library.compute_pipeline("pt_light_tiles");
+    const auto power = library.compute_pipeline("pt_light_power");
     const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
     MTL::Device* mtl = device.handle();
     const contracts::CameraData camera = camera::shader_form(description.camera, size);
@@ -330,11 +337,13 @@ std::vector<tests::ShiftResult> shift(const std::string& text, frame::Extent siz
     const auto counted = buffer_of(tests::Binding::of(count));
     constexpr std::size_t tile_entries = std::size_t{contracts::light_tiles} * contracts::light_tile_size;
     const auto tiles = buffer_of(tests::Binding::zeroed(tile_entries * sizeof(contracts::LightTileEntry)));
+    const auto pyramid = buffer_of(tests::Binding::zeroed(
+        contracts::light_power_floats(contracts::light_power_levels(description.light_counts.lights)) * sizeof(float)));
     // MNEE's list, of capacity 0 (its header zeroed): the trees' requests
     // are dropped (kernels/restir_pt_probe.metal, pt_shift).
     const auto mnee_header = buffer_of(tests::Binding::zeroed(contracts::mnee_header_bytes));
     auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-    descriptor->setMaxBufferBindCount(12);
+    descriptor->setMaxBufferBindCount(13);
     NS::Error* error = nullptr;
     auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
     REQUIRE(table);
@@ -353,7 +362,11 @@ std::vector<tests::ShiftResult> shift(const std::string& text, frame::Extent siz
     table->setAddress(tiles->gpuAddress(), 9);
     table->setAddress(mnee_header->gpuAddress(), 10);
     table->setAddress(mnee_header->gpuAddress(), 11);
+    table->setAddress(pyramid->gpuAddress(), 12);
     encoder->setArgumentTable(table.get());
+    encoder->setComputePipelineState(power.get());
+    encoder->dispatchThreadgroups(MTL::Size(1, 1, 1), MTL::Size(contracts::light_power_threads, 1, 1));
+    encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
     encoder->setComputePipelineState(fill.get());
     encoder->dispatchThreads(MTL::Size(tile_entries, 1, 1), MTL::Size(fill->threadExecutionWidth(), 1, 1));
     encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
@@ -369,6 +382,59 @@ std::vector<tests::ShiftResult> shift(const std::string& text, frame::Extent siz
 
 double luminance(contracts::Float3 c) {
     return 0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z;
+}
+
+// `draws` lights drawn by power in `text`'s still scene (kernels/
+// restir_pt_probe.metal, pt_power_draws), the pyramid built as the initial
+// pass builds it.
+std::vector<tests::PowerDraw> power_draws(const std::string& text, std::uint32_t draws) {
+    const scene::SceneDescription description = scene::parse(text, "test scene");
+    metal::Device device;
+    metal::Submission submission(device);
+    const metal::SceneBuffers buffers(device, submission, description);
+    metal::ShapeTransforms transforms(device, submission, description.shapes.transforms,
+                                      metal::FrameArray::Copies::one);
+    metal::LightGlows glows(device, submission, description.light_counts.spheres, false);
+    const std::vector<std::uint32_t> lights = scene::light_shapes(description);
+    metal::SceneAcceleration acceleration(device, submission, description.shapes, {.moving = {}, .lights = lights});
+    metal::Library library(device, metallib::probes);
+    const auto build = library.compute_pipeline("pt_light_power");
+    const auto draw = library.compute_pipeline("pt_power_draws");
+    const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+    const auto buffer_of = [&](const tests::Binding& binding) {
+        return tests::shared_buffer(device, submission, binding.bytes());
+    };
+    const auto out = buffer_of(tests::Binding::zeroed(std::size_t{draws} * sizeof(tests::PowerDraw)));
+    const auto counted = buffer_of(tests::Binding::of(draws));
+    const auto pyramid = buffer_of(tests::Binding::zeroed(
+        contracts::light_power_floats(contracts::light_power_levels(description.light_counts.lights)) * sizeof(float)));
+    auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
+    descriptor->setMaxBufferBindCount(13);
+    NS::Error* error = nullptr;
+    auto table = NS::TransferPtr(device.handle()->newArgumentTable(descriptor.get(), &error));
+    REQUIRE(table);
+    const metal::FrameSlot slot = submission.begin();
+    MTL4::ComputeCommandEncoder* encoder = slot.commands->computeCommandEncoder();
+    REQUIRE(encoder != nullptr);
+    table->setAddress(out->gpuAddress(), 0);
+    table->setAddress(counted->gpuAddress(), 1);
+    table->setAddress(acceleration.address(slot.slot), 3);
+    table->setAddress(buffers.block_address(), 4);
+    table->setAddress(glows.address(slot.slot), 5);
+    table->setAddress(transforms.address(slot.slot), 6);
+    table->setAddress(pyramid->gpuAddress(), 12);
+    encoder->setArgumentTable(table.get());
+    encoder->setComputePipelineState(build.get());
+    encoder->dispatchThreadgroups(MTL::Size(1, 1, 1), MTL::Size(contracts::light_power_threads, 1, 1));
+    encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+    encoder->setComputePipelineState(draw.get());
+    encoder->dispatchThreads(MTL::Size(draws, 1, 1), MTL::Size(draw->threadExecutionWidth(), 1, 1));
+    encoder->endEncoding();
+    submission.commit();
+    (void)submission.wait_until_complete(slot.sequence);
+    std::vector<tests::PowerDraw> results(draws);
+    std::memcpy(results.data(), out->contents(), results.size() * sizeof(tests::PowerDraw));
+    return results;
 }
 
 // A floor under a firefly and a large light, a glass ball (replay through
@@ -391,6 +457,41 @@ std::string shift_scene() {
 }
 
 }  // namespace
+
+TEST_CASE("the light tiles' draw takes each light in proportion to its power, with the probability MIS asks") {
+    // Five fireflies of powers 1 : 4 : 1/4 : 9 : 1 (radius^2 x luminance,
+    // contracts/light_tile.h), so 8 leaves, three of no light: RTXDI's
+    // presampling, by descent of the power pyramid
+    // (light_selection/power_light.metal.h).
+    const std::string text = camera_text("[0, 2, 3]", "[0, 0, 0]", 50) + sky("[0, 0, 0]", "[0, 0, 0]") +
+                             "[materials.floor]\nkind = \"rough\"\ncolor = [0.8, 0.8, 0.8]\n"
+                             "[materials.bright]\nkind = \"emissive\"\nradiance = [200, 200, 200]\n"
+                             "[materials.dim]\nkind = \"emissive\"\nradiance = [50, 50, 50]\n"
+                             "[[shapes]]\nkind = \"box\"\nmin = [-3, -1, -3]\nmax = [3, 0, 3]\nmaterial = \"floor\"\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0.3, 2.5, -0.5]\nradius = 0.05\nmaterial = \"bright\"\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [-1.2, 1.5, 0.4]\nradius = 0.1\nmaterial = \"bright\"\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [1.2, 1.5, 0.4]\nradius = 0.05\nmaterial = \"dim\"\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0.0, 1.0, 1.0]\nradius = 0.15\nmaterial = \"bright\"\n"
+                             "[[shapes]]\nkind = \"sphere\"\ncenter = [0.0, 1.5, -1.0]\nradius = 0.05\nmaterial = \"bright\"\n";
+    const std::array<double, 5> power = {1.0, 4.0, 0.25, 9.0, 1.0};
+    const double total = 15.25;
+    constexpr std::uint32_t draws = 1u << 20;
+    const std::vector<tests::PowerDraw> drawn = power_draws(text, draws);
+    std::array<std::uint32_t, 5> counts{};
+    for (const tests::PowerDraw& d : drawn) {
+        REQUIRE(d.index < power.size());  // never a leaf of no light
+        ++counts[d.index];
+        const double expected = power[d.index] / total;
+        CHECK(d.probability == doctest::Approx(expected).epsilon(1e-5));
+        CHECK(d.asked == d.probability);  // MIS's and the draw's are one number
+    }
+    for (std::size_t i = 0; i < power.size(); ++i) {
+        const double p = power[i] / total;
+        const double sigma = std::sqrt(draws * p * (1.0 - p));
+        INFO("light " << i << ": " << counts[i] << " draws, " << draws * p << " expected");
+        CHECK(std::abs(counts[i] - draws * p) < 5.0 * sigma);
+    }
+}
 
 TEST_CASE("a path shifted to its own pixel keeps its F and has a Jacobian of 1, in every case the shift has") {
     // shift_scene(), with one NEE candidate, so rays the BSDF draws to a

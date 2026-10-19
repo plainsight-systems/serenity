@@ -87,7 +87,8 @@ static_assert(PathReuseImages::grid_offset >= sizeof(std::uint32_t) &&
 static_assert(PathReuseImages::grid_offset % alignof(gpu::IndirectGrid) == 0 &&
               PathReuseImages::grid_offset % constant_offset_alignment == 0);
 
-PathReuseImages::PathReuseImages(const Device& device, Submission& submission, Spatial spatial, Temporal temporal)
+PathReuseImages::PathReuseImages(const Device& device, Submission& submission, Spatial spatial, Temporal temporal,
+                                 std::uint32_t lights)
     : device_(NS::RetainPtr(device.handle())), submission_(submission), spatial_(spatial), temporal_(temporal) {
     // The count starts at 0, and the grid pass keeps setting it back.
     const auto pool = scoped_pool();
@@ -96,6 +97,10 @@ PathReuseImages::PathReuseImages(const Device& device, Submission& submission, S
     make(light_tiles_,
          std::size_t{contracts::light_tiles} * contracts::light_tile_size * sizeof(contracts::LightTileEntry),
          "light tiles");
+    const std::size_t pyramid = contracts::light_power_floats(contracts::light_power_levels(lights));
+    for (std::size_t h = 0; h < (temporal == Temporal::merged ? 2u : 1u); ++h) {
+        make(light_power_[h], pyramid * sizeof(float), "power pyramid");
+    }
 }
 
 void PathReuseImages::make(Array& array, std::size_t bytes, std::string_view what) {
@@ -174,8 +179,10 @@ PathReuseImages::Addresses PathReuseImages::addresses(std::uint64_t index) const
     out.counter = address(counter_);
     out.grid = out.counter + grid_offset;
     out.light_tiles = address(light_tiles_);
+    out.light_power = address(light_power_[now]);
     if (temporal) {
         out.last_primaries = address(primaries_[then]);
+        out.last_light_power = address(light_power_[then]);
         out.finals = address(finals_[now]);
         out.last_finals = address(finals_[then]);
         out.previous_positions = address(previous_positions_);

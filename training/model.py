@@ -15,12 +15,15 @@ sees" and "Output". One frame, 960 x 540 in, 1920 x 1080 out:
 
 2. Features. A U-Net (OIDN's layout: 3 x 3 convolutions and ReLUs, 2 x 2
    max pools, nearest upsampling, skip connections by concatenation, four
-   levels below the input's) at 960 x 540 reads 28 channels: the noisy
+   levels below the input's) at 960 x 540 reads 30 channels: the noisy
    demodulated radiance through OIDN's PU transfer (loss.pu), the albedo,
-   the view-space normal, the depth and the motion (data.py), and the moved
+   the view-space normal, the depth and the motion (data.py), the moved
    history, PU-transferred, and its validity, each 2 x 2 block of output
    pixels folded into channels at the input pixel it covers (pixel
-   unshuffle: 12 + 4 channels, nothing averaged away). A 1 x 1 convolution
+   unshuffle: 12 + 4 channels, nothing averaged away), and the frame's
+   camera jitter, two constant channels, as DLSS-style upscalers take it,
+   so the kernels can lean toward where in each input pixel its light was
+   traced (network_input). A 1 x 1 convolution
    then gives each input pixel 4 x 31 scores: 31 for each of the four
    output pixels it covers.
 
@@ -57,14 +60,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from data import INPUT_CHANNELS, SCALE, albedo_factor
+from data import INPUT_CHANNELS, JITTER, SCALE, albedo_factor
 from loss import pu
 
 SPACINGS = (1, 2, 4)
 TAPS = 9
 SCORES = len(SPACINGS) * TAPS + len(SPACINGS) + 1  # 27 kernel taps, 3 scale weights, 1 history weight
 SUBPIXELS = SCALE * SCALE
-NETWORK_INPUTS = INPUT_CHANNELS + 3 * SUBPIXELS + SUBPIXELS  # 12 + 12 history + 4 validity = 28
+NETWORK_INPUTS = INPUT_CHANNELS + 3 * SUBPIXELS + SUBPIXELS  # 12 + 12 history + 4 validity + 2 jitter = 30
 MASKED = -1.0e4  # a score no softmax gives weight to
 
 
@@ -143,6 +146,14 @@ def tap_validity(height: int, width: int, device: torch.device, dtype: torch.dty
     return [F.unfold(inside, 3, dilation=s, padding=s).view(1, TAPS, 1, height, width) for s in SPACINGS]
 
 
+def network_input(inp: torch.Tensor, moved: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
+    """The U-Net's (B, 30, h, w) input, in contract 18's order (src/core/contracts/denoise.h): pu(demod) 0:3,
+    albedo, normal, depth and motion 3:12, the moved history unshuffled 12:24, its validity 24:28, the
+    jitter 28:30."""
+    return torch.cat((pu(inp[:, 0:3]), inp[:, 3:12], F.pixel_unshuffle(pu(moved), SCALE),
+                      F.pixel_unshuffle(valid, SCALE), inp[:, JITTER]), dim=1)
+
+
 class Denoiser(nn.Module):
     def __init__(self, widths: Widths | None = None):
         super().__init__()
@@ -151,7 +162,7 @@ class Denoiser(nn.Module):
 
     def frame(self, inp: torch.Tensor, albedo_full: torch.Tensor, history: torch.Tensor | None,
               extent: tuple[int, int] | None = None) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
-        """One frame. inp (B, 12, h, w), albedo_full (B, 3, 2h, 2w), history (B, 3, 2h, 2w) or None.
+        """One frame. inp (B, 14, h, w), albedo_full (B, 3, 2h, 2w), history (B, 3, 2h, 2w) or None.
 
         Returns (radiance (B, 3, 2h, 2w), demodulated output: the next history, parts for inspection).
         h and w must be multiples of UNet.alignment; a frame that is not is zero-padded (evaluate.py)
@@ -166,9 +177,7 @@ class Denoiser(nn.Module):
             valid = torch.zeros(b, 1, SCALE * h, SCALE * w, device=inp.device, dtype=inp.dtype)
         else:
             moved, valid = warp_history(history, motion, out_extent)
-        net_in = torch.cat((pu(demod), inp[:, 3:12], F.pixel_unshuffle(pu(moved), SCALE),
-                            F.pixel_unshuffle(valid, SCALE)), dim=1)
-        scores = self.unet(net_in).view(b, SCORES, SUBPIXELS, h, w)
+        scores = self.unet(network_input(inp, moved, valid)).view(b, SCORES, SUBPIXELS, h, w)
 
         filtered = []
         for k, (s, inside) in enumerate(zip(SPACINGS, tap_validity(h, w, inp.device, inp.dtype, extent))):
@@ -187,7 +196,7 @@ class Denoiser(nn.Module):
 
     def forward(self, inputs: torch.Tensor, albedo_full: torch.Tensor,
                 history: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor]:
-        """A sequence, recurrently: inputs (B, T, 12, h, w), albedo_full (B, T, 3, H, W) -> (B, T, 3, H, W).
+        """A sequence, recurrently: inputs (B, T, 14, h, w), albedo_full (B, T, 3, H, W) -> (B, T, 3, H, W).
 
         Each frame reads the frame before's own output (its demodulated
         output), from `history` for the first, if given. Returns the outputs

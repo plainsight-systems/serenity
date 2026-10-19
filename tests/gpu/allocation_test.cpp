@@ -45,6 +45,7 @@
 #include "metal/frame/renderer.h"
 #include "support/scene_text.h"
 #include "support/schedules.h"
+#include "support/text.h"
 
 namespace {
 
@@ -207,7 +208,13 @@ TEST_CASE("recording a frame allocates nothing of ours, in every kind of graph, 
         {"the denoised pipeline", tests::fixture_denoised_graph()},
     };
     SUBCASE("fireflies that fly and flash: every frame places shapes, rebuilds the structure, lights glows") {
-        const scene::SceneDescription flying = scene::parse(tests::flying_fireflies(), "flying fireflies");
+        // Through a lens, so the denoised pipeline's depth of field records
+        // its dispatches (a pinhole's records none).
+        const scene::SceneDescription flying =
+            scene::parse(tests::replaced(tests::flying_fireflies(), "vertical_fov_degrees = 38\n",
+                                         "vertical_fov_degrees = 38\nlens = { radius = 0.02, focus = 4.0 }\n"),
+                         "flying fireflies");
+        REQUIRE(flying.camera.lens_radius > 0.0f);
         REQUIRE(animation::moves(flying.animation));
         REQUIRE_FALSE(flying.animation.glowers.empty());
         for (const auto& [name, graph] : graphs) {

@@ -14,6 +14,19 @@ namespace tests {
 // One pair (x_{k-1}, x_k) for the reconnection criteria
 // (metal/integrator/reconnection.metal.h), the primary ray's x0 and x1
 // beside it.
+// A light drawn by power from the frame's pyramid (light_selection/
+// power_light.metal.h): its record's index and the probability the draw
+// gives it; and, at a light's own index, that light's probability as a
+// bounced ray's MIS asks it.
+struct PowerDraw {
+    uint32_t index;
+    float probability;
+    float asked;  // power_probability() of light `index` of the draw, asked anew
+    uint32_t padding;
+};
+
+static_assert(sizeof(PowerDraw) == 16, "PowerDraw must be the same 16 bytes on the host and in shaders");
+
 struct CriteriaQuery {
     contracts::Float3 camera;   // x0
     float footprint;            // c
@@ -132,6 +145,7 @@ static_assert(sizeof(PathMergeResult) == 80, "PathMergeResult must be the same 8
 
 #if !defined(__METAL_VERSION__)
 static_assert(std::is_trivially_copyable_v<PathMergeQuery>);
+static_assert(std::is_trivially_copyable_v<PowerDraw>);
 static_assert(std::is_trivially_copyable_v<PathMergeResult>);
 static_assert(std::is_trivially_copyable_v<CriteriaQuery>);
 static_assert(std::is_trivially_copyable_v<CriteriaResult>);

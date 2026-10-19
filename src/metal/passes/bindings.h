@@ -109,6 +109,8 @@ enum Buffer : unsigned {
     last_glows = 25,          // and glows
     mnee_requests = 26,       // MNEE's work list (contract 16), the initial pass's
     mnee_header = 27,         // its count and capacity
+    light_power = 28,         // the frame's power pyramid (contracts/light_tile.h)
+    last_light_power = 29,    // last frame's, which a shift to last frame's pixel weighs by
 };
 enum Texture : unsigned { accumulated = 0 };  // the shade's: also the frame's radiance, as the path pass's
 }  // namespace restir_pt
@@ -167,6 +169,24 @@ enum Buffer : unsigned { constants = 0, fill_constants = 1 };
 enum Texture : unsigned { accumulated = 0, previous_light = 1, depth = 2, motion = 3, light = 4, history = 5 };
 }  // namespace checkerboard_fill
 
+// The depth of field's six kernels (passes/depth_of_field/depth_of_field.h),
+// one layout for all of them, each taking what it reads and writes: its
+// constants (contract 21's DepthOfFieldConstants) and the tiles' two
+// buffers; the radiance image it reads and, at the composite, writes, the
+// full-size depth, and its half-resolution images
+// (metal/frame/depth_of_field_images.h).
+namespace depth_of_field {
+enum Buffer : unsigned { constants = 0, tiles = 1, dilated = 2 };
+enum Texture : unsigned {
+    radiance = 0,
+    depth = 1,
+    presort = 2,
+    far = 3,
+    near = 4,
+    far_filtered = 5,
+    near_filtered = 6,
+};
+}  // namespace depth_of_field
 
 // Every pass that reads the scene binds it at scene_view's indices (above):
 // each index as an unsigned, since two enumerations are not compared.

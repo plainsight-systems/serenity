@@ -33,7 +33,7 @@ inline void initial_pixel(constant serenity::contracts::FrameConstants& frame,
                           constant serenity::contracts::PathReuseSettings& settings,
                           device serenity::contracts::PathReservoir* reservoirs,
                           device serenity::contracts::PrimaryHit* primaries, device float4* light,
-                          const device serenity::contracts::LightTileEntry* tiles,
+                          const device serenity::contracts::LightTileEntry* tiles, const device float* light_power,
                           device serenity::contracts::Float3* previous_positions,
                           constant serenity::contracts::Transform* last_transforms, mnee::Queue queue, uint2 grid_place) {
     const restir_pt::Traced traced = restir_pt::traced(frame, settings);
@@ -42,10 +42,10 @@ inline void initial_pixel(constant serenity::contracts::FrameConstants& frame,
         return;
     }
     const uint i = traced.slot(pixel);
-    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
+    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows, light_power};
     PathNumbers numbers;
     const CameraRay ray = restir_pt::primary_ray(camera, pixel, frame.frame_index, uint2(frame.width, frame.height),
-                                                 numbers);
+                                                 frame_jitter(frame), numbers);
     // confidence_cap is 0 exactly in a graph without restir_pt_temporal,
     // where neither array is bound (contracts/path_reuse_settings.h).
     const bool temporal = settings.confidence_cap > 0.0f;
@@ -71,6 +71,7 @@ kernel void restir_pt_initial(constant serenity::contracts::FrameConstants& fram
                               device serenity::contracts::PrimaryHit* primaries [[buffer(binding::primaries)]],
                               device float4* light [[buffer(binding::light)]],
                               const device serenity::contracts::LightTileEntry* tiles [[buffer(binding::light_tiles)]],
+                              const device float* light_power [[buffer(binding::light_power)]],
                               device serenity::contracts::Float3* previous_positions
                               [[buffer(binding::previous_positions)]],
                               constant serenity::contracts::Transform* last_transforms
@@ -80,20 +81,36 @@ kernel void restir_pt_initial(constant serenity::contracts::FrameConstants& fram
                               device atomic_uint* mnee_header [[buffer(binding::mnee_header)]],
                               uint2 grid_place [[thread_position_in_grid]]) {
     initial_pixel(frame, camera, structure, block, sphere_glows, transforms, settings, reservoirs, primaries, light,
-                  tiles, previous_positions, last_transforms, mnee::Queue{mnee_requests, mnee_header}, grid_place);
+                  tiles, light_power, previous_positions, last_transforms, mnee::Queue{mnee_requests, mnee_header},
+                  grid_place);
+}
+
+// The frame's power pyramid (contracts/light_tile.h), by one threadgroup of
+// light_power_threads: every light's power at this frame's glows, and its
+// sums (light_selection/power_light.metal.h).
+kernel void restir_pt_light_power(serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
+                                  constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
+                                  constant float* sphere_glows [[buffer(binding::glows)]],
+                                  constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],
+                                  device float* light_power [[buffer(binding::light_power)]],
+                                  uint rank [[thread_index_in_threadgroup]],
+                                  uint threads [[threads_per_threadgroup]]) {
+    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
+    build_power_pyramid(scene.lights(), block.light_counts->lights, light_power, rank, threads);
 }
 
 // The frame's light tiles (contracts/light_tile.h), one thread an entry:
-// each a light drawn by the light selection and packed as this frame places
-// and lights it.
+// each a light drawn by power from the frame's pyramid and packed as this
+// frame places and lights it.
 kernel void restir_pt_light_tiles(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
                                   serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
                                   constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
                                   constant float* sphere_glows [[buffer(binding::glows)]],
                                   constant serenity::contracts::Transform* transforms [[buffer(binding::transforms)]],
                                   device serenity::contracts::LightTileEntry* tiles [[buffer(binding::light_tiles)]],
+                                  const device float* light_power [[buffer(binding::light_power)]],
                                   uint n [[thread_position_in_grid]]) {
-    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
+    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows, light_power};
     if (n >= serenity::contracts::light_tiles * serenity::contracts::light_tile_size || scene.selection().count == 0u) {
         return;
     }

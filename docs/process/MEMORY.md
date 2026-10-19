@@ -425,3 +425,39 @@ rendering moved into functions tested directly (`src/headless/options.h`,
   the Mac and copied over.
 - **The final frame:** 16.7 ms at 1920 x 1080 (60 fps), 56.1 ms at the
   window's 3456 x 2234 (17.8 fps).
+
+## The production sweep (Milestone 4, 2026-10-18)
+
+`research/2026-10-18-production-sweep.md`. Three production steps the
+frame lacked, chosen by the user from a sweep against shipped engines:
+
+- **Depth of field after the denoiser** (principle 12): a denoised graph
+  traces a pinhole (`frame::traced_inputs`) and its `depth_of_field`
+  pass, directly after the denoise pass, blurs the network's output by
+  the thin lens's circle of confusion, Jimenez's SIGGRAPH 2014 method
+  (contract 21). The path tracer, the reference, keeps the lens in its
+  rays, as Unreal's path tracer does. The data set is rendered through a
+  pinhole (its scenes written without their lens).
+- **Camera jitter**: every ReSTIR PT frame's camera rays through one
+  Halton(2, 3) offset of 32 phases (`core/sampling/jitter.h`), given to
+  the network as two input channels (contract 18: 30 inputs); motion
+  vectors and the full-size albedo unjittered.
+- **Light tiles drawn by power**, RTXDI's presampling: a power pyramid a
+  frame, every ReSTIR PT density that power over the total.
+- **The frame:** 17.37 ms at 1920 x 1080 (57.6 fps), 58.30 ms in the
+  window (17.2 fps), measured with the demo's network padded to the new
+  inputs.
+- **The network must be retrained**: every export has 28 inputs and the
+  renderer refuses it by name. The data set to render is denoiser-v2
+  (`scripts/make_denoiser_dataset.py --out ../serenity-data/denoiser-v2`),
+  inputs and targets both new, about 3.1 h (the estimate); the last data
+  set rendered on this Mac, later ones on the RTX 3090's renderer; tested
+  against its own targets, no reference rendered again (the user,
+  2026-10-18).
+- **The training data is what the network sees** (principle 13, the
+  user's decision 2026-10-18): every graph with ReSTIR PT and the features
+  pass, the data set's input graph among them, traces its light as the
+  denoised graph does, checkerboarded and filled, pinhole, jittered; a test
+  holds the input graph's light and features to the demo's hand-off, to
+  the bit. denoiser-v1-checkerboard's inputs, found traced at every pixel,
+  were not.

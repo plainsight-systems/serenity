@@ -99,8 +99,9 @@ kernel void pt_lattice_pairing(device PairingResult* out [[buffer(0)]], constant
 // A path drawn at each query's source pixel, shifted to its destination.
 // Bindings: the results at 0, the queries at 1, the camera at 2, the
 // structure at 3, the scene's block at 4, its glows at 5 and transforms at
-// 6, the settings at 7, the queries' count at 8, the light tiles at 9, and
-// MNEE's work list at 10 and its header at 11, a list of capacity 0: the
+// 6, the settings at 7, the queries' count at 8, the light tiles at 9,
+// MNEE's work list at 10 and its header at 11, a list of capacity 0, and the
+// power pyramid the tiles were drawn from at 12: the
 // trees' MNEE requests are counted and dropped, MNEE's paths being out of
 // the path space every tree and shift samples (restir_pt.metal.h).
 kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQuery* queries [[buffer(1)]],
@@ -114,18 +115,22 @@ kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQu
                      const device serenity::contracts::LightTileEntry* tiles [[buffer(9)]],
                      device serenity::contracts::MneeRequest* mnee_requests [[buffer(10)]],
                      device atomic_uint* mnee_header [[buffer(11)]],
+                     const device float* light_power [[buffer(12)]],
                      uint i [[thread_position_in_grid]]) {
     if (i >= count) {
         return;
     }
     const ShiftQuery q = queries[i];
     const uint2 size = uint2(q.width, q.height);
-    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
+    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows, light_power};
+    // Each pixel's own point, as before the jitter: the shifts' cases do not
+    // depend on where in the pixel the ray passes.
+    const PixelJitter unjittered{false, float2(0.0f)};
     // A pixel's tree as the initial pass draws it: its reservoir and its
     // G-buffer record.
     const auto tree_at = [&](uint2 pixel) {
         PathNumbers numbers;
-        const CameraRay ray = restir_pt::primary_ray(camera, pixel, q.frame, size, numbers);
+        const CameraRay ray = restir_pt::primary_ray(camera, pixel, q.frame, size, unjittered, numbers);
         restir_pt::TreeGather tree =
             restir_pt::start_tree(settings, numbers, scene.shapes(), restir_pt::block_tile(tiles, pixel, q.frame),
                                   mnee::Queue{mnee_requests, mnee_header}, 0u);
@@ -136,8 +141,8 @@ kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQu
     const uint2 destination = uint2(q.destination_x, q.destination_y);
     const serenity::contracts::PathReservoir reservoir = restir_pt::finish_tree(tree_at(source));
     const serenity::contracts::PrimaryHit record = tree_at(destination).primary;
-    const CameraRay source_ray = restir_pt::primary_ray(camera, source, q.frame, size);
-    const CameraRay destination_ray = restir_pt::primary_ray(camera, destination, q.frame, size);
+    const CameraRay source_ray = restir_pt::primary_ray(camera, source, q.frame, size, unjittered);
+    const CameraRay destination_ray = restir_pt::primary_ray(camera, destination, q.frame, size, unjittered);
     const shift::Shifted shifted = shift::shift_path(scene, shift::unpack_primary_hit(record), reservoir, settings);
     const shift::Shifted retraced =
         shift::shift_path(scene, shift::primary_hit(scene, destination_ray, settings.footprint), reservoir, settings);
@@ -164,16 +169,46 @@ kernel void pt_shift(device ShiftResult* out [[buffer(0)]], const device ShiftQu
                          {0u, 0u, 0u}};
 }
 
+// The power pyramid pt_light_tiles draws from, by one threadgroup, as the
+// initial pass builds it (restir_pt_initial.metal). Bindings: as
+// pt_light_tiles's; the pyramid it writes at 12.
+kernel void pt_light_power(serenity::shaders::SceneStructure structure [[buffer(3)]],
+                           constant serenity::gpu::SceneBlock& block [[buffer(4)]],
+                           constant float* sphere_glows [[buffer(5)]],
+                           constant serenity::contracts::Transform* transforms [[buffer(6)]],
+                           device float* light_power [[buffer(12)]], uint rank [[thread_index_in_threadgroup]],
+                           uint threads [[threads_per_threadgroup]]) {
+    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
+    build_power_pyramid(scene.lights(), block.light_counts->lights, light_power, rank, threads);
+}
+
+// Draws by power from the pyramid pt_light_power built, one a thread, each
+// from its own numbers. Bindings: the draws at 0, their count at 1, the
+// scene's block at 4 (for its light count), the pyramid at 12.
+kernel void pt_power_draws(device serenity::tests::PowerDraw* out [[buffer(0)]], constant uint& count [[buffer(1)]],
+                           constant serenity::gpu::SceneBlock& block [[buffer(4)]],
+                           const device float* light_power [[buffer(12)]], uint i [[thread_position_in_grid]]) {
+    if (i >= count) {
+        return;
+    }
+    const PowerLight power = power_light(light_power, block.light_counts->lights);
+    PathNumbers numbers = path_numbers(uint2(i & 0xffffu, i >> 16), 7u);
+    const PowerSelected drawn = select_power_index(power, numbers);
+    out[i] = serenity::tests::PowerDraw{drawn.index, drawn.probability, power_probability(power, drawn.index), 0u};
+}
+
 // The light tiles pt_shift's trees draw from, frame 0's. Bindings: as
 // pt_shift binds the scene, the structure at 3, the block at 4, the glows
-// at 5, the transforms at 6; the tiles it writes at 9.
+// at 5, the transforms at 6; the tiles it writes at 9, from the pyramid at
+// 12.
 kernel void pt_light_tiles(serenity::shaders::SceneStructure structure [[buffer(3)]],
                            constant serenity::gpu::SceneBlock& block [[buffer(4)]],
                            constant float* sphere_glows [[buffer(5)]],
                            constant serenity::contracts::Transform* transforms [[buffer(6)]],
                            device serenity::contracts::LightTileEntry* tiles [[buffer(9)]],
+                           const device float* light_power [[buffer(12)]],
                            uint n [[thread_position_in_grid]]) {
-    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows};
+    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows, light_power};
     if (n >= serenity::contracts::light_tiles * serenity::contracts::light_tile_size || scene.selection().count == 0u) {
         return;
     }

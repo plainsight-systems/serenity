@@ -56,8 +56,9 @@
 //                    cap_floor as D grows: c_cap = lerp(confidence_cap,
 //                    cap_floor, D^alpha) (Enhanced §5). Finite, within (0, 1]
 //                    with restir_pt_duplication; 0 without it.
-//   checkerboard     1 in a denoised graph, whose light is traced
-//                    checkerboarded (core/frame/schedule.h), else 0: the
+//   checkerboard     1 in a graph whose light is the network's input,
+//                    traced checkerboarded (core/frame/schedule.h,
+//                    feeds_network), else 0: the
 //                    passes trace the pixels contract 20 names for the
 //                    frame, half of them, their arrays packed and their
 //                    grid the packed one (core/contracts/checkerboard.h).

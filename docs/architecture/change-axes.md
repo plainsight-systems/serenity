@@ -144,7 +144,7 @@ axis:
 |---|---|
 | Scene description | Scene content |
 | Allocate frame state | Frame graph |
-| Denoise and Upscale, Tone map | Pass: denoising and upscaling one pass (below), the tone map its own |
+| Denoise and Upscale, Depth of field, Tone map | Pass: denoising and upscaling one pass (below), the depth of field and the tone map each their own |
 | Reservoirs | Sample reuse |
 
 The boxes that are compound:
@@ -305,7 +305,7 @@ three:
   half's is the frame graph's (contract 6).
 - **Sample reuse** asks it where a neighbor and last frame's input may
   be: a spatial partner among this frame's traced pixels (the pairing
-  taken over their lattice, so a denoised graph's sigma must be one the
+  taken over their lattice, so such a graph's sigma must be one the
   lattice can pair at), a temporal input among the frame before's. The
   merges themselves, their weights and the shifts do not change.
 - **Pass**: the fill's kernel, which reads the features and the frame
@@ -313,13 +313,82 @@ three:
 
 It looks wrong that **the choice is the frame graph's and not
 [restir_pt]'s**, since only ReSTIR PT's passes read it: the fill and the
-hand-off are the denoised frame's, which ReSTIR PT's settings know
-nothing of, so a graph traces its light checkerboarded exactly when it
-has the denoise pass, and the renderer copies that into the path reuse
-settings. And that **the
+hand-off are the network's input, which ReSTIR PT's settings know
+nothing of, so a graph traces its light checkerboarded exactly when its
+light is the network's input, ReSTIR PT with the features pass
+(`logical-overview.md`, principle 13), the denoised graph and the data
+set's input graph alike, and the renderer copies that into the path
+reuse settings. It looks wrong too that **a graph without the network
+runs the fill**: the input graph's light is the network's input, and the
+fill is how that light is made; the fill writes the light it hands on,
+to the network where there is one, and to the presenting pass and the
+headless renderer's files where there is not. And that **the
 features stay whole** while the light is halved: they are Film's guide
 images for the denoiser, and the fill's evidence for whether a moved
 pixel is the same surface; halved, both would guess at edges.
+
+**Depth of field is three axes' business, and the lens is still one
+camera's.** Applying the lens after the denoiser
+(`logical-overview.md`, principle 12) splits in three:
+
+- **Camera** owns the lens: its radius and plane of focus, the rays
+  through it, and the circle of confusion it gives a point at a depth
+  (the thin lens's, `src/core/camera/thin_lens.h`), so the rays a graph
+  traces through the lens and the blur a graph applies for it are one
+  lens's, and a test holds them to each other.
+- **Pass**: the blur, which reads the network's output, the full-size
+  depth and that circle of confusion (contract 21), and knows nothing of
+  how its input was made.
+- **Frame graph** decides which graphs trace the lens and which apply it
+  after the network: a denoised graph's light, features and full-size
+  albedo are traced through the camera with its lens taken off, and its
+  depth of field follows the denoise pass.
+
+It looks wrong that **a graph changes the camera it is given**, since the
+camera is a frame input (principle 1). The camera is unchanged: the frame
+graph chooses where its lens is applied, in the rays or after the
+network, as it chooses at what size the light is traced; the lens's
+numbers reach both places from the one camera.
+
+**The camera's jitter is three axes' business.** The point in the pixel
+every camera ray of a ReSTIR PT frame takes (`logical-overview.md`,
+"Primary visibility") splits in three:
+
+- **Sampler** owns the sequence: Halton in bases 2 and 3, its phase count,
+  and the offset of frame *n* (`src/core/sampling/jitter.h`), a function
+  of the frame's index alone, as every number the sampler gives is of
+  where and when it is used.
+- **Frame graph** decides which frames take it, a ReSTIR PT graph's light
+  and its features, never the full-size albedo, which is at the output's
+  resolution as the network's output is and so unjittered, and carries it
+  to the shaders in the frame's constants (contract 7), which the camera's
+  ray generation reads.
+- **Pass**: the denoiser reads it as two input channels (contract 18),
+  trained so.
+
+It looks wrong that **the jitter is not the camera's**, since DLSS's
+guide puts it in the projection matrix. It is a sample position, not a
+property of the lens or the view: the camera is the same for the
+path tracer, which draws its own point in every pixel, and the motion
+vectors and every reprojection go through the camera without it, which
+is NRD's and DLSS's convention for them.
+
+**Drawing lights by power is two axes' business.** RTXDI's presampling
+by power (`logical-overview.md`, "Light") splits in two:
+
+- **Light** owns a light's power: what a kind emits in all, a sphere's
+  4 pi r^2 x pi x its radiance's luminance (RTXDI's `GetPower`), at its
+  glow this frame (`metal/lights/emitter.metal.h`), so a new kind of
+  light brings its own.
+- **Light selection** owns the distribution: the pyramid of the lights'
+  powers, built each frame, a light drawn from it by descending it, and
+  the probability of any one light, which every density ReSTIR PT weighs
+  by asks (`metal/light_selection/power_light.metal.h`). The tiles
+  (contract 3's presampled form) hold its draws.
+
+The path tracer keeps the uniform selection: it is the reference, its
+noise the baseline the estimators are measured against, and a
+selection of its own changes nothing ReSTIR PT computes.
 
 **Scene content and animation are two files, not one.** Both describe how the
 fireflies move, which makes merging them tempting. But animation changes when

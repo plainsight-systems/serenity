@@ -3,8 +3,15 @@
 // Contract 7: frame constants. Owned by the Frame graph; read by every pass.
 //
 // The values every shader in a frame may read: when the frame is, which frame
-// it is, the size of the image being written, and how many frames the
-// accumulated image already holds. The camera is a contract of
+// it is, the size of the image being written, how many frames the
+// accumulated image already holds, and where in its pixel the frame's
+// camera rays pass, where the frame takes the camera's jitter
+// (core/sampling/jitter.h): one offset for every pixel, which the camera's
+// ray generation reads (metal/camera/thin_lens.metal.h, pixel_ray), in
+// place of each pixel's own random point. Which frames take it is the
+// frame graph's (core/frame/schedule.h, jitters): ReSTIR PT's light and its
+// features, written into the light's constants and never the output
+// size's, whose full-size albedo stays unjittered. The camera is a contract of
 // its own (contracts/camera.h), owned by Camera, so a change to the camera
 // changes nothing here. One definition for both
 // sides: C++ writes these bytes and the Metal shaders read them, so this
@@ -30,6 +37,10 @@
 namespace serenity {
 namespace contracts {
 
+// The camera's jitter's phases (core/sampling/jitter.h): 8 x the square of
+// the denoiser's upscale, DLSS's rule, asserted there.
+SERENITY_CONSTANT uint32_t jitter_phases = 32u;
+
 struct FrameConstants {
     // frame::FrameInputs::time, narrowed to float.
     float time_seconds;
@@ -43,7 +54,13 @@ struct FrameConstants {
     // the accumulated image, which this one joins; 0 starts it over. At most
     // 2^24 - 1 (frame::max_accumulated_frames, core/frame/frame_inputs.h).
     uint32_t accumulated_frames;
-    uint32_t padding[3];
+    // The camera's jitter, in pixels of this image, in [-1/2, 1/2): every
+    // camera ray passes through its pixel's center plus it, where
+    // `jittered` is 1; read by nothing where it is 0, each pixel drawing
+    // its own point from its numbers as before.
+    float jitter_x;
+    float jitter_y;
+    uint32_t jittered;
 };
 
 static_assert(sizeof(FrameConstants) == 32, "FrameConstants must be the same 32 bytes on the host and in shaders");

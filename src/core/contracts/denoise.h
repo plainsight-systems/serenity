@@ -20,8 +20,13 @@
 //     "inputs"): pu(demodulated radiance) 0..2, albedo clamped to [0, 1]
 //     3..5, the normal in view space 6..8, log(1 + z / median z) 9, motion
 //     10..11, pixel_unshuffle(pu(moved history)) 12..23, pixel_unshuffle(
-//     history validity) 24..27; stored in channel_block-padded half floats
-//     (input_channels), the 4 past network_inputs zero.
+//     history validity) 24..27, the frame's camera jitter (x, y) in input
+//     pixels 28..29 (core/sampling/jitter.h), the same at every pixel of
+//     the light and 0 in the padding, as DLSS-style upscalers take the
+//     jitter as an input; stored in channel_block-padded half floats
+//     (input_channels), the 2 past network_inputs zero. A network trained
+//     before the jitter has 28 inputs, and the loader refuses it
+//     (core/denoise/network.h): it was never shown where its samples lay.
 //   - scores per output pixel: taps (3 spacings x 9) 0..26, one weight per
 //     spacing 27..29, the history blend 30; the head's channel k * 4 + dy * 2
 //     + dx is score k of output pixel (2y + dy, 2x + dx).
@@ -39,7 +44,7 @@ namespace contracts {
 SERENITY_CONSTANT uint32_t denoise_scale = 2u;
 SERENITY_CONSTANT uint32_t unet_alignment = 16u;
 SERENITY_CONSTANT uint32_t unet_levels = 4u;  // max pools below the input's level
-SERENITY_CONSTANT uint32_t network_inputs = 28u;
+SERENITY_CONSTANT uint32_t network_inputs = 30u;
 SERENITY_CONSTANT uint32_t channel_block = 8u;  // a simdgroup matrix's side: every stored width a multiple
 SERENITY_CONSTANT uint32_t input_channels = 32u;  // network_inputs, padded to channel_block
 SERENITY_CONSTANT uint32_t denoise_taps = 9u;
@@ -68,7 +73,9 @@ SERENITY_CONSTANT uint32_t input_depth = 9u;
 SERENITY_CONSTANT uint32_t input_motion = 10u;
 SERENITY_CONSTANT uint32_t input_history = 12u;
 SERENITY_CONSTANT uint32_t input_validity = 24u;
-static_assert(input_validity + denoise_subpixels == network_inputs, "the inputs fill network_inputs channels");
+SERENITY_CONSTANT uint32_t input_jitter = 28u;
+static_assert(input_validity + denoise_subpixels == input_jitter && input_jitter + 2u == network_inputs,
+              "the inputs fill network_inputs channels");
 
 // The threadgroups the host dispatches and the kernels are written for
 // (metal/passes/denoise/denoise.{h,cpp,metal}): denoise_threads threads, four
@@ -115,7 +122,9 @@ struct DenoiseConstants {
     uint32_t output_width;
     uint32_t output_height;
     uint32_t features;  // the U-Net's last width: the head's inputs a pixel
-    uint32_t padding[3];
+    float jitter_x;     // the frame's camera jitter, input pixels (input_jitter)
+    float jitter_y;
+    uint32_t padding;
 };
 
 static_assert(sizeof(DenoiseConstants) == 80, "DenoiseConstants must be the same 80 bytes on the host and in shaders");

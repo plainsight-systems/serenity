@@ -22,11 +22,11 @@ namespace {
 // through. The switches below cover every kind (-Wswitch); this list is
 // held to the enum's final kind, PassKind::last, so a kind left out of it
 // fails to compile (schedule.h).
-constexpr std::array<PassKind, 10> kinds = {
+constexpr std::array<PassKind, 11> kinds = {
     PassKind::test_pattern,       PassKind::path,              PassKind::tone_map,
     PassKind::restir_pt_initial,  PassKind::restir_pt_temporal, PassKind::restir_pt_spatial,
     PassKind::restir_pt_shade,    PassKind::restir_pt_duplication, PassKind::features,
-    PassKind::denoise};
+    PassKind::denoise,            PassKind::depth_of_field};
 static_assert(kinds.size() == static_cast<std::size_t>(PassKind::last) + 1,
               "every PassKind is in `kinds`, in declaration order");
 static_assert(kinds.back() == PassKind::last, "the last PassKind is last in `kinds`");
@@ -71,6 +71,8 @@ std::string_view name(PassKind kind) {
         return "features";
     case PassKind::denoise:
         return "denoise";
+    case PassKind::depth_of_field:
+        return "depth_of_field";
     }
     no_case("name");
 }
@@ -89,6 +91,7 @@ bool needs_scene(PassKind kind) {
     case PassKind::restir_pt_duplication:
     case PassKind::features:
     case PassKind::denoise:  // traces the full-size albedo it remodulates by (metal/frame/renderer.h)
+    case PassKind::depth_of_field:  // the camera's lens and the full-size depth
         return true;
     }
     no_case("needs_scene");
@@ -105,6 +108,7 @@ bool accumulates(PassKind kind) {
     case PassKind::restir_pt_duplication:
     case PassKind::features:
     case PassKind::denoise:
+    case PassKind::depth_of_field:
         return false;
     case PassKind::path:
     case PassKind::restir_pt_shade:  // likewise
@@ -124,6 +128,7 @@ bool writes_radiance(PassKind kind) {
     case PassKind::restir_pt_duplication:
     case PassKind::features:
     case PassKind::denoise:  // the frame's radiance at the output size, not a light pass's (schedule.h)
+    case PassKind::depth_of_field:  // likewise, in place
         return false;
     case PassKind::path:
     case PassKind::restir_pt_shade:
@@ -146,6 +151,7 @@ bool reads_radiance(PassKind kind) {
         return false;
     case PassKind::tone_map:
     case PassKind::denoise:
+    case PassKind::depth_of_field:
         return true;
     }
     no_case("reads_radiance");
@@ -162,6 +168,7 @@ bool writes_target(PassKind kind) {
     case PassKind::restir_pt_duplication:
     case PassKind::features:
     case PassKind::denoise:
+    case PassKind::depth_of_field:
         return false;
     case PassKind::test_pattern:
     case PassKind::tone_map:
@@ -181,6 +188,7 @@ bool is_restir_pt(PassKind kind) {
     case PassKind::tone_map:
     case PassKind::features:
     case PassKind::denoise:
+    case PassKind::depth_of_field:
         return false;
     case PassKind::restir_pt_initial:
     case PassKind::restir_pt_temporal:
@@ -338,9 +346,27 @@ std::optional<std::string> denoise_broken(const std::vector<PassKind>& passes) {
         return "the frame graph's denoise pass reads ReSTIR PT's light, traced checkerboarded, and no "
                "restir_pt_shade comes before it";
     }
-    if (passes.end() - at != 2 || !writes_target(passes.back())) {
-        return "the frame graph's denoise pass writes the radiance its presenting pass shows at the output size, "
-               "so it must come directly before that pass, the last";
+    if (passes.end() - at != 3 || at[1] != PassKind::depth_of_field || !writes_target(passes.back())) {
+        return "the frame graph's denoise pass traces its light through a pinhole and writes it at the output size, "
+               "so it must be followed directly by depth_of_field, which applies the lens, and then the presenting "
+               "pass, the last";
+    }
+    return std::nullopt;
+}
+
+// The depth of field at most once, directly after the denoise pass (whose
+// own rule puts the presenting pass after it, schedule.h).
+std::optional<std::string> depth_of_field_broken(const std::vector<PassKind>& passes) {
+    const auto at = std::ranges::find(passes, PassKind::depth_of_field);
+    if (at == passes.end()) {
+        return std::nullopt;
+    }
+    if (std::ranges::count(passes, PassKind::depth_of_field) > 1) {
+        return "the frame graph has depth_of_field more than once; a frame's lens is applied once";
+    }
+    if (at == passes.begin() || at[-1] != PassKind::denoise) {
+        return "the frame graph's depth_of_field applies the lens to the denoised frame, which is traced through a "
+               "pinhole, so it must come directly after the denoise pass";
     }
     return std::nullopt;
 }
@@ -463,7 +489,8 @@ std::optional<std::string> invalid(const Schedule& schedule) {
         return "the frame graph has no passes";
     }
     for (const auto broken :
-         {accumulation_broken, presentation_broken, radiance_broken, restir_pt_broken, denoise_broken}) {
+         {accumulation_broken, presentation_broken, radiance_broken, restir_pt_broken, denoise_broken,
+          depth_of_field_broken}) {
         if (std::optional<std::string> reason = broken(passes)) {
             return reason;
         }
@@ -507,14 +534,14 @@ std::optional<std::string> invalid(const Schedule& schedule) {
         }
     }
 
-    // A denoised graph's light is traced checkerboarded: a sigma the traced
+    // The network's input is traced checkerboarded: a sigma the traced
     // lattice pairs at (schedule.h).
     const float least_sigma = contracts::min_pairing_sigma * contracts::checkerboard_lattice_step;
-    if (denoising && std::ranges::find(passes, PassKind::restir_pt_spatial) != passes.end() &&
+    if (feeds_network(schedule) && std::ranges::find(passes, PassKind::restir_pt_spatial) != passes.end() &&
         schedule.restir_pt->sigma < least_sigma) {
         return setting(pt, "sigma", text(schedule.restir_pt->sigma)) + "must be at least " + text(least_sigma) +
-               " pixels in a denoised graph: its light is traced checkerboarded, and the traced field's lattice "
-               "pairs at sigma over its step, " +
+               " pixels in a graph whose light is the network's input (ReSTIR PT with the features pass): it is "
+               "traced checkerboarded, and the traced field's lattice pairs at sigma over its step, " +
                text(contracts::checkerboard_lattice_step) + " pixels, at least " + text(contracts::min_pairing_sigma);
     }
     return std::nullopt;
@@ -576,6 +603,36 @@ bool reuses_history(const Schedule& schedule) {
 
 bool denoises(const Schedule& schedule) {
     return std::ranges::find(schedule.passes, PassKind::denoise) != schedule.passes.end();
+}
+
+bool feeds_network(const Schedule& schedule) {
+    return std::ranges::any_of(schedule.passes, [](PassKind kind) { return is_restir_pt(kind); }) &&
+           writes_features(schedule);
+}
+
+std::optional<sampling::CameraJitter> camera_jitter(const Schedule& schedule, std::uint64_t index) {
+    if (!feeds_network(schedule)) {
+        return std::nullopt;
+    }
+    return sampling::camera_jitter(index);
+}
+
+bool lens_after_network(const Schedule& schedule) {
+    return std::ranges::find(schedule.passes, PassKind::depth_of_field) != schedule.passes.end();
+}
+
+FrameInputs traced_inputs(const Schedule& schedule, const FrameInputs& inputs) {
+    FrameInputs traced = inputs;
+    if (!feeds_network(schedule)) {
+        return traced;
+    }
+    if (traced.camera) {
+        traced.camera->lens_radius = 0.0f;
+    }
+    if (traced.previous) {
+        traced.previous->camera.lens_radius = 0.0f;
+    }
+    return traced;
 }
 
 Extent light_size(const Schedule& schedule, Extent output) {

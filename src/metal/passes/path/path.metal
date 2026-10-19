@@ -45,7 +45,9 @@ kernel void path_trace(constant serenity::contracts::FrameConstants& frame
         // written out here: through pixel_ray() the path pass's kernel
         // compiled otherwise and measured 2% slower (docs/research/
         // 2026-10-16-codebase-guidelines-pass.md, C2). The same numbers in
-        // the same order; the byte diff of every graph holds them equal.
+        // the same order; the byte diff of every graph holds them equal. A
+        // path graph's frames never take the camera's jitter (core/frame/
+        // schedule.h, jitters), so its point is always the pixel's own.
         PathNumbers numbers = path_numbers(pixel, frame.frame_index);
         const float2 within = next_numbers2(numbers);  // the point in the pixel
         // The point on the lens, drawn only through one, so a pinhole's
