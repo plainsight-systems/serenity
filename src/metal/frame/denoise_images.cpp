@@ -102,9 +102,9 @@ void DenoiseImages::allocate(frame::Extent light) {
 
   make(input_, level(0), contracts::input_channels, "network's input");
   for (std::uint32_t l = 0; l < levels; ++l) {
-    make(skip_[l], level(l), w.enc[l], "skip");
-    make(pooled_[l], level(l + 1), w.enc[l], "max pool");
-    make(decoded_[l], level(l), w.dec[bottom - l], "decoder's output");
+    make(skip_.at(l), level(l), w.enc.at(l), "skip");
+    make(pooled_.at(l), level(l + 1), w.enc.at(l), "max pool");
+    make(decoded_.at(l), level(l), w.dec.at(bottom - l), "decoder's output");
   }
   make(bottleneck_a_, level(contracts::unet_levels), w.bottleneck,
        "bottleneck");
@@ -135,7 +135,7 @@ MTL::Texture* DenoiseImages::light_radiance(std::uint32_t slot) const {
     throw MetalError("DenoiseImages::light_radiance: slot " +
                      std::to_string(slot) + " is not one");
   }
-  return light_radiance_[slot].texture.get();
+  return light_radiance_.at(slot).texture.get();
 }
 
 void DenoiseImages::plan() {
@@ -144,7 +144,7 @@ void DenoiseImages::plan() {
   // The channels upsampled into level l's decoder: the bottleneck's at
   // the bottom level, the decoder's below it otherwise.
   const auto up = [&](std::uint32_t l) {
-    return l == bottom ? w.bottleneck : w.dec[bottom - 1 - l];
+    return l == bottom ? w.bottleneck : w.dec.at(bottom - 1 - l);
   };
 
   const auto address = [](const Activations& a) { return a.memory.address(); };
@@ -185,10 +185,11 @@ void DenoiseImages::plan() {
   // Encoders: each into its skip.
   convs_[0] = make_conv(input_, contracts::input_channels, skip_[0], w.enc[0]);
   for (std::uint32_t l = 1; l < levels; ++l) {
-    convs_[l] = make_conv(pooled_[l - 1], w.enc[l - 1], skip_[l], w.enc[l]);
+    convs_.at(l) =
+        make_conv(pooled_.at(l - 1), w.enc.at(l - 1), skip_.at(l), w.enc.at(l));
   }
   for (std::uint32_t l = 0; l < levels; ++l) {
-    pools_[l] = make_pool(skip_[l], pooled_[l], w.enc[l]);
+    pools_.at(l) = make_pool(skip_.at(l), pooled_.at(l), w.enc.at(l));
   }
   convs_[first_bottleneck] =
       make_conv(pooled_[bottom], w.enc[bottom], bottleneck_a_, w.bottleneck);
@@ -197,9 +198,10 @@ void DenoiseImages::plan() {
   // Decoders: dec i at level bottom - i, from the level below's output.
   for (std::uint32_t i = 0; i < levels; ++i) {
     const std::uint32_t l = bottom - i;
-    const Activations& below = i == 0 ? bottleneck_b_ : decoded_[l + 1];
-    Conv& c = convs_[first_decoder + i];
-    c = make_conv(skip_[l], up(l) + w.enc[l], decoded_[l], w.dec[i]);
+    const Activations& below = i == 0 ? bottleneck_b_ : decoded_.at(l + 1);
+    Conv& c = convs_.at(first_decoder + i);
+    c = make_conv(skip_.at(l), up(l) + w.enc.at(l), decoded_.at(l),
+                  w.dec.at(i));
     c.params.up_blocks = up(l) / contracts::channel_block;
     c.params.up_pitch = below.pitch;
     c.params.up_stride = below.stride;
@@ -252,10 +254,10 @@ MTL::GPUAddress DenoiseImages::median() const noexcept {
   return median_.address();
 }
 MTL::GPUAddress DenoiseImages::history() const noexcept {
-  return history_buffers_[(index_ + 1) % 2].address();
+  return history_buffers_.at((index_ + 1) % 2).address();
 }
 MTL::GPUAddress DenoiseImages::next_history() const noexcept {
-  return history_buffers_[index_ % 2].address();
+  return history_buffers_.at(index_ % 2).address();
 }
 
 }  // namespace serenity::metal

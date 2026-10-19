@@ -78,7 +78,7 @@ SceneAcceleration::Tree SceneAcceleration::make_tree(
   MTL::Device* metal_device = device.handle();
   const std::uint32_t structures = moves ? frames_in_flight : 1u;
   for (std::uint32_t slot = 0; slot < structures; ++slot) {
-    Built& built = tree.structures[slot];
+    Built& built = tree.structures.at(slot);
     auto geometry = NS::TransferPtr(
         MTL4::AccelerationStructureBoundingBoxGeometryDescriptor::alloc()
             ->init());
@@ -186,7 +186,7 @@ SceneAcceleration::SceneAcceleration(const Device& device,
     const MTL::ResourceID all = everything_.in(slot).structure->gpuResourceID();
     const MTL::ResourceID occluding =
         occluders_ ? occluders_->in(slot).structure->gpuResourceID() : all;
-    blocks[slot] = gpu::StructureBlock{
+    blocks.at(slot) = gpu::StructureBlock{
         all._impl, occluding._impl, occluder_table_->address(0),
         static_cast<std::uint32_t>(table.size()), 0u};
   }
@@ -197,7 +197,7 @@ SceneAcceleration::SceneAcceleration(const Device& device,
       any_moves ? FrameArray::Copies::per_frame : FrameArray::Copies::one);
   if (any_moves) {
     for (std::uint32_t slot = 1; slot < frames_in_flight; ++slot) {
-      blocks_->view<gpu::StructureBlock>(slot)[0] = blocks[slot];
+      blocks_->view<gpu::StructureBlock>(slot)[0] = blocks.at(slot);
     }
   }
 
@@ -270,7 +270,7 @@ void SceneAcceleration::update(
           tree->moving_bounds[i], transforms[tree->moving_shapes[i]]);
     }
     // Step 2: the slot's structure, over every box.
-    const Built& built = tree->structures[slot];
+    const Built& built = tree->structures.at(slot);
     encoder->buildAccelerationStructure(
         built.structure.get(), built.descriptor.get(),
         MTL4::BufferRange(built.scratch->gpuAddress(),

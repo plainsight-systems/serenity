@@ -87,8 +87,8 @@ DenoisePass::DenoisePass(const Device& device, const Library& library,
   // encoders, the bottleneck's two, the decoders, the last.
   std::array<const denoise::Convolution*, DenoiseImages::convolutions> convs{};
   for (std::size_t l = 0; l < DenoiseImages::levels; ++l) {
-    convs[l] = &network.enc[l];
-    convs[DenoiseImages::first_decoder + l] = &network.dec[l];
+    convs.at(l) = &network.enc.at(l);
+    convs.at(DenoiseImages::first_decoder + l) = &network.dec.at(l);
   }
   convs[DenoiseImages::first_bottleneck] = &network.bottleneck_a;
   convs[DenoiseImages::first_bottleneck + 1] = &network.bottleneck_b;
@@ -102,7 +102,7 @@ DenoisePass::DenoisePass(const Device& device, const Library& library,
   std::vector<std::span<const std::byte>> arrays;
   for (std::size_t i = 0; i < convs.size(); ++i) {
     arrays.push_back(std::as_bytes(std::span(weights[i])));
-    arrays.push_back(std::as_bytes(std::span(convs[i]->bias)));
+    arrays.push_back(std::as_bytes(std::span(convs.at(i)->bias)));
   }
   // The head as the output kernel's matrix product reads it: [feature]
   // [output], the 124 outputs padded to head_columns with zeros, half
@@ -126,7 +126,7 @@ MTL::ComputePipelineState* DenoisePass::pipeline(std::uint32_t chunk) const {
     throw MetalError("DenoisePass: no convolution kernel computes " +
                      std::to_string(chunk) + " blocks");
   }
-  return conv_[chunk - 1].get();
+  return conv_.at(chunk - 1).get();
 }
 
 void DenoisePass::record(MTL4::ComputeCommandEncoder* encoder,
@@ -163,13 +163,13 @@ void DenoisePass::record_median(MTL4::ComputeCommandEncoder* encoder,
   arguments->setAddress(images.median(), binding::median);
   arguments->setTexture(resources.depth->gpuResourceID(), binding::depth);
   for (std::size_t level = 0; level < histogram_.size(); ++level) {
-    encoder->setComputePipelineState(histogram_[level].get());
+    encoder->setComputePipelineState(histogram_.at(level).get());
     encoder->dispatchThreadgroups(
         MTL::Size{groups(light.width, median_side),
                   groups(light.height, median_side), 1},
         MTL::Size{median_side, median_side, 1});
     barrier_after_dispatch(encoder);
-    encoder->setComputePipelineState(select_[level].get());
+    encoder->setComputePipelineState(select_.at(level).get());
     encoder->dispatchThreadgroups(MTL::Size{1, 1, 1},
                                   MTL::Size{select_threads, 1, 1});
     barrier_after_dispatch(encoder);

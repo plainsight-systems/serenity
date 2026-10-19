@@ -32,13 +32,13 @@ Range shrunk(const Swarm& swarm, std::uint32_t i) {
                         animation::flight_delta + animation::first_drift_reach;
   Range range;
   for (std::size_t axis = 0; axis < 3; ++axis) {
-    range.low[axis] =
+    range.low.at(axis) =
         contracts::component(swarm.flight.volume.min, static_cast<int>(axis)) +
         margin;
-    range.high[axis] =
+    range.high.at(axis) =
         contracts::component(swarm.flight.volume.max, static_cast<int>(axis)) -
         margin;
-    if (!(range.low[axis] < range.high[axis])) {
+    if (!(range.low.at(axis) < range.high.at(axis))) {
       throw animation::MotionError(
           "firefly " + std::to_string(i) +
           ": the volume is too small for a firefly to drift in");
@@ -97,7 +97,8 @@ contracts::Float3 start_in(const Drawing& d, const Range& range) {
       const double u =
           animation::draw(d.seed, static_cast<std::uint64_t>(attempt),
                           static_cast<std::uint64_t>(axis));
-      p[axis] = range.low[axis] + u * (range.high[axis] - range.low[axis]);
+      p.at(axis) =
+          range.low.at(axis) + u * (range.high.at(axis) - range.low.at(axis));
     }
     const contracts::Float3 start = to_float(p);
     if (d.obstacles.distance(start) >= d.needed) {
@@ -195,7 +196,7 @@ std::optional<Perched> perch_from(const Drawing& d, const PerchStart& start,
   // `axis` is the draw's counter and the offset's index both (I.24).
   const auto start_of = [&](float lo, float hi, std::size_t axis) {
     return static_cast<float>(lo + pick(axis) * (static_cast<double>(hi) - lo) -
-                              offset[axis]);
+                              offset.at(axis));
   };
   const float sx = start_of(box.min.x, box.max.x, 0);
   const float sz = start_of(box.min.z, box.max.z, 2);

@@ -112,10 +112,11 @@ Color bilinear(const Field& f, double u, double v) {
   const auto j = static_cast<long>(fy);
   Color out{};
   for (std::size_t c = 0; c < 3; ++c) {
-    const double top = texel(i, j)[c] * (1 - tx) + texel(i + 1, j)[c] * tx;
+    const double top =
+        texel(i, j).at(c) * (1 - tx) + texel(i + 1, j).at(c) * tx;
     const double bottom =
-        texel(i, j + 1)[c] * (1 - tx) + texel(i + 1, j + 1)[c] * tx;
-    out[c] = top * (1 - ty) + bottom * ty;
+        texel(i, j + 1).at(c) * (1 - tx) + texel(i + 1, j + 1).at(c) * tx;
+    out.at(c) = top * (1 - ty) + bottom * ty;
   }
   return out;
 }
@@ -144,11 +145,12 @@ Color down13(Read read, double u, double v, const Field& source) {
   const Color m = s(1, 1);
   Color out{};
   for (std::size_t n = 0; n < 3; ++n) {
-    const double middle = 0.25 * (j[n] + k[n] + l[n] + m[n]);
-    const double corners =
-        0.25 * ((a[n] + b[n] + d[n] + e[n]) + (b[n] + c[n] + e[n] + f[n]) +
-                (d[n] + e[n] + g[n] + h[n]) + (e[n] + f[n] + h[n] + i[n]));
-    out[n] = middle_weight * middle + corner_weight * corners;
+    const double middle = 0.25 * (j.at(n) + k.at(n) + l.at(n) + m.at(n));
+    const double corners = 0.25 * ((a.at(n) + b.at(n) + d.at(n) + e.at(n)) +
+                                   (b.at(n) + c.at(n) + e.at(n) + f.at(n)) +
+                                   (d.at(n) + e.at(n) + g.at(n) + h.at(n)) +
+                                   (e.at(n) + f.at(n) + h.at(n) + i.at(n)));
+    out.at(n) = middle_weight * middle + corner_weight * corners;
   }
   return out;
 }
@@ -163,7 +165,7 @@ Color tent(const Field& level, double u, double v) {
       const double w = (dx == 0 ? 2.0 : 1.0) * (dy == 0 ? 2.0 : 1.0) / 16.0;
       const Color s = bilinear(level, u + dx * tx, v + dy * ty);
       for (std::size_t c = 0; c < 3; ++c) {
-        out[c] += w * s[c];
+        out.at(c) += w * s.at(c);
       }
     }
   }
@@ -257,7 +259,7 @@ void pyramid_up(std::vector<Field>& pyramid) {
         const Color t =
             tent(below, (x + 0.5) / level.width, (y + 0.5) / level.height);
         for (std::size_t c = 0; c < 3; ++c) {
-          level.at(x, y)[c] = half(level.at(x, y)[c] + t[c]);
+          level.at(x, y).at(c) = half(level.at(x, y).at(c) + t.at(c));
         }
       }
     }
@@ -273,7 +275,8 @@ Bytes composite(const Field& e, const Field& base, double bloom) {
       const Color glare = tent(base, (x + 0.5) / e.width, (y + 0.5) / e.height);
       Color c{};
       for (std::size_t n = 0; n < 3; ++n) {
-        c[n] = (1.0 - bloom) * clamped(e.at(x, y))[n] + bloom * glare[n];
+        c.at(n) =
+            (1.0 - bloom) * clamped(e.at(x, y)).at(n) + bloom * glare.at(n);
       }
       const Color shown = neutral(c);
       out.push_back({tests::srgb8(shown[0]), tests::srgb8(shown[1]),
@@ -364,8 +367,8 @@ Toned tone_map(const Field& radiance, passes::ToneMap settings,
   resources.size = size;
   resources.radiance = image.get();
   for (std::uint32_t k = 0; k < passes::bloom_levels; ++k) {
-    resources.bloom[k] =
-        pyramid == Pyramid::readable ? readable[k].get() : renderers.bloom(k);
+    resources.bloom.at(k) = pyramid == Pyramid::readable ? readable.at(k).get()
+                                                         : renderers.bloom(k);
   }
   const metal::FrameSlot slot = submission.begin();
   MTL4::ComputeCommandEncoder* encoder = slot.commands->computeCommandEncoder();
@@ -405,7 +408,7 @@ int farthest(const Bytes& a, const Bytes& b) {
   int most = 0;
   for (std::size_t i = 0; i < a.size(); ++i) {
     for (std::size_t c = 0; c < 3; ++c) {
-      most = std::max(most, std::abs(a[i][c] - b[i][c]));
+      most = std::max(most, std::abs(a.at(i).at(c) - b.at(i).at(c)));
     }
   }
   return most;
@@ -537,8 +540,8 @@ TEST_CASE(
     double worst = 0.0;
     for (std::size_t i = 0; i < gpu.base.texels.size(); ++i) {
       for (std::size_t c = 0; c < 3; ++c) {
-        const double got = gpu.base.texels[i][c];
-        const double want = cpu.base.texels[i][c];
+        const double got = gpu.base.texels.at(i).at(c);
+        const double want = cpu.base.texels.at(i).at(c);
         REQUIRE(std::isfinite(got));
         CHECK(got <= ceiling);
         worst = std::max(worst, std::abs(got - want) / std::max(want, 1e-3));
@@ -586,7 +589,7 @@ TEST_CASE(
   };
   // White-hot at its core.
   for (std::size_t channel = 0; channel < 3; ++channel) {
-    CHECK(at(c, c)[channel] >= 240);
+    CHECK(at(c, c).at(channel) >= 240);
   }
   // Falling off, never rising, along a row, and reaching far: B_5's texels
   // are 64 frame pixels apart.

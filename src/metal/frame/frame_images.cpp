@@ -41,7 +41,7 @@ MTL::Texture* FrameImages::bloom(std::uint32_t level) const {
   if (level >= pyramid_.size()) {
     throw MetalError("FrameImages: no bloom level " + std::to_string(level));
   }
-  return pyramid_[level].texture.get();
+  return pyramid_.at(level).texture.get();
 }
 
 void FrameImages::prepare(frame::Extent size) {
@@ -112,7 +112,7 @@ PathReuseImages::PathReuseImages(const Device& device, Submission& submission,
   const std::size_t pyramid =
       contracts::light_power_floats(contracts::light_power_levels(lights));
   for (std::size_t h = 0; h < (temporal == Temporal::merged ? 2u : 1u); ++h) {
-    make(light_power_[h], pyramid * sizeof(float), "power pyramid");
+    make(light_power_.at(h), pyramid * sizeof(float), "power pyramid");
   }
 }
 
@@ -165,7 +165,8 @@ std::uint64_t PathReuseImages::prepare(const frame::FrameInputs& inputs,
   make(reservoirs_, pixels * sizeof(contracts::PathReservoir),
        "path reservoirs");
   for (std::size_t h = 0; h < halves; ++h) {
-    make(primaries_[h], pixels * sizeof(contracts::PrimaryHit), "primary hits");
+    make(primaries_.at(h), pixels * sizeof(contracts::PrimaryHit),
+         "primary hits");
   }
   make(light_, pixels * 4 * sizeof(float), "light buffer");
   if (spatial_ == Spatial::merged || temporal) {
@@ -198,19 +199,19 @@ PathReuseImages::Addresses PathReuseImages::addresses(
   const std::size_t then = 1 - now;
   Addresses out;
   out.reservoirs = address(reservoirs_);
-  out.primaries = address(primaries_[now]);
+  out.primaries = address(primaries_.at(now));
   out.light = address(light_);
   out.shifts = address(shifts_);
   out.replays = address(replays_);
   out.counter = address(counter_);
   out.grid = out.counter + grid_offset;
   out.light_tiles = address(light_tiles_);
-  out.light_power = address(light_power_[now]);
+  out.light_power = address(light_power_.at(now));
   if (temporal) {
-    out.last_primaries = address(primaries_[then]);
-    out.last_light_power = address(light_power_[then]);
-    out.finals = address(finals_[now]);
-    out.last_finals = address(finals_[then]);
+    out.last_primaries = address(primaries_.at(then));
+    out.last_light_power = address(light_power_.at(then));
+    out.finals = address(finals_.at(now));
+    out.last_finals = address(finals_.at(then));
     out.previous_positions = address(previous_positions_);
     out.previous_pixels = address(previous_pixels_);
     out.duplication = address(duplication_);

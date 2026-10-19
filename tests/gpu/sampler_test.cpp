@@ -43,7 +43,7 @@ std::vector<PathNumbersDraw> draw(
 
 bool same(const PathNumbersDraw& a, const PathNumbersDraw& b) {
   for (std::uint32_t k = 0; k < path_numbers_drawn; ++k) {
-    if (a.u[k] != b.u[k]) {
+    if (std::span(a.u)[k] != std::span(b.u)[k]) {
       return false;
     }
   }
@@ -85,7 +85,7 @@ TEST_CASE(
   CHECK_FALSE(same(numbers[0], numbers[4]));  // x and y swapped
   // Within a path, no number repeats the one before.
   for (std::uint32_t k = 1; k < path_numbers_drawn; ++k) {
-    CHECK(numbers[0].u[k] != numbers[0].u[k - 1]);
+    CHECK(std::span(numbers[0].u)[k] != std::span(numbers[0].u)[k - 1]);
   }
 }
 

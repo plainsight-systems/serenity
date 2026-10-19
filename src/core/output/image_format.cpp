@@ -58,7 +58,7 @@ std::string image_format_names() {
   std::string names;
   for (std::size_t i = 0; i < kinds.size(); ++i) {
     names += i == 0 ? "" : (i + 1 == kinds.size() ? " or " : ", ");
-    names += kinds[i].name;
+    names += kinds.at(i).name;
   }
   return names;
 }

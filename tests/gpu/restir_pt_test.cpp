@@ -568,17 +568,17 @@ TEST_CASE(
   std::array<std::uint32_t, 5> counts{};
   for (const tests::PowerDraw& d : drawn) {
     REQUIRE(d.index < power.size());  // never a leaf of no light
-    ++counts[d.index];
-    const double expected = power[d.index] / total;
+    ++counts.at(d.index);
+    const double expected = power.at(d.index) / total;
     CHECK(d.probability == doctest::Approx(expected).epsilon(1e-5));
     CHECK(d.asked == d.probability);  // MIS's and the draw's are one number
   }
   for (std::size_t i = 0; i < power.size(); ++i) {
-    const double p = power[i] / total;
+    const double p = power.at(i) / total;
     const double sigma = std::sqrt(draws * p * (1.0 - p));
-    INFO("light " << i << ": " << counts[i] << " draws, " << draws * p
+    INFO("light " << i << ": " << counts.at(i) << " draws, " << draws * p
                   << " expected");
-    CHECK(std::abs(counts[i] - draws * p) < 5.0 * sigma);
+    CHECK(std::abs(counts.at(i) - draws * p) < 5.0 * sigma);
   }
 }
 
@@ -621,7 +621,7 @@ TEST_CASE(
                           : Case::struck)
                    : (contracts::path_lobe_at(r.flags) == 0u ? Case::nee_at_k
                                                              : Case::bsdf_at_k);
-    ++held[static_cast<std::size_t>(c)];
+    ++held.at(static_cast<std::size_t>(c));
     // To the stored point's rounding (contract 15) and the G-buffer's
     // packing of y1 (contract 5: its normal to 10^-4 radians, which
     // turns every replayed direction after it by as much), which a
@@ -631,14 +631,15 @@ TEST_CASE(
                       std::abs(r.jacobian - 1.0) < 2.0e-2 &&
                       std::abs(luminance(r.shifted) - luminance(r.stored)) <=
                           2.0e-2 * luminance(r.stored);
-    off[static_cast<std::size_t>(c)] += same ? 0u : 1u;
+    off.at(static_cast<std::size_t>(c)) += same ? 0u : 1u;
   }
   for (std::size_t c = 0; c < names.size(); ++c) {
     // A pair at the criteria's edge may fall the other way at the
     // stored point, and the shift fail: at most 1 in 200.
-    INFO(names[c] << ": " << held[c] << " paths, " << off[c] << " off");
-    CHECK(held[c] >= 20u);
-    CHECK(off[c] * 200u <= held[c]);
+    INFO(names.at(c) << ": " << held.at(c) << " paths, " << off.at(c)
+                     << " off");
+    CHECK(held.at(c) >= 20u);
+    CHECK(off.at(c) * 200u <= held.at(c));
   }
 }
 

@@ -41,8 +41,9 @@ void DepthOfFieldImages::prepare(frame::Extent size) {
       "depth of field's near field", "depth of field's filtered far field",
       "depth of field's filtered near field"};
   for (std::size_t i = 0; i < images_.size(); ++i) {
-    images_[i] = make_resident_texture(
-        device_.get(), submission_, MTL::PixelFormatRGBA16Float, half, what[i]);
+    images_.at(i) =
+        make_resident_texture(device_.get(), submission_,
+                              MTL::PixelFormatRGBA16Float, half, what.at(i));
   }
   const std::size_t tiles =
       std::size_t{(half.width + contracts::dof_tile - 1u) /

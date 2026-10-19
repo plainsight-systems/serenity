@@ -72,11 +72,11 @@ constexpr auto entries = std::to_array<Entry>({
 
 constexpr bool every_entry_its_own() {
   for (std::size_t i = 0; i < entries.size(); ++i) {
-    if (entries[i].field == nullptr || entries[i].bytes == nullptr) {
+    if (entries.at(i).field == nullptr || entries.at(i).bytes == nullptr) {
       return false;
     }
     for (std::size_t j = i + 1; j < entries.size(); ++j) {
-      if (entries[i].field == entries[j].field) {
+      if (entries.at(i).field == entries.at(j).field) {
         return false;
       }
     }
@@ -95,7 +95,7 @@ std::array<std::span<const std::byte>, entries.size()> arrays_of(
     const Scene& scene) {
   std::array<std::span<const std::byte>, entries.size()> arrays;
   for (std::size_t i = 0; i < entries.size(); ++i) {
-    arrays[i] = entries[i].bytes(scene);
+    arrays.at(i) = entries.at(i).bytes(scene);
   }
   return arrays;
 }
@@ -106,7 +106,7 @@ SceneBuffers::SceneBuffers(const Device& device, Submission& submission,
                            const scene::SceneDescription& scene)
     : arrays_(device, submission, arrays_of(scene)) {
   for (std::size_t i = 0; i < entries.size(); ++i) {
-    block_.*entries[i].field = arrays_.address(i);
+    block_.*entries.at(i).field = arrays_.address(i);
   }
   // The block itself, written once (scene_block.h); shared storage, which
   // Apple silicon's unified memory lets the GPU read where the CPU wrote.

@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -231,10 +232,10 @@ contracts::Float3 start_before_kinds(const scene::Swarm& swarm, std::uint32_t i,
   std::array<double, 3> low{};
   std::array<double, 3> high{};
   for (std::size_t axis = 0; axis < 3; ++axis) {
-    low[axis] =
+    low.at(axis) =
         contracts::component(swarm.flight.volume.min, static_cast<int>(axis)) +
         margin;
-    high[axis] =
+    high.at(axis) =
         contracts::component(swarm.flight.volume.max, static_cast<int>(axis)) -
         margin;
   }
@@ -245,7 +246,7 @@ contracts::Float3 start_before_kinds(const scene::Swarm& swarm, std::uint32_t i,
       const double u =
           animation::draw(seed, static_cast<std::uint64_t>(attempt),
                           static_cast<std::uint64_t>(axis));
-      p[axis] = low[axis] + u * (high[axis] - low[axis]);
+      p.at(axis) = low.at(axis) + u * (high.at(axis) - low.at(axis));
     }
     const contracts::Float3 start{static_cast<float>(p[0]),
                                   static_cast<float>(p[1]),
@@ -609,8 +610,8 @@ TEST_CASE(
           lo + animation::draw(seed, scene::perch_draws, attempt, axis) *
                    (static_cast<double>(hi) - lo);
       return static_cast<float>(
-          static_cast<double>(static_cast<float>(value - offset[at])) +
-          offset[at]);
+          static_cast<double>(static_cast<float>(value - offset.at(at))) +
+          offset.at(at));
     };
     bool drawn = false;
     for (std::uint64_t a = 0;
@@ -893,8 +894,10 @@ TEST_CASE(
     const contracts::Transform expected =
         contracts::placed(f.start, firefly_radius);
     for (std::size_t r = 0; r < 3; ++r) {
+      const std::span<const float, 4> got(std::span(placed.m)[r]);
+      const std::span<const float, 4> want(std::span(expected.m)[r]);
       for (std::size_t c = 0; c < 4; ++c) {
-        differ += placed.m[r][c] == expected.m[r][c] ? 0 : 1;
+        differ += got[c] == want[c] ? 0 : 1;
       }
     }
     const animation::Flight& made = s.animation.motions.flights[i];

@@ -71,7 +71,7 @@ bool runtime(const char* path) {
   const int depth = backtrace(frames.data(), static_cast<int>(frames.size()));
   for (std::size_t i = 1; i < static_cast<std::size_t>(depth); ++i) {
     Dl_info info{};
-    if (dladdr(frames[i], &info) == 0 || info.dli_fname == nullptr) {
+    if (dladdr(frames.at(i), &info) == 0 || info.dli_fname == nullptr) {
       continue;
     }
     if (info.dli_fbase == this_image) {

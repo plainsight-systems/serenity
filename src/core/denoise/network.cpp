@@ -1,5 +1,6 @@
 #include "core/denoise/network.h"
 
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstddef>
@@ -73,8 +74,8 @@ Widths read_widths(const Json& config, const std::string& source) {
                        " entries each");
   }
   for (std::size_t i = 0; i < contracts::unet_levels; ++i) {
-    w.enc[i] = width(enc[i], "a widths.enc entry", source);
-    w.dec[i] = width(dec[i], "a widths.dec entry", source);
+    w.enc.at(i) = width(enc[i], "a widths.enc entry", source);
+    w.dec.at(i) = width(dec[i], "a widths.dec entry", source);
   }
   w.bottleneck = width(widths.at("bottleneck"), "widths.bottleneck", source);
   return w;
@@ -121,10 +122,13 @@ void check_constants(const Json& layout, const std::string& source) {
   same(scores.at("masked_tap_score"), contracts::masked_score,
        "scores.masked_tap_score");
   const JsonArray& spacings = scores.at("spacings").array("scores.spacings");
+  // The contract's list, a C array for the shaders (contracts/denoise.h), as
+  // a std::array here, to read with bounds checked (Bounds.2).
+  constexpr auto spacing_pixels = std::to_array(contracts::spacing_pixels);
   bool same_spacings = spacings.size() == contracts::denoise_spacings;
   for (std::size_t s = 0; same_spacings && s < spacings.size(); ++s) {
     same_spacings = spacings[s].number("a spacing") ==
-                    static_cast<double>(contracts::spacing_pixels[s]);
+                    static_cast<double>(spacing_pixels.at(s));
   }
   if (!same_spacings) {
     std::string listed;
@@ -132,7 +136,7 @@ void check_constants(const Json& layout, const std::string& source) {
       listed += (s == 0                                 ? ""
                  : s + 1 == contracts::denoise_spacings ? " and "
                                                         : ", ") +
-                std::to_string(contracts::spacing_pixels[s]);
+                std::to_string(spacing_pixels.at(s));
     }
     refuse(source, "its spacings are not contract 18's " + listed);
   }
@@ -156,8 +160,8 @@ std::vector<Needed> needed(Network& n) {
       1;  // the encoder's last level, the decoder's first
   for (std::size_t i = 0; i < contracts::unet_levels; ++i) {
     list.push_back({"unet.enc." + std::to_string(i),
-                    i == 0 ? contracts::network_inputs : w.enc[i - 1], w.enc[i],
-                    3, &n.enc[i]});
+                    i == 0 ? contracts::network_inputs : w.enc.at(i - 1),
+                    w.enc.at(i), 3, &n.enc.at(i)});
   }
   list.push_back(
       {"unet.bottleneck_a", w.enc[deepest], w.bottleneck, 3, &n.bottleneck_a});
@@ -166,8 +170,9 @@ std::vector<Needed> needed(Network& n) {
   std::uint32_t previous = w.bottleneck;
   for (std::size_t i = 0; i < contracts::unet_levels; ++i) {
     list.push_back({"unet.dec." + std::to_string(i),
-                    previous + w.enc[deepest - i], w.dec[i], 3, &n.dec[i]});
-    previous = w.dec[i];
+                    previous + w.enc.at(deepest - i), w.dec.at(i), 3,
+                    &n.dec.at(i)});
+    previous = w.dec.at(i);
   }
   list.push_back(
       {"unet.dec_final", w.dec[deepest], w.dec[deepest], 3, &n.dec_final});

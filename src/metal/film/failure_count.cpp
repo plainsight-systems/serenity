@@ -37,11 +37,11 @@ void FailureCount::begin_frame(std::uint32_t slot, std::uint64_t sequence) {
                      std::to_string(slot));
   }
   // The slot's last frame has completed: begin() waited for it.
-  if (counting_[slot] != 0) {
+  if (counting_.at(slot) != 0) {
     total_ += *counter(slot);
   }
   *counter(slot) = 0;
-  counting_[slot] = sequence + 1;
+  counting_.at(slot) = sequence + 1;
 }
 
 MTL::GPUAddress FailureCount::address(std::uint32_t slot) const {
@@ -54,11 +54,12 @@ MTL::GPUAddress FailureCount::address(std::uint32_t slot) const {
 
 std::uint64_t FailureCount::count() const noexcept {
   std::uint64_t total = total_;
-  for (std::uint32_t slot = 0; slot < frames_in_flight; ++slot) {
-    if (counting_[slot] != 0 &&
-        submission_.has_completed(counting_[slot] - 1)) {
+  std::uint32_t slot = 0;
+  for (const std::uint64_t counted : counting_) {
+    if (counted != 0 && submission_.has_completed(counted - 1)) {
       total += *counter(slot);
     }
+    ++slot;
   }
   return total;
 }

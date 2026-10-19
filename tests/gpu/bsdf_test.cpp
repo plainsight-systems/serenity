@@ -113,7 +113,7 @@ std::array<double, 3> directional_albedo(const std::vector<BsdfCell>& cells,
   for (std::uint32_t i = 0; i < cell_count; ++i) {
     const double cos_wi = std::abs(dot(cell_direction(i), n));
     for (int c = 0; c < 3; ++c) {
-      albedo[static_cast<std::size_t>(c)] +=
+      albedo.at(static_cast<std::size_t>(c)) +=
           contracts::component(cells[i].evaluated, c) * cos_wi *
           cell_solid_angle;
     }
@@ -146,7 +146,7 @@ std::array<double, 3> mean_weight(const std::vector<BsdfDraw>& drawn, Vec3 n) {
     if (p.pdf > 0.0f) {
       const std::array<double, 3> w = weight(p, n);
       for (std::size_t c = 0; c < 3; ++c) {
-        sum[c] += w[c];
+        sum.at(c) += w.at(c);
       }
     }
   }
@@ -330,7 +330,8 @@ TEST_CASE(
   const std::array<double, 3> integral = directional_albedo(front.cells, n);
   for (std::size_t c = 0; c < 3; ++c) {
     INFO("channel " << c);
-    CHECK(integral[c] == doctest::Approx(albedo[c]).scale(0).epsilon(0.005));
+    CHECK(integral.at(c) ==
+          doctest::Approx(albedo.at(c)).scale(0).epsilon(0.005));
   }
 
   // wo on the far side of the normal: it reflects there instead. Checked
@@ -389,7 +390,7 @@ TEST_CASE(
   const std::array<double, 3> f0{0.91, 0.78, 0.42};
   const auto schlick = [&](std::size_t c, double cos_h) {
     const double x = 1.0 - std::clamp(cos_h, 0.0, 1.0);
-    return f0[c] + (1.0 - f0[c]) * x * x * x * x * x;
+    return f0.at(c) + (1.0 - f0.at(c)) * x * x * x * x * x;
   };
   // Head on, 53 degrees and 80 degrees from the normal: at 80 the half
   // vectors of the lobe are near the normal, wo . h near 0.17, and F is
@@ -437,7 +438,7 @@ TEST_CASE(
     const std::array<double, 3> albedo = directional_albedo(s.cells, n);
     for (std::size_t c = 0; c < 3; ++c) {
       INFO("channel " << c);
-      CHECK(mean[c] == doctest::Approx(albedo[c]).scale(0).epsilon(0.01));
+      CHECK(mean.at(c) == doctest::Approx(albedo.at(c)).scale(0).epsilon(0.01));
     }
   }
 }

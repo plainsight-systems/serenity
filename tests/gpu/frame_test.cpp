@@ -105,14 +105,14 @@ TEST_CASE("frames in flight: each submission reads its own frame's constants") {
     targets.push_back(
         std::make_unique<metal::Offscreen>(device, submission, size));
     last = metal::render_to_offscreen(submission, *targets.back(), renderer,
-                                      at(times[i], i));
+                                      at(times.at(i), i));
   }
   (void)submission.wait_until_complete(
       last);  // in order, so every earlier one is done too
   for (std::size_t i = 0; i < times.size(); ++i) {
     const std::vector<std::uint8_t> rgba = tests::read_back(*targets[i]);
-    check_pixel(rgba, probed[3], times[i]);
-    check_pixel(rgba, probed[4], times[i]);
+    check_pixel(rgba, probed[3], times.at(i));
+    check_pixel(rgba, probed[4], times.at(i));
   }
 }
 

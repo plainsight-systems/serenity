@@ -244,13 +244,14 @@ TEST_CASE(
   std::array<double, boards> means{};
   for (std::size_t b = 0; b < boards; ++b) {
     for (std::size_t i = 0; i < per_board; ++i) {
-      means[b] += planks[b * per_board + i].x / static_cast<double>(per_board);
+      means.at(b) +=
+          planks[b * per_board + i].x / static_cast<double>(per_board);
     }
   }
   for (std::size_t b = 1; b < boards; ++b) {
-    INFO("boards " << b - 1 << " and " << b << ": " << means[b - 1] << ", "
-                   << means[b]);
-    CHECK(std::abs(means[b] - means[b - 1]) > 1e-4);
+    INFO("boards " << b - 1 << " and " << b << ": " << means.at(b - 1) << ", "
+                   << means.at(b));
+    CHECK(std::abs(means.at(b) - means.at(b - 1)) > 1e-4);
   }
 
   textures::WoodData other = walnut;

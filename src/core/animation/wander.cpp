@@ -90,19 +90,22 @@ Wander make_wander(const WanderParams& params, float body,
     double total = 0.0;
     for (std::size_t i = 0; i < wander_terms; ++i) {
       const auto k = static_cast<int>(i);
-      weights[i] = least_weight + weight_span * wander_draw(params.seed, axis,
-                                                            k, Draw::weight);
-      total += weights[i];
-      wander.frequency[a][i] =
+      weights.at(i) =
+          least_weight +
+          weight_span * wander_draw(params.seed, axis, k, Draw::weight);
+      total += weights.at(i);
+      wander.frequency.at(a).at(i) =
           least_ratio +
           ratio_span * wander_draw(params.seed, axis, k, Draw::ratio);
-      wander.phase[a][i] =
+      wander.phase.at(a).at(i) =
           two_pi * wander_draw(params.seed, axis, k, Draw::phase);
     }
     // Step 2: the amplitudes, summing to the reach on each axis.
     for (std::size_t i = 0; i < wander_terms; ++i) {
-      wander.amplitude[a][i] = static_cast<double>(reach) * weights[i] / total;
-      const double v = two_pi * wander.frequency[a][i] * wander.amplitude[a][i];
+      wander.amplitude.at(a).at(i) =
+          static_cast<double>(reach) * weights.at(i) / total;
+      const double v =
+          two_pi * wander.frequency.at(a).at(i) * wander.amplitude.at(a).at(i);
       mean_square_speed += 0.5 * v * v;
     }
   }
@@ -123,14 +126,14 @@ contracts::Float3 position(const Wander& wander, frame::Seconds t) {
   for (std::size_t axis = 0; axis < 3; ++axis) {
     double sum = contracts::component(wander.anchor, static_cast<int>(axis));
     for (std::size_t k = 0; k < wander_terms; ++k) {
-      sum += wander.amplitude[axis][k] *
-             std::sin(two_pi * wander.frequency[axis][k] * seconds +
-                      wander.phase[axis][k]);
+      sum += wander.amplitude.at(axis).at(k) *
+             std::sin(two_pi * wander.frequency.at(axis).at(k) * seconds +
+                      wander.phase.at(axis).at(k));
     }
     // The exact path stays within anchor +/- reach, inside float's range
     // (make_wander); the clamp absorbs only the double sums' rounding at
     // that edge, so the narrowing is always defined.
-    p[axis] = std::clamp(sum, -float_max, float_max);
+    p.at(axis) = std::clamp(sum, -float_max, float_max);
   }
   return {static_cast<float>(p[0]), static_cast<float>(p[1]),
           static_cast<float>(p[2])};

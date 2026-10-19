@@ -129,9 +129,9 @@ std::vector<std::uint16_t> reuse_texture(std::uint32_t width, double sigma,
         const std::array<std::uint32_t, 4> held = {links[at[0]], links[at[1]],
                                                    links[at[2]], links[at[3]]};
         const std::array<std::uint8_t, 4>& order =
-            orders[random.below(static_cast<std::uint32_t>(orders.size()))];
+            orders.at(random.below(static_cast<std::uint32_t>(orders.size())));
         for (std::size_t i = 0; i < 4; ++i) {
-          links[at[i]] = held[order[i]];
+          links[at.at(i)] = held.at(order.at(i));
         }
       }
     }
@@ -161,9 +161,12 @@ std::vector<std::uint16_t> reuse_texture(std::uint32_t width, double sigma,
 std::vector<std::uint16_t> reuse_textures(double sigma, std::uint64_t seed) {
   std::vector<std::uint16_t> all;
   all.reserve(contracts::pairing_entries);
+  // The contract's widths, a C array for the shaders, as a std::array here,
+  // to read with bounds checked (Bounds.2).
+  constexpr auto widths = std::to_array(contracts::pairing_widths);
   for (std::uint32_t t = 0; t < contracts::max_path_neighbors; ++t) {
-    const std::vector<std::uint16_t> texture = reuse_texture(
-        contracts::pairing_widths[t], sigma, seed * texture_seed_step + t);
+    const std::vector<std::uint16_t> texture =
+        reuse_texture(widths.at(t), sigma, seed * texture_seed_step + t);
     all.insert(all.end(), texture.begin(), texture.end());
   }
   return all;

@@ -98,7 +98,7 @@ bool Submission::wait_idle() noexcept {
 }
 
 std::optional<Completed> Submission::settle(std::uint64_t sequence) {
-  Slot& slot = slots_[sequence % frames_in_flight];
+  Slot& slot = slots_.at(sequence % frames_in_flight);
   if (slot.settled_through >= sequence + 1) {
     return std::nullopt;
   }
@@ -147,7 +147,7 @@ FrameSlot Submission::begin(Parts parts) {
   const std::uint64_t sequence = next_;
   const std::uint32_t index =
       static_cast<std::uint32_t>(sequence % frames_in_flight);
-  Slot& slot = slots_[index];
+  Slot& slot = slots_.at(index);
 
   // The slot is free once the submission that last used it has completed
   // and reported (submission.h).
@@ -210,7 +210,7 @@ void Submission::end_and_commit(const MTL::Drawable* drawable) {
                      "while it was open");
   }
   const std::uint64_t sequence = next_ - 1;
-  Slot& slot = slots_[sequence % frames_in_flight];
+  Slot& slot = slots_.at(sequence % frames_in_flight);
   const bool two = slot.parts == Parts::two;
   slot.first.commands->endCommandBuffer();
   if (two) {

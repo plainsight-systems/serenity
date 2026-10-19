@@ -182,7 +182,7 @@ std::vector<LeaveQuery> queries_for(const Case& c, std::uint32_t per_distance) {
         for (int a = 0; a < 3; ++a) {
           const double lo = along(c.min, a);
           const double hi = along(c.max, a);
-          coords[static_cast<std::size_t>(a)] =
+          coords.at(static_cast<std::size_t>(a)) =
               a == axis ? (side > 0.0 ? hi : lo)
                         : lo + (hi - lo) * (0.25 + 0.5 * numbers.unit());
         }

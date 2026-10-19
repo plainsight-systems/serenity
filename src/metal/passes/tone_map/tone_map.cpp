@@ -74,9 +74,9 @@ void ToneMapPass::record(MTL4::ComputeCommandEncoder* encoder,
   for (std::size_t k = 1; k < bloom.size(); ++k) {
     barrier_after_dispatch(
         encoder);  // each dispatch reads what the one before wrote (tone_map.h)
-    arguments->setTexture(bloom[k - 1]->gpuResourceID(), binding::input);
-    arguments->setTexture(bloom[k]->gpuResourceID(), binding::level);
-    dispatch_per_pixel(encoder, down_.get(), extent(bloom[k]));
+    arguments->setTexture(bloom.at(k - 1)->gpuResourceID(), binding::input);
+    arguments->setTexture(bloom.at(k)->gpuResourceID(), binding::level);
+    dispatch_per_pixel(encoder, down_.get(), extent(bloom.at(k)));
   }
 
   // Step 3 for B_4 .. B_0, each from the level below it: `below` counts
@@ -86,9 +86,9 @@ void ToneMapPass::record(MTL4::ComputeCommandEncoder* encoder,
     const std::size_t k = below - 1;
     barrier_after_dispatch(
         encoder);  // each dispatch reads what the one before wrote (tone_map.h)
-    arguments->setTexture(bloom[below]->gpuResourceID(), binding::input);
-    arguments->setTexture(bloom[k]->gpuResourceID(), binding::level);
-    dispatch_per_pixel(encoder, up_.get(), extent(bloom[k]));
+    arguments->setTexture(bloom.at(below)->gpuResourceID(), binding::input);
+    arguments->setTexture(bloom.at(k)->gpuResourceID(), binding::level);
+    dispatch_per_pixel(encoder, up_.get(), extent(bloom.at(k)));
   }
 
   // Steps 1 and 4 to 6, into the target.

@@ -188,7 +188,7 @@ class Run {
     const std::array<std::filesystem::path, 4> paths =
         headless::feature_paths(options_.out, index);
     for (std::size_t i = 0; i < paths.size(); ++i) {
-      output::write_pfm(paths[i], *images[i]);
+      output::write_pfm(paths.at(i), *images.at(i));
     }
     return {paths.begin(), paths.end()};
   }

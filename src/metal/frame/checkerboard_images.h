@@ -83,10 +83,10 @@ class CheckerboardImages {
   // The image frame `index` writes, and the one it reads, its frame
   // before's (above). Null before the first prepare().
   MTL::Texture* written(std::uint64_t index) const noexcept {
-    return light_[index % 2u].texture.get();
+    return light_.at(index % 2u).texture.get();
   }
   MTL::Texture* before(std::uint64_t index) const noexcept {
-    return light_[(index + 1u) % 2u].texture.get();
+    return light_.at((index + 1u) % 2u).texture.get();
   }
 
   // The filled light of a graph without the denoise pass (above); null in

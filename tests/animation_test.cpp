@@ -104,9 +104,9 @@ TEST_CASE("step 3: its root-mean-square speed is the speed") {
   const auto along = [&](std::size_t a, double t) {
     double x = contracts::component(anchor, static_cast<int>(a));
     for (std::size_t k = 0; k < 3; ++k) {
-      x += w.amplitude[a][k] *
-           std::sin(2.0 * std::numbers::pi * w.frequency[a][k] * t +
-                    w.phase[a][k]);
+      x += w.amplitude.at(a).at(k) *
+           std::sin(2.0 * std::numbers::pi * w.frequency.at(a).at(k) * t +
+                    w.phase.at(a).at(k));
     }
     return x;
   };

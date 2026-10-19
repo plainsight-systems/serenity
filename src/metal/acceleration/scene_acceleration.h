@@ -211,7 +211,7 @@ class SceneAcceleration {
     bool moves() const { return !moving_boxes.empty(); }
     // The structure slot `slot` traces.
     const Built& in(std::uint32_t slot) const {
-      return moves() ? structures[slot] : structures[0];
+      return moves() ? structures.at(slot) : structures[0];
     }
   };
 

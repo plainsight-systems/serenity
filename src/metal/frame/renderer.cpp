@@ -276,7 +276,7 @@ Renderer::FeatureFamily::FeatureFamily(const Device& device,
   sets[0].emplace(device, submission);
   if (kept == Sets::per_slot) {
     for (std::size_t slot = 1; slot < sets.size(); ++slot) {
-      sets[slot].emplace(device, submission);
+      sets.at(slot).emplace(device, submission);
     }
   }
   if (moves) {
@@ -878,7 +878,7 @@ FrameResources Renderer::frame_resources(const FrameSlot& begun,
   if (images_) {
     resources.radiance = images_->radiance();
     for (std::uint32_t level = 0; level < passes::bloom_levels; ++level) {
-      resources.bloom[level] = images_->bloom(level);
+      resources.bloom.at(level) = images_->bloom(level);
     }
   }
   if (accumulation_) {

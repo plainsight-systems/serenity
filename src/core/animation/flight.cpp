@@ -206,13 +206,18 @@ static_assert(DriftAt::phase + triple <= segment_numbers,
 static_assert(StillAt::at + triple <= segment_numbers,
               "a still's numbers fit a segment's");
 
-constexpr Vec3 triple_at(const Segment& s, std::size_t i) noexcept {
-  return {s.numbers[i], s.numbers[i + 1], s.numbers[i + 2]};
+// The triple at place I: I a constant, so its bounds are checked as it
+// compiles (std::get, Bounds.2).
+template <std::size_t I>
+constexpr Vec3 triple_at(const Segment& s) noexcept {
+  return {std::get<I>(s.numbers), std::get<I + 1>(s.numbers),
+          std::get<I + 2>(s.numbers)};
 }
-constexpr void put_triple(Segment& s, std::size_t i, Vec3 v) noexcept {
-  s.numbers[i] = v.x;
-  s.numbers[i + 1] = v.y;
-  s.numbers[i + 2] = v.z;
+template <std::size_t I>
+constexpr void put_triple(Segment& s, Vec3 v) noexcept {
+  std::get<I>(s.numbers) = v.x;
+  std::get<I + 1>(s.numbers) = v.y;
+  std::get<I + 2>(s.numbers) = v.z;
 }
 
 constexpr Vec3 bezier(Vec3 b0, Vec3 b1, Vec3 b2, Vec3 b3, double u) noexcept {
@@ -226,10 +231,10 @@ constexpr Vec3 bezier(Vec3 b0, Vec3 b1, Vec3 b2, Vec3 b3, double u) noexcept {
 // worked out (ES.3), so evaluate(), speed_bound() and the opening's checks
 // read the same bits.
 constexpr std::array<Vec3, 4> controls_of_transit(const Segment& s) noexcept {
-  const Vec3 p0 = triple_at(s, TransitAt::p0);
-  const Vec3 p1 = triple_at(s, TransitAt::p1);
-  return {p0, p0 + (1.0 / 3.0) * triple_at(s, TransitAt::t0),
-          p1 - (1.0 / 3.0) * triple_at(s, TransitAt::t1), p1};
+  const Vec3 p0 = triple_at<TransitAt::p0>(s);
+  const Vec3 p1 = triple_at<TransitAt::p1>(s);
+  return {p0, p0 + (1.0 / 3.0) * triple_at<TransitAt::t0>(s),
+          p1 - (1.0 / 3.0) * triple_at<TransitAt::t1>(s), p1};
 }
 
 // A point as contract 11 asks about it and position() places it. Its
@@ -257,11 +262,11 @@ Vec3 evaluate(const Segment& s, double tau) {
       return bezier(b[0], b[1], b[2], b[3], tau / s.duration);
     }
     case Behaviour::circle: {
-      const Vec3 c = triple_at(s, CircleAt::center);
-      const Vec3 u = triple_at(s, CircleAt::u);
-      const Vec3 v = triple_at(s, CircleAt::v);
+      const Vec3 c = triple_at<CircleAt::center>(s);
+      const Vec3 u = triple_at<CircleAt::u>(s);
+      const Vec3 v = triple_at<CircleAt::v>(s);
       const Vec3 w = cross(u, v);
-      const auto n = [&](std::size_t i) { return s.numbers[i]; };
+      const auto n = [&](std::size_t i) { return s.numbers.at(i); };
       const double breathing =
           std::sin(2.0 * pi * n(CircleAt::breathe_rate) * tau +
                    n(CircleAt::breathe_phase));
@@ -275,20 +280,20 @@ Vec3 evaluate(const Segment& s, double tau) {
              bob * w;
     }
     case Behaviour::swoop:
-      return bezier(triple_at(s, SwoopAt::b0), triple_at(s, SwoopAt::b1),
-                    triple_at(s, SwoopAt::b2), triple_at(s, SwoopAt::b3),
+      return bezier(triple_at<SwoopAt::b0>(s), triple_at<SwoopAt::b1>(s),
+                    triple_at<SwoopAt::b2>(s), triple_at<SwoopAt::b3>(s),
                     tau / s.duration);
     case Behaviour::drift: {
-      const Vec3 c = triple_at(s, DriftAt::center);
-      const Vec3 a = triple_at(s, DriftAt::amplitude);
-      const Vec3 f = triple_at(s, DriftAt::frequency);
-      const Vec3 p = triple_at(s, DriftAt::phase);
+      const Vec3 c = triple_at<DriftAt::center>(s);
+      const Vec3 a = triple_at<DriftAt::amplitude>(s);
+      const Vec3 f = triple_at<DriftAt::frequency>(s);
+      const Vec3 p = triple_at<DriftAt::phase>(s);
       return c + Vec3{a.x * std::sin(2.0 * pi * f.x * tau + p.x),
                       a.y * std::sin(2.0 * pi * f.y * tau + p.y),
                       a.z * std::sin(2.0 * pi * f.z * tau + p.z)};
     }
     case Behaviour::still:
-      return triple_at(s, StillAt::at);
+      return triple_at<StillAt::at>(s);
   }
   no_case("evaluate");
 }
@@ -313,24 +318,24 @@ double speed_bound(const Segment& s) {
              s.duration;
     }
     case Behaviour::swoop: {
-      const Vec3 b0 = triple_at(s, SwoopAt::b0);
-      const Vec3 b1 = triple_at(s, SwoopAt::b1);
-      const Vec3 b2 = triple_at(s, SwoopAt::b2);
-      const Vec3 b3 = triple_at(s, SwoopAt::b3);
+      const Vec3 b0 = triple_at<SwoopAt::b0>(s);
+      const Vec3 b1 = triple_at<SwoopAt::b1>(s);
+      const Vec3 b2 = triple_at<SwoopAt::b2>(s);
+      const Vec3 b3 = triple_at<SwoopAt::b3>(s);
       return 3.0 *
              std::max({length(b1 - b0), length(b2 - b1), length(b3 - b2)}) /
              s.duration;
     }
     case Behaviour::circle: {
-      const auto n = [&](std::size_t i) { return s.numbers[i]; };
+      const auto n = [&](std::size_t i) { return s.numbers.at(i); };
       const double r0 = n(CircleAt::r0);
       return r0 * (1.0 + n(CircleAt::breathe)) * std::abs(n(CircleAt::omega)) +
              r0 * n(CircleAt::breathe) * 2.0 * pi * n(CircleAt::breathe_rate) +
              n(CircleAt::bob) * 2.0 * pi * n(CircleAt::bob_rate);
     }
     case Behaviour::drift: {
-      const Vec3 a = triple_at(s, DriftAt::amplitude);
-      const Vec3 f = triple_at(s, DriftAt::frequency);
+      const Vec3 a = triple_at<DriftAt::amplitude>(s);
+      const Vec3 f = triple_at<DriftAt::frequency>(s);
       return 2.0 * pi * length(Vec3{a.x * f.x, a.y * f.y, a.z * f.z});
     }
     case Behaviour::still:
@@ -519,16 +524,16 @@ Segment drift_about(const FlightParams& params, const Draws& d, Vec3 center) {
   Segment s;
   s.behaviour = Behaviour::drift;
   s.duration = d.between(Purpose::lasting, drift_shortest, drift_longest);
-  put_triple(s, DriftAt::center, center);
+  put_triple<DriftAt::center>(s, center);
   // At a third of the cruising speed: each axis's frequency from its
   // amplitude, f = (speed / 3) / (2 pi a sqrt 3).
   const DriftShape shape = drift_shape(d);
   const double v = static_cast<double>(params.speed) / drift_slowdown;
   for (std::size_t i = 0; i < 3; ++i) {
-    s.numbers[DriftAt::amplitude + i] = shape.amplitude[i];
-    s.numbers[DriftAt::frequency + i] =
-        v / (2.0 * pi * shape.amplitude[i] * std::sqrt(3.0));
-    s.numbers[DriftAt::phase + i] = shape.phase[i];
+    s.numbers.at(DriftAt::amplitude + i) = shape.amplitude.at(i);
+    s.numbers.at(DriftAt::frequency + i) =
+        v / (2.0 * pi * shape.amplitude.at(i) * std::sqrt(3.0));
+    s.numbers.at(DriftAt::phase + i) = shape.phase.at(i);
   }
   return s;
 }
@@ -566,11 +571,10 @@ Segment circle_about(const Context& c, const Draws& d) {
   const Vec3 v = cross(w, u);
   Segment s;
   s.behaviour = Behaviour::circle;
-  put_triple(s, CircleAt::center,
-             Vec3{static_cast<double>(t.center.x), height,
-                  static_cast<double>(t.center.z)});
-  put_triple(s, CircleAt::u, u);
-  put_triple(s, CircleAt::v, v);
+  put_triple<CircleAt::center>(s, Vec3{static_cast<double>(t.center.x), height,
+                                       static_cast<double>(t.center.z)});
+  put_triple<CircleAt::u>(s, u);
+  put_triple<CircleAt::v>(s, v);
   s.numbers[CircleAt::r0] = r0;
   s.numbers[CircleAt::theta0] = d.between(Purpose::turn, 0.0, 2.0 * pi);
   const double omega = static_cast<double>(params.speed) / r0;
@@ -613,10 +617,10 @@ Segment swoop_from(const Context& c, const Draws& d, Vec3 from) {
   const Vec3 b3 = start + reach * forward + climb * world_up;
   Segment s;
   s.behaviour = Behaviour::swoop;
-  put_triple(s, SwoopAt::b0, b0);
-  put_triple(s, SwoopAt::b1, b1);
-  put_triple(s, SwoopAt::b2, b2);
-  put_triple(s, SwoopAt::b3, b3);
+  put_triple<SwoopAt::b0>(s, b0);
+  put_triple<SwoopAt::b1>(s, b1);
+  put_triple<SwoopAt::b2>(s, b2);
+  put_triple<SwoopAt::b3>(s, b3);
   const double chord = length(b1 - b0) + length(b2 - b1) + length(b3 - b2);
   s.duration = std::clamp(
       chord / (swoop_speed_share * static_cast<double>(c.params.speed)),
@@ -655,10 +659,10 @@ Segment hermite(const FlightParams& params, End from, End to) {
   s.duration =
       std::max(transit_shortest,
                transit_slack * chord / static_cast<double>(params.speed));
-  put_triple(s, TransitAt::p0, from.at);
-  put_triple(s, TransitAt::p1, to.at);
-  put_triple(s, TransitAt::t0, s.duration * from.velocity);
-  put_triple(s, TransitAt::t1, s.duration * to.velocity);
+  put_triple<TransitAt::p0>(s, from.at);
+  put_triple<TransitAt::p1>(s, to.at);
+  put_triple<TransitAt::t0>(s, s.duration * from.velocity);
+  put_triple<TransitAt::t1>(s, s.duration * to.velocity);
   return s;
 }
 
@@ -746,15 +750,15 @@ Episodes draw_episodes(const Context& c, Vec3 start) {
   int k = 1;
   while (k < episodes) {
     const auto at = static_cast<std::size_t>(k);
-    if (build(c, e, k, round[at])) {
+    if (build(c, e, k, round.at(at))) {
       ++k;  // on to the next episode, from its first round
       if (k < episodes) {
-        round[at + 1] = 0;
+        round.at(at + 1) = 0;
       }
       continue;
     }
     const bool no_earlier = k == 1;
-    const bool earlier_spent = !no_earlier && round[at - 1] + 1 >= rounds;
+    const bool earlier_spent = !no_earlier && round.at(at - 1) + 1 >= rounds;
     if (no_earlier || earlier_spent || backtracks == most_backtracks) {
       throw MotionError(
           "flight episode " + std::to_string(k) +
@@ -764,7 +768,7 @@ Episodes draw_episodes(const Context& c, Vec3 start) {
           "it, or a volume "
           "too tight");
     }
-    ++round[at - 1];  // back to the episode before, from its next round
+    ++round.at(at - 1);  // back to the episode before, from its next round
     ++backtracks;
     --k;
   }
@@ -933,7 +937,7 @@ Segment still_at(Vec3 at, double duration) noexcept {
   Segment s;
   s.behaviour = Behaviour::still;
   s.duration = duration;
-  put_triple(s, StillAt::at, at);
+  put_triple<StillAt::at>(s, at);
   return s;
 }
 
@@ -1051,20 +1055,20 @@ Extent reach_of(const Extent& volume, const std::vector<Segment>& opening) {
   std::array<double, 3> lo{};
   std::array<double, 3> hi{};
   for (std::size_t axis = 0; axis < 3; ++axis) {
-    lo[axis] = contracts::component(volume.min, static_cast<int>(axis));
-    hi[axis] = contracts::component(volume.max, static_cast<int>(axis));
+    lo.at(axis) = contracts::component(volume.min, static_cast<int>(axis));
+    hi.at(axis) = contracts::component(volume.max, static_cast<int>(axis));
   }
   const auto hold = [&](Vec3 p) {
     const std::array<double, 3> q = {p.x, p.y, p.z};
     for (std::size_t axis = 0; axis < 3; ++axis) {
-      lo[axis] = std::min(lo[axis], q[axis]);
-      hi[axis] = std::max(hi[axis], q[axis]);
+      lo.at(axis) = std::min(lo.at(axis), q.at(axis));
+      hi.at(axis) = std::max(hi.at(axis), q.at(axis));
     }
   };
   for (const Segment& s : opening) {
     switch (s.behaviour) {
       case Behaviour::still:
-        hold(triple_at(s, StillAt::at));
+        hold(triple_at<StillAt::at>(s));
         break;
       case Behaviour::transit:
         for (const Vec3& p : controls_of_transit(s)) {
@@ -1080,7 +1084,8 @@ Extent reach_of(const Extent& volume, const std::vector<Segment>& opening) {
   }
   constexpr double float_max = std::numeric_limits<float>::max();
   for (std::size_t axis = 0; axis < 3; ++axis) {
-    if (!(std::abs(lo[axis]) <= float_max && std::abs(hi[axis]) <= float_max)) {
+    if (!(std::abs(lo.at(axis)) <= float_max &&
+          std::abs(hi.at(axis)) <= float_max)) {
       throw MotionError("the opening reaches past float's range");
     }
   }

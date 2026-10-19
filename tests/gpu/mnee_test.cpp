@@ -194,7 +194,7 @@ TEST_CASE(
       "mnee_solve", queries.size(), {Binding::of(queries)});
   REQUIRE(chains.size() == receivers.size());
   for (std::size_t i = 0; i < receivers.size(); ++i) {
-    const Vec3 x0 = receivers[i];
+    const Vec3 x0 = receivers.at(i);
     const std::optional<Traced> path = refraction_path(x0, light_point);
     REQUIRE(path);
     INFO("receiver " << i << ": (" << x0.x << ", " << x0.z << ")");
@@ -285,8 +285,8 @@ TEST_CASE(
                              {Binding::of(queries), Binding::of(records)});
   REQUIRE(chains.size() == cases.size());
   for (std::size_t i = 0; i < cases.size(); ++i) {
-    INFO(cases[i].name);
-    CHECK(chains[i] == cases[i].expected);
+    INFO(cases.at(i).name);
+    CHECK(chains[i] == cases.at(i).expected);
   }
 }
 
