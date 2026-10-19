@@ -102,8 +102,11 @@ add_test(NAME make_denoiser_dataset
 # The headless renderer as its user runs it, an integration test: a good
 # run's frames and what it prints, and its failures' status and messages.
 # On the GPU, under Metal's validation as the GPU tests are (tests/gpu).
-add_test(NAME headless
-    COMMAND sh "${PROJECT_SOURCE_DIR}/tests/test_headless.sh" $<TARGET_FILE:serenity-headless>
-            "${CMAKE_CURRENT_BINARY_DIR}/headless_test")
-set_tests_properties(headless PROPERTIES
-    ENVIRONMENT "MTL_DEBUG_LAYER=1;MTL_SHADER_VALIDATION=1;MTL_DEBUG_LAYER_ERROR_MODE=assert")
+# On the platforms whose backend builds it (CMakeLists.txt).
+if(TARGET serenity-headless)
+    add_test(NAME headless
+        COMMAND sh "${PROJECT_SOURCE_DIR}/tests/test_headless.sh" $<TARGET_FILE:serenity-headless>
+                "${CMAKE_CURRENT_BINARY_DIR}/headless_test")
+    set_tests_properties(headless PROPERTIES
+        ENVIRONMENT "MTL_DEBUG_LAYER=1;MTL_SHADER_VALIDATION=1;MTL_DEBUG_LAYER_ERROR_MODE=assert")
+endif()

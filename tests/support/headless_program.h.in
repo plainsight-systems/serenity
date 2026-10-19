@@ -1,0 +1,14 @@
+#pragma once
+
+// Where the headless renderer is, for the GPU tests that run it as its
+// user runs it: written by tests/gpu/CMakeLists.txt (file(GENERATE)) from
+// the build's own target, as programs.h is, on the platforms whose backend
+// builds it.
+
+#include <filesystem>
+
+namespace serenity::tests {
+
+inline const std::filesystem::path headless_program{"$<TARGET_FILE:serenity-headless>"};
+
+}  // namespace serenity::tests

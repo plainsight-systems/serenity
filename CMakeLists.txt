@@ -1,24 +1,47 @@
 cmake_minimum_required(VERSION 3.25)
-# C and Objective-C as well as C++: SDL is built with them, so they are
-# checked against the pin with the C++ compiler, below. And Objective-C++,
-# for the one file that names Core Animation's Objective-C types, the
-# display link (src/metal/device/display_link.mm), which metal-cpp does
-# not bind.
-project(serenity LANGUAGES C CXX OBJC OBJCXX)
 
 # ---------------------------------------------------------------------------
-# One target for now: Apple silicon, through Metal. The CUDA backend for the
-# RTX 3090 Ti comes next, behind the same core, as a backend of its own
-# (docs/research/2026-10-19-cuda-backend.md).
+# Two platforms, each with its backend (docs/research/2026-10-19-cuda-backend.md):
+# macOS, Apple silicon, through Metal; Linux, the RTX 3090 Ti, through CUDA
+# and OptiX, whose backend arrives in its Phase 2: until then Linux builds
+# the core, the measuring program and the tests that need no GPU. The
+# presets are the same on both (CMakePresets.json), so `cmake --preset
+# native-release` is one command everywhere; what only the Mac needs is
+# set here, before the languages are enabled.
+#
+# On the Mac, C and Objective-C as well as C++: SDL is built with them, so
+# they are checked against the pin with the C++ compiler, below. And
+# Objective-C++, for the one file that names Core Animation's Objective-C
+# types, the display link (src/metal/device/display_link.mm), which
+# metal-cpp does not bind. Its SDK and deployment target, and the
+# Objective-C compilers, Apple's as the presets' C and C++ are.
 # ---------------------------------------------------------------------------
-if(NOT APPLE)
-    message(FATAL_ERROR "serenity: only the Metal backend exists yet, which needs macOS.")
+if(CMAKE_HOST_APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "26.0" CACHE STRING "")
+    set(CMAKE_OSX_SYSROOT "macosx" CACHE STRING "")
+    set(CMAKE_OBJC_COMPILER "/usr/bin/clang" CACHE FILEPATH "")
+    set(CMAKE_OBJCXX_COMPILER "/usr/bin/clang++" CACHE FILEPATH "")
 endif()
-foreach(language CXX C OBJC OBJCXX)
-    if(NOT CMAKE_${language}_COMPILER_ID STREQUAL "AppleClang")
+project(serenity LANGUAGES C CXX)
+if(APPLE)
+    # The Objective-C sources take the C and C++ flags the preset gives
+    # (the sanitizer's, in native-sanitize).
+    set(CMAKE_OBJC_FLAGS "${CMAKE_C_FLAGS}" CACHE STRING "")
+    set(CMAKE_OBJCXX_FLAGS "${CMAKE_CXX_FLAGS}" CACHE STRING "")
+    enable_language(OBJC OBJCXX)
+    set(serenity_languages CXX C OBJC OBJCXX)
+    set(serenity_compiler_id "AppleClang")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(serenity_languages CXX C)
+    set(serenity_compiler_id "Clang")
+else()
+    message(FATAL_ERROR "serenity: builds on macOS (Metal) and Linux (CUDA, from its Phase 2), not ${CMAKE_SYSTEM_NAME}.")
+endif()
+foreach(language ${serenity_languages})
+    if(NOT CMAKE_${language}_COMPILER_ID STREQUAL serenity_compiler_id)
         message(FATAL_ERROR
             "serenity: the ${language} compiler is ${CMAKE_${language}_COMPILER_ID} "
-            "${CMAKE_${language}_COMPILER}, not Apple's.\n"
+            "${CMAKE_${language}_COMPILER}, not ${serenity_compiler_id}.\n"
             "Configure through a preset (cmake --preset native-debug), which selects /usr/bin/clang and clang++.")
     endif()
 endforeach()
@@ -33,14 +56,13 @@ endforeach()
 # its input graph and the demo's to hold them alike
 # (scripts/make_denoiser_dataset.py, input_graph_mismatch).
 find_package(Python3 3.11 REQUIRED COMPONENTS Interpreter)
+set(toolchain_tools --cxx "${CMAKE_CXX_COMPILER}" --cc "${CMAKE_C_COMPILER}" --cmake "${CMAKE_COMMAND}")
+if(APPLE)
+    list(APPEND toolchain_tools --objc "${CMAKE_OBJC_COMPILER}" --objcxx "${CMAKE_OBJCXX_COMPILER}"
+         --sdk "${CMAKE_OSX_SYSROOT}")
+endif()
 execute_process(
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_toolchain.py"
-            --cxx "${CMAKE_CXX_COMPILER}"
-            --cc "${CMAKE_C_COMPILER}"
-            --objc "${CMAKE_OBJC_COMPILER}"
-            --objcxx "${CMAKE_OBJCXX_COMPILER}"
-            --sdk "${CMAKE_OSX_SYSROOT}"
-            --cmake "${CMAKE_COMMAND}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_toolchain.py" ${toolchain_tools}
     RESULT_VARIABLE toolchain_status)
 if(NOT toolchain_status EQUAL 0)
     message(FATAL_ERROR "serenity: toolchain does not match cmake/toolchain.json (above).")
@@ -49,9 +71,11 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_OBJCXX_STANDARD 20)
-set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
-set(CMAKE_OBJCXX_EXTENSIONS OFF)
+if(APPLE)
+    set(CMAKE_OBJCXX_STANDARD 20)
+    set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+    set(CMAKE_OBJCXX_EXTENSIONS OFF)
+endif()
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "" FORCE)
@@ -59,7 +83,9 @@ endif()
 
 set(SERENITY_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 list(APPEND CMAKE_MODULE_PATH "${SERENITY_CMAKE_DIR}")
-include(MetalLibrary)
+if(APPLE)
+    include(MetalLibrary)
+endif()
 include(FetchContent)
 
 # Warnings fail the build in this project's code. Third-party headers are
@@ -73,6 +99,8 @@ set(SERENITY_WARNINGS -Wall -Wextra -Wpedantic -Werror)
 set(SERENITY_SOURCE_WARNINGS ${SERENITY_WARNINGS}
     -Wconversion -Wsign-conversion -Wshadow -Wold-style-cast)
 
+# The Mac's: metal-cpp, for the Metal backend, and SDL, for its window.
+if(APPLE)
 # ---------------------------------------------------------------------------
 # metal-cpp: Apple's C++ interface to Metal, header-only. Pinned by commit to
 # the release for the pinned SDK (macOS 26, cmake/toolchain.json); a floating
@@ -109,6 +137,7 @@ FetchContent_Declare(
     SYSTEM  # its headers' warnings are its own, as the other dependencies' are
 )
 FetchContent_MakeAvailable(SDL3)
+endif()
 
 # toml++: reading frame graph and scene files (src/core/frame/graph_file.cpp and
 # src/core/scene/scene.cpp only). v3.4.0.
@@ -176,6 +205,7 @@ target_include_directories(serenity_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src
 target_link_libraries(serenity_core PRIVATE tomlplusplus::tomlplusplus stb_image_write)
 target_compile_options(serenity_core PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
+if(APPLE)
 # ---------------------------------------------------------------------------
 # Metal backend: the only code that uses Metal's host API. Its shaders are
 # compiled into it (cmake/MetalLibrary.cmake), as serenity::metallib::shaders.
@@ -249,21 +279,27 @@ serenity_add_metallib(
 # its own, so the tests can reach it without a window or a GPU; the window's
 # clock, which needs neither, is in its library too.
 # ---------------------------------------------------------------------------
+endif()
+
 add_library(serenity_app_options STATIC src/app/options.cpp src/app/clock.cpp)
 target_link_libraries(serenity_app_options PUBLIC serenity_core)
 target_compile_options(serenity_app_options PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
-add_executable(serenity src/app/main.cpp src/app/window.cpp src/app/window_frames.cpp)
-target_link_libraries(serenity PRIVATE serenity_app_options serenity_metal SDL3::SDL3-static)
-target_compile_options(serenity PRIVATE ${SERENITY_SOURCE_WARNINGS})
+if(APPLE)
+    add_executable(serenity src/app/main.cpp src/app/window.cpp src/app/window_frames.cpp)
+    target_link_libraries(serenity PRIVATE serenity_app_options serenity_metal SDL3::SDL3-static)
+    target_compile_options(serenity PRIVATE ${SERENITY_SOURCE_WARNINGS})
+endif()
 
 add_library(serenity_headless_options STATIC src/headless/options.cpp)
 target_link_libraries(serenity_headless_options PUBLIC serenity_core)
 target_compile_options(serenity_headless_options PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
-add_executable(serenity-headless src/headless/main.cpp)
-target_link_libraries(serenity-headless PRIVATE serenity_headless_options serenity_metal)
-target_compile_options(serenity-headless PRIVATE ${SERENITY_SOURCE_WARNINGS})
+if(APPLE)
+    add_executable(serenity-headless src/headless/main.cpp)
+    target_link_libraries(serenity-headless PRIVATE serenity_headless_options serenity_metal)
+    target_compile_options(serenity-headless PRIVATE ${SERENITY_SOURCE_WARNINGS})
+endif()
 
 # The measuring program (src/measure/options.h): the core alone, no Metal,
 # so a reference is made and judged on any machine the core builds on. Its
@@ -279,4 +315,6 @@ target_compile_options(serenity-measure PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
 enable_testing()
 add_subdirectory(tests)
-add_subdirectory(tests/gpu)
+if(APPLE)
+    add_subdirectory(tests/gpu)
+endif()

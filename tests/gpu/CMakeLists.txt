@@ -14,6 +14,11 @@
 # their own constants, nothing allocated recording a frame, the GPU waited
 # for before what it uses is freed, the features beside the light changing
 # it in no bit, and the headless program's PFMs being the accumulated image.
+# Where the headless renderer is (support/headless_program.h.in), beside
+# the tests' other generated headers (tests/CMakeLists.txt).
+file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/tests/generated/headless_program.h"
+     INPUT "${PROJECT_SOURCE_DIR}/tests/support/headless_program.h.in")
+
 add_executable(serenity_gpu_tests
     device_test.cpp
     library_test.cpp

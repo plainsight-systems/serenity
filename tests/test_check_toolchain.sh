@@ -15,12 +15,24 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 # Baseline: the real pins match this machine, or the probes prove nothing.
 "${CHECK}" >/dev/null 2>&1 || fail "the real pins do not match this machine: run ${CHECK}"
 
-for key in xcode xcode_build macos_sdk metal cxx cc objc objcxx cmake; do
+# This machine's platform's set of pins (tools/check_toolchain.py), and the
+# tools its build uses.
+case "$(uname -s)" in
+    Darwin) PLATFORM=macos; BUILD_KEYS="xcode xcode_build macos_sdk metal cxx cc objc objcxx cmake"
+            TOOLS="cxx cc objc objcxx cmake" ;;
+    Linux) PLATFORM=linux; BUILD_KEYS="cxx cc cmake"; TOOLS="cxx cc cmake" ;;
+    *) fail "no pins for $(uname -s)" ;;
+esac
+export PLATFORM
+
+for key in ${BUILD_KEYS}; do
     python3 - "${key}" "${PINS}" <<'PY'
 import json, sys
 key, out = sys.argv[1], sys.argv[2]
+import os
 pins = json.load(open("cmake/toolchain.json"))
-pins[key] = pins[key] + " (not this one)"
+mine = pins[os.environ["PLATFORM"]]
+mine[key] = mine[key] + " (not this one)"
 json.dump(pins, open(out, "w"))
 PY
     if "${CHECK}" --pins "${PINS}" >/dev/null 2>"${ERR}"; then
@@ -37,8 +49,10 @@ for key in clang_format clang_tidy clangd cxx; do
     python3 - "${key}" "${PINS}" <<'PY'
 import json, sys
 key, out = sys.argv[1], sys.argv[2]
+import os
 pins = json.load(open("cmake/toolchain.json"))
-pins[key] = pins[key] + " (not this one)"
+mine = pins[os.environ["PLATFORM"]]
+mine[key] = mine[key] + " (not this one)"
 json.dump(pins, open(out, "w"))
 PY
     case "${key}" in
@@ -76,24 +90,34 @@ done
 # check reads the tools CMake resolved, not fixed paths.
 printf '#!/bin/sh\necho "Apple clang version 99.0.0 (not the pinned one)"\n' > "${FAKE}"
 chmod +x "${FAKE}"
-for tool in cxx cc objc objcxx cmake; do
+for tool in ${TOOLS}; do
     if "${CHECK}" "--${tool}" "${FAKE}" >/dev/null 2>"${ERR}"; then
         fail "${tool}: an unpinned one passed"
     fi
     grep -q "^  ${tool}:" "${ERR}" || fail "${tool}: the failure did not name it: $(cat "${ERR}")"
 done
 
-# An SDK root other than the pinned SDK's fails, and so does none at all (a
-# configure without the presets, which name it).
-if "${CHECK}" --sdk /nonexistent/MacOSX.sdk >/dev/null 2>"${ERR}"; then
-    fail "macos_sdk: an SDK root that is not the pinned SDK passed"
+# On macOS, an SDK root other than the pinned SDK's fails, and so does none
+# at all (a configure without the presets, which name it).
+if [ "${PLATFORM}" = macos ]; then
+    if "${CHECK}" --sdk /nonexistent/MacOSX.sdk >/dev/null 2>"${ERR}"; then
+        fail "macos_sdk: an SDK root that is not the pinned SDK passed"
+    fi
+    grep -q "^  macos_sdk:" "${ERR}" || fail "macos_sdk: the failure did not name it: $(cat "${ERR}")"
+    if "${CHECK}" --sdk "" >/dev/null 2>&1; then
+        fail "macos_sdk: no SDK root passed"
+    fi
+    "${CHECK}" --sdk "$(xcrun --sdk macosx --show-sdk-path)" >/dev/null 2>&1 ||
+        fail "macos_sdk: the pinned SDK, named by its root, was refused"
 fi
-grep -q "^  macos_sdk:" "${ERR}" || fail "macos_sdk: the failure did not name it: $(cat "${ERR}")"
-if "${CHECK}" --sdk "" >/dev/null 2>&1; then
-    fail "macos_sdk: no SDK root passed"
+
+# A pins file with no set for this platform fails by name.
+printf '{"elsewhere": {}}' > "${PINS}"
+if "${CHECK}" --pins "${PINS}" >/dev/null 2>"${ERR}"; then
+    fail "pins: a pins file without this platform's set passed"
 fi
-"${CHECK}" --sdk "$(xcrun --sdk macosx --show-sdk-path)" >/dev/null 2>&1 ||
-    fail "macos_sdk: the pinned SDK, named by its root, was refused"
+grep -q "^TOOLCHAIN PINS UNREADABLE: ${PINS}: no set for ${PLATFORM}" "${ERR}" ||
+    fail "pins: a pins file without this platform's set was not named: $(cat "${ERR}")"
 
 # A pins file that is missing or not JSON fails by name, not by a traceback.
 if "${CHECK}" --pins /nonexistent/toolchain.json >/dev/null 2>"${ERR}"; then

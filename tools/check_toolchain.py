@@ -12,24 +12,28 @@ binding: CMake runs it at configure time and stops on a mismatch. Each
 mismatch is named with both versions, so the failure says what to install or
 which pin to move. Moving a pin is a commit of its own (cmake/toolchain.json).
 
-What is checked is what the build uses, as CMake resolved it: the C++, C,
-Objective-C and Objective-C++ compilers (SDL is built with C and
+The pins are one set per platform, and the machine's platform picks its
+set: "macos" on macOS, "linux" on Linux; any other is refused by name.
+What is checked is what the build uses, as CMake resolved it. On macOS: the
+C++, C, Objective-C and Objective-C++ compilers (SDL is built with C and
 Objective-C, the display link with Objective-C++), the SDK the build
-compiles against (its root, CMAKE_OSX_SYSROOT), and CMake itself, whose
-version decides the compile lines. Run by hand, each defaults to what the
-presets select: /usr/bin/clang++ (C++ and Objective-C++), /usr/bin/clang
-(C and Objective-C), the macosx SDK, and the
-cmake on PATH. The one on PATH may be another clang entirely (Homebrew's, on
-the development machine). Python, which runs only this check and the
-review scripts and builds nothing, is found by CMake (find_package) and
-given a floor there, not pinned.
+compiles against (its root, CMAKE_OSX_SYSROOT), Xcode and its Metal
+compiler, and CMake itself, whose version decides the compile lines. On
+Linux: the C++ and C compilers and CMake. Run by hand, each defaults to
+what the presets select: /usr/bin/clang++ (C++ and Objective-C++),
+/usr/bin/clang (C and Objective-C), the macosx SDK, and the cmake on PATH.
+The one on PATH may be another clang entirely (Homebrew's, on the
+development machine). Python, which runs only this check and the review
+scripts and builds nothing, is found by CMake (find_package) and given a
+floor there, not pinned.
 
 --lint checks the other pins instead, and only them: LLVM's clang-format,
 clang-tidy and clangd, in --llvm-bin (default Homebrew's,
-/opt/homebrew/opt/llvm/bin). The build runs none of them, so configuring
-does not ask for them and a machine without them still builds; make
-format, format-check and tidy do, since the formatter's output depends on
-its version.
+/opt/homebrew/opt/llvm/bin, on macOS; LLVM's own release unpacked to
+~/.local/opt/llvm-21.1.8/bin on Linux). The build runs none of them, so
+configuring does not ask for them and a machine without them still builds;
+make format, format-check and tidy do, since the formatter's output depends
+on its version.
 
 Exit status: 0 when every version matches, 1 on any mismatch, when a tool
 cannot be run, or when the pins file cannot be read as JSON (named, with
@@ -43,8 +47,21 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# xcodebuild prints two lines; each pin takes one.
-LINE = {"xcode_build": 1}
+# The pins' set for this machine's platform, or None for one with no set.
+PLATFORM = {"darwin": "macos", "linux": "linux"}.get(sys.platform)
+
+# Which line of a tool's output its pin is: xcodebuild prints two lines,
+# each pin takes one; LLVM's own release prints its version on clang-tidy's
+# second line, Homebrew's on its first.
+LINE = {"macos": {"xcode_build": 1}, "linux": {"clang_tidy": 1}}
+
+# The tools each platform's build uses (commands(), below).
+BUILD_KEYS = {
+    "macos": ["xcode", "xcode_build", "macos_sdk", "metal", "cxx", "cc", "objc", "objcxx", "cmake"],
+    "linux": ["cxx", "cc", "cmake"],
+}
+LLVM_BIN = {"macos": "/opt/homebrew/opt/llvm/bin",
+            "linux": str(pathlib.Path.home() / ".local/opt/llvm-21.1.8/bin")}
 
 
 def lint_commands(llvm_bin):
@@ -57,10 +74,10 @@ def lint_commands(llvm_bin):
     }
 
 
-def commands(tools):
-    """What each pin is compared with: the first line (or LINE's) of each
-    command's output, for the tools given."""
-    return {
+def commands(tools, platform):
+    """What each of `platform`'s pins is compared with: the first line (or
+    LINE's) of each command's output, for the tools given."""
+    every = {
         "xcode": ["xcodebuild", "-version"],
         "xcode_build": ["xcodebuild", "-version"],
         "macos_sdk": ["xcrun", "--sdk", tools["sdk"], "--show-sdk-version"],
@@ -71,6 +88,7 @@ def commands(tools):
         "objcxx": [tools["objcxx"], "--version"],
         "cmake": [tools["cmake"], "--version"],
     }
+    return {key: every[key] for key in BUILD_KEYS[platform]}
 
 
 def installed(command, index):
@@ -85,6 +103,10 @@ def installed(command, index):
 
 
 def main(argv):
+    if PLATFORM is None:
+        print(f"TOOLCHAIN: no pins for this platform, {sys.platform}: cmake/toolchain.json has macos and linux",
+              file=sys.stderr)
+        return 1
     pins_path = ROOT / "cmake" / "toolchain.json"
     tools = {
         "cxx": "/usr/bin/clang++",
@@ -95,7 +117,7 @@ def main(argv):
         "cmake": "cmake",
     }
     lint = False
-    llvm_bin = "/opt/homebrew/opt/llvm/bin"
+    llvm_bin = LLVM_BIN[PLATFORM]
     args = argv[1:]
     while args:
         if args[0] == "--lint":
@@ -119,17 +141,20 @@ def main(argv):
     # A pins file that cannot be read, or is not JSON, is a named failure
     # like any mismatch, not a traceback.
     try:
-        pins = json.loads(pins_path.read_text())
+        pins = json.loads(pins_path.read_text())[PLATFORM]
     except (OSError, json.JSONDecodeError) as error:
         print(f"TOOLCHAIN PINS UNREADABLE: {pins_path}: {error}", file=sys.stderr)
         return 1
+    except KeyError:
+        print(f"TOOLCHAIN PINS UNREADABLE: {pins_path}: no set for {PLATFORM}", file=sys.stderr)
+        return 1
     failures = []
-    checked = lint_commands(llvm_bin) if lint else commands(tools)
+    checked = lint_commands(llvm_bin) if lint else commands(tools, PLATFORM)
     for key, command in checked.items():
         if key not in pins:
             failures.append(f"{key}: no pin in {pins_path}")
             continue
-        found, error = installed(command, LINE.get(key, 0))
+        found, error = installed(command, LINE[PLATFORM].get(key, 0))
         if error:
             failures.append(f"{key}: {error}")
         elif found != pins[key]:

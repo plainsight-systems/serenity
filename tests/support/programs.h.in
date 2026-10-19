@@ -10,6 +10,5 @@
 namespace serenity::tests {
 
 inline const std::filesystem::path measure_program{"$<TARGET_FILE:serenity-measure>"};
-inline const std::filesystem::path headless_program{"$<TARGET_FILE:serenity-headless>"};
 
 }  // namespace serenity::tests

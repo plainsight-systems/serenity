@@ -29,7 +29,7 @@ machine. The window comes after, as its own step.
 The core, the headless renderer's and the measuring program's sources
 already compile there under both compilers with the project's warnings: no
 error but the fetched headers' absence, and one `-Wshadow` from g++
-(`src/headless/options.cpp:127`).
+(`src/headless/options.cpp:127`), not a warning under the pinned clang.
 
 ## Facts the design rests on
 
@@ -247,6 +247,20 @@ backend.
 1. **The core on Linux.** CMake's per-platform selection, the presets,
    the toolchain's Linux section, the fetched dependencies, the shadow
    warning; the core's tests green there, `make check`'s rules extended.
+   **Done 2026-10-19:** the Mac-only settings (SDK, deployment target,
+   the Objective-C compilers and flags) moved from the presets into
+   `CMakeLists.txt`, so one preset name configures on both machines;
+   Linux builds the core, the options libraries, the measuring program
+   and the tests that need no GPU, and refuses any platform but the two.
+   `cmake/toolchain.json` one set of pins per platform, the checker and
+   its proof by platform; LLVM 21.1.8's own release on the RTX 3090 Ti's
+   machine (its SHA-256 GitHub's digest). On the Mac every compile line of
+   the three presets the same as before (350 each), so its output too. On
+   the RTX 3090 Ti: the three presets at 0 warnings under clang 18, ctest's
+   six tests green under each (UBSan's included), `make format-check` and
+   `make tidy` clean. g++'s `-Wshadow` was not one under the pinned clang.
+   The review script's test needs the codex CLI, which that machine lacks;
+   it now fails by name for it rather than calling the guard broken.
 2. **The device and the headless seam.** Context, stream, memory,
    readback, the offline target; the headless program split, Metal byte
    identical; the test pattern rendered on the 3090 to a file.

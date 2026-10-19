@@ -48,8 +48,20 @@ This repo is C++-dominant and performance-sensitive.
 - A frame's path, acceleration-structure builds, memory footprint and GPU
   dispatch are performance-sensitive by default.
 - GPU behavior is environment-sensitive. Verification names the machine it
-  ran on (the device test prints it); a green build is not proof. There is
-  one target, the development machine (MEMORY.md).
+  ran on (the device test prints it); a green build is not proof. Two
+  machines: the development machine, an M3 Max (Metal), and the RTX 3090
+  Ti's (CUDA and OptiX, from the backend's Phase 2; MEMORY.md).
+- **The RTX 3090 Ti's machine** (`ssh ai`, Ubuntu 24.04;
+  `docs/research/2026-10-19-cuda-backend.md`). The same presets and make
+  targets as the Mac's: `cmake/toolchain.json`'s "linux" set pins its
+  compilers, Ubuntu's clang 18 and CMake 3.28, and LLVM's own release of
+  21.1.8 for the lint, unpacked (no root needed) to
+  `~/.local/opt/llvm-21.1.8`, `make`'s LLVM_BIN there by default. Commits
+  reach it by git bundle (as for training, `/data/serenity/serenity`'s
+  remote), the work branch as a worktree, `/data/serenity/cuda`. Until its
+  backend arrives it builds the core, the measuring program and the tests
+  that need no GPU. `make check` there needs the codex CLI for the review
+  script's test, which fails by name without it.
 - **Python is outside the C++ gates.** `scripts/` and `training/` are
   reviewed for correctness, not against the C++ corpora; `training/` keeps
   its own pinned environment (`training/README.md`), and nothing the
@@ -71,7 +83,8 @@ This repo is C++-dominant and performance-sensitive.
 ## Formatting and static checks
 
 Decided by the user 2026-10-19. The tools are LLVM 21.1.8's (Homebrew's,
-`brew install llvm`), pinned in `cmake/toolchain.json` ("$lint") since the
+`brew install llvm`, on the Mac; LLVM's own release on the RTX 3090 Ti's
+machine, above), pinned in `cmake/toolchain.json` ("$lint") since the
 formatter's output depends on its version; the build needs none of them,
 and only the targets below check the pin (`tools/check_toolchain.py
 --lint`).

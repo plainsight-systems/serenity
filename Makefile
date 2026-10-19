@@ -199,13 +199,19 @@ toolchain:
 
 ## The formatter and the static checks are LLVM's, pinned
 ## (cmake/toolchain.json, "$lint": the formatter's output depends on its
-## version), from LLVM_BIN, Homebrew's by default (brew install llvm). The
-## build needs none of them; these targets check the pin first.
+## version), from LLVM_BIN: Homebrew's by default on macOS (brew install
+## llvm), LLVM's own release unpacked to ~/.local/opt/llvm-21.1.8 on Linux
+## (docs/process/workflow.md). The build needs none of them; these targets
+## check the pin first.
+ifeq ($(shell uname -s),Darwin)
 LLVM_BIN ?= /opt/homebrew/opt/llvm/bin
+else
+LLVM_BIN ?= $(HOME)/.local/opt/llvm-21.1.8/bin
+endif
 LINT_TOOLS = ./tools/check_toolchain.py --lint --llvm-bin $(LLVM_BIN)
 # Every C++, Objective-C++ and Metal source and header, NUL-separated.
 FORMATTED = find src tests \( -name '*.h' -o -name '*.cpp' -o -name '*.mm' -o -name '*.metal' \) -type f -print0
-JOBS ?= $(shell sysctl -n hw.ncpu)
+JOBS ?= $(shell getconf _NPROCESSORS_ONLN)
 
 ## Every source formatted in place, Google style (.clang-format). Twice:
 ## clang-format can need a second pass to settle a trailing comment it
