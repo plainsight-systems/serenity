@@ -542,9 +542,8 @@ void Renderer::make_restir_pt(const Device& device,
   // traced lattice, so at sigma over its step, sigma pixels along each
   // axis (renderer.h; the core has refused a sigma the lattice cannot
   // take, frame::invalid).
-  const double sigma = feeds_network_ ? static_cast<double>(settings.sigma) /
-                                            contracts::checkerboard_lattice_step
-                                      : static_cast<double>(settings.sigma);
+  const double sigma =
+      sampling::reuse_texture_sigma(settings.sigma, feeds_network_);
   const std::vector<std::uint16_t> textures =
       spatial ? sampling::reuse_textures(sigma, pairing_seed)
               : std::vector<std::uint16_t>(1, 0u);

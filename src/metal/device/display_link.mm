@@ -10,8 +10,9 @@
 #import <QuartzCore/CAMetalDisplayLink.h>
 #import <QuartzCore/CAMetalLayer.h>
 
-#include <cmath>
 #include <memory>
+#include <optional>
+#include <string>
 
 #include "metal/device/error.h"
 #include "metal/device/submission.h"
@@ -25,13 +26,11 @@ static_assert(frames_in_flight == 2,
               "the display link's latency is the frames in flight, which it takes as 1 or 2");
 constexpr float kFrameLatency = 2.0F;  // Google's Objective-C name for a constant
 
+// The core's rule for a rate (core/presentation/frame_source.h), thrown as
+// this backend's error.
 void check(presentation::FrameRate rate) {
-  const bool positive =
-      std::isfinite(rate.minimum) && std::isfinite(rate.maximum) && rate.minimum > 0.0F;
-  if (!positive || !(rate.minimum <= rate.preferred && rate.preferred <= rate.maximum)) {
-    throw MetalError(
-        "DisplayLink: a frame rate range must be positive and in order (minimum <= preferred <= "
-        "maximum)");
+  if (const std::optional<std::string> reason = presentation::frame_rate_refusal(rate)) {
+    throw MetalError("DisplayLink: " + *reason);
   }
 }
 

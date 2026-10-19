@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "core/contracts/bsdf.h"
+#include "core/contracts/checkerboard.h"
 #include "core/contracts/path_reservoir.h"
 #include "core/contracts/path_reuse_settings.h"
 #include "core/frame/graph_file.h"
@@ -228,4 +229,13 @@ TEST_CASE(
   CHECK(a == serenity::sampling::reuse_textures(16.0, 3u));
   CHECK(a != serenity::sampling::reuse_textures(16.0, 4u));
   CHECK(a.size() == serenity::contracts::pairing_entries);
+}
+
+TEST_CASE(
+    "the reuse textures' sigma is the graph's, or over the lattice's step "
+    "with the checkerboard") {
+  CHECK(serenity::sampling::reuse_texture_sigma(16.0F, false) == 16.0);
+  CHECK(serenity::sampling::reuse_texture_sigma(16.0F, true) ==
+        16.0 / static_cast<double>(
+                   serenity::contracts::checkerboard_lattice_step));
 }

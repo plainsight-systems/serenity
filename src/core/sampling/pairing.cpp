@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "core/contracts/checkerboard.h"
 #include "core/contracts/path_reuse_settings.h"
 
 namespace serenity::sampling {
@@ -179,6 +180,12 @@ std::vector<std::uint16_t> reuse_textures(double sigma, std::uint64_t seed) {
     all.insert(all.end(), texture.begin(), texture.end());
   }
   return all;
+}
+
+double reuse_texture_sigma(float sigma, bool checkerboard) {
+  return checkerboard
+             ? static_cast<double>(sigma) / contracts::checkerboard_lattice_step
+             : static_cast<double>(sigma);
 }
 
 }  // namespace serenity::sampling

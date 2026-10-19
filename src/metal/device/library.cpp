@@ -47,25 +47,24 @@ Library::Library(const Device& device, std::span<const std::byte> metallib)
       library_(load(device_.get(), metallib)) {}
 
 NS::SharedPtr<MTL::ComputePipelineState> Library::compute_pipeline(
-    const char* function) const {
-  if (function == nullptr) {
-    throw MetalError("compute_pipeline: the function name is null");
-  }
+    std::string_view function) const {
   const auto pool = scoped_pool();
 
+  // Metal takes a terminated string; a pipeline is built at start-up, so the
+  // copy is never per frame (MEM.9).
+  const std::string terminated(function);
   auto name = NS::TransferPtr(
-      NS::String::alloc()->init(function, NS::UTF8StringEncoding));
+      NS::String::alloc()->init(terminated.c_str(), NS::UTF8StringEncoding));
   auto fn = NS::TransferPtr(library_->newFunction(name.get()));
   if (!fn) {
-    throw MetalError(std::string{"no function '"} + function +
-                     "' in the library");
+    throw MetalError("no function '" + terminated + "' in the library");
   }
 
   NS::Error* error = nullptr;
   auto pipeline =
       NS::TransferPtr(device_->newComputePipelineState(fn.get(), &error));
   if (!pipeline) {
-    throw MetalError(std::string{"no compute pipeline for '"} + function +
+    throw MetalError("no compute pipeline for '" + terminated +
                      "': " + describe(error));
   }
   return pipeline;

@@ -1,8 +1,9 @@
-// The frame's submission (metal/device/submission.h): an integration test,
+// The frame's submission (metal/device/submission.h), an integration test:
 // frames in flight each reading their own frame's constants from the ring
 // (metal/frame/renderer.h), the test pattern rendered into images of their
-// own and read back; and unit tests of the submission protocol: finish(),
-// its refusals, an empty schedule refused, each submission settled once.
+// own and read back. The submission's protocol, which submission takes which
+// slot, what is settled once, and the misuses refused, is a unit apart from
+// Metal, tested without a GPU (frame_sequence_test.cpp).
 
 #include <doctest/doctest.h>
 
@@ -13,18 +14,15 @@
 #include <cstdlib>
 #include <memory>
 #include <numbers>
-#include <optional>
 #include <vector>
 
 #include "core/frame/graph_file.h"
 #include "gpu/support/rendering.h"
 #include "metal/device/device.h"
-#include "metal/device/error.h"
 #include "metal/device/offscreen.h"
 #include "metal/device/submission.h"
 #include "metal/frame/renderer.h"
 #include "support/references.h"
-#include "support/required.h"
 
 namespace frame = serenity::frame;
 namespace metal = serenity::metal;
@@ -45,20 +43,6 @@ frame::Schedule test_pattern_schedule() {
 frame::FrameInputs at(double seconds, std::uint64_t index) {
   return tests::frame_at(index, index, seconds, std::nullopt);
 }
-
-struct Rig {
-  metal::Device device;
-  metal::Submission submission{device};
-  metal::Offscreen target{device, submission, size};
-  metal::Renderer renderer{device, submission, test_pattern_schedule(),
-                           nullptr};
-
-  std::vector<std::uint8_t> render(double seconds, std::uint64_t index) {
-    (void)submission.wait_until_complete(metal::render_to_offscreen(
-        submission, target, renderer, at(seconds, index)));
-    return tests::read_back(target);
-  }
-};
 
 // The test pattern's formula (test_pattern.h), as 8-bit values.
 int expected(double value) {
@@ -115,62 +99,4 @@ TEST_CASE("frames in flight: each submission reads its own frame's constants") {
     check_pixel(rgba, probed[3], times.at(i));
     check_pixel(rgba, probed[4], times.at(i));
   }
-}
-
-TEST_CASE("finish() settles every frame, and nothing begins after it") {
-  Rig rig;
-  for (std::uint64_t i = 0; i < 3; ++i) {
-    (void)metal::render_to_offscreen(rig.submission, rig.target, rig.renderer,
-                                     at(0.0, i));
-  }
-  (void)rig.submission.finish();
-  CHECK_THROWS_AS((void)rig.submission.begin(), metal::MetalError);
-}
-
-TEST_CASE("the submission protocol refuses misuse") {
-  metal::Device device;
-  metal::Submission submission(device);
-  CHECK_THROWS_AS(submission.commit(), metal::MetalError);
-  (void)submission.begin();
-  CHECK_THROWS_AS((void)submission.begin(), metal::MetalError);
-  CHECK_THROWS_AS((void)submission.wait_until_complete(0), metal::MetalError);
-  submission.commit();
-  (void)submission.wait_until_complete(0);
-  CHECK_THROWS_AS((void)submission.wait_until_complete(5), metal::MetalError);
-}
-
-TEST_CASE("an empty schedule is refused") {
-  metal::Device device;
-  metal::Submission submission(device);
-  CHECK_THROWS_AS(
-      metal::Renderer(device, submission, frame::Schedule{}, nullptr),
-      metal::MetalError);
-}
-
-TEST_CASE("each submission is settled once, by whichever call comes first") {
-  metal::Device device;
-  metal::Submission submission(device);
-  std::optional<metal::Completed> settled_by_begin;
-  for (int i = 0; i < 3; ++i) {
-    const metal::FrameSlot slot = submission.begin();
-    if (i < 2) {
-      CHECK_FALSE(slot.settled.has_value());  // its slot had not been used
-    } else {
-      settled_by_begin = slot.settled;  // submission 0 had used it
-    }
-    submission.commit();
-  }
-  REQUIRE(settled_by_begin.has_value());
-  CHECK(tests::required(settled_by_begin).sequence == 0);
-
-  const auto waited = submission.wait_until_complete(2);
-  REQUIRE(waited.has_value());
-  CHECK(tests::required(waited).sequence == 2);
-  CHECK(tests::required(waited).gpu_end >= tests::required(waited).gpu_start);
-  CHECK_FALSE(
-      submission.wait_until_complete(2).has_value());  // already settled
-
-  const std::vector<metal::Completed> rest = submission.finish();
-  REQUIRE(rest.size() == 1);
-  CHECK(rest[0].sequence == 1);
 }

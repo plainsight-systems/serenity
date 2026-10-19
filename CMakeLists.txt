@@ -203,6 +203,7 @@ add_library(serenity_core STATIC
     src/core/scene/scene.cpp
     src/core/scene/scene_arrays.cpp
     src/core/scene/swarm.cpp
+    src/core/presentation/frame_source.cpp
     src/core/sampling/pairing.cpp
     src/core/shapes/shapes.cpp
     src/core/shapes/structure_plan.cpp
@@ -224,6 +225,7 @@ add_library(serenity_metal STATIC
     src/metal/device/offscreen.cpp
     src/metal/device/presenter.cpp
     src/metal/device/frame_array.cpp
+    src/metal/device/frame_sequence.cpp
     src/metal/device/readback.cpp
     src/metal/device/resident.cpp
     src/metal/device/static_arrays.cpp

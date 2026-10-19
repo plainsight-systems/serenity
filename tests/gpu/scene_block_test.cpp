@@ -1,17 +1,12 @@
 // The scene's block (core/scene/scene_block.h, scene_buffers.h): every
 // field holds the address of its own array, and a shader reading an array
 // through it, at the stride of its own type, reads what the scene reader
-// wrote. Checked two ways:
-//
-//   - word by word, through a probe (kernels/scene_block_probe.metal): every
-//     word of every element of every one of the block's arrays, read
-//     through the block's field as the shaders' type, against the scene
-//     description's bytes. A field given another array's address, two
-//     fields' order differing between host and shader, or a type's size
-//     differing between them, fails here;
-//   - in a frame: the preview over a scene that reads the wood, the swirl,
-//     the emissive and the medium arrays, the arrays no other render test
-//     reads all of, each shape showing what only its own array gives.
+// wrote. Checked word by word, through a probe (kernels/
+// scene_block_probe.metal): every word of every element of every one of the
+// block's arrays, read through the block's field as the shaders' type,
+// against the scene description's bytes. A field given another array's
+// address, two fields' order differing between host and shader, or a
+// type's size differing between them, fails here.
 
 #include "core/scene/scene_block.h"
 

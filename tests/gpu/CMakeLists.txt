@@ -1,26 +1,44 @@
-# GPU tests: the Metal backend, run on this machine's GPU. With no Metal
-# device, or one without ray tracing, they fail, never skip: a GPU test that
-# passes because it ran nothing would claim what was never checked.
+# Metal's tests, by the project's rule that unit tests test units of code
+# and tests that run the GPU are units of GPU code or a handful of
+# integration tests (CLAUDE.md):
 #
-# Unit tests of the backend's pieces, each run on its own: the shader
-# functions through the probe kernels below, the device layer (device,
-# library, argument table, submission), the tone-map pass on images written
-# for it, and the renderer's refusals. And a handful of integration tests,
-# frames rendered end to end, each for an invariant no unit shows: the path
-# tracer's mean on closed forms (it renders the training targets and the
-# references), ReSTIR PT keeping it, MNEE counting the caustic once, the
-# Metal denoiser matching PyTorch, the denoised pipeline running and
-# deterministic, its two halves' hand-off, frames in flight each reading
-# their own constants, nothing allocated recording a frame, the GPU waited
-# for before what it uses is freed, the features beside the light changing
-# it in no bit, and the headless program's PFMs being the accumulated image.
+#   - serenity_metal_unit_tests: the backend's own host logic, apart from
+#     Metal, with no GPU: the submission's bookkeeping, the image size rule.
+#   - serenity_gpu_tests, on this machine's GPU (with no Metal device, or
+#     one without ray tracing, they fail, never skip: a GPU test that passes
+#     because it ran nothing would claim what was never checked):
+#       - units of GPU code: the shader functions through the probe kernels
+#         below, each against the CPU's computation or a closed form; the
+#         tone-map pass on images written for it;
+#       - our Metal wrappers' refusals and lifetimes that need the device
+#         (the library, the presenter, the display link's thread, the memory
+#         owners' bounds), and the platform's behaviour the design relies on
+#         (the argument table's snapshot, the largest image);
+#       - a handful of integration tests, frames rendered end to end, each
+#         for an invariant no unit shows: the path tracer's mean on closed
+#         forms (it renders the training targets and the references),
+#         ReSTIR PT keeping it, MNEE counting the caustic once, the Metal
+#         denoiser matching PyTorch, its two halves' hand-off, determinism,
+#         frames in flight each reading their own constants, nothing
+#         allocated recording a frame, the GPU waited for before what it uses
+#         is freed, the features beside the light changing it in no bit, and
+#         the headless program's PFMs being the accumulated image.
+
 # Where the headless renderer is (support/headless_program.h.in), beside
 # the tests' other generated headers (tests/CMakeLists.txt).
 file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/tests/generated/headless_program.h"
      INPUT "${PROJECT_SOURCE_DIR}/tests/support/headless_program.h.in")
 
+# Unit tests of the Metal backend's own logic, apart from Metal: no GPU.
+add_executable(serenity_metal_unit_tests
+    frame_sequence_test.cpp
+    texture_size_test.cpp
+    ../main_test.cpp
+)
+target_link_libraries(serenity_metal_unit_tests PRIVATE serenity_metal serenity_test_support)
+add_test(NAME serenity_metal_unit_tests COMMAND serenity_metal_unit_tests)
+
 add_executable(serenity_gpu_tests
-    device_test.cpp
     library_test.cpp
     frame_test.cpp
     argument_table_test.cpp

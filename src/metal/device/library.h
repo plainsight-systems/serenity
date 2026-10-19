@@ -4,6 +4,7 @@
 #include <Metal/Metal.hpp>
 #include <cstddef>
 #include <span>
+#include <string_view>
 
 #include "metal/device/device.h"
 
@@ -44,11 +45,11 @@ class Library {
   Library& operator=(Library&&) = delete;
   ~Library() = default;
 
-  // A compute pipeline for the kernel named `function`, a null-terminated
-  // name that must not be null (F.25). Built on the device the library was
+  // A compute pipeline for the kernel named `function` (a view, which can
+  // be no null pointer: F.24, I.4). Built on the device the library was
   // loaded on.
   NS::SharedPtr<MTL::ComputePipelineState> compute_pipeline(
-      const char* function) const;
+      std::string_view function) const;
 
   // Valid for the Library's lifetime; not retained for the caller.
   MTL::Library* handle() const noexcept { return library_.get(); }

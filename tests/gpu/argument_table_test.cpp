@@ -1,11 +1,11 @@
-// Shows on this machine what Metal 4's header states and the renderer relies
-// on (metal/frame/renderer.h): the encoder "takes a snapshot of the
-// resources in the argument table when you make dispatch or execute calls"
-// (MTL4ComputeCommandEncoder.h, setArgumentTable), so when one argument
-// table is rebound between two dispatches in one encoder, each dispatch sees
-// the binding it was encoded with. If the GPU read the table when the work
-// ran, both dispatches would write the second buffer and the first would
-// stay untouched.
+// A platform assumption, checked on this machine: what Metal 4's header
+// states and the renderer relies on (metal/frame/renderer.h): the encoder
+// "takes a snapshot of the resources in the argument table when you make
+// dispatch or execute calls" (MTL4ComputeCommandEncoder.h, setArgumentTable),
+// so when one argument table is rebound between two dispatches in one encoder,
+// each dispatch sees the binding it was encoded with. If the GPU read the table
+// when the work ran, both dispatches would write the second buffer and the
+// first would stay untouched.
 //
 // Its own dispatch, not the probe runner's (support/probe_runner.h): the
 // rebinding between two dispatches of one encoder is what it tests.

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
@@ -43,7 +44,8 @@ namespace serenity::presentation {
 // A rate range in frames a second (Hz): what the window asks of the
 // source. A source asks its platform for it (CAFrameRateRange; a
 // swapchain's presentation timing) and refuses a range that is not
-// positive and in order (minimum <= preferred <= maximum).
+// positive and in order (minimum <= preferred <= maximum):
+// frame_rate_refusal(), below.
 struct FrameRate {
   float minimum = 0.0F;
   float maximum = 0.0F;
@@ -68,6 +70,12 @@ struct FrameReport {
   // caustic requests lost, so far (a bug)
   std::uint64_t mnee_lost_requests = 0;
 };
+
+// Why a source refuses `rate`, or none: its minimum and maximum finite, its
+// minimum positive, and minimum <= preferred <= maximum. The same rule for
+// every source, so the core's (A.1), a pure function (F.8); the source
+// throws its own error with it (I.10).
+std::optional<std::string> frame_rate_refusal(FrameRate rate);
 
 class FrameClient {
  public:

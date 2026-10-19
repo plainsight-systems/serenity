@@ -288,11 +288,10 @@ TEST_CASE(
     "with the checkerboard, each frame's pairing is an involution over the "
     "traced field, sigma pixels apart") {
   tests::ProbeRunner runner;
-  // As the renderer builds them with the checkerboard: at sigma over the
-  // lattice's step (metal/frame/renderer.h).
+  // As the renderer builds them with the checkerboard (core/sampling/
+  // pairing.h, reuse_texture_sigma).
   const std::vector<std::uint16_t> textures = sampling::reuse_textures(
-      16.0 / static_cast<double>(contracts::checkerboard_lattice_step),
-      0x5e2e417f);
+      sampling::reuse_texture_sigma(16.0F, true), 0x5e2e417f);
   constexpr std::uint32_t width = 512;
   constexpr std::uint32_t height = 384;
   for (std::uint32_t frame = 0; frame < 4; ++frame) {

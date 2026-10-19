@@ -11,8 +11,9 @@
 // milliseconds of GPU work against the microseconds between the last
 // commit and the throw. Whether they were is checked, not assumed: a GPU
 // that finished them first would leave the wait unexercised, and the test
-// says so rather than passing. The first and the last test are integration
-// tests; the two between, units of the submission.
+// says so rather than passing. Both are integration tests; the submission's
+// protocol (abandoning a submission open when memory is released, what an
+// idle wait waits for) is a unit apart from Metal (frame_sequence_test.cpp).
 
 #include <doctest/doctest.h>
 
@@ -26,7 +27,6 @@
 #include "core/scene/scene.h"
 #include "gpu/support/rendering.h"
 #include "metal/device/device.h"
-#include "metal/device/error.h"
 #include "metal/device/offscreen.h"
 #include "metal/device/presenter.h"
 #include "metal/device/submission.h"
@@ -98,32 +98,6 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "memory released while a submission is open: that submission can no longer "
-    "be committed") {
-  metal::Device device;
-  metal::Submission submission(device);
-  std::optional<metal::Offscreen> target;
-  target.emplace(device, submission, frame::Extent{8, 8});
-  (void)submission.begin();
-  target.reset();  // its texture leaves the residency set
-  CHECK_THROWS_AS(submission.commit(), metal::MetalError);
-}
-
-TEST_CASE("wait_idle() returns once every committed submission has completed") {
-  metal::Device device;
-  metal::Submission submission(device);
-  CHECK(submission.wait_idle());  // nothing committed
-  (void)submission.begin();
-  submission.commit();
-  (void)submission.begin();  // open: not waited for
-  CHECK(submission.wait_idle());
-  CHECK(submission.has_completed(0));
-  submission.commit();
-  CHECK(submission.wait_idle());
-  CHECK(submission.has_completed(1));
-}
-
-TEST_CASE(
     "the window's presenter takes its layer's residency set off the queue only "
     "after the GPU is done") {
   const scene::SceneDescription description =
@@ -136,6 +110,7 @@ TEST_CASE(
   CA::MetalLayer* layer = CA::MetalLayer::layer();
   REQUIRE(layer != nullptr);
   std::optional<std::uint64_t> last;
+  bool in_flight = false;
   {
     metal::Presenter presenter(device, submission, metal::LayerHandle{layer},
                                size);
@@ -144,8 +119,12 @@ TEST_CASE(
         metal::render_to_window(submission, presenter, renderer,
                                 inputs(description, 0), layer->nextDrawable())
             .sequence;
+    in_flight = !submission.has_completed(*last);
   }
   REQUIRE(last.has_value());
+  // The frame was still running when the presenter went, so its destructor
+  // had to wait: else nothing here was tested (lengthen the frame).
+  CHECK(in_flight);
   CHECK(submission.has_completed(*last));
   CHECK_NOTHROW(submission.finish());
 }

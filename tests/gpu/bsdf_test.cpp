@@ -571,9 +571,9 @@ TEST_CASE(
     "eta: what a transmission scales radiance by, which the path tracer's "
     "roulette undoes") {
   // bsdf_eta() is eta_t, the index of wi's side over wo's, for a
-  // transmission sample drawn for wo; every refraction's weight is
-  // 1 / eta_t^2 (dielectric.metal.h), so weight x eta_t^2 is 1. 1 for a
-  // kind that does not transmit.
+  // transmission sample drawn for wo; 1 for a kind that does not transmit.
+  // That every refraction's weight is 1 / eta_t^2 is the dielectric's case
+  // above.
   ProbeRunner gpu;
   const Vec3 n = unit(0.0, 0.0, 1.0);
   const auto eta_of = [&](const Bsdf& bsdf, Vec3 wo) {
@@ -589,20 +589,6 @@ TEST_CASE(
   CHECK(eta_of(glass, outside) == doctest::Approx(1.5).scale(0).epsilon(1e-6));
   CHECK(eta_of(glass, inside) ==
         doctest::Approx(1.0 / 1.5).scale(0).epsilon(1e-6));
-  for (const Vec3 wo : {outside, inside}) {
-    const double eta = eta_of(glass, wo);
-    std::uint32_t transmitted = 0;
-    std::uint32_t wrong = 0;
-    for (const BsdfDraw& p : samples(gpu, glass, wo)) {
-      if ((p.lobe & contracts::lobe_transmission) == 0u) {
-        continue;
-      }
-      ++transmitted;
-      wrong += std::abs(weight(p, n)[0] * eta * eta - 1.0) < 1e-4 ? 0u : 1u;
-    }
-    CHECK(transmitted > sample_count / 2);
-    CHECK(wrong == 0);
-  }
   for (const BsdfKind kind : {BsdfKind::none, BsdfKind::lambert,
                               BsdfKind::conductor, BsdfKind::coated}) {
     INFO("kind " << static_cast<int>(kind));
@@ -741,10 +727,9 @@ TEST_CASE(
         doctest::Approx(1.0).scale(0).epsilon(0.01));
 }
 
-TEST_CASE(
-    "lobes: each kind's, from the shader, and an estimator aims at lights only "
-    "where one is not delta") {
-  using contracts::aims_at_lights;
+// Which lobes aim at lights is the contract's (tests/bsdf_lobes_test.cpp);
+// here, the shader's lobes for each kind.
+TEST_CASE("lobes: each kind's, from the shader") {
   using contracts::Bsdf;
   using contracts::BsdfKind;
   using contracts::lobe_delta;
@@ -769,14 +754,6 @@ TEST_CASE(
   CHECK(lobes[2] == (lobe_reflection | lobe_glossy));
   CHECK(lobes[3] == (lobe_reflection | lobe_transmission | lobe_delta));
   CHECK(lobes[4] == (lobe_reflection | lobe_diffuse | lobe_delta));
-  CHECK(aims_at_lights(lobes[4]));  // its color, beside its coat's mirror
-
-  CHECK_FALSE(aims_at_lights(lobes[0]));
-  CHECK(aims_at_lights(lobes[1]));
-  CHECK(aims_at_lights(lobes[2]));
-  CHECK_FALSE(aims_at_lights(lobes[3]));
-  CHECK(aims_at_lights(lobe_reflection | lobe_delta |
-                       lobe_glossy));  // a mirror over a glossy coat
 }
 
 TEST_CASE(

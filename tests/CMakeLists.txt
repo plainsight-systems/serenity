@@ -32,6 +32,9 @@ target_compile_options(serenity_test_support INTERFACE
 add_executable(serenity_tests
     schedule_test.cpp
     frame_refusals_test.cpp
+    frame_source_test.cpp
+    bloom_test.cpp
+    bsdf_lobes_test.cpp
     unet_test.cpp
     structure_plan_test.cpp
     denoise_core_test.cpp

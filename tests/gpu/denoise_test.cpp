@@ -1,4 +1,4 @@
-// The denoised pipeline, three integration tests. The denoise pass
+// The denoised pipeline, two integration tests. The denoise pass
 // (passes/denoise/denoise.h) against PyTorch: the
 // committed fixture, tests/data/denoise (training/denoise_check.py made it:
 // a network of training/model.py's structure at small widths, randomly
@@ -13,14 +13,16 @@
 //     floats in the U-Net (denoise.metal, "Precision"), float sums. On this
 //     fixture the largest is 2.2e-4 (docs/research/2026-10-15-denoiser-
 //     live.md), so 1e-3 leaves a margin of four;
-//   - a network one weight off is not: one of the last convolution's
-//     weights a tenth off gives 4.0e-3, four times the tolerance.
+//   - and the check can fail: a network one weight off is not, one of the
+//     last convolution's weights a tenth off giving 4.0e-3, four times the
+//     tolerance.
 //
 // The pipeline in the renderer, ReSTIR PT's light traced checkerboarded,
 // filled, denoised and tone mapped (gpu/support/rendering.h,
-// fixture_denoised_graph), over moving fireflies: it runs, every value
-// finite, and the same frames give the same bits; and frame N + 1's light
-// half never writes what frame N's image half reads (below).
+// fixture_denoised_graph), over moving fireflies, two queues against one:
+// frame N + 1's light half never writes what frame N's image half reads,
+// every value finite and the scene shown, and the two runs' same bits the
+// pipeline's determinism (below).
 
 #include <doctest/doctest.h>
 
@@ -99,80 +101,16 @@ TEST_CASE(
   const double error = worst(fixture, tests::run_denoise_fixture(fixture));
   INFO("largest relative difference: " << error);
   CHECK(error < tolerance);
-}
-
-TEST_CASE("a network one weight off does not pass the denoise check") {
-  const tests::DenoiseFixture fixture =
-      tests::read_denoise_fixture(tests::data_dir / "denoise");
-  // One weight of the last convolution, by a tenth: about the size of
-  // its weights.
-  const double error =
+  // And the check can fail: a network one weight off, one weight of the
+  // last convolution by a tenth (about the size of its weights), does not
+  // pass it.
+  const double off =
       worst(fixture,
             tests::run_denoise_fixture(fixture, [](denoise::Network& network) {
               network.dec_final.weight.at(0) += 0.1f;
             }));
-  INFO("largest relative difference: " << error);
-  CHECK(error > tolerance);
-}
-
-// The denoised pipeline in the renderer, the fixture's network over
-// wandering fireflies at 64 x 48 (a 32 x 24 light). No glass: MNEE's sum
-// of three or more requests in a pixel is in the order the GPU solves them
-// (metal/passes/mnee/mnee.h, "Determinism"), which this test does not hold.
-namespace {
-
-frame::FrameInputs frame_of(std::uint64_t index, std::uint64_t since,
-                            const scene::SceneDescription& scene) {
-  // A changing scene: the accumulated image starts over every frame.
-  frame::FrameInputs inputs = tests::frame_at(
-      index, index, 30.0 + static_cast<double>(index) / 60.0, scene.camera);
-  inputs.reused_since = since;
-  if (index > since) {
-    inputs.previous = frame::PreviousFrame{
-        frame::Seconds{30.0 + static_cast<double>(index - 1) / 60.0},
-        scene.camera};
-  }
-  return inputs;
-}
-
-// The frames `inputs`, each at its size, on one renderer; the last one's
-// denoised radiance (Renderer::read_accumulated).
-std::vector<float> rendered(
-    const std::vector<std::pair<frame::FrameInputs, frame::Extent>>& frames,
-    const scene::SceneDescription& scene) {
-  metal::Device device;
-  metal::Submission submission(device);
-  metal::Renderer renderer(device, submission, tests::fixture_denoised_graph(),
-                           &scene);
-  std::vector<float> out;
-  for (const auto& [inputs, size] : frames) {
-    metal::Offscreen target(device, submission, size);
-    (void)submission.wait_until_complete(
-        metal::render_to_offscreen(submission, target, renderer, inputs));
-    out.assign(std::size_t{size.width} * size.height * 4, 0.0f);
-    renderer.read_accumulated(out);
-  }
-  return out;
-}
-
-}  // namespace
-
-TEST_CASE(
-    "the denoised pipeline runs, every value finite, and the same frames give "
-    "the same bits") {
-  const scene::SceneDescription scene =
-      scene::parse(tests::wandering_fireflies(), "wandering fireflies");
-  constexpr frame::Extent size{64, 48};
-  const std::vector<std::pair<frame::FrameInputs, frame::Extent>> frames = {
-      {frame_of(0, 0, scene), size},
-      {frame_of(1, 0, scene), size},
-      {frame_of(2, 0, scene), size}};
-  const std::vector<float> first = rendered(frames, scene);
-  const std::vector<float> again = rendered(frames, scene);
-  CHECK(tests::same_bits(first, again));
-  CHECK(std::ranges::all_of(first, [](float v) { return std::isfinite(v); }));
-  // And it shows the scene: light, not a black or an empty image.
-  CHECK(std::ranges::any_of(first, [](float v) { return v > 0.0f; }));
+  INFO("one weight off: largest relative difference " << off);
+  CHECK(off > tolerance);
 }
 
 // The hand-off (metal/frame/renderer.h, "Two halves"): frame N + 1's light
@@ -339,6 +277,12 @@ TEST_CASE(
     CHECK(overlapped.shown[k] == serial.shown[k]);
   }
   CHECK(tests::same_bits(overlapped.last, serial.last));
+  // The pipeline runs, every value finite, and it shows the scene: light,
+  // not a black or an empty image. Two runs ending in the same bits, as
+  // these do, is also the pipeline's determinism.
+  CHECK(std::ranges::all_of(serial.last,
+                            [](float v) { return std::isfinite(v); }));
+  CHECK(std::ranges::any_of(serial.last, [](float v) { return v > 0.0f; }));
 
   // It exercised the hazard: each frame's light half (its record's start)
   // began, and ended, while the frame before was held back. A serial

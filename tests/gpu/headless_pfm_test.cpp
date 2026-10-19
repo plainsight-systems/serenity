@@ -41,6 +41,9 @@ namespace tests = serenity::tests;
 
 TEST_CASE(
     "headless: a PFM frame is the accumulated image's radiance, bit for bit") {
+  // The machine the GPU tests run on, named, as every GPU verification
+  // names it (docs/process/workflow.md).
+  MESSAGE("device: " << serenity::metal::Device().info().name);
   // Frames 3 and 4 of the path graph over a brass ball under still
   // fireflies, time frozen, three samples a frame: frame 4's file holds
   // frames 3 and 4's six samples (a still scene, or frozen time, converges

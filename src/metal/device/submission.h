@@ -13,6 +13,7 @@
 
 #include "core/frame/frame_inputs.h"
 #include "metal/device/device.h"
+#include "metal/device/frame_sequence.h"
 
 namespace serenity::metal {
 
@@ -25,7 +26,6 @@ namespace serenity::metal {
 // C++, named as C++ constants are; Objective-C's naming rule reaches it
 // only through display_link.mm, which includes it for CAMetalDisplayLink.
 // NOLINTNEXTLINE(google-objc-global-variable-declaration)
-inline constexpr std::uint32_t frames_in_flight = 2;
 
 // A submission settled (Submission, below, "Settling").
 struct Completed {
@@ -280,7 +280,7 @@ class Submission {
 
   // The sequence the next begin() hands out: every submission from here on
   // has this sequence or a later one.
-  std::uint64_t next_sequence() const noexcept { return next_; }
+  std::uint64_t next_sequence() const noexcept { return frames_.next(); }
 
   // Blocks until every committed submission has completed, or the timeout
   // passes; returns whether they all completed. Never throws, and reports
@@ -335,9 +335,6 @@ class Submission {
     Part first;   // on the main queue
     Part second;  // on the overlap queue, for a two-part submission
     Parts parts = Parts::one;  // of the submission last begun in this slot
-    // The sequence + 1 of the last submission in this slot settled; read
-    // and written only on the caller's thread.
-    std::uint64_t settled_through = 0;
   };
 
   // Waits for submission `sequence`'s event, then its parts' feedback, and
@@ -362,13 +359,11 @@ class Submission {
   // n + 1 once part 1 of two-part submission n has
   NS::SharedPtr<MTL::SharedEvent> first_done_;
   std::array<Slot, frames_in_flight> slots_;
-  std::uint64_t next_ = 0;  // the sequence begin() hands out next
   // the parts of the last submission committed
   Parts last_committed_ = Parts::one;
-  bool open_ = false;      // a submission is begun and not yet committed
-  bool finished_ = false;  // finish() has run; nothing may be begun after
-  // an allocation left the set while open_: never commit it
-  bool abandoned_ = false;
+  // which submission is which slot's, what is settled, the misuses refused
+  // (frame_sequence.h); read and written only on the caller's thread
+  FrameSequence frames_;
 };
 
 }  // namespace serenity::metal

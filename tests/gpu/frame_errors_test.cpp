@@ -1,11 +1,13 @@
 // What a frame's inputs, a scene or a target can get wrong is refused by
 // Error before the frame's submission begins (metal/frame/renderer.h,
 // prepare), so the run can go on, or end, with nothing left open; and a
-// refusal changes nothing (E.4). And every refusal the backend's memory
-// owners state: an image Metal cannot make or read back at another size, an
+// refusal changes nothing (E.4). And the refusals the backend's memory
+// owners make before a Metal call: an image read back at another size, an
 // array of no bytes, a slot or an array index that is not one. And the
 // window's: a drawable not the size it renders at, refused; a display link
-// at a rate it cannot ask for, or off the main thread.
+// off the main thread. The rules themselves are units without a GPU: the
+// refusals' (tests/frame_refusals_test.cpp), the image size's
+// (texture_size_test.cpp), a frame rate's (tests/frame_source_test.cpp).
 
 #include <doctest/doctest.h>
 
@@ -14,7 +16,6 @@
 #include <QuartzCore/QuartzCore.hpp>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <span>
 #include <thread>
@@ -65,18 +66,12 @@ TEST_CASE(
   CHECK_NOTHROW((void)submission.wait_until_complete(done));
 }
 
-TEST_CASE(
-    "an image Metal cannot make is refused by Error, not by Metal stopping the "
-    "program") {
+// A platform assumption the size rule (check_texture_size, unit-tested in
+// texture_size_test.cpp) relies on: the largest image it allows is one this
+// GPU makes.
+TEST_CASE("the largest image the size rule allows is one Metal makes") {
   metal::Device device;
   metal::Submission submission(device);
-  const frame::Extent too_wide{metal::max_texture_side + 1, 16};
-  CHECK_THROWS_AS(metal::Offscreen(device, submission, too_wide),
-                  metal::MetalError);
-  CHECK_THROWS_AS(metal::Offscreen(device, submission, {0, 16}),
-                  metal::MetalError);
-  CHECK_THROWS_AS(metal::Offscreen(device, submission, {16, 0}),
-                  metal::MetalError);
   CHECK_NOTHROW(
       metal::Offscreen(device, submission, {metal::max_texture_side, 1}));
 }
@@ -165,9 +160,7 @@ TEST_CASE(
   CHECK_NOTHROW((void)submission.finish());
 }
 
-TEST_CASE(
-    "a display link is refused a frame rate not positive and in order, and any "
-    "thread but the main one") {
+TEST_CASE("a display link is refused any thread but the main one") {
   metal::Device device;
   metal::Submission submission(device);
   const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -179,21 +172,6 @@ TEST_CASE(
     int frames = 0;
     void frame(const metal::DisplayUpdate&) noexcept override { ++frames; }
   } client;
-  const float nan = std::numeric_limits<float>::quiet_NaN();
-  const float infinity = std::numeric_limits<float>::infinity();
-  for (const presentation::FrameRate wrong :
-       {presentation::FrameRate{0.0F, 0.0F, 0.0F},
-        presentation::FrameRate{-60.0F, 60.0F, 60.0F},
-        presentation::FrameRate{60.0F, 30.0F, 45.0F},
-        presentation::FrameRate{30.0F, 60.0F, 90.0F},
-        presentation::FrameRate{30.0F, 60.0F, 20.0F},
-        presentation::FrameRate{30.0F, 60.0F, nan},
-        presentation::FrameRate{30.0F, infinity, 60.0F}}) {
-    INFO("rate " << wrong.minimum << " to " << wrong.maximum << ", preferred "
-                 << wrong.preferred);
-    CHECK_THROWS_AS(metal::DisplayLink(presenter, wrong, client),
-                    metal::MetalError);
-  }
   CHECK_NOTHROW(metal::DisplayLink(
       presenter, presentation::FrameRate{60.0F, 60.0F, 60.0F}, client));
   // Off the main thread its frames would be called on a run loop nobody

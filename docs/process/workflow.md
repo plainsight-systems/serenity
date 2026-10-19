@@ -50,7 +50,7 @@ This repo is C++-dominant and performance-sensitive.
 - A frame's path, acceleration-structure builds, memory footprint and GPU
   dispatch are performance-sensitive by default.
 - GPU behavior is environment-sensitive. Verification names the machine it
-  ran on (the device test prints it); a green build is not proof. Two
+  ran on (each backend's headless integration test prints it); a green build is not proof. Two
   machines: the development machine, an M3 Max (Metal), and the RTX 3090
   Ti's (CUDA and OptiX, from the backend's Phase 2; MEMORY.md).
 - **The RTX 3090 Ti's machine** (`ssh ai`, Ubuntu 24.04;

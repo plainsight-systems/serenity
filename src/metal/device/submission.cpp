@@ -92,14 +92,14 @@ Submission::~Submission() {
 }
 
 bool Submission::wait_idle() noexcept {
-  const std::uint64_t committed = open_ ? next_ - 1 : next_;
+  const std::uint64_t committed = frames_.committed();
   return committed == 0 ||
          completed_->waitUntilSignaledValue(committed, timeout.count());
 }
 
 std::optional<Completed> Submission::settle(std::uint64_t sequence) {
   Slot& slot = slots_.at(sequence % frames_in_flight);
-  if (slot.settled_through >= sequence + 1) {
+  if (frames_.is_settled(sequence)) {
     return std::nullopt;
   }
   if (!completed_->waitUntilSignaledValue(sequence + 1, timeout.count())) {
@@ -132,28 +132,21 @@ std::optional<Completed> Submission::settle(std::uint64_t sequence) {
   if (slot.parts == Parts::two) {
     arrived(last);
   }
-  slot.settled_through = sequence + 1;
+  frames_.settled(sequence);
   return Completed{sequence, first.gpu_start, last.gpu_end};
 }
 
 FrameSlot Submission::begin(Parts parts) {
-  if (finished_) {
-    throw MetalError("begin() after finish()");
-  }
-  if (open_) {
-    throw MetalError("begin() while submission " + std::to_string(next_ - 1) +
-                     " is still open");
-  }
-  const std::uint64_t sequence = next_;
-  const std::uint32_t index =
-      static_cast<std::uint32_t>(sequence % frames_in_flight);
+  const FrameSequence::Begun begun = frames_.to_begin();
+  const std::uint64_t sequence = begun.sequence;
+  const std::uint32_t index = begun.slot;
   Slot& slot = slots_.at(index);
 
   // The slot is free once the submission that last used it has completed
   // and reported (submission.h).
   std::optional<Completed> settled;
-  if (sequence >= frames_in_flight) {
-    settled = settle(sequence - frames_in_flight);
+  if (begun.settle_first) {
+    settled = settle(*begun.settle_first);
   }
 
   slot.parts = parts;
@@ -165,8 +158,7 @@ FrameSlot Submission::begin(Parts parts) {
     slot.second.commands->beginCommandBuffer(slot.second.allocator.get());
     second = slot.second.commands.get();
   }
-  open_ = true;
-  ++next_;
+  frames_.opened();
   return FrameSlot{slot.first.commands.get(), second, index, sequence, settled};
 }
 
@@ -201,15 +193,7 @@ void Submission::commit_part(MTL4::CommandQueue* queue,
 }
 
 void Submission::end_and_commit(const MTL::Drawable* drawable) {
-  if (!open_) {
-    throw MetalError("commit with no submission begun");
-  }
-  if (abandoned_) {
-    throw MetalError("submission " + std::to_string(next_ - 1) +
-                     " cannot be committed: memory it may use was released "
-                     "while it was open");
-  }
-  const std::uint64_t sequence = next_ - 1;
+  const std::uint64_t sequence = frames_.commit();
   Slot& slot = slots_.at(sequence % frames_in_flight);
   const bool two = slot.parts == Parts::two;
   slot.first.commands->endCommandBuffer();
@@ -246,7 +230,6 @@ void Submission::end_and_commit(const MTL::Drawable* drawable) {
   }
   last->signalEvent(completed_.get(), sequence + 1);
   last_committed_ = slot.parts;
-  open_ = false;
 }
 
 void Submission::commit() { end_and_commit(nullptr); }
@@ -261,34 +244,22 @@ void Submission::present(CA::MetalDrawable* drawable) {
 
 std::optional<Completed> Submission::wait_until_complete(
     std::uint64_t sequence) {
-  if (sequence >= next_ || (open_ && sequence == next_ - 1)) {
-    throw MetalError("wait_until_complete(" + std::to_string(sequence) +
-                     ") for a submission not committed");
-  }
-  if (sequence + frames_in_flight < next_) {
-    throw MetalError("wait_until_complete(" + std::to_string(sequence) +
-                     "): its slot has been reused");
-  }
+  frames_.check_waitable(sequence);
   return settle(sequence);
 }
 
 std::vector<Completed> Submission::finish() {
   std::vector<Completed> settled = drain();
-  finished_ = true;
+  frames_.finish();
   return settled;
 }
 
 std::vector<Completed> Submission::drain() {
-  if (open_) {
-    throw MetalError("drain() or finish() while submission " +
-                     std::to_string(next_ - 1) + " is still open");
-  }
   // The submissions that may be unsettled: the last frames_in_flight
-  // committed. Every one before them was settled when its slot was reused.
-  const std::uint64_t first =
-      next_ > frames_in_flight ? next_ - frames_in_flight : 0;
+  // committed (FrameSequence::drain_from).
+  const std::uint64_t first = frames_.drain_from();
   std::vector<Completed> settled;
-  for (std::uint64_t sequence = first; sequence < next_; ++sequence) {
+  for (std::uint64_t sequence = first; sequence < frames_.next(); ++sequence) {
     if (std::optional<Completed> completed = settle(sequence)) {
       settled.push_back(*completed);
     }
@@ -315,9 +286,7 @@ Resident Submission::keep_resident(MTL::Allocation* allocation) {
 
 void Submission::retire(MTL::Allocation* allocation) noexcept {
   wait_idle();
-  if (open_) {
-    abandoned_ = true;  // it may have recorded a use of `allocation`
-  }
+  frames_.released();  // an open one may have recorded a use of `allocation`
   residency_->removeAllocation(allocation);
   residency_->commit();
 }
@@ -332,9 +301,8 @@ void Submission::add_residency_set(MTL::ResidencySet* set) {
 
 void Submission::remove_residency_set(MTL::ResidencySet* set) noexcept {
   wait_idle();
-  if (open_) {
-    abandoned_ = true;  // it may have recorded a use of what `set` holds
-  }
+  frames_
+      .released();  // an open one may have recorded a use of what `set` holds
   queue_->removeResidencySet(set);
   overlap_->removeResidencySet(set);
 }
