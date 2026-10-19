@@ -44,7 +44,11 @@ constexpr std::size_t longest_header_line = 32;
 // A C stream that closes itself however its scope ends (R.1, E.6); the
 // writer closes it explicitly, to see the close's result.
 struct CloseFile {
-  void operator()(std::FILE* file) const noexcept { (void)std::fclose(file); }
+  // The unique_ptr owns the stream and hands it here to close; the owner
+  // the check asks for is GSL's annotation, which this project does not use.
+  void operator()(std::FILE* file) const noexcept {
+    (void)std::fclose(file);  // NOLINT(cppcoreguidelines-owning-memory)
+  }
 };
 using File = std::unique_ptr<std::FILE, CloseFile>;
 

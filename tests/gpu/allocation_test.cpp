@@ -49,12 +49,23 @@ namespace {
 
 // The allocations counted on this thread, and whether they are being
 // counted. Plain thread-local integers: reading them allocates nothing.
+// Mutable and global because operator new, which the standard calls, can
+// reach no other state: the instrument this test is.
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
 thread_local std::size_t allocations = 0;
 thread_local bool counting = false;
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
-// An object in this program's image, to find the image by; and the image.
+// An object in this program's image, to find the image by; and the image,
+// found once, by the first Counting (below), before anything is counted.
 const int in_this_image = 0;
-const void* this_image = nullptr;
+const void* this_image() {
+  static const void* const image = [] {
+    Dl_info info{};
+    return dladdr(&in_this_image, &info) != 0 ? info.dli_fbase : nullptr;
+  }();
+  return image;
+}
 
 // Whether `path` is one of the runtimes' libraries, through which our code
 // allocates as much as anyone's: libc++, libc++abi, libSystem's parts.
@@ -74,7 +85,7 @@ bool runtime(const char* path) {
     if (dladdr(frames.at(i), &info) == 0 || info.dli_fname == nullptr) {
       continue;
     }
-    if (info.dli_fbase == this_image) {
+    if (info.dli_fbase == this_image()) {
       ++allocations;
       break;
     }
@@ -89,12 +100,7 @@ bool runtime(const char* path) {
 class Counting {
  public:
   Counting() noexcept {
-    if (this_image == nullptr) {
-      Dl_info info{};
-      if (dladdr(&in_this_image, &info) != 0) {
-        this_image = info.dli_fbase;
-      }
-    }
+    (void)this_image();  // found now, while nothing is counted
     allocations = 0;
     counting = true;
   }
@@ -107,6 +113,9 @@ class Counting {
   std::size_t count() const noexcept { return allocations; }
 };
 
+// The replacement operator new's memory: the C heap is the only memory
+// under the C++ one, so it is managed by hand here, and only here.
+// NOLINTBEGIN(cppcoreguidelines-no-malloc,cppcoreguidelines-owning-memory)
 void* allocate(std::size_t size, std::align_val_t aligned) {
   const auto alignment = static_cast<std::size_t>(aligned);
   const std::size_t bytes = size == 0 ? 1 : size;
@@ -143,6 +152,7 @@ void operator delete(void* memory) noexcept { std::free(memory); }
 void operator delete(void* memory, std::align_val_t) noexcept {
   std::free(memory);
 }
+// NOLINTEND(cppcoreguidelines-no-malloc,cppcoreguidelines-owning-memory)
 
 namespace animation = serenity::animation;
 namespace frame = serenity::frame;
