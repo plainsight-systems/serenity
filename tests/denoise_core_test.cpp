@@ -188,7 +188,7 @@ TEST_CASE("a network export that is not what the renderer runs is refused, namin
                           "format"));
     // A network trained before the camera's jitter was an input: 28 inputs,
     // as every export before contract 18's 30 (the demo's
-    // denoiser-v1-checkerboard-model among them).
+    // denoiser-v2-model among them).
     CHECK(tests::contains(network_refusal("  \"channels\": 30,", "  \"channels\": 28,"),
                           "inputs.channels is not the 30 this renderer runs with"));
     CHECK(tests::contains(network_refusal("\"albedo_floor\": 0.02", "\"albedo_floor\": 0.03"),

@@ -1,5 +1,5 @@
 {
- "data": "../../serenity-data/denoiser-v1-checkerboard",
+ "data": "../../serenity-data/denoiser-v2",
  "seed": 20261015,
  "widths": {"enc": [32, 48, 64, 80], "bottleneck": 96, "dec": [80, 64, 48, 32]},
  "batch_size": 16,

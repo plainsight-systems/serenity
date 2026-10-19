@@ -30,7 +30,7 @@ cap_floor = 1.0       # the cap where every neighbor holds a copy
 cap_exponent = 0.1    # how fast the cap falls with duplication
 
 [denoise]
-weights = "../../serenity-data/denoiser-v1-checkerboard-model/wide"
+weights = "../../serenity-data/denoiser-v2-model/wide"
 
 [tone_map]
 exposure = 0.0  # stops

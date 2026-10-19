@@ -38,7 +38,7 @@ namespace serenity::frame {
 //   cap_exponent = 0.1            # in (0, 1]; (PD)
 //
 //   [denoise]                     # exactly when a pass is denoise
-//   weights = "../../serenity-data/denoiser-v1-checkerboard-model/wide"
+//   weights = "../../serenity-data/denoiser-v2-model/wide"
 //                                 # the exported network's directory; a
 //                                 # relative path is relative to the graph
 //                                 # file's (core/passes/denoise.h)

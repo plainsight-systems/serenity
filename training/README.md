@@ -24,11 +24,11 @@ checkout, never in it, in `../serenity-data/` (from the checkout's root;
 | `denoiser-v1-checkerboard-warmup/` | the test sequences' warm-up frames | `render_warmup.py` |
 | `denoiser-v1/` | the original data set, whose scenes, albedo and targets the one above takes | `scripts/make_denoiser_dataset.py` |
 | `denoiser-v1-runs/` | each run's log, checkpoints and test results | `train.py`, `evaluate.py` |
-| `denoiser-v1-checkerboard-model/wide/` | the exported network the renderer reads | `export.py`, or `make weights` from the published copy |
+| `denoiser-v2-model/wide/` | the exported network the renderer reads | `export.py`, or `make weights` from the published copy |
 
 To run the published network without training, `make weights` (from the
 checkout's root) downloads it from the project's media host
-(`https://media.plainsight-systems.com/denoiser-v1-checkerboard-model/`) and checks each
+(`https://media.plainsight-systems.com/denoiser-v2-model/`) and checks each
 file against the SHA-256 pinned in `scripts/fetch_denoiser_weights.sh`.
 
 The whole cycle, in order: render the data set, render the warm-up frames,
@@ -167,7 +167,7 @@ A rough MPS time a frame: `uv run --locked python benchmark.py --checkpoint RUN/
 
 ```sh
 uv run --locked python export.py --checkpoint ../../serenity-data/denoiser-v1-runs/v1-wide-checkerboard/best.pt \
-    --out ../../serenity-data/denoiser-v1-checkerboard-model/wide
+    --out ../../serenity-data/denoiser-v2-model/wide
 ```
 
 `weights.bin` (float32), `layout.json` (every tensor's place, the network's
@@ -183,7 +183,7 @@ and PyTorch's outputs for it, and compares the GPU's outputs with them
 (docs/research/2026-10-15-denoiser-live.md):
 
 ```sh
-uv run --locked python denoise_check.py fixture --network ../../serenity-data/denoiser-v1-checkerboard-model/wide \
+uv run --locked python denoise_check.py fixture --network ../../serenity-data/denoiser-v2-model/wide \
     --data ../../serenity-data/denoiser-v1-checkerboard --sequence gen-0125 --frames 8 --out CHECK_DIR
 ../build/native-release/tests/gpu/denoise_check CHECK_DIR GPU_DIR
 uv run --locked python denoise_check.py compare --fixture CHECK_DIR --gpu GPU_DIR
