@@ -171,14 +171,9 @@ struct FixtureImages {
   std::vector<metal::Resident> resident;
 };
 
-struct FixtureSizes {
-  frame::Extent light;
-  frame::Extent output;
-};
 inline FixtureImages make_images(const metal::Device& device,
                                  metal::Submission& submission,
-                                 FixtureSizes sizes) {
-  const auto [light, output] = sizes;
+                                 frame::Extent light, frame::Extent output) {
   constexpr MTL::TextureUsage usage =
       MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite;
   FixtureImages m;
@@ -288,8 +283,8 @@ inline std::vector<contracts::LinearImage> run_denoise_fixture(
   const frame::Extent light = fixture.light;
   const frame::Extent output{contracts::denoise_scale * light.width,
                              contracts::denoise_scale * light.height};
-  const detail::FixtureImages made = detail::make_images(
-      device, submission, {.light = light, .output = output});
+  const detail::FixtureImages made =
+      detail::make_images(device, submission, light, output);
 
   auto descriptor =
       NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());

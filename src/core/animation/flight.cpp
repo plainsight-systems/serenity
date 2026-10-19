@@ -470,7 +470,7 @@ struct Draws {
   std::uint64_t episode = 0;
   std::uint64_t attempt = 0;
   double operator()(Purpose p) const {
-    return draw(seed, {episode, attempt, static_cast<std::uint64_t>(p)});
+    return draw(seed, episode, attempt, static_cast<std::uint64_t>(p));
   }
   double between(Purpose p, double lo, double hi) const {
     return lo + (hi - lo) * (*this)(p);
@@ -499,21 +499,16 @@ Vec3 nearby(const Context& c, const Draws& d, Vec3 from, double reach,
   const Vec3 middle{mid(box.min.x, box.max.x), mid(box.min.y, box.max.y),
                     mid(box.min.z, box.max.z)};
   const Vec3 toward = from + pull_to_middle * (middle - from);
-  struct Range {
-    double lo;
-    double hi;
-  };
-  const auto pick = [&](Purpose p, double at, Range range) {
+  const auto pick = [&](Purpose p, double at, double lo, double hi) {
     const double v = at + reach * (2.0 * d(p) - 1.0);
-    return range.lo < range.hi ? std::clamp(v, range.lo, range.hi)
-                               : half * (range.lo + range.hi);
+    return lo < hi ? std::clamp(v, lo, hi) : half * (lo + hi);
   };
-  return {pick(Purpose::where_x, toward.x,
-               {box.min.x + m + room.around, box.max.x - m - room.around}),
-          pick(Purpose::where_y, toward.y,
-               {box.min.y + m + room.below, box.max.y - m - room.above}),
-          pick(Purpose::where_z, toward.z,
-               {box.min.z + m + room.around, box.max.z - m - room.around})};
+  return {pick(Purpose::where_x, toward.x, box.min.x + m + room.around,
+               box.max.x - m - room.around),
+          pick(Purpose::where_y, toward.y, box.min.y + m + room.below,
+               box.max.y - m - room.above),
+          pick(Purpose::where_z, toward.z, box.min.z + m + room.around,
+               box.max.z - m - room.around)};
 }
 
 // A drift's shape on each axis, its amplitude and phase: what its draws
@@ -719,12 +714,7 @@ struct Episodes {
 // Episode k drawn from round `round` of its draws, near where k - 1 ended,
 // with the transit into it (steps 2 to 4): whether one of the round's draws
 // was clear.
-struct Trial {
-  int k;      // the episode
-  int round;  // the round of its draws
-};
-bool build(const Context& c, Episodes& e, Trial trial) {
-  const auto [k, round] = trial;
+bool build(const Context& c, Episodes& e, int k, int round) {
   const auto at = static_cast<std::size_t>(k);
   for (int attempt = round * attempts; attempt < (round + 1) * attempts;
        ++attempt) {
@@ -772,7 +762,7 @@ Episodes draw_episodes(const Context& c, Vec3 start) {
   int k = 1;
   while (k < episodes) {
     const auto at = static_cast<std::size_t>(k);
-    if (build(c, e, {.k = k, .round = round.at(at)})) {
+    if (build(c, e, k, round.at(at))) {
       ++k;  // on to the next episode, from its first round
       if (k < episodes) {
         round.at(at + 1) = 0;
@@ -806,7 +796,7 @@ std::vector<Segment> close_loop(const Context& c, Episodes& e) {
     // Draw episode 63 afresh, from rounds past the one its own build
     // used (round 0: no episode after it backs up into it), so the
     // draws differ; a round with none clear leaves it as it was.
-    build(c, e, {.k = episodes - 1, .round = attempt + 1});
+    build(c, e, episodes - 1, attempt + 1);
     closing = transit(c, e.behaviours.back(), e.behaviours.front());
   }
   if (closing.empty()) {
@@ -885,9 +875,9 @@ FlashSchedule schedule_flashes(std::uint64_t seed,
     const auto count = static_cast<int>(rate_of(s.behaviour) * s.duration +
                                         d(Purpose::flashes));
     for (int n = 0; n < count; ++n) {
-      starts.push_back(
-          s.start + s.duration * draw(seed, {loop_time_key, i,
-                                             static_cast<std::uint64_t>(n)}));
+      starts.push_back(s.start +
+                       s.duration * draw(seed, loop_time_key, i,
+                                         static_cast<std::uint64_t>(n)));
     }
   }
   std::sort(starts.begin(), starts.end());
@@ -931,9 +921,9 @@ std::vector<double> opening_flashes(std::uint64_t seed,
       }
       const auto count = static_cast<int>(expected);
       for (int n = 0; n < count; ++n) {
-        starts.push_back(
-            s.start + s.duration * draw(seed, {opening_time_key, j,
-                                               static_cast<std::uint64_t>(n)}));
+        starts.push_back(s.start +
+                         s.duration * draw(seed, opening_time_key, j,
+                                           static_cast<std::uint64_t>(n)));
       }
     }
   }

@@ -116,8 +116,7 @@ class Counting {
 // The replacement operator new's memory: the C heap is the only memory
 // under the C++ one, so it is managed by hand here, and only here.
 // NOLINTBEGIN(cppcoreguidelines-no-malloc,cppcoreguidelines-owning-memory)
-void* allocate(std::size_t size, std::align_val_t aligned) {
-  const auto alignment = static_cast<std::size_t>(aligned);
+void* allocate(std::size_t size, std::size_t alignment) {
   const std::size_t bytes = size == 0 ? 1 : size;
   void* memory = alignment <= alignof(std::max_align_t)
                      ? std::malloc(bytes)
@@ -137,14 +136,14 @@ void* operator new(std::size_t size) {
   if (counting) {
     count_if_ours();
   }
-  return allocate(size, std::align_val_t{alignof(std::max_align_t)});
+  return allocate(size, alignof(std::max_align_t));
 }
 
 void* operator new(std::size_t size, std::align_val_t alignment) {
   if (counting) {
     count_if_ours();
   }
-  return allocate(size, alignment);
+  return allocate(size, static_cast<std::size_t>(alignment));
 }
 
 void operator delete(void* memory) noexcept { std::free(memory); }

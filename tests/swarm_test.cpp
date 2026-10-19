@@ -245,8 +245,8 @@ contracts::Float3 start_before_kinds(const scene::Swarm& swarm, std::uint32_t i,
     std::array<double, 3> p{};
     for (std::size_t axis = 0; axis < 3; ++axis) {
       const double u =
-          animation::draw(seed, {static_cast<std::uint64_t>(attempt),
-                                 static_cast<std::uint64_t>(axis)});
+          animation::draw(seed, static_cast<std::uint64_t>(attempt),
+                          static_cast<std::uint64_t>(axis));
       p.at(axis) = low.at(axis) + u * (high.at(axis) - low.at(axis));
     }
     const contracts::Float3 start{static_cast<float>(p[0]),
@@ -342,8 +342,7 @@ TEST_CASE(
 namespace {
 
 // Step 2's range, the volume shrunk by the margin, on axis `axis`.
-template <int axis>
-bool in_range(float v) {
+bool in_range(float v, int axis) {
   const double low = static_cast<double>(
       contracts::component(job(0, clear_start).params.volume.min, axis));
   const double high = static_cast<double>(
@@ -428,8 +427,8 @@ TEST_CASE(
             p.x);
       CHECK(static_cast<float>(static_cast<double>(f.start.z) + offset[2]) ==
             p.z);
-      CHECK((in_range<0>(f.start.x) && in_range<1>(f.start.y) &&
-             in_range<2>(f.start.z)));
+      CHECK((in_range(f.start.x, 0) && in_range(f.start.y, 1) &&
+             in_range(f.start.z, 2)));
       CHECK(obstacles.distance(f.start) >= needed);
       // It rests until its wake and its linger.
       REQUIRE(f.wake.has_value());
@@ -598,7 +597,7 @@ TEST_CASE(
   for (std::uint32_t i = 0; i < partly.count; ++i) {
     const scene::Firefly f = scene::make_firefly(partly, first(i), obstacles);
     const contracts::Float3 perch = std::get<animation::Perch>(f.prelude).at;
-    CHECK(in_range<0>(f.start.x));
+    CHECK(in_range(f.start.x, 0));
     CHECK(perch.x <= 1.97f + 1e-6f);
     // Never moved: the perch is on a line some attempt drew, keyed
     // (seed_i, perch_draws, attempt, axis) (swarm.h, step 2p), its start
@@ -609,7 +608,7 @@ TEST_CASE(
     const auto line_of = [&](std::uint64_t attempt, std::uint64_t axis,
                              float lo, float hi, std::size_t at) {
       const double value =
-          lo + animation::draw(seed, {scene::perch_draws, attempt, axis}) *
+          lo + animation::draw(seed, scene::perch_draws, attempt, axis) *
                    (static_cast<double>(hi) - lo);
       return static_cast<float>(
           static_cast<double>(static_cast<float>(value - offset.at(at))) +

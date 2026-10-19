@@ -42,19 +42,12 @@ constexpr double unit_of(std::uint64_t bits) noexcept {
   return static_cast<double>(bits >> unit_dropped_bits) * unit_scale;
 }
 
-// The counters a draw is keyed by after its seed, in order (I.24: named
-// fields, not three adjacent integers).
-struct DrawCounters {
-  std::uint64_t a = 0;
-  std::uint64_t b = 0;
-  std::uint64_t c = 0;
-};
-
-constexpr double draw(std::uint64_t seed, DrawCounters counters) noexcept {
+constexpr double draw(std::uint64_t seed, std::uint64_t a, std::uint64_t b = 0,
+                      std::uint64_t c = 0) noexcept {
   std::uint64_t h = splitmix64(seed);
-  h = splitmix64(h ^ counters.a);
-  h = splitmix64(h ^ counters.b);
-  h = splitmix64(h ^ counters.c);
+  h = splitmix64(h ^ a);
+  h = splitmix64(h ^ b);
+  h = splitmix64(h ^ c);
   return unit_of(h);
 }
 

@@ -156,13 +156,8 @@ namespace {
 
 // A pair at the marbles' scale: the camera 0.39 m above a table point x1,
 // x_{k-1} on the table, x_k on a marble beside it, both diffuse.
-struct Pair {
-  double camera_height;
-  double apart;
-  double scale;
-};
-tests::CriteriaQuery diffuse_pair(Pair pair) {
-  const auto [camera_height, apart, scale] = pair;
+tests::CriteriaQuery diffuse_pair(double camera_height, double apart,
+                                  double scale) {
   const Vec3 up{0.0, 1.0, 0.0};
   const Vec3 x1 = scale * Vec3{0.0, 0.75, 0.0};
   const Vec3 camera = x1 + scale * Vec3{0.0, camera_height,
@@ -199,9 +194,7 @@ TEST_CASE(
   tests::ProbeRunner runner;
   std::vector<tests::CriteriaQuery> queries;
   // 0: diffuse x_{k-1} and x_k 20 cm apart, the camera 39 cm off: taken.
-  queries.push_back(diffuse_pair({.camera_height = 0.39 / std::numbers::sqrt2,
-                                  .apart = 0.2,
-                                  .scale = 1.0}));
+  queries.push_back(diffuse_pair(0.39 / std::numbers::sqrt2, 0.2, 1.0));
   // 1: the same with x_{k-1} a mirror (a conductor of alpha 10^-3, the
   // marbles' steel; roughness 0.03): refused by the roughness test.
   tests::CriteriaQuery mirror = queries[0];
@@ -211,18 +204,12 @@ TEST_CASE(
   queries.push_back(mirror);
   // 2: a pair 5 mm apart under the camera 39 cm off: refused, its ray
   // footprint 7.9 x 10^-5 m^2 under the threshold's 5.4 x 10^-4.
-  queries.push_back(diffuse_pair({.camera_height = 0.39 / std::numbers::sqrt2,
-                                  .apart = 0.005,
-                                  .scale = 1.0}));
+  queries.push_back(diffuse_pair(0.39 / std::numbers::sqrt2, 0.005, 1.0));
   // 3: the same pair under a camera 3 cm off: taken. A fixed distance
   // could not tell 2 from 3.
-  queries.push_back(diffuse_pair({.camera_height = 0.03 / std::numbers::sqrt2,
-                                  .apart = 0.005,
-                                  .scale = 1.0}));
+  queries.push_back(diffuse_pair(0.03 / std::numbers::sqrt2, 0.005, 1.0));
   // 4: case 2 ten times larger, camera and all: refused as case 2 is.
-  queries.push_back(diffuse_pair({.camera_height = 0.39 / std::numbers::sqrt2,
-                                  .apart = 0.005,
-                                  .scale = 10.0}));
+  queries.push_back(diffuse_pair(0.39 / std::numbers::sqrt2, 0.005, 10.0));
   // 5: case 0 with a near mirror at x_k, its glossy lobe's density 10^4:
   // refused by its inverse footprint.
   tests::CriteriaQuery mirror_at = queries[0];

@@ -190,8 +190,7 @@ TEST_CASE(
   using serenity::contracts::pairing_widths;
   for (const std::uint32_t width : std::span(pairing_widths)) {
     const std::vector<std::uint16_t> texture =
-        serenity::sampling::reuse_texture(
-            {.width = width, .sigma = 16.0, .seed = 7u});
+        serenity::sampling::reuse_texture(width, 16.0, 7u);
     REQUIRE(texture.size() == std::size_t{width} * width);
     const int w = static_cast<int>(width);
     double squares = 0.0;

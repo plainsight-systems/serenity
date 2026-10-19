@@ -56,13 +56,9 @@ std::vector<TraceHit> probe(
 
 // A ray from `origin` along the unit vector toward `toward`, carrying
 // `mask`; its shadow-ray twin looks as far as `reach`.
-struct Aim {
-  tests::Vec3 origin;
-  tests::Vec3 toward;
-};
-TraceRay ray(Aim aim, contracts::RayMask mask = contracts::RayMask::everything,
+TraceRay ray(tests::Vec3 origin, tests::Vec3 toward,
+             contracts::RayMask mask = contracts::RayMask::everything,
              float reach = 1.0e30f) {
-  const auto [origin, toward] = aim;
   const tests::Vec3 d = tests::normalized(toward);
   return TraceRay{tests::float3(origin), tests::float3(d), mask, reach};
 }
@@ -125,14 +121,13 @@ TEST_CASE(
   const metal::Library library(device, metallib::probes);
 
   const std::vector<TraceRay> rays = {
-      ray({{0, 0, 0}, {0, 0, -1}}),  // the firefly, 5 away: t = 4.97
-      ray({{0, 0, 0},
-           {1, 0, 0}}),  // the wide sphere, radius 7.5, 20 away: t = 12.5
-      ray({{0, 0, 0}, {0, 1, 0}}),   // the box, its bottom face at y = 9
-      ray({{0, 0, 0}, {0, -1, 0}}),  // nothing
-      ray({{0, 0.02, 0},
-           {0, 0, -1}}),  // the firefly off its middle: sqrt(0.03^2
-                          // - 0.02^2) short of 5
+      ray({0, 0, 0}, {0, 0, -1}),  // the firefly, 5 away: t = 4.97
+      ray({0, 0, 0},
+          {1, 0, 0}),  // the wide sphere, radius 7.5, 20 away: t = 12.5
+      ray({0, 0, 0}, {0, 1, 0}),      // the box, its bottom face at y = 9
+      ray({0, 0, 0}, {0, -1, 0}),     // nothing
+      ray({0, 0.02, 0}, {0, 0, -1}),  // the firefly off its middle: sqrt(0.03^2
+                                      // - 0.02^2) short of 5
   };
   const std::vector<TraceHit> hits =
       probe({device, submission, library, buffers, transforms, acceleration},
@@ -177,8 +172,8 @@ TEST_CASE("a moved shape is hit where it moved to, and not where it was") {
     const float x = 3.0f + static_cast<float>(round);
     moved[0] = contracts::moved_to(moved[0], {x, 0.0f, -5.0f});
     const std::vector<TraceRay> rays = {
-        ray({{x, 0, 0}, {0, 0, -1}}),  // where it is now
-        ray({{0, 0, 0}, {0, 0, -1}}),  // where it was at rest
+        ray({x, 0, 0}, {0, 0, -1}),  // where it is now
+        ray({0, 0, 0}, {0, 0, -1}),  // where it was at rest
     };
     const std::vector<TraceHit> hits =
         probe({device, submission, library, buffers, transforms, acceleration},
@@ -268,17 +263,17 @@ TEST_CASE(
   const metal::Library library(device, metallib::probes);
   using contracts::RayMask;
   const std::vector<TraceRay> rays = {
-      ray({{0, 0, 0}, {0, 0, -1}}, RayMask::everything,
+      ray({0, 0, 0}, {0, 0, -1}, RayMask::everything,
           6.0f),  // the light at 4.97, within reach
-      ray({{0, 0, 0}, {0, 0, -1}}, RayMask::occluders,
+      ray({0, 0, 0}, {0, 0, -1}, RayMask::occluders,
           6.0f),  // through it, to the surface at 7
-      ray({{0, 0, 0}, {0, 0, -1}}, RayMask::occluders,
+      ray({0, 0, 0}, {0, 0, -1}, RayMask::occluders,
           7.5f),  // reaching past the surface
-      ray({{0, 0, 0}, {1, 0, 0}}, RayMask::everything,
+      ray({0, 0, 0}, {1, 0, 0}, RayMask::everything,
           3.0f),  // the second light at 2.9
-      ray({{0, 0, 0}, {1, 0, 0}}, RayMask::occluders,
+      ray({0, 0, 0}, {1, 0, 0}, RayMask::occluders,
           3.0f),  // through it, to the box at 6
-      ray({{0, 0, 0}, {0, 1, 0}}, RayMask::occluders),  // nothing
+      ray({0, 0, 0}, {0, 1, 0}, RayMask::occluders),  // nothing
   };
   const std::vector<TraceHit> hits =
       probe({device, submission, library, buffers, transforms, acceleration},
@@ -330,14 +325,13 @@ TEST_CASE(
     moved[0] = contracts::moved_to(moved[0], {0.0f, y, -5.0f});   // the light
     moved[1] = contracts::moved_to(moved[1], {0.0f, -y, -8.0f});  // the surface
     const std::vector<TraceRay> rays = {
-        ray({{0, y, 0}, {0, 0, -1}},
+        ray({0, y, 0}, {0, 0, -1},
             RayMask::everything),  // the light, where it is now
-        ray({{0, y, 0}, {0, 0, -1}},
-            RayMask::occluders),  // not by the occluders
-        ray({{0, -y, 0}, {0, 0, -1}},
+        ray({0, y, 0}, {0, 0, -1}, RayMask::occluders),  // not by the occluders
+        ray({0, -y, 0}, {0, 0, -1},
             RayMask::occluders),  // the surface, where it is now
-        ray({{0, -y, 0}, {0, 0, -1}}, RayMask::everything),
-        ray({{0, 0, 0}, {0, 0, -1}},
+        ray({0, -y, 0}, {0, 0, -1}, RayMask::everything),
+        ray({0, 0, 0}, {0, 0, -1},
             RayMask::occluders),  // where both were at rest: nothing
     };
     const std::vector<TraceHit> hits =
@@ -401,9 +395,9 @@ color = [0.5, 0.5, 0.5]
     const metal::Library library(device, metallib::probes);
     using contracts::RayMask;
     const std::vector<TraceRay> rays = {
-        ray({{0, 0, 0}, {0, 0, -1}}, RayMask::occluders),
-        ray({{0, 0, 0}, {1, 0, 0}}, RayMask::occluders),
-        ray({{0, 0, 0}, {1, 0, 0}}, RayMask::everything),
+        ray({0, 0, 0}, {0, 0, -1}, RayMask::occluders),
+        ray({0, 0, 0}, {1, 0, 0}, RayMask::occluders),
+        ray({0, 0, 0}, {1, 0, 0}, RayMask::everything),
     };
     const std::vector<TraceHit> hits =
         probe({device, submission, library, buffers, transforms, acceleration},

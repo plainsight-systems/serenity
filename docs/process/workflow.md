@@ -81,7 +81,12 @@ and only the targets below check the pin (`tools/check_toolchain.py
   Objective-C column limit, 100. No style is tuned to match older code.
 - **clang-tidy:** `google-*`, `cppcoreguidelines-*`, `bugprone-*`,
   `performance-*` and `clang-analyzer-*`, every finding an error
-  (`.clang-tidy`). Nothing else is switched off.
+  (`.clang-tidy`), but `bugprone-easily-swappable-parameters`, off as
+  clang-tidy's own configuration has it: it flags most functions of two
+  parameters or more, and its fixes are mostly ceremony. Two of its fixes
+  stay where a swap is a real risk: `frame::HeldSpan` (a held span's start
+  and frame, two frame indices; and the history test's helper beside it) and the ReSTIR PT test's merge settings
+  (five floats). Nothing else is switched off.
 - **The deviations,** each suppressed where it applies, with its reason:
 
   | Where | Check | Why |

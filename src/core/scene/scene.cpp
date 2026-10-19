@@ -822,30 +822,17 @@ class StillObstacles final : public contracts::Obstacles {
   shapes::StillShapes still_;
 };
 
-// What a shape may wear, by name: the materials and the media (I.24: one
-// struct, not two adjacent indexes).
-// A sphere's place and size.
-struct SphereAt {
-  contracts::Float3 center;
-  float radius;
-};
-
-struct WornIndexes {
-  NameIndex materials;
-  NameIndex media;
-};
-
 // Reads the shapes, the swarms and every motion and glow into one scene
 // description: what each step reads and writes is this class's state, not
 // arguments threaded through every function (I.23, F.20).
 class ShapeReading {
  public:
   ShapeReading(const Reader& r, SceneDescription& description,
-               const WornIndexes& worn)
+               const NameIndex& material_index, const NameIndex& medium_index)
       : r_(r),
         description_(description),
-        material_index_(worn.materials),
-        medium_index_(worn.media) {}
+        material_index_(material_index),
+        medium_index_(medium_index) {}
   // Its state is references to what it reads and writes, for one read:
   // never copied or moved (C.12, C.21), as Context and Drawing are not.
   ShapeReading(const ShapeReading&) = delete;
@@ -894,7 +881,8 @@ class ShapeReading {
   std::uint32_t material(const toml::table& t, const std::string& what) const;
   std::uint32_t interior(const toml::table& t, const std::string& what,
                          std::uint32_t worn) const;
-  std::uint32_t add_sphere(SphereAt sphere, std::uint32_t worn_index);
+  std::uint32_t add_sphere(contracts::Float3 center, float radius,
+                           std::uint32_t worn_index);
   void read_sphere(const toml::table& t, const std::string& what,
                    std::uint32_t index);
   void read_box(const toml::table& t, const std::string& what);
@@ -964,9 +952,8 @@ std::uint32_t ShapeReading::interior(const toml::table& t,
 
 // A sphere of `radius` at `center` wearing material `worn_index`, and, if
 // that is emissive, a sphere light; its index.
-std::uint32_t ShapeReading::add_sphere(SphereAt sphere,
+std::uint32_t ShapeReading::add_sphere(contracts::Float3 center, float radius,
                                        std::uint32_t worn_index) {
-  const auto [center, radius] = sphere;
   SceneDescription& d = description_;
   const auto index = static_cast<std::uint32_t>(d.shapes.records.size());
   const materials::MaterialRecord worn = d.materials[worn_index];
@@ -996,7 +983,7 @@ void ShapeReading::read_sphere(const toml::table& t, const std::string& what,
     r_.fail(t, what + " must lie " + world_words());
   }
   const std::uint32_t worn = material(t, what);
-  const std::uint32_t added = add_sphere({center, radius}, worn);
+  const std::uint32_t added = add_sphere(center, radius, worn);
   description_.shapes.records[added].interior = interior(t, what, worn);
   if (t.contains("motion") || t.contains("glow")) {
     pending_.push_back({.shape = index,
@@ -1173,8 +1160,7 @@ void ShapeReading::read_swarms(const toml::array& all,
     for (std::uint32_t i = 0; i < swarm.count; ++i) {
       const Firefly firefly = draw_firefly(
           swarm_index, FireflyDraw{.index = i, .draw = 0}, obstacles);
-      const std::uint32_t index =
-          add_sphere({firefly.start, swarm.radius}, worn);
+      const std::uint32_t index = add_sphere(firefly.start, swarm.radius, worn);
       moving_.push_back(true);
       pending_.push_back({.shape = index,
                           .what = what + "'s firefly " + std::to_string(i),
@@ -1542,14 +1528,11 @@ SceneDescription read_scene(const Reader& r, const toml::table& root) {
 
   const NameIndex texture_index = read_textures(
       r, optional_table(r, root, "textures", "[textures]"), description);
-  // Materials, then media, in that order (designated initializers are
-  // evaluated in order).
-  const WornIndexes worn{
-      .materials =
-          read_materials(r, optional_table(r, root, "materials", "[materials]"),
-                         texture_index, description),
-      .media = read_media(r, optional_table(r, root, "media", "[media]"),
-                          description)};
+  const NameIndex material_index =
+      read_materials(r, optional_table(r, root, "materials", "[materials]"),
+                     texture_index, description);
+  const NameIndex medium_index =
+      read_media(r, optional_table(r, root, "media", "[media]"), description);
 
   const toml::node& shape_node = r.required(root, "shapes", "the scene");
   const toml::array* shape_list = shape_node.as_array();
@@ -1557,7 +1540,7 @@ SceneDescription read_scene(const Reader& r, const toml::table& root) {
     r.fail(shape_node,
            "'shapes' must be an array of tables, written [[shapes]]");
   }
-  ShapeReading reading{r, description, worn};
+  ShapeReading reading{r, description, material_index, medium_index};
   reading.read_shapes(*shape_list);
 
   const StillObstacles obstacles{description.shapes, reading.moving()};

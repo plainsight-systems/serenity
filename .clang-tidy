@@ -3,7 +3,7 @@
 # finding is an error. The deviations, each decided by the user
 # (docs/process/workflow.md, "Formatting and static checks"), are where the
 # Metal compiler or Metal's own types require them, each suppressed on its
-# line with its reason, and the two below:
+# line with its reason, and the three below:
 #
 #  - tests/.clang-tidy: cppcoreguidelines-avoid-magic-numbers is off in
 #    tests/, where a literal is the expected value.
@@ -14,11 +14,15 @@
 #    which metal-cpp relies on (as cmake/ubsan_ignorelist.txt lets it pass
 #    the sanitizer). Every assignment to an empty SharedPtr is such a call,
 #    reported inside metal-cpp, where no NOLINT can be written.
+#  - bugprone-easily-swappable-parameters, off (the user, 2026-10-19), as
+#    clang-tidy's own configuration has it: it flags most functions of two
+#    parameters or more, and its fixes are mostly ceremony.
 Checks: >
   -*,
   google-*,
   cppcoreguidelines-*,
   bugprone-*,
+  -bugprone-easily-swappable-parameters,
   performance-*,
   clang-analyzer-*
 WarningsAsErrors: '*'
