@@ -2,7 +2,8 @@
 # LLVM 21.1.8 as cmake/toolchain.json pins it. It compiles each file as
 # the debug build does, from that build's compile database (every preset
 # exports one; configure native-debug first: make test, or cmake --preset
-# native-debug), and checks it with .clang-tidy's checks as make tidy does.
+# native-debug), and checks it with .clang-tidy's checks as make tidy does,
+# all but the static analyzer's, which clangd does not run.
 CompileFlags:
   CompilationDatabase: build/native-debug
 ---

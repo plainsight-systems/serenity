@@ -481,3 +481,19 @@ frame lacked, chosen by the user from a sweep against shipped engines:
   holds the input graph's light and features to the demo's hand-off, to
   the bit. denoiser-v1-checkerboard's inputs, found traced at every pixel,
   were not.
+
+## Formatting and static checks (decided by the user 2026-10-19)
+
+- **Google style, unchanged** (`.clang-format`), and clang-tidy's
+  `google-*`, `cppcoreguidelines-*`, `bugprone-*`, `performance-*` and
+  `clang-analyzer-*`, every finding an error; `make check` runs both
+  (`make format-check`, `make tidy`). LLVM 21.1.8, pinned apart from the
+  build's tools (`cmake/toolchain.json`, "$lint").
+- **Deviations only where Metal requires them** (shared GPU layouts, the
+  binding indices, metal-cpp interop), and one more by the user: tests keep
+  their literal expected values (`tests/.clang-tidy`). The table, with the
+  three outside Metal still the user's to confirm, is in `workflow.md`,
+  "Formatting and static checks".
+- **clangd in VS Code, on save** (`.clangd`, `.vscode/`), formatting with
+  the same clang-format and checking with the same clang-tidy, the
+  analyzer aside.

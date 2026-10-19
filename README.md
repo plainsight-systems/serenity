@@ -143,6 +143,7 @@ git clone --recurse-submodules https://github.com/plainsight-systems/serenity.gi
 cd serenity
 make test     # builds, then runs the tests, the GPU tests among them
 make check    # structural rules, and tests proving each check fires
+make format   # Google style (LLVM 21: brew install llvm); VS Code does it on save, with clangd
 make run      # the window, running graphs/test_pattern.toml
 make headless # the same frames, as 60 PNGs in frames/
 ```
