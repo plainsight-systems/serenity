@@ -34,7 +34,10 @@ namespace serenity::shapes {
 //
 // The core's (A.1): which shapes a structure holds and where its boxes are
 // is the same on every backend; how a backend builds, keeps and rebuilds a
-// structure is its own. Pure functions (F.8).
+// structure is its own. Pure functions (F.8). Planned once a scene, the key
+// it depends on (GDSA.17), and split by update rate: a still structure is
+// built once, a moving one rebuilt each frame from its moving boxes alone
+// (CDSA.30).
 
 // One structure's shapes: its box i is shape members[i].
 struct TreePlan {

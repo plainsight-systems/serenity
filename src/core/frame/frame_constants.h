@@ -21,8 +21,9 @@ namespace serenity::frame {
 // 20), each filled from the frame's inputs and what the backend prepared
 // for it, so every backend's shaders read the same numbers for the same
 // frame (logical-overview.md, principle 10). Where a backend keeps them,
-// a ring slot, a buffer, a launch's parameters, is its own (Metal's:
-// metal/frame/renderer.h, "Frame constants").
+// a ring slot, a buffer, a launch's parameters, is its own, one copy per
+// frame in flight so the CPU never writes what the GPU still reads (GPU.7;
+// Metal's: metal/frame/renderer.h, "Frame constants").
 //
 // The core's (A.1: stable code apart from what changes with the backend),
 // each a pure function of its arguments (F.8), returning the block by value

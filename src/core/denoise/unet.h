@@ -21,7 +21,9 @@ namespace serenity::denoise {
 // where it lies.
 //
 // What the network computes and in what order is the same on every
-// backend, so decided here (A.1), a pure function (F.8). How each
+// backend, so decided here (A.1), a pure function (F.8) of the widths and
+// the light's size, the key a backend plans it by: remade only when the
+// size changes, never per frame (GDSA.17). How each
 // activation is laid out in memory (its pitch, borders, stride and any
 // slack past its end), how a convolution is tiled, and how the weights are
 // laid out for the backend's matrix units are each backend's (Metal's:

@@ -19,9 +19,11 @@ namespace serenity::frame {
 // contract the core defines, a float the shaders read, a 16-bit index a
 // layout packs, so the same scene and frame are refused on every backend,
 // with the same words. Each gives the reason, or none, as frame::invalid
-// does (schedule.h); the backend throws its own error with it (Metal's:
-// "Renderer: " and the reason, metal/frame/renderer.h). Refused rather than
-// wrapped or clamped (I.5).
+// does (schedule.h; F.20: a returned value), and the backend throws its own
+// error with it where it was asked to do the task (I.10: a failure to do a
+// required task is an exception, never ignorable; Metal's: "Renderer: " and
+// the reason, metal/frame/renderer.h). Refused rather than wrapped or
+// clamped (I.5).
 //
 // The core's (A.1): the limits are the contracts', not a backend's. Each a
 // pure function of its arguments (F.8).
