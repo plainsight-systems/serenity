@@ -321,6 +321,16 @@ Clarified by the user 2026-10-12:
 
 ## Publication feed
 
+- Milestone-four site update (2026-10-19, branch `m4-site`): the homepage
+  selects the Milestone 4 denoised opening; Writing, About and the RSS feed
+  include milestone 4, whose article carries the Milestone 3 versus
+  Milestone 4 comparison (labels measured on the fully lit scene, t = 120 s).
+  Earlier articles keep their films. The accepted article is staged
+  unchanged; its SVG diagrams render through `render-image.html`, in a
+  sideways scroll at their drawn size on phones. Prose gives frames a
+  second, not milliseconds (the user's direction). The eight 2026-10-19
+  objects were uploaded and verified by the user before this update.
+
 - Milestone-three site update (2026-10-16): Andrew requested publication
   preparation after the renderer and accepted article reached main. The
   homepage now selects the denoised opening; Writing and the RSS feed include

@@ -96,7 +96,8 @@ class SiteTests(unittest.TestCase):
                          {project / 'content/writing/_index.md',
                           project / 'content/writing/milestone-1/index.md',
                           project / 'content/writing/milestone-2/index.md',
-                          project / 'content/writing/milestone-3/index.md'})
+                          project / 'content/writing/milestone-3/index.md',
+                          project / 'content/writing/milestone-4/index.md'})
         html = (output / 'index.html').read_text()
         self.assertIn('https://media.example.invalid/', html)
         self.assertIn('Smaller playback file', html)
@@ -112,7 +113,9 @@ class SiteTests(unittest.TestCase):
         home = (output / 'index.html').read_text()
         index = (output / 'writing/index.html').read_text()
         self.assertIn('2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4', first)
-        self.assertIn('2026-10-15-marbles-opening-restir-pt-denoised-1080p30-16mbps.mp4', home)
+        self.assertIn('2026-10-19-marbles-opening-m4-denoised-1080p30-16mbps.mp4', home)
+        self.assertIn('href="/serenity/writing/milestone-4/"', home)
+        self.assertNotIn('2026-10-15-marbles-opening-restir-pt-denoised-1080p30-16mbps.mp4', home)
         self.assertNotIn('2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4', home)
         self.assertIn('2026-10-13-marbles-opening-path-vs-restir-pt-1080p30-16mbps.mp4', second)
         self.assertIn('width="1920" height="540"', second)
@@ -127,6 +130,20 @@ class SiteTests(unittest.TestCase):
         self.assertIn('href="/serenity/writing/milestone-2/"', third)
         self.assertIn('https://example.invalid/serenity/images/marbles-denoised-20s.jpg', third)
         self.assertIn('2026-10-15-denoiser-training.md', third)
+        fourth = (output / 'writing/milestone-4/index.html').read_text()
+        self.assertIn('2026-10-19-marbles-opening-m3-vs-m4-1080p30-16mbps.mp4', fourth)
+        self.assertIn('width="1920" height="540"', fourth)
+        self.assertIn('href="/serenity/writing/milestone-3/"', fourth)
+        self.assertIn('https://example.invalid/serenity/images/marbles-m4-20s.jpg', fourth)
+        self.assertNotIn('2026-10-19-marbles-opening-m3-vs-m4-1080p30-16mbps.mp4', third)
+        # Diagrams are published beside the article and wrapped for phone-width scrolling.
+        for name in ('pipeline-m3', 'pipeline-m4', 'm4-overlap', 'm4-shadow-rays',
+                     'm4-checkerboard', 'm4-retrain'):
+            self.assertTrue((output / f'writing/milestone-4/images/{name}.svg').is_file())
+            self.assertIn(f'role="region" aria-label="Diagram" tabindex="0"><img class="diagram" '
+                          f'src="images/{name}.svg"', fourth)
+        self.assertNotIn('class="diagram"', first + second + third)
+        self.assertLess(index.index('writing/milestone-4/'), index.index('writing/milestone-3/'))
         self.assertLess(index.index('writing/milestone-3/'), index.index('writing/milestone-2/'))
         self.assertLess(index.index('writing/milestone-2/'), index.index('writing/milestone-1/'))
 
@@ -149,8 +166,8 @@ class SiteTests(unittest.TestCase):
                         '--panicOnWarning'], check=True, capture_output=True)
         xml = (output / 'writing/index.xml').read_text()
         entries = ET.fromstring(xml).findall('./channel/item')
-        self.assertEqual(len(entries), 28)
-        self.assertEqual(entries[0].findtext('title'), site.ARTICLES['milestone-3']['title'])
+        self.assertEqual(len(entries), 29)
+        self.assertEqual(entries[0].findtext('title'), site.ARTICLES['milestone-4']['title'])
         self.assertIn('Fixture 0 & <GPU>', [item.findtext('title') for item in entries])
         self.assertNotIn('PRIVATE BODY', xml)
         self.assertNotIn('/writing/draft/', xml)

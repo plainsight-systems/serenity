@@ -1,0 +1,8 @@
+{{/* Diagrams (SVG) fill the reading column; on a phone they keep the size
+they were drawn at, inside a labelled sideways scroll as tables do, so their
+labels stay legible. Photographs render as Markdown's plain image. */}}
+{{- if strings.HasSuffix (lower .Destination) ".svg" -}}
+<span class="diagram-scroll" role="region" aria-label="Diagram" tabindex="0"><img class="diagram" src="{{ .Destination | safeURL }}" alt="{{ .PlainText }}"{{ with .Title }} title="{{ . }}"{{ end }}></span>
+{{- else -}}
+<img src="{{ .Destination | safeURL }}" alt="{{ .PlainText }}"{{ with .Title }} title="{{ . }}"{{ end }}>
+{{- end -}}

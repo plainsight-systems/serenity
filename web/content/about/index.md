@@ -10,11 +10,11 @@ The scene is deliberately simple: glass, porcelain, and metal marbles on a walnu
 
 ## Where it is now
 
-Milestone 3 adds a neural network I trained to denoise and upscale the light from ReSTIR. It learns how much nearby samples and earlier frames should contribute to each output pixel. Tracing at half the width and height leaves fewer pixels to render, while the reconstruction produces a much cleaner image.
+Milestone 4 makes the frame fast. It applies the optimizations real-time renderers use once the image is right: the light and the network run at the same time on two GPU queues, shadow rays skip the 616 fireflies, and each frame traces half the light’s pixels in an alternating checkerboard. Checking every stage against shipped engines then moved depth of field after the network, which cleaned up the near marbles, and I retrained the network for the new input, for the first time on my RTX 3090.
 
-A fully lit 1920 × 1080 frame now takes about 23.5 ms on my M3 Max, compared with 39.8 ms before reconstruction. At the window’s 3456 × 2234 it takes about 77 ms. The table still shimmers and small reflections lose detail. Next I’m working on the cost of tracing and reuse, toward a clean moving image at the display’s full resolution and 60 frames a second.
+The fully lit scene now runs at 57 frames a second at 1920 × 1080 on my M3 Max, up from 43, and about 17 at the display’s full size. The network and the reuse steps are now the larger costs. How to tune the reuse steps as kernels depends on the GPU, so next Serenity leaves the Mac: a Vulkan backend for my RTX 3090 and AMD’s Strix Halo, and Direct3D 12 for the Xbox Series X.
 
-The [third milestone]({{< relref "/writing/milestone-3" >}}) follows the model from training data to the Metal kernels that run it. The [second milestone]({{< relref "/writing/milestone-2" >}}) covers path reuse and light focused through glass; the [first]({{< relref "/writing/milestone-1" >}}) records the baseline.
+The [fourth milestone]({{< relref "/writing/milestone-4" >}}) follows each optimization and what it bought. The [third]({{< relref "/writing/milestone-3" >}}) follows the model from training data to the Metal kernels that run it; the [second]({{< relref "/writing/milestone-2" >}}) covers path reuse and light focused through glass; the [first]({{< relref "/writing/milestone-1" >}}) records the baseline.
 
 ## Why the name
 

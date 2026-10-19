@@ -61,14 +61,26 @@ ARTICLES = {
         'images': ['marbles-denoised-20s.jpg', 'marbles-restir-pt-vs-denoised-10s.jpg'],
         'film': 'denoised_comparison', 'film_title': 'The reconstruction in motion',
     },
+    'milestone-4': {
+        'title': 'Milestone 4: making the frame fast',
+        'description': 'Applying the optimizations shipped engines use once the image is right, '
+                       'checking every stage against them, and retraining the network for the new input.',
+        'date': '2026-10-19', 'milestone': 4,
+        'image': 'images/marbles-m4-20s.jpg',
+        'images': ['marbles-m4-20s.jpg', 'pipeline-m3.svg', 'pipeline-m4.svg', 'm4-overlap.svg',
+                   'm4-shadow-rays.svg', 'm4-checkerboard.svg',
+                   'm4-depth-of-field-near-marbles.jpg', 'm4-retrain.svg'],
+        'film': 'm3_vs_m4', 'film_title': 'Milestone 3 beside Milestone 4',
+    },
 }
 IMAGE_KEYS = {'artwork', 'poster', 'baseline_poster', 'comparison_poster',
-              'denoised_comparison_poster'}
+              'denoised_comparison_poster', 'm3_vs_m4_poster'}
 MEDIA_KEYS = IMAGE_KEYS | {'film', 'film_small', 'film_original', 'brass',
                           'baseline', 'baseline_small', 'baseline_original',
                           'comparison', 'comparison_small', 'comparison_original',
                           'denoised_comparison', 'denoised_comparison_small',
-                          'denoised_comparison_original'}
+                          'denoised_comparison_original',
+                          'm3_vs_m4', 'm3_vs_m4_small', 'm3_vs_m4_original'}
 PUBLIC_PAGES = {'index.html', 'about/index.html', 'writing/index.html', '404.html'} | {
     f'writing/{slug}/index.html' for slug in ARTICLES
 }
