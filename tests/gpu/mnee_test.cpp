@@ -61,7 +61,12 @@ constexpr Vec3 light_normal{0.0, -1.0, 0.0};
 
 // The nearer root along unit `d` from `o` of the sphere, past `least`, if
 // any.
-std::optional<double> root(Vec3 o, Vec3 d, double least) {
+struct Line {
+  Vec3 o;  // from
+  Vec3 d;  // along, unit
+};
+std::optional<double> root(Line line, double least) {
+  const auto [o, d] = line;
   const Vec3 oc = o - sphere_center;
   const double b = dot(oc, d);
   const double disc = b * b - (dot(oc, oc) - sphere_radius * sphere_radius);
@@ -105,7 +110,7 @@ Traced trace_at(Vec3 x0, Vec3 y, double a) {
   const Vec3 normal = normalized(cross(u, sphere_center - x0));
   const Vec3 v = cross(normal, u);
   const Vec3 d = std::cos(a) * u + std::sin(a) * v;
-  const std::optional<double> t1 = root(x0, d, 1e-9);
+  const std::optional<double> t1 = root({x0, d}, 1e-9);
   if (!t1) {
     return {false, {}, {}, 0.0};
   }
@@ -115,7 +120,7 @@ Traced trace_at(Vec3 x0, Vec3 y, double a) {
   if (!inside) {
     return {false, {}, {}, 0.0};
   }
-  const std::optional<double> t2 = root(p1, *inside, 1e-9);
+  const std::optional<double> t2 = root({p1, *inside}, 1e-9);
   if (!t2) {
     return {false, {}, {}, 0.0};
   }

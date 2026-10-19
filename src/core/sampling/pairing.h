@@ -68,8 +68,12 @@ std::uint32_t shuffle_count(double sigma);
 // One reuse texture, width x width offsets row by row, each packed as
 // above. Precondition: width even, in [2, largest_pairing_width]; sigma at
 // least contracts::min_pairing_sigma, finite.
-std::vector<std::uint16_t> reuse_texture(std::uint32_t width, double sigma,
-                                         std::uint64_t seed);
+struct ReuseTexture {
+  std::uint32_t width;
+  double sigma;
+  std::uint64_t seed;
+};
+std::vector<std::uint16_t> reuse_texture(ReuseTexture texture);
 
 // The three textures of contract 15's widths, one after another, each from
 // its own seed derived from `seed`.

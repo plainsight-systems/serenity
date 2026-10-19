@@ -172,9 +172,15 @@ void check_packable(const scene::SceneDescription& scene,
   }
 }
 
+// How many buffers and textures an argument table binds (I.24).
+struct TableSize {
+  NS::UInteger buffers;
+  NS::UInteger textures;
+};
+
 NS::SharedPtr<MTL4::ArgumentTable> make_argument_table(MTL::Device* device,
-                                                       NS::UInteger buffers,
-                                                       NS::UInteger textures) {
+                                                       TableSize size) {
+  const auto [buffers, textures] = size;
   const auto pool = scoped_pool();  // Metal's error, if any, is autoreleased
   auto descriptor =
       NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
@@ -389,8 +395,9 @@ Renderer::Renderer(const Device& device, Submission& submission,
       library_(device, serenity::metallib::shaders),
       constants_(device, submission, std::vector<std::byte>(ring_slot_size),
                  FrameArray::Copies::per_frame),
-      arguments_(make_argument_table(device.handle(), buffer_bindings(schedule),
-                                     texture_bindings(schedule))),
+      arguments_(make_argument_table(device.handle(),
+                                     {.buffers = buffer_bindings(schedule),
+                                      .textures = texture_bindings(schedule)})),
       denoises_(frame::denoises(schedule)),
       feeds_network_(frame::feeds_network(schedule)),
       schedule_(schedule) {

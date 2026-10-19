@@ -84,7 +84,8 @@ int wrapped(int d, int width) {
   return d;
 }
 
-std::uint16_t packed(int x, int y) {
+std::uint16_t packed(Offset offset) {
+  const auto [x, y] = offset;
   const auto low = static_cast<std::uint32_t>(
       static_cast<std::uint8_t>(static_cast<std::int8_t>(x)));
   const auto high = static_cast<std::uint32_t>(
@@ -106,8 +107,8 @@ std::uint32_t shuffle_count(double sigma) {
   return static_cast<std::uint32_t>(std::floor(n));
 }
 
-std::vector<std::uint16_t> reuse_texture(std::uint32_t width, double sigma,
-                                         std::uint64_t seed) {
+std::vector<std::uint16_t> reuse_texture(ReuseTexture texture) {
+  const auto [width, sigma, seed] = texture;
   if (width < 2 || width > largest_pairing_width || width % 2 != 0) {
     throw std::invalid_argument("reuse_texture: width " +
                                 std::to_string(width) +
@@ -161,8 +162,8 @@ std::vector<std::uint16_t> reuse_texture(std::uint32_t width, double sigma,
         wrapped(static_cast<int>(b % width) - static_cast<int>(a % width), w);
     const int dy =
         wrapped(static_cast<int>(b / width) - static_cast<int>(a / width), w);
-    offsets[a] = packed(dx, dy);
-    offsets[b] = packed(-dx, -dy);
+    offsets[a] = packed({dx, dy});
+    offsets[b] = packed({-dx, -dy});
   }
   return offsets;
 }
@@ -175,7 +176,9 @@ std::vector<std::uint16_t> reuse_textures(double sigma, std::uint64_t seed) {
   constexpr auto widths = std::to_array(contracts::pairing_widths);
   for (std::uint32_t t = 0; t < contracts::max_path_neighbors; ++t) {
     const std::vector<std::uint16_t> texture =
-        reuse_texture(widths.at(t), sigma, seed * texture_seed_step + t);
+        reuse_texture({.width = widths.at(t),
+                       .sigma = sigma,
+                       .seed = seed * texture_seed_step + t});
     all.insert(all.end(), texture.begin(), texture.end());
   }
   return all;

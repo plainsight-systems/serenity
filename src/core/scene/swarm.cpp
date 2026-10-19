@@ -96,8 +96,8 @@ contracts::Float3 start_in(const Drawing& d, const Range& range) {
     std::array<double, 3> p{};
     for (std::size_t axis = 0; axis < 3; ++axis) {
       const double u =
-          animation::draw(d.seed, static_cast<std::uint64_t>(attempt),
-                          static_cast<std::uint64_t>(axis));
+          animation::draw(d.seed, {static_cast<std::uint64_t>(attempt),
+                                   static_cast<std::uint64_t>(axis)});
       p.at(axis) =
           range.low.at(axis) + u * (range.high.at(axis) - range.low.at(axis));
     }
@@ -188,7 +188,7 @@ std::optional<Perched> perch_from(const Drawing& d, const PerchStart& start,
                                   const std::array<double, 3>& offset,
                                   std::uint64_t attempt) {
   const auto pick = [&](std::uint64_t axis) {
-    return animation::draw(d.seed, perch_draws, attempt, axis);
+    return animation::draw(d.seed, {perch_draws, attempt, axis});
   };
   const contracts::Box& box = start.box;
   const Range& range = d.range;
@@ -324,7 +324,7 @@ Firefly make_firefly(const Swarm& swarm, FireflyDraw which,
   double wakes = 0.0;
   if (swarm.wake) {
     const SwarmWake& w = *swarm.wake;
-    const double u = animation::draw(d.seed, wake_draws);
+    const double u = animation::draw(d.seed, {wake_draws});
     wakes =
         std::min(w.from + (w.to - w.from) * std::pow(u, 1.0 / w.power), w.to);
     firefly.wake = animation::Wake{.at = wakes, .ramp = w.ramp};
@@ -351,7 +351,7 @@ Firefly make_firefly(const Swarm& swarm, FireflyDraw which,
                    const double linger =
                        std::min(perch.linger_least +
                                     (perch.linger_most - perch.linger_least) *
-                                        animation::draw(d.seed, linger_draws),
+                                        animation::draw(d.seed, {linger_draws}),
                                 perch.linger_most);
                    firefly.start = found.start;
                    // wakes <= to and linger <= most_wait - to

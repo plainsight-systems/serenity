@@ -45,7 +45,7 @@ std::vector<LinearImage> batches(Extent extent, std::size_t count,
     LinearImage batch{extent, std::vector<float>(values)};
     for (std::size_t i = 0; i < values; ++i) {
       batch.rgb[i] = static_cast<float>(
-          offset + spread * serenity::animation::draw(seed, b, i));
+          offset + spread * serenity::animation::draw(seed, {b, i}));
     }
     made.push_back(std::move(batch));
   }

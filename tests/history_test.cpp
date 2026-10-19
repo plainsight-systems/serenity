@@ -197,9 +197,13 @@ TEST_CASE(
 
 namespace {
 
-FrameInputs reusing(std::uint64_t index, std::uint64_t reused_since) {
-  FrameInputs inputs = frame_at(index, index);
-  inputs.reused_since = reused_since;
+struct Reuse {
+  std::uint64_t index;
+  std::uint64_t since;
+};
+FrameInputs reusing(Reuse reuse) {
+  FrameInputs inputs = frame_at(reuse.index, reuse.index);
+  inputs.reused_since = reuse.since;
   return inputs;
 }
 
@@ -209,26 +213,28 @@ TEST_CASE(
     "the reuse history holds consecutive frames since it started over, at one "
     "size, at any times") {
   frame::ReuseHistory history;
-  const frame::ReuseJoined first = history.join(reusing(0, 0), small);
+  const frame::ReuseJoined first =
+      history.join(reusing({.index = 0, .since = 0}), small);
   CHECK(first.held == 0);
   CHECK(first.remade);
-  FrameInputs later = reusing(1, 0);
+  FrameInputs later = reusing({.index = 1, .since = 0});
   later.time = Seconds(5.0);  // another instant: temporal reuse follows it
   CHECK(history.join(later, small).held == 1);
-  CHECK_FALSE(history.join(reusing(2, 0), small).remade);
+  CHECK_FALSE(history.join(reusing({.index = 2, .since = 0}), small).remade);
 
-  CHECK_THROWS_AS(history.join(reusing(4, 0), small),
+  CHECK_THROWS_AS(history.join(reusing({.index = 4, .since = 0}), small),
                   HistoryError);  // a frame skipped
-  CHECK_THROWS_AS(history.join(reusing(3, 0), large),
+  CHECK_THROWS_AS(history.join(reusing({.index = 3, .since = 0}), large),
                   HistoryError);  // a size changed
-  CHECK_THROWS_AS(history.join(reusing(3, 1), small),
+  CHECK_THROWS_AS(history.join(reusing({.index = 3, .since = 1}), small),
                   HistoryError);  // since moved
-  CHECK_THROWS_AS(history.join(reusing(3, 5), small),
+  CHECK_THROWS_AS(history.join(reusing({.index = 3, .since = 5}), small),
                   HistoryError);  // since after the frame
-  CHECK(history.join(reusing(3, 0), small).held == 3);
+  CHECK(history.join(reusing({.index = 3, .since = 0}), small).held == 3);
 
-  CHECK_FALSE(history.join(reusing(4, 4), small).remade);
-  const frame::ReuseJoined resized = history.join(reusing(5, 5), large);
+  CHECK_FALSE(history.join(reusing({.index = 4, .since = 4}), small).remade);
+  const frame::ReuseJoined resized =
+      history.join(reusing({.index = 5, .since = 5}), large);
   CHECK(resized.held == 0);
   CHECK(resized.remade);
 }

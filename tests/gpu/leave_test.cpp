@@ -85,7 +85,7 @@ class Numbers {
  public:
   explicit Numbers(std::uint64_t seed) : seed_(seed) {}
 
-  double unit() { return animation::draw(seed_, next_++); }
+  double unit() { return animation::draw(seed_, {next_++}); }
 
   // A unit vector, uniform over the sphere.
   Vec3 direction() {

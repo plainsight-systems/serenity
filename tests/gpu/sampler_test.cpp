@@ -141,8 +141,13 @@ TEST_CASE(
   constexpr std::size_t pixels = std::size_t{side} * side;
   const auto n = static_cast<double>(pixels);
   // dimension k of frame `frame`, over the pixels; its right neighbour's.
-  const auto column = [&](std::uint32_t frame, std::uint32_t k,
-                          std::uint32_t shift) {
+  struct Column {
+    std::uint32_t frame;
+    std::uint32_t k;      // the dimension
+    std::uint32_t shift;  // pixels right
+  };
+  const auto column = [&](Column which) {
+    const auto [frame, k, shift] = which;
     std::vector<double> values;
     values.reserve(pixels);
     for (std::size_t i = 0; i < pixels; ++i) {
@@ -153,18 +158,19 @@ TEST_CASE(
   };
   for (std::uint32_t k = 0; k < path_numbers_drawn; ++k) {
     INFO("dimension " << k);
-    const std::vector<double> u = column(0, k, 0);
+    const std::vector<double> u = column({.frame = 0, .k = k, .shift = 0});
     double sum = 0.0;
     for (const double v : u) {
       sum += v;
     }
     CHECK(std::abs(sum / n - 0.5) < 5.0 / std::sqrt(12.0 * n));
-    CHECK(std::abs(correlation(u, column(1, k, 0))) <
+    CHECK(std::abs(correlation(u, column({.frame = 1, .k = k, .shift = 0}))) <
           5.0 / std::sqrt(n));  // the next frame
-    CHECK(std::abs(correlation(u, column(0, k, 1))) <
+    CHECK(std::abs(correlation(u, column({.frame = 0, .k = k, .shift = 1}))) <
           5.0 / std::sqrt(n));  // the pixel beside
     if (k + 1 < path_numbers_drawn) {
-      CHECK(std::abs(correlation(u, column(0, k + 1, 0))) <
+      CHECK(std::abs(
+                correlation(u, column({.frame = 0, .k = k + 1, .shift = 0}))) <
             5.0 / std::sqrt(n));  // the next dimension
     }
   }

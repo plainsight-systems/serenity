@@ -32,7 +32,13 @@ enum class Draw : std::uint8_t { weight = 0, ratio = 1, phase = 2 };
 // which of the term's numbers it is, alone: the top 53 bits of the hash, a
 // double's mantissa. The values of Draw and the key's layout are the
 // wander's keying, which its tests pin.
-double wander_draw(std::uint64_t seed, int axis, int term, Draw which) {
+struct WanderKey {
+  int axis;
+  int term;
+  Draw which;
+};
+double wander_draw(std::uint64_t seed, WanderKey key_of) {
+  const auto [axis, term, which] = key_of;
   const std::uint64_t key = (static_cast<std::uint64_t>(axis) << 16) |
                             (static_cast<std::uint64_t>(term) << 8) |
                             static_cast<std::uint64_t>(which);
@@ -93,13 +99,13 @@ Wander make_wander(const WanderParams& params, float body,
       const auto k = static_cast<int>(i);
       weights.at(i) =
           least_weight +
-          weight_span * wander_draw(params.seed, axis, k, Draw::weight);
+          weight_span * wander_draw(params.seed, {axis, k, Draw::weight});
       total += weights.at(i);
       wander.frequency.at(a).at(i) =
           least_ratio +
-          ratio_span * wander_draw(params.seed, axis, k, Draw::ratio);
+          ratio_span * wander_draw(params.seed, {axis, k, Draw::ratio});
       wander.phase.at(a).at(i) =
-          two_pi * wander_draw(params.seed, axis, k, Draw::phase);
+          two_pi * wander_draw(params.seed, {axis, k, Draw::phase});
     }
     // Step 2: the amplitudes, summing to the reach on each axis.
     for (std::size_t i = 0; i < wander_terms; ++i) {

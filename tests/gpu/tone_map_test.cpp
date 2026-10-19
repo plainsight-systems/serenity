@@ -95,7 +95,12 @@ frame::Extent half_size(frame::Extent size) {
 double half(double v) { return static_cast<double>(static_cast<Half>(v)); }
 
 // Bilinear at normalized (u, v), edges clamped.
-Color bilinear(const Field& f, double u, double v) {
+struct Uv {
+  double u;
+  double v;
+};
+Color bilinear(const Field& f, Uv at) {
+  const auto [u, v] = at;
   const double x = u * f.width - 0.5;
   const double y = v * f.height - 0.5;
   const double fx = std::floor(x);
@@ -163,7 +168,7 @@ Color tent(const Field& level, double u, double v) {
   for (int dy = -1; dy <= 1; ++dy) {
     for (int dx = -1; dx <= 1; ++dx) {
       const double w = (dx == 0 ? 2.0 : 1.0) * (dy == 0 ? 2.0 : 1.0) / 16.0;
-      const Color s = bilinear(level, u + dx * tx, v + dy * ty);
+      const Color s = bilinear(level, {u + dx * tx, v + dy * ty});
       for (std::size_t c = 0; c < 3; ++c) {
         out.at(c) += w * s.at(c);
       }
@@ -230,7 +235,7 @@ std::vector<Field> pyramid_down(const Field& e) {
     const frame::Extent size = half_size({source->width, source->height});
     Field level = field(size.width, size.height, {});
     const auto read = [&](double u, double v) {
-      const Color c = bilinear(*source, u, v);
+      const Color c = bilinear(*source, {u, v});
       return k == 0 ? clamped(c) : c;
     };
     const double scale = k == 0 ? 1.0 / levels : 1.0;

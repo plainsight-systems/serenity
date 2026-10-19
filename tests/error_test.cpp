@@ -121,11 +121,11 @@ TEST_CASE(
   LinearImage image = filled(extent, 0.0f);
   LinearImage reference = filled(extent, 0.0f);
   for (std::size_t i = 0; i < image.rgb.size(); ++i) {
-    const double decade = std::floor(12.0 * serenity::animation::draw(3, i));
+    const double decade = std::floor(12.0 * serenity::animation::draw(3, {i}));
     image.rgb[i] = static_cast<float>(std::pow(10.0, decade - 6.0) *
-                                      serenity::animation::draw(4, i));
+                                      serenity::animation::draw(4, {i}));
     reference.rgb[i] = static_cast<float>(std::pow(10.0, decade - 6.0) *
-                                          serenity::animation::draw(5, i));
+                                          serenity::animation::draw(5, {i}));
   }
   double squared = 0.0;
   double relative = 0.0;

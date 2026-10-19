@@ -569,8 +569,13 @@ kind = "absorbing"
 tint = [0.25, 0.5, 0.95]
 tint_distance = 0.01
 )";
-  const auto scene_with = [&](std::string_view from, std::string_view to,
-                              std::string_view shape_extra) {
+  struct Edit {
+    std::string_view from;  // replaced by `to`, if not empty
+    std::string_view to;
+    std::string_view shape_extra;  // after the glass sphere's material
+  };
+  const auto scene_with = [&](Edit edit) {
+    const auto [from, to, shape_extra] = edit;
     std::string text = with("[[shapes]]", extra + "[[shapes]]");
     if (!from.empty()) {
       text = replaced(text, from, to);
@@ -579,8 +584,10 @@ tint_distance = 0.01
     return replaced(text, "material = \"glass\"",
                     "material = \"glass\"" + std::string(shape_extra));
   };
-  const scene::SceneDescription s =
-      scene::parse(scene_with("", "", "\ninterior = \"blue_tint\""), "s");
+  const scene::SceneDescription s = scene::parse(
+      scene_with(
+          {.from = "", .to = "", .shape_extra = "\ninterior = \"blue_tint\""}),
+      "s");
   REQUIRE(s.coateds.size() == 1);
   CHECK(s.coateds[0].ior == 1.5f);
   CHECK(s.coateds[0].escape ==
@@ -599,12 +606,14 @@ tint_distance = 0.01
   CHECK(s.shapes.records[0].interior == 0u);  // the glass sphere, filled
   CHECK(s.shapes.records[1].interior == contracts::no_medium);  // the floor
   // Without an interior, air.
-  CHECK(scene::parse(scene_with("", "", ""), "s").shapes.records[0].interior ==
-        contracts::no_medium);
+  CHECK(scene::parse(scene_with({.from = "", .to = "", .shape_extra = ""}), "s")
+            .shapes.records[0]
+            .interior == contracts::no_medium);
 
   const auto error = [&](std::string_view from, std::string_view to,
                          std::string_view shape_extra = "") {
-    return error_of(scene_with(from, to, shape_extra));
+    return error_of(
+        scene_with({.from = from, .to = to, .shape_extra = shape_extra}));
   };
   CHECK(contains(
       error("color = [0.6, 0.05, 0.04]", "color = [1.2, 0.05, 0.04]"),
@@ -633,9 +642,9 @@ tint_distance = 0.01
   CHECK(contains(error("", "", "\ninterior = \"red_tint\""),
                  "interior is medium 'red_tint', which is not defined"));
   // A medium fills only what light passes into: not the floor.
-  const std::string floor_filled =
-      replaced(scene_with("", "", ""), "material = \"floor\"",
-               "material = \"floor\"\ninterior = \"blue_tint\"");
+  const std::string floor_filled = replaced(
+      scene_with({.from = "", .to = "", .shape_extra = ""}),
+      "material = \"floor\"", "material = \"floor\"\ninterior = \"blue_tint\"");
   CHECK(contains(error_of(floor_filled),
                  "shape 2 has an interior, and light cannot pass into it"));
   // A coated surface's checker must stay within [0, 1] as its color would.

@@ -6,7 +6,8 @@
 
 namespace serenity::frame {
 
-bool HeldFrames::start(std::uint64_t since, std::uint64_t index, Extent size) {
+bool HeldFrames::start(HeldSpan span, Extent size) {
+  const auto [since, index] = span;
   const bool remade = !made_ || !(size == size_);
   made_ = true;
   size_ = size;
@@ -15,9 +16,8 @@ bool HeldFrames::start(std::uint64_t since, std::uint64_t index, Extent size) {
   return remade;
 }
 
-bool HeldFrames::continues(std::uint64_t since, std::uint64_t index,
-                           Extent size) const {
-  return made_ && since == since_ && index == next_ && size == size_;
+bool HeldFrames::continues(HeldSpan span, Extent size) const {
+  return made_ && span.since == since_ && span.index == next_ && size == size_;
 }
 
 std::string HeldFrames::holds() const {
@@ -43,12 +43,12 @@ Joined History::join(const FrameInputs& inputs, Extent size,
 
   if (held == 0) {
     const bool remade =
-        held_.start(inputs.accumulated_since, inputs.index, size);
+        held_.start({inputs.accumulated_since, inputs.index}, size);
     time_ = inputs.time;
     return Joined{0, remade};
   }
 
-  if (!held_.continues(inputs.accumulated_since, inputs.index, size)) {
+  if (!held_.continues({inputs.accumulated_since, inputs.index}, size)) {
     throw HistoryError("frame " + std::to_string(inputs.index) +
                        " claims an image accumulated since frame " +
                        std::to_string(inputs.accumulated_since) + " at " +
@@ -90,9 +90,10 @@ ReuseJoined ReuseHistory::join(const FrameInputs& inputs, Extent size) {
   }
   const std::uint64_t held = inputs.index - inputs.reused_since;
   if (held == 0) {
-    return ReuseJoined{0, held_.start(inputs.reused_since, inputs.index, size)};
+    return ReuseJoined{0,
+                       held_.start({inputs.reused_since, inputs.index}, size)};
   }
-  if (!held_.continues(inputs.reused_since, inputs.index, size)) {
+  if (!held_.continues({inputs.reused_since, inputs.index}, size)) {
     throw HistoryError(
         "frame " + std::to_string(inputs.index) +
         " claims reservoirs reused since frame " +

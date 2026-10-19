@@ -153,17 +153,24 @@ struct Joined {
 // frame starts it over or is the next frame of the same start and size.
 // Kept by History and ReuseHistory, each adding its own checks; not for
 // their callers.
+// The frames held, from `since` to frame `index` (I.24: named, not two
+// adjacent frame indices).
+struct HeldSpan {
+  std::uint64_t since;
+  std::uint64_t index;
+};
+
 class HeldFrames {
  public:
   // Frame `index` starts over at `size`, holding the frames from `since`
   // (its own index) on; whether the images must be made anew, having no
   // size yet or another one.
-  bool start(std::uint64_t since, std::uint64_t index, Extent size);
+  bool start(HeldSpan span, Extent size);
 
   // Whether frame `index`, claiming the frames from `since` on at `size`,
   // is the next frame of what is held: the same start and size, and the
   // index after the last held.
-  bool continues(std::uint64_t since, std::uint64_t index, Extent size) const;
+  bool continues(HeldSpan span, Extent size) const;
 
   // Frame `index`, which continues(), joins.
   void take(std::uint64_t index) { next_ = index + 1; }

@@ -46,7 +46,7 @@ std::vector<CameraProbeRay> rays(const contracts::CameraData& camera,
 }
 
 double uniform(std::uint64_t i, std::uint64_t which) {
-  return animation::draw(0xCA3u, i, which);
+  return animation::draw(0xCA3u, {i, which});
 }
 
 // A point of the image and of the lens, drawn from i.

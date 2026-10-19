@@ -51,11 +51,17 @@ std::int64_t rhythm_beat(const Rhythm& r, double t) {
 // A rhythm's glow at t, from its checked beat k0. Flash k starts at k period
 // + jitter(k), the jitter within a fifth of the period: only flashes k0 - 1
 // .. k0 + 1 can be lit at t.
-float rhythm_glow(const Rhythm& r, double t, std::int64_t k0) {
+struct Beat {
+  double t;         // the instant, seconds
+  std::int64_t k0;  // its beat (rhythm_beat)
+};
+float rhythm_glow(const Rhythm& r, Beat beat) {
+  const auto [t, k0] = beat;
   double p = 0.0;
   for (std::int64_t k = k0 - 1; k <= k0 + 1; ++k) {
-    const double jitter = (draw(r.seed, static_cast<std::uint64_t>(k)) - 0.5) *
-                          jitter_span * r.period;
+    const double jitter =
+        (draw(r.seed, {static_cast<std::uint64_t>(k)}) - 0.5) * jitter_span *
+        r.period;
     p = std::max(p,
                  pulse(t, static_cast<double>(k) * r.period + jitter, r.flash));
   }
@@ -187,7 +193,9 @@ float glow(const Glows& glows, GlowRecord record, frame::Seconds t) {
       const Rhythm& r = glows.rhythms.at(record.index);
       const std::int64_t beat = rhythm_beat(r, time);
       const double w = wake_factor(r.wake, time);
-      return w == 0.0 ? 0.0f : woken(r.wake, w, rhythm_glow(r, time, beat));
+      return w == 0.0
+                 ? 0.0f
+                 : woken(r.wake, w, rhythm_glow(r, {.t = time, .k0 = beat}));
     }
     case GlowKind::schedule: {
       const ScheduleGlow& g = glows.schedules.at(record.index);

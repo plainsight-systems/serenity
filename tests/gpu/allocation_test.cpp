@@ -107,7 +107,8 @@ class Counting {
   std::size_t count() const noexcept { return allocations; }
 };
 
-void* allocate(std::size_t size, std::size_t alignment) {
+void* allocate(std::size_t size, std::align_val_t aligned) {
+  const auto alignment = static_cast<std::size_t>(aligned);
   const std::size_t bytes = size == 0 ? 1 : size;
   void* memory = alignment <= alignof(std::max_align_t)
                      ? std::malloc(bytes)
@@ -127,14 +128,14 @@ void* operator new(std::size_t size) {
   if (counting) {
     count_if_ours();
   }
-  return allocate(size, alignof(std::max_align_t));
+  return allocate(size, std::align_val_t{alignof(std::max_align_t)});
 }
 
 void* operator new(std::size_t size, std::align_val_t alignment) {
   if (counting) {
     count_if_ours();
   }
-  return allocate(size, static_cast<std::size_t>(alignment));
+  return allocate(size, alignment);
 }
 
 void operator delete(void* memory) noexcept { std::free(memory); }

@@ -36,7 +36,7 @@ using tests::TexturePoint;
 namespace {
 
 double uniform(std::uint64_t i, std::uint64_t which) {
-  return animation::draw(0x5EEDu, i, which);
+  return animation::draw(0x5EEDu, {i, which});
 }
 
 TexturePoint at(double x, double y, double z, std::uint32_t seed = 0) {

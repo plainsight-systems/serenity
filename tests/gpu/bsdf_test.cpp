@@ -828,9 +828,9 @@ radius = 1
 material = "a_checks"
 )",
                                                            "resolve test");
-  const auto at = [](float x, float z, std::uint32_t material) {
+  const auto at = [](contracts::Float3 position, std::uint32_t material) {
     contracts::SurfaceInteraction s{};
-    s.position = {x, 0.0f, z};
+    s.position = position;
     s.material = material;
     s.geometric_normal = {0.0f, 1.0f, 0.0f};
     s.shading_normal = {0.0f, 1.0f, 0.0f};
@@ -839,22 +839,18 @@ material = "a_checks"
   };
   // A core's surface, in the world at `world` and on its shape at `own`.
   const auto core = [&](float world, contracts::Float3 own) {
-    contracts::SurfaceInteraction s = at(world, 0.0f, 4);
+    contracts::SurfaceInteraction s = at({world, 0.0f, 0.0f}, 4);
     s.object_position = own;
     return s;
   };
   // Materials in name order: a_checks 0, b_brass 1, c_glass 2, d_glow 3,
   // e_core 4, f_porcelain 5.
   const std::vector<contracts::SurfaceInteraction> surfaces = {
-      at(0.5f, 0.5f, 0),
-      at(1.5f, 0.5f, 0),
-      at(0.0f, 0.0f, 1),
-      at(0.0f, 0.0f, 2),
-      at(0.0f, 0.0f, 3),
-      core(0.0f, {1.0f, 0.0f, 0.0f}),
-      core(7.0f, {1.0f, 0.0f, 0.0f}),
-      core(0.0f, {0.0f, 0.0f, 1.0f}),
-      at(0.0f, 0.0f, 5)};
+      at({0.5f, 0.0f, 0.5f}, 0),      at({1.5f, 0.0f, 0.5f}, 0),
+      at({0.0f, 0.0f, 0.0f}, 1),      at({0.0f, 0.0f, 0.0f}, 2),
+      at({0.0f, 0.0f, 0.0f}, 3),      core(0.0f, {1.0f, 0.0f, 0.0f}),
+      core(7.0f, {1.0f, 0.0f, 0.0f}), core(0.0f, {0.0f, 0.0f, 1.0f}),
+      at({0.0f, 0.0f, 0.0f}, 5)};
   const auto count = static_cast<std::uint32_t>(surfaces.size());
   ProbeRunner gpu;
   const metal::SceneBuffers buffers(gpu.device(), gpu.submission(),
