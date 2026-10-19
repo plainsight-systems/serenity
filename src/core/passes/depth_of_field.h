@@ -36,6 +36,14 @@ namespace serenity::passes {
 contracts::DepthOfFieldConstants depth_of_field_constants(
     const contracts::Camera& camera, frame::Extent size);
 
+// The pass's grids for an output of `size` (contract 21), as the constants
+// above give them, for a backend sizing its images and dispatches by the
+// same numbers: the half-resolution grid, `size` halved each way, rounded
+// up; and its tiles, the half grid in tiles of contracts::dof_tile, rounded
+// up.
+frame::Extent depth_of_field_half(frame::Extent size) noexcept;
+frame::Extent depth_of_field_tiles(frame::Extent size) noexcept;
+
 // Whether a frame with `constants` blurs at all: false for a pinhole (a
 // scale of 0), whose depth of field is the image itself, so the pass
 // records nothing and the image is the network's to the bit

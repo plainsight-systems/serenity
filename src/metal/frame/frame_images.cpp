@@ -7,28 +7,14 @@
 #include <initializer_list>
 #include <string>
 
-#include "core/contracts/float3.h"
-#include "core/contracts/light_tile.h"
-#include "core/contracts/path_reservoir.h"
-#include "core/contracts/path_reuse_settings.h"
-#include "core/contracts/primary_hit.h"
+#include "core/passes/bloom.h"
+#include "core/passes/restir_pt_arrays.h"
 #include "metal/device/error.h"
 #include "metal/device/indirect_grid.h"
 #include "metal/device/resident.h"
 #include "metal/device/support.h"
 
 namespace serenity::metal {
-
-namespace {
-
-// Half of `size` on each axis, rounded up, at least 1 (core/passes/tone_map.h,
-// step 2).
-constexpr frame::Extent half(frame::Extent size) noexcept {
-  return {std::max(1u, (size.width + 1) / 2),
-          std::max(1u, (size.height + 1) / 2)};
-}
-
-}  // namespace
 
 FrameImages::FrameImages(const Device& device, Submission& submission,
                          Radiance radiance, Bloom bloom)
@@ -80,7 +66,7 @@ void FrameImages::prepare(frame::Extent size) {
   if (bloom_ == Bloom::pyramid) {
     frame::Extent level = size;
     for (auto& image : pyramid_) {
-      level = half(level);
+      level = passes::bloom_level(level);
       make(image, MTL::PixelFormatRGBA16Float, level, "bloom level");
     }
   }
@@ -105,14 +91,10 @@ PathReuseImages::PathReuseImages(const Device& device, Submission& submission,
   counter_ = make_resident_buffer(device_.get(), submission_, counter_bytes,
                                   MTL::ResourceStorageModeShared,
                                   "ReSTIR PT's replay count", Zeroed::yes);
-  make(light_tiles_,
-       std::size_t{contracts::light_tiles} * contracts::light_tile_size *
-           sizeof(contracts::LightTileEntry),
-       "light tiles");
-  const std::size_t pyramid =
-      contracts::light_power_floats(contracts::light_power_levels(lights));
+  make(light_tiles_, passes::light_tiles_bytes(), "light tiles");
   for (std::size_t h = 0; h < (temporal == Temporal::merged ? 2u : 1u); ++h) {
-    make(light_power_.at(h), pyramid * sizeof(float), "power pyramid");
+    make(light_power_.at(h), passes::light_power_bytes(lights),
+         "power pyramid");
   }
 }
 
@@ -160,31 +142,24 @@ std::uint64_t PathReuseImages::prepare(const frame::FrameInputs& inputs,
     array->reset();
   }
   const auto pool = scoped_pool();
-  const std::size_t pixels = std::size_t{size.width} * size.height;
-  const std::size_t halves = temporal ? 2 : 1;
-  make(reservoirs_, pixels * sizeof(contracts::PathReservoir),
-       "path reservoirs");
-  for (std::size_t h = 0; h < halves; ++h) {
-    make(primaries_.at(h), pixels * sizeof(contracts::PrimaryHit),
-         "primary hits");
+  const passes::PathReuseArrays sizes =
+      passes::path_reuse_arrays(size, spatial_ == Spatial::merged, temporal);
+  make(reservoirs_, sizes.reservoirs, "path reservoirs");
+  for (std::size_t h = 0; h < sizes.copies; ++h) {
+    make(primaries_.at(h), sizes.primaries, "primary hits");
   }
-  make(light_, pixels * 4 * sizeof(float), "light buffer");
-  if (spatial_ == Spatial::merged || temporal) {
-    make(shifts_, pixels * contracts::max_path_neighbors * 4 * sizeof(float),
-         "shifted paths");
-    make(replays_,
-         pixels * contracts::max_path_neighbors * sizeof(std::uint32_t),
-         "replaying shifts");
+  make(light_, sizes.light, "light buffer");
+  if (sizes.shifts != 0) {
+    make(shifts_, sizes.shifts, "shifted paths");
+    make(replays_, sizes.replays, "replaying shifts");
   }
-  if (temporal) {
+  if (sizes.finals != 0) {
     for (Array& copy : finals_) {
-      make(copy, pixels * sizeof(contracts::PathReservoir),
-           "final path reservoirs");
+      make(copy, sizes.finals, "final path reservoirs");
     }
-    make(previous_positions_, pixels * sizeof(contracts::Float3),
-         "previous positions");
-    make(previous_pixels_, pixels * sizeof(std::uint32_t), "previous pixels");
-    make(duplication_, pixels * sizeof(float), "duplication map");
+    make(previous_positions_, sizes.previous_positions, "previous positions");
+    make(previous_pixels_, sizes.previous_pixels, "previous pixels");
+    make(duplication_, sizes.duplication, "duplication map");
   }
   size_ = size;
   history_ = joined;
@@ -195,7 +170,7 @@ PathReuseImages::Addresses PathReuseImages::addresses(
     std::uint64_t index) const noexcept {
   const auto address = [](const Array& array) { return array.address(); };
   const bool temporal = temporal_ == Temporal::merged;
-  const std::size_t now = temporal ? index % 2 : 0;
+  const std::size_t now = passes::this_frame_copy(index, temporal);
   const std::size_t then = 1 - now;
   Addresses out;
   out.reservoirs = address(reservoirs_);

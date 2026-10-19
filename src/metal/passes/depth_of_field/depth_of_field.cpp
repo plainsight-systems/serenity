@@ -2,8 +2,8 @@
 
 #include <cstdint>
 
-#include "core/contracts/depth_of_field.h"
 #include "core/frame/extent.h"
+#include "core/passes/depth_of_field.h"
 #include "metal/device/error.h"
 #include "metal/device/support.h"
 #include "metal/frame/depth_of_field_images.h"
@@ -49,12 +49,8 @@ void DepthOfFieldPass::record(MTL4::ComputeCommandEncoder* encoder,
 
   // The grids (contract 21): the output's, half of it, and its tiles.
   const frame::Extent output = resources.size;
-  const frame::Extent half{
-      static_cast<std::uint32_t>(images->presort()->width()),
-      static_cast<std::uint32_t>(images->presort()->height())};
-  const frame::Extent tiles{
-      (half.width + contracts::dof_tile - 1u) / contracts::dof_tile,
-      (half.height + contracts::dof_tile - 1u) / contracts::dof_tile};
+  const frame::Extent half = passes::depth_of_field_half(output);
+  const frame::Extent tiles = passes::depth_of_field_tiles(output);
   // Each step after a barrier on the one before (depth_of_field.h; GPU.8).
   const auto step =
       [&](const NS::SharedPtr<MTL::ComputePipelineState>& pipeline,

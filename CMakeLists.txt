@@ -161,6 +161,7 @@ add_library(serenity_core STATIC
     src/core/output/png.cpp
     src/core/output/stb_image_write.cpp
     src/core/passes/depth_of_field.cpp
+    src/core/passes/restir_pt_arrays.cpp
     src/core/scene/packed_range.cpp
     src/core/scene/scene.cpp
     src/core/scene/scene_arrays.cpp

@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string_view>
 
-#include "core/contracts/depth_of_field.h"
+#include "core/passes/depth_of_field.h"
 #include "metal/device/support.h"
 
 namespace serenity::metal {
@@ -18,11 +18,7 @@ void DepthOfFieldImages::prepare(frame::Extent size) {
   if (size == size_) {
     return;
   }
-  const auto halved = [](std::uint32_t side) {
-    return side / contracts::dof_scale +
-           (side % contracts::dof_scale != 0 ? 1u : 0u);
-  };
-  const frame::Extent half{halved(size.width), halved(size.height)};
+  const frame::Extent half = passes::depth_of_field_half(size);
   check_texture_size(half, "depth of field's images");
   // Frames in flight may still read the old images (frame_images.h, the
   // same reasons).
@@ -45,10 +41,8 @@ void DepthOfFieldImages::prepare(frame::Extent size) {
         make_resident_texture(device_.get(), submission_,
                               MTL::PixelFormatRGBA16Float, half, what.at(i));
   }
-  const std::size_t tiles =
-      std::size_t{(half.width + contracts::dof_tile - 1u) /
-                  contracts::dof_tile} *
-      ((half.height + contracts::dof_tile - 1u) / contracts::dof_tile);
+  const frame::Extent grid = passes::depth_of_field_tiles(size);
+  const std::size_t tiles = std::size_t{grid.width} * grid.height;
   tiles_ = make_resident_buffer(
       device_.get(), submission_, tiles * sizeof(float),
       MTL::ResourceStorageModePrivate, "depth of field's tiles");
