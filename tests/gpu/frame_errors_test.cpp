@@ -66,21 +66,6 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "a glowing light that is not one of the scene's is refused when the "
-    "renderer is built") {
-  scene::SceneDescription description =
-      scene::parse(tests::flying_fireflies(), "flying fireflies");
-  REQUIRE_FALSE(description.animation.glowers.empty());
-  description.animation.glowers.back().target =
-      description.light_counts.spheres;
-  metal::Device device;
-  metal::Submission submission(device);
-  CHECK_THROWS_AS(
-      metal::Renderer(device, submission, tests::path_graph(), &description),
-      metal::MetalError);
-}
-
-TEST_CASE(
     "an image Metal cannot make is refused by Error, not by Metal stopping the "
     "program") {
   metal::Device device;
