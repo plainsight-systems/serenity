@@ -52,8 +52,9 @@ TEST_CASE("error: an image equal to the reference has none") {
 
 TEST_CASE("error: a uniform offset, and a mixed image, in closed form") {
   // Every value 0.5 above a reference of 1: (0.5)^2, and over (1.01)^2.
-  const auto offset = error_against({.image = filled(Extent{4, 3}, 1.5f),
-                                     .reference = filled(Extent{4, 3}, 1.0f)});
+  const LinearImage raised = filled(Extent{4, 3}, 1.5f);
+  const LinearImage ones = filled(Extent{4, 3}, 1.0f);
+  const auto offset = error_against({.image = raised, .reference = ones});
   CHECK(offset.mse == 0.25);
   CHECK(offset.relative_mse ==
         doctest::Approx(0.25 / (1.01 * 1.01)).scale(0).epsilon(1e-14));
@@ -72,8 +73,9 @@ TEST_CASE("error: a uniform offset, and a mixed image, in closed form") {
         doctest::Approx(relative).scale(0).epsilon(1e-14));
   // An image's value may be below 0 (a signed estimator's); only the
   // reference's may not.
-  const auto below = error_against({.image = filled(Extent{1, 1}, -1.0f),
-                                    .reference = filled(Extent{1, 1}, 0.0f)});
+  const LinearImage negative = filled(Extent{1, 1}, -1.0f);
+  const LinearImage zero = filled(Extent{1, 1}, 0.0f);
+  const auto below = error_against({.image = negative, .reference = zero});
   CHECK(below.mse == 1.0);
 }
 
@@ -145,17 +147,17 @@ TEST_CASE(
 }
 
 TEST_CASE("error: images of two extents, or a contract broken, are refused") {
-  CHECK(contains(refusal({.image = filled(Extent{2, 3}, 1.0f),
-                          .reference = filled(Extent{3, 2}, 1.0f)}),
+  const LinearImage tall = filled(Extent{2, 3}, 1.0f);
+  const LinearImage wide = filled(Extent{3, 2}, 1.0f);
+  CHECK(contains(refusal({.image = tall, .reference = wide}),
                  "the image is 2 x 3, the reference 3 x 2"));
-  LinearImage short_of_one = filled(Extent{2, 2}, 1.0f);
+  const LinearImage whole = filled(Extent{2, 2}, 1.0f);
+  LinearImage short_of_one = whole;
   short_of_one.rgb.pop_back();
-  CHECK(contains(
-      refusal({.image = short_of_one, .reference = filled(Extent{2, 2}, 1.0f)}),
-      "error_against: the image: 11 floats"));
-  CHECK(contains(
-      refusal({.image = filled(Extent{2, 2}, 1.0f), .reference = short_of_one}),
-      "error_against: the reference: 11 floats"));
+  CHECK(contains(refusal({.image = short_of_one, .reference = whole}),
+                 "error_against: the image: 11 floats"));
+  CHECK(contains(refusal({.image = whole, .reference = short_of_one}),
+                 "error_against: the reference: 11 floats"));
   const LinearImage empty{Extent{0, 1}, {}};
   CHECK(contains(refusal({.image = empty, .reference = empty}),
                  "error_against: the reference: an image of 0 x 1, where each "
@@ -185,9 +187,8 @@ TEST_CASE(
                  "the reference's pixel (1, 0) channel 1 is -0.25"));
   // No pixel skipped: pbrt's MRSE leaves out an infinite relative error;
   // here none can arise, and a dark reference value counts in full.
-  CHECK(error_against(
-            {.image = filled(extent, 1.0f), .reference = filled(extent, 0.0f)})
-            .relative_mse ==
+  const LinearImage dark = filled(extent, 0.0f);
+  CHECK(error_against({.image = ones, .reference = dark}).relative_mse ==
         doctest::Approx(1.0 / (relative_epsilon * relative_epsilon))
             .scale(0)
             .epsilon(1e-12));

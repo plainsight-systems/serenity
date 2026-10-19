@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 
 #include "app/clock.h"
@@ -68,7 +69,7 @@ class WindowFrames final : public presentation::FrameClient {
   void shown(const presentation::FrameReport& report) override;
 
  private:
-  Window& window_;
+  std::reference_wrapper<Window> window_;  // C.12: not a reference member
   const scene::SceneDescription* scene_;
   double scale_;
 

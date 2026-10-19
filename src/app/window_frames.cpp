@@ -47,11 +47,11 @@ WindowFrames::WindowFrames(Window& window, const scene::SceneDescription* scene,
                                                : frame::SceneMotion::still) {}
 
 bool WindowFrames::events(frame::Seconds longest) {
-  return !window_.wait(longest).quit;
+  return !window_.get().wait(longest).quit;
 }
 
 frame::Extent WindowFrames::size() {
-  const frame::Extent pixels = window_.size_in_pixels();
+  const frame::Extent pixels = window_.get().size_in_pixels();
   if (pixels.width == 0 || pixels.height == 0) {
     return frame::Extent{0, 0};
   }
@@ -87,7 +87,7 @@ void WindowFrames::shown(const presentation::FrameReport& report) {
     frame_times_.add(report.settled->gpu_start, report.settled->gpu_end);
   }
   if (const auto summary = frame_times_.take(shown_frame.time)) {
-    window_.set_title(title(report, *summary));
+    window_.get().set_title(title(report, *summary));
   }
 }
 

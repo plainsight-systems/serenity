@@ -89,7 +89,7 @@ class DenoiseImages {
   static constexpr std::size_t resamplings = levels;
 
   struct Conv {
-    contracts::ConvParams params;
+    contracts::ConvParams params{};
     MTL::GPUAddress params_address = 0;
     MTL::GPUAddress input = 0;
     MTL::GPUAddress output = 0;
@@ -97,7 +97,7 @@ class DenoiseImages {
         0;  // a decoder's level below; else its input again, unread
   };
   struct Resample {
-    contracts::ResampleParams params;
+    contracts::ResampleParams params{};
     MTL::GPUAddress params_address = 0;
     MTL::GPUAddress input = 0;
     MTL::GPUAddress output = 0;

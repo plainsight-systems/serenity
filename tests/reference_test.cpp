@@ -299,8 +299,9 @@ TEST_CASE(
   // truth, measured as error.h measures any image.
   const LinearImage truth{extent, std::vector<float>(std::size_t{64} * 64 * 3,
                                                      static_cast<float>(mu))};
-  const auto error = serenity::measurement::error_against(
-      {.image = builder.mean(), .reference = truth});
+  const serenity::contracts::LinearImage mean = builder.mean();
+  const auto error =
+      serenity::measurement::error_against({.image = mean, .reference = truth});
   CHECK(error.mse ==
         doctest::Approx(builder.mse_floor()).scale(0).epsilon(0.06));
 }

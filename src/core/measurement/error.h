@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include "core/contracts/linear_image.h"
 
 namespace serenity::measurement {
@@ -58,8 +60,11 @@ struct ImageError {
 // the call it is made for, so its members refer rather than copy some 25 MB
 // each.
 struct Judged {
-  const contracts::LinearImage& image;
-  const contracts::LinearImage& reference;
+  // References that can be rebound, so the struct is a value (C.12); like
+  // any std::reference_wrapper, they bind no temporary, so each image is
+  // one the caller has named.
+  std::reference_wrapper<const contracts::LinearImage> image;
+  std::reference_wrapper<const contracts::LinearImage> reference;
 };
 
 // The error of `judged.image` against `judged.reference`; see above.

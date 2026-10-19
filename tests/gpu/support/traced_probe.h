@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
+#include <functional>
 #include <initializer_list>
 #include <optional>
 #include <span>
@@ -43,12 +44,13 @@ namespace serenity::tests {
 // A scene on the GPU, as a frame traces it: its arrays, its shapes'
 // transforms and its structure; and the probes' library (metallib::probes).
 struct Traced {
-  metal::Device& device;
-  metal::Submission& submission;
-  const metal::Library& library;
-  const metal::SceneBuffers& buffers;
-  metal::ShapeTransforms& transforms;
-  metal::SceneAcceleration& acceleration;
+  // References that can be rebound, so the struct is a value (C.12).
+  std::reference_wrapper<metal::Device> device;
+  std::reference_wrapper<metal::Submission> submission;
+  std::reference_wrapper<const metal::Library> library;
+  std::reference_wrapper<const metal::SceneBuffers> buffers;
+  std::reference_wrapper<metal::ShapeTransforms> transforms;
+  std::reference_wrapper<metal::SceneAcceleration> acceleration;
 };
 
 // Dispatches `threads` threads of `kernel` over `traced`'s structure for
@@ -61,15 +63,15 @@ std::vector<Out> run_traced(
     std::initializer_list<Binding> inputs,
     const std::optional<std::vector<contracts::Transform>>& moved =
         std::nullopt) {
-  const auto pipeline = traced.library.compute_pipeline(kernel);
+  const auto pipeline = traced.library.get().compute_pipeline(kernel);
   const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
-  MTL::Device* mtl = traced.device.handle();
-  const auto out = shared_buffer(traced.device, traced.submission, {},
-                                 threads * sizeof(Out));
+  MTL::Device* mtl = traced.device.get().handle();
+  const auto out = shared_buffer(traced.device.get(), traced.submission.get(),
+                                 {}, threads * sizeof(Out));
   std::vector<NS::SharedPtr<MTL::Buffer>> buffers;
   for (const Binding& input : inputs) {
-    buffers.push_back(
-        shared_buffer(traced.device, traced.submission, input.bytes()));
+    buffers.push_back(shared_buffer(traced.device.get(),
+                                    traced.submission.get(), input.bytes()));
   }
   auto descriptor =
       NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
@@ -79,32 +81,32 @@ std::vector<Out> run_traced(
   INFO("argument table: " << reason(error));
   REQUIRE(table);
 
-  const metal::FrameSlot slot = traced.submission.begin();
+  const metal::FrameSlot slot = traced.submission.get().begin();
   MTL4::ComputeCommandEncoder* encoder = slot.commands->computeCommandEncoder();
   REQUIRE(encoder != nullptr);
   if (moved) {
     const std::span<contracts::Transform> placed =
-        traced.transforms.transforms(slot.slot);
+        traced.transforms.get().transforms(slot.slot);
     std::ranges::copy(*moved, placed.begin());
-    traced.acceleration.update(encoder, slot.slot, placed);
+    traced.acceleration.get().update(encoder, slot.slot, placed);
   }
   std::size_t index = 0;
   table->setAddress(out->gpuAddress(), index++);
   for (const auto& buffer : buffers) {
     table->setAddress(buffer->gpuAddress(), index++);
   }
-  table->setAddress(traced.acceleration.address(slot.slot),
+  table->setAddress(traced.acceleration.get().address(slot.slot),
                     index++);  // the structures by mask
-  table->setAddress(traced.buffers.block().shapes, index++);
-  table->setAddress(traced.transforms.address(slot.slot), index++);
-  table->setAddress(traced.buffers.block().boxes, index);
+  table->setAddress(traced.buffers.get().block().shapes, index++);
+  table->setAddress(traced.transforms.get().address(slot.slot), index++);
+  table->setAddress(traced.buffers.get().block().boxes, index);
   encoder->setArgumentTable(table.get());
   encoder->setComputePipelineState(pipeline.get());
   encoder->dispatchThreads(MTL::Size(threads, 1, 1),
                            MTL::Size(pipeline->threadExecutionWidth(), 1, 1));
   encoder->endEncoding();
-  traced.submission.commit();
-  (void)traced.submission.wait_until_complete(slot.sequence);
+  traced.submission.get().commit();
+  (void)traced.submission.get().wait_until_complete(slot.sequence);
 
   std::vector<Out> results(threads);
   std::memcpy(results.data(), out->contents(), threads * sizeof(Out));

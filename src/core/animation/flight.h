@@ -295,7 +295,7 @@ struct Target {
 };
 
 struct FlightParams {
-  Extent volume;                // where it flies; its body stays inside
+  Extent volume{};              // where it flies; its body stays inside
   std::vector<Target> targets;  // what it circles; none, and it does not circle
   float speed = 0.0f;           // cruising, in meters a second; > 0
   float clearance =
@@ -358,9 +358,9 @@ struct Segment {
 };
 
 struct Flight {
-  Extent volume;  // the loop's
-  Extent reach;   // the box its center never leaves: the volume, grown to hold
-                  // the opening
+  Extent volume{};  // the loop's
+  Extent reach{};  // the box its center never leaves: the volume, grown to hold
+                   // the opening
   std::vector<Segment> opening;  // the prelude, in time order, covering [0,
                                  // begin); none without one
   double begin = 0.0;            // when the loop begins, in seconds

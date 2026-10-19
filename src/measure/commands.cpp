@@ -49,8 +49,9 @@ std::string run(const MeasureError& command) {
   const contracts::LinearImage reference = output::read_pfm(command.reference);
   std::string table = "image,mse,relative_mse\n";
   for (const std::filesystem::path& image : command.images) {
-    const measurement::ImageError error = measurement::error_against(
-        {.image = output::read_pfm(image), .reference = reference});
+    const contracts::LinearImage judged = output::read_pfm(image);
+    const measurement::ImageError error =
+        measurement::error_against({.image = judged, .reference = reference});
     table += std::format("{},{:.9g},{:.9g}\n", csv_field(image.string()),
                          error.mse, error.relative_mse);
   }
