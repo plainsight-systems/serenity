@@ -264,7 +264,13 @@ backend.
    developer's); it fails by name without the CLI.
 2. **The device and the headless seam.** Context, stream, memory,
    readback, the offline target; the headless program split, Metal byte
-   identical; the test pattern rendered on the 3090 to a file.
+   identical; the test pattern rendered on the 3090 to a file. The seam is
+   one interface and one factory declared in the core, defined by each
+   backend's library and chosen by what the headless program links, so
+   `src/headless/` names no backend (file-mapping.md, "The headless
+   renderer behind an offline renderer"); the alternative, a preprocessor
+   switch in its `main.cpp`, was not taken. Two commits, two intents: the
+   seam on Metal, then the CUDA layer. OptiX waits for Phase 3.
 3. **The scene and the path tracer.** Scene buffers, the two structures,
    the shapes' intersection programs, the materials, lights and sampler
    with their CPU checks, the path pass and the accumulation: the

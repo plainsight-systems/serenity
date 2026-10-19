@@ -112,9 +112,9 @@ data or adds a kind; it does not change a family that already exists.
 | `src/metal/reuse/` | Sample reuse | the reservoir, the merge rule, and temporal and spatial reuse |
 | `src/metal/passes/` | Pass | each pass, its shader and its launcher together |
 | `src/metal/frame/` | Frame graph | running the core's schedule on Metal |
-| `src/core/presentation/` | Presentation | the seam between the window and a backend's pacing: the frame source and its client |
+| `src/core/presentation/` | Presentation | the seams between the programs and a backend: the window's frame source and its client; the headless renderer's offline renderer |
 | `src/app/` | Presentation | the macOS window, its event loop, and each frame's inputs, at the instant the backend's frame source gives |
-| `src/headless/` | Presentation | rendering frames to files at a fixed step |
+| `src/headless/` | Presentation | rendering frames to files at a fixed step, on whichever backend the build links, naming none |
 | `src/measure/` | Measurement | the measuring program's command line: a reference made from files, and images judged against it |
 | `scenes/` | Scene content | scene descriptions, as data |
 | `graphs/` | Frame graph | frame graphs, as data |
@@ -378,6 +378,61 @@ kept once the backend's memory exists (the rule is already the core's,
 allocation); the failure counts' bookkeeping and the submission's
 protocol (each is how Metal's unified memory and events work; CUDA's
 differ); MNEE's capacity (one request a pixel, contract 16 states it).
+
+## The headless renderer behind an offline renderer, and the CUDA device
+
+The CUDA backend's Phase 2 (`docs/research/2026-10-19-cuda-backend.md`):
+the headless program renders through a seam both backends implement, and
+the CUDA backend's device layer renders its first pass, the test pattern,
+on the RTX 3090 Ti, to a file.
+
+**The seam.** What the headless program asks of a backend, from what it
+does today: render a frame's sample, wait for it, read back the displayed
+image, the accumulated image or the feature images, the failure counts,
+and wait for everything at the end. One interface in the core, as the
+window's frame source is, and one factory declaration beside it that each
+backend's library defines; the headless program's executable links the
+backend its platform builds, so no file of `src/headless/` names one, not
+even `main.cpp`. The alternative, a preprocessor switch in `main.cpp` on
+the platform, is a compile-time switch where the link already is one.
+Nothing in a frame's work changes: the window's loop and the demo graph do
+not pass through it, so it is guarded by the output being the same to the
+bit and the refusals' words, not by frame time.
+
+| What | Axis | Where |
+|---|---|---|
+| the offline renderer: render a sample, wait, read back the displayed, accumulated and feature images, the failure counts, finish; the feature images read back; the factory each backend defines | Presentation | `src/core/presentation/offline_renderer.h`, new |
+| one run: the plan's frames rendered, checked and written through the offline renderer, what it prints | Presentation | `src/headless/run.{h,cpp}`, from `main.cpp` |
+| the command line parsed, the graph and scene loaded, the plan made, the run composed with the factory's renderer | Presentation | `src/headless/main.cpp` |
+| Metal's offline renderer: its device, submission, target and renderer, and the factory | GPU backend | `src/metal/frame/offline_frames.{h,cpp}`, new |
+| no file of `src/headless/` includes a backend | build | `tools/check_boundaries.sh`, a rule and its proof |
+
+**The CUDA device layer.** The driver API (`cuda.h`), as Blender
+Cycles' CUDA device: the host code C++ compiled by the pinned clang, the
+kernels compiled by `nvcc` at build time into a fatbin for sm_86, embedded
+in the program as Metal's library is and loaded at start-up. Device code
+is kernels only (`.cu`); every launch is `cuLaunchKernel` from host code,
+its parameters by value where they are small (the frame's constants, 32
+bytes): no ring until a pass needs device-resident constants (OptiX's
+launch parameters, Phase 3). OptiX arrives with the first launch that
+traces, Phase 3. The backend's renderer refuses, by name and at
+construction, every pass kind it does not build yet.
+
+| What | Axis | Where |
+|---|---|---|
+| the backend's error, from a driver call's result | GPU backend | `src/cuda/device/error.{h,cpp}` |
+| the device and its primary context; the machine it names | GPU backend | `src/cuda/device/device.{h,cpp}` |
+| the kernels' module, loaded from the embedded fatbin; a kernel by name, launched | GPU backend | `src/cuda/device/module.{h,cpp}` |
+| device memory, owned | GPU backend | `src/cuda/device/buffer.{h,cpp}` |
+| the stream, frames in flight by event, sequences, waiting, the lifetime rule | GPU backend | `src/cuda/device/submission.{h,cpp}` |
+| the offscreen target and its readback | GPU backend | `src/cuda/device/offscreen.{h,cpp}` |
+| the test pattern, the kernel and its launch | Pass | `src/cuda/passes/test_pattern/test_pattern.{cu,h,cpp}` |
+| the schedule carried out: each pass kind this backend builds, every other refused | Frame graph | `src/cuda/frame/renderer.{h,cpp}` |
+| CUDA's offline renderer and the factory | GPU backend | `src/cuda/frame/offline_frames.{h,cpp}` |
+| the kernels compiled by `nvcc` with flags pinned in one place, embedded; the bytes-to-header script both backends' libraries use | build | `cmake/CudaModules.cmake`, new; `cmake/embed_bytes_script.cmake`, from `embed_metallib_script.cmake` |
+| `nvcc` and the driver pinned | build | `cmake/toolchain.json`, "linux"; `tools/check_toolchain.py` |
+| only `src/cuda/` uses CUDA's host API; its kernels include the core's shared layouts only | build | `tools/check_boundaries.sh`, rules 3 and 7 and their proofs |
+| the device, the submission's protocol, the test pattern against the CPU's, determinism; the headless program on the test pattern | tests | `tests/cuda/`, new |
 
 ## Not here yet
 
