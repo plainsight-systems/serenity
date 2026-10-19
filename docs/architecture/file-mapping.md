@@ -190,11 +190,13 @@ GPU (a material's parameters, a light sample, a primary hit) has one
 definition, in a core header that Metal's shading language can also
 include: plain fixed-size fields, nothing only the host has. The host writes
 the bytes the shader reads, with no second definition to drift. This shares
-layouts only, never math. CUDA's device code includes the same headers,
-and only these: CUDA is C++ and could include the core's math too, which
-would leave the GPU tests checking one source compiled twice, so
-`tools/check_boundaries.sh` keeps `src/cuda/`'s device code to
-`core/contracts/`.
+layouts only, never math: a shared layout is a header that includes
+`core/contracts/shared_layout.h` (the contracts, the kinds' records, and
+the encodings beside them), and a shader includes nothing else from the
+core. CUDA's device code includes the same headers, and only these: CUDA
+is C++ and could include the core's math too, which would leave the GPU
+tests checking one source compiled twice. `tools/check_boundaries.sh`
+keeps both backends' device code to them.
 
 ## The algorithm over the families
 

@@ -98,12 +98,17 @@ triangles on the RT cores, an instance level with mask bits, reordering,
 fused passes: each is this machine's tuning, measured one at a time after
 the port runs, not a decision of the port.
 
-**Device code includes `core/contracts/` only.** CUDA is C++, so a kernel
-could include the core's sampling or material code; it does not. The
-GPU tests check each backend against the core's CPU computations, and a
+**Device code includes the core's shared layouts only.** A shared layout
+is a core header that includes `core/contracts/shared_layout.h`: the
+contracts, the kinds' records (lights', materials', media's, shapes',
+textures', passes'), and their encodings (the `constexpr` packing
+functions beside them), never math. Metal's shaders already include
+nothing else from the core (checked 2026-10-19). CUDA is C++, so a kernel
+could include the core's sampling or material code; it does not. The GPU
+tests check each backend against the core's CPU computations, and a
 kernel compiled from the same source would only check that it compiles
-twice. As on Metal (file-mapping.md, "The contracts": layouts only, never
-math), enforced by `tools/check_boundaries.sh`.
+twice. Enforced by `tools/check_boundaries.sh` for both backends' device
+code.
 
 **Host code is C++ compiled by the host compiler; `nvcc` compiles device
 code only.** The host uses the CUDA driver API (`cuda.h`), loading the
