@@ -148,6 +148,7 @@ add_library(serenity_core STATIC
     src/core/denoise/network.cpp
     src/core/materials/coated.cpp
     src/core/film/linear_image.cpp
+    src/core/frame/frame_constants.cpp
     src/core/frame/graph_file.cpp
     src/core/frame/history.cpp
     src/core/frame/schedule.cpp

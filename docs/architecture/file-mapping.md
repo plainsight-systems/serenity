@@ -351,6 +351,34 @@ The light the network reads traced alike wherever it is made
 | the fill and its output in a graph without the network: the light the presenting pass shows and the headless renderer writes; a readback of the light the network is handed, and its jitter | Frame graph | `src/metal/frame/renderer.{h,cpp}` |
 | the test: the input graph's light and features are the denoised graph's, to the bit | Frame graph (test) | `tests/gpu/features_test.cpp` |
 
+## What every backend computes the same, in the core
+
+Before the CUDA backend (`docs/research/2026-10-19-cuda-backend.md`,
+Phase 0), what `src/metal/` computed without Metal moves into the core, so
+the second backend does not write it again. Each move keeps Metal's output
+the same to the bit and its refusals' words the same; the Metal files keep
+how they allocate, bind and record.
+
+| What | Axis | Was | Now |
+|---|---|---|---|
+| the scene's block, the 19 addresses its shaders read the scene through | Scene content | `src/metal/scene/scene_block.h` | `src/core/scene/scene_block.h` (a shared layout; how Metal's shaders read it, in the constant address space, stays in `scene_block.metal.h`) |
+| the list of the scene's arrays, each with its field of the block | Scene content | `src/metal/scene/scene_buffers.cpp` | `src/core/scene/scene_arrays.{h,cpp}` |
+| each frame's constants blocks, filled from the frame's inputs: the frame constants, the features', ReSTIR PT's reuse, the denoiser's, the fill's; the grid ReSTIR PT's kernels run over | Frame graph | `src/metal/frame/renderer.cpp` | `src/core/frame/frame_constants.{h,cpp}` |
+| what a scene or a frame may not be, refused before a frame begins: a time past float's range; a ReSTIR PT scene's media, material values, shapes and lights past what its G-buffer, light tiles and MNEE's requests pack; a glowing light that is not one; a frame before whose camera cannot be framed | Frame graph | `src/metal/frame/renderer.cpp` | `src/core/frame/refusals.{h,cpp}`, each a reason or none, as `frame::invalid` gives; the backend throws its own error with it |
+| the denoiser's network as dispatches: each level's size and channels, which activations each convolution and pool reads and writes, the padded grid | Pass (denoise) | `src/metal/frame/denoise_images.cpp` | `src/core/denoise/unet.{h,cpp}`; each activation's memory (its pitch, stride and slack) and each dispatch's tiling stay the backend's |
+| the depth of field's half size and its tile grid, written twice | Pass (depth of field) | `src/metal/frame/depth_of_field_images.cpp`, `src/metal/passes/depth_of_field/depth_of_field.cpp` | `src/core/passes/depth_of_field.{h,cpp}` |
+| the bloom pyramid's level sizes | Pass (tone map) | `src/metal/frame/frame_images.cpp` | `src/core/passes/bloom.h` |
+| ReSTIR PT's arrays and their sizes for each kind of reuse | Sample reuse | `src/metal/frame/frame_images.cpp` | `src/core/passes/restir_pt_arrays.{h,cpp}` |
+| the acceleration structures' plan: which shapes each holds, which boxes move and their shapes' bounds, every box at rest, the occluders' table; a frame's moving boxes placed | Acceleration | `src/metal/acceleration/scene_acceleration.cpp` | `src/core/shapes/structure_plan.{h,cpp}`; the builds stay the backend's |
+| device code includes the core's shared layouts only | build | none | `tools/check_boundaries.sh`, a rule and its proof |
+
+Left in the backend, each for a reason: the history joined on a copy and
+kept once the backend's memory exists (the rule is already the core's,
+`frame::ReuseHistory`; what is left is the backend's error and its order of
+allocation); the failure counts' bookkeeping and the submission's
+protocol (each is how Metal's unified memory and events work; CUDA's
+differ); MNEE's capacity (one request a pixel, contract 16 states it).
+
 ## Not here yet
 
 - **The CUDA backend's files,** tabled here phase by phase as its

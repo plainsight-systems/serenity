@@ -26,6 +26,7 @@
 #include "core/contracts/path_reuse_settings.h"
 #include "core/contracts/primary_hit.h"
 #include "core/denoise/network.h"
+#include "core/frame/frame_constants.h"
 #include "core/passes/depth_of_field.h"
 #include "core/sampling/pairing.h"
 #include "core/scene/packed_range.h"
@@ -197,11 +198,8 @@ NS::SharedPtr<MTL4::ArgumentTable> make_argument_table(MTL::Device* device,
 MTL::GPUAddress write_feature_constants(
     FrameArray& ring, std::uint32_t slot,
     const std::optional<frame::PreviousFrame>& previous, frame::Extent size) {
-  contracts::FeatureConstants features{};
-  features.previous = previous ? 1u : 0u;
-  if (previous) {
-    features.previous_camera = camera::shader_form(previous->camera, size);
-  }
+  const contracts::FeatureConstants features =
+      frame::feature_constants(previous, size);
   std::memcpy(ring.bytes(slot).data(), &features, sizeof(features));
   return ring.address(slot);
 }
@@ -259,11 +257,8 @@ void Renderer::RestirPtFamily::bind(
   if (constants) {
     // Whether there is a frame before to merge, with its camera framed
     // for this frame's size.
-    contracts::PathReuseConstants reuse{};
-    reuse.previous = previous_camera ? 1u : 0u;
-    if (previous_camera) {
-      reuse.previous_camera = camera::shader_form(*previous_camera, light);
-    }
+    const contracts::PathReuseConstants reuse =
+        frame::path_reuse_constants(previous_camera, light);
     std::memcpy(constants->bytes(begun.slot).data(), &reuse, sizeof(reuse));
     resources.path_constants = constants->address(begun.slot);
   }
@@ -845,18 +840,8 @@ std::pair<MTL::GPUAddress, MTL::GPUAddress> Renderer::write_constants(
     FrameArray& ring, const FrameSlot& begun, const frame::FrameInputs& inputs,
     frame::Extent at, std::uint32_t accumulated_frames,
     std::optional<sampling::CameraJitter> jitter) {
-  const sampling::CameraJitter offset =
-      jitter.value_or(sampling::CameraJitter{});
-  const contracts::FrameConstants constants{
-      static_cast<float>(inputs.time.count()),
-      static_cast<std::uint32_t>(inputs.index),
-      at.width,
-      at.height,
-      accumulated_frames,
-      offset.x,
-      offset.y,
-      jitter ? 1u : 0u,
-  };
+  const contracts::FrameConstants constants =
+      frame::frame_constants(inputs, at, accumulated_frames, jitter);
   const std::span<std::byte> bytes = ring.bytes(begun.slot);
   const MTL::GPUAddress address = ring.address(begun.slot);
   std::memcpy(bytes.subspan(constants_offset, sizeof(constants)).data(),
@@ -923,11 +908,7 @@ FrameResources Renderer::frame_resources(const FrameSlot& begun,
   if (restir_pt_) {
     restir_pt_->bind(resources, begun, inputs.index, previous_camera, light);
     // The grid its one-thread-a-pixel kernels run over (contract 20).
-    resources.traced =
-        checkerboard_
-            ? frame::Extent{contracts::checkerboard_width(light.width),
-                            light.height}
-            : light;
+    resources.traced = frame::traced_grid(light, checkerboard_.has_value());
   }
   if (features_) {
     features_->bind(resources, begun, inputs.previous, light);
@@ -1010,27 +991,20 @@ Renderer::DenoiseResources Renderer::denoise_resources(
   full_features.depth = full.depth();
   full_features.motion = full.motion();
 
-  // Its constants: the view axes, the sizes, whether there is a history.
-  const camera::ViewAxes axes =
-      camera::view_axes(made(inputs.camera, "camera"));
-  contracts::DenoiseConstants k{};
-  k.right = axes.right;
-  k.up = axes.up;
-  k.backward = axes.backward;
-  k.light_width = light.width;
-  k.light_height = light.height;
-  k.history = prepared.denoise_history ? 1u : 0u;
-  k.padded_width = d.images.padded().width;
-  k.padded_height = d.images.padded().height;
-  k.output_width = size.width;
-  k.output_height = size.height;
-  k.features = d.features;
-  // The light's jitter, the frame's (renderer.h, "The camera's jitter"): a
-  // denoised graph feeds the network, so its frames take it.
-  const sampling::CameraJitter jitter =
-      made(frame::camera_jitter(schedule_, inputs.index), "camera jitter");
-  k.jitter_x = jitter.x;
-  k.jitter_y = jitter.y;
+  // Its constants: the view axes, the sizes, whether there is a history,
+  // and the light's jitter, the frame's (renderer.h, "The camera's
+  // jitter"): a denoised graph feeds the network, so its frames take it.
+  const contracts::DenoiseConstants k = frame::denoise_constants(
+      made(inputs.camera, "camera"),
+      frame::DenoiseFrame{
+          .light = light,
+          .padded = d.images.padded(),
+          .output = size,
+          .features = d.features,
+          .history = prepared.denoise_history,
+          .jitter = made(frame::camera_jitter(schedule_, inputs.index),
+                         "camera jitter"),
+      });
   std::memcpy(d.constants.bytes(begun.slot).data(), &k, sizeof(k));
 
   FrameResources& denoising = out.denoising;
@@ -1112,8 +1086,8 @@ void Renderer::record_hand_off(MTL4::ComputeCommandEncoder* encoder,
   CheckerboardFamily& c = made(checkerboard_, "checkerboard fill");
   // The frame before's history is this history's frame before when the
   // fill's own history holds it (renderer.h).
-  const contracts::CheckerboardConstants constants{
-      prepared.fill_history ? 1u : 0u, {0u, 0u, 0u}};
+  const contracts::CheckerboardConstants constants =
+      frame::checkerboard_constants(prepared.fill_history);
   std::memcpy(c.constants.bytes(begun.slot).data(), &constants,
               sizeof(constants));
   // At the light size, as the light half's passes: its constants, the
