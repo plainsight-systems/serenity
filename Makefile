@@ -8,7 +8,7 @@
 # (docs/research/2026-10-10-sanitizers.md). There is no CI yet
 # (docs/process/QUEUE.md).
 
-.PHONY: test test-release test-sanitize run headless movie reference convergence weights check toolchain clean
+.PHONY: test test-release test-sanitize run headless movie reference convergence weights check toolchain format format-check tidy clean
 
 # Configure quietly: dependencies' status summaries (SDL prints its whole
 # option list) are hidden; warnings and errors still show. VERBOSE=1 shows all.
@@ -197,7 +197,42 @@ weights:
 toolchain:
 	./tools/check_toolchain.py
 
-## Structural invariants, plus the tests proving each guard actually fires.
+## The formatter and the static checks are LLVM's, pinned
+## (cmake/toolchain.json, "$lint": the formatter's output depends on its
+## version), from LLVM_BIN, Homebrew's by default (brew install llvm). The
+## build needs none of them; these targets check the pin first.
+LLVM_BIN ?= /opt/homebrew/opt/llvm/bin
+LINT_TOOLS = ./tools/check_toolchain.py --lint --llvm-bin $(LLVM_BIN)
+# Every C++, Objective-C++ and Metal source and header, NUL-separated.
+FORMATTED = find src tests \( -name '*.h' -o -name '*.cpp' -o -name '*.mm' -o -name '*.metal' \) -type f -print0
+JOBS ?= $(shell sysctl -n hw.ncpu)
+
+## Every source formatted in place, Google style (.clang-format). Twice:
+## clang-format can need a second pass to settle a trailing comment it
+## reflowed in the first.
+format:
+	$(LINT_TOOLS)
+	$(FORMATTED) | xargs -0 $(LLVM_BIN)/clang-format -i
+	$(FORMATTED) | xargs -0 $(LLVM_BIN)/clang-format -i
+
+## Fails on any source not formatted, naming each place (make format fixes them).
+format-check:
+	$(LINT_TOOLS)
+	$(FORMATTED) | xargs -0 $(LLVM_BIN)/clang-format --dry-run -Werror
+
+## clang-tidy over every source the debug build compiles (.clang-tidy;
+## tests/.clang-tidy), JOBS at a time, the headers of src/ and tests/ with
+## them: any finding fails. The build first: the sources include headers it
+## generates (the shaders' libraries, embedded).
+tidy:
+	$(LINT_TOOLS)
+	cmake --preset native-debug $(CONFIGURE_QUIET)
+	cmake --build --preset native-debug
+	$(LLVM_BIN)/run-clang-tidy -quiet -j $(JOBS) -p build/native-debug \
+		-clang-tidy-binary $(LLVM_BIN)/clang-tidy '$(CURDIR)/(src|tests)/'
+
+## Structural invariants, plus the tests proving each guard actually fires;
+## then the formatting and the static checks.
 check:
 	for f in scripts/*.sh tools/*.sh tests/*.sh; do bash -n "$$f" || exit 1; done
 	./tools/check_boundaries.sh
@@ -205,6 +240,8 @@ check:
 	./tests/test_check_boundaries.sh
 	./tests/test_check_toolchain.sh
 	./tests/test_codex_review_preflight.sh
+	$(MAKE) format-check
+	$(MAKE) tidy
 
 clean:
 	rm -rf build

@@ -29,6 +29,49 @@ PY
     grep -q "^  ${key}:" "${ERR}" || fail "${key}: the failure did not name the tool: $(cat "${ERR}")"
 done
 
+# The lint tools' pins (LLVM's) are --lint's alone: a mismatch in one fails
+# --lint by name, and does not touch the build's check, which a machine
+# without LLVM must still pass; a build pin's mismatch does not touch --lint.
+"${CHECK}" --lint >/dev/null 2>&1 || fail "the real lint pins do not match this machine: run ${CHECK} --lint"
+for key in clang_format clang_tidy clangd cxx; do
+    python3 - "${key}" "${PINS}" <<'PY'
+import json, sys
+key, out = sys.argv[1], sys.argv[2]
+pins = json.load(open("cmake/toolchain.json"))
+pins[key] = pins[key] + " (not this one)"
+json.dump(pins, open(out, "w"))
+PY
+    case "${key}" in
+        cxx)
+            "${CHECK}" --lint --pins "${PINS}" >/dev/null 2>&1 ||
+                fail "${key}: a build pin's mismatch failed --lint"
+            ;;
+        *)
+            if "${CHECK}" --lint --pins "${PINS}" >/dev/null 2>"${ERR}"; then
+                fail "${key}: a mismatched lint pin passed --lint"
+            fi
+            grep -q "^  ${key}:" "${ERR}" || fail "${key}: the failure did not name the tool: $(cat "${ERR}")"
+            "${CHECK}" --pins "${PINS}" >/dev/null 2>&1 ||
+                fail "${key}: a lint pin's mismatch failed the build's check"
+            ;;
+    esac
+done
+
+# Lint tools other than the pinned ones fail --lint, each by name: the check
+# reads the tools in --llvm-bin, not fixed paths.
+FAKE_LLVM="$(mktemp -d -t serenity-fake-llvm.XXXXXX)"
+trap 'rm -f "${PINS}" "${ERR}" "${FAKE}"; rm -rf "${FAKE_LLVM}"' EXIT
+for tool in clang-format clang-tidy clangd; do
+    printf '#!/bin/sh\necho "Homebrew %s version 99.0.0"\n' "${tool}" > "${FAKE_LLVM}/${tool}"
+    chmod +x "${FAKE_LLVM}/${tool}"
+done
+if "${CHECK}" --lint --llvm-bin "${FAKE_LLVM}" >/dev/null 2>"${ERR}"; then
+    fail "lint: unpinned lint tools passed"
+fi
+for key in clang_format clang_tidy clangd; do
+    grep -q "^  ${key}:" "${ERR}" || fail "${key}: the failure did not name it: $(cat "${ERR}")"
+done
+
 # A tool other than the pinned one fails, even with every pin intact: the
 # check reads the tools CMake resolved, not fixed paths.
 printf '#!/bin/sh\necho "Apple clang version 99.0.0 (not the pinned one)"\n' > "${FAKE}"
@@ -66,4 +109,4 @@ grep -q "^TOOLCHAIN PINS UNREADABLE: ${PINS}: " "${ERR}" ||
     fail "pins: a pins file that is not JSON was not named: $(cat "${ERR}")"
 grep -q "Traceback" "${ERR}" && fail "pins: a traceback, not a named failure: $(cat "${ERR}")"
 
-echo "check_toolchain: OK (a mismatch in any pin fails, by name)"
+echo "check_toolchain: OK (a mismatch in any pin fails, by name; the lint pins only --lint)"

@@ -4,6 +4,7 @@
     tools/check_toolchain.py [--pins <path>] [--cxx <compiler>] [--cc <compiler>]
                              [--objc <compiler>] [--objcxx <compiler>]
                              [--sdk <name or path>] [--cmake <cmake>]
+    tools/check_toolchain.py --lint [--pins <path>] [--llvm-bin <directory>]
 
 Metal cannot run in a container, so the toolchain cannot be pinned by an
 image. It is pinned by version instead, and this check is what makes the pin
@@ -23,6 +24,13 @@ the development machine). Python, which runs only this check and the
 review scripts and builds nothing, is found by CMake (find_package) and
 given a floor there, not pinned.
 
+--lint checks the other pins instead, and only them: LLVM's clang-format,
+clang-tidy and clangd, in --llvm-bin (default Homebrew's,
+/opt/homebrew/opt/llvm/bin). The build runs none of them, so configuring
+does not ask for them and a machine without them still builds; make
+format, format-check and tidy do, since the formatter's output depends on
+its version.
+
 Exit status: 0 when every version matches, 1 on any mismatch, when a tool
 cannot be run, or when the pins file cannot be read as JSON (named, with
 why). Covered by tests/test_check_toolchain.sh, which proves a
@@ -37,6 +45,16 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # xcodebuild prints two lines; each pin takes one.
 LINE = {"xcode_build": 1}
+
+
+def lint_commands(llvm_bin):
+    """What each of --lint's pins is compared with: the first line of each
+    tool's --version, the tools in `llvm_bin`."""
+    return {
+        "clang_format": [f"{llvm_bin}/clang-format", "--version"],
+        "clang_tidy": [f"{llvm_bin}/clang-tidy", "--version"],
+        "clangd": [f"{llvm_bin}/clangd", "--version"],
+    }
 
 
 def commands(tools):
@@ -76,9 +94,17 @@ def main(argv):
         "sdk": "macosx",
         "cmake": "cmake",
     }
+    lint = False
+    llvm_bin = "/opt/homebrew/opt/llvm/bin"
     args = argv[1:]
     while args:
-        if len(args) >= 2 and args[0] == "--pins":
+        if args[0] == "--lint":
+            lint = True
+            args = args[1:]
+            continue
+        if len(args) >= 2 and args[0] == "--llvm-bin":
+            llvm_bin = args[1]
+        elif len(args) >= 2 and args[0] == "--pins":
             pins_path = pathlib.Path(args[1])
         elif len(args) >= 2 and args[0].startswith("--") and args[0][2:] in tools:
             if not args[1]:
@@ -98,7 +124,8 @@ def main(argv):
         print(f"TOOLCHAIN PINS UNREADABLE: {pins_path}: {error}", file=sys.stderr)
         return 1
     failures = []
-    for key, command in commands(tools).items():
+    checked = lint_commands(llvm_bin) if lint else commands(tools)
+    for key, command in checked.items():
         if key not in pins:
             failures.append(f"{key}: no pin in {pins_path}")
             continue
@@ -113,7 +140,7 @@ def main(argv):
         for failure in failures:
             print(f"  {failure}", file=sys.stderr)
         return 1
-    print("toolchain OK")
+    print("lint tools OK" if lint else "toolchain OK")
     return 0
 
 

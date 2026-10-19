@@ -8,5 +8,9 @@
  "cc": "Apple clang version 17.0.0 (clang-1700.6.3.2)",
  "objc": "Apple clang version 17.0.0 (clang-1700.6.3.2)",
  "objcxx": "Apple clang version 17.0.0 (clang-1700.6.3.2)",
- "cmake": "cmake version 4.2.3"
+ "cmake": "cmake version 4.2.3",
+ "$lint": "The formatter and the static checks, LLVM's, which the build does not run: make format, format-check and tidy, and clangd in the editor (docs/process/workflow.md). The formatter's output depends on its version, so it is pinned with the others; tools/check_toolchain.py --lint checks these alone, and only those targets ask it to, so a machine without them still builds. brew install llvm.",
+ "clang_format": "Homebrew clang-format version 21.1.8",
+ "clang_tidy": "Homebrew LLVM version 21.1.8",
+ "clangd": "Homebrew clangd version 21.1.8"
 }
