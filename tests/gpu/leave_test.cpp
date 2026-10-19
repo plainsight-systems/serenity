@@ -203,10 +203,10 @@ struct Tally {
   std::size_t outward = 0;   // rays leaving outward
   std::size_t inward = 0;    // rays leaving inward
   std::size_t self_out = 0;  // outward rays that hit the shape again
-  std::size_t self_in =
-      0;  // inward rays that hit it nearer than half way across
-  std::size_t leaked =
-      0;  // inward rays that did not hit it: they started outside it
+  // inward rays that hit it nearer than half way across
+  std::size_t self_in = 0;
+  // inward rays that did not hit it: they started outside it
+  std::size_t leaked = 0;
 
   std::size_t failures() const { return self_out + self_in + leaked; }
 };

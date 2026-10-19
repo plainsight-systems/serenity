@@ -58,8 +58,7 @@ namespace serenity::scene {
 //   [environment]
 //   kind = "gradient"
 //   zenith = [0.02, 0.03, 0.08]     # linear RGB, 0 or more: all 0 is a
-//   horizon = [0.15, 0.17, 0.25]    # black sky, the scene lit by its lights
-//   alone
+//   horizon = [0.15, 0.17, 0.25]    # black sky, lit by the lights alone
 //
 //   [textures.floor_checks]         # a name, used by materials
 //   kind = "checker"
@@ -76,11 +75,12 @@ namespace serenity::scene {
 //   seed = 3
 //
 //   [textures.cats_eye]
-//   kind = "swirl"                  # a marble's core, on its shape
-//   (core/textures/swirl.h) a = [0.9, 0.35, 0.05]           # the two colors,
-//   linear RGB in [0, 1] b = [0.95, 0.9, 0.8] vanes = 3                       #
-//   bands of each color around; 1 to 16 twist = 0.5                     # turns
-//   per unit of height seed = 2
+//   kind = "swirl"                  # a marble's core, on its shape (swirl.h)
+//   a = [0.9, 0.35, 0.05]           # the two colors, linear RGB in [0, 1]
+//   b = [0.95, 0.9, 0.8]
+//   vanes = 3                       # bands of each color around; 1 to 16
+//   twist = 0.5                     # turns per unit of height
+//   seed = 2
 //
 //   [materials.glass]               # a name, used by shapes
 //   kind = "dielectric"
@@ -136,8 +136,8 @@ namespace serenity::scene {
 //   radius = 0.03
 //   material = "glow"
 //   motion = { kind = "wander", reach = 0.25, speed = 0.3, seed = 7 }
-//   glow = { kind = "rhythm", period = 5.5, flash = 0.35, dim = 0.05, seed = 3
-//   }
+//   glow = { kind = "rhythm", period = 5.5, flash = 0.35, dim = 0.05,
+//            seed = 3 }
 //
 //   [[shapes]]
 //   kind = "sphere"
@@ -148,8 +148,8 @@ namespace serenity::scene {
 //              targets = ["marble"], speed = 0.5, clearance = 0.08,
 //              circle = 3, swoop = 1, drift = 1, seed = 11,
 //              prelude = { kind = "perch", at = [2, 0.8305, 0], until = 9 } }
-//                                   # optional: hold (until), or perch (at,
-//                                   until)
+//                                   # optional: hold (until), or perch
+//                                   # (at, until)
 //   glow = { kind = "flight", flash = 0.35, dim = 0.05,
 //            wake = { at = 4, ramp = 1.5 } }  # optional: dark until at
 //

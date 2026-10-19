@@ -85,8 +85,8 @@ namespace materials {
 struct CoatedData {
   contracts::Float3 color;  // the base's albedo, each in [0, 1]; used when
                             // texture.index is no_texture
-  contracts::TextureReference
-      texture;   // the base's albedo from a texture, or no_texture
+  // the base's albedo from a texture, or no_texture
+  contracts::TextureReference texture;
   float ior;     // the coat's index of refraction; greater than 1
   float escape;  // internal_escape(ior), 1 - F_in, filled at load
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array

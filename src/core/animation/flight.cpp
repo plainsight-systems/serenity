@@ -26,8 +26,8 @@ namespace {
 constexpr int episodes = 64;
 constexpr int attempts = 16;  // draws of an episode in a round (step 3)
 constexpr int rounds = 4;     // rounds of draws an episode may have (step 4)
-constexpr int most_backtracks =
-    64;  // redraws of earlier episodes, in all (step 4)
+// redraws of earlier episodes, in all (step 4)
+constexpr int most_backtracks = 64;
 constexpr double delta = flight_delta;  // the sampling bound, meters (step 3)
 constexpr double pi = std::numbers::pi;
 constexpr double two_pi = 2.0 * pi;  // a turn, in radians
@@ -44,10 +44,10 @@ constexpr double seconds_an_hour = 3600.0;
 // uniformly between its least and its most.
 
 // circle
-constexpr double orbit_gap =
-    0.04;  // meters past the clearance to the nearest orbit
-constexpr double orbit_widest =
-    0.6;  // meters wider than the nearest the orbit may be
+// meters past the clearance to the nearest orbit
+constexpr double orbit_gap = 0.04;
+// meters wider than the nearest the orbit may be
+constexpr double orbit_widest = 0.6;
 constexpr double tilt_most = 25.0 * pi / 180.0;
 constexpr double breathe_most = 0.1;        // of the radius
 constexpr double breathe_rate_least = 0.1;  // hertz
@@ -65,35 +65,35 @@ constexpr double climb_least = 0.3;  // meters
 constexpr double climb_most = 0.6;
 constexpr double swoop_reach_least = 0.3;  // meters along the heading
 constexpr double swoop_reach_most = 0.6;
-constexpr double swoop_headroom =
-    0.35;  // meters above the climb, for the transit out of it
-constexpr double swoop_low =
-    1.6;  // the first handle's depth, in dips: the deepest the J goes
+// meters above the climb, for the transit out of it
+constexpr double swoop_headroom = 0.35;
+// the first handle's depth, in dips: the deepest the J goes
+constexpr double swoop_low = 1.6;
 constexpr double swoop_mid = 0.8;          // the second handle's depth, in dips
 constexpr double swoop_first_along = 0.3;  // the handles' way along the reach
 constexpr double swoop_second_along = 0.8;
-constexpr double swoop_speed_share =
-    0.8;  // of the cruising speed, along its chord
+// of the cruising speed, along its chord
+constexpr double swoop_speed_share = 0.8;
 constexpr double swoop_shortest = 1.0;  // seconds
 constexpr double swoop_longest = 2.5;
 
 // drift
-constexpr double drift_least_reach =
-    0.04;  // meters on each axis, up to first_drift_reach
+// meters on each axis, up to first_drift_reach
+constexpr double drift_least_reach = 0.04;
 constexpr double drift_slowdown = 3.0;  // the cruising speed over this
-constexpr double drift_room =
-    0.1;  // meters it is placed with room for on every side
+// meters it is placed with room for on every side
+constexpr double drift_room = 0.1;
 constexpr double drift_shortest = 2.0;  // seconds
 constexpr double drift_longest = 4.0;
 
 // transit
 constexpr double transit_shortest = 0.4;  // seconds
-constexpr double transit_slack =
-    1.2;  // its duration over its chord's at the cruising speed
-constexpr double waypoint_headroom =
-    0.05;  // meters below the volume's top, past body and delta
-constexpr double level_least =
-    1e-6;  // meters: a level offset shorter than this has no heading
+// its duration over its chord's at the cruising speed
+constexpr double transit_slack = 1.2;
+// meters below the volume's top, past body and delta
+constexpr double waypoint_headroom = 0.05;
+// meters: a level offset shorter than this has no heading
+constexpr double level_least = 1e-6;
 
 // where a swoop or a drift starts, near where the last episode ended: within
 // a meter of it, pulled a third of the way toward the volume's middle
@@ -128,8 +128,8 @@ constexpr double rise_keeps = perch_gap / 2.0;
 
 // Step P1: what a perch keeps from every still surface past its body and
 // the rounding allowance, and the largest allowance a perch's gap survives.
-constexpr double perch_keeps =
-    rise_keeps + rise_least_slack;  // 3 perch_gap / 4
+// 3 perch_gap / 4
+constexpr double perch_keeps = rise_keeps + rise_least_slack;
 constexpr double perch_most_rounding = perch_gap / 8.0;
 
 // The central difference's step, in seconds: small beside any segment's
@@ -386,8 +386,8 @@ struct Context {
   const FlightParams& params;
   double body;
   const contracts::Obstacles& obstacles;
-  double
-      rho;  // the volume's rounding allowance, which step 3's thresholds carry
+  // the volume's rounding allowance, which step 3's thresholds carry
+  double rho;
 };
 
 // Step 3: whether every sample of the segment keeps the clearance and keeps
@@ -1203,9 +1203,9 @@ Flight make_flight(const FlightJob& job,
   Flight flight;
   flight.volume = job.params.volume;
   lay_out(flight, e, closing);  // step 6
-  flight.opening =
-      opening_of(c, job.prelude, flight.segments.front());  // steps P1 and P2
-  flight.begin = lay_out_opening(flight.opening);           // step P3
+  // steps P1 and P2
+  flight.opening = opening_of(c, job.prelude, flight.segments.front());
+  flight.begin = lay_out_opening(flight.opening);  // step P3
   flight.reach = reach_of(flight.volume, flight.opening);
   flight.flashes = schedule_flashes(job.params.seed, flight.segments,
                                     flight.loop);  // step 7, the loop

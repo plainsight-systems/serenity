@@ -681,8 +681,9 @@ TEST_CASE(
     const double dc2 = dot(center - p, center - p);
     const double solid_angle =
         2.0 * std::numbers::pi * (1.0 - std::sqrt(1.0 - radius * radius / dc2));
+    // one light: P = 1
     const double direction_density =
-        nee ? 1.0 / solid_angle : w.y / std::numbers::pi;  // one light: P = 1
+        nee ? 1.0 / solid_angle : w.y / std::numbers::pi;
     return direction_density * cos_light / d2;
   };
   std::size_t checked = 0;
@@ -854,8 +855,8 @@ TEST_CASE(
     CHECK(r.kept.weight * kept_f ==
           doctest::Approx(w_own + w_last).epsilon(1.0e-5));
   }
-  CHECK(contracts::path_count(results[2].kept.flags) ==
-        2u);  // the floor's: 1 + 1
+  // the floor's: 1 + 1
+  CHECK(contracts::path_count(results[2].kept.flags) == 2u);
 }
 
 namespace {

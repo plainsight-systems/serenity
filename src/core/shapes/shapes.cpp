@@ -116,9 +116,8 @@ double distance_to(const PlacedSphere& s, contracts::Float3 point) noexcept {
 
 double distance_to(const PlacedBox& b, contracts::Float3 point) noexcept {
   double outside2 = 0.0;
-  double inside =
-      -std::numeric_limits<double>::infinity();  // the largest (least negative)
-                                                 // face distance
+  // the largest (least negative) face distance
+  double inside = -std::numeric_limits<double>::infinity();
   // Fixed-extent views, indexed below their extent (Bounds.1).
   const std::span<const double, 3> low(b.low);
   const std::span<const double, 3> high(b.high);

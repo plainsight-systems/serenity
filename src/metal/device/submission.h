@@ -354,21 +354,21 @@ class Submission {
 
   NS::SharedPtr<MTL::Device> device_;
   NS::SharedPtr<MTL4::CommandQueue> queue_;  // the main queue
-  NS::SharedPtr<MTL4::CommandQueue>
-      overlap_;  // a two-part submission's second part's
+  // a two-part submission's second part's
+  NS::SharedPtr<MTL4::CommandQueue> overlap_;
   NS::SharedPtr<MTL::ResidencySet> residency_;
-  NS::SharedPtr<MTL::SharedEvent>
-      completed_;  // n + 1 once submission n has completed
-  NS::SharedPtr<MTL::SharedEvent>
-      first_done_;  // n + 1 once part 1 of two-part submission n has
+  // n + 1 once submission n has completed
+  NS::SharedPtr<MTL::SharedEvent> completed_;
+  // n + 1 once part 1 of two-part submission n has
+  NS::SharedPtr<MTL::SharedEvent> first_done_;
   std::array<Slot, frames_in_flight> slots_;
   std::uint64_t next_ = 0;  // the sequence begin() hands out next
-  Parts last_committed_ =
-      Parts::one;          // the parts of the last submission committed
+  // the parts of the last submission committed
+  Parts last_committed_ = Parts::one;
   bool open_ = false;      // a submission is begun and not yet committed
   bool finished_ = false;  // finish() has run; nothing may be begun after
-  bool abandoned_ =
-      false;  // an allocation left the set while open_: never commit it
+  // an allocation left the set while open_: never commit it
+  bool abandoned_ = false;
 };
 
 }  // namespace serenity::metal

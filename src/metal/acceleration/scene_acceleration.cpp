@@ -263,8 +263,9 @@ void SceneAcceleration::update(
       continue;
     }
     // Step 1: the tree's moving boxes, where this frame places their shapes.
+    // made from boxes
     const std::span<shapes::Bounds> boxes =
-        tree->boxes->view<shapes::Bounds>(slot);  // made from boxes
+        tree->boxes->view<shapes::Bounds>(slot);
     for (std::size_t i = 0; i < tree->moving_boxes.size(); ++i) {
       boxes[tree->moving_boxes[i]] = shapes::world_bounds(
           tree->moving_bounds[i], transforms[tree->moving_shapes[i]]);

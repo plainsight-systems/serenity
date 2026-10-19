@@ -142,8 +142,8 @@ inline uint bsdf_lobes(serenity::contracts::Bsdf bsdf) {
 
 // `value` as a half's bits, a positive value never 0.
 constant constexpr uint half_magnitude = 0x7fffu;  // a half's bits but its sign
-constant constexpr uint half_least =
-    1u;  // the least positive half, 2^-24, a subnormal
+// the least positive half, 2^-24, a subnormal
+constant constexpr uint half_least = 1u;
 
 inline uint pack_half(float value) {
   const ushort bits = as_type<ushort>(half(value));

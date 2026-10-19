@@ -164,8 +164,8 @@ struct Options {
   Write write = Write::all;
   std::uint64_t samples = 1;  // rendered per frame, at its instant
   output::ImageFormat format = output::default_format;
-  bool features =
-      false;  // --features: the feature images beside each frame written
+  // --features: the feature images beside each frame written
+  bool features = false;
 };
 
 // Which of a run's frames: the one `after_first` frames after its first, of

@@ -23,9 +23,8 @@ namespace serenity::frame {
 //   passes = ["path", "tone_map"] # pass names, in order; at least one
 //
 //   [tone_map]                    # exactly when a pass is tone_map
-//   exposure = 0.0                # stops, within [-10, 10]
-//   (core/passes/tone_map.h) bloom = 0.04                  # the fraction of
-//   light spread into glare
+//   exposure = 0.0                # stops, within [-10, 10] (passes/tone_map.h)
+//   bloom = 0.04                  # the fraction of light spread into glare
 //
 //   [restir_pt]                   # exactly when a pass is one of ReSTIR PT's
 //   nee_candidates = 32           # an integer in [1, 32]

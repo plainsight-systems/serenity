@@ -646,8 +646,9 @@ struct TreeGather {
         kept.density;
     const float weight =
         nee::light_weight(m, kept.density, bsdf_pdf(here.bsdf, here.wo, wi));
+    // W_RIS p1
     const float contribution_weight =
-        sum / (float(m) * kept.target) * kept.density;  // W_RIS p1
+        sum / (float(m) * kept.target) * kept.density;
     const uint length = index + 1u;
     if (rc != 0u) {
       offer(beta * weight * kept_light, contribution_weight,

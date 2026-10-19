@@ -114,8 +114,8 @@ constexpr int32_t checkerboard_previous_x(int32_t x, int32_t y,
 
 // What the fill reads beyond the frame's constants (above).
 struct CheckerboardConstants {
-  uint32_t
-      history;  // 1 when the fill's history holds this history's frame before
+  // 1 when the fill's history holds this history's frame before
+  uint32_t history;
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[3];
 };

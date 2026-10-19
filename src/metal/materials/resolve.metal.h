@@ -8,9 +8,8 @@
 // a kind added to MaterialKind and not here fails to compile (-Werror).
 //
 //   rough       lambert: color from its texture or constant
-//   conductor   conductor: f0, alpha = roughness^2, no less than least_alpha (a
-//   GGX
-//               with alpha 0 has no density to sample)
+//   conductor   conductor: f0, alpha = roughness^2, no less than least_alpha
+//               (a GGX with alpha 0 has no density to sample)
 //   dielectric  dielectric: ior
 //   coated      coated: color from its texture or constant, the coat's
 //               ior, and its internal reflectance (materials/coated.h)

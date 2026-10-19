@@ -71,8 +71,8 @@ inline uint candidate_count(uint candidates, uint index) {
 // often not keep; the kept one's point is found once, by kept_point().
 struct Candidate {
   uint light;  // the light record's index
-  serenity::contracts::LightSample
-      sample;     // its direction, distance and radiance from the origin
+  // its direction, distance and radiance from the origin
+  serenity::contracts::LightSample sample;
   float density;  // p1 = P p_l, solid angle
   float target;   // p̂(y), unshadowed
 };

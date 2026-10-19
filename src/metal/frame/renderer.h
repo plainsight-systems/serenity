@@ -516,11 +516,11 @@ class Renderer {
     std::uint64_t index = 0;
     frame::Extent size;
     std::uint32_t accumulated_frames = 0;
-    std::uint64_t reused_frames =
-        0;                         // the reuse history's frames before this one
+    // the reuse history's frames before this one
+    std::uint64_t reused_frames = 0;
     bool denoise_history = false;  // the denoiser reads last frame's output
-    bool fill_history =
-        false;  // the checkerboard's fill reads the frame before's light
+    // the checkerboard's fill reads the frame before's light
+    bool fill_history = false;
   };
 
   // Each family's state (above), one struct each, held in place in an
@@ -541,8 +541,8 @@ class Renderer {
 
     PathReuseImages images;
     StaticArrays statics;  // the settings, then the reuse textures
-    std::optional<FrameArray>
-        constants;  // with restir_pt_temporal: contracts::PathReuseConstants
+    // with restir_pt_temporal: contracts::PathReuseConstants
+    std::optional<FrameArray> constants;
   };
   // MNEE's (contract 16): its work list and its count of lost requests.
   struct MneeFamily {
@@ -566,12 +566,12 @@ class Renderer {
               const std::optional<frame::PreviousFrame>& previous,
               frame::Extent light);
 
-    std::array<std::optional<FeatureImages>, frames_in_flight>
-        sets;  // the second only per slot
+    // the second only per slot
+    std::array<std::optional<FeatureImages>, frames_in_flight> sets;
     FrameArray constants;
     std::optional<ShapeTransforms> previous_transforms;
-    std::uint32_t last_slot =
-        0;  // the slot of the frame bound last, which read_features() reads
+    // the slot of the frame bound last, which read_features() reads
+    std::uint32_t last_slot = 0;
   };
   // The denoise pass's: the network's last width, its buffers, the
   // target-size ring, its constants' ring, and the full-size albedo's
@@ -584,8 +584,8 @@ class Renderer {
     DenoiseImages images;
     FrameArray output_constants;
     FrameArray constants;
-    std::array<std::optional<FeatureImages>, frames_in_flight>
-        full_features;  // a set per slot (above)
+    // a set per slot (above)
+    std::array<std::optional<FeatureImages>, frames_in_flight> full_features;
     FrameArray full_feature_constants;
     FeaturesPass full_features_pass;
   };
@@ -675,11 +675,11 @@ class Renderer {
   Submission& submission_;
   Library library_;
   FrameArray constants_;  // the ring: one slot per frame in flight
-  NS::SharedPtr<MTL4::ArgumentTable>
-      arguments_;  // every frame's: Metal snapshots it at each dispatch
+  // every frame's: Metal snapshots it at each dispatch
+  NS::SharedPtr<MTL4::ArgumentTable> arguments_;
   bool denoises_ = false;
-  bool feeds_network_ =
-      false;  // core/frame/schedule.h: traced checkerboarded and filled
+  // core/frame/schedule.h: traced checkerboarded and filled
+  bool feeds_network_ = false;
   frame::Schedule schedule_;  // for light_size()
   bool needs_scene_ = false;  // some pass in the schedule reads the scene
   std::unique_ptr<SceneBuffers> scene_;

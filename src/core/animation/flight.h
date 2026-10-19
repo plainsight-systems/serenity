@@ -296,16 +296,16 @@ struct Target {
 
 struct FlightParams {
   Extent volume{};  // where it flies; its body stays inside
-  std::vector<Target>
-      targets{};       // what it circles; none, and it does not circle
+  // what it circles; none, and it does not circle
+  std::vector<Target> targets{};
   float speed = 0.0f;  // cruising, in meters a second; > 0
-  float clearance =
-      0.0f;  // from every still surface to its own, in meters; >= 0
+  // from every still surface to its own, in meters; >= 0
+  float clearance = 0.0f;
   std::array<float, 3> weights{};  // circle, swoop, drift: >= 0, summing > 0;
                                    // circle 0 with no targets
   std::uint64_t seed = 0;
-  std::int64_t most_steps =
-      flight_most_steps;  // step 3's bound on one segment's samples; > 0
+  // step 3's bound on one segment's samples; > 0
+  std::int64_t most_steps = flight_most_steps;
 };
 
 enum class Behaviour : std::uint8_t {
@@ -365,9 +365,9 @@ struct Flight {
   std::vector<Segment> opening{};  // the prelude, in time order, covering [0,
                                    // begin); none without one
   double begin = 0.0;              // when the loop begins, in seconds
-  std::vector<Segment>
-      segments;       // the loop, in time order, covering [0, loop) from begin
-  double loop = 0.0;  // the loop's length, in seconds
+  // the loop, in time order, covering [0, loop) from begin
+  std::vector<Segment> segments;
+  double loop = 0.0;      // the loop's length, in seconds
   FlashSchedule flashes;  // its flashes, over the opening and the loop (step 7)
 };
 

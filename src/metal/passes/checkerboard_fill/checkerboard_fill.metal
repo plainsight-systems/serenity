@@ -106,8 +106,8 @@ bool reprojected(Images images, float2 at, float expected, float slope,
                                         frame - 1u)) {
       continue;
     }
-    const float4 then =
-        images.previous_light.read(uint2(texel));  // rgb the light, a the depth
+    // rgb the light, a the depth
+    const float4 then = images.previous_light.read(uint2(texel));
     if (!same_surface(expected, then.a, slope)) {
       continue;
     }

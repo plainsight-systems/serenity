@@ -78,10 +78,10 @@ class WindowFrames final : public presentation::FrameClient {
   std::uint64_t index_ = 0;
   frame::LiveHistory history_;
   frame::LiveReuse reuse_;
-  std::optional<frame::PreviousFrame>
-      previous_;  // the last frame shown, none before the first
-  std::optional<frame::FrameInputs>
-      pending_;  // the frame inputs() gave, until shown()
+  // the last frame shown, none before the first
+  std::optional<frame::PreviousFrame> previous_;
+  // the frame inputs() gave, until shown()
+  std::optional<frame::FrameInputs> pending_;
 };
 
 }  // namespace serenity::app

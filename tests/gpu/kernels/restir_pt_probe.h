@@ -115,8 +115,8 @@ struct ShiftResult {
   float weight;                       // the reservoir's W
   contracts::Float3 reconnection;     // x_k, decoded
   float source_jacobian;              // the reservoir's cached denominator
-  contracts::Float3
-      retraced;  // F at the destination, its primary ray traced again
+  // F at the destination, its primary ray traced again
+  contracts::Float3 retraced;
   float retraced_jacobian;
   uint32_t retraced_succeeded;
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array

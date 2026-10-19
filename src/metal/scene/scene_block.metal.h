@@ -43,14 +43,14 @@ namespace shaders {
 
 template <typename Selection>
 struct SceneView {
-  SceneStructure
-      structure;  // the structures by mask (acceleration/structure_block.h)
+  // the structures by mask (acceleration/structure_block.h)
+  SceneStructure structure;
   constant serenity::gpu::SceneBlock* block;
   constant serenity::contracts::Transform*
       transforms;         // as this frame places the shapes
   constant float* glows;  // as bright as this frame lights them
-  const device float* light_power =
-      nullptr;  // ReSTIR PT's: the frame's power pyramid
+  // ReSTIR PT's: the frame's power pyramid
+  const device float* light_power = nullptr;
 
   Shapes shapes() const {
     return Shapes{block->shapes, transforms, block->boxes};

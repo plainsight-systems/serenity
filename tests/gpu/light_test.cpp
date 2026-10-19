@@ -161,6 +161,6 @@ TEST_CASE(
                               .scale(0)
                               .epsilon(1e-4));  // its middle, inside
   CHECK(far.aside_pdf == 0.0f);                 // well aside, outside
-  CHECK(far.sample_distance ==
-        doctest::Approx(999.9).scale(0).epsilon(1e-5));  // to its surface
+  // to its surface
+  CHECK(far.sample_distance == doctest::Approx(999.9).scale(0).epsilon(1e-5));
 }

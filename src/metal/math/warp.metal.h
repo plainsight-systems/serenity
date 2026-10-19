@@ -78,8 +78,8 @@ inline float3 cosine_direction(float3 n, float2 u) {
 // Cost: encode, a square root, an arctangent and a division; decode, a
 // square root, a sine and a cosine. Pure (F.8), inline, no memory read.
 constant constexpr float unit_levels = 65535.0f;  // 2^16 - 1, the largest code
-constant constexpr uint unit_code_mask =
-    0xffffu;  // a coordinate's code, x's in the low bits
+// a coordinate's code, x's in the low bits
+constant constexpr uint unit_code_mask = 0xffffu;
 constant constexpr uint unit_y_shift = 16u;  // y's above it
 
 // A coordinate in [-1, 1] as its 16-bit code, and back.

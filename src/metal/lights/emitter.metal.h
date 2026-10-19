@@ -122,8 +122,8 @@ inline float light_pdf(Lights lights, serenity::lights::LightRecord light,
 struct PlacedLight {
   serenity::lights::LightRecord record;
   SphereLight sphere;  // read where record.kind is sphere
-  serenity::contracts::Transform
-      placed;  // the sphere's shape's: where it is, and how big
+  // the sphere's shape's: where it is, and how big
+  serenity::contracts::Transform placed;
 };
 
 // Light record `light`, placed by `lights`: this frame's arrays, or last

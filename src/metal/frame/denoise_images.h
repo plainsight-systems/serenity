@@ -93,8 +93,8 @@ class DenoiseImages {
     MTL::GPUAddress params_address = 0;
     MTL::GPUAddress input = 0;
     MTL::GPUAddress output = 0;
-    MTL::GPUAddress coarse =
-        0;  // a decoder's level below; else its input again, unread
+    // a decoder's level below; else its input again, unread
+    MTL::GPUAddress coarse = 0;
   };
   struct Resample {
     contracts::ResampleParams params{};
@@ -145,8 +145,8 @@ class DenoiseImages {
   frame::ReuseHistory history_;
   frame::Extent light_;
   frame::Extent padded_;
-  std::uint64_t index_ =
-      0;  // the prepared frame's: its parity picks the history
+  // the prepared frame's: its parity picks the history
+  std::uint64_t index_ = 0;
 
   Activations input_;
   std::array<Activations, levels> skip_;  // levels 0..3, the encoders' outputs
@@ -160,8 +160,8 @@ class DenoiseImages {
   Buffer histogram_;
   Buffer median_;
   Buffer params_;
-  std::array<ResidentTexture, frames_in_flight>
-      light_radiance_;  // the hand-off, by slot
+  // the hand-off, by slot
+  std::array<ResidentTexture, frames_in_flight> light_radiance_;
   std::array<Conv, convolutions> convs_{};
   std::array<Resample, resamplings> pools_{};
 };

@@ -57,12 +57,12 @@
 namespace serenity {
 namespace contracts {
 
-SERENITY_CONSTANT uint32_t mnee_most_crossings =
-    4u;  // metal/integrator/mnee.metal.h, max_interfaces
-SERENITY_CONSTANT uint32_t mnee_shape_bits =
-    16u;  // a crossing's shape: half a word
-SERENITY_CONSTANT uint32_t mnee_largest_shape =
-    (1u << mnee_shape_bits) - 1u;  // 0xffff, and the half's mask
+// metal/integrator/mnee.metal.h, max_interfaces
+SERENITY_CONSTANT uint32_t mnee_most_crossings = 4u;
+// a crossing's shape: half a word
+SERENITY_CONSTANT uint32_t mnee_shape_bits = 16u;
+// 0xffff, and the half's mask
+SERENITY_CONSTANT uint32_t mnee_largest_shape = (1u << mnee_shape_bits) - 1u;
 SERENITY_CONSTANT uint32_t mnee_shapes_a_word = 32u / mnee_shape_bits;  // 2
 
 // The header (above): its words, the grid's place, its bytes; the solve's

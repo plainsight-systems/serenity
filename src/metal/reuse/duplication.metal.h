@@ -42,14 +42,13 @@ namespace duplication {
 
 constant constexpr uint radius = 8u;
 constant constexpr uint window = 2u * radius + 1u;  // 17 x 17
-constant constexpr uint group =
-    serenity::contracts::duplication_group;  // pixels on a side of a
-                                             // threadgroup
+// pixels on a side of a threadgroup
+constant constexpr uint group = serenity::contracts::duplication_group;
 constant constexpr uint span = group + 2u * radius;
-constant constexpr float others =
-    float(window * window - 1u);  // the window but its pixel: 288
-constant constexpr uint2 no_key =
-    uint2(0xffffffffu);  // no pixel key is: x + 2^16 y with x, y under 16384
+// the window but its pixel: 288
+constant constexpr float others = float(window * window - 1u);
+// no pixel key is: x + 2^16 y with x, y under 16384
+constant constexpr uint2 no_key = uint2(0xffffffffu);
 
 // The key a reservoir is counted by (above): its stream, or no_key for an
 // empty one.

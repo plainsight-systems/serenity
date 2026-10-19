@@ -249,15 +249,15 @@ class PathReuseImages {
   frame::Extent size_;
   frame::ReuseHistory history_;  // asked only with temporal reuse
   Array reservoirs_;
-  std::array<Array, 2>
-      primaries_;  // [0] for even frames; [0] alone without temporal reuse
+  // [0] for even frames; [0] alone without temporal reuse
+  std::array<Array, 2> primaries_;
   Array light_;
   Array shifts_;
   Array replays_;
   Array counter_;      // shared storage, zeroed once
   Array light_tiles_;  // contracts/light_tile.h: a frame's, whatever its size
-  std::array<Array, 2>
-      light_power_;  // [0] for even frames; [0] alone without temporal reuse
+  // [0] for even frames; [0] alone without temporal reuse
+  std::array<Array, 2> light_power_;
   std::array<Array, 2> finals_;
   Array previous_positions_;
   Array previous_pixels_;

@@ -67,8 +67,8 @@ namespace contracts {
 
 SERENITY_CONSTANT uint32_t light_tiles = 128u;
 SERENITY_CONSTANT uint32_t light_tile_size = 1024u;
-SERENITY_CONSTANT uint32_t light_tile_block =
-    8u;  // pixels on a side of the block that draws one tile
+// pixels on a side of the block that draws one tile
+SERENITY_CONSTANT uint32_t light_tile_block = 8u;
 
 // ids' fields (above), named once (ES.45).
 SERENITY_CONSTANT uint32_t tile_index_mask = 0xffffu;

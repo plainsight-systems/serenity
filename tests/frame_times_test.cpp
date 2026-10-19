@@ -69,8 +69,8 @@ TEST_CASE(
   CHECK(required(summary).frames == 4);
   CHECK(required(summary).longest.count() ==
         doctest::Approx(0.070).scale(0).epsilon(1e-6));
-  CHECK(required(summary).shortest.count() ==
-        0.0);  // exactly: the frame added nothing
+  // exactly: the frame added nothing
+  CHECK(required(summary).shortest.count() == 0.0);
   CHECK(required(summary).mean.count() ==
         doctest::Approx((0.070 + 0.040 + 0.040) / 4).scale(0).epsilon(1e-6));
 }

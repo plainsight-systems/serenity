@@ -97,8 +97,8 @@ void DenoiseImages::allocate(frame::Extent light) {
   const auto level = [&](std::uint32_t l) {
     return frame::Extent{padded_.width >> l, padded_.height >> l};
   };
-  constexpr std::uint32_t bottom =
-      contracts::unet_levels - 1u;  // the lowest level with a skip
+  // the lowest level with a skip
+  constexpr std::uint32_t bottom = contracts::unet_levels - 1u;
 
   make(input_, level(0), contracts::input_channels, "network's input");
   for (std::uint32_t l = 0; l < levels; ++l) {

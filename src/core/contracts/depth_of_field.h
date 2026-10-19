@@ -49,15 +49,15 @@
 namespace serenity {
 namespace contracts {
 
-SERENITY_CONSTANT float dof_max_radius =
-    0.025f;  // of the output's width, as a radius
-SERENITY_CONSTANT uint32_t dof_scale =
-    2u;  // the gather's grid: the output's, halved each way
-SERENITY_CONSTANT uint32_t dof_tile =
-    8u;  // half-resolution pixels on a tile's side
+// of the output's width, as a radius
+SERENITY_CONSTANT float dof_max_radius = 0.025f;
+// the gather's grid: the output's, halved each way
+SERENITY_CONSTANT uint32_t dof_scale = 2u;
+// half-resolution pixels on a tile's side
+SERENITY_CONSTANT uint32_t dof_tile = 8u;
 SERENITY_CONSTANT uint32_t dof_rings = 3u;
-SERENITY_CONSTANT uint32_t dof_ring_taps =
-    8u;                                     // ring k's taps: dof_ring_taps x k
+// ring k's taps: dof_ring_taps x k
+SERENITY_CONSTANT uint32_t dof_ring_taps = 8u;
 SERENITY_CONSTANT uint32_t dof_taps = 49u;  // the pixel's own and the rings'
 static_assert(dof_taps ==
                   1u + dof_ring_taps * dof_rings * (dof_rings + 1u) / 2u,
@@ -67,8 +67,8 @@ SERENITY_CONSTANT float dof_alpha_gain = 2.0f;
 // What the pass's kernels read beyond the frame's constants, one per frame
 // in flight. Sizes in pixels.
 struct DepthOfFieldConstants {
-  float
-      coc_scale;  // output pixels: coc(z) = coc_scale (z - focus_distance) / z
+  // output pixels: coc(z) = coc_scale (z - focus_distance) / z
+  float coc_scale;
   float focus_distance;  // meters along the camera's forward axis, > 0
   float max_radius;      // output pixels: |coc| at most
   uint32_t width;        // the output's

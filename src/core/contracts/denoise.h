@@ -43,21 +43,21 @@ namespace contracts {
 
 SERENITY_CONSTANT uint32_t denoise_scale = 2u;
 SERENITY_CONSTANT uint32_t unet_alignment = 16u;
-SERENITY_CONSTANT uint32_t unet_levels =
-    4u;  // max pools below the input's level
+// max pools below the input's level
+SERENITY_CONSTANT uint32_t unet_levels = 4u;
 SERENITY_CONSTANT uint32_t network_inputs = 30u;
-SERENITY_CONSTANT uint32_t channel_block =
-    8u;  // a simdgroup matrix's side: every stored width a multiple
-SERENITY_CONSTANT uint32_t input_channels =
-    32u;  // network_inputs, padded to channel_block
+// a simdgroup matrix's side: every stored width a multiple
+SERENITY_CONSTANT uint32_t channel_block = 8u;
+// network_inputs, padded to channel_block
+SERENITY_CONSTANT uint32_t input_channels = 32u;
 SERENITY_CONSTANT uint32_t denoise_taps = 9u;
 SERENITY_CONSTANT uint32_t denoise_spacings = 3u;  // 1, 2 and 4
 // Each spacing's taps, a weight per spacing and the history blend: 31.
 SERENITY_CONSTANT uint32_t denoise_scores =
     denoise_taps * denoise_spacings + denoise_spacings + 1u;
 SERENITY_CONSTANT uint32_t denoise_subpixels = 4u;
-SERENITY_CONSTANT uint32_t head_outputs =
-    denoise_scores * denoise_subpixels;  // 124
+// 124: each subpixel's scores
+SERENITY_CONSTANT uint32_t head_outputs = denoise_scores * denoise_subpixels;
 static_assert(
     input_channels % channel_block == 0u && input_channels >= network_inputs &&
         input_channels - network_inputs < channel_block,
@@ -127,8 +127,8 @@ struct DenoiseConstants {
   Float3 up;  // its unit up axis
   uint32_t light_height;
   Float3 backward;  // toward the viewer: -forward
-  uint32_t
-      history;  // 1 when last frame's output is this frame's history, else 0
+  // 1 when last frame's output is this frame's history, else 0
+  uint32_t history;
   uint32_t padded_width;
   uint32_t padded_height;
   uint32_t output_width;
@@ -205,8 +205,8 @@ static_assert(
 // bits, 11, 10 and 10 of them (metal/passes/denoise/denoise.metal). For
 // both middle ranks, (n - 1) / 2 and n / 2, whose mean is the median of an
 // even count.
-SERENITY_CONSTANT uint32_t median_bins =
-    2048u;  // per level: 2^11, or two ranks' 2^10
+// per level: 2^11, or two ranks' 2^10
+SERENITY_CONSTANT uint32_t median_bins = 2048u;
 struct MedianState {
   uint32_t count;  // surface pixels: depth > 0
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array

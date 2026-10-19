@@ -285,10 +285,10 @@ struct HeadlessPlan {
   // reuses history, which replays the frames before the run's first
   // (above). The plan's samples, accumulated image included, start here.
   std::uint64_t first = 0;
-  std::uint64_t samples =
-      1;  // rendered per frame: 1 for a graph that accumulates nothing
-  bool instants =
-      false;  // each frame's image its own: the scene changes and time advances
+  // rendered per frame: 1 for a graph that accumulates nothing
+  std::uint64_t samples = 1;
+  // each frame's image its own: the scene changes and time advances
+  bool instants = false;
   // The first frame written: the run's first, always; frames first ..
   // first_written - 1 are rendered and not written. Declared last, after
   // the members plan_headless() initializes in order, so it changes none

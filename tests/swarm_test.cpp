@@ -58,8 +58,8 @@ constexpr float firefly_radius = tests::job_body;
 constexpr float swarm_clearance = tests::job_clearance;
 constexpr float volume_low = tests::job_volume.min.y;
 constexpr float volume_high = tests::job_volume.max.y;
-constexpr float volume_reach =
-    tests::job_volume.max.x;  // the volume's x and z bounds, either way
+// the volume's x and z bounds, either way
+constexpr float volume_reach = tests::job_volume.max.x;
 
 // The ball on its floor, and a swarm about it: the [[swarms]] entry on line
 // 26, its count on 27.

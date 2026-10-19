@@ -185,8 +185,8 @@ class SceneAcceleration {
  private:
   struct Built {
     NS::SharedPtr<MTL::Buffer> scratch;
-    NS::SharedPtr<MTL4::PrimitiveAccelerationStructureDescriptor>
-        descriptor;  // over the slot's boxes
+    // over the slot's boxes
+    NS::SharedPtr<MTL4::PrimitiveAccelerationStructureDescriptor> descriptor;
     NS::SharedPtr<MTL::AccelerationStructure> structure;
     Resident structure_resident;
     Resident scratch_resident;  // when shapes move: each frame's build writes
@@ -199,12 +199,12 @@ class SceneAcceleration {
   // indexed by slot, when one does. Made whole by make_tree() alone
   // (C.41).
   struct Tree {
-    std::vector<std::uint32_t>
-        moving_boxes;  // the boxes of its moving shapes, which update() writes
-    std::vector<std::uint32_t>
-        moving_shapes;  // their shapes, whose transforms place them
-    std::vector<shapes::Bounds>
-        moving_bounds;  // their object-space bounds, in the same order
+    // the boxes of its moving shapes, which update() writes
+    std::vector<std::uint32_t> moving_boxes;
+    // their shapes, whose transforms place them
+    std::vector<std::uint32_t> moving_shapes;
+    // their object-space bounds, in the same order
+    std::vector<shapes::Bounds> moving_bounds;
     std::unique_ptr<FrameArray> boxes;  // one box per member, per structure
     std::array<Built, frames_in_flight> structures;
 
@@ -229,10 +229,10 @@ class SceneAcceleration {
   // The occluders' own, when the scene has lights and surfaces both;
   // otherwise none, and the block names everything's (structure_block.h).
   std::optional<Tree> occluders_;
-  std::unique_ptr<StaticArrays>
-      occluder_table_;  // the occluders' shapes, a uint32 a box
-  std::unique_ptr<FrameArray>
-      blocks_;  // one StructureBlock, one per slot when anything moves
+  // the occluders' shapes, a uint32 a box
+  std::unique_ptr<StaticArrays> occluder_table_;
+  // one StructureBlock, one per slot when anything moves
+  std::unique_ptr<FrameArray> blocks_;
 };
 
 }  // namespace serenity::metal

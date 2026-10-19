@@ -75,8 +75,8 @@ class FrameTimes {
   std::optional<frame::Seconds> started_;
   Summary current_;
   frame::Seconds total_{0.0};  // the period's frames' durations, summed (I.4)
-  std::optional<frame::Seconds>
-      last_end_;  // the end of the frame added last, across periods
+  // the end of the frame added last, across periods
+  std::optional<frame::Seconds> last_end_;
 };
 
 }  // namespace serenity::measurement

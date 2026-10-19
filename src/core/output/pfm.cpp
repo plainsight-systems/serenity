@@ -29,12 +29,11 @@ static_assert(std::endian::native == std::endian::little,
 static_assert(std::numeric_limits<float>::is_iec559 && sizeof(float) == 4,
               "a PFM's floats are 32-bit IEEE 754");
 
-constexpr std::size_t channels =
-    contracts::linear_image_channels;  // red, green, blue: the colour variant,
-                                       // "PF"
+// red, green, blue: the colour variant, "PF"
+constexpr std::size_t channels = contracts::linear_image_channels;
 constexpr std::string_view magic = "PF";
-constexpr std::string_view scale_written =
-    "-1.0";  // little-endian, every value as it is
+// little-endian, every value as it is
+constexpr std::string_view scale_written = "-1.0";
 // The longest header line read before it is refused: "16384 16384" is 11
 // bytes, so a line past this is no header of this format, and a binary file
 // is not scanned to its end for a newline (SL.io.2).

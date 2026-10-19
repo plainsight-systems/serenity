@@ -584,8 +584,8 @@ void Renderer::make_restir_pt(const Device& device,
   reuses_history_ = temporal;
   const bool spatial = has(schedule, frame::PassKind::restir_pt_spatial);
   contracts::PathReuseSettings settings = *schedule.restir_pt;
-  settings.checkerboard =
-      feeds_network_ ? 1u : 0u;  // the network's input is traced checkerboarded
+  // the network's input is traced checkerboarded
+  settings.checkerboard = feeds_network_ ? 1u : 0u;
   // With spatial reuse, the three reuse textures, built once on the CPU
   // from the graph's sigma and a fixed seed (core/sampling/pairing.h); one
   // zero texel without. With the checkerboard the pairing is over the
@@ -765,8 +765,8 @@ void Renderer::read_accumulated(std::span<float> out) {
         "read_accumulated: the frame graph accumulates nothing, or no frame "
         "has made its image");
   }
-  constexpr std::size_t channels =
-      contracts::accumulated_image_channels;  // RGBA32Float
+  // RGBA32Float
+  constexpr std::size_t channels = contracts::accumulated_image_channels;
   const std::size_t row_bytes =
       std::size_t{image->width()} * channels * sizeof(float);
   const std::size_t floats =
@@ -793,8 +793,8 @@ Renderer::NetworkInput Renderer::read_network_input() {
   }
   MTL::Texture* image = denoise_ ? denoise_->images.light_radiance(*last_slot_)
                                  : checkerboard_->images.filled();
-  constexpr std::size_t channels =
-      contracts::accumulated_image_channels;  // RGBA32Float, as the hand-off's
+  // RGBA32Float, as the hand-off's
+  constexpr std::size_t channels = contracts::accumulated_image_channels;
   const frame::Extent size{static_cast<std::uint32_t>(image->width()),
                            static_cast<std::uint32_t>(image->height())};
   const std::size_t row_bytes =
@@ -1035,8 +1035,8 @@ Renderer::DenoiseResources Renderer::denoise_resources(
 
   FrameResources& denoising = out.denoising;
   denoising = output;
-  denoising.light_radiance =
-      d.images.light_radiance(begun.slot);  // the hand-off (renderer.h)
+  // the hand-off (renderer.h)
+  denoising.light_radiance = d.images.light_radiance(begun.slot);
   denoising.albedo = resources.albedo;
   denoising.normal = resources.normal;
   denoising.depth = resources.depth;
@@ -1069,8 +1069,8 @@ void Renderer::record_light(MTL4::ComputeCommandEncoder* encoder,
   if (first == 0) {
     encoder->setArgumentTable(resources.arguments);
   }
-  bool restir_before =
-      false;  // whether a ReSTIR PT pass came before, in this frame
+  // whether a ReSTIR PT pass came before, in this frame
+  bool restir_before = false;
   for (std::size_t i = first; i < last; ++i) {
     const Step& step = steps_[i];
     if (i == first_cross_frame_) {

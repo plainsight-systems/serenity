@@ -102,17 +102,17 @@ namespace serenity {
 namespace passes {
 
 SERENITY_CONSTANT uint32_t bloom_levels = 6u;
-SERENITY_CONSTANT float bloom_ceiling =
-    65504.0f;  // the largest half float (step 1)
-SERENITY_CONSTANT float down_middle =
-    0.5f;  // step 2's weights: the middle box,
+// the largest half float (step 1)
+SERENITY_CONSTANT float bloom_ceiling = 65504.0f;
+// step 2's weights: the middle box,
+SERENITY_CONSTANT float down_middle = 0.5f;
 SERENITY_CONSTANT float down_corner = 0.125f;  // and each corner box
-SERENITY_CONSTANT float neutral_f90 =
-    0.04f;  // step 5: F90, the offset taken off
-SERENITY_CONSTANT float neutral_toe =
-    0.08f;  // step 5: 2 F90, below which the offset eases in
-SERENITY_CONSTANT float neutral_toe_curve =
-    6.25f;  // step 5: 1 / (4 F90), the easing's curve
+// step 5: F90, the offset taken off
+SERENITY_CONSTANT float neutral_f90 = 0.04f;
+// step 5: 2 F90, below which the offset eases in
+SERENITY_CONSTANT float neutral_toe = 0.08f;
+// step 5: 1 / (4 F90), the easing's curve
+SERENITY_CONSTANT float neutral_toe_curve = 6.25f;
 SERENITY_CONSTANT float neutral_start = 0.76f;  // step 5: 0.8 - F90
 SERENITY_CONSTANT float neutral_desaturation = 0.15f;
 SERENITY_CONSTANT float max_exposure = 10.0f;  // stops, either way

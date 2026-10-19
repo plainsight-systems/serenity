@@ -69,10 +69,10 @@
 //   change as the shadow rays' (Milestone 4's Step 2 measures it).
 //   6. The shifted integrand, and the Jacobian of supplemental eq. 4,
 //
-//        |du_y / du_x| = p_{k-1}^y(w', l_{k-1}) G(y_{k-1} -> x_k) p_k^y(w_k,
-//        l_k)
-//                        / [p_{k-1}^x(w, l_{k-1}) G(x_{k-1} -> x_k) p_k^x(w_k,
-//                        l_k)]
+//        |du_y / du_x| = p_{k-1}^y(w', l_{k-1}) G(y_{k-1} -> x_k)
+//                          p_k^y(w_k, l_k)
+//                        / [p_{k-1}^x(w, l_{k-1}) G(x_{k-1} -> x_k)
+//                           p_k^x(w_k, l_k)]
 //
 //      the denominator the source's, cached (contract 15, `jacobian`); p_k
 //      1 where x_k's direction was drawn by NEE (its density is the

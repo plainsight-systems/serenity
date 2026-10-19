@@ -61,12 +61,12 @@ struct SettledFrame {
 // What a frame shown reports, for the window's title.
 struct FrameReport {
   frame::Extent size;  // the size it was rendered at
-  std::optional<SettledFrame>
-      settled;  // a frame its submission settled, if one
-  std::uint64_t non_finite_samples =
-      0;  // samples left out as not finite, so far (a bug)
-  std::uint64_t mnee_lost_requests =
-      0;  // caustic requests lost, so far (a bug)
+  // a frame its submission settled, if one
+  std::optional<SettledFrame> settled;
+  // samples left out as not finite, so far (a bug)
+  std::uint64_t non_finite_samples = 0;
+  // caustic requests lost, so far (a bug)
+  std::uint64_t mnee_lost_requests = 0;
 };
 
 class FrameClient {

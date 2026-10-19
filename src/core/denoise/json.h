@@ -35,8 +35,8 @@ class JsonError : public std::runtime_error {
 
 struct Json;
 using JsonArray = std::vector<Json>;
-using JsonObject =
-    std::vector<std::pair<std::string, Json>>;  // in the file's order
+// in the file's order
+using JsonObject = std::vector<std::pair<std::string, Json>>;
 
 struct Json {
   std::variant<std::nullptr_t, bool, double, std::string, JsonArray, JsonObject>

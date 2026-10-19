@@ -584,8 +584,8 @@ TEST_CASE(
   const Bsdf glass =
       make(BsdfKind::dielectric, n, {1.0f, 1.0f, 1.0f}, {.ior = 1.5f});
   const Vec3 outside = unit(0.3, 0.0, 1.0);
-  const Vec3 inside =
-      unit(0.3, 0.0, -1.0);  // within the critical angle: some of it leaves
+  // within the critical angle: some of it leaves
+  const Vec3 inside = unit(0.3, 0.0, -1.0);
   CHECK(eta_of(glass, outside) == doctest::Approx(1.5).scale(0).epsilon(1e-6));
   CHECK(eta_of(glass, inside) ==
         doctest::Approx(1.0 / 1.5).scale(0).epsilon(1e-6));

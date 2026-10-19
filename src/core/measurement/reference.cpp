@@ -49,8 +49,8 @@ void ReferenceBuilder::add(const contracts::LinearImage& batch) {
   // summing squares cancels, and the batches folded in the order given, so
   // the same batches in the same order give the same bits (CDSA.23;
   // GDSA.2, run to run). Nothing below can throw.
-  const double n =
-      static_cast<double>(count_ + 1);  // exact: far under 2^53 batches (ES.46)
+  // exact: far under 2^53 batches (ES.46)
+  const double n = static_cast<double>(count_ + 1);
   for (std::size_t i = 0; i < values; ++i) {
     const double x = batch.rgb[i];
     const double delta = x - mean_[i];

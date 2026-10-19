@@ -94,8 +94,8 @@ struct Camera {
   Float3 up{};                        // not parallel to look_at - position
   float vertical_fov_degrees = 0.0f;  // strictly between 0 and 180
   float lens_radius = 0.0f;           // meters, 0 or more; 0 is a pinhole
-  float focus_distance =
-      1.0f;  // meters, greater than 0; read only through a lens
+  // meters, greater than 0; read only through a lens
+  float focus_distance = 1.0f;
 };
 #endif
 

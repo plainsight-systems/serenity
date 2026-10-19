@@ -386,8 +386,8 @@ kernel void conv3x3(constant contracts::ConvParams& p
   const uint y = y0 + sg;
   const bool active = y < p.height;  // every thread still copies and waits
   const uint first_out = group.z * channels;
-  const uint out_width =
-      p.out_blocks * block;  // the weights' row: every output channel
+  // the weights' row: every output channel
+  const uint out_width = p.out_blocks * block;
 
   // A row's conv_pixels pixels as pixel_blocks matrices of `block` pixels.
   constexpr uint pixel_blocks = conv_pixels / block;

@@ -85,8 +85,8 @@ class DenoisePass {
   std::array<NS::SharedPtr<MTL::ComputePipelineState>, 3> histogram_;
   std::array<NS::SharedPtr<MTL::ComputePipelineState>, 3> select_;
   NS::SharedPtr<MTL::ComputePipelineState> input_;
-  std::array<NS::SharedPtr<MTL::ComputePipelineState>, 4>
-      conv_;  // conv3x3_n1 .. n4
+  // conv3x3_n1 .. n4
+  std::array<NS::SharedPtr<MTL::ComputePipelineState>, 4> conv_;
   NS::SharedPtr<MTL::ComputePipelineState> maxpool_;
   NS::SharedPtr<MTL::ComputePipelineState> output_;
   // Each convolution's weights and bias, then the head's (above).

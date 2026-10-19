@@ -181,8 +181,9 @@ namespace mnee {
 
 // Cycles' solver's constants (mnee.h), named once (ES.45); the distances
 // relative to the caster's radius (above).
+// 4, contract 16's
 constant constexpr uint max_interfaces =
-    serenity::contracts::mnee_most_crossings;  // 4, contract 16's
+    serenity::contracts::mnee_most_crossings;
 constant constexpr uint max_iterations = 64u;
 constant constexpr float solver_threshold = 1.0e-3f;
 constant constexpr float least_step = 1.0e-4f;
@@ -192,8 +193,8 @@ constant constexpr float projection_reach = 2.0f;
 constant constexpr float least_segment = 1.0e-3f;   // times the caster's radius
 constant constexpr float least_progress = 1.0e-4f;  // times the caster's radius
 constant constexpr float hit_tolerance = 1.0e-3f;   // times the caster's radius
-constant constexpr float same_sphere =
-    1.0e-4f;  // a root nearer than this times the radius is the start
+// a root nearer than this times the radius is the start
+constant constexpr float same_sphere = 1.0e-4f;
 
 // Whether a surface of `bsdf` receives caustics (above): it has a diffuse
 // lobe.
@@ -339,8 +340,8 @@ inline Seed seed_segment(SceneT scene, float3 origin, float3 direction,
     const CasterAt at = caster_at(shapes, materials, shape);
     if (!at.is_caster) {
       if (at.dielectric && intersect_shape(shapes, shape, segment).found) {
-        seed.usable =
-            false;  // glass with no smooth normal: no seed through it (above)
+        // glass with no smooth normal: no seed through it (above)
+        seed.usable = false;
         seed.blocked = true;
         query.abort();
         break;

@@ -143,11 +143,11 @@ contracts::Bsdf floor_bsdf(contracts::BsdfKind kind, float alpha) {
 // What the MIS probe found over its draws of both strategies.
 struct WeightSums {
   std::size_t both = 0;  // directions both strategies draw
-  std::size_t by_bsdf_both =
-      0;  // of them, the BSDF's draws: bounces that strike the light
+  // of them, the BSDF's draws: bounces that strike the light
+  std::size_t by_bsdf_both = 0;
   double worst = 0.0;  // the largest |w_l + w_b - 1| among them
-  double worst_alone =
-      0.0;  // the largest |w_b - 1| where only the BSDF draws the direction
+  // the largest |w_b - 1| where only the BSDF draws the direction
+  double worst_alone = 0.0;
 
   double worst_either() const { return std::max(worst, worst_alone); }
 };

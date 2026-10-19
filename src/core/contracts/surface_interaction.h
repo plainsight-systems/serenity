@@ -62,15 +62,15 @@ namespace serenity {
 namespace contracts {
 
 // Bits of SurfaceInteraction::flags.
-SERENITY_CONSTANT uint32_t arrived_from_outside =
-    1u;  // against the outward normal
+// against the outward normal
+SERENITY_CONSTANT uint32_t arrived_from_outside = 1u;
 
 struct SurfaceInteraction {
   Float3 position;
   uint32_t material;  // index into the material records (materials/material.h)
   Float3 geometric_normal;  // unit, outward
-  uint32_t
-      primitive;  // the shape, as primitive i is shape i (shapes/primitive.h)
+  // the shape, as primitive i is shape i (shapes/primitive.h)
+  uint32_t primitive;
   Float3 shading_normal;   // unit, outward
   uint32_t flags;          // arrived_from_outside, or 0
   Float3 object_position;  // the point in the shape's own coordinates (contract

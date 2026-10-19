@@ -31,10 +31,9 @@ inline constexpr double flash_spacing = 1.0;
 
 struct FlashSchedule {
   double begin = 0.0;  // seconds, >= 0: when the loop starts, the opening's end
-  std::vector<double>
-      opening{};      // once each, within [0, begin), in order,
-                      // flash_spacing apart, the last at least
-                      // flash_spacing before begin + the loop's first
+  // once each, within [0, begin), in order, flash_spacing apart, the last at
+  // least flash_spacing before begin + the loop's first
+  std::vector<double> opening{};
   double loop = 0.0;  // seconds, > 0: the loop repeats every loop from begin
   std::vector<double> starts{};  // within [0, loop) from begin, in order, at
                                  // least flash_spacing apart, the last and the

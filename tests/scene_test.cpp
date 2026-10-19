@@ -849,8 +849,8 @@ TEST_CASE(
   for (std::size_t i = 0; i < 8; ++i) {
     CAPTURE(i);
     const animation::Flight& f = s.animation.motions.flights[i];
-    REQUIRE(f.opening.size() ==
-            2);  // a wait and a rise: every linger is at least 2 s
+    // a wait and a rise: every linger is at least 2 s
+    REQUIRE(f.opening.size() == 2);
     const animation::ScheduleGlow& glow =
         s.animation.glows.schedules.at(s.animation.glowers[i].glow.index);
     REQUIRE(glow.wake.has_value());

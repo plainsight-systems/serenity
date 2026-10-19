@@ -29,8 +29,8 @@ constexpr std::uint32_t padded(std::uint32_t channels) {
 // reads them: [tap = ky * 3 + kx][in, padded][out], half floats, padding 0.
 std::vector<Half> laid_out(const denoise::Convolution& c) {
   const std::uint32_t in = padded(c.inputs);
-  const std::uint32_t out =
-      c.outputs;  // a multiple of channel_block (network.h)
+  // a multiple of channel_block (network.h)
+  const std::uint32_t out = c.outputs;
   std::vector<Half> w(std::size_t{conv_taps} * in * out, Half{0});
   for (std::uint32_t o = 0; o < c.outputs; ++o) {
     for (std::uint32_t i = 0; i < c.inputs; ++i) {
@@ -57,8 +57,8 @@ constexpr std::uint32_t pool_channels = 4;  // a half4 a thread
 // convolution's (the constructor lays them out so).
 constexpr std::size_t weights_index(std::size_t i) { return 2 * i; }
 constexpr std::size_t bias_index(std::size_t i) { return 2 * i + 1; }
-constexpr std::size_t head_index =
-    2 * DenoiseImages::convolutions;  // and its bias after it
+// and its bias after it
+constexpr std::size_t head_index = 2 * DenoiseImages::convolutions;
 
 // Threadgroups of `per_group` covering `threads`.
 constexpr NS::UInteger groups(std::uint32_t threads, NS::UInteger per_group) {

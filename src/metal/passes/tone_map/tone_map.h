@@ -69,8 +69,8 @@ class ToneMapPass {
               const FrameResources& resources) const;
 
  private:
-  NS::SharedPtr<MTL::ComputePipelineState>
-      down_first_;  // step 2, from the exposed radiance
+  // step 2, from the exposed radiance
+  NS::SharedPtr<MTL::ComputePipelineState> down_first_;
   NS::SharedPtr<MTL::ComputePipelineState> down_;    // step 2, from a level
   NS::SharedPtr<MTL::ComputePipelineState> up_;      // step 3
   NS::SharedPtr<MTL::ComputePipelineState> finish_;  // steps 4 to 6

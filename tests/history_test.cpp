@@ -245,8 +245,8 @@ TEST_CASE(
   frame::LiveReuse live;
   CHECK(live.since(7, frame::View::same) == 7);
   CHECK(live.since(8, frame::View::same) == 7);
-  CHECK(live.since(8, frame::View::same) ==
-        7);  // asked again: no drawable last time
+  // asked again: no drawable last time
+  CHECK(live.since(8, frame::View::same) == 7);
   CHECK(live.since(9, frame::View::changed) == 9);
   CHECK(live.since(12, frame::View::same) == 12);  // a gap
   CHECK_THROWS_AS(live.since(11, frame::View::same), HistoryError);

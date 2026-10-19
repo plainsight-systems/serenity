@@ -20,8 +20,8 @@
 //     m_n = p̂_n(x_n) c_n / (p̂_n(x_n) c_n + p̂_c(y_n) J_{n->c} c_c / k)
 //   the canonical path, weighed against every neighbor it was shifted to:
 //     m_c = 1 + sum over n of [1 - p̂_n(T(x_c)) J_{c->n} c_n
-//                                  / (p̂_n(T(x_c)) J_{c->n} c_n + p̂_c(x_c) c_c /
-//                                  k)]
+//                                  / (p̂_n(T(x_c)) J_{c->n} c_n
+//                                     + p̂_c(x_c) c_c / k)]
 //
 // The weights sum to k + 1 over the inputs, so each is divided by k + 1
 // where it is used (the 2022 code divides W once at the end). The estimate

@@ -92,8 +92,8 @@ class DisplayFrames final : public presentation::FrameSource,
 
   // During run() only.
   presentation::FrameClient* client_ = nullptr;
-  std::uint64_t first_frame_ =
-      0;  // the sequence of the run's first frame's submission
+  // the sequence of the run's first frame's submission
+  std::uint64_t first_frame_ = 0;
   bool view_changed_ = false;  // the size changed since the last frame rendered
   std::exception_ptr failure_;  // the first a frame threw; frames stop at it
 };

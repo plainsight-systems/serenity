@@ -189,11 +189,11 @@ struct Bsdf {
                   // shading normal (contracts/surface_interaction.h), as the
                   // material perturbs it, if it does
   BsdfKind kind;
-  Float3
-      color;    // lambert, coated: albedo; conductor: f0; dielectric: unused, 1
-  float alpha;  // conductor: GGX alpha = roughness^2; otherwise 0
-  float ior;    // dielectric: index of refraction inside; coated: the coat's;
-                // against 1 outside; otherwise 0
+  // lambert, coated: albedo; conductor: f0; dielectric: unused, 1
+  Float3 color;
+  float alpha;   // conductor: GGX alpha = roughness^2; otherwise 0
+  float ior;     // dielectric: index of refraction inside; coated: the coat's;
+                 // against 1 outside; otherwise 0
   float escape;  // coated: 1 - F_in, what the coat lets out of the base's light
                  // (materials/coated.h); otherwise 0
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
@@ -216,14 +216,14 @@ SERENITY_CONSTANT uint32_t packed_kind_shift = 16u;
 SERENITY_CONSTANT uint32_t packed_kind_mask = 0xffu;
 
 // The packed form's range and tolerance (above), named once (ES.45).
-SERENITY_CONSTANT float packed_largest =
-    65504.0f;  // half's largest finite value
-SERENITY_CONSTANT float packed_least_normal =
-    6.103515625e-5f;  // 2^-14, half's least normal value
-SERENITY_CONSTANT float packed_relative =
-    4.8828125e-4f;  // 2^-11, at and above packed_least_normal
-SERENITY_CONSTANT float packed_absolute =
-    5.9604644775390625e-8f;  // 2^-24, below packed_least_normal
+// half's largest finite value
+SERENITY_CONSTANT float packed_largest = 65504.0f;
+// 2^-14, half's least normal value
+SERENITY_CONSTANT float packed_least_normal = 6.103515625e-5f;
+// 2^-11, at and above packed_least_normal
+SERENITY_CONSTANT float packed_relative = 4.8828125e-4f;
+// 2^-24, below packed_least_normal
+SERENITY_CONSTANT float packed_absolute = 5.9604644775390625e-8f;
 
 // A Bsdf packed (above): four words, read whole.
 struct PackedBsdf {

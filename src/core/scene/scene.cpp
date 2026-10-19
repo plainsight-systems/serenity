@@ -775,15 +775,15 @@ constexpr std::size_t no_swarm = std::numeric_limits<std::size_t>::max();
 struct Pending {
   std::uint32_t shape = 0;
   std::string what;  // "shape N", or "swarm N's firefly i", for errors
-  const toml::node* motion =
-      nullptr;                       // a written shape's motion's table, if any
+  // a written shape's motion's table, if any
+  const toml::node* motion = nullptr;
   const toml::node* glow = nullptr;  // and its glow's
   std::size_t swarm = no_swarm;      // a swarm's firefly: its swarm's index
   std::uint32_t firefly = 0;         // which of it
   std::uint32_t draw = 0;     // and which of its draws (swarm.h, steps 1 and 5)
   contracts::Float3 start{};  // and where it starts (swarm.h, step 2)
-  animation::Prelude
-      prelude{};  // what it does before its loop (swarm.h, step 4)
+  // what it does before its loop (swarm.h, step 4)
+  animation::Prelude prelude{};
   std::optional<animation::Wake> wake{};  // and when its glow wakes (step 3)
 };
 
@@ -1407,8 +1407,8 @@ ShapeReading::Gathered ShapeReading::gather(
     const Pending& p = pending_[i];
     const contracts::Transform& placed =
         description_.shapes.transforms[p.shape];
-    const float body =
-        contracts::scale(placed);  // a sphere's radius (core/shapes/sphere.h)
+    // a sphere's radius (core/shapes/sphere.h)
+    const float body = contracts::scale(placed);
     if (p.swarm != no_swarm) {
       gathered.job_of[i] = jobs.size();
       jobs.push_back(swarm_job(p));  // swarm.h, step 1's seed of its draw

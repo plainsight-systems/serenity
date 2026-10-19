@@ -108,8 +108,8 @@ class ProbeRunner {
 
    private:
     friend class ProbeRunner;
-    std::vector<NS::SharedPtr<MTL::Buffer>>
-        buffers_;  // null where a binding was an address
+    // null where a binding was an address
+    std::vector<NS::SharedPtr<MTL::Buffer>> buffers_;
     std::vector<std::size_t> sizes_;
   };
 

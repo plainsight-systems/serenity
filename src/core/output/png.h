@@ -23,9 +23,8 @@ namespace serenity::output {
 //     other length is a PngError, checked before anything is written.
 //   - The values are written as they are: no gamma, no tone mapping. What
 //     they mean is decided before they get here.
-//   - Failure throws PngError naming the path (E.2, E.14). A partial file may
-//   be
-//     left behind; nothing reads a file whose write failed.
+//   - Failure throws PngError naming the path (E.2, E.14). A partial file
+//     may be left behind; nothing reads a file whose write failed.
 //
 // Not performance-sensitive: used by the headless renderer, which is not
 // held to the frame budget. Compressing a frame at the display's resolution

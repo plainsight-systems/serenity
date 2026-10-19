@@ -51,12 +51,12 @@ namespace serenity {
 namespace textures {
 
 SERENITY_CONSTANT float swirl_waver = 0.15f;  // step 2: in bands
-SERENITY_CONSTANT float swirl_scale =
-    2.0f;  // step 2: noise cells across the unit sphere
+// step 2: noise cells across the unit sphere
+SERENITY_CONSTANT float swirl_scale = 2.0f;
 SERENITY_CONSTANT float swirl_edge = 0.08f;           // step 3: in bands
 SERENITY_CONSTANT uint32_t swirl_waver_octaves = 2u;  // step 2: fbm's octaves
-SERENITY_CONSTANT uint32_t swirl_most_vanes =
-    16u;  // the most vanes a scene may give
+// the most vanes a scene may give
+SERENITY_CONSTANT uint32_t swirl_most_vanes = 16u;
 
 struct SwirlData {
   contracts::Float3 a;  // linear RGB in [0, 1]

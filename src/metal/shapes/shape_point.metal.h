@@ -37,8 +37,8 @@
 namespace serenity {
 namespace shaders {
 
-constant constexpr float shape_point_scale =
-    65535.0f;  // a 16-bit fraction's largest code
+// a 16-bit fraction's largest code
+constant constexpr float shape_point_scale = 65535.0f;
 
 // `world`, a point on shape `shape`, in that shape's coordinates.
 inline serenity::contracts::ShapePoint encode_shape_point(Shapes shapes,

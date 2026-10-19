@@ -84,8 +84,8 @@ struct Shading {
   serenity::contracts::SurfaceInteraction surface;
   serenity::contracts::Bsdf bsdf;
   float3 wo;  // unit, toward where the light goes
-  uint
-      medium;  // the medium on wo's side: an index into the media, or no_medium
+  // the medium on wo's side: an index into the media, or no_medium
+  uint medium;
 };
 
 // offset_ray()'s constants (above; ES.45): the band about 0 given a fixed

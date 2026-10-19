@@ -123,8 +123,8 @@ std::vector<std::uint16_t> reuse_texture(std::uint32_t width, double sigma,
   Generator random(seed);
   const std::uint32_t blocks = width / 2;
   for (std::uint32_t pass = 0; pass < shuffles; ++pass) {
-    const std::uint32_t shift =
-        pass % 2;  // every other pass's blocks offset diagonally by one
+    // every other pass's blocks offset diagonally by one
+    const std::uint32_t shift = pass % 2;
     for (std::uint32_t by = 0; by < blocks; ++by) {
       for (std::uint32_t bx = 0; bx < blocks; ++bx) {
         const std::uint32_t x0 = 2 * bx + shift;

@@ -83,8 +83,8 @@ class FailureCount {
   const Submission& submission_;
   std::string what_;
   ResidentBuffer counters_;  // one uint per slot
-  std::array<std::uint64_t, frames_in_flight>
-      counting_{};  // sequence + 1 each slot counts for; 0 for none
+  // sequence + 1 each slot counts for; 0 for none
+  std::array<std::uint64_t, frames_in_flight> counting_{};
   std::uint64_t total_ = 0;
 };
 

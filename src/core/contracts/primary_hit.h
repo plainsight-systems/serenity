@@ -70,8 +70,8 @@ namespace contracts {
 // sides' fields (above), named once (ES.45).
 SERENITY_CONSTANT uint32_t primary_flags_mask = 0xffu;
 SERENITY_CONSTANT uint32_t primary_interior_shift = 16u;
-SERENITY_CONSTANT uint32_t primary_no_medium =
-    0xffffu;  // contract 12's no_medium, in 16 bits
+// contract 12's no_medium, in 16 bits
+SERENITY_CONSTANT uint32_t primary_no_medium = 0xffffu;
 
 struct PrimaryHit {
   Float3 position;  // y1, world space, full precision

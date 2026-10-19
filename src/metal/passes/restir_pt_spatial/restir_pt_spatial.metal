@@ -201,8 +201,8 @@ kernel void restir_pt_spatial(
   float canonical = 1.0f;
   float3 sum = float3(0.0f);
   for (uint t = 0u; t < settings.neighbors && k > 0u; ++t) {
-    const float4 outward =
-        shifts[i * slots + t];  // this pixel's path at its partner
+    // this pixel's path at its partner
+    const float4 outward = shifts[i * slots + t];
     if (outward.w == restir_pt::not_paired) {
       continue;
     }

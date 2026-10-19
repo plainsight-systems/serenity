@@ -72,8 +72,8 @@ TEST_CASE(
     "plane of focus") {
   constexpr float lens_radius = 0.012f;
   constexpr std::uint64_t points = 64;
-  constexpr std::uint64_t per_point =
-      16;  // lens points through each image point
+  // lens points through each image point
+  constexpr std::uint64_t per_point = 16;
   const contracts::CameraData data =
       camera::shader_form(framed_camera(lens_radius), image);
   std::vector<CameraQuery> queries;

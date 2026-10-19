@@ -116,8 +116,8 @@ contracts::CameraData shader_form(const contracts::Camera& camera,
                                 std::string(*reason));
   }
   const auto [forward, right_unit] = basis(camera);
-  const Vec3 up_unit =
-      cross(right_unit, forward);  // unit: the two are orthonormal
+  // unit: the two are orthonormal
+  const Vec3 up_unit = cross(right_unit, forward);
 
   const double half_height =
       std::tan(static_cast<double>(camera.vertical_fov_degrees) *

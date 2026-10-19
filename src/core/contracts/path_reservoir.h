@@ -106,14 +106,14 @@ enum class PathEnd : uint32_t {
 SERENITY_CONSTANT uint32_t path_count_mask = 0xffu;
 SERENITY_CONSTANT uint32_t path_length_shift = 8u;
 SERENITY_CONSTANT uint32_t path_rc_shift = 12u;
-SERENITY_CONSTANT uint32_t path_index_mask =
-    0xfu;  // d and k, after their shifts
+// d and k, after their shifts
+SERENITY_CONSTANT uint32_t path_index_mask = 0xfu;
 SERENITY_CONSTANT uint32_t path_end_shift = 16u;
 SERENITY_CONSTANT uint32_t path_end_mask = 0x3u;
 SERENITY_CONSTANT uint32_t path_lobe_before_shift = 18u;
 SERENITY_CONSTANT uint32_t path_lobe_at_shift = 23u;
-SERENITY_CONSTANT uint32_t path_lobe_mask =
-    0x1fu;  // contract 2's five lobe bits
+// contract 2's five lobe bits
+SERENITY_CONSTANT uint32_t path_lobe_mask = 0x1fu;
 SERENITY_CONSTANT uint32_t path_face_shift = 28u;
 SERENITY_CONSTANT uint32_t path_face_mask = 0x7u;
 

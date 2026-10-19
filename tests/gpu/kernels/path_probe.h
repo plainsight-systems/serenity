@@ -29,8 +29,8 @@ struct MisQuery {
   uint32_t draws;  // directions drawn by each strategy
   contracts::Float3 wo;
   uint32_t light_count;  // N, step 5's
-  contracts::Float3
-      normal;  // the surface's geometric normal, and its shading normal
+  // the surface's geometric normal, and its shading normal
+  contracts::Float3 normal;
   uint32_t struck_light_count;  // N, step 3's
   uint32_t light_from_point;    // 0: step 5 draws as the path tracer does; 1:
                                 // from the surface's point
@@ -50,8 +50,8 @@ struct MisDraw {
                         // draw it
   float bsdf_density;   // p_b, as step 6 hands it on: 0 where step 6 does not
                         // draw it
-  uint32_t
-      by_bsdf;  // 0: drawn toward the light (step 5); 1: by the BSDF (step 6)
+  // 0: drawn toward the light (step 5); 1: by the BSDF (step 6)
+  uint32_t by_bsdf;
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[3];
 };
