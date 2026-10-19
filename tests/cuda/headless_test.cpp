@@ -11,7 +11,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
+#include <span>
 #include <string>
+#include <vector>
 
 #include "headless_program.h"
 #include "support/files.h"
@@ -30,6 +33,10 @@ namespace {
 
 using serenity::tests::Ran;
 using serenity::tests::ScratchDirectory;
+
+// stb's decoded pixels, freed by stb's own function however the test ends
+// (R.1, R.12).
+using Decoded = std::unique_ptr<stbi_uc, decltype(&stbi_image_free)>;
 
 TEST_CASE("the headless program writes the test pattern on CUDA") {
   const ScratchDirectory scratch("cuda-headless");
@@ -52,11 +59,16 @@ TEST_CASE("the headless program writes the test pattern on CUDA") {
     int w = 0;
     int h = 0;
     int channels = 0;
-    unsigned char* pixels =
-        stbi_load(png.string().c_str(), &w, &h, &channels, 4);
-    REQUIRE(pixels != nullptr);
-    CHECK(w == 40);
-    CHECK(h == 24);
+    const Decoded decoded(stbi_load(png.string().c_str(), &w, &h, &channels, 4),
+                          &stbi_image_free);
+    REQUIRE(decoded != nullptr);
+    // The decoded size first: stb's buffer holds w x h x 4 bytes, and is read
+    // only once that is the size asked for (SL.con.3).
+    REQUIRE(w == 40);
+    REQUIRE(h == 24);
+    const std::span<const stbi_uc> bytes(decoded.get(),
+                                         std::size_t{40} * 24 * 4);
+    const std::vector<std::uint8_t> pixels(bytes.begin(), bytes.end());
     int worst_blue = 0;
     const float seconds = 0.75f * static_cast<float>(index);
     for (int y = 0; y < h; ++y) {
@@ -68,14 +80,14 @@ TEST_CASE("the headless program writes the test pattern on CUDA") {
             serenity::tests::test_pattern_pixel(static_cast<unsigned>(x),
                                                 static_cast<unsigned>(y), 40,
                                                 24, seconds);
-        CHECK(pixels[at] == want[0]);
-        CHECK(pixels[at + 1] == want[1]);
-        worst_blue = std::max(worst_blue, std::abs(pixels[at + 2] - want[2]));
-        CHECK(pixels[at + 3] == 255);
+        CHECK(pixels.at(at) == want[0]);
+        CHECK(pixels.at(at + 1) == want[1]);
+        worst_blue =
+            std::max(worst_blue, std::abs(pixels.at(at + 2) - want[2]));
+        CHECK(pixels.at(at + 3) == 255);
       }
     }
     CHECK(worst_blue <= 1);
-    stbi_image_free(pixels);
   }
 }
 

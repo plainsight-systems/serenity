@@ -33,10 +33,11 @@ Submission::~Submission() {
 }
 
 void Submission::settle(std::uint32_t slot) {
-  if (!pending_.at(slot)) {
+  const std::optional<std::uint64_t> pending = pending_.at(slot);
+  if (!pending) {
     return;
   }
-  const std::uint64_t sequence = *pending_.at(slot);
+  const std::uint64_t sequence = *pending;
   pending_.at(slot).reset();
   check(cuEventSynchronize(events_.at(slot)),
         "frame " + std::to_string(sequence) + " on the GPU");

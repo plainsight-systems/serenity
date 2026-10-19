@@ -1,6 +1,7 @@
 #include "cuda/device/device.h"
 
 #include <array>
+#include <cstddef>
 
 #include "cuda/device/error.h"
 
@@ -11,6 +12,8 @@ namespace {
 // The architecture the kernels are built for (cmake/CudaModules.cmake).
 constexpr int built_major = 8;
 constexpr int built_minor = 6;
+// What cuDeviceGetName writes into: a name, its terminator, and room.
+constexpr std::size_t name_capacity = 256;
 
 }  // namespace
 
@@ -22,7 +25,7 @@ Device::Device() {
     throw CudaError("Device: the driver sees no CUDA device");
   }
   check(cuDeviceGet(&device_, 0), "cuDeviceGet");
-  std::array<char, 256> text{};
+  std::array<char, name_capacity> text{};
   check(cuDeviceGetName(text.data(), static_cast<int>(text.size()), device_),
         "cuDeviceGetName");
   int major = 0;
