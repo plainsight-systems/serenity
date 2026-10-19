@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "core/frame/schedule.h"
+#include "support/required.h"
 #include "support/schedules.h"
 
 namespace contracts = serenity::contracts;
@@ -87,8 +88,8 @@ TEST_CASE(
   const std::optional<sampling::CameraJitter> taken =
       frame::camera_jitter(restir(true), 7);
   REQUIRE(taken.has_value());
-  CHECK(taken->x == sampling::camera_jitter(7).x);
-  CHECK(taken->y == sampling::camera_jitter(7).y);
+  CHECK(tests::required(taken).x == sampling::camera_jitter(7).x);
+  CHECK(tests::required(taken).y == sampling::camera_jitter(7).y);
   CHECK_FALSE(frame::camera_jitter(restir(false), 7).has_value());
   CHECK_FALSE(frame::camera_jitter(
       frame::Schedule{{PassKind::path, PassKind::tone_map}, tests::look}, 7));

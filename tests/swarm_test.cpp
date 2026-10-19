@@ -27,6 +27,7 @@
 #include "core/shapes/shapes.h"
 #include "support/ball_jobs.h"
 #include "support/ball_on_floor.h"
+#include "support/required.h"
 #include "support/text.h"
 #include "support/vector.h"
 
@@ -298,7 +299,7 @@ TEST_CASE(
     CHECK(f.start.y == before.y);
     CHECK(f.start.z == before.z);
     REQUIRE(f.wake.has_value());
-    CHECK(f.wake->ramp == a_wake.ramp);
+    CHECK(tests::required(f.wake).ramp == a_wake.ramp);
   }
 }
 
@@ -322,7 +323,7 @@ TEST_CASE(
             static_cast<double>(static_cast<float>(top)));
       REQUIRE(std::holds_alternative<animation::Hold>(f.prelude));
       CHECK(std::get<animation::Hold>(f.prelude).until ==
-            (wake ? f.wake->at : 0.0));
+            (wake ? tests::required(f.wake).at : 0.0));
     }
   }
   // A depth past the whole range: all of it.
@@ -431,8 +432,8 @@ TEST_CASE(
       CHECK(obstacles.distance(f.start) >= needed);
       // It rests until its wake and its linger.
       REQUIRE(f.wake.has_value());
-      CHECK(perch.until - f.wake->at >= 2.0);
-      CHECK(perch.until - f.wake->at <= 8.0);
+      CHECK(perch.until - tests::required(f.wake).at >= 2.0);
+      CHECK(perch.until - tests::required(f.wake).at <= 8.0);
     }
   }
 }
@@ -647,7 +648,9 @@ TEST_CASE(
     std::vector<double> at;
     at.reserve(count);
     for (std::uint32_t i = 0; i < count; ++i) {
-      at.push_back(scene::make_firefly(swarm, first(i), obstacles).wake->at);
+      at.push_back(
+          tests::required(scene::make_firefly(swarm, first(i), obstacles).wake)
+              .at);
     }
     CHECK(std::ranges::all_of(
         at, [&](double t) { return t >= w.from && t <= w.to; }));
@@ -685,7 +688,8 @@ TEST_CASE("a firefly's wake is drawn apart from its start") {
   int alike = 0;
   for (std::uint32_t i = 0; i < count; ++i) {
     const scene::Firefly f = scene::make_firefly(swarm, first(i), obstacles);
-    const double wake_u = (f.wake->at - w.from) / (w.to - w.from);
+    const double wake_u =
+        (tests::required(f.wake).at - w.from) / (w.to - w.from);
     const double height_u =
         (static_cast<double>(f.start.y) - low) / (high - low);
     alike += std::abs(wake_u - height_u) < 1e-6 ? 1 : 0;
@@ -976,30 +980,32 @@ TEST_CASE(
         CAPTURE(i);
         const std::optional<Drawn> expected = drawn_one_by_one(swarm, i, still);
         REQUIRE(expected.has_value());
-        again += expected->draw > 0 ? 1 : 0;
+        again += tests::required(expected).draw > 0 ? 1 : 0;
         // Its sphere, placed at its start, and its light, its sphere's.
         const contracts::Float3 at =
             contracts::translation(s.shapes.transforms[shape]);
-        CHECK(tests::same(at, expected->firefly.start));
+        CHECK(tests::same(at, tests::required(expected).firefly.start));
         const std::uint32_t light = s.shape_lights[shape];
         REQUIRE(light != lights::no_light);
         CHECK(s.sphere_lights[s.lights[light].index].shape == shape);
         // Its flight, and its glow's flashes and wake.
         const std::size_t motion = shape - table_shapes;
         const animation::Flight& made = s.animation.motions.flights[motion];
-        CHECK(made.loop == expected->flight.loop);
-        CHECK(made.begin == expected->flight.begin);
+        CHECK(made.loop == tests::required(expected).flight.loop);
+        CHECK(made.begin == tests::required(expected).flight.begin);
         for (const double t : {0.0, made.begin + 1.5, 77.25}) {
           const contracts::Float3 a = animation::position(made, Seconds(t));
           const contracts::Float3 b =
-              animation::position(expected->flight, Seconds(t));
+              animation::position(tests::required(expected).flight, Seconds(t));
           CHECK(tests::same(a, b));
         }
         const animation::ScheduleGlow& glow =
             s.animation.glows.schedules[s.animation.glowers[motion].glow.index];
-        CHECK(glow.schedule.opening == expected->flight.flashes.opening);
+        CHECK(glow.schedule.opening ==
+              tests::required(expected).flight.flashes.opening);
         REQUIRE(glow.wake.has_value());
-        CHECK(glow.wake->at == expected->firefly.wake->at);
+        CHECK(tests::required(glow.wake).at ==
+              tests::required(tests::required(expected).firefly.wake).at);
       }
     }
   }

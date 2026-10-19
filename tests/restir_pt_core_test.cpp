@@ -20,11 +20,13 @@
 #include "core/frame/schedule.h"
 #include "core/passes/restir_pt.h"
 #include "core/sampling/pairing.h"
+#include "support/required.h"
 #include "support/text.h"
 
 using serenity::frame::GraphFileError;
 using serenity::frame::parse_schedule;
 using serenity::tests::contains;
+using serenity::tests::required;
 
 namespace {
 
@@ -65,8 +67,8 @@ TEST_CASE(
                      "graph.toml");
   CHECK(serenity::frame::reuses_history(alone));
   REQUIRE(alone.restir_pt.has_value());
-  CHECK(alone.restir_pt->confidence_cap == 20.0f);
-  CHECK(alone.restir_pt->cap_exponent == 0.0f);
+  CHECK(required(alone.restir_pt).confidence_cap == 20.0f);
+  CHECK(required(alone.restir_pt).cap_exponent == 0.0f);
   // The map without temporal reuse, whose cap is all it serves.
   CHECK(contains(error_for(graph("\"restir_pt_initial\", \"restir_pt_shade\", "
                                  "\"restir_pt_duplication\"") +
@@ -110,7 +112,7 @@ TEST_CASE(
           "confidence_cap = 40.0\ncap_floor = 30.0\ncap_exponent = 0.5\n",
       "graph.toml");
   REQUIRE(raised.restir_pt.has_value());
-  CHECK(raised.restir_pt->cap_floor == 30.0f);
+  CHECK(required(raised.restir_pt).cap_floor == 30.0f);
 }
 
 TEST_CASE(

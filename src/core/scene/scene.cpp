@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <toml++/toml.hpp>
@@ -1468,6 +1469,10 @@ void ShapeReading::record(const Gathered& gathered,
     if (p.swarm != no_swarm) {
       // A flight glow with the swarm's flash and dim, and the
       // firefly's wake (swarm.h, step 4).
+      if (!motion) {
+        throw std::logic_error(
+            p.what + ": a swarm's firefly recorded without its flight");
+      }
       animation::ScheduleGlow glow;
       glow.schedule = motions.flights[motion->index].flashes;
       glow.flash = swarms_[p.swarm].swarm.flash;

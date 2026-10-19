@@ -52,33 +52,34 @@ bool is_option(std::string_view argument) { return argument.starts_with("--"); }
 // A command's arguments: the one option it takes, `name`, exactly once, and
 // its files in the order given. Any other option is refused by name.
 struct Parsed {
-  std::optional<std::filesystem::path> option;
+  std::filesystem::path option;  // given, and once
   std::vector<std::filesystem::path> files;
 };
 
 Parsed parse_command(Arguments& arguments, std::string_view command,
                      std::string_view name) {
-  Parsed parsed;
+  std::optional<std::filesystem::path> option;
+  std::vector<std::filesystem::path> files;
   while (const std::optional<std::string_view> next = arguments.next()) {
     const std::string_view argument = *next;
     if (argument == name) {
-      if (parsed.option) {
+      if (option) {
         throw OptionsError(std::string{name} + " is given twice; " +
                            std::string{command} + " takes one");
       }
-      parsed.option = std::filesystem::path{arguments.value_of(name)};
+      option = std::filesystem::path{arguments.value_of(name)};
     } else if (is_option(argument)) {
       throw OptionsError("unknown option '" + std::string{argument} + "' for " +
                          std::string{command} + "; " + std::string{usage});
     } else {
-      parsed.files.emplace_back(argument);
+      files.emplace_back(argument);
     }
   }
-  if (!parsed.option) {
+  if (!option) {
     throw OptionsError("missing " + std::string{name} + "; " +
                        std::string{usage});
   }
-  return parsed;
+  return Parsed{.option = std::move(*option), .files = std::move(files)};
 }
 
 }  // namespace
@@ -98,7 +99,7 @@ Command parse(std::span<const char* const> args) {
           "floor; " +
           std::to_string(parsed.files.size()) + " given");
     }
-    return MakeReference{.out = std::move(*parsed.option),
+    return MakeReference{.out = std::move(parsed.option),
                          .batches = std::move(parsed.files)};
   }
   if (*command == "error") {
@@ -106,7 +107,7 @@ Command parse(std::span<const char* const> args) {
     if (parsed.files.empty()) {
       throw OptionsError("error needs an image or more to judge; none given");
     }
-    return MeasureError{.reference = std::move(*parsed.option),
+    return MeasureError{.reference = std::move(parsed.option),
                         .images = std::move(parsed.files)};
   }
   throw OptionsError("unknown command '" + std::string{*command} + "'; " +

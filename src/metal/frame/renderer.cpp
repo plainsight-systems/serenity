@@ -56,6 +56,26 @@ static_assert(camera_offset % alignof(contracts::CameraData) == 0);
 static_assert(std::is_trivially_copyable_v<contracts::FrameConstants>);
 static_assert(std::is_trivially_copyable_v<contracts::CameraData>);
 
+// What `held` holds: a family, setting or input the graph's passes have
+// (renderer.h), made or given before any frame reads it. One that is not
+// there is this renderer's defect, refused by name (E.2, I.6), not read.
+template <typename T>
+T& made(std::optional<T>& held, std::string_view what) {
+  if (!held) {
+    throw MetalError("Renderer: no " + std::string(what) +
+                     ", which the frame graph's passes need");
+  }
+  return *held;
+}
+template <typename T>
+const T& made(const std::optional<T>& held, std::string_view what) {
+  if (!held) {
+    throw MetalError("Renderer: no " + std::string(what) +
+                     ", which the frame graph's passes need");
+  }
+  return *held;
+}
+
 // The argument table's sizes (renderer.h). Each family of passes binds at
 // most its constant's buffers and textures through the table
 // (metal/passes/bindings.h), each the index past its passes' last, asserted
@@ -295,7 +315,7 @@ void Renderer::FeatureFamily::prepare(frame::Extent light) {
 
 const FeatureImages& Renderer::FeatureFamily::images(std::uint32_t slot) const {
   // One set per slot when handed off, else the one (renderer.h).
-  return sets[1] ? *sets.at(slot) : *sets[0];
+  return made(sets[1] ? sets.at(slot) : sets[0], "feature images");
 }
 
 void Renderer::FeatureFamily::bind(
@@ -410,7 +430,8 @@ Renderer::Renderer(const Device& device, Submission& submission,
   // The denoise pass's. The core has made sure the graph has the features
   // pass and a light pass before it (frame::invalid).
   if (denoises_) {
-    denoise_.emplace(device, submission_, library_, *network);
+    denoise_.emplace(device, submission_, library_,
+                     made(network, "denoiser network"));
   }
   // Checkerboard rendering's, a graph's whose light is the network's input
   // (frame::feeds_network), its own filled light without the denoise pass.
@@ -468,9 +489,10 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
         break;
       case frame::PassKind::tone_map:
         // The schedule has its settings with its pass (frame::invalid).
-        steps_.push_back(
-            Step{kind, Pass{std::in_place_type<ToneMapPass>, device, library_,
-                            submission_, *schedule.tone_map}});
+        steps_.push_back(Step{
+            kind,
+            Pass{std::in_place_type<ToneMapPass>, device, library_, submission_,
+                 made(schedule.tone_map, "tone map settings")}});
         break;
       case frame::PassKind::restir_pt_initial:
         steps_.push_back(Step{
@@ -500,7 +522,7 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
         // The schedule has its settings with its pass (frame::invalid).
         steps_.push_back(
             Step{kind, Pass{std::in_place_type<DenoisePass>, device, library_,
-                            submission_, *network}});
+                            submission_, made(network, "denoiser network")}});
         break;
       case frame::PassKind::depth_of_field:
         steps_.push_back(
@@ -686,7 +708,7 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
   }
   if (denoise_) {
     for (std::optional<FeatureImages>& set : denoise_->full_features) {
-      set->prepare(size);
+      made(set, "full-size features").prepare(size);
     }
   }
   const bool fill_history =
@@ -963,7 +985,7 @@ Renderer::DenoiseResources Renderer::denoise_resources(
     const FrameResources& resources, const FrameSlot& begun,
     const frame::FrameInputs& inputs, const contracts::Camera& lens,
     frame::Extent size, const Prepared& prepared) {
-  DenoiseFamily& d = *denoise_;
+  DenoiseFamily& d = made(denoise_, "denoiser");
   const frame::Extent light = resources.size;
   DenoiseResources out{resources, resources, resources, resources, false};
   FrameResources& output = out.output;
@@ -981,14 +1003,16 @@ Renderer::DenoiseResources Renderer::denoise_resources(
   full_features.feature_constants = write_feature_constants(
       d.full_feature_constants, begun.slot, inputs.previous, size);
   const FeatureImages& full =
-      *d.full_features.at(begun.slot);  // the slot's (renderer.h)
+      made(d.full_features.at(begun.slot),
+           "full-size features");  // the slot's (renderer.h)
   full_features.albedo = full.albedo();
   full_features.normal = full.normal();
   full_features.depth = full.depth();
   full_features.motion = full.motion();
 
   // Its constants: the view axes, the sizes, whether there is a history.
-  const camera::ViewAxes axes = camera::view_axes(*inputs.camera);
+  const camera::ViewAxes axes =
+      camera::view_axes(made(inputs.camera, "camera"));
   contracts::DenoiseConstants k{};
   k.right = axes.right;
   k.up = axes.up;
@@ -1004,7 +1028,7 @@ Renderer::DenoiseResources Renderer::denoise_resources(
   // The light's jitter, the frame's (renderer.h, "The camera's jitter"): a
   // denoised graph feeds the network, so its frames take it.
   const sampling::CameraJitter jitter =
-      frame::camera_jitter(schedule_, inputs.index).value();
+      made(frame::camera_jitter(schedule_, inputs.index), "camera jitter");
   k.jitter_x = jitter.x;
   k.jitter_y = jitter.y;
   std::memcpy(d.constants.bytes(begun.slot).data(), &k, sizeof(k));
@@ -1024,7 +1048,7 @@ Renderer::DenoiseResources Renderer::denoise_resources(
   // The depth of field's: at the output's size, the radiance image the
   // denoise pass wrote, the slot's full-size depth, its constants from the
   // frame's own lens (renderer.h, "The depth of field").
-  DepthOfFieldFamily& f = *depth_of_field_;
+  DepthOfFieldFamily& f = made(depth_of_field_, "depth of field");
   const contracts::DepthOfFieldConstants dof =
       passes::depth_of_field_constants(lens, size);
   std::memcpy(f.constants.bytes(begun.slot).data(), &dof, sizeof(dof));
@@ -1085,7 +1109,7 @@ void Renderer::record_hand_off(MTL4::ComputeCommandEncoder* encoder,
                                const FrameResources& resources,
                                const Prepared& prepared,
                                MTL::Texture* hand_off) {
-  CheckerboardFamily& c = *checkerboard_;
+  CheckerboardFamily& c = made(checkerboard_, "checkerboard fill");
   // The frame before's history is this history's frame before when the
   // fill's own history holds it (renderer.h).
   const contracts::CheckerboardConstants constants{
@@ -1194,15 +1218,16 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given,
     encoder->endEncoding();
   } else {
     const DenoiseResources denoised = denoise_resources(
-        resources, begun, inputs, *given.camera, size, prepared);
+        resources, begun, inputs, made(given.camera, "camera"), size, prepared);
     // The full-size albedo, in the light half (renderer.h, "Two
     // halves"): it writes the slot's own images, which nothing before
     // it in the frame reads, so no barrier before it, as none before the
     // light-size features; the fill's barrier orders it before the image
     // half in one part, the event in two.
-    denoise_->full_features_pass.record(encoder, denoised.full_features);
+    DenoiseFamily& d = made(denoise_, "denoiser");
+    d.full_features_pass.record(encoder, denoised.full_features);
     record_hand_off(encoder, begun, resources, prepared,
-                    denoise_->images.light_radiance(begun.slot));
+                    d.images.light_radiance(begun.slot));
     MTL4::ComputeCommandEncoder* image = encoder;
     if (begun.second != nullptr) {
       // The image half in the second part, on the overlap queue

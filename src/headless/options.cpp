@@ -314,7 +314,7 @@ frame::Seconds frame_time(const Options& options, std::uint64_t index) {
 std::optional<frame::Seconds> previous_time(const Options& options,
                                             std::uint64_t index) {
   if (options.time) {
-    return *options.time;
+    return options.time;
   }
   if (index == 0) {
     return std::nullopt;

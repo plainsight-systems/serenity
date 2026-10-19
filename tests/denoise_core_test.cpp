@@ -22,6 +22,7 @@
 #include "core/frame/graph_file.h"
 #include "core/frame/schedule.h"
 #include "support/files.h"
+#include "support/required.h"
 #include "support/schedules.h"
 #include "support/text.h"
 #include "test_paths.h"
@@ -152,11 +153,12 @@ TEST_CASE(
   const Schedule relative =
       frame::load_schedule(scratch / "graphs" / "relative.toml");
   REQUIRE(relative.denoise.has_value());
-  CHECK(relative.denoise->weights == scratch / "graphs" / "../model/net");
+  CHECK(tests::required(relative.denoise).weights ==
+        scratch / "graphs" / "../model/net");
   const Schedule absolute =
       frame::load_schedule(scratch / "graphs" / "absolute.toml");
   REQUIRE(absolute.denoise.has_value());
-  CHECK(absolute.denoise->weights == "/model/net");
+  CHECK(tests::required(absolute.denoise).weights == "/model/net");
 }
 
 TEST_CASE("every mistake in [denoise] is an error") {
@@ -341,12 +343,14 @@ TEST_CASE(
 
   const frame::FrameInputs traced =
       frame::traced_inputs(schedule_of(denoised), inputs);
-  CHECK(traced.camera->lens_radius == 0.0f);
-  CHECK(traced.previous->camera.lens_radius == 0.0f);
+  CHECK(tests::required(traced.camera).lens_radius == 0.0f);
+  CHECK(tests::required(traced.previous).camera.lens_radius == 0.0f);
   // The rest of each camera, and of the frame, as given.
-  CHECK(traced.camera->focus_distance == lensed.focus_distance);
-  CHECK(traced.camera->vertical_fov_degrees == lensed.vertical_fov_degrees);
-  CHECK(traced.previous->camera.position.x == before.position.x);
+  CHECK(tests::required(traced.camera).focus_distance == lensed.focus_distance);
+  CHECK(tests::required(traced.camera).vertical_fov_degrees ==
+        lensed.vertical_fov_degrees);
+  CHECK(tests::required(traced.previous).camera.position.x ==
+        before.position.x);
   CHECK(traced.index == inputs.index);
   CHECK(traced.time == inputs.time);
 
@@ -356,13 +360,16 @@ TEST_CASE(
       schedule_of({PassKind::restir_pt_initial, PassKind::restir_pt_shade,
                    PassKind::features, PassKind::tone_map},
                   false);
-  CHECK(frame::traced_inputs(input, inputs).camera->lens_radius == 0.0f);
+  CHECK(
+      tests::required(frame::traced_inputs(input, inputs).camera).lens_radius ==
+      0.0f);
 
   const Schedule plain =
       schedule_of({PassKind::restir_pt_initial, PassKind::restir_pt_shade,
                    PassKind::tone_map},
                   false);
   const frame::FrameInputs kept = frame::traced_inputs(plain, inputs);
-  CHECK(kept.camera->lens_radius == lensed.lens_radius);
-  CHECK(kept.previous->camera.lens_radius == before.lens_radius);
+  CHECK(tests::required(kept.camera).lens_radius == lensed.lens_radius);
+  CHECK(tests::required(kept.previous).camera.lens_radius ==
+        before.lens_radius);
 }

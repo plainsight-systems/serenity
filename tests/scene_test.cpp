@@ -14,6 +14,7 @@
 #include "core/contracts/medium.h"
 #include "core/materials/coated.h"
 #include "support/ball_on_floor.h"
+#include "support/required.h"
 #include "support/scene_text.h"
 #include "support/text.h"
 #include "test_paths.h"
@@ -730,8 +731,8 @@ TEST_CASE("a written firefly may hold or perch, and wake, as a swarm's does") {
   CHECK(rest.z == 0.0f);
   const animation::ScheduleGlow& glow = perched.animation.glows.schedules.at(0);
   REQUIRE(glow.wake.has_value());
-  CHECK(glow.wake->at == 4.0);
-  CHECK(glow.wake->ramp == 1.5);
+  CHECK(tests::required(glow.wake).at == 4.0);
+  CHECK(tests::required(glow.wake).ramp == 1.5);
   CHECK(glow.schedule.begin == f.begin);
   CHECK(glow.schedule.opening == f.flashes.opening);
   const animation::GlowRecord record = perched.animation.glowers.at(0).glow;
@@ -751,8 +752,8 @@ TEST_CASE("a written firefly may hold or perch, and wake, as a swarm's does") {
           "wake = { at = -2, ramp = 0 } }"),
       "s");
   REQUIRE(rhythm.animation.glows.rhythms.at(0).wake.has_value());
-  CHECK(rhythm.animation.glows.rhythms[0].wake->at == -2.0);
-  CHECK(rhythm.animation.glows.rhythms[0].wake->ramp == 0.0);
+  CHECK(tests::required(rhythm.animation.glows.rhythms[0].wake).at == -2.0);
+  CHECK(tests::required(rhythm.animation.glows.rhythms[0].wake).ramp == 0.0);
 }
 
 TEST_CASE(
@@ -853,12 +854,12 @@ TEST_CASE(
     const animation::ScheduleGlow& glow =
         s.animation.glows.schedules.at(s.animation.glowers[i].glow.index);
     REQUIRE(glow.wake.has_value());
-    CHECK(glow.wake->ramp == 1.5);
-    CHECK(glow.wake->at >= 2.0);
-    CHECK(glow.wake->at <= 30.0);
+    CHECK(tests::required(glow.wake).ramp == 1.5);
+    CHECK(tests::required(glow.wake).at >= 2.0);
+    CHECK(tests::required(glow.wake).at <= 30.0);
     // It rests until its wake and its linger, and is dark until it wakes.
-    CHECK(f.opening[0].duration - glow.wake->at >= 2.0);
-    CHECK(f.opening[0].duration - glow.wake->at <= 8.0);
+    CHECK(f.opening[0].duration - tests::required(glow.wake).at >= 2.0);
+    CHECK(f.opening[0].duration - tests::required(glow.wake).at <= 8.0);
     CHECK(glow.schedule.begin == f.begin);
     CHECK(animation::glow(s.animation.glows, s.animation.glowers[i].glow,
                           frame::Seconds(1.9)) == 0.0f);

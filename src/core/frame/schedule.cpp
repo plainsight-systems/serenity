@@ -610,7 +610,7 @@ std::optional<std::string> invalid(const Schedule& schedule) {
       contracts::min_pairing_sigma * contracts::checkerboard_lattice_step;
   if (feeds_network(schedule) &&
       std::ranges::find(passes, PassKind::restir_pt_spatial) != passes.end() &&
-      schedule.restir_pt->sigma < least_sigma) {
+      schedule.restir_pt && schedule.restir_pt->sigma < least_sigma) {
     return setting(pt, "sigma", text(schedule.restir_pt->sigma)) +
            "must be at least " + text(least_sigma) +
            " pixels in a graph whose light is the network's input (ReSTIR PT "

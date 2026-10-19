@@ -24,6 +24,7 @@
 #include "metal/device/submission.h"
 #include "metal/frame/renderer.h"
 #include "support/references.h"
+#include "support/required.h"
 
 namespace frame = serenity::frame;
 namespace metal = serenity::metal;
@@ -160,12 +161,12 @@ TEST_CASE("each submission is settled once, by whichever call comes first") {
     submission.commit();
   }
   REQUIRE(settled_by_begin.has_value());
-  CHECK(settled_by_begin->sequence == 0);
+  CHECK(tests::required(settled_by_begin).sequence == 0);
 
   const auto waited = submission.wait_until_complete(2);
   REQUIRE(waited.has_value());
-  CHECK(waited->sequence == 2);
-  CHECK(waited->gpu_end >= waited->gpu_start);
+  CHECK(tests::required(waited).sequence == 2);
+  CHECK(tests::required(waited).gpu_end >= tests::required(waited).gpu_start);
   CHECK_FALSE(
       submission.wait_until_complete(2).has_value());  // already settled
 

@@ -6,8 +6,11 @@
 
 #include <stdexcept>
 
+#include "support/required.h"
+
 using serenity::frame::Seconds;
 using serenity::measurement::FrameTimes;
+using serenity::tests::required;
 
 TEST_CASE("a summary covers the frames of one period, then starts the next") {
   FrameTimes times(Seconds(1.0));
@@ -21,11 +24,12 @@ TEST_CASE("a summary covers the frames of one period, then starts the next") {
 
   const auto summary = times.take(Seconds(1.0));
   REQUIRE(summary.has_value());
-  CHECK(summary->frames == 3);
-  CHECK(summary->mean.count() == doctest::Approx(0.004).scale(0).epsilon(1e-6));
-  CHECK(summary->shortest.count() ==
+  CHECK(required(summary).frames == 3);
+  CHECK(required(summary).mean.count() ==
+        doctest::Approx(0.004).scale(0).epsilon(1e-6));
+  CHECK(required(summary).shortest.count() ==
         doctest::Approx(0.002).scale(0).epsilon(1e-6));
-  CHECK(summary->longest.count() ==
+  CHECK(required(summary).longest.count() ==
         doctest::Approx(0.006).scale(0).epsilon(1e-6));
 
   // The next period starts empty.
@@ -33,8 +37,9 @@ TEST_CASE("a summary covers the frames of one period, then starts the next") {
   times.add(Seconds(20.0), Seconds(20.001));
   const auto next = times.take(Seconds(2.6));
   REQUIRE(next.has_value());
-  CHECK(next->frames == 1);
-  CHECK(next->mean.count() == doctest::Approx(0.001).scale(0).epsilon(1e-6));
+  CHECK(required(next).frames == 1);
+  CHECK(required(next).mean.count() ==
+        doctest::Approx(0.001).scale(0).epsilon(1e-6));
 }
 
 TEST_CASE(
@@ -61,10 +66,11 @@ TEST_CASE(
             Seconds(10.140));  // ends before the frame before: no time added
   const auto summary = times.take(Seconds(1.0));
   REQUIRE(summary.has_value());
-  CHECK(summary->frames == 4);
-  CHECK(summary->longest.count() ==
+  CHECK(required(summary).frames == 4);
+  CHECK(required(summary).longest.count() ==
         doctest::Approx(0.070).scale(0).epsilon(1e-6));
-  CHECK(summary->shortest.count() == 0.0);  // exactly: the frame added nothing
-  CHECK(summary->mean.count() ==
+  CHECK(required(summary).shortest.count() ==
+        0.0);  // exactly: the frame added nothing
+  CHECK(required(summary).mean.count() ==
         doctest::Approx((0.070 + 0.040 + 0.040) / 4).scale(0).epsilon(1e-6));
 }

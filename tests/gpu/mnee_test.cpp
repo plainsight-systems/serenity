@@ -37,6 +37,7 @@
 #include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"
 #include "metal/frame/renderer.h"
+#include "support/required.h"
 #include "support/scene_text.h"
 #include "support/schedules.h"
 #include "support/vector.h"
@@ -201,24 +202,24 @@ TEST_CASE(
     REQUIRE(chains[i].found == 1u);
     // The solve stops where every constraint, a sine, is under 10^-3:
     // its points are that close in angle, a few 10^-4 of the radius.
-    const double off =
-        std::max(length(tests::vec(chains[i].first) - path->first),
-                 length(tests::vec(chains[i].second) - path->second));
+    const double off = std::max(
+        length(tests::vec(chains[i].first) - tests::required(path).first),
+        length(tests::vec(chains[i].second) - tests::required(path).second));
     CHECK(off < 2e-3 * sphere_radius);
 
     // G: the solid angle at x0 per area at the light, from the
     // directions toward the first crossing as the light's point moves
     // by h along two tangents of its surface.
     constexpr double h = 1e-4;
-    const Vec3 w = normalized(path->first - x0);
+    const Vec3 w = normalized(tests::required(path).first - x0);
     const std::optional<Traced> along_x =
         refraction_path(x0, light_point + h * Vec3{1.0, 0.0, 0.0});
     const std::optional<Traced> along_z =
         refraction_path(x0, light_point + h * Vec3{0.0, 0.0, 1.0});
     REQUIRE(along_x);
     REQUIRE(along_z);
-    const Vec3 wx = normalized(along_x->first - x0) - w;
-    const Vec3 wz = normalized(along_z->first - x0) - w;
+    const Vec3 wx = normalized(tests::required(along_x).first - x0) - w;
+    const Vec3 wz = normalized(tests::required(along_z).first - x0) - w;
     const double expected = length(cross(wx, wz)) / (h * h);
     INFO("G expected " << expected << ", found " << chains[i].geometry);
     CHECK(static_cast<double>(chains[i].geometry) ==

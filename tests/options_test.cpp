@@ -15,10 +15,12 @@
 #include "core/frame/schedule.h"
 #include "core/output/image_format.h"
 #include "headless/options.h"
+#include "support/required.h"
 #include "support/schedules.h"
 #include "support/text.h"
 
 using serenity::tests::contains;
+using serenity::tests::required;
 
 namespace {
 
@@ -298,8 +300,8 @@ TEST_CASE("headless: which frames are written, and frozen time") {
   CHECK_FALSE(headless({}).time.has_value());
   const auto frozen = headless({"--time", "2.5"});
   REQUIRE(frozen.time.has_value());
-  CHECK(frozen.time->count() == 2.5);
-  CHECK(headless({"--time", "0"}).time.value().count() == 0.0);
+  CHECK(required(frozen.time).count() == 2.5);
+  CHECK(required(headless({"--time", "0"}).time).count() == 0.0);
   CHECK(contains(headless_error({"--time", "-1"}), "0 or more"));
   CHECK(contains(headless_error({"--time", "nan"}), "0 or more"));
   CHECK(
@@ -336,11 +338,11 @@ TEST_CASE(
   CHECK(frame_time(stepped, 0).count() == 0.0);
   CHECK(frame_time(stepped, 3).count() == 1.5);
   CHECK_FALSE(previous_time(stepped, 0).has_value());
-  CHECK(previous_time(stepped, 3).value().count() == 1.0);
+  CHECK(required(previous_time(stepped, 3)).count() == 1.0);
   const auto frozen = headless({"--time", "2.5"});
   CHECK(frame_time(frozen, 0).count() == 2.5);
   CHECK(frame_time(frozen, 9).count() == 2.5);
-  CHECK(previous_time(frozen, 0).value().count() == 2.5);
+  CHECK(required(previous_time(frozen, 0)).count() == 2.5);
 }
 
 TEST_CASE(

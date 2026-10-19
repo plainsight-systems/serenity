@@ -28,6 +28,7 @@
 #include "core/scene/scene.h"
 #include "support/ball_jobs.h"
 #include "support/ball_on_floor.h"
+#include "support/required.h"
 #include "support/text.h"
 #include "support/vector.h"
 
@@ -1413,8 +1414,8 @@ TEST_CASE(
         tests::thrown<animation::FlightsError>(
             [&] { return animation::make_flights(jobs, obstacles, workers); });
     REQUIRE(error.has_value());
-    CHECK(error->job() == 7);
-    CHECK(std::string(error->what()).starts_with("flight 7: "));
+    CHECK(tests::required(error).job() == 7);
+    CHECK(std::string(tests::required(error).what()).starts_with("flight 7: "));
   }
 }
 
@@ -1534,10 +1535,10 @@ TEST_CASE(
         tests::thrown<animation::FlightsError>(
             [&] { return animation::make_flights(jobs, obstacles, workers); });
     REQUIRE(error.has_value());
-    CHECK(error->job() == 1);
-    CHECK(error->reason().starts_with("the flight's start"));
-    CHECK(std::string(error->what()) ==
-          "flight 1: " + std::string(error->reason()));
+    CHECK(tests::required(error).job() == 1);
+    CHECK(tests::required(error).reason().starts_with("the flight's start"));
+    CHECK(std::string(tests::required(error).what()) ==
+          "flight 1: " + std::string(tests::required(error).reason()));
     // Its own message, not a refusal's ("flight 0: ..."): an Obstacles'
     // own exception is not taken for one.
     CHECK(tests::error_of<std::invalid_argument>([&] {
@@ -1631,7 +1632,7 @@ TEST_CASE(
           return animation::make_flights(refusal_first, obstacles, workers);
         });
     REQUIRE(refused.has_value());
-    CHECK(refused->job() == 5);
+    CHECK(tests::required(refused).job() == 5);
     CHECK(tests::error_of<std::runtime_error>([&] {
             return animation::try_flights(failure_first, obstacles, workers);
           }) == "the obstacles broke far out");

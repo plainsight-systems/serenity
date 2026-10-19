@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 
+#include "support/required.h"
 #include "support/text.h"
 #include "test_paths.h"
 
@@ -18,6 +19,7 @@ using serenity::frame::parse_schedule;
 using serenity::frame::PassKind;
 using serenity::tests::contains;
 using serenity::tests::graphs_dir;
+using serenity::tests::required;
 
 namespace {
 
@@ -104,13 +106,14 @@ TEST_CASE("the tone map's settings are read with its pass") {
       "0.25\n",
       "graph.toml");
   REQUIRE(schedule.tone_map.has_value());
-  CHECK(schedule.tone_map->exposure == -1.5f);
-  CHECK(schedule.tone_map->bloom == 0.25f);
+  CHECK(required(schedule.tone_map).exposure == -1.5f);
+  CHECK(required(schedule.tone_map).bloom == 0.25f);
   // A whole number is a number.
-  CHECK(parse_schedule("passes = [\"path\", "
-                       "\"tone_map\"]\n[tone_map]\nexposure = 1\nbloom = 0\n",
-                       "g")
-            .tone_map.value()
+  CHECK(required(parse_schedule(
+                     "passes = [\"path\", "
+                     "\"tone_map\"]\n[tone_map]\nexposure = 1\nbloom = 0\n",
+                     "g")
+                     .tone_map)
             .exposure == 1.0f);
 }
 

@@ -14,6 +14,7 @@
 
 #include "core/contracts/bsdf.h"
 #include "core/scene/scene.h"
+#include "support/required.h"
 #include "support/scene_text.h"
 #include "support/text.h"
 
@@ -144,7 +145,8 @@ TEST_CASE(
           std::numeric_limits<float>::infinity();
       const std::optional<std::string> found = scene::outside_packed_bsdf(s);
       REQUIRE(found.has_value());
-      CHECK(contains(*found, "material " + std::to_string(i) + "'s f0"));
+      CHECK(contains(tests::required(found),
+                     "material " + std::to_string(i) + "'s f0"));
     }
     if (s.materials[i].kind == materials::MaterialKind::coated) {
       ++coateds;
@@ -153,7 +155,7 @@ TEST_CASE(
       const std::optional<std::string> found =
           scene::outside_packed_bsdf(escaped);
       REQUIRE(found.has_value());
-      CHECK(contains(*found, "'tile''s escape"));
+      CHECK(contains(tests::required(found), "'tile''s escape"));
     }
   }
   // Each branch ran: the example's one conductor and one coated material.
