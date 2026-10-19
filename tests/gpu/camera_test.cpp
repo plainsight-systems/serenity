@@ -189,6 +189,7 @@ TEST_CASE(
     const auto [cx, cy] = image_point(data, point);
     // Each edge point's start on the lens, from the GPU's rays.
     std::vector<CameraQuery> starts;
+    starts.reserve(edge);
     for (std::uint32_t i = 0; i < edge; ++i) {
       starts.push_back({517.0f, 311.0f, 1.0f,
                         static_cast<float>(i) / static_cast<float>(edge)});

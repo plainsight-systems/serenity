@@ -45,7 +45,7 @@ using tests::refusal;
 
 // `kinds`, shown through the tone map, with ReSTIR PT's settings at the
 // values graphs/ are written with (support/schedules.h).
-Schedule schedule_of(std::vector<PassKind> kinds, bool settings = true) {
+Schedule schedule_of(const std::vector<PassKind>& kinds, bool settings = true) {
   Schedule s{kinds, tests::look};
   s.restir_pt = tests::written_restir_pt(kinds);
   if (settings) {

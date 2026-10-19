@@ -1399,6 +1399,7 @@ TEST_CASE(
       scene::parse(tests::ball_on_floor("[10, 8, 2]"), "s");
   const tests::BallAndFloor obstacles(s);
   std::vector<animation::FlightJob> jobs;
+  jobs.reserve(30);
   for (std::uint64_t k = 0; k < 30; ++k) {
     jobs.push_back(job(k, clear_start));
   }
@@ -1472,6 +1473,7 @@ TEST_CASE(
       scene::parse(tests::ball_on_floor("[10, 8, 2]"), "s");
   const Breaking obstacles = breaking_near(s);
   std::vector<animation::FlightJob> jobs;
+  jobs.reserve(24);
   for (std::uint64_t k = 0; k < 24; ++k) {
     jobs.push_back(job(k, clear_start));
   }
@@ -1569,6 +1571,7 @@ TEST_CASE(
       scene::parse(tests::ball_on_floor("[10, 8, 2]"), "s");
   const tests::BallAndFloor obstacles(s);
   std::vector<animation::FlightJob> jobs;
+  jobs.reserve(12);
   for (std::uint64_t k = 0; k < 12; ++k) {
     jobs.push_back(job(200 + k, clear_start));
   }
@@ -1611,6 +1614,7 @@ TEST_CASE(
       scene::parse(tests::ball_on_floor("[10, 8, 2]"), "s");
   const Breaking obstacles = breaking_far_out(s);
   std::vector<animation::FlightJob> jobs;
+  jobs.reserve(12);
   for (std::uint64_t k = 0; k < 12; ++k) {
     jobs.push_back(job(300 + k, clear_start));
   }

@@ -183,6 +183,7 @@ TEST_CASE(
     "MNEE's solve: through a glass sphere on a floor, the refraction path and "
     "its geometry term") {
   std::vector<tests::MneeQuery> queries;
+  queries.reserve(receivers.size());
   for (const Vec3& x0 : receivers) {
     queries.push_back(tests::MneeQuery{tests::float3(x0),
                                        static_cast<float>(ior),
@@ -282,6 +283,7 @@ TEST_CASE(
            {most + 1u, refraction, 0u, 0u},
            off}};
   std::vector<tests::ChainQuery> queries;
+  queries.reserve(cases.size());
   for (const Case& k : cases) {
     queries.push_back(k.query);
   }

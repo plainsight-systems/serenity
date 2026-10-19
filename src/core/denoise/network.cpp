@@ -154,7 +154,11 @@ struct Needed {
 
 std::vector<Needed> needed(Network& n) {
   const Widths& w = n.widths;
+  // Each level's convolution both ways, and four more: the bottleneck's two,
+  // the decoder's last and the head.
+  constexpr std::size_t convolutions = 2 * contracts::unet_levels + 4;
   std::vector<Needed> list;
+  list.reserve(convolutions);
   constexpr std::size_t deepest =
       contracts::unet_levels -
       1;  // the encoder's last level, the decoder's first

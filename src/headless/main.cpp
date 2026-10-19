@@ -160,7 +160,7 @@ class Run {
     if (!frame::presents(schedule_)) {
       return std::nullopt;  // nothing shown to write
     }
-    const std::filesystem::path path =
+    std::filesystem::path path =
         headless::frame_path(options_.out, index, options_.format);
     switch (source_) {
       case output::ImageSource::displayed:

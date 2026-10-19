@@ -282,6 +282,7 @@ HandOffRun run_hand_off(const scene::SceneDescription& scene,
   metal::Renderer renderer(device, submission, tests::fixture_denoised_graph(),
                            &scene);
   std::vector<std::unique_ptr<metal::Offscreen>> targets;
+  targets.reserve(frames);
   for (std::uint64_t i = 0; i < frames; ++i) {
     targets.push_back(
         std::make_unique<metal::Offscreen>(device, submission, size));

@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/scene/scene.h"
@@ -378,12 +379,14 @@ kind = "rough"
 color = [0.5, 0.5, 0.5]
 )";
   for (const std::string material : {"matte", "glow"}) {
-    const std::string text =
-        std::string(head) +
-        "[[shapes]]\nkind = \"sphere\"\ncenter = [0, 0, -5]\n" +
-        "radius = 1\nmaterial = \"" + material +
-        "\"\n[[shapes]]\nkind = \"sphere\"\n" +
-        "center = [4, 0, 0]\nradius = 1\nmaterial = \"" + material + "\"\n";
+    std::string text(head);
+    for (const std::string_view center : {"[0, 0, -5]", "[4, 0, 0]"}) {
+      text += "[[shapes]]\nkind = \"sphere\"\ncenter = ";
+      text += center;
+      text += "\nradius = 1\nmaterial = \"";
+      text += material;
+      text += "\"\n";
+    }
     const scene::SceneDescription description = scene::parse(text, material);
     metal::Device device;
     metal::Submission submission(device);

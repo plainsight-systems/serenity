@@ -831,6 +831,7 @@ TEST_CASE(
        quarter_cap},  // the second number keeps last's path
   };
   std::vector<tests::PathMergeQuery> queries;
+  queries.reserve(cases.size());
   for (const Case& c : cases) {
     queries.push_back(c.query);
   }
