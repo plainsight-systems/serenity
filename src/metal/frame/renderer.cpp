@@ -359,10 +359,10 @@ Renderer::Renderer(const Device& device, Submission& submission,
                                      texture_bindings(schedule))),
       denoises_(frame::denoises(schedule)),
       feeds_network_(frame::feeds_network(schedule)),
-      schedule_(schedule) {
+      schedule_(schedule),
+      needs_scene_(std::ranges::any_of(schedule.passes, frame::needs_scene)) {
   // The core decides which schedules can be carried out (principle 10).
   refuse(frame::invalid(schedule));
-  needs_scene_ = std::ranges::any_of(schedule.passes, frame::needs_scene);
   refuse(frame::scene_refusal(schedule, scene));
   const auto pool = scoped_pool();
   // The network, read once (core/denoise/network.h); its weights go to the

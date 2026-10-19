@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/scene/scene.h"
+#include "support/required.h"
 #include "support/scene_text.h"
 
 namespace serenity::shapes {
@@ -56,17 +57,18 @@ TEST_CASE(
   const StructurePlan plan = plan_structures(s, Indices{}, Indices{0, 2});
   CHECK(plan.everything.members == first(n));
   REQUIRE(plan.occluders);
+  const TreePlan& occluders = tests::required(plan.occluders);
   Indices surfaces = first(n);
   surfaces.erase(surfaces.begin() + 2);
   surfaces.erase(surfaces.begin());
-  CHECK(plan.occluders->members == surfaces);
+  CHECK(occluders.members == surfaces);
   CHECK(plan.occluder_table == surfaces);
   CHECK(plan.everything.at_rest.size() == n);
-  CHECK(plan.occluders->at_rest.size() == surfaces.size());
+  CHECK(occluders.at_rest.size() == surfaces.size());
   for (std::size_t box = 0; box < surfaces.size(); ++box) {
     const std::uint32_t shape = surfaces[box];
     CHECK(same(
-        plan.occluders->at_rest[box],
+        occluders.at_rest[box],
         world_bounds(object_bounds(s, s.records[shape]), s.transforms[shape])));
   }
 }
@@ -89,8 +91,9 @@ TEST_CASE(
   CHECK(plan.everything.moving_boxes == Indices{1, 3});
   CHECK(plan.everything.moving_shapes == Indices{1, 3});
   REQUIRE(plan.occluders);
-  CHECK(plan.occluders->moving_shapes == Indices{1});
-  CHECK(plan.occluders->moving_boxes == Indices{1});  // shape 1 is box 1
+  CHECK(tests::required(plan.occluders).moving_shapes == Indices{1});
+  CHECK(tests::required(plan.occluders).moving_boxes ==
+        Indices{1});  // shape 1 is box 1
   CHECK_FALSE(plan_structures(s, Indices{}, Indices{3}).everything.moves());
 
   // Placed where a frame's transforms put them; the still boxes untouched.

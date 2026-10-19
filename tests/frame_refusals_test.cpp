@@ -10,6 +10,7 @@
 
 #include "core/frame/refusals.h"
 #include "core/scene/scene.h"
+#include "support/required.h"
 #include "support/scene_text.h"
 #include "support/schedules.h"
 
@@ -61,9 +62,10 @@ TEST_CASE("a frame of a graph that reads a scene needs a camera") {
 TEST_CASE("a frame before whose camera cannot be framed is refused") {
   FrameInputs inputs = frame(5, 0.0);
   CHECK_FALSE(previous_camera_refusal(inputs));  // none before
-  inputs.previous = PreviousFrame{Seconds(0.0), *inputs.camera};
+  inputs.previous = PreviousFrame{Seconds(0.0), tests::required(inputs.camera)};
   CHECK_FALSE(previous_camera_refusal(inputs));
-  inputs.previous->camera = contracts::Camera{};  // looks at itself
+  inputs.previous =
+      PreviousFrame{Seconds(0.0), contracts::Camera{}};  // looks at itself
   CHECK(says(previous_camera_refusal(inputs), "frame 5: the frame before's"));
 }
 
