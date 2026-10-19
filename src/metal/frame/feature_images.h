@@ -5,6 +5,7 @@
 
 #include "core/contracts/linear_image.h"
 #include "core/frame/extent.h"
+#include "core/presentation/offline_renderer.h"
 #include "metal/device/device.h"
 #include "metal/device/resident.h"
 #include "metal/device/submission.h"
@@ -54,13 +55,10 @@ class FeatureImages {
   MTL::Texture* depth() const noexcept { return depth_.texture.get(); }
   MTL::Texture* motion() const noexcept { return motion_.texture.get(); }
 
-  // The four images as they are, read back (above).
-  struct Read {
-    contracts::LinearImage albedo;
-    contracts::LinearImage normal;
-    contracts::LinearImage depth;
-    contracts::LinearImage motion;
-  };
+  // The four images as they are, read back (above): the offline
+  // renderer's type for them, one type wherever they are read back
+  // (core/presentation/offline_renderer.h).
+  using Read = presentation::OfflineRenderer::Features;
 
   // Reads the images back, through the submission, as every frame
   // committed before wrote them (metal/device/readback.h). Throws

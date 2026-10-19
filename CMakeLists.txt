@@ -236,6 +236,7 @@ add_library(serenity_metal STATIC
     src/metal/frame/feature_images.cpp
     src/metal/frame/frame_images.cpp
     src/metal/frame/mnee_list.cpp
+    src/metal/frame/offline_frames.cpp
     src/metal/frame/renderer.cpp
     src/metal/passes/checkerboard_fill/checkerboard_fill.cpp
     src/metal/passes/denoise/denoise.cpp
@@ -296,7 +297,7 @@ target_link_libraries(serenity_headless_options PUBLIC serenity_core)
 target_compile_options(serenity_headless_options PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
 if(APPLE)
-    add_executable(serenity-headless src/headless/main.cpp)
+    add_executable(serenity-headless src/headless/main.cpp src/headless/run.cpp)
     target_link_libraries(serenity-headless PRIVATE serenity_headless_options serenity_metal)
     target_compile_options(serenity-headless PRIVATE ${SERENITY_SOURCE_WARNINGS})
 endif()

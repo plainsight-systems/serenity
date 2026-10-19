@@ -25,6 +25,7 @@ INTEGRATOR_APART="src/metal/integrator/ includes Sample reuse or a Pass"
 APP_NEUTRAL="src/app/ includes a backend outside main.cpp"
 APP_PACING="src/app/ reaches Metal's display link"
 SHADER_LAYOUTS="a shader includes a core header that is not a shared layout"
+HEADLESS_NEUTRAL="src/headless/ includes a backend"
 SEARCH_FAILED="failed (status"
 
 # src/core/ may hold no files yet, and git keeps no empty directory.
@@ -161,6 +162,15 @@ F=src/metal/_probe41.metal.h; CREATED="${CREATED} ${F}"
 printf '#pragma once\n#include "core/contracts/shared_layout.h"\n#include "core/scene/scene_block.h"\n' > "${F}"
 "${CHECK}" >/dev/null 2>&1 || fail "a shared layout included by a shader was refused"
 rm -f "${F}"
+
+# 4e. The headless renderer naming a backend, from main.cpp too, by quoted,
+#     angled and relative path.
+probe "the headless main includes Metal's renderer" "${HEADLESS_NEUTRAL}" src/headless/_probe42.cpp \
+    '#include "metal/frame/renderer.h"\n'
+probe "a headless file includes the CUDA backend by angle" "${HEADLESS_NEUTRAL}" src/headless/_probe43.h \
+    '#pragma once\n#include <cuda/frame/offline_frames.h>\n'
+probe "a headless file includes a backend by relative path" "${HEADLESS_NEUTRAL}" src/headless/_probe44.cpp \
+    '#include "../metal/frame/offline_frames.h"\n'
 
 # 5. A search that cannot read a file fails the check, rather than finding
 #    nothing in it and passing.

@@ -42,7 +42,7 @@ METAL_DIR=src/metal/
 status=0
 fail() { echo "BOUNDARY VIOLATION: $1" >&2; status=1; }
 
-for dir in src src/core src/metal src/measure src/metal/reuse src/metal/integrator src/app; do
+for dir in src src/core src/metal src/measure src/metal/reuse src/metal/integrator src/app src/headless; do
     [ -d "${dir}" ] || { echo "check_boundaries: ${dir} is missing; nothing would be checked" >&2; exit 2; }
 done
 
@@ -144,6 +144,16 @@ hits="$(search -rnE 'display_link\.h|(^|[^[:alnum:]_])(DisplayLink|DisplayUpdate
 if [ -n "${hits}" ]; then
     echo "${hits}" | sed 's/^/  /' >&2
     fail "src/app/ reaches Metal's display link. How frames are paced is the backend's frame source's."
+fi
+
+# 8. The headless renderer names no backend (core/presentation/
+#    offline_renderer.h): no file of src/headless/, main.cpp included,
+#    includes from one, by quoted, angled or relative path. The program
+#    reaches its platform's backend through the factory it is linked with.
+hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal|cuda)/' src/headless/)"
+if [ -n "${hits}" ]; then
+    echo "${hits}" | sed 's/^/  /' >&2
+    fail "src/headless/ includes a backend. It renders through the offline renderer alone."
 fi
 
 # 7. A shader includes from the core only its shared layouts
