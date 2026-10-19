@@ -118,7 +118,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tomlplusplus)
 
-# stb_image_write: PNG output (src/core/output/png.cpp only). v1.16.
+# stb_image_write: PNG output (src/core/output/png.cpp only; its
+# implementation compiled in src/core/output/stb_image_write.cpp). v1.16.
 FetchContent_Declare(
     stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
@@ -156,6 +157,7 @@ add_library(serenity_core STATIC
     src/core/output/image_format.cpp
     src/core/output/pfm.cpp
     src/core/output/png.cpp
+    src/core/output/stb_image_write.cpp
     src/core/passes/depth_of_field.cpp
     src/core/scene/packed_range.cpp
     src/core/scene/scene.cpp

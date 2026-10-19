@@ -93,7 +93,7 @@ fi
 # 4. Each third-party library is reached from one place only, so swapping it
 #    touches only its readers (change-axes.md): SDL from src/app/, toml++
 #    from the two file readers (frame graphs and scenes), stb from the PNG
-#    writer.
+#    writer (and the one unit compiling stb's implementation).
 confined() {
     pattern="$1"; allowed="$2"; what="$3"
     users="$(search -rlE "${pattern}" src/)"
@@ -105,7 +105,7 @@ confined() {
 }
 confined '#[[:space:]]*include[[:space:]]*[<"]SDL3/' 'src/app/' 'SDL'
 confined '#[[:space:]]*include[[:space:]]*[<"]toml\+\+/' 'src/core/(frame/graph_file|scene/scene)\.cpp$' 'toml++'
-confined '#[[:space:]]*include[[:space:]]*[<"]stb_' 'src/core/output/png\.cpp$' 'stb'
+confined '#[[:space:]]*include[[:space:]]*[<"]stb_' 'src/core/output/(png|stb_image_write)\.cpp$' 'stb'
 
 # 5. Sample reuse and the Integrator meet at contracts, and only a Pass
 #    composes them (change-axes.md; metal/passes/restir_pt/

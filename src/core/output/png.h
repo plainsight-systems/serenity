@@ -13,8 +13,9 @@ namespace serenity::output {
 // Axis: Output (PNG).
 //
 // Writes an 8-bit RGBA image as a PNG: the format for sharing a frame. The
-// encoding is stb_image_write's, pinned by commit (NOTICE); this file is the
-// only one that includes it.
+// encoding is stb_image_write's, pinned by commit (NOTICE); png.cpp is the
+// only file that calls it (its implementation is compiled apart, in
+// stb_image_write.cpp).
 //
 // Contract:
 //   - `rgba` holds extent.width x extent.height pixels, 4 bytes each in the

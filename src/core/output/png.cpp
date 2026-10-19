@@ -1,12 +1,10 @@
 #include "core/output/png.h"
 
+#include <stb_image_write.h>  // defined in stb_image_write.cpp
+
 #include <cstdint>
 #include <limits>
 #include <string>
-
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#define STB_IMAGE_WRITE_STATIC
-#include <stb_image_write.h>
 
 namespace serenity::output {
 
