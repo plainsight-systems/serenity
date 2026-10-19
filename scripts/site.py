@@ -69,7 +69,10 @@ ARTICLES = {
         'image': 'images/marbles-m4-20s.jpg',
         'images': ['marbles-m4-20s.jpg', 'pipeline-m3.svg', 'pipeline-m4.svg', 'm4-overlap.svg',
                    'm4-shadow-rays.svg', 'm4-checkerboard.svg',
-                   'm4-depth-of-field-near-marbles.jpg', 'm4-retrain.svg'],
+                   'm4-depth-of-field-near-marbles.jpg', 'm4-retrain.svg',
+                   # each diagram drawn again for phones (render-image.html)
+                   'pipeline-m3-narrow.svg', 'pipeline-m4-narrow.svg', 'm4-overlap-narrow.svg',
+                   'm4-shadow-rays-narrow.svg', 'm4-checkerboard-narrow.svg', 'm4-retrain-narrow.svg'],
         'film': 'm3_vs_m4', 'film_title': 'Milestone 3 beside Milestone 4',
     },
 }

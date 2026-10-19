@@ -548,6 +548,7 @@ main { min-height: 65vh; }
 .table-scroll { overflow-x: auto; margin-block: 32px; }
 .table-scroll:focus-visible { outline: 2px solid var(--copper); outline-offset: 4px; }
 .diagram-scroll { display: block; overflow-x: auto; }
+.diagram-picture { display: block; }
 .prose img.diagram { min-width: 800px; }
 .diagram-scroll:focus-visible { outline: 2px solid var(--copper); outline-offset: 4px; }
 table { border-collapse: collapse; width: 100%; font: 14px/1.65 PlexMono, monospace; }
@@ -566,6 +567,7 @@ th { font-weight: 400; color: var(--copper); }
   .contents ul { columns: 2; column-gap: 24px; }
   .contents li { break-inside: avoid; margin-bottom: 12px; }
   .prose img.diagram { width: auto; min-width: 0; max-width: none; }
+  .prose .diagram-picture img.diagram { width: 100%; max-width: 420px; }
 }
 @media (max-width: 700px) {
   .page-heading { padding-block: 40px 28px; }

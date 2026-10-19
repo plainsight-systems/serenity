@@ -136,11 +136,13 @@ class SiteTests(unittest.TestCase):
         self.assertIn('href="/serenity/writing/milestone-3/"', fourth)
         self.assertIn('https://example.invalid/serenity/images/marbles-m4-20s.jpg', fourth)
         self.assertNotIn('2026-10-19-marbles-opening-m3-vs-m4-1080p30-16mbps.mp4', third)
-        # Diagrams are published beside the article and wrapped for phone-width scrolling.
+        # Diagrams are published beside the article, each with its phone version shown below 900 px.
         for name in ('pipeline-m3', 'pipeline-m4', 'm4-overlap', 'm4-shadow-rays',
                      'm4-checkerboard', 'm4-retrain'):
             self.assertTrue((output / f'writing/milestone-4/images/{name}.svg').is_file())
-            self.assertIn(f'role="region" aria-label="Diagram" tabindex="0"><img class="diagram" '
+            self.assertTrue((output / f'writing/milestone-4/images/{name}-narrow.svg').is_file())
+            self.assertIn(f'<picture class="diagram-picture"><source media="(max-width: 900px)" '
+                          f'srcset="images/{name}-narrow.svg"><img class="diagram" '
                           f'src="images/{name}.svg"', fourth)
         self.assertNotIn('class="diagram"', first + second + third)
         self.assertLess(index.index('writing/milestone-4/'), index.index('writing/milestone-3/'))

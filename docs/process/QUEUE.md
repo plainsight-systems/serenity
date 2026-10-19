@@ -4,14 +4,16 @@ This file tracks active and accepted work.
 
 ## Active
 
-- **Milestone 4 site update** (2026-10-19, branch `m4-site`, not pushed):
+- **Milestone 4 site update** (2026-10-19, published by the user's approval):
   homepage, Writing, About, article registry/media and feed updated for the
   closed fourth milestone, as for Milestone 3. The homepage plays the
   Milestone 4 film; the article carries the Milestone 3 versus Milestone 4
-  comparison and its six SVG diagrams. Films already on R2 (uploaded and
-  verified by the user); nothing uploaded here. Build and ten site tests
-  pass; the article and homepage fit a 390-pixel viewport. Awaiting the
-  user's approval of the preview before main is pushed (which publishes).
+  comparison and its six SVG diagrams, each with a phone version drawn for
+  widths up to 900 px (the user's choice over a sideways scroll). The
+  film captions give the renderer's live rate (57 fps) apart from the
+  film's encoded 30 fps. Films already on R2; nothing uploaded here. Build
+  and ten site tests pass; the article and homepage fit a 390-pixel
+  viewport. Approved by the user and published 2026-10-19.
 
 - **The denoiser, Milestone 3** (docs/research/2026-10-14-denoiser-training-design.md).
   Phase 1 built 2026-10-14 (docs/research/2026-10-14-denoiser-features.md): the
