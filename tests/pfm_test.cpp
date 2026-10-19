@@ -159,7 +159,9 @@ TEST_CASE(
     return serenity::tests::error_of<PfmError>(
         [&] { write_pfm(path, asymmetric()); });
   };
-  // Another writer's file, there before this write: refused, and kept whole.
+  // Another writer's file, there before this write's open: the exclusive
+  // create is the check, so a file that appears between any earlier
+  // check and the write is refused just the same, and kept whole.
   write_bytes(scratch / "theirs.pfm", "another writer's file");
   CHECK(
       contains(refusal(scratch / "theirs.pfm"), "something is already there"));

@@ -491,10 +491,9 @@ frame lacked, chosen by the user from a sweep against shipped engines:
   build's tools (`cmake/toolchain.json`, "$lint").
 - **Deviations only where Metal requires them** (shared GPU layouts, the
   binding indices, metal-cpp interop), and one more by the user: tests keep
-  their literal expected values (`tests/.clang-tidy`), and two kept by the
-  user's decision: Objective-C's naming rule on three C++ constants, the
-  allocation test's own heap. `bugprone-easily-swappable-parameters` is
-  off. The table is in `workflow.md`, "Formatting and static checks".
+  their literal expected values (`tests/.clang-tidy`). The table, with the
+  three outside Metal still the user's to confirm, is in `workflow.md`,
+  "Formatting and static checks".
 - **clangd in VS Code, on save** (`.clangd`, `.vscode/`), formatting with
   the same clang-format and checking with the same clang-tidy, the
   analyzer aside.

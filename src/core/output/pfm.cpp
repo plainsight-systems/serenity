@@ -4,6 +4,7 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <ios>
@@ -38,6 +39,26 @@ constexpr std::string_view scale_written = "-1.0";
 // bytes, so a line past this is no header of this format, and a binary file
 // is not scanned to its end for a newline (SL.io.2).
 constexpr std::size_t longest_header_line = 32;
+
+// A C stream that closes itself however its scope ends (R.1, E.6); the
+// writer closes it explicitly, to see the close's result.
+struct CloseFile {
+  // The unique_ptr owns the stream and hands it here to close; the owner
+  // the check asks for is GSL's annotation, which this project does not use.
+  void operator()(std::FILE* file) const noexcept {
+    (void)std::fclose(file);  // NOLINT(cppcoreguidelines-owning-memory)
+  }
+};
+using File = std::unique_ptr<std::FILE, CloseFile>;
+
+// `values` written whole to `file`; false if fewer were.
+bool write_all(std::FILE* file, std::span<const float> values) {
+  return std::fwrite(values.data(), sizeof(float), values.size(), file) ==
+         values.size();
+}
+bool write_all(std::FILE* file, std::string_view text) {
+  return std::fwrite(text.data(), 1, text.size(), file) == text.size();
+}
 
 // A byte count as the stream's: every count here is at most a 16384 x 16384
 // image's 3 GiB, far inside a 64-bit streamsize (ES.46).
@@ -153,16 +174,19 @@ void write_pfm(const std::filesystem::path& path,
   // Sides bounded by the check, so this cannot overflow (ES.103).
   const std::size_t row_floats = std::size_t{extent.width} * channels;
 
-  // Nothing may be at the path, a dangling link included (pfm.h): checked
-  // just before the open, which C++20's file streams cannot make exclusive.
-  std::error_code ignored;
-  if (std::filesystem::exists(std::filesystem::symlink_status(path, ignored))) {
-    throw PfmError("cannot write " + path.string() +
-                   ": something is already there, and a PFM is never written "
-                   "over anything");
-  }
-  std::ofstream out(path, std::ios::out | std::ios::binary | std::ios::trunc);
-  if (!out) {
+  // Exclusive create: the open is the check that nothing is at the path,
+  // made by the file system at once, so no other writer can slip in
+  // between a check and the write (pfm.h).
+  File file{std::fopen(path.c_str(), "wbx")};
+  if (!file) {
+    // Why, asked of the file system rather than errno (E.28).
+    std::error_code ignored;
+    if (std::filesystem::exists(
+            std::filesystem::symlink_status(path, ignored))) {
+      throw PfmError("cannot write " + path.string() +
+                     ": something is already there, and a PFM is never written "
+                     "over anything");
+    }
     throw PfmError("cannot write " + path.string() + ": it cannot be created");
   }
   // std::to_string, not a stream's operator<<: no locale's grouping can
@@ -170,23 +194,20 @@ void write_pfm(const std::filesystem::path& path,
   const std::string header =
       std::string{magic} + "\n" + std::to_string(extent.width) + " " +
       std::to_string(extent.height) + "\n" + std::string{scale_written} + "\n";
-  out.write(header.data(), stream_size(header.size()));
-  // Rows from the bottom, as the format has them (pfm.h): each copied into
-  // one row's chars, the stream's interface, and written; memcpy reads the
-  // floats' object representation, with no cast of their storage (ES.48).
+  bool written = write_all(file.get(), header);
+  // Rows from the bottom, as the format has them (pfm.h); each written
+  // from the image as it is, through the stream's buffer, with no copy.
   const std::span<const float> rgb = image.rgb;
-  std::vector<char> bytes(row_floats * sizeof(float));
-  for (std::size_t r = 0; out && r < extent.height; ++r) {
+  for (std::size_t r = 0; written && r < extent.height; ++r) {
     const std::size_t row = extent.height - 1 - r;
-    std::memcpy(bytes.data(), rgb.subspan(row * row_floats, row_floats).data(),
-                bytes.size());
-    out.write(bytes.data(), stream_size(bytes.size()));
+    written = write_all(file.get(), rgb.subspan(row * row_floats, row_floats));
   }
   // Closed here, its result seen: a buffered write can fail at the close.
-  out.close();
-  if (!out) {
+  const bool closed = std::fclose(file.release()) == 0;
+  if (!written || !closed) {
     // The file is this call's own, made by it: a partial one is not
     // left to look like a PFM.
+    std::error_code ignored;
     std::filesystem::remove(path, ignored);
     throw PfmError("cannot write " + path.string() +
                    ": the write failed, and the partial file is removed");

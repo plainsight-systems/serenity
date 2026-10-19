@@ -10,7 +10,8 @@ This file tracks active and accepted work.
   (of 759 findings, the tests' literals aside, some 630 fixed, a commit
   per check or group, and some 130 the deviations in `workflow.md`), `make format`, `format-check` and `tidy` in `make check`,
   clangd in VS Code on save, LLVM 21.1.8 pinned. Every graph's output the
-  same to the bit. Not merged.
+  same to the bit. Not merged: three deviations outside Metal await the
+  user (`workflow.md`).
 
 - **Milestone 4 site update** (2026-10-19, published by the user's approval):
   homepage, Writing, About, article registry/media and feed updated for the

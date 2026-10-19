@@ -99,6 +99,7 @@ and only the targets below check the pin (`tools/check_toolchain.py
   | `tests/.clang-tidy` | `avoid-magic-numbers` | In a test the literal is the expectation; ES.45 is about constants in program logic |
   | `frames_in_flight`, `max_texture_side`, `max_accumulated_frames` | `google-objc-global-variable-declaration` | C++ constants, reached by Objective-C's naming rule only because `display_link.mm` (Core Animation's `CAMetalDisplayLink`, which metal-cpp lacks) includes them |
   | `tests/gpu/allocation_test.cpp` | `no-malloc`, `owning-memory`, `avoid-non-const-global-variables` | It replaces operator new and delete: under them is only the C heap, and its counters are the only state operator new can reach |
+  | `output/pfm.cpp`, the C stream's deleter | `owning-memory` | The check asks for GSL's `gsl::owner`, which the project does not use; the `unique_ptr` is the owner |
 
 - **`make format`** formats every C++, Objective-C++ and Metal source in
   place; **`make format-check`** fails on any that is not; **`make tidy`**
