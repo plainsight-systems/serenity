@@ -22,7 +22,7 @@
     "height": 1080,
     "type": "video/mp4",
     "label": "1080p film",
-    "provenance": "Milestone 4 · ReSTIR PT + MNEE · Denoised and upscaled from 960 × 540 · Depth of field after the network · Offline render · 1920 × 1080 · 30 fps playback",
+    "provenance": "Milestone 4 · ReSTIR PT + MNEE, traced in a checkerboard · Denoised and upscaled from 960 × 540 · Depth of field after the network · Offline render · 1920 × 1080 · 30 fps playback",
     "alt": "Thirty-second opening rendered by Milestone 4: light traced at half resolution, denoised and upscaled by the retrained network, then given its depth of field"
   },
   "film_small": {
