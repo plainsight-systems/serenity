@@ -1,8 +1,24 @@
 {
-  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/native-debug/compile_commands.json",
-  "C_Cpp.default.cppStandard": "c++20",
-  "C_Cpp.default.includePath": ["${workspaceFolder}/src", "${workspaceFolder}/tests"],
+  "clangd.path": "/opt/homebrew/opt/llvm/bin/clangd",
+  "clangd.arguments": ["--clang-tidy", "--header-insertion=never"],
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "C_Cpp.formatting": "disabled",
+  "[c]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+    "editor.formatOnSave": true
+  },
+  "[cpp]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+    "editor.formatOnSave": true
+  },
+  "[objective-cpp]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+    "editor.formatOnSave": true
+  },
+  "files.associations": {
+    "*.metal": "cpp",
+    "*.metal.h": "cpp"
+  },
   "cmake.useCMakePresets": "always",
-  "cmake.configureOnOpen": false,
-  "files.associations": { "*.metal": "cpp" }
+  "cmake.configureOnOpen": false
 }

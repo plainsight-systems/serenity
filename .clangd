@@ -1,0 +1,24 @@
+# clangd: the language server VS Code runs on save (.vscode/settings.json),
+# LLVM 21.1.8 as cmake/toolchain.json pins it. It compiles each file as
+# the debug build does, from that build's compile database (every preset
+# exports one; configure native-debug first: make test, or cmake --preset
+# native-debug), and checks it with .clang-tidy's checks as make tidy does.
+CompileFlags:
+  CompilationDatabase: build/native-debug
+---
+# The Metal sources (*.metal, and the *.metal.h headers only they include)
+# are the Metal Shading Language, which clangd cannot compile: no
+# metal_stdlib, address spaces (device, constant, thread) and attributes it
+# does not know. They are read as C++ for navigation (go to definition,
+# find references, outline), and nothing is reported of them; the Metal
+# compiler, in the build, is their check.
+If:
+  PathMatch: [.*\.metal, .*\.metal\.h]
+CompileFlags:
+  Add: [-xc++, -std=c++17, -ferror-limit=0]
+Diagnostics:
+  Suppress: '*'
+  ClangTidy:
+    Remove: '*'
+  UnusedIncludes: None
+  MissingIncludes: None
