@@ -20,7 +20,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 case "$(uname -s)" in
     Darwin) PLATFORM=macos; BUILD_KEYS="xcode xcode_build macos_sdk metal cxx cc objc objcxx cmake"
             TOOLS="cxx cc objc objcxx cmake" ;;
-    Linux) PLATFORM=linux; BUILD_KEYS="cxx cc cmake"; TOOLS="cxx cc cmake" ;;
+    Linux) PLATFORM=linux; BUILD_KEYS="cxx cc cmake nvcc driver"; TOOLS="cxx cc cmake nvcc" ;;
     *) fail "no pins for $(uname -s)" ;;
 esac
 export PLATFORM

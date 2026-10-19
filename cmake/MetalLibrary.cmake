@@ -86,9 +86,9 @@ function(serenity_add_metallib)
     add_custom_command(
         OUTPUT "${header}"
         COMMAND "${CMAKE_COMMAND}"
-                -DINPUT=${metallib} -DOUTPUT=${header} -DNAME=${ARG_NAME}
-                -P "${SERENITY_CMAKE_DIR}/embed_metallib_script.cmake"
-        DEPENDS "${metallib}" "${SERENITY_CMAKE_DIR}/embed_metallib_script.cmake"
+                -DINPUT=${metallib} -DOUTPUT=${header} -DNAME=${ARG_NAME} -DNAMESPACE=metallib
+                -P "${SERENITY_CMAKE_DIR}/embed_bytes_script.cmake"
+        DEPENDS "${metallib}" "${SERENITY_CMAKE_DIR}/embed_bytes_script.cmake"
         COMMENT "Metal: embedding ${ARG_NAME}.metallib"
         VERBATIM)
 

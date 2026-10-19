@@ -209,8 +209,8 @@ else
 LLVM_BIN ?= $(HOME)/.local/opt/llvm-21.1.8/bin
 endif
 LINT_TOOLS = ./tools/check_toolchain.py --lint --llvm-bin $(LLVM_BIN)
-# Every C++, Objective-C++ and Metal source and header, NUL-separated.
-FORMATTED = find src tests \( -name '*.h' -o -name '*.cpp' -o -name '*.mm' -o -name '*.metal' \) -type f -print0
+# Every C++, Objective-C++, Metal and CUDA source and header, NUL-separated.
+FORMATTED = find src tests \( -name '*.h' -o -name '*.cpp' -o -name '*.mm' -o -name '*.metal' -o -name '*.cu' -o -name '*.cuh' \) -type f -print0
 JOBS ?= $(shell getconf _NPROCESSORS_ONLN)
 
 ## Every source formatted in place, Google style (.clang-format). Twice:

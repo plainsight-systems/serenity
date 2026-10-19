@@ -271,6 +271,23 @@ backend.
    renderer behind an offline renderer"); the alternative, a preprocessor
    switch in its `main.cpp`, was not taken. Two commits, two intents: the
    seam on Metal, then the CUDA layer. OptiX waits for Phase 3.
+   **Done 2026-10-19.** The seam (fa3d737): `core/presentation/
+   offline_renderer.h`, the run in `headless/run.{h,cpp}`, Metal's side in
+   `metal/frame/offline_frames.{h,cpp}`, rule 8 of the boundary check;
+   every graph's 94 files the same to the bit, the refusals' words the
+   same. The CUDA layer: `src/cuda/` (the driver API's device, modules,
+   memory, submission and offscreen target; the test pattern; a renderer
+   that refuses by name every pass it does not build yet; the offline
+   renderer and its factory), `cmake/CudaModules.cmake` (nvcc's flags in
+   one place, sm_86 machine code alone, no fast math) and the one
+   bytes-to-header script both backends' libraries use; `nvcc` 13.2.86 and
+   the driver 595.91.07 pinned; rules 3b and 7 of the boundary check over
+   `src/cuda/`. `tests/cuda` on the RTX 3090 Ti: the device, the
+   submission's protocol, the test pattern against the CPU's (red and
+   green to the bit, blue within a level), the same frame the same bytes,
+   a pass not built refused by name, and `serenity-headless` writing the
+   pattern as PNGs. The `headless` integration test renders the path
+   tracer, so it joins Linux's tests in Phase 3.
 3. **The scene and the path tracer.** Scene buffers, the two structures,
    the shapes' intersection programs, the materials, lights and sampler
    with their CPU checks, the path pass and the accumulation: the

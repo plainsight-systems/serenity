@@ -60,6 +60,12 @@ set(toolchain_tools --cxx "${CMAKE_CXX_COMPILER}" --cc "${CMAKE_C_COMPILER}" --c
 if(APPLE)
     list(APPEND toolchain_tools --objc "${CMAKE_OBJC_COMPILER}" --objcxx "${CMAKE_OBJCXX_COMPILER}"
          --sdk "${CMAKE_OSX_SYSROOT}")
+else()
+    # The CUDA toolkit: its driver API's header and library, and nvcc, which
+    # compiles the kernels (cmake/CudaModules.cmake). Not enable_language(CUDA),
+    # which would hand host code to nvcc: the host code is the pinned clang's.
+    find_package(CUDAToolkit 13.2 REQUIRED)
+    list(APPEND toolchain_tools --nvcc "${CUDAToolkit_NVCC_EXECUTABLE}")
 endif()
 execute_process(
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_toolchain.py" ${toolchain_tools}
@@ -292,15 +298,48 @@ if(APPLE)
     target_compile_options(serenity PRIVATE ${SERENITY_SOURCE_WARNINGS})
 endif()
 
+# ---------------------------------------------------------------------------
+# CUDA backend, on Linux: the only code that uses CUDA's host API. Its kernels
+# are compiled into it (cmake/CudaModules.cmake), one module a pass, as
+# serenity::cuda_modules::<pass>. Built a phase at a time
+# (docs/research/2026-10-19-cuda-backend.md); its renderer refuses the
+# passes it does not build yet.
+# ---------------------------------------------------------------------------
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    include(CudaModules)
+    add_library(serenity_cuda STATIC
+        src/cuda/device/buffer.cpp
+        src/cuda/device/device.cpp
+        src/cuda/device/error.cpp
+        src/cuda/device/module.cpp
+        src/cuda/device/offscreen.cpp
+        src/cuda/device/submission.cpp
+        src/cuda/frame/offline_frames.cpp
+        src/cuda/frame/renderer.cpp
+        src/cuda/passes/test_pattern/test_pattern.cpp
+    )
+    target_link_libraries(serenity_cuda PUBLIC serenity_core CUDA::cuda_driver)
+    target_compile_options(serenity_cuda PRIVATE ${SERENITY_SOURCE_WARNINGS})
+    serenity_add_cuda_module(
+        TARGET serenity_cuda NAME test_pattern
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/test_pattern/test_pattern.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+endif()
+
 add_library(serenity_headless_options STATIC src/headless/options.cpp)
 target_link_libraries(serenity_headless_options PUBLIC serenity_core)
 target_compile_options(serenity_headless_options PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
+# The headless renderer names no backend: it is linked with its platform's,
+# whose library defines the offline renderer's factory
+# (core/presentation/offline_renderer.h).
+add_executable(serenity-headless src/headless/main.cpp src/headless/run.cpp)
 if(APPLE)
-    add_executable(serenity-headless src/headless/main.cpp src/headless/run.cpp)
     target_link_libraries(serenity-headless PRIVATE serenity_headless_options serenity_metal)
-    target_compile_options(serenity-headless PRIVATE ${SERENITY_SOURCE_WARNINGS})
+else()
+    target_link_libraries(serenity-headless PRIVATE serenity_headless_options serenity_cuda)
 endif()
+target_compile_options(serenity-headless PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
 # The measuring program (src/measure/options.h): the core alone, no Metal,
 # so a reference is made and judged on any machine the core builds on. Its
@@ -318,4 +357,6 @@ enable_testing()
 add_subdirectory(tests)
 if(APPLE)
     add_subdirectory(tests/gpu)
+else()
+    add_subdirectory(tests/cuda)
 endif()

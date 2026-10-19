@@ -60,9 +60,10 @@ This repo is C++-dominant and performance-sensitive.
   21.1.8 for the lint, unpacked (no root needed) to
   `~/.local/opt/llvm-21.1.8`, `make`'s LLVM_BIN there by default. Commits
   reach it by git bundle (as for training, `/data/serenity/serenity`'s
-  remote), the work branch as a worktree, `/data/serenity/cuda`. Until its
-  backend arrives it builds the core, the measuring program and the tests
-  that need no GPU.
+  remote), the work branch as a worktree, `/data/serenity/cuda`. It builds
+  the core, the measuring program, the CUDA backend as far as its phases
+  have come, the headless renderer on it, and `tests/cuda`, which run on
+  its GPU; the pins there add CUDA's `nvcc` and NVIDIA's driver.
 - **Python is outside the C++ gates.** `scripts/` and `training/` are
   reviewed for correctness, not against the C++ corpora; `training/` keeps
   its own pinned environment (`training/README.md`), and nothing the

@@ -95,6 +95,15 @@ if [ -n "${offenders}" ]; then
     fail "only ${METAL_DIR} may use Metal's host API."
 fi
 
+# 3b. Within src/, only src/cuda/ uses CUDA's host API and OptiX's: their
+#     headers, by any spelling the include takes.
+users="$(search -rlE "${CUDA_INCLUDES}" src/)"
+offenders="$(printf '%s\n' "${users}" | grep -v -e '^src/cuda/' -e '^$' || true)"
+if [ -n "${offenders}" ]; then
+    echo "${offenders}" | sed 's/^/  /' >&2
+    fail "only src/cuda/ may use CUDA's host API."
+fi
+
 # 4. Each third-party library is reached from one place only, so swapping it
 #    touches only its readers (change-axes.md): SDL from src/app/, toml++
 #    from the two file readers (frame graphs and scenes), stb from the PNG
@@ -160,9 +169,9 @@ fi
 #    (file-mapping.md, "The contracts"): headers that include
 #    core/contracts/shared_layout.h, the layouts and their encodings, never
 #    the core's math, so the GPU tests check each backend's own code
-#    against the core's. Every Metal shader and header of src/ and of the
-#    GPU tests' kernels.
-shaders="$(find src tests/gpu/kernels -type f \( -name '*.metal' -o -name '*.metal.h' \) | sort)"
+#    against the core's. Every Metal shader and header and every CUDA
+#    kernel source and header of src/ and of the GPU tests' kernels.
+shaders="$(find src tests/gpu/kernels -type f \( -name '*.metal' -o -name '*.metal.h' -o -name '*.cu' -o -name '*.cuh' \) | sort)"
 for shader in ${shaders}; do
     for header in $(search -hoE '#[[:space:]]*include[[:space:]]*[<"]core/[^">]+' "${shader}" | sed -E 's/.*[<"]//'); do
         [ "${header}" = core/contracts/shared_layout.h ] && continue

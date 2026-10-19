@@ -19,7 +19,9 @@ C++, C, Objective-C and Objective-C++ compilers (SDL is built with C and
 Objective-C, the display link with Objective-C++), the SDK the build
 compiles against (its root, CMAKE_OSX_SYSROOT), Xcode and its Metal
 compiler, and CMake itself, whose version decides the compile lines. On
-Linux: the C++ and C compilers and CMake. Run by hand, each defaults to
+Linux: the C++ and C compilers, CMake, CUDA's nvcc, which compiles the
+kernels, and NVIDIA's driver, which runs them (CUDA's runtime and, from the
+backend's Phase 3, OptiX's are the driver's). Run by hand, each defaults to
 what the presets select: /usr/bin/clang++ (C++ and Objective-C++),
 /usr/bin/clang (C and Objective-C), the macosx SDK, and the cmake on PATH.
 The one on PATH may be another clang entirely (Homebrew's, on the
@@ -53,12 +55,12 @@ PLATFORM = {"darwin": "macos", "linux": "linux"}.get(sys.platform)
 # Which line of a tool's output its pin is: xcodebuild prints two lines,
 # each pin takes one; LLVM's own release prints its version on clang-tidy's
 # second line, Homebrew's on its first.
-LINE = {"macos": {"xcode_build": 1}, "linux": {"clang_tidy": 1}}
+LINE = {"macos": {"xcode_build": 1}, "linux": {"clang_tidy": 1, "nvcc": 3}}
 
 # The tools each platform's build uses (commands(), below).
 BUILD_KEYS = {
     "macos": ["xcode", "xcode_build", "macos_sdk", "metal", "cxx", "cc", "objc", "objcxx", "cmake"],
-    "linux": ["cxx", "cc", "cmake"],
+    "linux": ["cxx", "cc", "cmake", "nvcc", "driver"],
 }
 LLVM_BIN = {"macos": "/opt/homebrew/opt/llvm/bin",
             "linux": str(pathlib.Path.home() / ".local/opt/llvm-21.1.8/bin")}
@@ -87,6 +89,8 @@ def commands(tools, platform):
         "objc": [tools["objc"], "--version"],
         "objcxx": [tools["objcxx"], "--version"],
         "cmake": [tools["cmake"], "--version"],
+        "nvcc": [tools["nvcc"], "--version"],
+        "driver": ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
     }
     return {key: every[key] for key in BUILD_KEYS[platform]}
 
@@ -115,6 +119,7 @@ def main(argv):
         "objcxx": "/usr/bin/clang++",
         "sdk": "macosx",
         "cmake": "cmake",
+        "nvcc": "nvcc",
     }
     lint = False
     llvm_bin = LLVM_BIN[PLATFORM]

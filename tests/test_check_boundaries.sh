@@ -26,6 +26,7 @@ APP_NEUTRAL="src/app/ includes a backend outside main.cpp"
 APP_PACING="src/app/ reaches Metal's display link"
 SHADER_LAYOUTS="a shader includes a core header that is not a shared layout"
 HEADLESS_NEUTRAL="src/headless/ includes a backend"
+CUDA_ONLY="only src/cuda/ may use CUDA's host API"
 SEARCH_FAILED="failed (status"
 
 # src/core/ may hold no files yet, and git keeps no empty directory.
@@ -161,6 +162,19 @@ probe "a Metal shader header includes the core's scene" "${SHADER_LAYOUTS}" src/
 F=src/metal/_probe41.metal.h; CREATED="${CREATED} ${F}"
 printf '#pragma once\n#include "core/contracts/shared_layout.h"\n#include "core/scene/scene_block.h"\n' > "${F}"
 "${CHECK}" >/dev/null 2>&1 || fail "a shared layout included by a shader was refused"
+rm -f "${F}"
+
+# 4f. CUDA's host API outside src/cuda/; and a CUDA kernel including the
+#     core's math. CUDA's own headers in src/cuda/ pass.
+probe "the Metal backend includes cuda.h" "${CUDA_ONLY}" src/metal/_probe45.cpp \
+    '#include <cuda.h>\n'
+probe "the headless program includes OptiX" "${CUDA_ONLY}" src/headless/_probe46.cpp \
+    '#include <optix.h>\n'
+probe "a CUDA kernel includes the core's sampling" "${SHADER_LAYOUTS}" src/metal/_probe47.cu \
+    '#include "core/sampling/jitter.h"\n'
+F=src/cuda/_probe48.cpp; mkdir -p src/cuda; CREATED="${CREATED} ${F}"
+printf '#include <cuda.h>\n#include <optix.h>\n' > "${F}"
+"${CHECK}" >/dev/null 2>&1 || fail "CUDA's headers in src/cuda/ were refused"
 rm -f "${F}"
 
 # 4e. The headless renderer naming a backend, from main.cpp too, by quoted,
