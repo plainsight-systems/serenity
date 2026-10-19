@@ -4,13 +4,15 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <limits>
 #include <numbers>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 #include "core/animation/animate.h"
@@ -134,7 +136,9 @@ TEST_CASE(
     const contracts::Float3 pa = animation::position(a, Seconds(t));
     const contracts::Float3 pb = animation::position(b, Seconds(t));
     const contracts::Float3 pc = animation::position(c, Seconds(t));
-    CHECK(std::memcmp(&pa, &pb, sizeof pa) == 0);
+    // The same bits, -0 and NaN included: each component's.
+    CHECK(std::bit_cast<std::array<std::uint32_t, 3>>(pa) ==
+          std::bit_cast<std::array<std::uint32_t, 3>>(pb));
     CHECK(pa.x != pc.x);
   }
   // Pinned: splitmix64 and the steps, not <random>, so these bits are the
@@ -236,11 +240,18 @@ TEST_CASE(
   animation::Animation anim;
   anim.motions.wanders.push_back(animation::make_wander(
       {{0.0f, 1.0f, 0.0f}, reach, speed, seed}, 0.0f, nothing));
-  const animation::MotionRecord stray{static_cast<animation::MotionKind>(5), 0};
+  // A kind no enumerator names, as a corrupt record's bytes would hold it.
+  const animation::MotionRecord stray{
+      std::bit_cast<animation::MotionKind>(
+          std::underlying_type_t<animation::MotionKind>{5}),
+      0};
   CHECK_THROWS_AS(animation::position(anim.motions, stray, Seconds(1.0)),
                   std::logic_error);
   CHECK_THROWS_AS(animation::extent(anim.motions, stray), std::logic_error);
-  const animation::GlowRecord glow{static_cast<animation::GlowKind>(5), 0};
+  const animation::GlowRecord glow{
+      std::bit_cast<animation::GlowKind>(
+          std::underlying_type_t<animation::GlowKind>{5}),
+      0};
   CHECK_THROWS_AS(animation::glow(anim.glows, glow, Seconds(1.0)),
                   std::logic_error);
 }

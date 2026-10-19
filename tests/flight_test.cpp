@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +22,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -414,7 +416,10 @@ TEST_CASE(
                   std::invalid_argument);
   const scene::SceneDescription s = scene::parse(flying(), "flight");
   animation::Flight corrupt = the_flight(s);
-  corrupt.segments[0].behaviour = static_cast<animation::Behaviour>(9);
+  // A behaviour no enumerator names, as a corrupt record's bytes would hold
+  // it.
+  corrupt.segments[0].behaviour = std::bit_cast<animation::Behaviour>(
+      std::underlying_type_t<animation::Behaviour>{9});
   CHECK_THROWS_AS(animation::position(corrupt, Seconds(0.0)), std::logic_error);
 }
 

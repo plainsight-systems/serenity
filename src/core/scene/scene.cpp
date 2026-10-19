@@ -1515,10 +1515,13 @@ void ShapeReading::record(const Gathered& gathered,
   }
 }
 
-// A table of the root's at `key`, or an empty one if the file has none.
+// A table of the root's at `key`, or an empty one if the file has none: one
+// empty table for every such reading, which outlives them all (not a
+// caller's, which a reference returned could outlive).
 const toml::table& optional_table(const Reader& r, const toml::table& root,
-                                  std::string_view key, const std::string& what,
-                                  const toml::table& none) {
+                                  std::string_view key,
+                                  const std::string& what) {
+  static const toml::table none;
   const toml::node* node = root.get(key);
   return node ? r.table(*node, what) : none;
 }
@@ -1536,19 +1539,16 @@ SceneDescription read_scene(const Reader& r, const toml::table& root) {
       r,
       r.table(r.required(root, "environment", "the scene"), "[environment]"));
 
-  const toml::table no_entries;
   const NameIndex texture_index = read_textures(
-      r, optional_table(r, root, "textures", "[textures]", no_entries),
-      description);
+      r, optional_table(r, root, "textures", "[textures]"), description);
   // Materials, then media, in that order (designated initializers are
   // evaluated in order).
   const WornIndexes worn{
-      .materials = read_materials(
-          r, optional_table(r, root, "materials", "[materials]", no_entries),
-          texture_index, description),
-      .media =
-          read_media(r, optional_table(r, root, "media", "[media]", no_entries),
-                     description)};
+      .materials =
+          read_materials(r, optional_table(r, root, "materials", "[materials]"),
+                         texture_index, description),
+      .media = read_media(r, optional_table(r, root, "media", "[media]"),
+                          description)};
 
   const toml::node& shape_node = r.required(root, "shapes", "the scene");
   const toml::array* shape_list = shape_node.as_array();

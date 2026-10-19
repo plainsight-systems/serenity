@@ -5,9 +5,11 @@
 
 #include <doctest/doctest.h>
 
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <stdexcept>
+#include <type_traits>
 
 #include "core/contracts/medium.h"
 
@@ -133,7 +135,9 @@ TEST_CASE(
     "a record whose kind is no ShapeKind is refused, never answered as a "
     "shape") {
   Shapes shapes = two_spheres_and_a_box();
-  shapes.records[0].kind = static_cast<ShapeKind>(7);
+  // A kind no enumerator names, as a corrupt record's bytes would hold it.
+  shapes.records[0].kind =
+      std::bit_cast<ShapeKind>(std::underlying_type_t<ShapeKind>{7});
   CHECK_THROWS_AS(distance(shapes, 0, {0.0f, 0.0f, 0.0f}), std::logic_error);
   CHECK_THROWS_AS(
       touches(shapes, 0, Bounds{{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}}),

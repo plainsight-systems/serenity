@@ -951,7 +951,7 @@ std::optional<Drawn> drawn_one_by_one(const scene::Swarm& swarm,
       return Drawn{
           .draw = d, .firefly = f, .flight = animation::make_flight(j, still)};
     } catch (const animation::MotionError&) {
-      // refused: its next draw
+      continue;  // refused: its next draw
     }
   }
   return std::nullopt;
