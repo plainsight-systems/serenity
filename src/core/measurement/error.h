@@ -48,8 +48,8 @@ namespace serenity::measurement {
 inline constexpr double relative_epsilon = 0.01;
 
 struct ImageError {
-    double mse = 0.0;
-    double relative_mse = 0.0;
+  double mse = 0.0;
+  double relative_mse = 0.0;
 };
 
 // The two images an error is of, each by name, so they cannot be passed in
@@ -58,11 +58,12 @@ struct ImageError {
 // the call it is made for, so its members refer rather than copy some 25 MB
 // each.
 struct Judged {
-    const contracts::LinearImage& image;
-    const contracts::LinearImage& reference;
+  const contracts::LinearImage& image;
+  const contracts::LinearImage& reference;
 };
 
 // The error of `judged.image` against `judged.reference`; see above.
-ImageError error_against(Judged judged);  // two references: cheap to copy (F.16)
+ImageError error_against(
+    Judged judged);  // two references: cheap to copy (F.16)
 
 }  // namespace serenity::measurement

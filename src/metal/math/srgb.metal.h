@@ -3,9 +3,10 @@
 // Shared shader mathematics: sRGB's transfer function (IEC 61966-2-1), from
 // a linear value in [0, 1] to what an 8-bit target the display reads as
 // sRGB holds. The presenting pass ends in it (passes/tone_map/tone_map.h);
-// how it brings its colors into [0, 1] first is its own. A mapping, owned by no pass. And the luminance of a
-// linear color in its primaries, Rec. 709's, which ReSTIR PT's targets
-// weigh by (metal/integrator/nee.metal.h, metal/passes/restir_pt/).
+// how it brings its colors into [0, 1] first is its own. A mapping, owned by no
+// pass. And the luminance of a linear color in its primaries, Rec. 709's, which
+// ReSTIR PT's targets weigh by (metal/integrator/nee.metal.h,
+// metal/passes/restir_pt/).
 
 #include <metal_stdlib>
 
@@ -25,12 +26,13 @@ constant constexpr float3 rec709_luminance = float3(0.2126f, 0.7152f, 0.0722f);
 
 // Rec. 709 luminance of a linear sRGB radiance.
 inline float luminance(float3 radiance) {
-    return metal::dot(radiance, rec709_luminance);
+  return metal::dot(radiance, rec709_luminance);
 }
 
 inline float3 transfer_srgb(float3 c) {
-    return metal::select(srgb_scale * metal::pow(c, 1.0f / srgb_gamma) - srgb_offset, srgb_linear_slope * c,
-                         c <= srgb_cutoff);
+  return metal::select(
+      srgb_scale * metal::pow(c, 1.0f / srgb_gamma) - srgb_offset,
+      srgb_linear_slope * c, c <= srgb_cutoff);
 }
 
 }  // namespace shaders

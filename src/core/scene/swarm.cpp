@@ -23,35 +23,43 @@ constexpr double facing_step = animation::perch_gap / 4.0;
 // Step 2's range on each axis: the volume shrunk by radius + delta +
 // first_drift_reach on every side.
 struct Range {
-    std::array<double, 3> low{};
-    std::array<double, 3> high{};
+  std::array<double, 3> low{};
+  std::array<double, 3> high{};
 };
 
 Range shrunk(const Swarm& swarm, std::uint32_t i) {
-    const double margin = static_cast<double>(swarm.radius) + animation::flight_delta + animation::first_drift_reach;
-    Range range;
-    for (std::size_t axis = 0; axis < 3; ++axis) {
-        range.low[axis] = contracts::component(swarm.flight.volume.min, static_cast<int>(axis)) + margin;
-        range.high[axis] = contracts::component(swarm.flight.volume.max, static_cast<int>(axis)) - margin;
-        if (!(range.low[axis] < range.high[axis])) {
-            throw animation::MotionError("firefly " + std::to_string(i) +
-                                         ": the volume is too small for a firefly to drift in");
-        }
+  const double margin = static_cast<double>(swarm.radius) +
+                        animation::flight_delta + animation::first_drift_reach;
+  Range range;
+  for (std::size_t axis = 0; axis < 3; ++axis) {
+    range.low[axis] =
+        contracts::component(swarm.flight.volume.min, static_cast<int>(axis)) +
+        margin;
+    range.high[axis] =
+        contracts::component(swarm.flight.volume.max, static_cast<int>(axis)) -
+        margin;
+    if (!(range.low[axis] < range.high[axis])) {
+      throw animation::MotionError(
+          "firefly " + std::to_string(i) +
+          ": the volume is too small for a firefly to drift in");
     }
-    return range;
+  }
+  return range;
 }
 
 // The distance step 2's start must keep from every still surface, for its
 // whole first drift to keep the flight's clearance.
 double needed_of(const Swarm& swarm) {
-    return static_cast<double>(swarm.flight.clearance) + static_cast<double>(swarm.radius) + animation::flight_delta +
-           animation::first_drift_reach * std::sqrt(3.0);
+  return static_cast<double>(swarm.flight.clearance) +
+         static_cast<double>(swarm.radius) + animation::flight_delta +
+         animation::first_drift_reach * std::sqrt(3.0);
 }
 
 // A point drawn within the swarm's volume, or a perch box, both inside the
 // world, so within float's range (ES.46).
 contracts::Float3 to_float(const std::array<double, 3>& p) noexcept {
-    return {static_cast<float>(p[0]), static_cast<float>(p[1]), static_cast<float>(p[2])};
+  return {static_cast<float>(p[0]), static_cast<float>(p[1]),
+          static_cast<float>(p[2])};
 }
 
 // What every step of one firefly reads: its swarm, its number and seed,
@@ -59,54 +67,61 @@ contracts::Float3 to_float(const std::array<double, 3>& p) noexcept {
 // step rather than five or six (I.23); read through references, so never
 // copied (C.12).
 struct Drawing {
-    Drawing(const Swarm& s, FireflyDraw which, const contracts::Obstacles& o)
-        : swarm(s), i(which.index), seed(firefly_seed(s.flight.seed, which)), range(shrunk(s, which.index)),
-          needed(needed_of(s)), obstacles(o) {}
-    Drawing(const Drawing&) = delete;
-    Drawing& operator=(const Drawing&) = delete;
-    Drawing(Drawing&&) = delete;
-    Drawing& operator=(Drawing&&) = delete;
-    ~Drawing() = default;
+  Drawing(const Swarm& s, FireflyDraw which, const contracts::Obstacles& o)
+      : swarm(s),
+        i(which.index),
+        seed(firefly_seed(s.flight.seed, which)),
+        range(shrunk(s, which.index)),
+        needed(needed_of(s)),
+        obstacles(o) {}
+  Drawing(const Drawing&) = delete;
+  Drawing& operator=(const Drawing&) = delete;
+  Drawing(Drawing&&) = delete;
+  Drawing& operator=(Drawing&&) = delete;
+  ~Drawing() = default;
 
-    const Swarm& swarm;
-    std::uint32_t i;        // which firefly
-    std::uint64_t seed;     // its own (step 1)
-    Range range;            // step 2's
-    double needed;          // step 2's distance from every still surface
-    const contracts::Obstacles& obstacles;
+  const Swarm& swarm;
+  std::uint32_t i;     // which firefly
+  std::uint64_t seed;  // its own (step 1)
+  Range range;         // step 2's
+  double needed;       // step 2's distance from every still surface
+  const contracts::Obstacles& obstacles;
 };
 
 // Step 2: a start in `range`, the draws keyed (seed_i, attempt, axis), as
 // they were before starts had kinds.
 contracts::Float3 start_in(const Drawing& d, const Range& range) {
-    for (int attempt = 0; attempt < start_attempts; ++attempt) {
-        std::array<double, 3> p{};
-        for (std::size_t axis = 0; axis < 3; ++axis) {
-            const double u =
-                animation::draw(d.seed, static_cast<std::uint64_t>(attempt), static_cast<std::uint64_t>(axis));
-            p[axis] = range.low[axis] + u * (range.high[axis] - range.low[axis]);
-        }
-        const contracts::Float3 start = to_float(p);
-        if (d.obstacles.distance(start) >= d.needed) {
-            return start;
-        }
+  for (int attempt = 0; attempt < start_attempts; ++attempt) {
+    std::array<double, 3> p{};
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+      const double u =
+          animation::draw(d.seed, static_cast<std::uint64_t>(attempt),
+                          static_cast<std::uint64_t>(axis));
+      p[axis] = range.low[axis] + u * (range.high[axis] - range.low[axis]);
     }
-    throw animation::MotionError("firefly " + std::to_string(d.i) + ": no start clear of the still shapes in " +
-                                 std::to_string(start_attempts) + " draws; the volume is too full");
+    const contracts::Float3 start = to_float(p);
+    if (d.obstacles.distance(start) >= d.needed) {
+      return start;
+    }
+  }
+  throw animation::MotionError("firefly " + std::to_string(d.i) +
+                               ": no start clear of the still shapes in " +
+                               std::to_string(start_attempts) +
+                               " draws; the volume is too full");
 }
 
 // A perch and the start that puts its loop's first point straight above it
 // (step 2p).
 struct Perched {
-    contracts::Float3 perch{};
-    contracts::Float3 start{};
+  contracts::Float3 perch{};
+  contracts::Float3 start{};
 };
 
 // The vertical line a perch is traced down: its x and z, named, not two
 // doubles side by side (I.24).
 struct Vertical {
-    double x = 0.0;
-    double z = 0.0;
+  double x = 0.0;
+  double z = 0.0;
 };
 
 // Step 2p's sphere trace down `line` from the box's top: the first point at
@@ -114,44 +129,52 @@ struct Vertical {
 // box's top inside a shape or within that height of one, no surface above
 // the box's floor, or no answer in perch_steps steps. The distance is exact
 // (contract 11), so no step passes a surface.
-std::optional<contracts::Float3> trace_down(const Drawing& d, const contracts::Box& box, Vertical line) {
-    const double height = static_cast<double>(d.swarm.radius) + animation::perch_gap;
-    double y = box.max.y;
-    for (int step = 0; step < perch_steps; ++step) {
-        const contracts::Float3 at = to_float({line.x, y, line.z});
-        const double ahead = d.obstacles.distance(at) - height;
-        if (std::abs(ahead) <= perch_tolerance) {
-            return at;
-        }
-        if (!(ahead > 0.0)) {
-            return std::nullopt;  // the top inside a shape, or nearer one than the perch's height
-        }
-        y -= ahead;
-        if (y < static_cast<double>(box.min.y)) {
-            return std::nullopt;  // never below the box's floor
-        }
+std::optional<contracts::Float3> trace_down(const Drawing& d,
+                                            const contracts::Box& box,
+                                            Vertical line) {
+  const double height =
+      static_cast<double>(d.swarm.radius) + animation::perch_gap;
+  double y = box.max.y;
+  for (int step = 0; step < perch_steps; ++step) {
+    const contracts::Float3 at = to_float({line.x, y, line.z});
+    const double ahead = d.obstacles.distance(at) - height;
+    if (std::abs(ahead) <= perch_tolerance) {
+      return at;
     }
-    return std::nullopt;
+    if (!(ahead > 0.0)) {
+      return std::nullopt;  // the top inside a shape, or nearer one than the
+                            // perch's height
+    }
+    y -= ahead;
+    if (y < static_cast<double>(box.min.y)) {
+      return std::nullopt;  // never below the box's floor
+    }
+  }
+  return std::nullopt;
 }
 
 // Whether the surface under `perch` faces up: the distance's rise along y,
 // by a central difference over perch_gap / 2, at least cos(perch_steepest).
 bool faces_up(const Drawing& d, contracts::Float3 perch) {
-    // Narrowed to float within a millimeter of a perch in its box, inside
-    // the world: within float's range (ES.46).
-    const double y = perch.y;
-    const contracts::Float3 above{perch.x, static_cast<float>(y + facing_step), perch.z};
-    const contracts::Float3 below{perch.x, static_cast<float>(y - facing_step), perch.z};
-    // Over the float points' own span, which rounding may make other than
-    // perch_gap / 2.
-    const double span = static_cast<double>(above.y) - static_cast<double>(below.y);
-    const double rise = (d.obstacles.distance(above) - d.obstacles.distance(below)) / span;
-    return rise >= std::cos(perch_steepest);
+  // Narrowed to float within a millimeter of a perch in its box, inside
+  // the world: within float's range (ES.46).
+  const double y = perch.y;
+  const contracts::Float3 above{perch.x, static_cast<float>(y + facing_step),
+                                perch.z};
+  const contracts::Float3 below{perch.x, static_cast<float>(y - facing_step),
+                                perch.z};
+  // Over the float points' own span, which rounding may make other than
+  // perch_gap / 2.
+  const double span =
+      static_cast<double>(above.y) - static_cast<double>(below.y);
+  const double rise =
+      (d.obstacles.distance(above) - d.obstacles.distance(below)) / span;
+  return rise >= std::cos(perch_steepest);
 }
 
 // Whether `v`, a float, lies in [low, high], compared in double.
 bool in(float v, double low, double high) {
-    return static_cast<double>(v) >= low && static_cast<double>(v) <= high;
+  return static_cast<double>(v) >= low && static_cast<double>(v) <= high;
 }
 
 // Step 2p, attempt `attempt`, from draws keyed (seed_i, perch_draws,
@@ -159,147 +182,185 @@ bool in(float v, double low, double high) {
 // is straight above it, or none. `offset` is the flight's first_offset():
 // the first point is the start plus it (flight.h), so the start is placed
 // from the line, and the line traced is the first point's, never moved.
-std::optional<Perched> perch_from(const Drawing& d, const PerchStart& start, const std::array<double, 3>& offset,
+std::optional<Perched> perch_from(const Drawing& d, const PerchStart& start,
+                                  const std::array<double, 3>& offset,
                                   std::uint64_t attempt) {
-    const auto pick = [&](std::uint64_t axis) { return animation::draw(d.seed, perch_draws, attempt, axis); };
-    const contracts::Box& box = start.box;
-    const Range& range = d.range;
-    // The start's x and z, the drawn line's less the offset's, in step 2's
-    // range or the attempt fails: never clamped, which would turn the rise.
-    // `axis` is the draw's counter and the offset's index both (I.24).
-    const auto start_of = [&](float lo, float hi, std::size_t axis) {
-        return static_cast<float>(lo + pick(axis) * (static_cast<double>(hi) - lo) - offset[axis]);
-    };
-    const float sx = start_of(box.min.x, box.max.x, 0);
-    const float sz = start_of(box.min.z, box.max.z, 2);
-    if (!in(sx, range.low[0], range.high[0]) || !in(sz, range.low[2], range.high[2])) {
-        return std::nullopt;
-    }
-    // The first point's line, as the flight places it: start plus offset.
-    const Vertical line{.x = static_cast<double>(sx) + offset[0], .z = static_cast<double>(sz) + offset[2]};
-    const std::optional<contracts::Float3> perch = trace_down(d, box, line);
-    if (!perch || !in(perch->x, box.min.x, box.max.x) || !in(perch->z, box.min.z, box.max.z) ||
-        !faces_up(d, *perch)) {
-        return std::nullopt;
-    }
-    // The start's height drawn as step 2 draws it; the first point above
-    // the perch, and the start clear as step 2's must be.
-    const float sy = static_cast<float>(range.low[1] + pick(1) * (range.high[1] - range.low[1]));
-    const contracts::Float3 begins_at{sx, sy, sz};
-    const bool above_perch = static_cast<double>(sy) + offset[1] > static_cast<double>(perch->y);
-    if (!above_perch || !in(sy, range.low[1], range.high[1]) || !(d.obstacles.distance(begins_at) >= d.needed)) {
-        return std::nullopt;
-    }
-    return Perched{.perch = *perch, .start = begins_at};
+  const auto pick = [&](std::uint64_t axis) {
+    return animation::draw(d.seed, perch_draws, attempt, axis);
+  };
+  const contracts::Box& box = start.box;
+  const Range& range = d.range;
+  // The start's x and z, the drawn line's less the offset's, in step 2's
+  // range or the attempt fails: never clamped, which would turn the rise.
+  // `axis` is the draw's counter and the offset's index both (I.24).
+  const auto start_of = [&](float lo, float hi, std::size_t axis) {
+    return static_cast<float>(lo + pick(axis) * (static_cast<double>(hi) - lo) -
+                              offset[axis]);
+  };
+  const float sx = start_of(box.min.x, box.max.x, 0);
+  const float sz = start_of(box.min.z, box.max.z, 2);
+  if (!in(sx, range.low[0], range.high[0]) ||
+      !in(sz, range.low[2], range.high[2])) {
+    return std::nullopt;
+  }
+  // The first point's line, as the flight places it: start plus offset.
+  const Vertical line{.x = static_cast<double>(sx) + offset[0],
+                      .z = static_cast<double>(sz) + offset[2]};
+  const std::optional<contracts::Float3> perch = trace_down(d, box, line);
+  if (!perch || !in(perch->x, box.min.x, box.max.x) ||
+      !in(perch->z, box.min.z, box.max.z) || !faces_up(d, *perch)) {
+    return std::nullopt;
+  }
+  // The start's height drawn as step 2 draws it; the first point above
+  // the perch, and the start clear as step 2's must be.
+  const float sy = static_cast<float>(range.low[1] +
+                                      pick(1) * (range.high[1] - range.low[1]));
+  const contracts::Float3 begins_at{sx, sy, sz};
+  const bool above_perch =
+      static_cast<double>(sy) + offset[1] > static_cast<double>(perch->y);
+  if (!above_perch || !in(sy, range.low[1], range.high[1]) ||
+      !(d.obstacles.distance(begins_at) >= d.needed)) {
+    return std::nullopt;
+  }
+  return Perched{.perch = *perch, .start = begins_at};
 }
 
 Perched perch_for(const Drawing& d, const PerchStart& start) {
-    const std::array<double, 3> offset = animation::first_offset(d.seed);
-    for (int attempt = 0; attempt < start_attempts; ++attempt) {
-        if (const std::optional<Perched> found = perch_from(d, start, offset, static_cast<std::uint64_t>(attempt))) {
-            return *found;
-        }
+  const std::array<double, 3> offset = animation::first_offset(d.seed);
+  for (int attempt = 0; attempt < start_attempts; ++attempt) {
+    if (const std::optional<Perched> found =
+            perch_from(d, start, offset, static_cast<std::uint64_t>(attempt))) {
+      return *found;
     }
-    throw animation::MotionError("firefly " + std::to_string(d.i) + ": no perch found in the perch box in " +
-                                 std::to_string(start_attempts) + " draws: a box with no upward-facing surface in "
-                                 "it, its top inside a shape, a perch no start in the volume can put a loop "
-                                 "above, or no clear start");
+  }
+  throw animation::MotionError("firefly " + std::to_string(d.i) +
+                               ": no perch found in the perch box in " +
+                               std::to_string(start_attempts) +
+                               " draws: a box with no upward-facing surface in "
+                               "it, its top inside a shape, a perch no start "
+                               "in the volume can put a loop "
+                               "above, or no clear start");
 }
 
 // The numbers make_firefly takes as given, which the scene reader checks
 // first (I.5): refused as a std::invalid_argument here, never drawn from.
 void check_numbers(const Swarm& swarm) {
-    const auto at_least_zero = [](double v) { return std::isfinite(v) && v >= 0.0; };
-    const auto finite = [](contracts::Float3 p) {
-        return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z);
-    };
-    // Each wait within [0, most_wait] (flight.h, step P1), as its own bound.
-    const auto a_wait = [&](double v) { return at_least_zero(v) && v <= animation::most_wait; };
-    const auto wake_ok = [&](const SwarmWake& w) {
-        return at_least_zero(w.from) && a_wait(w.to) && w.to >= w.from && std::isfinite(w.power) &&
-               w.power > 0.0 && at_least_zero(w.ramp);
-    };
-    if (swarm.wake && !wake_ok(*swarm.wake)) {
-        throw std::invalid_argument("make_firefly: a swarm's wake out of range, its to past most_wait included");
-    }
-    // A perch's wait is the wake's to and the linger's most: compared with
-    // most_wait - to, to already within [0, most_wait], so nothing is added
-    // that could overflow or round past the bound (ES.103).
-    const double latest_wake = swarm.wake ? swarm.wake->to : 0.0;
-    const bool start_ok = std::visit(
-        animation::Visit{[](const AirStart&) { return true; },
-                         [](const AboveStart& a) { return std::isfinite(a.depth) && a.depth > 0.0; },
-                         [&](const PerchStart& p) {
-                             const bool box = finite(p.box.min) && finite(p.box.max) && p.box.min.x < p.box.max.x &&
-                                              p.box.min.y < p.box.max.y && p.box.min.z < p.box.max.z;
-                             // most_wait - to is at most most_wait, so the
-                             // linger's most is held to most_wait too.
-                             return box && at_least_zero(p.linger_least) && p.linger_most >= p.linger_least &&
-                                    p.linger_most <= animation::most_wait - latest_wake;
-                         }},
-        swarm.start);
-    if (!start_ok) {
-        throw std::invalid_argument("make_firefly: a swarm's start out of range: a perch box not finite or "
-                                    "empty, a depth not above 0, or a linger past what most_wait leaves");
-    }
+  const auto at_least_zero = [](double v) {
+    return std::isfinite(v) && v >= 0.0;
+  };
+  const auto finite = [](contracts::Float3 p) {
+    return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z);
+  };
+  // Each wait within [0, most_wait] (flight.h, step P1), as its own bound.
+  const auto a_wait = [&](double v) {
+    return at_least_zero(v) && v <= animation::most_wait;
+  };
+  const auto wake_ok = [&](const SwarmWake& w) {
+    return at_least_zero(w.from) && a_wait(w.to) && w.to >= w.from &&
+           std::isfinite(w.power) && w.power > 0.0 && at_least_zero(w.ramp);
+  };
+  if (swarm.wake && !wake_ok(*swarm.wake)) {
+    throw std::invalid_argument(
+        "make_firefly: a swarm's wake out of range, its to past most_wait "
+        "included");
+  }
+  // A perch's wait is the wake's to and the linger's most: compared with
+  // most_wait - to, to already within [0, most_wait], so nothing is added
+  // that could overflow or round past the bound (ES.103).
+  const double latest_wake = swarm.wake ? swarm.wake->to : 0.0;
+  const bool start_ok = std::visit(
+      animation::Visit{[](const AirStart&) { return true; },
+                       [](const AboveStart& a) {
+                         return std::isfinite(a.depth) && a.depth > 0.0;
+                       },
+                       [&](const PerchStart& p) {
+                         const bool box = finite(p.box.min) &&
+                                          finite(p.box.max) &&
+                                          p.box.min.x < p.box.max.x &&
+                                          p.box.min.y < p.box.max.y &&
+                                          p.box.min.z < p.box.max.z;
+                         // most_wait - to is at most most_wait, so the
+                         // linger's most is held to most_wait too.
+                         return box && at_least_zero(p.linger_least) &&
+                                p.linger_most >= p.linger_least &&
+                                p.linger_most <=
+                                    animation::most_wait - latest_wake;
+                       }},
+      swarm.start);
+  if (!start_ok) {
+    throw std::invalid_argument(
+        "make_firefly: a swarm's start out of range: a perch box not finite or "
+        "empty, a depth not above 0, or a linger past what most_wait leaves");
+  }
 }
 
 }  // namespace
 
 std::uint64_t firefly_seed(std::uint64_t swarm_seed, FireflyDraw which) {
-    // Step 1: draw 0's seed as it was before redraws; each later draw's from
-    // it and its own number, mixed (GDSA.3).
-    const std::uint64_t first = animation::splitmix64(animation::splitmix64(swarm_seed) ^ which.index);
-    return which.draw == 0 ? first : animation::splitmix64(first ^ animation::splitmix64(which.draw));
+  // Step 1: draw 0's seed as it was before redraws; each later draw's from
+  // it and its own number, mixed (GDSA.3).
+  const std::uint64_t first =
+      animation::splitmix64(animation::splitmix64(swarm_seed) ^ which.index);
+  return which.draw == 0
+             ? first
+             : animation::splitmix64(first ^ animation::splitmix64(which.draw));
 }
 
-Firefly make_firefly(const Swarm& swarm, FireflyDraw which, const contracts::Obstacles& obstacles) {
-    if (!(which.index < swarm.count && which.draw < firefly_draws)) {
-        throw std::invalid_argument("make_firefly: a swarm's firefly or draw past its count or firefly_draws");
-    }
-    check_numbers(swarm);
-    const Drawing d{swarm, which, obstacles};
-    Firefly firefly;
+Firefly make_firefly(const Swarm& swarm, FireflyDraw which,
+                     const contracts::Obstacles& obstacles) {
+  if (!(which.index < swarm.count && which.draw < firefly_draws)) {
+    throw std::invalid_argument(
+        "make_firefly: a swarm's firefly or draw past its count or "
+        "firefly_draws");
+  }
+  check_numbers(swarm);
+  const Drawing d{swarm, which, obstacles};
+  Firefly firefly;
 
-    // Step 3: its wake, the share awake by t ((t - from) / (to - from))^power
-    // from u's uniform draw; held to `to`, which rounding could pass.
-    double wakes = 0.0;
-    if (swarm.wake) {
-        const SwarmWake& w = *swarm.wake;
-        const double u = animation::draw(d.seed, wake_draws);
-        wakes = std::min(w.from + (w.to - w.from) * std::pow(u, 1.0 / w.power), w.to);
-        firefly.wake = animation::Wake{.at = wakes, .ramp = w.ramp};
-    }
+  // Step 3: its wake, the share awake by t ((t - from) / (to - from))^power
+  // from u's uniform draw; held to `to`, which rounding could pass.
+  double wakes = 0.0;
+  if (swarm.wake) {
+    const SwarmWake& w = *swarm.wake;
+    const double u = animation::draw(d.seed, wake_draws);
+    wakes =
+        std::min(w.from + (w.to - w.from) * std::pow(u, 1.0 / w.power), w.to);
+    firefly.wake = animation::Wake{.at = wakes, .ramp = w.ramp};
+  }
 
-    // Steps 2 and 2p, and the prelude each kind's start makes (step 4).
-    std::visit(animation::Visit{[&](const AirStart&) {
-                                    firefly.start = start_in(d, d.range);
-                                    firefly.prelude = animation::NoPrelude{};
-                                },
-                                [&](const AboveStart& above) {
-                                    // Its height within the top `depth` of the
-                                    // range, or all of it; the draws otherwise air's.
-                                    Range top = d.range;
-                                    top.low[1] = std::max(d.range.low[1], d.range.high[1] - above.depth);
-                                    firefly.start = start_in(d, top);
-                                    firefly.prelude = animation::Hold{.until = wakes};
-                                },
-                                [&](const PerchStart& perch) {
-                                    const Perched found = perch_for(d, perch);
-                                    // Its linger, held to the most, which rounding could pass.
-                                    const double linger = std::min(
-                                        perch.linger_least + (perch.linger_most - perch.linger_least) *
-                                                                 animation::draw(d.seed, linger_draws),
-                                        perch.linger_most);
-                                    firefly.start = found.start;
-                                    // wakes <= to and linger <= most_wait - to
-                                    // (check_numbers), so only the sum's rounding
-                                    // could pass most_wait: held to it.
-                                    firefly.prelude = animation::Perch{
-                                        .at = found.perch, .until = std::min(wakes + linger, animation::most_wait)};
-                                }},
-               swarm.start);
-    return firefly;
+  // Steps 2 and 2p, and the prelude each kind's start makes (step 4).
+  std::visit(animation::Visit{
+                 [&](const AirStart&) {
+                   firefly.start = start_in(d, d.range);
+                   firefly.prelude = animation::NoPrelude{};
+                 },
+                 [&](const AboveStart& above) {
+                   // Its height within the top `depth` of the
+                   // range, or all of it; the draws otherwise air's.
+                   Range top = d.range;
+                   top.low[1] =
+                       std::max(d.range.low[1], d.range.high[1] - above.depth);
+                   firefly.start = start_in(d, top);
+                   firefly.prelude = animation::Hold{.until = wakes};
+                 },
+                 [&](const PerchStart& perch) {
+                   const Perched found = perch_for(d, perch);
+                   // Its linger, held to the most, which rounding could pass.
+                   const double linger =
+                       std::min(perch.linger_least +
+                                    (perch.linger_most - perch.linger_least) *
+                                        animation::draw(d.seed, linger_draws),
+                                perch.linger_most);
+                   firefly.start = found.start;
+                   // wakes <= to and linger <= most_wait - to
+                   // (check_numbers), so only the sum's rounding
+                   // could pass most_wait: held to it.
+                   firefly.prelude = animation::Perch{
+                       .at = found.perch,
+                       .until = std::min(wakes + linger, animation::most_wait)};
+                 }},
+             swarm.start);
+  return firefly;
 }
 
 }  // namespace serenity::scene

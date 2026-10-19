@@ -26,6 +26,7 @@
 #define SERENITY_CONSTANT constant constexpr
 #else
 #include <stdint.h>
+
 #include <type_traits>
 #define SERENITY_CONSTANT inline constexpr
 #endif

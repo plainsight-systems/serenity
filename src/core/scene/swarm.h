@@ -168,43 +168,44 @@ namespace serenity::scene {
 struct AirStart {};
 
 struct AboveStart {
-    double depth = 0.0;  // meters of the volume's top it starts in; > 0
+  double depth = 0.0;  // meters of the volume's top it starts in; > 0
 };
 
 struct PerchStart {
-    contracts::Box box{};       // where perches are found; finite, min below max
-    double linger_least = 0.0;  // seconds it stays after waking; 0 or more
-    double linger_most = 0.0;   // at least linger_least; with the wake's to, at most most_wait (flight.h)
+  contracts::Box box{};       // where perches are found; finite, min below max
+  double linger_least = 0.0;  // seconds it stays after waking; 0 or more
+  double linger_most = 0.0;   // at least linger_least; with the wake's to, at
+                              // most most_wait (flight.h)
 };
 
 using SwarmStart = std::variant<AirStart, AboveStart, PerchStart>;
 
 // When a swarm's fireflies wake (above, step 3).
 struct SwarmWake {
-    double from = 0.0;   // seconds; finite, 0 or more
-    double to = 0.0;     // seconds; at least from, at most most_wait (flight.h)
-    double power = 1.0;  // finite, > 0
-    double ramp = 0.0;   // seconds; finite, 0 or more
+  double from = 0.0;   // seconds; finite, 0 or more
+  double to = 0.0;     // seconds; at least from, at most most_wait (flight.h)
+  double power = 1.0;  // finite, > 0
+  double ramp = 0.0;   // seconds; finite, 0 or more
 };
 
 // A swarm as read from its table (scene.h): everything but the material,
 // which the scene reader keeps.
 struct Swarm {
-    std::uint32_t count = 0;             // 1 to max_swarm
-    float radius = 0.0f;                 // each firefly's; > 0
-    animation::FlightParams flight;      // the swarm's seed in flight.seed
-    float flash = 0.0f;                  // the flight glow's (glow.h)
-    float dim = 0.0f;
-    SwarmStart start;                    // none written: air
-    std::optional<SwarmWake> wake;       // none written: lit from the start
+  std::uint32_t count = 0;         // 1 to max_swarm
+  float radius = 0.0f;             // each firefly's; > 0
+  animation::FlightParams flight;  // the swarm's seed in flight.seed
+  float flash = 0.0f;              // the flight glow's (glow.h)
+  float dim = 0.0f;
+  SwarmStart start;               // none written: air
+  std::optional<SwarmWake> wake;  // none written: lit from the start
 };
 
 // One firefly as steps 2 to 3 draw it: where its loop starts, its prelude
 // (flight.h) and its wake (glow.h).
 struct Firefly {
-    contracts::Float3 start{};
-    animation::Prelude prelude;
-    std::optional<animation::Wake> wake;
+  contracts::Float3 start{};
+  animation::Prelude prelude;
+  std::optional<animation::Wake> wake;
 };
 
 // The most fireflies one swarm makes: some 25 KB of flight each (flight.h),
@@ -233,8 +234,8 @@ inline constexpr std::uint32_t firefly_draws = 8;
 // Which firefly, and which of its draws (step 1): named fields, not two
 // adjacent integers a caller could swap (I.24).
 struct FireflyDraw {
-    std::uint32_t index = 0;  // i, from 0 to count - 1
-    std::uint32_t draw = 0;   // d, from 0 to firefly_draws - 1
+  std::uint32_t index = 0;  // i, from 0 to count - 1
+  std::uint32_t draw = 0;   // d, from 0 to firefly_draws - 1
 };
 
 // Step 1: firefly i's seed for its draw d.
@@ -252,6 +253,7 @@ std::uint64_t firefly_seed(std::uint64_t swarm_seed, FireflyDraw which);
 // 0, its ramp 0 or more; and a wake's to (0 with no wake) plus a linger's
 // most at most most_wait, compared without adding, so no sum overflows;
 // and a `which` past the swarm's count or firefly_draws (FireflyDraw).
-Firefly make_firefly(const Swarm& swarm, FireflyDraw which, const contracts::Obstacles& obstacles);
+Firefly make_firefly(const Swarm& swarm, FireflyDraw which,
+                     const contracts::Obstacles& obstacles);
 
 }  // namespace serenity::scene

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Foundation/Foundation.hpp>
+#include <Metal/Metal.hpp>
+#include <QuartzCore/QuartzCore.hpp>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -7,10 +10,6 @@
 #include <optional>
 #include <string>
 #include <vector>
-
-#include <Foundation/Foundation.hpp>
-#include <Metal/Metal.hpp>
-#include <QuartzCore/QuartzCore.hpp>
 
 #include "core/frame/frame_inputs.h"
 #include "metal/device/device.h"
@@ -27,9 +26,9 @@ inline constexpr std::uint32_t frames_in_flight = 2;
 
 // A submission settled (Submission, below, "Settling").
 struct Completed {
-    std::uint64_t sequence = 0;
-    frame::Seconds gpu_start{0.0};  // host time
-    frame::Seconds gpu_end{0.0};    // host time
+  std::uint64_t sequence = 0;
+  frame::Seconds gpu_start{0.0};  // host time
+  frame::Seconds gpu_end{0.0};    // host time
 };
 
 // How many parts a submission has (Submission, below, "Two parts"): one,
@@ -44,11 +43,11 @@ enum class Parts { one, two };
 // already. `second` is the second part's command buffer, on the overlap
 // queue, for a submission begun with Parts::two; null for one part.
 struct FrameSlot {
-    MTL4::CommandBuffer* commands = nullptr;
-    MTL4::CommandBuffer* second = nullptr;
-    std::uint32_t slot = 0;
-    std::uint64_t sequence = 0;
-    std::optional<Completed> settled;
+  MTL4::CommandBuffer* commands = nullptr;
+  MTL4::CommandBuffer* second = nullptr;
+  std::uint32_t slot = 0;
+  std::uint64_t sequence = 0;
+  std::optional<Completed> settled;
 };
 
 class Submission;
@@ -59,24 +58,24 @@ class Submission;
 // outlives the wait however the owner orders its members. The Submission
 // must outlive it.
 class Resident {
-public:
-    Resident() = default;
-    Resident(const Resident&) = delete;
-    Resident& operator=(const Resident&) = delete;
-    Resident(Resident&& other) noexcept;
-    Resident& operator=(Resident&& other) noexcept;
-    ~Resident();
+ public:
+  Resident() = default;
+  Resident(const Resident&) = delete;
+  Resident& operator=(const Resident&) = delete;
+  Resident(Resident&& other) noexcept;
+  Resident& operator=(Resident&& other) noexcept;
+  ~Resident();
 
-    // Takes the allocation out of the set now, after waiting for the GPU,
-    // as destruction does; nothing is held after.
-    void reset() noexcept;
+  // Takes the allocation out of the set now, after waiting for the GPU,
+  // as destruction does; nothing is held after.
+  void reset() noexcept;
 
-private:
-    friend class Submission;
-    Resident(Submission& submission, MTL::Allocation* allocation);
+ private:
+  friend class Submission;
+  Resident(Submission& submission, MTL::Allocation* allocation);
 
-    Submission* submission_ = nullptr;
-    NS::SharedPtr<MTL::Allocation> allocation_;
+  Submission* submission_ = nullptr;
+  NS::SharedPtr<MTL::Allocation> allocation_;
 };
 
 // Submission.
@@ -224,141 +223,149 @@ private:
 // feedback handler, would wake once instead (CONC.4); it is kept a poll,
 // since a frame's time is the GPU's and the poll was measured to cost it
 // nothing (Per.6; docs/research/2026-10-09-pass-costs.md). Nothing of ours
-// is allocated per frame (MEM.9). Metal 4 takes the feedback handler through commit
-// options, an object made per commit, and metal-cpp hands the handler on as
-// a block that Metal copies to the heap with what it captures: a few small
+// is allocated per frame (MEM.9). Metal 4 takes the feedback handler through
+// commit options, an object made per commit, and metal-cpp hands the handler on
+// as a block that Metal copies to the heap with what it captures: a few small
 // allocations a frame, by the API's shape. Kept: an options object cannot
 // shed a handler once added, so it cannot be reused for the next commit
 // with a new one, and a few allocations against a frame of milliseconds are
 // not worth a design of their own (Per.1, Per.6: no measured cost).
 class Submission {
-public:
-    explicit Submission(const Device& device);
+ public:
+  explicit Submission(const Device& device);
 
-    Submission(const Submission&) = delete;
-    Submission& operator=(const Submission&) = delete;
-    Submission(Submission&&) = delete;
-    Submission& operator=(Submission&&) = delete;
-    ~Submission();
+  Submission(const Submission&) = delete;
+  Submission& operator=(const Submission&) = delete;
+  Submission(Submission&&) = delete;
+  Submission& operator=(Submission&&) = delete;
+  ~Submission();
 
-    // Begins the next submission, of `parts` (above, "Two parts"). Its
-    // command buffers are valid until the matching commit() or present().
-    FrameSlot begin(Parts parts = Parts::one);
+  // Begins the next submission, of `parts` (above, "Two parts"). Its
+  // command buffers are valid until the matching commit() or present().
+  FrameSlot begin(Parts parts = Parts::one);
 
-    // Ends and commits the frame begun last.
-    void commit();
+  // Ends and commits the frame begun last.
+  void commit();
 
-    // Ends and commits the frame begun last, which writes `drawable`'s
-    // texture, and presents it.
-    void present(CA::MetalDrawable* drawable);
+  // Ends and commits the frame begun last, which writes `drawable`'s
+  // texture, and presents it.
+  void present(CA::MetalDrawable* drawable);
 
-    // Blocks until submission `sequence` has completed on the GPU, and
-    // throws MetalError if it failed. For readback, and for start-up work that
-    // must finish before frames begin. Returns its record if this call
-    // settled it, none if an earlier call had.
-    std::optional<Completed> wait_until_complete(std::uint64_t sequence);
+  // Blocks until submission `sequence` has completed on the GPU, and
+  // throws MetalError if it failed. For readback, and for start-up work that
+  // must finish before frames begin. Returns its record if this call
+  // settled it, none if an earlier call had.
+  std::optional<Completed> wait_until_complete(std::uint64_t sequence);
 
-    // Blocks until every committed submission has completed and reported,
-    // and throws MetalError if any failed. Called once, at the end of a run, so a
-    // failure in its last frames is not lost. Returns the records of those it
-    // settled, in sequence order. The destructor waits too, but a destructor
-    // cannot report.
-    std::vector<Completed> finish();
+  // Blocks until every committed submission has completed and reported,
+  // and throws MetalError if any failed. Called once, at the end of a run, so a
+  // failure in its last frames is not lost. Returns the records of those it
+  // settled, in sequence order. The destructor waits too, but a destructor
+  // cannot report.
+  std::vector<Completed> finish();
 
-    // As finish(), but submissions may begin again after it: for replacing a
-    // resource that frames in flight may still read (an accumulated image
-    // remade at a new size, metal/frame/accumulation.h). A full wait,
-    // visible in the call; never per frame.
-    std::vector<Completed> drain();
+  // As finish(), but submissions may begin again after it: for replacing a
+  // resource that frames in flight may still read (an accumulated image
+  // remade at a new size, metal/frame/accumulation.h). A full wait,
+  // visible in the call; never per frame.
+  std::vector<Completed> drain();
 
-    // Whether submission `sequence` has completed on the GPU, without
-    // waiting: its event has been signalled, so what it wrote to shared
-    // memory may be read. Says nothing of failure, which settling reports.
-    bool has_completed(std::uint64_t sequence) const noexcept;
+  // Whether submission `sequence` has completed on the GPU, without
+  // waiting: its event has been signalled, so what it wrote to shared
+  // memory may be read. Says nothing of failure, which settling reports.
+  bool has_completed(std::uint64_t sequence) const noexcept;
 
-    // The sequence the next begin() hands out: every submission from here on
-    // has this sequence or a later one.
-    std::uint64_t next_sequence() const noexcept { return next_; }
+  // The sequence the next begin() hands out: every submission from here on
+  // has this sequence or a later one.
+  std::uint64_t next_sequence() const noexcept { return next_; }
 
-    // Blocks until every committed submission has completed, or the timeout
-    // passes; returns whether they all completed. Never throws, and reports
-    // no failure (settling does): for destructors, which must not free what
-    // the GPU still uses (see Lifetime, above).
-    bool wait_idle() noexcept;
+  // Blocks until every committed submission has completed, or the timeout
+  // passes; returns whether they all completed. Never throws, and reports
+  // no failure (settling does): for destructors, which must not free what
+  // the GPU still uses (see Lifetime, above).
+  bool wait_idle() noexcept;
 
-    // Makes `allocation` resident for every frame from now on, until the
-    // returned Resident is destroyed. Throws MetalError if it is null.
-    [[nodiscard]] Resident keep_resident(MTL::Allocation* allocation);
+  // Makes `allocation` resident for every frame from now on, until the
+  // returned Resident is destroyed. Throws MetalError if it is null.
+  [[nodiscard]] Resident keep_resident(MTL::Allocation* allocation);
 
-    // Makes `allocation` resident for as long as this Submission lives: for
-    // memory that lives as long (a test's probe buffers). Throws MetalError if it
-    // is null.
-    void make_resident(MTL::Allocation* allocation);
+  // Makes `allocation` resident for as long as this Submission lives: for
+  // memory that lives as long (a test's probe buffers). Throws MetalError if it
+  // is null.
+  void make_resident(MTL::Allocation* allocation);
 
-    // Adds a residency set another object owns (a layer's) to both queues,
-    // and takes it out again: remove_residency_set() first waits as wait_idle()
-    // does, for the owner's destructor. Throws MetalError if `set` is null.
-    void add_residency_set(MTL::ResidencySet* set);
-    void remove_residency_set(MTL::ResidencySet* set) noexcept;
+  // Adds a residency set another object owns (a layer's) to both queues,
+  // and takes it out again: remove_residency_set() first waits as wait_idle()
+  // does, for the owner's destructor. Throws MetalError if `set` is null.
+  void add_residency_set(MTL::ResidencySet* set);
+  void remove_residency_set(MTL::ResidencySet* set) noexcept;
 
-private:
-    friend class Resident;
+ private:
+  friend class Resident;
 
-    // Waits as wait_idle() does, then takes `allocation` out of the set; see
-    // Lifetime, above.
-    void retire(MTL::Allocation* allocation) noexcept;
+  // Waits as wait_idle() does, then takes `allocation` out of the set; see
+  // Lifetime, above.
+  void retire(MTL::Allocation* allocation) noexcept;
 
-    // What a slot's feedback handlers write, on Metal's feedback queue, and
-    // this object reads. `arrived` is the sequence + 1 of the last submission
-    // whose feedback has arrived. `failure` is written before `failed` is
-    // released, and only once. One handler runs per slot at a time: a slot is
-    // not reused until its last handler has stored `arrived`.
-    struct Feedback {
-        std::atomic<std::uint64_t> arrived{0};
-        std::atomic<bool> failed{false};
-        std::string failure;
-        frame::Seconds gpu_start{0.0};  // host time; written before `arrived` is released
-        frame::Seconds gpu_end{0.0};
-    };
+  // What a slot's feedback handlers write, on Metal's feedback queue, and
+  // this object reads. `arrived` is the sequence + 1 of the last submission
+  // whose feedback has arrived. `failure` is written before `failed` is
+  // released, and only once. One handler runs per slot at a time: a slot is
+  // not reused until its last handler has stored `arrived`.
+  struct Feedback {
+    std::atomic<std::uint64_t> arrived{0};
+    std::atomic<bool> failed{false};
+    std::string failure;
+    frame::Seconds gpu_start{
+        0.0};  // host time; written before `arrived` is released
+    frame::Seconds gpu_end{0.0};
+  };
 
-    // One part's command allocator, buffer and feedback, in a slot.
-    struct Part {
-        NS::SharedPtr<MTL4::CommandAllocator> allocator;
-        NS::SharedPtr<MTL4::CommandBuffer> commands;
-        std::shared_ptr<Feedback> feedback = std::make_shared<Feedback>();
-    };
+  // One part's command allocator, buffer and feedback, in a slot.
+  struct Part {
+    NS::SharedPtr<MTL4::CommandAllocator> allocator;
+    NS::SharedPtr<MTL4::CommandBuffer> commands;
+    std::shared_ptr<Feedback> feedback = std::make_shared<Feedback>();
+  };
 
-    struct Slot {
-        Part first;   // on the main queue
-        Part second;  // on the overlap queue, for a two-part submission
-        Parts parts = Parts::one;  // of the submission last begun in this slot
-        // The sequence + 1 of the last submission in this slot settled; read
-        // and written only on the caller's thread.
-        std::uint64_t settled_through = 0;
-    };
+  struct Slot {
+    Part first;   // on the main queue
+    Part second;  // on the overlap queue, for a two-part submission
+    Parts parts = Parts::one;  // of the submission last begun in this slot
+    // The sequence + 1 of the last submission in this slot settled; read
+    // and written only on the caller's thread.
+    std::uint64_t settled_through = 0;
+  };
 
-    // Waits for submission `sequence`'s event, then its parts' feedback, and
-    // throws if any does not come in time or the submission failed. Returns
-    // its record if this call settled it, none if it was settled already.
-    std::optional<Completed> settle(std::uint64_t sequence);
-    void end_and_commit(const MTL::Drawable* drawable);
-    // Commits one part's `commands` to `queue`, its feedback handler writing
-    // `state`; `part` names it in a failure's message ("" for one part).
-    static void commit_part(MTL4::CommandQueue* queue, MTL4::CommandBuffer* commands,
-                            const std::shared_ptr<Feedback>& state, std::uint64_t sequence, const char* part);
+  // Waits for submission `sequence`'s event, then its parts' feedback, and
+  // throws if any does not come in time or the submission failed. Returns
+  // its record if this call settled it, none if it was settled already.
+  std::optional<Completed> settle(std::uint64_t sequence);
+  void end_and_commit(const MTL::Drawable* drawable);
+  // Commits one part's `commands` to `queue`, its feedback handler writing
+  // `state`; `part` names it in a failure's message ("" for one part).
+  static void commit_part(MTL4::CommandQueue* queue,
+                          MTL4::CommandBuffer* commands,
+                          const std::shared_ptr<Feedback>& state,
+                          std::uint64_t sequence, const char* part);
 
-    NS::SharedPtr<MTL::Device> device_;
-    NS::SharedPtr<MTL4::CommandQueue> queue_;    // the main queue
-    NS::SharedPtr<MTL4::CommandQueue> overlap_;  // a two-part submission's second part's
-    NS::SharedPtr<MTL::ResidencySet> residency_;
-    NS::SharedPtr<MTL::SharedEvent> completed_;   // n + 1 once submission n has completed
-    NS::SharedPtr<MTL::SharedEvent> first_done_;  // n + 1 once part 1 of two-part submission n has
-    std::array<Slot, frames_in_flight> slots_;
-    std::uint64_t next_ = 0;   // the sequence begin() hands out next
-    Parts last_committed_ = Parts::one;  // the parts of the last submission committed
-    bool open_ = false;        // a submission is begun and not yet committed
-    bool finished_ = false;    // finish() has run; nothing may be begun after
-    bool abandoned_ = false;   // an allocation left the set while open_: never commit it
+  NS::SharedPtr<MTL::Device> device_;
+  NS::SharedPtr<MTL4::CommandQueue> queue_;  // the main queue
+  NS::SharedPtr<MTL4::CommandQueue>
+      overlap_;  // a two-part submission's second part's
+  NS::SharedPtr<MTL::ResidencySet> residency_;
+  NS::SharedPtr<MTL::SharedEvent>
+      completed_;  // n + 1 once submission n has completed
+  NS::SharedPtr<MTL::SharedEvent>
+      first_done_;  // n + 1 once part 1 of two-part submission n has
+  std::array<Slot, frames_in_flight> slots_;
+  std::uint64_t next_ = 0;  // the sequence begin() hands out next
+  Parts last_committed_ =
+      Parts::one;          // the parts of the last submission committed
+  bool open_ = false;      // a submission is begun and not yet committed
+  bool finished_ = false;  // finish() has run; nothing may be begun after
+  bool abandoned_ =
+      false;  // an allocation left the set while open_: never commit it
 };
 
 }  // namespace serenity::metal

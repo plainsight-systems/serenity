@@ -6,9 +6,9 @@
 
 #include <metal_stdlib>
 
+#include "camera_probe.h"
 #include "metal/camera/thin_lens.metal.h"
 #include "metal/device/layout.metal.h"
-#include "camera_probe.h"
 
 using namespace serenity::shaders;
 using serenity::tests::CameraImage;
@@ -18,13 +18,15 @@ using serenity::tests::CameraQuery;
 kernel void camera_probe(device CameraProbeRay* out [[buffer(0)]],
                          device const CameraQuery* queries [[buffer(1)]],
                          constant uint& count [[buffer(2)]],
-                         constant serenity::contracts::CameraData& camera [[buffer(3)]],
+                         constant serenity::contracts::CameraData& camera
+                         [[buffer(3)]],
                          constant CameraImage& image [[buffer(4)]],
                          uint i [[thread_position_in_grid]]) {
-    if (i < count) {
-        const CameraQuery q = queries[i];
-        const CameraRay ray = camera_ray(camera, float2(q.pixel_x, q.pixel_y), float2(q.lens_u, q.lens_v),
-                                         uint2(image.width, image.height));
-        out[i] = CameraProbeRay{to_packed(ray.origin), to_packed(ray.direction)};
-    }
+  if (i < count) {
+    const CameraQuery q = queries[i];
+    const CameraRay ray = camera_ray(camera, float2(q.pixel_x, q.pixel_y),
+                                     float2(q.lens_u, q.lens_v),
+                                     uint2(image.width, image.height));
+    out[i] = CameraProbeRay{to_packed(ray.origin), to_packed(ray.direction)};
+  }
 }

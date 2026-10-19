@@ -67,7 +67,8 @@ namespace contracts {
 
 SERENITY_CONSTANT uint32_t light_tiles = 128u;
 SERENITY_CONSTANT uint32_t light_tile_size = 1024u;
-SERENITY_CONSTANT uint32_t light_tile_block = 8u;  // pixels on a side of the block that draws one tile
+SERENITY_CONSTANT uint32_t light_tile_block =
+    8u;  // pixels on a side of the block that draws one tile
 
 // ids' fields (above), named once (ES.45).
 SERENITY_CONSTANT uint32_t tile_index_mask = 0xffffu;
@@ -75,13 +76,15 @@ SERENITY_CONSTANT uint32_t tile_shape_shift = 16u;
 SERENITY_CONSTANT uint32_t tile_largest_id = 0xffffu;
 
 struct LightTileEntry {
-    Float3 center;
-    float radius;
-    Float3 radiance;  // the glow's this frame
-    uint32_t ids;     // the light record's index (bits 0-15), its shape (16-31)
+  Float3 center;
+  float radius;
+  Float3 radiance;  // the glow's this frame
+  uint32_t ids;     // the light record's index (bits 0-15), its shape (16-31)
 };
 
-static_assert(sizeof(LightTileEntry) == 32, "LightTileEntry must be the same 32 bytes on the host and in shaders");
+static_assert(
+    sizeof(LightTileEntry) == 32,
+    "LightTileEntry must be the same 32 bytes on the host and in shaders");
 
 // The power pyramid's one threadgroup (above).
 SERENITY_CONSTANT uint32_t light_power_threads = 1024u;
@@ -89,29 +92,30 @@ SERENITY_CONSTANT uint32_t light_power_threads = 1024u;
 // L, the levels above the leaves, for `count` lights: the least with 4^L
 // at least the count; 0 for one light or none.
 constexpr uint32_t light_power_levels(uint32_t count) {
-    uint32_t levels = 0u;
-    while ((1u << (2u * levels)) < count) {
-        ++levels;
-    }
-    return levels;
+  uint32_t levels = 0u;
+  while ((1u << (2u * levels)) < count) {
+    ++levels;
+  }
+  return levels;
 }
 
 // Where level `level` of a pyramid of `levels` begins, in floats: the
 // levels below it, 4^levels + 4^(levels - 1) + ... in all.
 constexpr uint32_t light_power_offset(uint32_t levels, uint32_t level) {
-    uint32_t offset = 0u;
-    for (uint32_t below = 0u; below < level; ++below) {
-        offset += 1u << (2u * (levels - below));
-    }
-    return offset;
+  uint32_t offset = 0u;
+  for (uint32_t below = 0u; below < level; ++below) {
+    offset += 1u << (2u * (levels - below));
+  }
+  return offset;
 }
 
 // The floats in all, the top's place plus it.
 constexpr uint32_t light_power_floats(uint32_t levels) {
-    return light_power_offset(levels, levels) + 1u;
+  return light_power_offset(levels, levels) + 1u;
 }
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<LightTileEntry>, "LightTileEntry is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<LightTileEntry>,
+              "LightTileEntry is written to the GPU as bytes");
 #endif
 
 }  // namespace contracts

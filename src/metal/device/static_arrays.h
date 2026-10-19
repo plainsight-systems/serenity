@@ -1,11 +1,10 @@
 #pragma once
 
+#include <Foundation/Foundation.hpp>
+#include <Metal/Metal.hpp>
 #include <cstddef>
 #include <span>
 #include <vector>
-
-#include <Foundation/Foundation.hpp>
-#include <Metal/Metal.hpp>
 
 #include "metal/device/device.h"
 #include "metal/device/submission.h"
@@ -31,25 +30,26 @@ namespace serenity::metal {
 //
 // Not performance-sensitive: one copy, at start-up.
 class StaticArrays {
-public:
-    // Copies each of `arrays` into a buffer on `device`, made resident
-    // through `submission`.
-    StaticArrays(const Device& device, Submission& submission, std::span<const std::span<const std::byte>> arrays);
+ public:
+  // Copies each of `arrays` into a buffer on `device`, made resident
+  // through `submission`.
+  StaticArrays(const Device& device, Submission& submission,
+               std::span<const std::span<const std::byte>> arrays);
 
-    StaticArrays(const StaticArrays&) = delete;
-    StaticArrays& operator=(const StaticArrays&) = delete;
-    StaticArrays(StaticArrays&&) = delete;
-    StaticArrays& operator=(StaticArrays&&) = delete;
-    ~StaticArrays() = default;
+  StaticArrays(const StaticArrays&) = delete;
+  StaticArrays& operator=(const StaticArrays&) = delete;
+  StaticArrays(StaticArrays&&) = delete;
+  StaticArrays& operator=(StaticArrays&&) = delete;
+  ~StaticArrays() = default;
 
-    // The address of array `i`, in the order given; the shared zeroed block
-    // if it was empty. Throws MetalError if there is no array `i`.
-    MTL::GPUAddress address(std::size_t i) const;
+  // The address of array `i`, in the order given; the shared zeroed block
+  // if it was empty. Throws MetalError if there is no array `i`.
+  MTL::GPUAddress address(std::size_t i) const;
 
-private:
-    NS::SharedPtr<MTL::Buffer> buffer_;
-    Resident resident_;  // released after the GPU is done with it (submission.h)
-    std::vector<MTL::GPUAddress> addresses_;
+ private:
+  NS::SharedPtr<MTL::Buffer> buffer_;
+  Resident resident_;  // released after the GPU is done with it (submission.h)
+  std::vector<MTL::GPUAddress> addresses_;
 };
 
 }  // namespace serenity::metal

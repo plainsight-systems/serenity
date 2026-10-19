@@ -1,16 +1,15 @@
 #pragma once
 
+#include <Foundation/Foundation.hpp>
+#include <Metal/MTL4AccelerationStructure.hpp>  // not in Metal.hpp's umbrella
+#include <Metal/Metal.hpp>
 #include <array>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <span>
 #include <vector>
-
-#include <Foundation/Foundation.hpp>
-#include <Metal/MTL4AccelerationStructure.hpp>  // not in Metal.hpp's umbrella
-#include <Metal/Metal.hpp>
 
 #include "core/shapes/shapes.h"
 #include "metal/device/device.h"
@@ -45,7 +44,8 @@ namespace serenity::metal {
 // What it leaves out is the instance level each ray would otherwise cross,
 // which on this hardware, for boxes whose hits the shader decides, costs more
 // than everything it saves: measured, with the variants tried and the
-// triangle spheres' look, in docs/research/2026-10-09-acceleration-structure.md.
+// triangle spheres' look, in
+// docs/research/2026-10-09-acceleration-structure.md.
 //
 // When a shape arrives that is a mesh (a table of triangles), it is a
 // structure of its own, built once, under an instance: a second level for
@@ -145,82 +145,94 @@ namespace serenity::metal {
 // structure, its scratch memory or a buffer, or if the start-up build fails
 // on the GPU (submission.h).
 class SceneAcceleration {
-public:
-    // What the structures are told of the shapes beyond their geometry:
-    // which move and which are lights, each by index in increasing order.
-    // Named fields, so the two lists cannot pass in each other's places
-    // (I.24).
-    struct Roles {
-        std::span<const std::uint32_t> moving;
-        std::span<const std::uint32_t> lights;
-    };
+ public:
+  // What the structures are told of the shapes beyond their geometry:
+  // which move and which are lights, each by index in increasing order.
+  // Named fields, so the two lists cannot pass in each other's places
+  // (I.24).
+  struct Roles {
+    std::span<const std::uint32_t> moving;
+    std::span<const std::uint32_t> lights;
+  };
 
-    // Builds the structures over `shapes` at rest. A structure none of
-    // whose shapes moves is built here; one with a moving shape, in each
-    // slot by its frame's update(). Throws MetalError if an index in `roles`
-    // is not a shape's, or a list is not in increasing order (I.5).
-    SceneAcceleration(const Device& device, Submission& submission, const shapes::Shapes& shapes, Roles roles);
+  // Builds the structures over `shapes` at rest. A structure none of
+  // whose shapes moves is built here; one with a moving shape, in each
+  // slot by its frame's update(). Throws MetalError if an index in `roles`
+  // is not a shape's, or a list is not in increasing order (I.5).
+  SceneAcceleration(const Device& device, Submission& submission,
+                    const shapes::Shapes& shapes, Roles roles);
 
-    SceneAcceleration(const SceneAcceleration&) = delete;
-    SceneAcceleration& operator=(const SceneAcceleration&) = delete;
-    SceneAcceleration(SceneAcceleration&&) = delete;
-    SceneAcceleration& operator=(SceneAcceleration&&) = delete;
-    ~SceneAcceleration() = default;
+  SceneAcceleration(const SceneAcceleration&) = delete;
+  SceneAcceleration& operator=(const SceneAcceleration&) = delete;
+  SceneAcceleration(SceneAcceleration&&) = delete;
+  SceneAcceleration& operator=(SceneAcceleration&&) = delete;
+  ~SceneAcceleration() = default;
 
-    // Records, into the frame's `encoder`, steps 1 to 3 for slot `slot`,
-    // from the frame's `transforms`, one per shape: for each structure with
-    // a moving shape, its moving boxes and its build; then the one barrier.
-    // Called once a frame, before any pass that traces, when shapes move,
-    // between Submission::begin() returning the slot and the frame's
-    // commit; throws MetalError when nothing moves, or if `transforms` is
-    // not the shape count.
-    void update(MTL4::ComputeCommandEncoder* encoder, std::uint32_t slot,
-                std::span<const contracts::Transform> transforms);
+  // Records, into the frame's `encoder`, steps 1 to 3 for slot `slot`,
+  // from the frame's `transforms`, one per shape: for each structure with
+  // a moving shape, its moving boxes and its build; then the one barrier.
+  // Called once a frame, before any pass that traces, when shapes move,
+  // between Submission::begin() returning the slot and the frame's
+  // commit; throws MetalError when nothing moves, or if `transforms` is
+  // not the shape count.
+  void update(MTL4::ComputeCommandEncoder* encoder, std::uint32_t slot,
+              std::span<const contracts::Transform> transforms);
 
-    // The structures frame slot `slot` traces, as a shader binds them: the
-    // address of its StructureBlock (structure_block.h).
-    MTL::GPUAddress address(std::uint32_t slot) const;
+  // The structures frame slot `slot` traces, as a shader binds them: the
+  // address of its StructureBlock (structure_block.h).
+  MTL::GPUAddress address(std::uint32_t slot) const;
 
-private:
-    struct Built {
-        NS::SharedPtr<MTL::Buffer> scratch;
-        NS::SharedPtr<MTL4::PrimitiveAccelerationStructureDescriptor> descriptor;  // over the slot's boxes
-        NS::SharedPtr<MTL::AccelerationStructure> structure;
-        Resident structure_resident;
-        Resident scratch_resident;  // when shapes move: each frame's build writes the scratch
-    };
+ private:
+  struct Built {
+    NS::SharedPtr<MTL::Buffer> scratch;
+    NS::SharedPtr<MTL4::PrimitiveAccelerationStructureDescriptor>
+        descriptor;  // over the slot's boxes
+    NS::SharedPtr<MTL::AccelerationStructure> structure;
+    Resident structure_resident;
+    Resident scratch_resident;  // when shapes move: each frame's build writes
+                                // the scratch
+  };
 
-    // One structure over some of the shapes, its box i shape members[i]
-    // (for everything, every shape, so box i is shape i): one, in entry 0,
-    // which every frame traces, when none of them moves; one per slot,
-    // indexed by slot, when one does. Made whole by make_tree() alone
-    // (C.41).
-    struct Tree {
-        std::vector<std::uint32_t> moving_boxes;    // the boxes of its moving shapes, which update() writes
-        std::vector<std::uint32_t> moving_shapes;   // their shapes, whose transforms place them
-        std::vector<shapes::Bounds> moving_bounds;  // their object-space bounds, in the same order
-        std::unique_ptr<FrameArray> boxes;          // one box per member, per structure
-        std::array<Built, frames_in_flight> structures;
+  // One structure over some of the shapes, its box i shape members[i]
+  // (for everything, every shape, so box i is shape i): one, in entry 0,
+  // which every frame traces, when none of them moves; one per slot,
+  // indexed by slot, when one does. Made whole by make_tree() alone
+  // (C.41).
+  struct Tree {
+    std::vector<std::uint32_t>
+        moving_boxes;  // the boxes of its moving shapes, which update() writes
+    std::vector<std::uint32_t>
+        moving_shapes;  // their shapes, whose transforms place them
+    std::vector<shapes::Bounds>
+        moving_bounds;  // their object-space bounds, in the same order
+    std::unique_ptr<FrameArray> boxes;  // one box per member, per structure
+    std::array<Built, frames_in_flight> structures;
 
-        bool moves() const { return !moving_boxes.empty(); }
-        // The structure slot `slot` traces.
-        const Built& in(std::uint32_t slot) const { return moves() ? structures[slot] : structures[0]; }
-    };
+    bool moves() const { return !moving_boxes.empty(); }
+    // The structure slot `slot` traces.
+    const Built& in(std::uint32_t slot) const {
+      return moves() ? structures[slot] : structures[0];
+    }
+  };
 
-    // Makes a tree over `members`, the shapes it holds in increasing order,
-    // of which `moving` (increasing) move: its boxes at rest, descriptors,
-    // structures and scratch, resident; a still tree's scratch is added to
-    // `build_only` instead, for the constructor's one start-up build.
-    static Tree make_tree(const Device& device, Submission& submission, const shapes::Shapes& shapes,
-                          std::span<const std::uint32_t> members, std::span<const std::uint32_t> moving,
-                          MTL::ResidencySet* build_only);
+  // Makes a tree over `members`, the shapes it holds in increasing order,
+  // of which `moving` (increasing) move: its boxes at rest, descriptors,
+  // structures and scratch, resident; a still tree's scratch is added to
+  // `build_only` instead, for the constructor's one start-up build.
+  static Tree make_tree(const Device& device, Submission& submission,
+                        const shapes::Shapes& shapes,
+                        std::span<const std::uint32_t> members,
+                        std::span<const std::uint32_t> moving,
+                        MTL::ResidencySet* build_only);
 
-    Tree everything_;
-    // The occluders' own, when the scene has lights and surfaces both;
-    // otherwise none, and the block names everything's (structure_block.h).
-    std::optional<Tree> occluders_;
-    std::unique_ptr<StaticArrays> occluder_table_;  // the occluders' shapes, a uint32 a box
-    std::unique_ptr<FrameArray> blocks_;            // one StructureBlock, one per slot when anything moves
+  Tree everything_;
+  // The occluders' own, when the scene has lights and surfaces both;
+  // otherwise none, and the block names everything's (structure_block.h).
+  std::optional<Tree> occluders_;
+  std::unique_ptr<StaticArrays>
+      occluder_table_;  // the occluders' shapes, a uint32 a box
+  std::unique_ptr<FrameArray>
+      blocks_;  // one StructureBlock, one per slot when anything moves
 };
 
 }  // namespace serenity::metal

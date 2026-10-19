@@ -1,11 +1,10 @@
 #pragma once
 
+#include <Foundation/Foundation.hpp>
+#include <Metal/Metal.hpp>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-
-#include <Foundation/Foundation.hpp>
-#include <Metal/Metal.hpp>
 
 #include "core/contracts/denoise.h"
 #include "core/denoise/network.h"
@@ -31,8 +30,8 @@ namespace serenity::metal {
 //     each a skip; the max pools', the bottleneck's two, the decoders' and
 //     the last convolution's. No concatenation and no upsampled copy: a
 //     decoder convolution reads the level below, upsampled, and the skip,
-//     each where it is (conv3x3). The padded grid is the light's size rounded up to
-//     contracts::unet_alignment, as training/evaluate.py pads;
+//     each where it is (conv3x3). The padded grid is the light's size rounded
+//     up to contracts::unet_alignment, as training/evaluate.py pads;
 //   - the demodulated light, a float4 an input pixel of the padded grid;
 //   - the history, last frame's output and this frame's, a float4 an output
 //     pixel of twice the padded grid, two of them by the frame's parity;
@@ -65,101 +64,106 @@ namespace serenity::metal {
 // Throws MetalError if the light's size is not one Metal makes an image of,
 // or the device cannot make a buffer.
 class DenoiseImages {
-public:
-    DenoiseImages(const Device& device, Submission& submission, const denoise::Widths& widths);
+ public:
+  DenoiseImages(const Device& device, Submission& submission,
+                const denoise::Widths& widths);
 
-    DenoiseImages(const DenoiseImages&) = delete;
-    DenoiseImages& operator=(const DenoiseImages&) = delete;
-    DenoiseImages(DenoiseImages&&) = delete;
-    DenoiseImages& operator=(DenoiseImages&&) = delete;
-    ~DenoiseImages() = default;
+  DenoiseImages(const DenoiseImages&) = delete;
+  DenoiseImages& operator=(const DenoiseImages&) = delete;
+  DenoiseImages(DenoiseImages&&) = delete;
+  DenoiseImages& operator=(DenoiseImages&&) = delete;
+  ~DenoiseImages() = default;
 
-    // Ready for frame `inputs`, its light of `light`: the buffers made or
-    // remade, the frame joined to the history. Whether the frame reads last
-    // frame's output.
-    bool prepare(const frame::FrameInputs& inputs, frame::Extent light);
+  // Ready for frame `inputs`, its light of `light`: the buffers made or
+  // remade, the frame joined to the history. Whether the frame reads last
+  // frame's output.
+  bool prepare(const frame::FrameInputs& inputs, frame::Extent light);
 
-    // The conv3x3 dispatches, in order: enc 0..3, bottleneck a and b,
-    // dec 0..3, dec_final. The pools, levels 1..4.
-    static constexpr std::size_t levels = contracts::unet_levels;
-    static constexpr std::size_t first_bottleneck = levels;
-    static constexpr std::size_t first_decoder = first_bottleneck + 2;
-    static constexpr std::size_t last_convolution = first_decoder + levels;
-    static constexpr std::size_t convolutions = last_convolution + 1;
-    static constexpr std::size_t resamplings = levels;
+  // The conv3x3 dispatches, in order: enc 0..3, bottleneck a and b,
+  // dec 0..3, dec_final. The pools, levels 1..4.
+  static constexpr std::size_t levels = contracts::unet_levels;
+  static constexpr std::size_t first_bottleneck = levels;
+  static constexpr std::size_t first_decoder = first_bottleneck + 2;
+  static constexpr std::size_t last_convolution = first_decoder + levels;
+  static constexpr std::size_t convolutions = last_convolution + 1;
+  static constexpr std::size_t resamplings = levels;
 
-    struct Conv {
-        contracts::ConvParams params;
-        MTL::GPUAddress params_address = 0;
-        MTL::GPUAddress input = 0;
-        MTL::GPUAddress output = 0;
-        MTL::GPUAddress coarse = 0;  // a decoder's level below; else its input again, unread
-    };
-    struct Resample {
-        contracts::ResampleParams params;
-        MTL::GPUAddress params_address = 0;
-        MTL::GPUAddress input = 0;
-        MTL::GPUAddress output = 0;
-    };
+  struct Conv {
+    contracts::ConvParams params;
+    MTL::GPUAddress params_address = 0;
+    MTL::GPUAddress input = 0;
+    MTL::GPUAddress output = 0;
+    MTL::GPUAddress coarse =
+        0;  // a decoder's level below; else its input again, unread
+  };
+  struct Resample {
+    contracts::ResampleParams params;
+    MTL::GPUAddress params_address = 0;
+    MTL::GPUAddress input = 0;
+    MTL::GPUAddress output = 0;
+  };
 
-    // Each valid after the first prepare().
-    const Conv& conv(std::size_t i) const { return convs_.at(i); }
-    const Resample& pool(std::size_t i) const { return pools_.at(i); }
-    frame::Extent light() const noexcept { return light_; }
-    frame::Extent padded() const noexcept { return padded_; }
-    MTL::GPUAddress input() const noexcept;
-    MTL::GPUAddress features() const noexcept;  // the last convolution's output
-    MTL::GPUAddress demod() const noexcept;
-    MTL::GPUAddress histogram() const noexcept;
-    MTL::GPUAddress median() const noexcept;
-    // Last frame's output and this frame's, by the prepared frame's parity.
-    MTL::GPUAddress history() const noexcept;
-    MTL::GPUAddress next_history() const noexcept;
-    // Frame slot `slot`'s hand-off of the light's radiance (above). Throws
-    // MetalError for a slot that is not one (I.6).
-    MTL::Texture* light_radiance(std::uint32_t slot) const;
+  // Each valid after the first prepare().
+  const Conv& conv(std::size_t i) const { return convs_.at(i); }
+  const Resample& pool(std::size_t i) const { return pools_.at(i); }
+  frame::Extent light() const noexcept { return light_; }
+  frame::Extent padded() const noexcept { return padded_; }
+  MTL::GPUAddress input() const noexcept;
+  MTL::GPUAddress features() const noexcept;  // the last convolution's output
+  MTL::GPUAddress demod() const noexcept;
+  MTL::GPUAddress histogram() const noexcept;
+  MTL::GPUAddress median() const noexcept;
+  // Last frame's output and this frame's, by the prepared frame's parity.
+  MTL::GPUAddress history() const noexcept;
+  MTL::GPUAddress next_history() const noexcept;
+  // Frame slot `slot`'s hand-off of the light's radiance (above). Throws
+  // MetalError for a slot that is not one (I.6).
+  MTL::Texture* light_radiance(std::uint32_t slot) const;
 
-private:
-    using Buffer = ResidentBuffer;  // metal/device/resident.h
-    // A level's activations, bordered (above): its size, pitch and stride.
-    struct Activations {
-        Buffer memory;
-        frame::Extent size;
-        std::uint32_t pitch = 0;
-        std::uint32_t stride = 0;
-    };
+ private:
+  using Buffer = ResidentBuffer;  // metal/device/resident.h
+  // A level's activations, bordered (above): its size, pitch and stride.
+  struct Activations {
+    Buffer memory;
+    frame::Extent size;
+    std::uint32_t pitch = 0;
+    std::uint32_t stride = 0;
+  };
 
-    void make(Buffer& buffer, std::size_t bytes, std::string_view what);
-    void make(Activations& a, frame::Extent size, std::uint32_t stride, std::string_view what);
-    // At a new size, the light's `light`: every buffer and image made
-    // (allocate), then every dispatch's parameters planned and written once
-    // (plan).
-    void allocate(frame::Extent light);
-    void plan();
+  void make(Buffer& buffer, std::size_t bytes, std::string_view what);
+  void make(Activations& a, frame::Extent size, std::uint32_t stride,
+            std::string_view what);
+  // At a new size, the light's `light`: every buffer and image made
+  // (allocate), then every dispatch's parameters planned and written once
+  // (plan).
+  void allocate(frame::Extent light);
+  void plan();
 
-    NS::SharedPtr<MTL::Device> device_;
-    Submission& submission_;
-    denoise::Widths widths_;
-    frame::ReuseHistory history_;
-    frame::Extent light_;
-    frame::Extent padded_;
-    std::uint64_t index_ = 0;  // the prepared frame's: its parity picks the history
+  NS::SharedPtr<MTL::Device> device_;
+  Submission& submission_;
+  denoise::Widths widths_;
+  frame::ReuseHistory history_;
+  frame::Extent light_;
+  frame::Extent padded_;
+  std::uint64_t index_ =
+      0;  // the prepared frame's: its parity picks the history
 
-    Activations input_;
-    std::array<Activations, levels> skip_;    // levels 0..3, the encoders' outputs
-    std::array<Activations, levels> pooled_;  // levels 1..4
-    Activations bottleneck_a_;
-    Activations bottleneck_b_;
-    std::array<Activations, levels> decoded_;  // levels 0..3, dec 3..0's outputs
-    Activations final_;
-    Buffer demod_;
-    std::array<Buffer, 2> history_buffers_;
-    Buffer histogram_;
-    Buffer median_;
-    Buffer params_;
-    std::array<ResidentTexture, frames_in_flight> light_radiance_;  // the hand-off, by slot
-    std::array<Conv, convolutions> convs_{};
-    std::array<Resample, resamplings> pools_{};
+  Activations input_;
+  std::array<Activations, levels> skip_;  // levels 0..3, the encoders' outputs
+  std::array<Activations, levels> pooled_;  // levels 1..4
+  Activations bottleneck_a_;
+  Activations bottleneck_b_;
+  std::array<Activations, levels> decoded_;  // levels 0..3, dec 3..0's outputs
+  Activations final_;
+  Buffer demod_;
+  std::array<Buffer, 2> history_buffers_;
+  Buffer histogram_;
+  Buffer median_;
+  Buffer params_;
+  std::array<ResidentTexture, frames_in_flight>
+      light_radiance_;  // the hand-off, by slot
+  std::array<Conv, convolutions> convs_{};
+  std::array<Resample, resamplings> pools_{};
 };
 
 // The output channel blocks one conv3x3 threadgroup computes for a

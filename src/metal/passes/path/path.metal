@@ -22,44 +22,51 @@ using namespace serenity::shaders;
 // One pixel's path, by the path tracer (path.metal.h), folded in.
 kernel void path_trace(constant serenity::contracts::FrameConstants& frame
                        [[buffer(serenity::bindings::path::constants)]],
-                       constant serenity::contracts::CameraData& camera [[buffer(serenity::bindings::path::camera)]],
-                       serenity::shaders::SceneStructure structure [[buffer(serenity::bindings::path::structure)]],
-                       constant serenity::gpu::SceneBlock& block [[buffer(serenity::bindings::path::scene)]],
-                       constant float* sphere_glows [[buffer(serenity::bindings::path::glows)]],
+                       constant serenity::contracts::CameraData& camera
+                       [[buffer(serenity::bindings::path::camera)]],
+                       serenity::shaders::SceneStructure structure
+                       [[buffer(serenity::bindings::path::structure)]],
+                       constant serenity::gpu::SceneBlock& block
+                       [[buffer(serenity::bindings::path::scene)]],
+                       constant float* sphere_glows
+                       [[buffer(serenity::bindings::path::glows)]],
                        constant serenity::contracts::Transform* transforms
                        [[buffer(serenity::bindings::path::transforms)]],
-                       device atomic_uint* non_finite [[buffer(serenity::bindings::path::non_finite)]],
+                       device atomic_uint* non_finite
+                       [[buffer(serenity::bindings::path::non_finite)]],
                        texture2d<float, access::read_write> accumulated
                        [[texture(serenity::bindings::path::accumulated)]],
                        uint2 pixel [[thread_position_in_grid]]) {
-    // Every thread reaches count_non_finite() below, which sums over its
-    // SIMD group: none returns early.
-    const bool inside = pixel.x < frame.width && pixel.y < frame.height;
-    bool failed = false;
-    if (inside) {
-        // The scene, through its block, and as this frame places and lights
-        // it (metal/scene/scene_block.metal.h).
-        const path::Scene scene{structure, &block, transforms, sphere_glows};
+  // Every thread reaches count_non_finite() below, which sums over its
+  // SIMD group: none returns early.
+  const bool inside = pixel.x < frame.width && pixel.y < frame.height;
+  bool failed = false;
+  if (inside) {
+    // The scene, through its block, and as this frame places and lights
+    // it (metal/scene/scene_block.metal.h).
+    const path::Scene scene{structure, &block, transforms, sphere_glows};
 
-        // The camera's ray as pixel_ray() draws it (camera/thin_lens.metal.h),
-        // written out here: through pixel_ray() the path pass's kernel
-        // compiled otherwise and measured 2% slower (docs/research/
-        // 2026-10-16-codebase-guidelines-pass.md, C2). The same numbers in
-        // the same order; the byte diff of every graph holds them equal. A
-        // path graph's frames never take the camera's jitter (core/frame/
-        // schedule.h, jitters), so its point is always the pixel's own.
-        PathNumbers numbers = path_numbers(pixel, frame.frame_index);
-        const float2 within = next_numbers2(numbers);  // the point in the pixel
-        // The point on the lens, drawn only through one, so a pinhole's
-        // paths draw what they drew before lenses; a pinhole reads none.
-        const float2 lens = has_lens(camera) ? next_numbers2(numbers) : float2(0.0f);
-        const CameraRay ray =
-            camera_ray(camera, float2(pixel) + within, lens, uint2(frame.width, frame.height));
-        const float3 sample = path::radiance(scene, ray, numbers);
+    // The camera's ray as pixel_ray() draws it (camera/thin_lens.metal.h),
+    // written out here: through pixel_ray() the path pass's kernel
+    // compiled otherwise and measured 2% slower (docs/research/
+    // 2026-10-16-codebase-guidelines-pass.md, C2). The same numbers in
+    // the same order; the byte diff of every graph holds them equal. A
+    // path graph's frames never take the camera's jitter (core/frame/
+    // schedule.h, jitters), so its point is always the pixel's own.
+    PathNumbers numbers = path_numbers(pixel, frame.frame_index);
+    const float2 within = next_numbers2(numbers);  // the point in the pixel
+    // The point on the lens, drawn only through one, so a pinhole's
+    // paths draw what they drew before lenses; a pinhole reads none.
+    const float2 lens =
+        has_lens(camera) ? next_numbers2(numbers) : float2(0.0f);
+    const CameraRay ray = camera_ray(camera, float2(pixel) + within, lens,
+                                     uint2(frame.width, frame.height));
+    const float3 sample = path::radiance(scene, ray, numbers);
 
-        failed = !finite(sample);
-        const float4 held = accumulate(accumulated.read(pixel), sample, frame.accumulated_frames == 0u);
-        accumulated.write(held, pixel);
-    }
-    count_non_finite(failed, non_finite);
+    failed = !finite(sample);
+    const float4 held = accumulate(accumulated.read(pixel), sample,
+                                   frame.accumulated_frames == 0u);
+    accumulated.write(held, pixel);
+  }
+  count_non_finite(failed, non_finite);
 }

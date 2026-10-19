@@ -59,8 +59,8 @@
 //
 // The scene's woods are one array in this layout (core/scene/scene.h,
 // SceneDescription::woods), which every pass that reads the scene binds at
-// buffer 19 (passes/path/path.metal, among them), and hands to the textures (metal/textures/
-// textures.metal.h).
+// buffer 19 (passes/path/path.metal, among them), and hands to the textures
+// (metal/textures/ textures.metal.h).
 //
 // Finite everywhere a ray can hit: the world is within 10^6 m of the origin
 // (core/scene/scene.h, world_extent), and the scene reader holds ring and
@@ -83,43 +83,51 @@
 // included, is a named constant below (ES.45), for the shader half to read
 // rather than repeat.
 
-#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace textures {
 
-SERENITY_CONSTANT uint32_t wood_salt = 0x77D0u;           // step 2: boards' hashes apart from noise's
-SERENITY_CONSTANT float wood_depth_least = 0.3f;          // step 2: the face's depth below the log's axis,
-SERENITY_CONSTANT float wood_depth_most = 1.5f;           //   in board widths
-SERENITY_CONSTANT float wood_board_shade = 0.12f;         // step 2: boards up to 12% lighter or darker
-SERENITY_CONSTANT float wood_waver = 1.5f;                // step 4: in rings
-SERENITY_CONSTANT float wood_waver_along = 0.5f;          // step 4: meters
-SERENITY_CONSTANT float wood_waver_across = 0.05f;        // step 4: meters
-SERENITY_CONSTANT uint32_t wood_waver_octaves = 3u;       // step 4: fbm's octaves
-SERENITY_CONSTANT float wood_latewood = 0.7f;             // step 5: where in a ring it darkens from
-SERENITY_CONSTANT float wood_pores = 0.25f;               // step 6: how much the pores darken
-SERENITY_CONSTANT float wood_pores_along = 0.08f;         // step 6: meters
-SERENITY_CONSTANT float wood_pores_across = 0.0015f;      // step 6: meters
-SERENITY_CONSTANT uint32_t wood_pores_seed = 1u;          // step 6: added to the seed
-SERENITY_CONSTANT float wood_seam = 0.0015f;              // step 7: meters
-SERENITY_CONSTANT float wood_seam_shade = 0.25f;          // step 7
-SERENITY_CONSTANT float wood_least_ring = 1.0e-4f;        // meters: the finest rings read
-SERENITY_CONSTANT float wood_least_board = 1.0e-3f;       // meters
-SERENITY_CONSTANT float wood_most_board = 10.0f;          // meters
+SERENITY_CONSTANT uint32_t wood_salt =
+    0x77D0u;  // step 2: boards' hashes apart from noise's
+SERENITY_CONSTANT float wood_depth_least =
+    0.3f;  // step 2: the face's depth below the log's axis,
+SERENITY_CONSTANT float wood_depth_most = 1.5f;  //   in board widths
+SERENITY_CONSTANT float wood_board_shade =
+    0.12f;  // step 2: boards up to 12% lighter or darker
+SERENITY_CONSTANT float wood_waver = 1.5f;           // step 4: in rings
+SERENITY_CONSTANT float wood_waver_along = 0.5f;     // step 4: meters
+SERENITY_CONSTANT float wood_waver_across = 0.05f;   // step 4: meters
+SERENITY_CONSTANT uint32_t wood_waver_octaves = 3u;  // step 4: fbm's octaves
+SERENITY_CONSTANT float wood_latewood =
+    0.7f;  // step 5: where in a ring it darkens from
+SERENITY_CONSTANT float wood_pores =
+    0.25f;  // step 6: how much the pores darken
+SERENITY_CONSTANT float wood_pores_along = 0.08f;     // step 6: meters
+SERENITY_CONSTANT float wood_pores_across = 0.0015f;  // step 6: meters
+SERENITY_CONSTANT uint32_t wood_pores_seed = 1u;  // step 6: added to the seed
+SERENITY_CONSTANT float wood_seam = 0.0015f;      // step 7: meters
+SERENITY_CONSTANT float wood_seam_shade = 0.25f;  // step 7
+SERENITY_CONSTANT float wood_least_ring =
+    1.0e-4f;  // meters: the finest rings read
+SERENITY_CONSTANT float wood_least_board = 1.0e-3f;  // meters
+SERENITY_CONSTANT float wood_most_board = 10.0f;     // meters
 
 struct WoodData {
-    contracts::Float3 light;  // earlywood, linear RGB in [0, 1]
-    float ring;               // meters between growth rings; at least wood_least_ring
-    contracts::Float3 dark;   // latewood, linear RGB in [0, 1]
-    float board;              // meters across a board; wood_least_board to wood_most_board
-    uint32_t seed;
-    uint32_t padding[3];
+  contracts::Float3 light;  // earlywood, linear RGB in [0, 1]
+  float ring;  // meters between growth rings; at least wood_least_ring
+  contracts::Float3 dark;  // latewood, linear RGB in [0, 1]
+  float board;  // meters across a board; wood_least_board to wood_most_board
+  uint32_t seed;
+  uint32_t padding[3];
 };
 
-static_assert(sizeof(WoodData) == 48, "WoodData must be the same 48 bytes on the host and in shaders");
+static_assert(sizeof(WoodData) == 48,
+              "WoodData must be the same 48 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<WoodData>, "WoodData is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<WoodData>,
+              "WoodData is written to the GPU as bytes");
 #endif
 
 }  // namespace textures

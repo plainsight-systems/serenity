@@ -42,30 +42,33 @@ namespace contracts {
 SERENITY_CONSTANT uint32_t jitter_phases = 32u;
 
 struct FrameConstants {
-    // frame::FrameInputs::time, narrowed to float.
-    float time_seconds;
-    // The low 32 bits of frame::FrameInputs::index: wraps after 2^32 frames,
-    // over two years at 60 frames a second.
-    uint32_t frame_index;
-    // The image being written, in pixels.
-    uint32_t width;
-    uint32_t height;
-    // frame::FrameInputs::index - accumulated_since: the frames already in
-    // the accumulated image, which this one joins; 0 starts it over. At most
-    // 2^24 - 1 (frame::max_accumulated_frames, core/frame/frame_inputs.h).
-    uint32_t accumulated_frames;
-    // The camera's jitter, in pixels of this image, in [-1/2, 1/2): every
-    // camera ray passes through its pixel's center plus it, where
-    // `jittered` is 1; read by nothing where it is 0, each pixel drawing
-    // its own point from its numbers as before.
-    float jitter_x;
-    float jitter_y;
-    uint32_t jittered;
+  // frame::FrameInputs::time, narrowed to float.
+  float time_seconds;
+  // The low 32 bits of frame::FrameInputs::index: wraps after 2^32 frames,
+  // over two years at 60 frames a second.
+  uint32_t frame_index;
+  // The image being written, in pixels.
+  uint32_t width;
+  uint32_t height;
+  // frame::FrameInputs::index - accumulated_since: the frames already in
+  // the accumulated image, which this one joins; 0 starts it over. At most
+  // 2^24 - 1 (frame::max_accumulated_frames, core/frame/frame_inputs.h).
+  uint32_t accumulated_frames;
+  // The camera's jitter, in pixels of this image, in [-1/2, 1/2): every
+  // camera ray passes through its pixel's center plus it, where
+  // `jittered` is 1; read by nothing where it is 0, each pixel drawing
+  // its own point from its numbers as before.
+  float jitter_x;
+  float jitter_y;
+  uint32_t jittered;
 };
 
-static_assert(sizeof(FrameConstants) == 32, "FrameConstants must be the same 32 bytes on the host and in shaders");
+static_assert(
+    sizeof(FrameConstants) == 32,
+    "FrameConstants must be the same 32 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<FrameConstants>, "FrameConstants is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<FrameConstants>,
+              "FrameConstants is written to the GPU as bytes");
 #endif
 
 }  // namespace contracts

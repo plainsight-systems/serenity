@@ -136,39 +136,40 @@ namespace serenity::headless {
 // looking like one of them (principle 1: the same command writes the same
 // files). The Makefile's targets clear their own directories first.
 class OptionsError : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
+ public:
+  using std::runtime_error::runtime_error;
 };
 
 enum class Write {
-    all,
-    last,
-    doubling,
+  all,
+  last,
+  doubling,
 };
 
 // What parse() read: plain values, which parse() alone makes and checks
 // (C.2: a struct, since nothing here keeps an invariant after it).
 struct Options {
-    std::uint64_t frames = 1;
-    std::uint64_t first = 0;
-    frame::Seconds step{1.0 / 60.0};
-    std::optional<frame::Seconds> time;  // frozen at this, when given
-    frame::Extent size{1920, 1080};
-    std::filesystem::path graph;
-    std::filesystem::path scene;  // empty when none was given
-    std::filesystem::path out;
-    Write write = Write::all;
-    std::uint64_t samples = 1;  // rendered per frame, at its instant
-    output::ImageFormat format = output::default_format;
-    bool features = false;  // --features: the feature images beside each frame written
+  std::uint64_t frames = 1;
+  std::uint64_t first = 0;
+  frame::Seconds step{1.0 / 60.0};
+  std::optional<frame::Seconds> time;  // frozen at this, when given
+  frame::Extent size{1920, 1080};
+  std::filesystem::path graph;
+  std::filesystem::path scene;  // empty when none was given
+  std::filesystem::path out;
+  Write write = Write::all;
+  std::uint64_t samples = 1;  // rendered per frame, at its instant
+  output::ImageFormat format = output::default_format;
+  bool features =
+      false;  // --features: the feature images beside each frame written
 };
 
 // Which of a run's frames: the one `after_first` frames after its first, of
 // `frames` in all. A struct, so the two counts are named where they are
 // given (I.24).
 struct RunFrame {
-    std::uint64_t after_first = 0;
-    std::uint64_t frames = 0;
+  std::uint64_t after_first = 0;
+  std::uint64_t frames = 0;
 };
 
 // Whether `frame` is written. Throws std::logic_error for a Write with no
@@ -200,12 +201,15 @@ void check_graph(const Options& options, const frame::Schedule& schedule);
 // The file frame `index` is written to in `out`, as `format`'s kind:
 // frame-NNNNNN, the index zero-padded to six digits, and the kind's
 // extension (above).
-std::filesystem::path frame_path(const std::filesystem::path& out, std::uint64_t index, output::ImageFormat format);
+std::filesystem::path frame_path(const std::filesystem::path& out,
+                                 std::uint64_t index,
+                                 output::ImageFormat format);
 
 // The feature images' files beside frame `index`'s, in the order they are
 // written: frame-NNNNNN-albedo.pfm, -normal.pfm, -depth.pfm, -motion.pfm
 // (above, --features).
-std::array<std::filesystem::path, 4> feature_paths(const std::filesystem::path& out, std::uint64_t index);
+std::array<std::filesystem::path, 4> feature_paths(
+    const std::filesystem::path& out, std::uint64_t index);
 
 // Frame `index`'s time: index x step, or the time --time froze (above).
 frame::Seconds frame_time(const Options& options, std::uint64_t index);
@@ -213,6 +217,7 @@ frame::Seconds frame_time(const Options& options, std::uint64_t index);
 // The time of the frame before frame `index` on the timeline, which its
 // features' motion points back to (above, --features): the same instant
 // under --time, (index - 1) x step otherwise; none before frame 0.
-std::optional<frame::Seconds> previous_time(const Options& options, std::uint64_t index);
+std::optional<frame::Seconds> previous_time(const Options& options,
+                                            std::uint64_t index);
 
 }  // namespace serenity::headless

@@ -17,14 +17,18 @@ namespace serenity::animation {
 
 // `x` rounded to a float no greater than it: a box's min.
 inline float round_down(double x) noexcept {
-    const auto f = static_cast<float>(x);
-    return static_cast<double>(f) > x ? std::nextafter(f, -std::numeric_limits<float>::infinity()) : f;
+  const auto f = static_cast<float>(x);
+  return static_cast<double>(f) > x
+             ? std::nextafter(f, -std::numeric_limits<float>::infinity())
+             : f;
 }
 
 // `x` rounded to a float no less than it: a box's max.
 inline float round_up(double x) noexcept {
-    const auto f = static_cast<float>(x);
-    return static_cast<double>(f) < x ? std::nextafter(f, std::numeric_limits<float>::infinity()) : f;
+  const auto f = static_cast<float>(x);
+  return static_cast<double>(f) < x
+             ? std::nextafter(f, std::numeric_limits<float>::infinity())
+             : f;
 }
 
 }  // namespace serenity::animation

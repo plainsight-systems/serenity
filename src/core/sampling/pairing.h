@@ -58,7 +58,8 @@ namespace serenity::sampling {
 // into [-width / 2, width / 2], an offset of a texture this wide or less is
 // within [-127, 127] (above). Every one of contract 15's widths is within
 // it (pairing.cpp asserts it).
-inline constexpr std::uint32_t largest_pairing_width = 2u * std::numeric_limits<std::int8_t>::max();
+inline constexpr std::uint32_t largest_pairing_width =
+    2u * std::numeric_limits<std::int8_t>::max();
 
 // eq. 3's shuffle count for `sigma`. Precondition: sigma at least
 // contracts::min_pairing_sigma (0.8), finite.
@@ -67,7 +68,8 @@ std::uint32_t shuffle_count(double sigma);
 // One reuse texture, width x width offsets row by row, each packed as
 // above. Precondition: width even, in [2, largest_pairing_width]; sigma at
 // least contracts::min_pairing_sigma, finite.
-std::vector<std::uint16_t> reuse_texture(std::uint32_t width, double sigma, std::uint64_t seed);
+std::vector<std::uint16_t> reuse_texture(std::uint32_t width, double sigma,
+                                         std::uint64_t seed);
 
 // The three textures of contract 15's widths, one after another, each from
 // its own seed derived from `seed`.
@@ -75,12 +77,12 @@ std::vector<std::uint16_t> reuse_textures(double sigma, std::uint64_t seed);
 
 // An offset's two coordinates, from its packed word.
 struct Offset {
-    int x;
-    int y;
+  int x;
+  int y;
 };
 constexpr Offset unpack_offset(std::uint16_t packed) {
-    return Offset{static_cast<int>(static_cast<std::int8_t>(packed & 0xffu)),
-                  static_cast<int>(static_cast<std::int8_t>(packed >> 8u))};
+  return Offset{static_cast<int>(static_cast<std::int8_t>(packed & 0xffu)),
+                static_cast<int>(static_cast<std::int8_t>(packed >> 8u))};
 }
 
 }  // namespace serenity::sampling

@@ -1,11 +1,10 @@
 #pragma once
 
+#include <Foundation/Foundation.hpp>
+#include <Metal/Metal.hpp>
 #include <cstddef>
 #include <span>
 #include <string_view>
-
-#include <Foundation/Foundation.hpp>
-#include <Metal/Metal.hpp>
 
 #include "core/frame/extent.h"
 #include "metal/device/submission.h"
@@ -27,16 +26,19 @@ namespace serenity::metal {
 // An image to copy whole into the readback's buffer: its texture, at its
 // size, rows of `row_bytes` from `offset`.
 struct ImageCopy {
-    MTL::Texture* texture = nullptr;
-    std::size_t offset = 0;
-    std::size_t row_bytes = 0;
+  MTL::Texture* texture = nullptr;
+  std::size_t offset = 0;
+  std::size_t row_bytes = 0;
 };
 
 // Copies each of `copies`, every one `size`, into a new shared buffer of
 // `bytes`, through `submission`, and returns the buffer once the copies have
 // completed. Throws MetalError naming `what` if the device makes no buffer
 // or the command buffer no encoder, or as Submission's wait does.
-NS::SharedPtr<MTL::Buffer> read_back(MTL::Device* device, Submission& submission, frame::Extent size,
-                                     std::size_t bytes, std::span<const ImageCopy> copies, std::string_view what);
+NS::SharedPtr<MTL::Buffer> read_back(MTL::Device* device,
+                                     Submission& submission, frame::Extent size,
+                                     std::size_t bytes,
+                                     std::span<const ImageCopy> copies,
+                                     std::string_view what);
 
 }  // namespace serenity::metal

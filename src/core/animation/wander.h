@@ -71,20 +71,20 @@ namespace serenity::animation {
 inline constexpr std::size_t wander_terms = 3;
 
 struct WanderParams {
-    contracts::Float3 anchor{};
-    float reach = 0.0f;  // finite, greater than 0
-    float speed = 0.0f;  // finite, greater than 0
-    std::uint64_t seed = 0;
+  contracts::Float3 anchor{};
+  float reach = 0.0f;  // finite, greater than 0
+  float speed = 0.0f;  // finite, greater than 0
+  std::uint64_t seed = 0;
 };
 
 struct Wander {
-    contracts::Float3 anchor{};
-    float reach = 0.0f;  // greater than 0
-    // Per axis (x, y, z), per term: the amplitude, the frequency in hertz,
-    // and the phase in radians.
-    std::array<std::array<double, wander_terms>, 3> amplitude{};
-    std::array<std::array<double, wander_terms>, 3> frequency{};
-    std::array<std::array<double, wander_terms>, 3> phase{};
+  contracts::Float3 anchor{};
+  float reach = 0.0f;  // greater than 0
+  // Per axis (x, y, z), per term: the amplitude, the frequency in hertz,
+  // and the phase in radians.
+  std::array<std::array<double, wander_terms>, 3> amplitude{};
+  std::array<std::array<double, wander_terms>, 3> frequency{};
+  std::array<std::array<double, wander_terms>, 3> phase{};
 };
 
 // The path for these numbers, by steps 1 to 3, of a body of radius `body`
@@ -92,9 +92,10 @@ struct Wander {
 // `speed` finite and greater than 0, `body` finite and 0 or more, and every
 // point the body can reach a float: |anchor| + reach + body no greater than
 // FLT_MAX on each axis, in double, so no position rounds to an infinity.
-// Throws std::invalid_argument for numbers that are not, and a MotionError for a
-// reach whose body could touch a still shape.
-Wander make_wander(const WanderParams& params, float body, const contracts::Obstacles& obstacles);
+// Throws std::invalid_argument for numbers that are not, and a MotionError for
+// a reach whose body could touch a still shape.
+Wander make_wander(const WanderParams& params, float body,
+                   const contracts::Obstacles& obstacles);
 
 // Where it is at `t`.
 contracts::Float3 position(const Wander& wander, frame::Seconds t);

@@ -26,50 +26,68 @@ RestirPtInitialPass::RestirPtInitialPass(const Library& library)
       pipeline_(library.compute_pipeline("restir_pt_initial")),
       mnee_(library) {}
 
-void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
-    if (resources.path_settings == 0 || resources.path_reservoirs == 0 || resources.primaries == 0 ||
-        resources.light == 0 || resources.light_tiles == 0 || resources.light_power == 0 ||
-        resources.mnee_requests == 0 || resources.mnee_header == 0) {
-        throw MetalError("RestirPtInitialPass: the frame lacks one of its ReSTIR PT's settings, path reservoirs, "
-                         "primary hits, light buffer, light tiles, power pyramid or MNEE's work list");
-    }
-    if (power_->maxTotalThreadsPerThreadgroup() < contracts::light_power_threads) {
-        throw MetalError("RestirPtInitialPass: the power pyramid's kernel takes fewer threads a threadgroup than "
-                         "its one threadgroup's " + std::to_string(contracts::light_power_threads));
-    }
-    namespace binding = bindings::restir_pt;
-    MTL4::ArgumentTable* arguments = resources.arguments;
-    bind_scene(resources, SceneCamera::bound, "RestirPtInitialPass");
-    arguments->setAddress(resources.path_settings, binding::settings);
-    arguments->setAddress(resources.path_reservoirs, binding::reservoirs);
-    arguments->setAddress(resources.primaries, binding::primaries);
-    arguments->setAddress(resources.light, binding::light);
-    arguments->setAddress(resources.light_tiles, binding::light_tiles);
-    arguments->setAddress(resources.light_power, binding::light_power);
-    // Unread without temporal reuse, where they are 0: bound then to arrays
-    // that exist (the light buffer, this frame's transforms), since Metal's
-    // validation refuses a null binding the kernel declares.
-    arguments->setAddress(resources.previous_positions != 0 ? resources.previous_positions : resources.light,
-                          binding::previous_positions);
-    arguments->setAddress(resources.last_transforms != 0 ? resources.last_transforms : resources.transforms,
-                          binding::last_transforms);
-    arguments->setAddress(resources.mnee_requests, binding::mnee_requests);
-    arguments->setAddress(resources.mnee_header, binding::mnee_header);
-    // The power pyramid, one threadgroup (contracts/light_tile.h), which the
-    // tiles are drawn from (GPU.8: a write and its reader).
-    encoder->setComputePipelineState(power_.get());
-    encoder->dispatchThreadgroups(MTL::Size{1, 1, 1}, MTL::Size{contracts::light_power_threads, 1, 1});
-    barrier_after_dispatch(encoder);
-    encoder->setComputePipelineState(tiles_.get());
-    encoder->dispatchThreads(
-        MTL::Size{contracts::light_tiles * contracts::light_tile_size, 1, 1},
-        MTL::Size{std::min<NS::UInteger>(tiles_->maxTotalThreadsPerThreadgroup(), tiles_group), 1, 1});
-    // The tiles, which the tree's candidates read (GPU.8: a write and its reader).
-    barrier_after_dispatch(encoder);
-    encoder->setComputePipelineState(pipeline_.get());
-    dispatch_per_pixel(encoder, pipeline_.get(), resources.traced);  // a thread a traced pixel
-    // The tree's MNEE requests solved, their light into the light buffer.
-    mnee_.record(encoder, resources);
+void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder,
+                                 const FrameResources& resources) const {
+  if (resources.path_settings == 0 || resources.path_reservoirs == 0 ||
+      resources.primaries == 0 || resources.light == 0 ||
+      resources.light_tiles == 0 || resources.light_power == 0 ||
+      resources.mnee_requests == 0 || resources.mnee_header == 0) {
+    throw MetalError(
+        "RestirPtInitialPass: the frame lacks one of its ReSTIR PT's settings, "
+        "path reservoirs, "
+        "primary hits, light buffer, light tiles, power pyramid or MNEE's work "
+        "list");
+  }
+  if (power_->maxTotalThreadsPerThreadgroup() <
+      contracts::light_power_threads) {
+    throw MetalError(
+        "RestirPtInitialPass: the power pyramid's kernel takes fewer threads a "
+        "threadgroup than "
+        "its one threadgroup's " +
+        std::to_string(contracts::light_power_threads));
+  }
+  namespace binding = bindings::restir_pt;
+  MTL4::ArgumentTable* arguments = resources.arguments;
+  bind_scene(resources, SceneCamera::bound, "RestirPtInitialPass");
+  arguments->setAddress(resources.path_settings, binding::settings);
+  arguments->setAddress(resources.path_reservoirs, binding::reservoirs);
+  arguments->setAddress(resources.primaries, binding::primaries);
+  arguments->setAddress(resources.light, binding::light);
+  arguments->setAddress(resources.light_tiles, binding::light_tiles);
+  arguments->setAddress(resources.light_power, binding::light_power);
+  // Unread without temporal reuse, where they are 0: bound then to arrays
+  // that exist (the light buffer, this frame's transforms), since Metal's
+  // validation refuses a null binding the kernel declares.
+  arguments->setAddress(resources.previous_positions != 0
+                            ? resources.previous_positions
+                            : resources.light,
+                        binding::previous_positions);
+  arguments->setAddress(resources.last_transforms != 0
+                            ? resources.last_transforms
+                            : resources.transforms,
+                        binding::last_transforms);
+  arguments->setAddress(resources.mnee_requests, binding::mnee_requests);
+  arguments->setAddress(resources.mnee_header, binding::mnee_header);
+  // The power pyramid, one threadgroup (contracts/light_tile.h), which the
+  // tiles are drawn from (GPU.8: a write and its reader).
+  encoder->setComputePipelineState(power_.get());
+  encoder->dispatchThreadgroups(
+      MTL::Size{1, 1, 1}, MTL::Size{contracts::light_power_threads, 1, 1});
+  barrier_after_dispatch(encoder);
+  encoder->setComputePipelineState(tiles_.get());
+  encoder->dispatchThreads(
+      MTL::Size{contracts::light_tiles * contracts::light_tile_size, 1, 1},
+      MTL::Size{std::min<NS::UInteger>(tiles_->maxTotalThreadsPerThreadgroup(),
+                                       tiles_group),
+                1, 1});
+  // The tiles, which the tree's candidates read (GPU.8: a write and its
+  // reader).
+  barrier_after_dispatch(encoder);
+  encoder->setComputePipelineState(pipeline_.get());
+  dispatch_per_pixel(encoder, pipeline_.get(),
+                     resources.traced);  // a thread a traced pixel
+  // The tree's MNEE requests solved, their light into the light buffer.
+  mnee_.record(encoder, resources);
 }
 
 }  // namespace serenity::metal

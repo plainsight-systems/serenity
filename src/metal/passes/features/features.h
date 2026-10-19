@@ -35,16 +35,17 @@ namespace serenity::metal {
 // MB at 1920 x 1080. Read, the scene as the path pass reads it. One
 // dispatch. Measured in docs/research/2026-10-14-denoiser-features.md.
 class FeaturesPass {
-public:
-    explicit FeaturesPass(const Library& library);
+ public:
+  explicit FeaturesPass(const Library& library);
 
-    // Records the pass. Throws MetalError if `resources` lacks the scene,
-    // camera, transforms, glows, the feature constants, last frame's
-    // transforms or any feature image.
-    void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+  // Records the pass. Throws MetalError if `resources` lacks the scene,
+  // camera, transforms, glows, the feature constants, last frame's
+  // transforms or any feature image.
+  void record(MTL4::ComputeCommandEncoder* encoder,
+              const FrameResources& resources) const;
 
-private:
-    NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
+ private:
+  NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
 };
 
 }  // namespace serenity::metal

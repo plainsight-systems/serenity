@@ -25,17 +25,18 @@ namespace serenity::metal {
 //
 // Cost: measured in docs/research/2026-10-11-restir-pt-phase2.md.
 class RestirPtDuplicationPass {
-public:
-    // Throws MetalError if the device runs fewer than 24 x 24 threads in a
-    // group of this kernel.
-    explicit RestirPtDuplicationPass(const Library& library);
+ public:
+  // Throws MetalError if the device runs fewer than 24 x 24 threads in a
+  // group of this kernel.
+  explicit RestirPtDuplicationPass(const Library& library);
 
-    // Records the pass. Throws MetalError if `resources` lacks anything it
-    // reads or writes above.
-    void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+  // Records the pass. Throws MetalError if `resources` lacks anything it
+  // reads or writes above.
+  void record(MTL4::ComputeCommandEncoder* encoder,
+              const FrameResources& resources) const;
 
-private:
-    NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
+ private:
+  NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
 };
 
 }  // namespace serenity::metal

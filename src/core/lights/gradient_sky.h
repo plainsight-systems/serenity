@@ -8,22 +8,25 @@
 // a ray that leaves the scene sees (metal/integrator/path.metal.h, step 2).
 // The shader half is metal/lights/gradient_sky.metal.h.
 
-#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace lights {
 
 struct GradientSkyData {
-    contracts::Float3 zenith;
-    float padding0;
-    contracts::Float3 horizon;
-    float padding1;
+  contracts::Float3 zenith;
+  float padding0;
+  contracts::Float3 horizon;
+  float padding1;
 };
 
-static_assert(sizeof(GradientSkyData) == 32, "GradientSkyData must be the same 32 bytes on the host and in shaders");
+static_assert(
+    sizeof(GradientSkyData) == 32,
+    "GradientSkyData must be the same 32 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<GradientSkyData>, "GradientSkyData is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<GradientSkyData>,
+              "GradientSkyData is written to the GPU as bytes");
 #endif
 
 }  // namespace lights

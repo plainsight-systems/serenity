@@ -1,9 +1,8 @@
 #pragma once
 
-#include <string_view>
-
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
+#include <string_view>
 
 #include "core/frame/extent.h"
 #include "metal/device/library.h"
@@ -32,19 +31,20 @@ namespace serenity::metal {
 // pass, if the replay's pipeline takes fewer threads a group than the
 // grid gives it.
 class ShiftReplay {
-public:
-    ShiftReplay(const Library& library, const char* shift, const char* replay, const char* merge,
-                std::string_view pass);
+ public:
+  ShiftReplay(const Library& library, const char* shift, const char* replay,
+              const char* merge, std::string_view pass);
 
-    // The four dispatches, the shift and the merge over the grid `traced`
-    // (frame_resources.h), the replay by the grid at `replay_grid`.
-    void record(MTL4::ComputeCommandEncoder* encoder, frame::Extent traced, MTL::GPUAddress replay_grid) const;
+  // The four dispatches, the shift and the merge over the grid `traced`
+  // (frame_resources.h), the replay by the grid at `replay_grid`.
+  void record(MTL4::ComputeCommandEncoder* encoder, frame::Extent traced,
+              MTL::GPUAddress replay_grid) const;
 
-private:
-    NS::SharedPtr<MTL::ComputePipelineState> shift_;
-    NS::SharedPtr<MTL::ComputePipelineState> grid_;
-    NS::SharedPtr<MTL::ComputePipelineState> replay_;
-    NS::SharedPtr<MTL::ComputePipelineState> merge_;
+ private:
+  NS::SharedPtr<MTL::ComputePipelineState> shift_;
+  NS::SharedPtr<MTL::ComputePipelineState> grid_;
+  NS::SharedPtr<MTL::ComputePipelineState> replay_;
+  NS::SharedPtr<MTL::ComputePipelineState> merge_;
 };
 
 }  // namespace serenity::metal

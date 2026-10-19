@@ -30,46 +30,54 @@ using serenity::tests::LeaveQuery;
 using serenity::tests::LeaveResult;
 
 // The cosines to the normal the leaving rays take, head on to grazing.
-constant float leave_cosines[serenity::tests::leave_cosine_count] = {1.0f,  0.5f,   0.1f, 0.03f,
-                                                                    0.01f, 3e-3f, 1e-3f, 3e-4f};
+constant float leave_cosines[serenity::tests::leave_cosine_count] = {
+    1.0f, 0.5f, 0.1f, 0.03f, 0.01f, 3e-3f, 1e-3f, 3e-4f};
 
 kernel void leave_probe(device LeaveResult* out [[buffer(0)]],
                         device const LeaveQuery* queries [[buffer(1)]],
                         constant uint& count [[buffer(2)]],
-                        serenity::shaders::SceneStructure structure [[buffer(3)]],
-                        constant serenity::shapes::ShapeRecord* records [[buffer(4)]],
-                        constant serenity::contracts::Transform* transforms [[buffer(5)]],
+                        serenity::shaders::SceneStructure structure
+                        [[buffer(3)]],
+                        constant serenity::shapes::ShapeRecord* records
+                        [[buffer(4)]],
+                        constant serenity::contracts::Transform* transforms
+                        [[buffer(5)]],
                         constant serenity::shapes::BoxData* boxes [[buffer(6)]],
                         uint i [[thread_position_in_grid]]) {
-    if (i >= count * serenity::tests::leave_directions) {
-        return;
-    }
-    const Shapes shapes{records, transforms, boxes};
-    const LeaveQuery query = queries[i / serenity::tests::leave_directions];
-    const uint j = i % serenity::tests::leave_directions;
-    const metal::raytracing::ray aimed(to_float3(query.origin), to_float3(query.direction), 0.0f, unbounded);
-    const Hit found = trace(structure, shapes, aimed, serenity::contracts::RayMask::everything);
-    LeaveResult result{};
-    if (!found.found || found.primitive != query.shape) {
-        out[i] = result;
-        return;
-    }
-    result.found = 1u;
-    const serenity::contracts::SurfaceInteraction surface =
-        surface_interaction(shapes, found.primitive, aimed.origin + found.t * aimed.direction, aimed.direction);
-
-    const float3 n = to_float3(surface.geometric_normal);
-    const float cosine = leave_cosines[j / 2u] * ((j % 2u) == 0u ? 1.0f : -1.0f);
-    const float angle = 2.0f * M_PI_F * unit_float(pcg_hash(i ^ 0x6a09e667u));
-    const Tangents about = tangents(n);
-    const float sine = metal::sqrt(1.0f - cosine * cosine);
-    const float3 direction = metal::normalize(cosine * n + sine * (metal::cos(angle) * about.t +
-                                                                   metal::sin(angle) * about.b));
-    const Hit hit = trace(structure, shapes, leave(surface, direction), serenity::contracts::RayMask::everything);
-    result.outward = leaves_outward(surface, direction) ? 1u : 0u;
-    result.hit = hit.found ? 1u : 0u;
-    result.hit_shape = hit.primitive;
-    result.t = hit.t;
-    result.cosine = metal::dot(direction, n);
+  if (i >= count * serenity::tests::leave_directions) {
+    return;
+  }
+  const Shapes shapes{records, transforms, boxes};
+  const LeaveQuery query = queries[i / serenity::tests::leave_directions];
+  const uint j = i % serenity::tests::leave_directions;
+  const metal::raytracing::ray aimed(
+      to_float3(query.origin), to_float3(query.direction), 0.0f, unbounded);
+  const Hit found =
+      trace(structure, shapes, aimed, serenity::contracts::RayMask::everything);
+  LeaveResult result{};
+  if (!found.found || found.primitive != query.shape) {
     out[i] = result;
+    return;
+  }
+  result.found = 1u;
+  const serenity::contracts::SurfaceInteraction surface = surface_interaction(
+      shapes, found.primitive, aimed.origin + found.t * aimed.direction,
+      aimed.direction);
+
+  const float3 n = to_float3(surface.geometric_normal);
+  const float cosine = leave_cosines[j / 2u] * ((j % 2u) == 0u ? 1.0f : -1.0f);
+  const float angle = 2.0f * M_PI_F * unit_float(pcg_hash(i ^ 0x6a09e667u));
+  const Tangents about = tangents(n);
+  const float sine = metal::sqrt(1.0f - cosine * cosine);
+  const float3 direction =
+      metal::normalize(cosine * n + sine * (metal::cos(angle) * about.t +
+                                            metal::sin(angle) * about.b));
+  const Hit hit = trace(structure, shapes, leave(surface, direction),
+                        serenity::contracts::RayMask::everything);
+  result.outward = leaves_outward(surface, direction) ? 1u : 0u;
+  result.hit = hit.found ? 1u : 0u;
+  result.hit_shape = hit.primitive;
+  result.t = hit.t;
+  result.cosine = metal::dot(direction, n);
+  out[i] = result;
 }

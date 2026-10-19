@@ -15,6 +15,10 @@
 //
 // Failures are the test's (P.7), as the probe runner's are.
 
+#include <doctest/doctest.h>
+
+#include <Foundation/Foundation.hpp>
+#include <Metal/Metal.hpp>
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
@@ -23,11 +27,6 @@
 #include <span>
 #include <utility>
 #include <vector>
-
-#include <doctest/doctest.h>
-
-#include <Foundation/Foundation.hpp>
-#include <Metal/Metal.hpp>
 
 #include "core/contracts/transform.h"
 #include "gpu/support/probe_runner.h"
@@ -44,12 +43,12 @@ namespace serenity::tests {
 // A scene on the GPU, as a frame traces it: its arrays, its shapes'
 // transforms and its structure; and the probes' library (metallib::probes).
 struct Traced {
-    metal::Device& device;
-    metal::Submission& submission;
-    const metal::Library& library;
-    const metal::SceneBuffers& buffers;
-    metal::ShapeTransforms& transforms;
-    metal::SceneAcceleration& acceleration;
+  metal::Device& device;
+  metal::Submission& submission;
+  const metal::Library& library;
+  const metal::SceneBuffers& buffers;
+  metal::ShapeTransforms& transforms;
+  metal::SceneAcceleration& acceleration;
 };
 
 // Dispatches `threads` threads of `kernel` over `traced`'s structure for
@@ -57,51 +56,59 @@ struct Traced {
 // `inputs` from 1, in one command buffer; if `moved` is given, first writes
 // them as the slot's transforms and records the structure's update.
 template <GpuBytes Out>
-std::vector<Out> run_traced(const Traced& traced, const char* kernel, std::size_t threads,
-                            std::initializer_list<Binding> inputs,
-                            const std::optional<std::vector<contracts::Transform>>& moved = std::nullopt) {
-    const auto pipeline = traced.library.compute_pipeline(kernel);
-    const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
-    MTL::Device* mtl = traced.device.handle();
-    const auto out = shared_buffer(traced.device, traced.submission, {}, threads * sizeof(Out));
-    std::vector<NS::SharedPtr<MTL::Buffer>> buffers;
-    for (const Binding& input : inputs) {
-        buffers.push_back(shared_buffer(traced.device, traced.submission, input.bytes()));
-    }
-    auto descriptor = NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-    descriptor->setMaxBufferBindCount(1 + buffers.size() + 4);
-    NS::Error* error = nullptr;
-    auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
-    INFO("argument table: " << reason(error));
-    REQUIRE(table);
+std::vector<Out> run_traced(
+    const Traced& traced, const char* kernel, std::size_t threads,
+    std::initializer_list<Binding> inputs,
+    const std::optional<std::vector<contracts::Transform>>& moved =
+        std::nullopt) {
+  const auto pipeline = traced.library.compute_pipeline(kernel);
+  const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+  MTL::Device* mtl = traced.device.handle();
+  const auto out = shared_buffer(traced.device, traced.submission, {},
+                                 threads * sizeof(Out));
+  std::vector<NS::SharedPtr<MTL::Buffer>> buffers;
+  for (const Binding& input : inputs) {
+    buffers.push_back(
+        shared_buffer(traced.device, traced.submission, input.bytes()));
+  }
+  auto descriptor =
+      NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
+  descriptor->setMaxBufferBindCount(1 + buffers.size() + 4);
+  NS::Error* error = nullptr;
+  auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
+  INFO("argument table: " << reason(error));
+  REQUIRE(table);
 
-    const metal::FrameSlot slot = traced.submission.begin();
-    MTL4::ComputeCommandEncoder* encoder = slot.commands->computeCommandEncoder();
-    REQUIRE(encoder != nullptr);
-    if (moved) {
-        const std::span<contracts::Transform> placed = traced.transforms.transforms(slot.slot);
-        std::ranges::copy(*moved, placed.begin());
-        traced.acceleration.update(encoder, slot.slot, placed);
-    }
-    std::size_t index = 0;
-    table->setAddress(out->gpuAddress(), index++);
-    for (const auto& buffer : buffers) {
-        table->setAddress(buffer->gpuAddress(), index++);
-    }
-    table->setAddress(traced.acceleration.address(slot.slot), index++);  // the structures by mask
-    table->setAddress(traced.buffers.block().shapes, index++);
-    table->setAddress(traced.transforms.address(slot.slot), index++);
-    table->setAddress(traced.buffers.block().boxes, index);
-    encoder->setArgumentTable(table.get());
-    encoder->setComputePipelineState(pipeline.get());
-    encoder->dispatchThreads(MTL::Size(threads, 1, 1), MTL::Size(pipeline->threadExecutionWidth(), 1, 1));
-    encoder->endEncoding();
-    traced.submission.commit();
-    (void)traced.submission.wait_until_complete(slot.sequence);
+  const metal::FrameSlot slot = traced.submission.begin();
+  MTL4::ComputeCommandEncoder* encoder = slot.commands->computeCommandEncoder();
+  REQUIRE(encoder != nullptr);
+  if (moved) {
+    const std::span<contracts::Transform> placed =
+        traced.transforms.transforms(slot.slot);
+    std::ranges::copy(*moved, placed.begin());
+    traced.acceleration.update(encoder, slot.slot, placed);
+  }
+  std::size_t index = 0;
+  table->setAddress(out->gpuAddress(), index++);
+  for (const auto& buffer : buffers) {
+    table->setAddress(buffer->gpuAddress(), index++);
+  }
+  table->setAddress(traced.acceleration.address(slot.slot),
+                    index++);  // the structures by mask
+  table->setAddress(traced.buffers.block().shapes, index++);
+  table->setAddress(traced.transforms.address(slot.slot), index++);
+  table->setAddress(traced.buffers.block().boxes, index);
+  encoder->setArgumentTable(table.get());
+  encoder->setComputePipelineState(pipeline.get());
+  encoder->dispatchThreads(MTL::Size(threads, 1, 1),
+                           MTL::Size(pipeline->threadExecutionWidth(), 1, 1));
+  encoder->endEncoding();
+  traced.submission.commit();
+  (void)traced.submission.wait_until_complete(slot.sequence);
 
-    std::vector<Out> results(threads);
-    std::memcpy(results.data(), out->contents(), threads * sizeof(Out));
-    return results;
+  std::vector<Out> results(threads);
+  std::memcpy(results.data(), out->contents(), threads * sizeof(Out));
+  return results;
 }
 
 }  // namespace serenity::tests

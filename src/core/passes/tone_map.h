@@ -38,10 +38,10 @@
 //           ceiling, 65504, the largest half float, bounds what the
 //           pyramid stores (steps 2 and 3): light brighter than it after
 //           exposure glares as if it were that bright, and its core is
-//           white either way (step 5). Clamped after the average rather than texel by texel, so a
-//           backend reads E through its hardware's filter, 13 reads a texel
-//           of B_0 rather than 52; the two differ only for light past the
-//           ceiling.
+//           white either way (step 5). Clamped after the average rather than
+//           texel by texel, so a backend reads E through its hardware's filter,
+//           13 reads a texel of B_0 rather than 52; the two differ only for
+//           light past the ceiling.
 //   Step 2  Down: level k's size is max(1, ceil(previous / 2)) on each axis,
 //           from W x H, so a frame of any size, 1 x 1 included, has every
 //           level. B_0 is E filtered to its size and divided by
@@ -86,14 +86,14 @@
 //           0.04 taken off, eased in below 2 F90 = 0.08 by a parabola whose
 //           curve is 1 / (4 F90) = 6.25; p its largest channel; if p >=
 //           neutral_start (0.8 - F90), with d = 1 - neutral_start, p_n = 1 -
-//           d^2 / (p + d - neutral_start), C *= p_n / p, and C mixed toward (p_n, p_n, p_n)
-//           by 1 - 1 / (neutral_desaturation (p - p_n) + 1). Below the start
-//           colors pass as they are; above, they roll off toward 1 and toward
-//           white, so a firefly's core goes white-hot while its glare keeps
-//           its yellow. Chosen over ACES and AgX because it keeps hues where
-//           they are, and the brass and the fireflies are the scene's colors
-//           (the note above gives AgX's measured shift of brass). Every
-//           input is finite (step 1), so every output is.
+//           d^2 / (p + d - neutral_start), C *= p_n / p, and C mixed toward
+//           (p_n, p_n, p_n) by 1 - 1 / (neutral_desaturation (p - p_n) + 1).
+//           Below the start colors pass as they are; above, they roll off
+//           toward 1 and toward white, so a firefly's core goes white-hot while
+//           its glare keeps its yellow. Chosen over ACES and AgX because it
+//           keeps hues where they are, and the brass and the fireflies are the
+//           scene's colors (the note above gives AgX's measured shift of
+//           brass). Every input is finite (step 1), so every output is.
 //   Step 6  Encode: sRGB's transfer function, into the target.
 
 #include "core/contracts/shared_layout.h"
@@ -102,26 +102,33 @@ namespace serenity {
 namespace passes {
 
 SERENITY_CONSTANT uint32_t bloom_levels = 6u;
-SERENITY_CONSTANT float bloom_ceiling = 65504.0f;  // the largest half float (step 1)
-SERENITY_CONSTANT float down_middle = 0.5f;        // step 2's weights: the middle box,
-SERENITY_CONSTANT float down_corner = 0.125f;      // and each corner box
-SERENITY_CONSTANT float neutral_f90 = 0.04f;       // step 5: F90, the offset taken off
-SERENITY_CONSTANT float neutral_toe = 0.08f;       // step 5: 2 F90, below which the offset eases in
-SERENITY_CONSTANT float neutral_toe_curve = 6.25f; // step 5: 1 / (4 F90), the easing's curve
-SERENITY_CONSTANT float neutral_start = 0.76f;     // step 5: 0.8 - F90
+SERENITY_CONSTANT float bloom_ceiling =
+    65504.0f;  // the largest half float (step 1)
+SERENITY_CONSTANT float down_middle =
+    0.5f;  // step 2's weights: the middle box,
+SERENITY_CONSTANT float down_corner = 0.125f;  // and each corner box
+SERENITY_CONSTANT float neutral_f90 =
+    0.04f;  // step 5: F90, the offset taken off
+SERENITY_CONSTANT float neutral_toe =
+    0.08f;  // step 5: 2 F90, below which the offset eases in
+SERENITY_CONSTANT float neutral_toe_curve =
+    6.25f;  // step 5: 1 / (4 F90), the easing's curve
+SERENITY_CONSTANT float neutral_start = 0.76f;  // step 5: 0.8 - F90
 SERENITY_CONSTANT float neutral_desaturation = 0.15f;
-SERENITY_CONSTANT float max_exposure = 10.0f;      // stops, either way
+SERENITY_CONSTANT float max_exposure = 10.0f;  // stops, either way
 
 // The settings, as the graph gives them and a shader reads them.
 struct ToneMap {
-    float exposure;  // stops; finite, within [-max_exposure, max_exposure]
-    float bloom;     // in [0, 1)
-    float padding[2];
+  float exposure;  // stops; finite, within [-max_exposure, max_exposure]
+  float bloom;     // in [0, 1)
+  float padding[2];
 };
 
-static_assert(sizeof(ToneMap) == 16, "ToneMap must be the same 16 bytes on the host and in shaders");
+static_assert(sizeof(ToneMap) == 16,
+              "ToneMap must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<ToneMap>, "ToneMap is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<ToneMap>,
+              "ToneMap is written to the GPU as bytes");
 #endif
 
 }  // namespace passes

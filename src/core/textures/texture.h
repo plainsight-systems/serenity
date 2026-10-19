@@ -24,19 +24,22 @@ namespace serenity {
 namespace textures {
 
 enum class TextureKind : uint32_t {
-    checker = 0,  // laid on the world (checker.h)
-    wood = 1,     // a plank tabletop, laid on the world (wood.h)
-    swirl = 2,    // a marble's core, laid on its shape (swirl.h)
+  checker = 0,  // laid on the world (checker.h)
+  wood = 1,     // a plank tabletop, laid on the world (wood.h)
+  swirl = 2,    // a marble's core, laid on its shape (swirl.h)
 };
 
 struct TextureRecord {
-    TextureKind kind;
-    uint32_t index;  // into that kind's array
+  TextureKind kind;
+  uint32_t index;  // into that kind's array
 };
 
-static_assert(sizeof(TextureRecord) == 8, "TextureRecord must be the same 8 bytes on the host and in shaders");
+static_assert(
+    sizeof(TextureRecord) == 8,
+    "TextureRecord must be the same 8 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<TextureRecord>, "TextureRecord is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<TextureRecord>,
+              "TextureRecord is written to the GPU as bytes");
 #endif
 
 }  // namespace textures

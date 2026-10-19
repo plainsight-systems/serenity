@@ -386,7 +386,8 @@ constant constexpr uint roulette_from = 3;  // the 4th surface, counting from 0
 constant constexpr uint safety_stop = 256;
 // A path's numbers, at most 7 a surface and the camera's 4, lie below every
 // purpose's (sampler.metal.h).
-static_assert(7u * safety_stop + 4u <= purpose_span, "a path's numbers stay below the purposes'");
+static_assert(7u * safety_stop + 4u <= purpose_span,
+              "a path's numbers stay below the purposes'");
 constant constexpr float max_survival = 0.95f;
 
 // The scene (metal/scene/scene_block.metal.h), its lights chosen among
@@ -405,43 +406,48 @@ constant constexpr float counted_in_full = 0.0f;
 // such densities, and power_heuristic(f, g) + power_heuristic(g, f) is 1
 // to rounding (I.7).
 inline float power_heuristic(float drawn, float other) {
-    const float larger = metal::max(drawn, other);
-    const float smaller = metal::min(drawn, other);
-    if (smaller == larger) {
-        return 0.5f;  // equal densities, both infinite included: an even split
-    }
-    // larger > smaller >= 0, so r is in [0, 1): 0 where `smaller` is 0 or
-    // `larger` infinite.
-    const float r = smaller / larger;
-    const float r2 = r * r;
-    const float of_larger = 1.0f / (1.0f + r2);
-    return drawn == larger ? of_larger : r2 * of_larger;
+  const float larger = metal::max(drawn, other);
+  const float smaller = metal::min(drawn, other);
+  if (smaller == larger) {
+    return 0.5f;  // equal densities, both infinite included: an even split
+  }
+  // larger > smaller >= 0, so r is in [0, 1): 0 where `smaller` is 0 or
+  // `larger` infinite.
+  const float r = smaller / larger;
+  const float r2 = r * r;
+  const float of_larger = 1.0f / (1.0f + r2);
+  return drawn == larger ? of_larger : r2 * of_larger;
 }
 
 // Step 5's w_l: for a light sample along `wi`, drawn with density
 // `light_density` (P p_l, above 0), at a surface of `bsdf` seen from `wo`.
-inline float next_event_weight(float light_density, serenity::contracts::Bsdf bsdf, float3 wo, float3 wi) {
-    return power_heuristic(light_density, bsdf_pdf(bsdf, wo, wi));
+inline float next_event_weight(float light_density,
+                               serenity::contracts::Bsdf bsdf, float3 wo,
+                               float3 wi) {
+  return power_heuristic(light_density, bsdf_pdf(bsdf, wo, wi));
 }
 
 // Step 3's w_b: for `light`, struck by a ray from `origin` along unit
 // `direction` that its surface drew with emission_pdf `emission_pdf`, p_l
 // asked from the ray's origin, where step 5 at that surface draws from
 // (above, "One origin").
-inline float emission_weight(UniformLight selection, Lights lights, serenity::lights::LightRecord light, float3 origin,
+inline float emission_weight(UniformLight selection, Lights lights,
+                             serenity::lights::LightRecord light, float3 origin,
                              float3 direction, float emission_pdf) {
-    if (emission_pdf == counted_in_full) {
-        return 1.0f;
-    }
-    return power_heuristic(emission_pdf,
-                           light_probability(selection, light) * light_pdf(lights, light, origin, direction));
+  if (emission_pdf == counted_in_full) {
+    return 1.0f;
+  }
+  return power_heuristic(emission_pdf,
+                         light_probability(selection, light) *
+                             light_pdf(lights, light, origin, direction));
 }
 
 // Where step 5 at `surface`, seen from `wo`, draws its light sample from and
 // its shadow ray leaves from: the point a ray toward wo's side leaves from
 // (above, "One origin").
-inline float3 next_event_origin(serenity::contracts::SurfaceInteraction surface, float3 wo) {
-    return leaving_point(surface, wo);
+inline float3 next_event_origin(serenity::contracts::SurfaceInteraction surface,
+                                float3 wo) {
+  return leaving_point(surface, wo);
 }
 
 // Step 6's emission_pdf for the sample `next` drawn at `here`: how the next
@@ -449,11 +455,11 @@ inline float3 next_event_origin(serenity::contracts::SurfaceInteraction surface,
 // lobe's direction, and for one that leaves on wo's other side, which step
 // 5 does not draw; else the density it was drawn with (above, "One origin").
 inline float handed_on(serenity::contracts::BsdfSample next, Shading here) {
-    if ((next.lobe & serenity::contracts::lobe_delta) != 0u ||
-        !leave_alike(here.surface, to_float3(next.direction), here.wo)) {
-        return counted_in_full;
-    }
-    return next.pdf;
+  if ((next.lobe & serenity::contracts::lobe_delta) != 0u ||
+      !leave_alike(here.surface, to_float3(next.direction), here.wo)) {
+    return counted_in_full;
+  }
+  return next.pdf;
 }
 
 // Step 5 at `here`: what one light, chosen uniformly, sends toward wo along
@@ -462,31 +468,37 @@ inline float handed_on(serenity::contracts::BsdfSample next, Shading here) {
 // traced from next_event_origin(). T is over `here`'s medium, which the
 // shadow ray crosses, along it (above, step 5). The term is whole before
 // the shadow ray's query, so it alone of the step is alive across it.
-inline float3 next_event(Scene scene, Shading here, thread PathNumbers& numbers) {
-    const SelectedLight chosen = select_light(scene.selection(), next_number(numbers));
-    const float3 origin = next_event_origin(here.surface, here.wo);
-    const serenity::contracts::LightSample sample =
-        sample_light(scene.lights(), chosen.light, origin, next_numbers2(numbers));
-    if (sample.pdf <= 0.0f || !metal::any(to_float3(sample.radiance) > 0.0f)) {
-        return float3(0.0f);  // no light from it: no shadow ray (step 5)
-    }
-    const float3 wi = to_float3(sample.direction);
-    if (!leave_alike(here.surface, wi, here.wo)) {
-        return float3(0.0f);  // on wo's other side: not step 5's to draw (above, "One origin")
-    }
-    const float3 f = bsdf_evaluate(here.bsdf, here.wo, wi);
-    if (!metal::any(f > 0.0f)) {
-        return float3(0.0f);
-    }
-    const float light_density = chosen.probability * sample.pdf;
-    const float3 unshadowed = f * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) *
-                              to_float3(sample.radiance) * transmittance(scene.media(), here.medium, sample.distance) /
-                              light_density * next_event_weight(light_density, here.bsdf, here.wo, wi);
-    if (occluded(scene.structure, scene.shapes(), metal::raytracing::ray(origin, wi, 0.0f, sample.distance),
-                 serenity::contracts::RayMask::occluders, sample.primitive)) {
-        return float3(0.0f);
-    }
-    return unshadowed;
+inline float3 next_event(Scene scene, Shading here,
+                         thread PathNumbers& numbers) {
+  const SelectedLight chosen =
+      select_light(scene.selection(), next_number(numbers));
+  const float3 origin = next_event_origin(here.surface, here.wo);
+  const serenity::contracts::LightSample sample = sample_light(
+      scene.lights(), chosen.light, origin, next_numbers2(numbers));
+  if (sample.pdf <= 0.0f || !metal::any(to_float3(sample.radiance) > 0.0f)) {
+    return float3(0.0f);  // no light from it: no shadow ray (step 5)
+  }
+  const float3 wi = to_float3(sample.direction);
+  if (!leave_alike(here.surface, wi, here.wo)) {
+    return float3(0.0f);  // on wo's other side: not step 5's to draw (above,
+                          // "One origin")
+  }
+  const float3 f = bsdf_evaluate(here.bsdf, here.wo, wi);
+  if (!metal::any(f > 0.0f)) {
+    return float3(0.0f);
+  }
+  const float light_density = chosen.probability * sample.pdf;
+  const float3 unshadowed =
+      f * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) *
+      to_float3(sample.radiance) *
+      transmittance(scene.media(), here.medium, sample.distance) /
+      light_density * next_event_weight(light_density, here.bsdf, here.wo, wi);
+  if (occluded(scene.structure, scene.shapes(),
+               metal::raytracing::ray(origin, wi, 0.0f, sample.distance),
+               serenity::contracts::RayMask::occluders, sample.primitive)) {
+    return float3(0.0f);
+  }
+  return unshadowed;
 }
 
 // What the loop carries from one surface to the next (steps 1 to 8): the
@@ -496,64 +508,71 @@ inline float3 next_event(Scene scene, Shading here, thread PathNumbers& numbers)
 // itself starts just off that surface, so its hit distance is short of the
 // stretch by that much, and a medium's stretch is measured from here).
 struct Walk {
-    float3 L;
-    float3 beta;
-    float eta_scale;
-    float emission_pdf;
-    uint medium;
-    metal::raytracing::ray along;
-    float3 from;
+  float3 L;
+  float3 beta;
+  float eta_scale;
+  float emission_pdf;
+  uint medium;
+  metal::raytracing::ray along;
+  float3 from;
 };
 
 // The walk at the camera: nothing found, throughput 1, the camera's own ray,
 // which counts a light in full, in air.
 inline Walk walk_from(CameraRay camera) {
-    return Walk{float3(0.0f),
-                float3(1.0f),
-                1.0f,
-                counted_in_full,
-                serenity::contracts::no_medium,
-                metal::raytracing::ray(camera.origin, camera.direction, 0.0f, unbounded),
-                camera.origin};
+  return Walk{
+      float3(0.0f),
+      float3(1.0f),
+      1.0f,
+      counted_in_full,
+      serenity::contracts::no_medium,
+      metal::raytracing::ray(camera.origin, camera.direction, 0.0f, unbounded),
+      camera.origin};
 }
 
 // The path tracer's gather (above): the light found added to L, its numbers
 // drawn in turn from the path's counter, Russian roulette dividing the
 // throughput by the survival chance. Stateless.
 struct Radiance {
-    // Step 2.
-    [[gnu::always_inline]] void escaped(Scene scene, thread float3& L, float3 beta, metal::raytracing::ray along,
-                                        uint) const {
-        L += beta * gradient_sky(scene.sky(), along.direction);
-    }
+  // Step 2.
+  [[gnu::always_inline]] void escaped(Scene scene, thread float3& L,
+                                      float3 beta, metal::raytracing::ray along,
+                                      uint) const {
+    L += beta * gradient_sky(scene.sky(), along.direction);
+  }
 
-    // Step 3.
-    [[gnu::always_inline]] void emitted(Scene scene, thread float3& L, float3 beta, serenity::lights::LightRecord light,
-                                        float3 point, metal::raytracing::ray along, float emission_pdf, uint,
-                                        serenity::contracts::SurfaceInteraction) const {
-        L += beta * light_emitted(scene.lights(), light, point, -along.direction) *
-             emission_weight(scene.selection(), scene.lights(), light, along.origin, along.direction, emission_pdf);
-    }
+  // Step 3.
+  [[gnu::always_inline]] void emitted(
+      Scene scene, thread float3& L, float3 beta,
+      serenity::lights::LightRecord light, float3 point,
+      metal::raytracing::ray along, float emission_pdf, uint,
+      serenity::contracts::SurfaceInteraction) const {
+    L += beta * light_emitted(scene.lights(), light, point, -along.direction) *
+         emission_weight(scene.selection(), scene.lights(), light, along.origin,
+                         along.direction, emission_pdf);
+  }
 
-    // Step 5.
-    [[gnu::always_inline]] void next_event(Scene scene, thread float3& L, float3 beta, Shading here, uint,
-                                           thread PathNumbers& numbers) const {
-        L += beta * path::next_event(scene, here, numbers);
-    }
+  // Step 5.
+  [[gnu::always_inline]] void next_event(Scene scene, thread float3& L,
+                                         float3 beta, Shading here, uint,
+                                         thread PathNumbers& numbers) const {
+    L += beta * path::next_event(scene, here, numbers);
+  }
 
-    // Step 6's numbers, the path's next three.
-    [[gnu::always_inline]] float3 bsdf_numbers(thread PathNumbers& numbers, uint) const {
-        return next_numbers3(numbers);
-    }
+  // Step 6's numbers, the path's next three.
+  [[gnu::always_inline]] float3 bsdf_numbers(thread PathNumbers& numbers,
+                                             uint) const {
+    return next_numbers3(numbers);
+  }
 
-    // Step 7: roulette divides a survivor's throughput by its chance,
-    // written in the loop itself (walk_path).
-    static constant constexpr bool divides_by_survival = true;
+  // Step 7: roulette divides a survivor's throughput by its chance,
+  // written in the loop itself (walk_path).
+  static constant constexpr bool divides_by_survival = true;
 
-    // It watches no vertex: crossed(), continues_at(), reached() and
-    // scattered() are never asked (every surface goes on to the loop's
-    // safety stop).
-    static constant constexpr bool observes_vertices = false;
+  // It watches no vertex: crossed(), continues_at(), reached() and
+  // scattered() are never asked (every surface goes on to the loop's
+  // safety stop).
+  static constant constexpr bool observes_vertices = false;
 };
 
 // Steps 1 to 8 for each surface, from the walk's ray until the path ends;
@@ -565,120 +584,132 @@ struct Radiance {
 // pass's loop keeps the same state live across its ray queries, and no
 // more (GPU.3; docs/research/2026-10-10-path-kernel-counters.md).
 template <typename Gather>
-[[gnu::always_inline]] inline Walk walk_path(Scene scene, Walk walk, thread PathNumbers& numbers,
+[[gnu::always_inline]] inline Walk walk_path(Scene scene, Walk walk,
+                                             thread PathNumbers& numbers,
                                              thread Gather& gather) {
-    float3 L = walk.L;
-    float3 beta = walk.beta;
-    float eta_scale = walk.eta_scale;
-    float emission_pdf = walk.emission_pdf;
-    uint medium = walk.medium;
-    metal::raytracing::ray along = walk.along;
-    float3 from = walk.from;
-    const auto carried = [&]() __attribute__((always_inline)) {
-        return Walk{L, beta, eta_scale, emission_pdf, medium, along, from};
-    };
+  float3 L = walk.L;
+  float3 beta = walk.beta;
+  float eta_scale = walk.eta_scale;
+  float emission_pdf = walk.emission_pdf;
+  uint medium = walk.medium;
+  metal::raytracing::ray along = walk.along;
+  float3 from = walk.from;
+  const auto carried = [&]() __attribute__((always_inline)) {
+    return Walk{L, beta, eta_scale, emission_pdf, medium, along, from};
+  };
 
-    // Steps 6 to 8 at `here`, the path's surface number `surface`: the walk
-    // sent on from it; the lobe step 6 drew there, or 0 where the path ends
-    // there (a sample's lobe has a bit of each pair, contract 2).
-    const auto scatter = [&](Shading here, uint surface) __attribute__((always_inline)) -> uint {
-        // Step 6.
-        const serenity::contracts::BsdfSample next =
-            bsdf_sample(here.bsdf, here.wo, gather.bsdf_numbers(numbers, surface));
-        if (next.pdf <= 0.0f) {
-            return 0u;
-        }
-        const float3 wi = to_float3(next.direction);
-        const float3 factor =
-            to_float3(next.value) * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) / next.pdf;
-        beta *= factor;
-        emission_pdf = handed_on(next, here);
-        if constexpr (Gather::observes_vertices) {
-            gather.scattered(here, next, surface, from, factor);
-        }
-        if ((next.lobe & serenity::contracts::lobe_transmission) != 0u) {
-            medium = (here.surface.flags & serenity::contracts::arrived_from_outside) != 0u
-                         ? here.surface.interior
-                         : serenity::contracts::no_medium;
-            const float eta = bsdf_eta(here.bsdf, here.wo);
-            eta_scale *= eta * eta;
-        }
-
-        // Step 7: the path tracer's roulette written out here, so its
-        // division stays behind its branch (as a hook, the compiler
-        // hoisted it); a gather that folds survival elsewhere is asked.
-        if constexpr (Gather::divides_by_survival) {
-            if (surface >= roulette_from) {
-                const float energy = metal::max(metal::max(beta.r, beta.g), beta.b) * eta_scale;
-                const float q = metal::min(energy, max_survival);
-                if (next_number(numbers) >= q) {
-                    return 0u;
-                }
-                beta /= q;
-            }
-        } else if (!gather.survives(beta, eta_scale, surface, numbers)) {
-            return 0u;
-        }
-
-        // Step 8.
-        from = to_float3(here.surface.position);
-        along = leave(here.surface, wi);
-        return next.lobe;
-    };
-
-    for (uint surface = 0u; surface < safety_stop; ++surface) {
-        // Step 1.
-        const Hit hit = trace(scene.structure, scene.shapes(), along, serenity::contracts::RayMask::everything);
-
-        // Step 2.
-        if (!hit.found) {
-            gather.escaped(scene, L, beta, along, surface);
-            break;
-        }
-        const float3 point = along.origin + hit.t * along.direction;
-        beta *= transmittance(scene.media(), medium, metal::distance(from, point));
-        if constexpr (Gather::observes_vertices) {
-            gather.crossed(scene, medium, metal::distance(from, point));
-        }
-        const serenity::contracts::SurfaceInteraction surface_at =
-            surface_interaction(scene.shapes(), hit.primitive, point, along.direction);
-
-        // Step 3.
-        const ShapeLight glowing = light_at(scene.lights(), hit.primitive);
-        if (glowing.is_light) {
-            gather.emitted(scene, L, beta, glowing.light, point, along, emission_pdf, surface, surface_at);
-        }
-        if constexpr (Gather::observes_vertices) {
-            if (!gather.continues_at(surface)) {
-                break;
-            }
-        }
-
-        // Step 4.
-        const Shading here{surface_at, resolve_bsdf(scene.materials(), scene.textures(), surface_at),
-                           -along.direction, medium};
-        if constexpr (Gather::observes_vertices) {
-            gather.reached(here, from, surface);
-        }
-
-        // Step 5.
-        if (serenity::contracts::aims_at_lights(bsdf_lobes(here.bsdf)) && scene.selection().count > 0u) {
-            gather.next_event(scene, L, beta, here, surface, numbers);
-        }
-
-        // Steps 6 to 8.
-        if (scatter(here, surface) == 0u) {
-            break;
-        }
+  // Steps 6 to 8 at `here`, the path's surface number `surface`: the walk
+  // sent on from it; the lobe step 6 drew there, or 0 where the path ends
+  // there (a sample's lobe has a bit of each pair, contract 2).
+  const auto scatter = [&](Shading here, uint surface)
+                           __attribute__((always_inline)) -> uint {
+    // Step 6.
+    const serenity::contracts::BsdfSample next =
+        bsdf_sample(here.bsdf, here.wo, gather.bsdf_numbers(numbers, surface));
+    if (next.pdf <= 0.0f) {
+      return 0u;
     }
-    return carried();
+    const float3 wi = to_float3(next.direction);
+    const float3 factor =
+        to_float3(next.value) *
+        metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) / next.pdf;
+    beta *= factor;
+    emission_pdf = handed_on(next, here);
+    if constexpr (Gather::observes_vertices) {
+      gather.scattered(here, next, surface, from, factor);
+    }
+    if ((next.lobe & serenity::contracts::lobe_transmission) != 0u) {
+      medium =
+          (here.surface.flags & serenity::contracts::arrived_from_outside) != 0u
+              ? here.surface.interior
+              : serenity::contracts::no_medium;
+      const float eta = bsdf_eta(here.bsdf, here.wo);
+      eta_scale *= eta * eta;
+    }
+
+    // Step 7: the path tracer's roulette written out here, so its
+    // division stays behind its branch (as a hook, the compiler
+    // hoisted it); a gather that folds survival elsewhere is asked.
+    if constexpr (Gather::divides_by_survival) {
+      if (surface >= roulette_from) {
+        const float energy =
+            metal::max(metal::max(beta.r, beta.g), beta.b) * eta_scale;
+        const float q = metal::min(energy, max_survival);
+        if (next_number(numbers) >= q) {
+          return 0u;
+        }
+        beta /= q;
+      }
+    } else if (!gather.survives(beta, eta_scale, surface, numbers)) {
+      return 0u;
+    }
+
+    // Step 8.
+    from = to_float3(here.surface.position);
+    along = leave(here.surface, wi);
+    return next.lobe;
+  };
+
+  for (uint surface = 0u; surface < safety_stop; ++surface) {
+    // Step 1.
+    const Hit hit = trace(scene.structure, scene.shapes(), along,
+                          serenity::contracts::RayMask::everything);
+
+    // Step 2.
+    if (!hit.found) {
+      gather.escaped(scene, L, beta, along, surface);
+      break;
+    }
+    const float3 point = along.origin + hit.t * along.direction;
+    beta *= transmittance(scene.media(), medium, metal::distance(from, point));
+    if constexpr (Gather::observes_vertices) {
+      gather.crossed(scene, medium, metal::distance(from, point));
+    }
+    const serenity::contracts::SurfaceInteraction surface_at =
+        surface_interaction(scene.shapes(), hit.primitive, point,
+                            along.direction);
+
+    // Step 3.
+    const ShapeLight glowing = light_at(scene.lights(), hit.primitive);
+    if (glowing.is_light) {
+      gather.emitted(scene, L, beta, glowing.light, point, along, emission_pdf,
+                     surface, surface_at);
+    }
+    if constexpr (Gather::observes_vertices) {
+      if (!gather.continues_at(surface)) {
+        break;
+      }
+    }
+
+    // Step 4.
+    const Shading here{
+        surface_at,
+        resolve_bsdf(scene.materials(), scene.textures(), surface_at),
+        -along.direction, medium};
+    if constexpr (Gather::observes_vertices) {
+      gather.reached(here, from, surface);
+    }
+
+    // Step 5.
+    if (serenity::contracts::aims_at_lights(bsdf_lobes(here.bsdf)) &&
+        scene.selection().count > 0u) {
+      gather.next_event(scene, L, beta, here, surface, numbers);
+    }
+
+    // Steps 6 to 8.
+    if (scatter(here, surface) == 0u) {
+      break;
+    }
+  }
+  return carried();
 }
 
 // The radiance arriving along the camera's ray, by the algorithm above;
 // `numbers` the path's own. The path pass's.
-inline float3 radiance(Scene scene, CameraRay camera, thread PathNumbers& numbers) {
-    Radiance gather;
-    return walk_path(scene, walk_from(camera), numbers, gather).L;
+inline float3 radiance(Scene scene, CameraRay camera,
+                       thread PathNumbers& numbers) {
+  Radiance gather;
+  return walk_path(scene, walk_from(camera), numbers, gather).L;
 }
 
 }  // namespace path

@@ -45,76 +45,80 @@ namespace serenity::presentation {
 // swapchain's presentation timing) and refuses a range that is not
 // positive and in order (minimum <= preferred <= maximum).
 struct FrameRate {
-    float minimum = 0.0F;
-    float maximum = 0.0F;
-    float preferred = 0.0F;
+  float minimum = 0.0F;
+  float maximum = 0.0F;
+  float preferred = 0.0F;
 };
 
 // An earlier frame's time on the GPU, in host time, once the backend has
 // settled it: what the frame times count (core/measurement/frame_times.h).
 // Only frames are reported, never start-up work.
 struct SettledFrame {
-    frame::Seconds gpu_start{0.0};
-    frame::Seconds gpu_end{0.0};
+  frame::Seconds gpu_start{0.0};
+  frame::Seconds gpu_end{0.0};
 };
 
 // What a frame shown reports, for the window's title.
 struct FrameReport {
-    frame::Extent size;                   // the size it was rendered at
-    std::optional<SettledFrame> settled;  // a frame its submission settled, if one
-    std::uint64_t non_finite_samples = 0; // samples left out as not finite, so far (a bug)
-    std::uint64_t mnee_lost_requests = 0; // caustic requests lost, so far (a bug)
+  frame::Extent size;  // the size it was rendered at
+  std::optional<SettledFrame>
+      settled;  // a frame its submission settled, if one
+  std::uint64_t non_finite_samples =
+      0;  // samples left out as not finite, so far (a bug)
+  std::uint64_t mnee_lost_requests =
+      0;  // caustic requests lost, so far (a bug)
 };
 
 class FrameClient {
-public:
-    // Handles the window's events since the last call, waiting for one at
-    // most `longest` (0: not at all). Returns whether the run goes on: false
-    // once the window is closed. May throw; the source then stops and lets
-    // it through (E.2).
-    virtual bool events(frame::Seconds longest) = 0;
+ public:
+  // Handles the window's events since the last call, waiting for one at
+  // most `longest` (0: not at all). Returns whether the run goes on: false
+  // once the window is closed. May throw; the source then stops and lets
+  // it through (E.2).
+  virtual bool events(frame::Seconds longest) = 0;
 
-    // The size the next frame is to be rendered at: the window's pixels at
-    // its scale; a side of 0 when the window shows nothing (minimized), and
-    // then the source renders none.
-    virtual frame::Extent size() = 0;
+  // The size the next frame is to be rendered at: the window's pixels at
+  // its scale; a side of 0 when the window shows nothing (minimized), and
+  // then the source renders none.
+  virtual frame::Extent size() = 0;
 
-    // The inputs of the frame the source is about to render, which will be
-    // shown at `shown_at` (host time, the source's instant); `view`
-    // changed when the size the source renders at changed since the last
-    // frame shown. Each call is followed by shown(), once the frame is
-    // rendered and presented, unless rendering fails, which ends the run.
-    // May throw, as rendering may (below).
-    virtual frame::FrameInputs inputs(frame::Seconds shown_at, frame::View view) = 0;
+  // The inputs of the frame the source is about to render, which will be
+  // shown at `shown_at` (host time, the source's instant); `view`
+  // changed when the size the source renders at changed since the last
+  // frame shown. Each call is followed by shown(), once the frame is
+  // rendered and presented, unless rendering fails, which ends the run.
+  // May throw, as rendering may (below).
+  virtual frame::FrameInputs inputs(frame::Seconds shown_at,
+                                    frame::View view) = 0;
 
-    // The frame inputs() gave was rendered and presented.
-    virtual void shown(const FrameReport& report) = 0;
+  // The frame inputs() gave was rendered and presented.
+  virtual void shown(const FrameReport& report) = 0;
 
-protected:
-    FrameClient() = default;
-    FrameClient(const FrameClient&) = default;
-    FrameClient& operator=(const FrameClient&) = default;
-    FrameClient(FrameClient&&) = default;
-    FrameClient& operator=(FrameClient&&) = default;
-    ~FrameClient() = default;
+ protected:
+  FrameClient() = default;
+  FrameClient(const FrameClient&) = default;
+  FrameClient& operator=(const FrameClient&) = default;
+  FrameClient(FrameClient&&) = default;
+  FrameClient& operator=(FrameClient&&) = default;
+  ~FrameClient() = default;
 };
 
 class FrameSource {
-public:
-    // Runs the window: calls `client`'s events() and, as the source paces
-    // them, its frames, until events() returns false. Throws what a frame
-    // or the client threw, or the source's own failure, having stopped
-    // calling frames first (E.2, E.6: what it started for the run is
-    // released on the way out). Called once.
-    virtual void run(FrameClient& client) = 0;
+ public:
+  // Runs the window: calls `client`'s events() and, as the source paces
+  // them, its frames, until events() returns false. Throws what a frame
+  // or the client threw, or the source's own failure, having stopped
+  // calling frames first (E.2, E.6: what it started for the run is
+  // released on the way out). Called once.
+  virtual void run(FrameClient& client) = 0;
 
-protected:
-    FrameSource() = default;
-    FrameSource(const FrameSource&) = default;
-    FrameSource& operator=(const FrameSource&) = default;
-    FrameSource(FrameSource&&) = default;
-    FrameSource& operator=(FrameSource&&) = default;
-    ~FrameSource() = default;
+ protected:
+  FrameSource() = default;
+  FrameSource(const FrameSource&) = default;
+  FrameSource& operator=(const FrameSource&) = default;
+  FrameSource(FrameSource&&) = default;
+  FrameSource& operator=(FrameSource&&) = default;
+  ~FrameSource() = default;
 };
 
 }  // namespace serenity::presentation

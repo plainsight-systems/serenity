@@ -67,13 +67,13 @@
 //           (pixels, the current position plus the vector is the previous
 //           one). The pinhole projection, not the jittered sample's
 //           position, so a still scene under a still camera has motion 0,
-//           to float rounding (some 10^-6 pixels), whatever the jitter. The sky's: of the direction, at
-//           infinity, so only the camera's turn moves it; dz 0. Where the
-//           frame has no frame before (frame::FrameInputs::previous, none
-//           at a history's first frame), 0: as DLSS's reset, the consumer
-//           told so by the same input. Glass and mirrors show what is
-//           behind or before them moving differently from their own
-//           surface (production's specular motion vectors); not given
+//           to float rounding (some 10^-6 pixels), whatever the jitter. The
+//           sky's: of the direction, at infinity, so only the camera's turn
+//           moves it; dz 0. Where the frame has no frame before
+//           (frame::FrameInputs::previous, none at a history's first frame), 0:
+//           as DLSS's reset, the consumer told so by the same input. Glass and
+//           mirrors show what is behind or before them moving differently from
+//           their own surface (production's specular motion vectors); not given
 //           here (docs/process/QUEUE.md).
 //
 // Half floats for three of the four, as production's G-buffers keep them
@@ -104,14 +104,17 @@ SERENITY_CONSTANT uint32_t feature_delta_hops = 8u;
 // whether there is a frame before, and its camera framed for this frame's
 // size (camera/thin_lens.h), for the motion.
 struct FeatureConstants {
-    CameraData previous_camera;
-    uint32_t previous;  // 1 when there is a frame before, else 0
-    uint32_t padding[3];
+  CameraData previous_camera;
+  uint32_t previous;  // 1 when there is a frame before, else 0
+  uint32_t padding[3];
 };
 
-static_assert(sizeof(FeatureConstants) == 80, "FeatureConstants must be the same 80 bytes on the host and in shaders");
+static_assert(
+    sizeof(FeatureConstants) == 80,
+    "FeatureConstants must be the same 80 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<FeatureConstants>, "FeatureConstants is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<FeatureConstants>,
+              "FeatureConstants is written to the GPU as bytes");
 #endif
 
 }  // namespace contracts

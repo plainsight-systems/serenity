@@ -95,22 +95,24 @@ namespace contracts {
 
 // How a path ends (flags bits 16 to 17).
 enum class PathEnd : uint32_t {
-    none = 0,    // an empty reservoir
-    nee = 1,     // on a light NEE at x_{d-1} drew
-    struck = 2,  // on a light a ray x_{d-1}'s BSDF drew struck
-    sky = 3,     // in the sky, a ray from x_{d-1} escaping
+  none = 0,    // an empty reservoir
+  nee = 1,     // on a light NEE at x_{d-1} drew
+  struck = 2,  // on a light a ray x_{d-1}'s BSDF drew struck
+  sky = 3,     // in the sky, a ray from x_{d-1} escaping
 };
 
 // The flags' fields (above), named once (ES.45).
 SERENITY_CONSTANT uint32_t path_count_mask = 0xffu;
 SERENITY_CONSTANT uint32_t path_length_shift = 8u;
 SERENITY_CONSTANT uint32_t path_rc_shift = 12u;
-SERENITY_CONSTANT uint32_t path_index_mask = 0xfu;  // d and k, after their shifts
+SERENITY_CONSTANT uint32_t path_index_mask =
+    0xfu;  // d and k, after their shifts
 SERENITY_CONSTANT uint32_t path_end_shift = 16u;
 SERENITY_CONSTANT uint32_t path_end_mask = 0x3u;
 SERENITY_CONSTANT uint32_t path_lobe_before_shift = 18u;
 SERENITY_CONSTANT uint32_t path_lobe_at_shift = 23u;
-SERENITY_CONSTANT uint32_t path_lobe_mask = 0x1fu;  // contract 2's five lobe bits
+SERENITY_CONSTANT uint32_t path_lobe_mask =
+    0x1fu;  // contract 2's five lobe bits
 SERENITY_CONSTANT uint32_t path_face_shift = 28u;
 SERENITY_CONSTANT uint32_t path_face_mask = 0x7u;
 
@@ -124,71 +126,76 @@ SERENITY_CONSTANT uint32_t path_max_count = 255u;
 // and a box's face, 0 to 5 (the axis times 2, plus 1 on the axis's maximum
 // side); 0 for a sphere.
 struct ShapePoint {
-    uint32_t point;
-    uint32_t face;
+  uint32_t point;
+  uint32_t face;
 };
 
 struct PathReservoir {
-    float weight;            // W
-    Float3 integrand;        // F, RGB
-    uint32_t seed_pixel;     // the stream: its pixel's key
-    uint32_t seed_frame;     // and its frame
-    uint32_t flags;          // M, d, k, the end, the lobes at x_{k-1} and x_k, x_k's face
-    uint32_t primitive;      // x_k's shape
-    uint32_t point;          // x_k's point in that shape's coordinates
-    uint32_t incoming;       // at x_k toward x_{k+1}, equal-area octahedral
-    Float3 radiance;         // the suffix after x_k's BSDF
-    float jacobian;          // p_{k-1} G(x_{k-1} -> x_k) p_k, the source's
-    float light_density;     // P p_l of the light the path ends on, from x_{d-1}
-    uint32_t padding;        // Algorithm 1's second seed: unused (above)
+  float weight;         // W
+  Float3 integrand;     // F, RGB
+  uint32_t seed_pixel;  // the stream: its pixel's key
+  uint32_t seed_frame;  // and its frame
+  uint32_t flags;  // M, d, k, the end, the lobes at x_{k-1} and x_k, x_k's face
+  uint32_t primitive;   // x_k's shape
+  uint32_t point;       // x_k's point in that shape's coordinates
+  uint32_t incoming;    // at x_k toward x_{k+1}, equal-area octahedral
+  Float3 radiance;      // the suffix after x_k's BSDF
+  float jacobian;       // p_{k-1} G(x_{k-1} -> x_k) p_k, the source's
+  float light_density;  // P p_l of the light the path ends on, from x_{d-1}
+  uint32_t padding;     // Algorithm 1's second seed: unused (above)
 };
 
-static_assert(sizeof(PathReservoir) == 64, "PathReservoir must be the same 64 bytes on the host and in shaders");
+static_assert(
+    sizeof(PathReservoir) == 64,
+    "PathReservoir must be the same 64 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<PathReservoir>, "PathReservoir is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<PathReservoir>,
+              "PathReservoir is written to the GPU as bytes");
 #endif
 
 // The fields of what a path is, in the flags' order (C.1), packed by
 // pack_path_flags() and read back one by one below.
 struct PathShape {
-    uint32_t count;        // M, at most path_max_count
-    uint32_t length;       // d, at most path_max_length
-    uint32_t rc;           // k, or 0
-    PathEnd end;
-    uint32_t lobe_before;  // at x_{k-1}
-    uint32_t lobe_at;      // at x_k
-    uint32_t face;         // x_k's box face
+  uint32_t count;   // M, at most path_max_count
+  uint32_t length;  // d, at most path_max_length
+  uint32_t rc;      // k, or 0
+  PathEnd end;
+  uint32_t lobe_before;  // at x_{k-1}
+  uint32_t lobe_at;      // at x_k
+  uint32_t face;         // x_k's box face
 };
 
 constexpr uint32_t pack_path_flags(PathShape shape) {
-    return (shape.count & path_count_mask) | ((shape.length & path_index_mask) << path_length_shift) |
-           ((shape.rc & path_index_mask) << path_rc_shift) |
-           ((static_cast<uint32_t>(shape.end) & path_end_mask) << path_end_shift) |
-           ((shape.lobe_before & path_lobe_mask) << path_lobe_before_shift) |
-           ((shape.lobe_at & path_lobe_mask) << path_lobe_at_shift) |
-           ((shape.face & path_face_mask) << path_face_shift);
+  return (shape.count & path_count_mask) |
+         ((shape.length & path_index_mask) << path_length_shift) |
+         ((shape.rc & path_index_mask) << path_rc_shift) |
+         ((static_cast<uint32_t>(shape.end) & path_end_mask)
+          << path_end_shift) |
+         ((shape.lobe_before & path_lobe_mask) << path_lobe_before_shift) |
+         ((shape.lobe_at & path_lobe_mask) << path_lobe_at_shift) |
+         ((shape.face & path_face_mask) << path_face_shift);
 }
 
 constexpr uint32_t path_count(uint32_t flags) {
-    return flags & path_count_mask;
+  return flags & path_count_mask;
 }
 constexpr uint32_t path_length(uint32_t flags) {
-    return (flags >> path_length_shift) & path_index_mask;
+  return (flags >> path_length_shift) & path_index_mask;
 }
 constexpr uint32_t path_rc(uint32_t flags) {
-    return (flags >> path_rc_shift) & path_index_mask;
+  return (flags >> path_rc_shift) & path_index_mask;
 }
 constexpr PathEnd path_end(uint32_t flags) {
-    return static_cast<PathEnd>((flags >> path_end_shift) & path_end_mask);
+  return static_cast<PathEnd>((flags >> path_end_shift) & path_end_mask);
 }
 constexpr uint32_t path_lobe_before(uint32_t flags) {
-    return (flags >> path_lobe_before_shift) & path_lobe_mask;
+  return (flags >> path_lobe_before_shift) & path_lobe_mask;
 }
 constexpr uint32_t path_lobe_at(uint32_t flags) {
-    return (flags >> path_lobe_at_shift) & path_lobe_mask;
+  return (flags >> path_lobe_at_shift) & path_lobe_mask;
 }
 constexpr uint32_t path_face(uint32_t flags) {
-    return (flags >> path_face_shift) & path_face_mask;
+  return (flags >> path_face_shift) & path_face_mask;
 }
 
 }  // namespace contracts

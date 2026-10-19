@@ -131,8 +131,8 @@ namespace serenity::frame {
 // Not performance-sensitive: a few comparisons a frame.
 
 class HistoryError : public std::runtime_error {
-public:
-    explicit HistoryError(const std::string& what) : std::runtime_error(what) {}
+ public:
+  explicit HistoryError(const std::string& what) : std::runtime_error(what) {}
 };
 
 // Whether the scene changes from one instant to another (anything moves or
@@ -144,8 +144,8 @@ enum class View { same, changed };
 
 // What a frame joining the image is told.
 struct Joined {
-    std::uint32_t held = 0;  // frames the image holds before this one
-    bool remade = false;     // the image must be made anew, at the frame's size
+  std::uint32_t held = 0;  // frames the image holds before this one
+  bool remade = false;     // the image must be made anew, at the frame's size
 };
 
 // The part of the two rules above that is the same (ES.3): which frames of
@@ -154,140 +154,145 @@ struct Joined {
 // Kept by History and ReuseHistory, each adding its own checks; not for
 // their callers.
 class HeldFrames {
-public:
-    // Frame `index` starts over at `size`, holding the frames from `since`
-    // (its own index) on; whether the images must be made anew, having no
-    // size yet or another one.
-    bool start(std::uint64_t since, std::uint64_t index, Extent size);
+ public:
+  // Frame `index` starts over at `size`, holding the frames from `since`
+  // (its own index) on; whether the images must be made anew, having no
+  // size yet or another one.
+  bool start(std::uint64_t since, std::uint64_t index, Extent size);
 
-    // Whether frame `index`, claiming the frames from `since` on at `size`,
-    // is the next frame of what is held: the same start and size, and the
-    // index after the last held.
-    bool continues(std::uint64_t since, std::uint64_t index, Extent size) const;
+  // Whether frame `index`, claiming the frames from `since` on at `size`,
+  // is the next frame of what is held: the same start and size, and the
+  // index after the last held.
+  bool continues(std::uint64_t since, std::uint64_t index, Extent size) const;
 
-    // Frame `index`, which continues(), joins.
-    void take(std::uint64_t index) { next_ = index + 1; }
+  // Frame `index`, which continues(), joins.
+  void take(std::uint64_t index) { next_ = index + 1; }
 
-    // What is held, for refusals: "frames a .. b at W x H", or "nothing yet".
-    std::string holds() const;
+  // What is held, for refusals: "frames a .. b at W x H", or "nothing yet".
+  std::string holds() const;
 
-private:
-    bool made_ = false;  // whether the images have a size yet
-    Extent size_;
-    std::uint64_t since_ = 0;  // the first frame held
-    std::uint64_t next_ = 0;   // the index of the frame taken next
+ private:
+  bool made_ = false;  // whether the images have a size yet
+  Extent size_;
+  std::uint64_t since_ = 0;  // the first frame held
+  std::uint64_t next_ = 0;   // the index of the frame taken next
 };
 
 class History {
-public:
-    // Frame `inputs`, at `size`, of a scene that changes or not, joins the
-    // image; see above. Throws HistoryError, changing nothing, if it may not.
-    Joined join(const FrameInputs& inputs, Extent size, SceneMotion motion);
+ public:
+  // Frame `inputs`, at `size`, of a scene that changes or not, joins the
+  // image; see above. Throws HistoryError, changing nothing, if it may not.
+  Joined join(const FrameInputs& inputs, Extent size, SceneMotion motion);
 
-private:
-    HeldFrames held_;    // the frames from accumulated_since
-    Seconds time_{0.0};  // the time of the frames it holds
+ private:
+  HeldFrames held_;    // the frames from accumulated_since
+  Seconds time_{0.0};  // the time of the frames it holds
 };
 
 // A running window's accumulated_since, frame by frame.
 class LiveHistory {
-public:
-    explicit LiveHistory(SceneMotion motion) : changes_(motion == SceneMotion::changing) {}
+ public:
+  explicit LiveHistory(SceneMotion motion)
+      : changes_(motion == SceneMotion::changing) {}
 
-    // accumulated_since for frame `index`, the frames asked for in order;
-    // `view`, whether what the window shows changed since the last frame
-    // (its size). Throws HistoryError for an index before the one the
-    // image started at: frames out of order (I.5).
-    std::uint64_t since(std::uint64_t index, View view);
+  // accumulated_since for frame `index`, the frames asked for in order;
+  // `view`, whether what the window shows changed since the last frame
+  // (its size). Throws HistoryError for an index before the one the
+  // image started at: frames out of order (I.5).
+  std::uint64_t since(std::uint64_t index, View view);
 
-private:
-    bool changes_;
-    std::uint64_t since_ = 0;
+ private:
+  bool changes_;
+  std::uint64_t since_ = 0;
 };
 
 // What a frame joining the reuse history is told.
 struct ReuseJoined {
-    std::uint64_t held = 0;  // frames the history holds before this one: 0, the temporal merge merges nothing
-    bool remade = false;     // the records and reservoirs must be made anew, at the frame's size
+  std::uint64_t held = 0;  // frames the history holds before this one: 0, the
+                           // temporal merge merges nothing
+  bool remade = false;  // the records and reservoirs must be made anew, at the
+                        // frame's size
 };
 
 // The reuse history's rule (above), as History is the accumulated image's.
 class ReuseHistory {
-public:
-    // Frame `inputs`, at `size`, joins the reservoirs and records; see
-    // above. Throws HistoryError, changing nothing, if it may not.
-    ReuseJoined join(const FrameInputs& inputs, Extent size);
+ public:
+  // Frame `inputs`, at `size`, joins the reservoirs and records; see
+  // above. Throws HistoryError, changing nothing, if it may not.
+  ReuseJoined join(const FrameInputs& inputs, Extent size);
 
-private:
-    HeldFrames held_;  // the frames from reused_since
+ private:
+  HeldFrames held_;  // the frames from reused_since
 };
 
 // A running window's reused_since, frame by frame.
 class LiveReuse {
-public:
-    // reused_since for frame `index`; `view`, whether what the window shows
-    // changed since the last frame (its size). Starts over at the first
-    // frame, when the view changed, and when `index` is not the one after
-    // the last asked for. The last index asked again gives the same answer
-    // (a frame the window had no drawable for, and asks for again). Throws
-    // HistoryError for an index before the last asked for: frames out of
-    // order (I.5).
-    std::uint64_t since(std::uint64_t index, View view);
+ public:
+  // reused_since for frame `index`; `view`, whether what the window shows
+  // changed since the last frame (its size). Starts over at the first
+  // frame, when the view changed, and when `index` is not the one after
+  // the last asked for. The last index asked again gives the same answer
+  // (a frame the window had no drawable for, and asks for again). Throws
+  // HistoryError for an index before the last asked for: frames out of
+  // order (I.5).
+  std::uint64_t since(std::uint64_t index, View view);
 
-private:
-    bool started_ = false;
-    std::uint64_t since_ = 0;
-    std::uint64_t last_ = 0;
+ private:
+  bool started_ = false;
+  std::uint64_t since_ = 0;
+  std::uint64_t last_ = 0;
 };
 
 // One of the headless renderer's samples: the renderer's frame for it.
 struct Sample {
-    std::uint64_t index = 0;
-    std::uint64_t accumulated_since = 0;
-    // 0, the timeline's start, for a graph that reuses history (above);
-    // unread otherwise. Last, so the plan's positional Sample{index,
-    // accumulated_since} keeps its meaning.
-    std::uint64_t reused_since = 0;
+  std::uint64_t index = 0;
+  std::uint64_t accumulated_since = 0;
+  // 0, the timeline's start, for a graph that reuses history (above);
+  // unread otherwise. Last, so the plan's positional Sample{index,
+  // accumulated_since} keeps its meaning.
+  std::uint64_t reused_since = 0;
 };
 
 // What the headless renderer is asked to run, each by name, so two counts
 // and four flags cannot be passed in each other's places (I.24).
 struct HeadlessRun {
-    std::uint64_t first = 0;     // the first frame's index
-    std::uint64_t samples = 1;   // asked for per frame
-    bool accumulates = false;    // the graph accumulates (frame::accumulates)
-    bool scene_changes = false;  // anything in the scene moves or glows
-    bool time_frozen = false;    // every frame at one time
-    // The graph reuses history (frame::reuses_history). Last, after the
-    // members callers name in order.
-    bool reuses = false;
+  std::uint64_t first = 0;     // the first frame's index
+  std::uint64_t samples = 1;   // asked for per frame
+  bool accumulates = false;    // the graph accumulates (frame::accumulates)
+  bool scene_changes = false;  // anything in the scene moves or glows
+  bool time_frozen = false;    // every frame at one time
+  // The graph reuses history (frame::reuses_history). Last, after the
+  // members callers name in order.
+  bool reuses = false;
 };
 
 // Which sample of which frame, by name (I.24).
 struct SampleOf {
-    std::uint64_t frame = 0;
-    std::uint64_t sample = 0;
+  std::uint64_t frame = 0;
+  std::uint64_t sample = 0;
 };
 
 // How the headless renderer renders a run.
 struct HeadlessPlan {
-    // The first frame rendered: the run's first, or 0 for a graph that
-    // reuses history, which replays the frames before the run's first
-    // (above). The plan's samples, accumulated image included, start here.
-    std::uint64_t first = 0;
-    std::uint64_t samples = 1;  // rendered per frame: 1 for a graph that accumulates nothing
-    bool instants = false;      // each frame's image its own: the scene changes and time advances
-    // The first frame written: the run's first, always; frames first ..
-    // first_written - 1 are rendered and not written. Declared last, after
-    // the members plan_headless() initializes in order, so it changes none
-    // of their meanings.
-    std::uint64_t first_written = 0;
+  // The first frame rendered: the run's first, or 0 for a graph that
+  // reuses history, which replays the frames before the run's first
+  // (above). The plan's samples, accumulated image included, start here.
+  std::uint64_t first = 0;
+  std::uint64_t samples =
+      1;  // rendered per frame: 1 for a graph that accumulates nothing
+  bool instants =
+      false;  // each frame's image its own: the scene changes and time advances
+  // The first frame written: the run's first, always; frames first ..
+  // first_written - 1 are rendered and not written. Declared last, after
+  // the members plan_headless() initializes in order, so it changes none
+  // of their meanings.
+  std::uint64_t first_written = 0;
 
-    // Sample `of.sample` of frame `of.frame`. Preconditions, checked (I.5,
-    // E.2): of.sample < samples, else std::invalid_argument; and the frame's
-    // indices within 64 bits, else std::overflow_error rather than a wrapped
-    // index, which would seed a sample with numbers another already used.
-    Sample sample(SampleOf of) const;
+  // Sample `of.sample` of frame `of.frame`. Preconditions, checked (I.5,
+  // E.2): of.sample < samples, else std::invalid_argument; and the frame's
+  // indices within 64 bits, else std::overflow_error rather than a wrapped
+  // index, which would seed a sample with numbers another already used.
+  Sample sample(SampleOf of) const;
 };
 
 HeadlessPlan plan_headless(const HeadlessRun& run);

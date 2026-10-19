@@ -1,13 +1,12 @@
 #pragma once
 
+#include <Foundation/Foundation.hpp>
+#include <Metal/Metal.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string>
 #include <type_traits>
-
-#include <Foundation/Foundation.hpp>
-#include <Metal/Metal.hpp>
 
 #include "metal/device/device.h"
 #include "metal/device/error.h"
@@ -47,53 +46,56 @@ namespace serenity::metal {
 // Cost: the array's size times the copies, once; nothing per frame but what
 // the writer writes, and nothing allocated (MEM.9).
 class FrameArray {
-public:
-    // How many copies: one every frame shares, or one per frame in flight.
-    // A type, not a count, so no other number can be asked for (I.4).
-    enum class Copies { one, per_frame };
+ public:
+  // How many copies: one every frame shares, or one per frame in flight.
+  // A type, not a count, so no other number can be asked for (I.4).
+  enum class Copies { one, per_frame };
 
-    FrameArray(const Device& device, Submission& submission, std::span<const std::byte> initial, Copies copies);
+  FrameArray(const Device& device, Submission& submission,
+             std::span<const std::byte> initial, Copies copies);
 
-    FrameArray(const FrameArray&) = delete;
-    FrameArray& operator=(const FrameArray&) = delete;
-    FrameArray(FrameArray&&) = delete;
-    FrameArray& operator=(FrameArray&&) = delete;
-    ~FrameArray() = default;
+  FrameArray(const FrameArray&) = delete;
+  FrameArray& operator=(const FrameArray&) = delete;
+  FrameArray(FrameArray&&) = delete;
+  FrameArray& operator=(FrameArray&&) = delete;
+  ~FrameArray() = default;
 
-    // Frame slot `slot`'s copy, for the CPU to write; see above. Not const:
-    // it hands out the array to write (Con.2).
-    std::span<std::byte> bytes(std::uint32_t slot);
+  // Frame slot `slot`'s copy, for the CPU to write; see above. Not const:
+  // it hands out the array to write (Con.2).
+  std::span<std::byte> bytes(std::uint32_t slot);
 
-    // The same copy as the array of T it was made from: the one place its
-    // bytes are reinterpreted. T must be a type whose bytes are its value
-    // (SL.con.4, COPY.6: the copy was made by memcpy), and the copy whole
-    // T's, else MetalError (I.6: never a view that drops a partial T); each
-    // copy starts buffer_alignment-aligned, more than any T here needs.
-    template <typename T>
-    std::span<T> view(std::uint32_t slot) {
-        static_assert(std::is_trivially_copyable_v<T>, "a FrameArray holds bytes copied from Ts");
-        static_assert(alignof(T) <= buffer_alignment);
-        const std::span<std::byte> copy = bytes(slot);
-        if (copy.size() % sizeof(T) != 0) {
-            throw MetalError("FrameArray::view: a copy of " + std::to_string(copy.size()) + " bytes is not whole " +
-                             std::to_string(sizeof(T)) + "-byte values");
-        }
-        return {reinterpret_cast<T*>(copy.data()), copy.size() / sizeof(T)};
+  // The same copy as the array of T it was made from: the one place its
+  // bytes are reinterpreted. T must be a type whose bytes are its value
+  // (SL.con.4, COPY.6: the copy was made by memcpy), and the copy whole
+  // T's, else MetalError (I.6: never a view that drops a partial T); each
+  // copy starts buffer_alignment-aligned, more than any T here needs.
+  template <typename T>
+  std::span<T> view(std::uint32_t slot) {
+    static_assert(std::is_trivially_copyable_v<T>,
+                  "a FrameArray holds bytes copied from Ts");
+    static_assert(alignof(T) <= buffer_alignment);
+    const std::span<std::byte> copy = bytes(slot);
+    if (copy.size() % sizeof(T) != 0) {
+      throw MetalError("FrameArray::view: a copy of " +
+                       std::to_string(copy.size()) + " bytes is not whole " +
+                       std::to_string(sizeof(T)) + "-byte values");
     }
+    return {reinterpret_cast<T*>(copy.data()), copy.size() / sizeof(T)};
+  }
 
-    // Frame slot `slot`'s copy, as a shader binds it.
-    MTL::GPUAddress address(std::uint32_t slot) const;
+  // Frame slot `slot`'s copy, as a shader binds it.
+  MTL::GPUAddress address(std::uint32_t slot) const;
 
-private:
-    // Where slot `slot`'s copy starts; throws MetalError for a slot that is not
-    // one (I.6).
-    std::size_t offset(std::uint32_t slot) const;
+ private:
+  // Where slot `slot`'s copy starts; throws MetalError for a slot that is not
+  // one (I.6).
+  std::size_t offset(std::uint32_t slot) const;
 
-    NS::SharedPtr<MTL::Buffer> buffer_;
-    Resident resident_;       // released after the GPU is done with it (submission.h)
-    std::size_t size_ = 0;    // bytes in each copy
-    std::size_t stride_ = 0;  // bytes between copies
-    Copies copies_;
+  NS::SharedPtr<MTL::Buffer> buffer_;
+  Resident resident_;  // released after the GPU is done with it (submission.h)
+  std::size_t size_ = 0;    // bytes in each copy
+  std::size_t stride_ = 0;  // bytes between copies
+  Copies copies_;
 };
 
 }  // namespace serenity::metal

@@ -22,7 +22,8 @@ namespace serenity::output {
 //     other length is a PngError, checked before anything is written.
 //   - The values are written as they are: no gamma, no tone mapping. What
 //     they mean is decided before they get here.
-//   - Failure throws PngError naming the path (E.2, E.14). A partial file may be
+//   - Failure throws PngError naming the path (E.2, E.14). A partial file may
+//   be
 //     left behind; nothing reads a file whose write failed.
 //
 // Not performance-sensitive: used by the headless renderer, which is not
@@ -30,8 +31,8 @@ namespace serenity::output {
 // takes tens of milliseconds, on the CPU, after the frame is done.
 
 class PngError : public std::runtime_error {
-public:
-    explicit PngError(const std::string& what) : std::runtime_error(what) {}
+ public:
+  explicit PngError(const std::string& what) : std::runtime_error(what) {}
 };
 
 void write_png(const std::filesystem::path& path, frame::Extent extent,

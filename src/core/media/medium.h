@@ -17,17 +17,20 @@ namespace serenity {
 namespace media {
 
 enum class MediumKind : uint32_t {
-    absorbing = 0,  // absorbs and does not scatter: tinted glass (absorbing.h)
+  absorbing = 0,  // absorbs and does not scatter: tinted glass (absorbing.h)
 };
 
 struct MediumRecord {
-    MediumKind kind;
-    uint32_t index;  // into that kind's array
+  MediumKind kind;
+  uint32_t index;  // into that kind's array
 };
 
-static_assert(sizeof(MediumRecord) == 8, "MediumRecord must be the same 8 bytes on the host and in shaders");
+static_assert(
+    sizeof(MediumRecord) == 8,
+    "MediumRecord must be the same 8 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<MediumRecord>, "MediumRecord is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<MediumRecord>,
+              "MediumRecord is written to the GPU as bytes");
 #endif
 
 }  // namespace media

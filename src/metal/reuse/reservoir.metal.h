@@ -38,8 +38,8 @@ namespace shaders {
 // probability weight / weight_sum by `u` in [0, 1). A weight of 0 is never
 // kept.
 inline bool stream_pick(thread float& weight_sum, float weight, float u) {
-    weight_sum += weight;
-    return weight > 0.0f && u * weight_sum < weight;
+  weight_sum += weight;
+  return weight > 0.0f && u * weight_sum < weight;
 }
 
 }  // namespace shaders

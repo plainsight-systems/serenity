@@ -54,50 +54,55 @@ using namespace serenity;
 constexpr app::Points initial_window{1280, 800};
 
 // The frame rate asked of the frame source (above).
-constexpr presentation::FrameRate frame_rate{.minimum = 30.0F, .maximum = 60.0F, .preferred = 60.0F};
+constexpr presentation::FrameRate frame_rate{
+    .minimum = 30.0F, .maximum = 60.0F, .preferred = 60.0F};
 
 // The arguments after the program's name; none if the system gave not even
 // that (POSIX allows argc == 0).
 std::span<const char* const> arguments(int argc, char** argv) {
-    if (argc < 1) {
-        return {};
-    }
-    return {argv + 1, static_cast<std::size_t>(argc - 1)};
+  if (argc < 1) {
+    return {};
+  }
+  return {argv + 1, static_cast<std::size_t>(argc - 1)};
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-    try {
-        const app::Options options = app::parse(arguments(argc, argv));
-        const frame::Schedule schedule = frame::load_schedule(options.graph);
-        if (!frame::presents(schedule)) {
-            // The program's own refusal of its arguments, as serenity-headless
-            // refuses a graph that shows nothing (E.14).
-            throw app::OptionsError("the graph " + options.graph.string() +
-                                    " shows no image (it renders features alone, for serenity-headless "
-                                    "--features); a window needs one that does");
-        }
-        const std::optional<scene::SceneDescription> loaded =
-            options.scene.empty() ? std::nullopt : std::optional{scene::load(options.scene)};
-        const scene::SceneDescription* described = loaded ? &*loaded : nullptr;
-
-        app::Window window("Serenity", initial_window);
-        metal::Device device;
-        metal::Submission submission(device);
-        metal::Presenter presenter(device, submission, metal::LayerHandle{window.metal_layer()},
-                                   app::render_size(window.size_in_pixels(), options.scale));
-        metal::Renderer renderer(device, submission, schedule, described);
-        metal::DisplayFrames metal_frames(submission, presenter, renderer, frame_rate);
-
-        app::WindowFrames frames(window, described, options.scale);
-        presentation::FrameSource& source = metal_frames;
-        source.run(frames);
-
-        submission.finish();
-        return 0;
-    } catch (const std::exception& error) {
-        std::cerr << "serenity: " << error.what() << '\n';
-        return 1;
+  try {
+    const app::Options options = app::parse(arguments(argc, argv));
+    const frame::Schedule schedule = frame::load_schedule(options.graph);
+    if (!frame::presents(schedule)) {
+      // The program's own refusal of its arguments, as serenity-headless
+      // refuses a graph that shows nothing (E.14).
+      throw app::OptionsError(
+          "the graph " + options.graph.string() +
+          " shows no image (it renders features alone, for serenity-headless "
+          "--features); a window needs one that does");
     }
+    const std::optional<scene::SceneDescription> loaded =
+        options.scene.empty() ? std::nullopt
+                              : std::optional{scene::load(options.scene)};
+    const scene::SceneDescription* described = loaded ? &*loaded : nullptr;
+
+    app::Window window("Serenity", initial_window);
+    metal::Device device;
+    metal::Submission submission(device);
+    metal::Presenter presenter(
+        device, submission, metal::LayerHandle{window.metal_layer()},
+        app::render_size(window.size_in_pixels(), options.scale));
+    metal::Renderer renderer(device, submission, schedule, described);
+    metal::DisplayFrames metal_frames(submission, presenter, renderer,
+                                      frame_rate);
+
+    app::WindowFrames frames(window, described, options.scale);
+    presentation::FrameSource& source = metal_frames;
+    source.run(frames);
+
+    submission.finish();
+    return 0;
+  } catch (const std::exception& error) {
+    std::cerr << "serenity: " << error.what() << '\n';
+    return 1;
+  }
 }

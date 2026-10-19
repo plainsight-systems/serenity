@@ -1,9 +1,8 @@
 #pragma once
 
-#include <cstdint>
-
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
+#include <cstdint>
 
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
@@ -59,29 +58,30 @@ namespace serenity::metal {
 // arrays (frame_images.h, PathReuseImages): a changing scene starts this
 // image over every frame and keeps that history, so the two are kept apart.
 class Accumulation {
-public:
-    Accumulation(const Device& device, Submission& submission);
+ public:
+  Accumulation(const Device& device, Submission& submission);
 
-    Accumulation(const Accumulation&) = delete;
-    Accumulation& operator=(const Accumulation&) = delete;
-    Accumulation(Accumulation&&) = delete;
-    Accumulation& operator=(Accumulation&&) = delete;
-    ~Accumulation() = default;
+  Accumulation(const Accumulation&) = delete;
+  Accumulation& operator=(const Accumulation&) = delete;
+  Accumulation(Accumulation&&) = delete;
+  Accumulation& operator=(Accumulation&&) = delete;
+  ~Accumulation() = default;
 
-    // The count of frames the image holds before frame `inputs`, at `size`,
-    // of a scene that changes or not; see above. Throws MetalError if the core's
-    // rule refuses the frame, or the image cannot be made.
-    std::uint32_t prepare(const frame::FrameInputs& inputs, frame::Extent size, frame::SceneMotion motion);
+  // The count of frames the image holds before frame `inputs`, at `size`,
+  // of a scene that changes or not; see above. Throws MetalError if the core's
+  // rule refuses the frame, or the image cannot be made.
+  std::uint32_t prepare(const frame::FrameInputs& inputs, frame::Extent size,
+                        frame::SceneMotion motion);
 
-    // The image, valid until the next prepare(); null before the first.
-    MTL::Texture* texture() const noexcept { return texture_.get(); }
+  // The image, valid until the next prepare(); null before the first.
+  MTL::Texture* texture() const noexcept { return texture_.get(); }
 
-private:
-    NS::SharedPtr<MTL::Device> device_;
-    Submission& submission_;
-    NS::SharedPtr<MTL::Texture> texture_;
-    Resident resident_;  // released after the GPU is done with it (submission.h)
-    frame::History history_;  // the core's rule, and what the image holds
+ private:
+  NS::SharedPtr<MTL::Device> device_;
+  Submission& submission_;
+  NS::SharedPtr<MTL::Texture> texture_;
+  Resident resident_;  // released after the GPU is done with it (submission.h)
+  frame::History history_;  // the core's rule, and what the image holds
 };
 
 }  // namespace serenity::metal

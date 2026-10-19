@@ -46,46 +46,47 @@ namespace serenity::metal {
 //
 // Not performance-sensitive: one property read a frame.
 struct LayerHandle {
-    void* ca_metal_layer = nullptr;  // a CAMetalLayer; must not be null
+  void* ca_metal_layer = nullptr;  // a CAMetalLayer; must not be null
 };
 
 class Presenter {
-public:
-    // Configures the layer for `device` at `size`, and adds its residency set
-    // to `submission`'s queue. Throws MetalError if the handle is null, or `size`
-    // is not one Metal makes an image of (device.h, check_texture_size).
-    Presenter(const Device& device, Submission& submission, LayerHandle layer, frame::Extent size);
+ public:
+  // Configures the layer for `device` at `size`, and adds its residency set
+  // to `submission`'s queue. Throws MetalError if the handle is null, or `size`
+  // is not one Metal makes an image of (device.h, check_texture_size).
+  Presenter(const Device& device, Submission& submission, LayerHandle layer,
+            frame::Extent size);
 
-    Presenter(const Presenter&) = delete;
-    Presenter& operator=(const Presenter&) = delete;
-    Presenter(Presenter&&) = delete;
-    Presenter& operator=(Presenter&&) = delete;
-    // Waits for the GPU, then takes the layer's residency set off the queue
-    // (submission.h, Lifetime).
-    ~Presenter();
+  Presenter(const Presenter&) = delete;
+  Presenter& operator=(const Presenter&) = delete;
+  Presenter(Presenter&&) = delete;
+  Presenter& operator=(Presenter&&) = delete;
+  // Waits for the GPU, then takes the layer's residency set off the queue
+  // (submission.h, Lifetime).
+  ~Presenter();
 
-    // Follows the window to `size`, setting the layer's drawable size if the
-    // layer's is not `size` (above); a side of 0 (a minimized window) keeps
-    // the last size and changes nothing. Throws MetalError for a size Metal
-    // makes no image of (device.h, check_texture_size), as the constructor
-    // does.
-    void resize(frame::Extent size);
-    // The size drawables are rendered at: the last asked for.
-    frame::Extent size() const noexcept { return size_; }
+  // Follows the window to `size`, setting the layer's drawable size if the
+  // layer's is not `size` (above); a side of 0 (a minimized window) keeps
+  // the last size and changes nothing. Throws MetalError for a size Metal
+  // makes no image of (device.h, check_texture_size), as the constructor
+  // does.
+  void resize(frame::Extent size);
+  // The size drawables are rendered at: the last asked for.
+  frame::Extent size() const noexcept { return size_; }
 
-    // Whether `drawable`'s texture is size(): one a frame may be rendered
-    // into; not one made before the size changed, nor none (I.6).
-    bool renders_into(CA::MetalDrawable* drawable) const;
+  // Whether `drawable`'s texture is size(): one a frame may be rendered
+  // into; not one made before the size changed, nor none (I.6).
+  bool renders_into(CA::MetalDrawable* drawable) const;
 
-    // The layer, for the display link on it (display_link.h); configured,
-    // and retained for this object's life.
-    CA::MetalLayer* layer() const noexcept { return layer_.get(); }
+  // The layer, for the display link on it (display_link.h); configured,
+  // and retained for this object's life.
+  CA::MetalLayer* layer() const noexcept { return layer_.get(); }
 
-private:
-    Submission& submission_;
-    NS::SharedPtr<CA::MetalLayer> layer_;
-    NS::SharedPtr<MTL::ResidencySet> drawables_;  // the layer's, on the queue
-    frame::Extent size_;
+ private:
+  Submission& submission_;
+  NS::SharedPtr<CA::MetalLayer> layer_;
+  NS::SharedPtr<MTL::ResidencySet> drawables_;  // the layer's, on the queue
+  frame::Extent size_;
 };
 
 }  // namespace serenity::metal

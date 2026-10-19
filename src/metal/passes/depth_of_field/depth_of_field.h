@@ -88,20 +88,21 @@ namespace serenity::metal {
 // a thread a tile (GDSA.6: the passes counted; their work is the gather's
 // 1 / 64th).
 class DepthOfFieldPass {
-public:
-    explicit DepthOfFieldPass(const Library& library);
+ public:
+  explicit DepthOfFieldPass(const Library& library);
 
-    // Records the pass. Throws MetalError if `resources` lacks the radiance
-    // image, the full-size depth, its constants or its images.
-    void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+  // Records the pass. Throws MetalError if `resources` lacks the radiance
+  // image, the full-size depth, its constants or its images.
+  void record(MTL4::ComputeCommandEncoder* encoder,
+              const FrameResources& resources) const;
 
-private:
-    NS::SharedPtr<MTL::ComputePipelineState> presort_;
-    NS::SharedPtr<MTL::ComputePipelineState> tiles_;
-    NS::SharedPtr<MTL::ComputePipelineState> dilate_;
-    NS::SharedPtr<MTL::ComputePipelineState> gather_;
-    NS::SharedPtr<MTL::ComputePipelineState> median_;
-    NS::SharedPtr<MTL::ComputePipelineState> composite_;
+ private:
+  NS::SharedPtr<MTL::ComputePipelineState> presort_;
+  NS::SharedPtr<MTL::ComputePipelineState> tiles_;
+  NS::SharedPtr<MTL::ComputePipelineState> dilate_;
+  NS::SharedPtr<MTL::ComputePipelineState> gather_;
+  NS::SharedPtr<MTL::ComputePipelineState> median_;
+  NS::SharedPtr<MTL::ComputePipelineState> composite_;
 };
 
 }  // namespace serenity::metal

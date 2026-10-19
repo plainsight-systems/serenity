@@ -19,22 +19,22 @@ namespace serenity {
 namespace shaders {
 
 struct Media {
-    constant serenity::media::MediumRecord* records;
-    constant serenity::media::AbsorbingData* absorbings;
+  constant serenity::media::MediumRecord* records;
+  constant serenity::media::AbsorbingData* absorbings;
 };
 
 // The share of light, per channel, kept over a stretch `t` long inside
 // medium `which`, an index into the records or no_medium (air: 1).
 inline float3 transmittance(Media media, uint which, float t) {
-    if (which == serenity::contracts::no_medium) {
-        return float3(1.0f);
-    }
-    const serenity::media::MediumRecord record = media.records[which];
-    switch (record.kind) {
-    case serenity::media::MediumKind::absorbing:
-        return absorbing_transmittance(media.absorbings[record.index], t);
-    }
+  if (which == serenity::contracts::no_medium) {
     return float3(1.0f);
+  }
+  const serenity::media::MediumRecord record = media.records[which];
+  switch (record.kind) {
+    case serenity::media::MediumKind::absorbing:
+      return absorbing_transmittance(media.absorbings[record.index], t);
+  }
+  return float3(1.0f);
 }
 
 }  // namespace shaders

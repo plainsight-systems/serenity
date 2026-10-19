@@ -20,7 +20,8 @@
 //     m_n = p̂_n(x_n) c_n / (p̂_n(x_n) c_n + p̂_c(y_n) J_{n->c} c_c / k)
 //   the canonical path, weighed against every neighbor it was shifted to:
 //     m_c = 1 + sum over n of [1 - p̂_n(T(x_c)) J_{c->n} c_n
-//                                  / (p̂_n(T(x_c)) J_{c->n} c_n + p̂_c(x_c) c_c / k)]
+//                                  / (p̂_n(T(x_c)) J_{c->n} c_n + p̂_c(x_c) c_c /
+//                                  k)]
 //
 // The weights sum to k + 1 over the inputs, so each is divided by k + 1
 // where it is used (the 2022 code divides W once at the end). The estimate
@@ -79,43 +80,50 @@ namespace path_merge {
 
 // m_n (above): `own` p̂_n(x_n) and `own_count` c_n, the neighbor's;
 // `shifted` p̂_c(y_n) J_{n->c}; `canonical_count` c_c; k neighbors.
-inline float neighbor_weight(float own, float own_count, float shifted, float canonical_count, uint k) {
-    const float a = own * own_count;
-    const float sum = a + shifted * canonical_count / float(k);
-    return sum > 0.0f ? a / sum : 0.0f;
+inline float neighbor_weight(float own, float own_count, float shifted,
+                             float canonical_count, uint k) {
+  const float a = own * own_count;
+  const float sum = a + shifted * canonical_count / float(k);
+  return sum > 0.0f ? a / sum : 0.0f;
 }
 
 // One neighbor's term of m_c (above): `canonical` p̂_c(x_c) and
 // `canonical_count` c_c; `shifted` p̂_n(T(x_c)) J_{c->n}; `neighbor_count`
 // c_n; k neighbors.
-inline float canonical_share(float canonical, float canonical_count, float shifted, float neighbor_count, uint k) {
-    const float b = shifted * neighbor_count;
-    const float sum = b + canonical * canonical_count / float(k);
-    return 1.0f - (sum > 0.0f ? b / sum : 0.0f);
+inline float canonical_share(float canonical, float canonical_count,
+                             float shifted, float neighbor_count, uint k) {
+  const float b = shifted * neighbor_count;
+  const float sum = b + canonical * canonical_count / float(k);
+  return 1.0f - (sum > 0.0f ? b / sum : 0.0f);
 }
 
 // m_c or m_t (above): `own` c_i p̂_i(x_i), `other` c_j p̂_j(T(x_i)) J.
 inline float talbot_weight(float own, float other) {
-    const float sum = own + other;
-    return sum > 0.0f ? own / sum : 0.0f;
+  const float sum = own + other;
+  return sum > 0.0f ? own / sum : 0.0f;
 }
 
 // c_cap (above): `cap` confidence_cap, lowered toward `floor` by the
 // duplication score `duplication`, D in [0, 1], at sensitivity `exponent`;
 // an exponent of 0 (no duplication map in the graph) leaves it.
-inline float duplication_cap(float cap, float floor, float exponent, float duplication) {
-    return exponent > 0.0f ? metal::mix(cap, floor, metal::pow(metal::saturate(duplication), exponent)) : cap;
+inline float duplication_cap(float cap, float floor, float exponent,
+                             float duplication) {
+  return exponent > 0.0f
+             ? metal::mix(cap, floor,
+                          metal::pow(metal::saturate(duplication), exponent))
+             : cap;
 }
 
 // c_t (above): last frame's count, at most `cap` times the own count.
 inline float temporal_confidence(float last_count, float own_count, float cap) {
-    return metal::min(last_count, cap * own_count);
+  return metal::min(last_count, cap * own_count);
 }
 
 // `flags` with its count M set to `count` rounded, held to its 8 bits.
 inline uint with_count(uint flags, float count) {
-    const uint m = metal::min(uint(metal::round(metal::max(count, 0.0f))), serenity::contracts::path_max_count);
-    return (flags & ~serenity::contracts::path_count_mask) | m;
+  const uint m = metal::min(uint(metal::round(metal::max(count, 0.0f))),
+                            serenity::contracts::path_max_count);
+  return (flags & ~serenity::contracts::path_count_mask) | m;
 }
 
 // `source`'s path as a shift left it at another pixel (metal/integrator/
@@ -124,12 +132,14 @@ inline uint with_count(uint flags, float count) {
 // supplemental eq. 4's numerator (contract 15, `jacobian`); every other
 // field the source's (its numbers' stream, its reconnection vertex and
 // suffix, its lobes), which is what the shifted path is made of.
-inline serenity::contracts::PathReservoir shifted_reservoir(serenity::contracts::PathReservoir source, float3 integrand,
-                                                            float jacobian) {
-    serenity::contracts::PathReservoir shifted = source;
-    shifted.integrand = serenity::contracts::Float3{integrand.x, integrand.y, integrand.z};
-    shifted.jacobian = source.jacobian * jacobian;
-    return shifted;
+inline serenity::contracts::PathReservoir shifted_reservoir(
+    serenity::contracts::PathReservoir source, float3 integrand,
+    float jacobian) {
+  serenity::contracts::PathReservoir shifted = source;
+  shifted.integrand =
+      serenity::contracts::Float3{integrand.x, integrand.y, integrand.z};
+  shifted.jacobian = source.jacobian * jacobian;
+  return shifted;
 }
 
 }  // namespace path_merge

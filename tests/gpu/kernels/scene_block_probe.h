@@ -18,15 +18,18 @@ namespace tests {
 // A 32-bit word of an element of one of the scene block's arrays: field i
 // of gpu::SceneBlock, in the order it declares them.
 struct BlockQuery {
-    uint32_t field;
-    uint32_t element;
-    uint32_t word;
+  uint32_t field;
+  uint32_t element;
+  uint32_t word;
 };
 
-static_assert(sizeof(BlockQuery) == 12, "BlockQuery must be the same 12 bytes on the host and in shaders");
+static_assert(
+    sizeof(BlockQuery) == 12,
+    "BlockQuery must be the same 12 bytes on the host and in shaders");
 
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<BlockQuery>, "BlockQuery is copied to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<BlockQuery>,
+              "BlockQuery is copied to the GPU as bytes");
 #endif
 
 }  // namespace tests

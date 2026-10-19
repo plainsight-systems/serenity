@@ -18,21 +18,25 @@ using namespace metal;
 using namespace serenity::shaders;
 namespace binding = serenity::bindings::restir_pt;
 
-kernel void restir_pt_duplication(constant serenity::contracts::FrameConstants& frame [[buffer(binding::constants)]],
-                                  constant serenity::contracts::PathReuseSettings& settings
-                                  [[buffer(binding::settings)]],
-                                  const device serenity::contracts::PathReservoir* finals [[buffer(binding::finals)]],
-                                  device float* map [[buffer(binding::duplication)]],
-                                  uint2 pixel [[thread_position_in_grid]],
-                                  uint2 local [[thread_position_in_threadgroup]],
-                                  uint2 group [[threadgroup_position_in_grid]]) {
-    threadgroup uint2 keys[duplication::span * duplication::span];
-    // The arrays' grid: the image, or the packed one, whose slots are its
-    // row-major indices (restir_pt.metal.h, Traced).
-    const uint2 size = restir_pt::traced(frame, settings).grid();
-    duplication::load_keys(keys, finals, size, group * duplication::group, local.y * duplication::group + local.x);
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (pixel.x < size.x && pixel.y < size.y) {
-        map[pixel.y * size.x + pixel.x] = duplication::score(keys, local);
-    }
+kernel void restir_pt_duplication(
+    constant serenity::contracts::FrameConstants& frame
+    [[buffer(binding::constants)]],
+    constant serenity::contracts::PathReuseSettings& settings
+    [[buffer(binding::settings)]],
+    const device serenity::contracts::PathReservoir* finals
+    [[buffer(binding::finals)]],
+    device float* map [[buffer(binding::duplication)]],
+    uint2 pixel [[thread_position_in_grid]],
+    uint2 local [[thread_position_in_threadgroup]],
+    uint2 group [[threadgroup_position_in_grid]]) {
+  threadgroup uint2 keys[duplication::span * duplication::span];
+  // The arrays' grid: the image, or the packed one, whose slots are its
+  // row-major indices (restir_pt.metal.h, Traced).
+  const uint2 size = restir_pt::traced(frame, settings).grid();
+  duplication::load_keys(keys, finals, size, group * duplication::group,
+                         local.y * duplication::group + local.x);
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (pixel.x < size.x && pixel.y < size.y) {
+    map[pixel.y * size.x + pixel.x] = duplication::score(keys, local);
+  }
 }

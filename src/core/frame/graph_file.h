@@ -23,8 +23,9 @@ namespace serenity::frame {
 //   passes = ["path", "tone_map"] # pass names, in order; at least one
 //
 //   [tone_map]                    # exactly when a pass is tone_map
-//   exposure = 0.0                # stops, within [-10, 10] (core/passes/tone_map.h)
-//   bloom = 0.04                  # the fraction of light spread into glare
+//   exposure = 0.0                # stops, within [-10, 10]
+//   (core/passes/tone_map.h) bloom = 0.04                  # the fraction of
+//   light spread into glare
 //
 //   [restir_pt]                   # exactly when a pass is one of ReSTIR PT's
 //   nee_candidates = 32           # an integer in [1, 32]
@@ -65,14 +66,15 @@ namespace serenity::frame {
 // (schedule.h, invalid()), or a key nobody reads is a GraphFileError, never
 // a default or an ignored line: a typo must fail the run that reads it, not
 // render something else (E.2, E.14). Each GraphFileError names the file and
-// the line, and an unknown pass name lists the known ones. A file that cannot be read whole, a directory's path or one
-// that ends early, is a GraphFileError naming it, never an empty graph.
+// the line, and an unknown pass name lists the known ones. A file that cannot
+// be read whole, a directory's path or one that ends early, is a GraphFileError
+// naming it, never an empty graph.
 //
 // Not performance-sensitive: read once, at start-up.
 
 class GraphFileError : public std::runtime_error {
-public:
-    explicit GraphFileError(const std::string& what) : std::runtime_error(what) {}
+ public:
+  explicit GraphFileError(const std::string& what) : std::runtime_error(what) {}
 };
 
 // Reads the frame graph file at `path`.

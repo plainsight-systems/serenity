@@ -34,18 +34,19 @@ namespace serenity::metal {
 // writes 30.9 MB a frame and reads nothing but the frame's 32 bytes of
 // constants.
 class TestPatternPass {
-public:
-    // Builds the pipeline for test_pattern from `library`. Throws MetalError if it
-    // cannot.
-    explicit TestPatternPass(const Library& library);
+ public:
+  // Builds the pipeline for test_pattern from `library`. Throws MetalError if
+  // it cannot.
+  explicit TestPatternPass(const Library& library);
 
-    // Records the pass into `encoder`: binds the frame's constants and its
-    // target through the resources' argument table, and dispatches one thread
-    // per pixel. It reads no scene.
-    void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+  // Records the pass into `encoder`: binds the frame's constants and its
+  // target through the resources' argument table, and dispatches one thread
+  // per pixel. It reads no scene.
+  void record(MTL4::ComputeCommandEncoder* encoder,
+              const FrameResources& resources) const;
 
-private:
-    NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
+ private:
+  NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
 };
 
 }  // namespace serenity::metal

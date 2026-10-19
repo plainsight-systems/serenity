@@ -18,7 +18,7 @@ namespace {
 // Word `word` of element `element` of the array at `array`.
 template <typename T>
 uint word_of(constant T* array, uint element, uint word) {
-    return reinterpret_cast<constant uint*>(array + element)[word];
+  return reinterpret_cast<constant uint*>(array + element)[word];
 }
 
 }  // namespace
@@ -26,34 +26,74 @@ uint word_of(constant T* array, uint element, uint word) {
 kernel void scene_block_probe(device uint* out [[buffer(0)]],
                               device const BlockQuery* queries [[buffer(1)]],
                               constant uint& count [[buffer(2)]],
-                              constant serenity::gpu::SceneBlock& block [[buffer(3)]],
+                              constant serenity::gpu::SceneBlock& block
+                              [[buffer(3)]],
                               uint i [[thread_position_in_grid]]) {
-    if (i >= count) {
-        return;
-    }
-    const BlockQuery q = queries[i];
-    uint word = 0xdeadbeefu;  // a field the block does not have
-    switch (q.field) {
-        case 0u: word = word_of(block.environment, q.element, q.word); break;
-        case 1u: word = word_of(block.textures, q.element, q.word); break;
-        case 2u: word = word_of(block.checkers, q.element, q.word); break;
-        case 3u: word = word_of(block.woods, q.element, q.word); break;
-        case 4u: word = word_of(block.swirls, q.element, q.word); break;
-        case 5u: word = word_of(block.materials, q.element, q.word); break;
-        case 6u: word = word_of(block.roughs, q.element, q.word); break;
-        case 7u: word = word_of(block.dielectrics, q.element, q.word); break;
-        case 8u: word = word_of(block.conductors, q.element, q.word); break;
-        case 9u: word = word_of(block.emissives, q.element, q.word); break;
-        case 10u: word = word_of(block.coateds, q.element, q.word); break;
-        case 11u: word = word_of(block.media, q.element, q.word); break;
-        case 12u: word = word_of(block.absorbings, q.element, q.word); break;
-        case 13u: word = word_of(block.shapes, q.element, q.word); break;
-        case 14u: word = word_of(block.boxes, q.element, q.word); break;
-        case 15u: word = word_of(block.light_records, q.element, q.word); break;
-        case 16u: word = word_of(block.shape_lights, q.element, q.word); break;
-        case 17u: word = word_of(block.sphere_lights, q.element, q.word); break;
-        case 18u: word = word_of(block.light_counts, q.element, q.word); break;
-        default: break;
-    }
-    out[i] = word;
+  if (i >= count) {
+    return;
+  }
+  const BlockQuery q = queries[i];
+  uint word = 0xdeadbeefu;  // a field the block does not have
+  switch (q.field) {
+    case 0u:
+      word = word_of(block.environment, q.element, q.word);
+      break;
+    case 1u:
+      word = word_of(block.textures, q.element, q.word);
+      break;
+    case 2u:
+      word = word_of(block.checkers, q.element, q.word);
+      break;
+    case 3u:
+      word = word_of(block.woods, q.element, q.word);
+      break;
+    case 4u:
+      word = word_of(block.swirls, q.element, q.word);
+      break;
+    case 5u:
+      word = word_of(block.materials, q.element, q.word);
+      break;
+    case 6u:
+      word = word_of(block.roughs, q.element, q.word);
+      break;
+    case 7u:
+      word = word_of(block.dielectrics, q.element, q.word);
+      break;
+    case 8u:
+      word = word_of(block.conductors, q.element, q.word);
+      break;
+    case 9u:
+      word = word_of(block.emissives, q.element, q.word);
+      break;
+    case 10u:
+      word = word_of(block.coateds, q.element, q.word);
+      break;
+    case 11u:
+      word = word_of(block.media, q.element, q.word);
+      break;
+    case 12u:
+      word = word_of(block.absorbings, q.element, q.word);
+      break;
+    case 13u:
+      word = word_of(block.shapes, q.element, q.word);
+      break;
+    case 14u:
+      word = word_of(block.boxes, q.element, q.word);
+      break;
+    case 15u:
+      word = word_of(block.light_records, q.element, q.word);
+      break;
+    case 16u:
+      word = word_of(block.shape_lights, q.element, q.word);
+      break;
+    case 17u:
+      word = word_of(block.sphere_lights, q.element, q.word);
+      break;
+    case 18u:
+      word = word_of(block.light_counts, q.element, q.word);
+      break;
+    default:
+      break;
+  }
+  out[i] = word;
 }

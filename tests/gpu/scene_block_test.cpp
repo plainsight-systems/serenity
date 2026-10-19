@@ -13,6 +13,10 @@
 //     the emissive and the medium arrays, the arrays no other render test
 //     reads all of, each shape showing what only its own array gives.
 
+#include "metal/scene/scene_block.h"
+
+#include <doctest/doctest.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -21,14 +25,11 @@
 #include <type_traits>
 #include <vector>
 
-#include <doctest/doctest.h>
-
 #include "core/camera/thin_lens.h"
 #include "core/scene/scene.h"
 #include "gpu/kernels/scene_block_probe.h"
 #include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"
-#include "metal/scene/scene_block.h"
 #include "metal/scene/scene_buffers.h"
 #include "support/references.h"
 #include "support/scene_text.h"
@@ -42,7 +43,8 @@ namespace {
 
 // A scene with at least one element in every one of the block's arrays.
 std::string every_kind() {
-    return tests::camera_text("[0, 0, 5]", "[0, 0, 0]", 40) + tests::sky("[1, 1, 1]", "[1, 1, 1]") + R"(
+  return tests::camera_text("[0, 0, 5]", "[0, 0, 0]", 40) +
+         tests::sky("[1, 1, 1]", "[1, 1, 1]") + R"(
 [textures.checks]
 kind = "checker"
 size = 0.5
@@ -131,89 +133,100 @@ material = "floor"
 // The 32-bit words of an array, in order.
 template <typename T>
 std::vector<std::uint32_t> words(std::span<const T> array) {
-    static_assert(std::is_trivially_copyable_v<T> && sizeof(T) % 4 == 0, "a block array is read as 32-bit words");
-    std::vector<std::uint32_t> out(array.size() * sizeof(T) / 4);
-    std::memcpy(out.data(), array.data(), out.size() * 4);
-    return out;
+  static_assert(std::is_trivially_copyable_v<T> && sizeof(T) % 4 == 0,
+                "a block array is read as 32-bit words");
+  std::vector<std::uint32_t> out(array.size() * sizeof(T) / 4);
+  std::memcpy(out.data(), array.data(), out.size() * 4);
+  return out;
 }
 
 template <typename T>
 std::vector<std::uint32_t> words(const std::vector<T>& array) {
-    return words(std::span<const T>(array));
+  return words(std::span<const T>(array));
 }
 
 template <typename T>
 std::vector<std::uint32_t> words(const T& one) {
-    return words(std::span<const T>(&one, 1));
+  return words(std::span<const T>(&one, 1));
 }
 
 // Each of the block's fields, in its order (scene_block.h): a name, the size
 // of one element, and the words the scene reader wrote.
 struct Field {
-    const char* name;
-    std::size_t element_size;
-    std::vector<std::uint32_t> written;
+  const char* name;
+  std::size_t element_size;
+  std::vector<std::uint32_t> written;
 };
 
 std::vector<Field> fields(const scene::SceneDescription& s) {
-    return {
-        {"environment", sizeof(s.environment), words(s.environment)},
-        {"textures", sizeof(textures::TextureRecord), words(s.textures)},
-        {"checkers", sizeof(textures::CheckerData), words(s.checkers)},
-        {"woods", sizeof(textures::WoodData), words(s.woods)},
-        {"swirls", sizeof(textures::SwirlData), words(s.swirls)},
-        {"materials", sizeof(materials::MaterialRecord), words(s.materials)},
-        {"rough", sizeof(materials::RoughData), words(s.roughs)},
-        {"dielectrics", sizeof(materials::DielectricData), words(s.dielectrics)},
-        {"conductors", sizeof(materials::ConductorData), words(s.conductors)},
-        {"emissives", sizeof(materials::EmissiveData), words(s.emissives)},
-        {"coated", sizeof(materials::CoatedData), words(s.coateds)},
-        {"media", sizeof(media::MediumRecord), words(s.media)},
-        {"absorbing", sizeof(media::AbsorbingData), words(s.absorbings)},
-        {"shapes", sizeof(shapes::ShapeRecord), words(s.shapes.records)},
-        {"boxes", sizeof(shapes::BoxData), words(s.shapes.boxes)},
-        {"light_records", sizeof(lights::LightRecord), words(s.lights)},
-        {"shape_lights", sizeof(std::uint32_t), words(s.shape_lights)},
-        {"sphere_lights", sizeof(lights::SphereLightData), words(s.sphere_lights)},
-        {"light_counts", sizeof(s.light_counts), words(s.light_counts)},
-    };
+  return {
+      {"environment", sizeof(s.environment), words(s.environment)},
+      {"textures", sizeof(textures::TextureRecord), words(s.textures)},
+      {"checkers", sizeof(textures::CheckerData), words(s.checkers)},
+      {"woods", sizeof(textures::WoodData), words(s.woods)},
+      {"swirls", sizeof(textures::SwirlData), words(s.swirls)},
+      {"materials", sizeof(materials::MaterialRecord), words(s.materials)},
+      {"rough", sizeof(materials::RoughData), words(s.roughs)},
+      {"dielectrics", sizeof(materials::DielectricData), words(s.dielectrics)},
+      {"conductors", sizeof(materials::ConductorData), words(s.conductors)},
+      {"emissives", sizeof(materials::EmissiveData), words(s.emissives)},
+      {"coated", sizeof(materials::CoatedData), words(s.coateds)},
+      {"media", sizeof(media::MediumRecord), words(s.media)},
+      {"absorbing", sizeof(media::AbsorbingData), words(s.absorbings)},
+      {"shapes", sizeof(shapes::ShapeRecord), words(s.shapes.records)},
+      {"boxes", sizeof(shapes::BoxData), words(s.shapes.boxes)},
+      {"light_records", sizeof(lights::LightRecord), words(s.lights)},
+      {"shape_lights", sizeof(std::uint32_t), words(s.shape_lights)},
+      {"sphere_lights", sizeof(lights::SphereLightData),
+       words(s.sphere_lights)},
+      {"light_counts", sizeof(s.light_counts), words(s.light_counts)},
+  };
 }
 
 }  // namespace
 
-TEST_CASE("every field of the scene's block reads its own array, every word as the scene reader wrote it") {
-    const scene::SceneDescription description = scene::parse(every_kind(), "every kind");
-    const std::vector<Field> expected = fields(description);
-    REQUIRE(expected.size() * sizeof(std::uint64_t) == sizeof(gpu::SceneBlock));
+TEST_CASE(
+    "every field of the scene's block reads its own array, every word as the "
+    "scene reader wrote it") {
+  const scene::SceneDescription description =
+      scene::parse(every_kind(), "every kind");
+  const std::vector<Field> expected = fields(description);
+  REQUIRE(expected.size() * sizeof(std::uint64_t) == sizeof(gpu::SceneBlock));
 
-    std::vector<BlockQuery> queries;
-    std::vector<std::uint32_t> wanted;
-    std::vector<std::size_t> owner;  // the field each query asks of
-    for (std::size_t f = 0; f < expected.size(); ++f) {
-        INFO("field " << std::string(expected[f].name));
-        REQUIRE_FALSE(expected[f].written.empty());  // every kind present, so every field is read
-        const std::size_t per_element = expected[f].element_size / 4;
-        for (std::size_t w = 0; w < expected[f].written.size(); ++w) {
-            queries.push_back({static_cast<std::uint32_t>(f), static_cast<std::uint32_t>(w / per_element),
-                               static_cast<std::uint32_t>(w % per_element)});
-            wanted.push_back(expected[f].written[w]);
-            owner.push_back(f);
-        }
+  std::vector<BlockQuery> queries;
+  std::vector<std::uint32_t> wanted;
+  std::vector<std::size_t> owner;  // the field each query asks of
+  for (std::size_t f = 0; f < expected.size(); ++f) {
+    INFO("field " << std::string(expected[f].name));
+    REQUIRE_FALSE(
+        expected[f]
+            .written.empty());  // every kind present, so every field is read
+    const std::size_t per_element = expected[f].element_size / 4;
+    for (std::size_t w = 0; w < expected[f].written.size(); ++w) {
+      queries.push_back({static_cast<std::uint32_t>(f),
+                         static_cast<std::uint32_t>(w / per_element),
+                         static_cast<std::uint32_t>(w % per_element)});
+      wanted.push_back(expected[f].written[w]);
+      owner.push_back(f);
     }
+  }
 
-    tests::ProbeRunner gpu;
-    const metal::SceneBuffers buffers(gpu.device(), gpu.submission(), description);
-    const auto count = static_cast<std::uint32_t>(queries.size());
-    const std::vector<std::uint32_t> read = gpu.run<std::uint32_t>(
-        "scene_block_probe", queries.size(),
-        {Binding::of(queries), Binding::of(count), Binding::at(buffers.block_address())});
+  tests::ProbeRunner gpu;
+  const metal::SceneBuffers buffers(gpu.device(), gpu.submission(),
+                                    description);
+  const auto count = static_cast<std::uint32_t>(queries.size());
+  const std::vector<std::uint32_t> read =
+      gpu.run<std::uint32_t>("scene_block_probe", queries.size(),
+                             {Binding::of(queries), Binding::of(count),
+                              Binding::at(buffers.block_address())});
 
-    std::vector<std::size_t> wrong(expected.size(), 0);
-    for (std::size_t i = 0; i < queries.size(); ++i) {
-        wrong[owner[i]] += read[i] == wanted[i] ? 0u : 1u;
-    }
-    for (std::size_t f = 0; f < expected.size(); ++f) {
-        INFO("field " << std::string(expected[f].name) << ": " << expected[f].written.size() << " words");
-        CHECK(wrong[f] == 0);
-    }
+  std::vector<std::size_t> wrong(expected.size(), 0);
+  for (std::size_t i = 0; i < queries.size(); ++i) {
+    wrong[owner[i]] += read[i] == wanted[i] ? 0u : 1u;
+  }
+  for (std::size_t f = 0; f < expected.size(); ++f) {
+    INFO("field " << std::string(expected[f].name) << ": "
+                  << expected[f].written.size() << " words");
+    CHECK(wrong[f] == 0);
+  }
 }

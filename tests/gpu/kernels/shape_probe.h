@@ -10,23 +10,25 @@
 // and its inputs after it in the order its comment lists them
 // (tests/gpu/support/probe_runner.h).
 
-#include "core/contracts/shared_layout.h"
-
 #include "core/contracts/float3.h"
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace tests {
 
 // A point on shape `shape`, where a ray arriving from +z meets it.
 struct ShapeQuery {
-    contracts::Float3 point;
-    uint32_t shape;
+  contracts::Float3 point;
+  uint32_t shape;
 };
 
-static_assert(sizeof(ShapeQuery) == 16, "ShapeQuery must be the same 16 bytes on the host and in shaders");
+static_assert(
+    sizeof(ShapeQuery) == 16,
+    "ShapeQuery must be the same 16 bytes on the host and in shaders");
 
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<ShapeQuery>, "ShapeQuery is copied to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<ShapeQuery>,
+              "ShapeQuery is copied to the GPU as bytes");
 #endif
 
 }  // namespace tests

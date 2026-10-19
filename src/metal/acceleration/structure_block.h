@@ -39,8 +39,9 @@
 #include <metal_raytracing>
 #include <metal_stdlib>
 #else
-#include <cstdint>
 #include <stdint.h>  // uint32_t in the global namespace, where the shading language has it
+
+#include <cstdint>
 #endif
 
 namespace serenity {
@@ -57,14 +58,16 @@ using ShapeTable = std::uint64_t;  // the table's GPU address
 #endif
 
 struct StructureBlock {
-    Structure everything;
-    Structure occluders;
-    ShapeTable<uint32_t> occluder_shapes;
-    uint32_t occluder_count;
-    uint32_t padding;
+  Structure everything;
+  Structure occluders;
+  ShapeTable<uint32_t> occluder_shapes;
+  uint32_t occluder_count;
+  uint32_t padding;
 };
 
-static_assert(sizeof(StructureBlock) == 32, "StructureBlock must be the same 32 bytes on the host and in shaders");
+static_assert(
+    sizeof(StructureBlock) == 32,
+    "StructureBlock must be the same 32 bytes on the host and in shaders");
 
 }  // namespace gpu
 }  // namespace serenity

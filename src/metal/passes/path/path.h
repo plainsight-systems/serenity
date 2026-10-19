@@ -47,15 +47,16 @@ namespace serenity::metal {
 // of surfaces in practice; integrator/path.metal.h), and 32 bytes of
 // image: the accumulated pixel's 16 read and 16 written.
 class PathPass {
-public:
-    explicit PathPass(const Library& library);
+ public:
+  explicit PathPass(const Library& library);
 
-    // Records the pass. Throws MetalError if `resources` has no scene, no
-    // camera, no accumulated image or no counter of samples not finite.
-    void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+  // Records the pass. Throws MetalError if `resources` has no scene, no
+  // camera, no accumulated image or no counter of samples not finite.
+  void record(MTL4::ComputeCommandEncoder* encoder,
+              const FrameResources& resources) const;
 
-private:
-    NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
+ private:
+  NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
 };
 
 }  // namespace serenity::metal

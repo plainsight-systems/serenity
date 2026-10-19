@@ -36,8 +36,9 @@
 // (contracts/light_tile.h; Enhanced §6.1): draw_tile_candidate(), the same
 // draw from a 32-byte packed entry of the tile its pixel's block holds, in
 // place of four dependent reads of the light's record, sphere, transform
-// and glow (metal/lights/emitter.metal.h, place_light). Measured 4.7% faster for the initial pass on
-// the marbles (docs/research/2026-10-11-restir-pt-phase2.md), so kept.
+// and glow (metal/lights/emitter.metal.h, place_light). Measured 4.7% faster
+// for the initial pass on the marbles
+// (docs/research/2026-10-11-restir-pt-phase2.md), so kept.
 //
 // Cost per vertex: M candidates of 4 numbers, a tile entry's 32 bytes, a
 // point on its cone, a BSDF evaluation each; one shadow ray. 32 at the
@@ -61,7 +62,7 @@ namespace nee {
 
 // The candidates at the path's vertex `vertex`, 1 the primary hit.
 inline uint candidate_count(uint candidates, uint index) {
-    return metal::max(1u, candidates / (index * index));
+  return metal::max(1u, candidates / (index * index));
 }
 
 // One candidate, drawn and weighed (above): drawn by the light's own
@@ -69,31 +70,35 @@ inline uint candidate_count(uint candidates, uint index) {
 // (contract 4), so a candidate costs no encoding of a point it will most
 // often not keep; the kept one's point is found once, by kept_point().
 struct Candidate {
-    uint light;                                // the light record's index
-    serenity::contracts::LightSample sample;   // its direction, distance and radiance from the origin
-    float density;                             // p1 = P p_l, solid angle
-    float target;                              // p̂(y), unshadowed
+  uint light;  // the light record's index
+  serenity::contracts::LightSample
+      sample;     // its direction, distance and radiance from the origin
+  float density;  // p1 = P p_l, solid angle
+  float target;   // p̂(y), unshadowed
 };
 
 inline Candidate no_candidate() {
-    return Candidate{0u, serenity::contracts::LightSample{}, 0.0f, 0.0f};
+  return Candidate{0u, serenity::contracts::LightSample{}, 0.0f, 0.0f};
 }
 
 // The unshadowed f |cos| L_e at `here` of light arriving along `wi` with
 // `radiance`, 0 where wi leaves on wo's other side (path.metal.h, "One
 // origin").
 inline float3 unshadowed(Shading here, float3 wi, float3 radiance) {
-    if (!leave_alike(here.surface, wi, here.wo)) {
-        return float3(0.0f);
-    }
-    return bsdf_evaluate(here.bsdf, here.wo, wi) * metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) * radiance;
+  if (!leave_alike(here.surface, wi, here.wo)) {
+    return float3(0.0f);
+  }
+  return bsdf_evaluate(here.bsdf, here.wo, wi) *
+         metal::abs(metal::dot(wi, to_float3(here.bsdf.normal))) * radiance;
 }
 
 // The same for a light's answer at a stored point (contract 4), 0 where the
 // light faces away.
-inline float3 unshadowed(Shading here, serenity::contracts::LightReceived light) {
-    return light.cos_light > 0.0f ? unshadowed(here, to_float3(light.direction), to_float3(light.radiance))
-                                  : float3(0.0f);
+inline float3 unshadowed(Shading here,
+                         serenity::contracts::LightReceived light) {
+  return light.cos_light > 0.0f ? unshadowed(here, to_float3(light.direction),
+                                             to_float3(light.radiance))
+                                : float3(0.0f);
 }
 
 // A candidate drawn from a light tile's entry (contracts/light_tile.h):
@@ -101,14 +106,18 @@ inline float3 unshadowed(Shading here, serenity::contracts::LightReceived light)
 // packed from, its density the selection's `probability` of the entry's
 // light (its power over the frame's total, light_selection/
 // power_light.metal.h) times the cone's.
-inline Candidate draw_tile_candidate(serenity::contracts::LightTileEntry entry, float probability, Shading here,
+inline Candidate draw_tile_candidate(serenity::contracts::LightTileEntry entry,
+                                     float probability, Shading here,
                                      float3 origin, float2 u) {
-    const serenity::contracts::LightSample sample = sample_tile_light(entry, origin, u);
-    Candidate candidate{entry.ids & serenity::contracts::tile_index_mask, sample, probability * sample.pdf, 0.0f};
-    if (candidate.density > 0.0f) {
-        candidate.target = luminance(unshadowed(here, to_float3(sample.direction), to_float3(sample.radiance)));
-    }
-    return candidate;
+  const serenity::contracts::LightSample sample =
+      sample_tile_light(entry, origin, u);
+  Candidate candidate{entry.ids & serenity::contracts::tile_index_mask, sample,
+                      probability * sample.pdf, 0.0f};
+  if (candidate.density > 0.0f) {
+    candidate.target = luminance(unshadowed(here, to_float3(sample.direction),
+                                            to_float3(sample.radiance)));
+  }
+  return candidate;
 }
 
 // The kept candidate's point on its light (contract 4), seen from `origin`
@@ -116,28 +125,30 @@ inline Candidate draw_tile_candidate(serenity::contracts::LightTileEntry entry, 
 // point, and the light's answer there (its cosine and distance for the
 // point's area density).
 struct KeptPoint {
-    serenity::contracts::LightPoint point;
-    serenity::contracts::LightReceived light;
+  serenity::contracts::LightPoint point;
+  serenity::contracts::LightReceived light;
 };
 
 inline KeptPoint kept_point(Lights lights, Candidate kept, float3 origin) {
-    const PlacedLight light = place_light(lights, kept.light);
-    const float3 reached = origin + kept.sample.distance * to_float3(kept.sample.direction);
-    const serenity::contracts::LightPoint point = light_point_at(light, kept.light, reached);
-    return KeptPoint{point, evaluate_light_point(light, point, origin)};
+  const PlacedLight light = place_light(lights, kept.light);
+  const float3 reached =
+      origin + kept.sample.distance * to_float3(kept.sample.direction);
+  const serenity::contracts::LightPoint point =
+      light_point_at(light, kept.light, reached);
+  return KeptPoint{point, evaluate_light_point(light, point, origin)};
 }
 
 // The M-sample balance heuristic's weights (above), each for the strategy
 // named, from M, p1 and p_b of one direction. Defined where both are 0: a
 // direction neither draws is weighed 0.
 inline float light_weight(uint m, float light_density, float bsdf_density) {
-    const float light = float(m) * light_density;
-    const float sum = light + bsdf_density;
-    return sum > 0.0f ? light / sum : 0.0f;
+  const float light = float(m) * light_density;
+  const float sum = light + bsdf_density;
+  return sum > 0.0f ? light / sum : 0.0f;
 }
 inline float bsdf_weight(uint m, float light_density, float bsdf_density) {
-    const float sum = float(m) * light_density + bsdf_density;
-    return sum > 0.0f ? bsdf_density / sum : 0.0f;
+  const float sum = float(m) * light_density + bsdf_density;
+  return sum > 0.0f ? bsdf_density / sum : 0.0f;
 }
 
 // Whether nothing blocks the light along `direction` for `distance` from
@@ -146,15 +157,17 @@ inline float bsdf_weight(uint m, float light_density, float bsdf_density) {
 // shape `primitive` among them. The one shadow ray of ReSTIR PT's initial
 // paths and of its shifts' reconnections to a light, so a shift tests the
 // visibility its path was sampled with.
-inline bool visible(SceneStructure structure, Shapes shapes, float3 origin, float3 direction, float distance,
-                    uint primitive) {
-    return !occluded(structure, shapes, metal::raytracing::ray(origin, direction, 0.0f, distance),
-                     serenity::contracts::RayMask::occluders, primitive);
+inline bool visible(SceneStructure structure, Shapes shapes, float3 origin,
+                    float3 direction, float distance, uint primitive) {
+  return !occluded(structure, shapes,
+                   metal::raytracing::ray(origin, direction, 0.0f, distance),
+                   serenity::contracts::RayMask::occluders, primitive);
 }
 
 inline bool visible(SceneStructure structure, Shapes shapes, float3 origin,
                     serenity::contracts::LightReceived light) {
-    return visible(structure, shapes, origin, to_float3(light.direction), light.distance, light.primitive);
+  return visible(structure, shapes, origin, to_float3(light.direction),
+                 light.distance, light.primitive);
 }
 
 }  // namespace nee

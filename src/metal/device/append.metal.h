@@ -24,19 +24,21 @@ namespace shaders {
 // group's. The counter passes the list's capacity where it fills, by what
 // did not fit: the caller writes only below it.
 inline uint simd_reserve(device metal::atomic_uint* counter, uint count) {
-    const uint before = metal::simd_prefix_exclusive_sum(count);
-    const uint total = metal::simd_sum(count);
-    uint base = 0u;
-    if (metal::simd_is_first() && total > 0u) {
-        base = metal::atomic_fetch_add_explicit(counter, total, metal::memory_order_relaxed);
-    }
-    return metal::simd_broadcast_first(base) + before;
+  const uint before = metal::simd_prefix_exclusive_sum(count);
+  const uint total = metal::simd_sum(count);
+  uint base = 0u;
+  if (metal::simd_is_first() && total > 0u) {
+    base = metal::atomic_fetch_add_explicit(counter, total,
+                                            metal::memory_order_relaxed);
+  }
+  return metal::simd_broadcast_first(base) + before;
 }
 
 // The grid for `count` items, a thread each, in threadgroups of `group`.
 inline serenity::gpu::IndirectGrid indirect_grid(uint count, uint group) {
-    // At least one thread: a grid of none is not one Metal takes.
-    return serenity::gpu::IndirectGrid{{metal::max(count, 1u), 1u, 1u}, {group, 1u, 1u}, count};
+  // At least one thread: a grid of none is not one Metal takes.
+  return serenity::gpu::IndirectGrid{
+      {metal::max(count, 1u), 1u, 1u}, {group, 1u, 1u}, count};
 }
 
 }  // namespace shaders

@@ -16,12 +16,15 @@ namespace serenity {
 namespace contracts {
 
 struct TextureReference {
-    uint32_t index;  // into the texture records, or no_texture
+  uint32_t index;  // into the texture records, or no_texture
 };
 
-static_assert(sizeof(TextureReference) == 4, "TextureReference must be the same 4 bytes on the host and in shaders");
+static_assert(
+    sizeof(TextureReference) == 4,
+    "TextureReference must be the same 4 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<TextureReference>, "TextureReference is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<TextureReference>,
+              "TextureReference is written to the GPU as bytes");
 #endif
 
 // The index of a reference to no texture. A constant at namespace scope must

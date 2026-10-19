@@ -30,20 +30,24 @@
 // its peak, which its glow this frame scales (core/animation/glow.h,
 // metal/scene/light_glows.h), 1 for a light that does not blink.
 
-#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace lights {
 
 struct SphereLightData {
-    contracts::Float3 radiance;
-    uint32_t shape;  // its sphere: where it is and how big, and how a ray that reaches it knows it
+  contracts::Float3 radiance;
+  uint32_t shape;  // its sphere: where it is and how big, and how a ray that
+                   // reaches it knows it
 };
 
-static_assert(sizeof(SphereLightData) == 16, "SphereLightData must be the same 16 bytes on the host and in shaders");
+static_assert(
+    sizeof(SphereLightData) == 16,
+    "SphereLightData must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<SphereLightData>, "SphereLightData is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<SphereLightData>,
+              "SphereLightData is written to the GPU as bytes");
 #endif
 
 }  // namespace lights

@@ -66,99 +66,112 @@ namespace shaders {
 // A sphere light as the functions below read it: its data, and where its
 // shape is and how big, from the frame's transforms (emitter.metal.h).
 struct SphereLight {
-    float3 center;
-    float radius;
-    float3 radiance;
-    uint primitive;  // its shape, which a shadow ray toward it ignores
+  float3 center;
+  float radius;
+  float3 radiance;
+  uint primitive;  // its shape, which a shadow ray toward it ignores
 };
 
 // Its power (emitter.metal.h, light_power): 4 pi r^2 x pi x luminance,
 // RTXDI's SphereLight::GetPower without its shaping.
 inline float sphere_light_power(SphereLight light) {
-    constexpr float pi = 3.14159265358979f;
-    return 4.0f * pi * light.radius * light.radius * pi * luminance(light.radiance);
+  constexpr float pi = 3.14159265358979f;
+  return 4.0f * pi * light.radius * light.radius * pi *
+         luminance(light.radiance);
 }
 
-inline SphereLight sphere_light(serenity::lights::SphereLightData light, serenity::contracts::Transform placed,
+inline SphereLight sphere_light(serenity::lights::SphereLightData light,
+                                serenity::contracts::Transform placed,
                                 float glow) {
-    return SphereLight{transform_translation(placed), transform_scale(placed), to_float3(light.radiance) * glow,
-                       light.shape};
+  return SphereLight{transform_translation(placed), transform_scale(placed),
+                     to_float3(light.radiance) * glow, light.shape};
 }
 
 struct LightView {
-    float3 direction;      // unit, from the point to the center
-    float distance;        // to the center
-    float sin2;            // sin^2 of the cone's half-angle: (r / d)^2, at most 1
-    float cos_max;         // cos of the cone's half-angle
-    float one_minus_cos;   // 1 - cos_max, computed without cancelling
-    float solid_angle;     // of the cone: 2 pi (1 - cos_max)
+  float3 direction;     // unit, from the point to the center
+  float distance;       // to the center
+  float sin2;           // sin^2 of the cone's half-angle: (r / d)^2, at most 1
+  float cos_max;        // cos of the cone's half-angle
+  float one_minus_cos;  // 1 - cos_max, computed without cancelling
+  float solid_angle;    // of the cone: 2 pi (1 - cos_max)
 };
 
 inline LightView view_light(SphereLight light, float3 point) {
-    const float3 to_center = light.center - point;
-    const float distance = metal::length(to_center);
-    const float sin2 = metal::min(1.0f, (light.radius * light.radius) / (distance * distance));
-    const float cos_max = metal::sqrt(1.0f - sin2);
-    // 1 - cos a = sin^2 a / (1 + cos a): the direct difference cancels to 0
-    // for a small, distant light (r / d = 1e-4 makes 1 - sin^2 round to 1),
-    // and the light would vanish; this form keeps its precision.
-    const float one_minus_cos = sin2 / (1.0f + cos_max);
-    return LightView{to_center / distance, distance, sin2, cos_max, one_minus_cos, 2.0f * M_PI_F * one_minus_cos};
+  const float3 to_center = light.center - point;
+  const float distance = metal::length(to_center);
+  const float sin2 =
+      metal::min(1.0f, (light.radius * light.radius) / (distance * distance));
+  const float cos_max = metal::sqrt(1.0f - sin2);
+  // 1 - cos a = sin^2 a / (1 + cos a): the direct difference cancels to 0
+  // for a small, distant light (r / d = 1e-4 makes 1 - sin^2 round to 1),
+  // and the light would vanish; this form keeps its precision.
+  const float one_minus_cos = sin2 / (1.0f + cos_max);
+  return LightView{
+      to_center / distance,         distance, sin2, cos_max, one_minus_cos,
+      2.0f * M_PI_F * one_minus_cos};
 }
 
 // A direction within the light's cone, uniform in solid angle, from a point
 // `u` in the unit square: cos t uniform on [cos_max, 1], the azimuth uniform.
 inline float3 direction_to_light(LightView v, float2 u) {
-    const float cos_t = 1.0f - u.x * v.one_minus_cos;
-    const float sin_t = metal::sqrt(metal::max(0.0f, 1.0f - cos_t * cos_t));
-    const float phi = 2.0f * M_PI_F * u.y;
-    const Tangents f = tangents(v.direction);
-    return sin_t * metal::cos(phi) * f.t + sin_t * metal::sin(phi) * f.b + cos_t * v.direction;
+  const float cos_t = 1.0f - u.x * v.one_minus_cos;
+  const float sin_t = metal::sqrt(metal::max(0.0f, 1.0f - cos_t * cos_t));
+  const float phi = 2.0f * M_PI_F * u.y;
+  const Tangents f = tangents(v.direction);
+  return sin_t * metal::cos(phi) * f.t + sin_t * metal::sin(phi) * f.b +
+         cos_t * v.direction;
 }
 
 // How far along unit `direction`, within the light's cone, the ray reaches
 // the light's surface from the point: the nearer root of the ray and the
 // sphere. At the cone's rim the root is double, d cos a.
-inline float distance_to_light(SphereLight light, LightView v, float3 direction) {
-    const float along = v.distance * metal::dot(direction, v.direction);
-    // The ray's distance from the center, squared: d^2 sin^2 of the angle
-    // between them, from the cross product. Not d^2 - along^2, which for a
-    // light far off subtracts two numbers near d^2 and loses the difference.
-    const float3 across = metal::cross(direction, v.direction);
-    const float off2 = v.distance * v.distance * metal::dot(across, across);
-    return along - metal::sqrt(metal::max(0.0f, light.radius * light.radius - off2));
+inline float distance_to_light(SphereLight light, LightView v,
+                               float3 direction) {
+  const float along = v.distance * metal::dot(direction, v.direction);
+  // The ray's distance from the center, squared: d^2 sin^2 of the angle
+  // between them, from the cross product. Not d^2 - along^2, which for a
+  // light far off subtracts two numbers near d^2 and loses the difference.
+  const float3 across = metal::cross(direction, v.direction);
+  const float off2 = v.distance * v.distance * metal::dot(across, across);
+  return along -
+         metal::sqrt(metal::max(0.0f, light.radius * light.radius - off2));
 }
 
 // Contract 3, for a sphere light. A point inside the light has no sample:
 // LightSample{}, its pdf 0.
 
-inline serenity::contracts::LightSample sphere_sample_light(SphereLight light, float3 point, float2 u) {
-    const LightView v = view_light(light, point);
-    if (v.distance <= light.radius) {
-        return serenity::contracts::LightSample{};
-    }
-    const float3 d = direction_to_light(v, u);
-    return serenity::contracts::LightSample{
-        to_packed(d), distance_to_light(light, v, d), to_packed(light.radiance), 1.0f / v.solid_angle,
-        light.primitive, {0u, 0u, 0u}};
+inline serenity::contracts::LightSample sphere_sample_light(SphereLight light,
+                                                            float3 point,
+                                                            float2 u) {
+  const LightView v = view_light(light, point);
+  if (v.distance <= light.radius) {
+    return serenity::contracts::LightSample{};
+  }
+  const float3 d = direction_to_light(v, u);
+  return serenity::contracts::LightSample{to_packed(d),
+                                          distance_to_light(light, v, d),
+                                          to_packed(light.radiance),
+                                          1.0f / v.solid_angle,
+                                          light.primitive,
+                                          {0u, 0u, 0u}};
 }
 
 // The same radiance from every point of it, every way.
-inline float3 sphere_emitted(SphereLight light) {
-    return light.radiance;
-}
+inline float3 sphere_emitted(SphereLight light) { return light.radiance; }
 
-inline float sphere_light_pdf(SphereLight light, float3 point, float3 direction) {
-    const LightView v = view_light(light, point);
-    // Inside the cone: on the light's side, and sin^2 of the angle to its
-    // middle, the cross product's length squared, at most sin^2 a; this
-    // holds its precision where cos against cos_max would cancel.
-    const float3 across = metal::cross(direction, v.direction);
-    if (v.distance <= light.radius || metal::dot(direction, v.direction) <= 0.0f ||
-        metal::dot(across, across) > v.sin2) {
-        return 0.0f;
-    }
-    return 1.0f / v.solid_angle;
+inline float sphere_light_pdf(SphereLight light, float3 point,
+                              float3 direction) {
+  const LightView v = view_light(light, point);
+  // Inside the cone: on the light's side, and sin^2 of the angle to its
+  // middle, the cross product's length squared, at most sin^2 a; this
+  // holds its precision where cos against cos_max would cancel.
+  const float3 across = metal::cross(direction, v.direction);
+  if (v.distance <= light.radius ||
+      metal::dot(direction, v.direction) <= 0.0f ||
+      metal::dot(across, across) > v.sin2) {
+    return 0.0f;
+  }
+  return 1.0f / v.solid_angle;
 }
 
 // Contract 4, for a sphere light placed by `placed` (the transform
@@ -167,9 +180,10 @@ inline float sphere_light_pdf(SphereLight light, float3 point, float3 direction)
 // The point `reached`, on the sphere placed by `placed` up to rounding,
 // encoded as contract 4's `point`: the unit direction from the center in
 // the sphere's own space.
-inline uint sphere_point_at(serenity::contracts::Transform placed, float3 reached) {
-    // On the unit sphere in its own space, up to the root's rounding.
-    return encode_unit(metal::normalize(transform_to_object(placed, reached)));
+inline uint sphere_point_at(serenity::contracts::Transform placed,
+                            float3 reached) {
+  // On the unit sphere in its own space, up to the root's rounding.
+  return encode_unit(metal::normalize(transform_to_object(placed, reached)));
 }
 
 // The density with which sphere_sample_light() draws the direction from
@@ -181,30 +195,33 @@ inline uint sphere_point_at(serenity::contracts::Transform placed, float3 reache
 // by construction, so this asks nothing of the direction (a shift that
 // reconnects to a light point may land on the rim as anywhere:
 // metal/integrator/shift.metal.h).
-inline float sphere_point_pdf(SphereLight light, float3 point, serenity::contracts::LightReceived received) {
-    const LightView v = view_light(light, point);
-    return v.distance > light.radius && received.cos_light > 0.0f ? 1.0f / v.solid_angle : 0.0f;
+inline float sphere_point_pdf(SphereLight light, float3 point,
+                              serenity::contracts::LightReceived received) {
+  const LightView v = view_light(light, point);
+  return v.distance > light.radius && received.cos_light > 0.0f
+             ? 1.0f / v.solid_angle
+             : 0.0f;
 }
 
 // What the sphere's point in `sample` gives `point`, as this light is
 // placed and lit, at the decoded point. The identity, not its bare word,
 // so it cannot be passed in another word's place (I.24).
-inline serenity::contracts::LightReceived sphere_evaluate_point(SphereLight light,
-                                                               serenity::contracts::Transform placed,
-                                                               serenity::contracts::LightPoint sample,
-                                                               float3 point) {
-    // s R v: the outward normal at y scaled by the radius, and y - c.
-    const float3 outward = transform_direction(placed, decode_unit(sample.point));
-    const float3 to_light = light.center + outward - point;
-    const float distance = metal::length(to_light);
-    const float3 direction = to_light / distance;
-    return serenity::contracts::LightReceived{to_packed(direction),
-                                              distance,
-                                              to_packed(light.radiance),
-                                              -metal::dot(metal::normalize(outward), direction),
-                                              light.radius * light.radius,
-                                              light.primitive,
-                                              {0u, 0u}};
+inline serenity::contracts::LightReceived sphere_evaluate_point(
+    SphereLight light, serenity::contracts::Transform placed,
+    serenity::contracts::LightPoint sample, float3 point) {
+  // s R v: the outward normal at y scaled by the radius, and y - c.
+  const float3 outward = transform_direction(placed, decode_unit(sample.point));
+  const float3 to_light = light.center + outward - point;
+  const float distance = metal::length(to_light);
+  const float3 direction = to_light / distance;
+  return serenity::contracts::LightReceived{
+      to_packed(direction),
+      distance,
+      to_packed(light.radiance),
+      -metal::dot(metal::normalize(outward), direction),
+      light.radius * light.radius,
+      light.primitive,
+      {0u, 0u}};
 }
 
 }  // namespace shaders

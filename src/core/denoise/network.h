@@ -57,36 +57,36 @@ namespace serenity::denoise {
 // Not performance-sensitive: about 2 MB read once.
 
 class NetworkError : public std::runtime_error {
-public:
-    explicit NetworkError(const std::string& what) : std::runtime_error(what) {}
+ public:
+  explicit NetworkError(const std::string& what) : std::runtime_error(what) {}
 };
 
 // One convolution's parameters, in PyTorch's order.
 struct Convolution {
-    std::uint32_t inputs = 0;
-    std::uint32_t outputs = 0;
-    std::uint32_t kernel = 0;    // 3, or 1 for the head
-    std::vector<float> weight;   // [outputs][inputs][kernel][kernel]
-    std::vector<float> bias;     // [outputs]
+  std::uint32_t inputs = 0;
+  std::uint32_t outputs = 0;
+  std::uint32_t kernel = 0;   // 3, or 1 for the head
+  std::vector<float> weight;  // [outputs][inputs][kernel][kernel]
+  std::vector<float> bias;    // [outputs]
 };
 
 // training/model.py's Widths: one encoder and one decoder width a level
 // (contracts::unet_levels).
 struct Widths {
-    std::array<std::uint32_t, contracts::unet_levels> enc{};
-    std::uint32_t bottleneck = 0;
-    std::array<std::uint32_t, contracts::unet_levels> dec{};  // levels 3, 2, 1, 0
+  std::array<std::uint32_t, contracts::unet_levels> enc{};
+  std::uint32_t bottleneck = 0;
+  std::array<std::uint32_t, contracts::unet_levels> dec{};  // levels 3, 2, 1, 0
 };
 
 struct Network {
-    Widths widths;
-    std::array<Convolution, contracts::unet_levels> enc;
-    Convolution bottleneck_a;
-    Convolution bottleneck_b;
-    std::array<Convolution, contracts::unet_levels> dec;
-    Convolution dec_final;
-    Convolution head;
-    std::string source;  // the directory read, for messages
+  Widths widths;
+  std::array<Convolution, contracts::unet_levels> enc;
+  Convolution bottleneck_a;
+  Convolution bottleneck_b;
+  std::array<Convolution, contracts::unet_levels> dec;
+  Convolution dec_final;
+  Convolution head;
+  std::string source;  // the directory read, for messages
 };
 
 // Reads the network exported into `directory` (above). Throws NetworkError.
@@ -94,6 +94,8 @@ Network load_network(const std::filesystem::path& directory);
 
 // Reads a network from the two files' contents, naming it `source` in
 // errors: for tests, and for load_network() itself.
-Network parse_network(const std::string& layout_json, std::span<const std::byte> weights, const std::string& source);
+Network parse_network(const std::string& layout_json,
+                      std::span<const std::byte> weights,
+                      const std::string& source);
 
 }  // namespace serenity::denoise

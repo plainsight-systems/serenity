@@ -44,18 +44,19 @@ namespace serenity::metal {
 // draws in docs/research/2026-10-18-production-sweep.md. Three dispatches,
 // and MNEE's two.
 class RestirPtInitialPass {
-public:
-    explicit RestirPtInitialPass(const Library& library);
+ public:
+  explicit RestirPtInitialPass(const Library& library);
 
-    // Records the pass. Throws MetalError if `resources` lacks any array or
-    // structure it reads or writes above.
-    void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+  // Records the pass. Throws MetalError if `resources` lacks any array or
+  // structure it reads or writes above.
+  void record(MTL4::ComputeCommandEncoder* encoder,
+              const FrameResources& resources) const;
 
-private:
-    NS::SharedPtr<MTL::ComputePipelineState> power_;
-    NS::SharedPtr<MTL::ComputePipelineState> tiles_;
-    NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
-    MneePass mnee_;
+ private:
+  NS::SharedPtr<MTL::ComputePipelineState> power_;
+  NS::SharedPtr<MTL::ComputePipelineState> tiles_;
+  NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
+  MneePass mnee_;
 };
 
 }  // namespace serenity::metal

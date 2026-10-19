@@ -1,9 +1,8 @@
 #pragma once
 
-#include <array>
-
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
+#include <array>
 
 #include "core/frame/extent.h"
 #include "metal/device/device.h"
@@ -45,35 +44,39 @@ namespace serenity::metal {
 // Throws MetalError if the half size is not one Metal makes an image of,
 // or the device cannot make one.
 class DepthOfFieldImages {
-public:
-    DepthOfFieldImages(const Device& device, Submission& submission);
+ public:
+  DepthOfFieldImages(const Device& device, Submission& submission);
 
-    DepthOfFieldImages(const DepthOfFieldImages&) = delete;
-    DepthOfFieldImages& operator=(const DepthOfFieldImages&) = delete;
-    DepthOfFieldImages(DepthOfFieldImages&&) = delete;
-    DepthOfFieldImages& operator=(DepthOfFieldImages&&) = delete;
-    ~DepthOfFieldImages() = default;
+  DepthOfFieldImages(const DepthOfFieldImages&) = delete;
+  DepthOfFieldImages& operator=(const DepthOfFieldImages&) = delete;
+  DepthOfFieldImages(DepthOfFieldImages&&) = delete;
+  DepthOfFieldImages& operator=(DepthOfFieldImages&&) = delete;
+  ~DepthOfFieldImages() = default;
 
-    // Ready for a frame of the output's `size`: made, or remade, if not made
-    // at it.
-    void prepare(frame::Extent size);
+  // Ready for a frame of the output's `size`: made, or remade, if not made
+  // at it.
+  void prepare(frame::Extent size);
 
-    // Null, and 0, before the first prepare().
-    MTL::Texture* presort() const noexcept { return images_[0].texture.get(); }
-    MTL::Texture* far() const noexcept { return images_[1].texture.get(); }
-    MTL::Texture* near() const noexcept { return images_[2].texture.get(); }
-    MTL::Texture* far_filtered() const noexcept { return images_[3].texture.get(); }
-    MTL::Texture* near_filtered() const noexcept { return images_[4].texture.get(); }
-    MTL::GPUAddress tiles() const noexcept { return tiles_.address(); }
-    MTL::GPUAddress dilated() const noexcept { return dilated_.address(); }
+  // Null, and 0, before the first prepare().
+  MTL::Texture* presort() const noexcept { return images_[0].texture.get(); }
+  MTL::Texture* far() const noexcept { return images_[1].texture.get(); }
+  MTL::Texture* near() const noexcept { return images_[2].texture.get(); }
+  MTL::Texture* far_filtered() const noexcept {
+    return images_[3].texture.get();
+  }
+  MTL::Texture* near_filtered() const noexcept {
+    return images_[4].texture.get();
+  }
+  MTL::GPUAddress tiles() const noexcept { return tiles_.address(); }
+  MTL::GPUAddress dilated() const noexcept { return dilated_.address(); }
 
-private:
-    NS::SharedPtr<MTL::Device> device_;
-    Submission& submission_;
-    frame::Extent size_;
-    std::array<ResidentTexture, 5> images_;
-    ResidentBuffer tiles_;
-    ResidentBuffer dilated_;
+ private:
+  NS::SharedPtr<MTL::Device> device_;
+  Submission& submission_;
+  frame::Extent size_;
+  std::array<ResidentTexture, 5> images_;
+  ResidentBuffer tiles_;
+  ResidentBuffer dilated_;
 };
 
 }  // namespace serenity::metal

@@ -68,62 +68,73 @@ using MaskedQuery = metal::raytracing::intersection_query<>;
 // each candidate by candidate_shape(), and so reads neither the structure
 // nor the table itself.
 struct MaskedStructure {
-    metal::raytracing::primitive_acceleration_structure structure;
-    constant uint* table;
-    bool empty;
+  metal::raytracing::primitive_acceleration_structure structure;
+  constant uint* table;
+  bool empty;
 
-    uint shape(uint primitive) const { return table == nullptr ? primitive : table[primitive]; }
+  uint shape(uint primitive) const {
+    return table == nullptr ? primitive : table[primitive];
+  }
 
-    void reset(thread MaskedQuery& query, metal::raytracing::ray r,
-               metal::raytracing::intersection_params params) const {
-        query.reset(r, structure, params);
-    }
-    uint candidate_shape(thread MaskedQuery& query) const { return shape(query.get_candidate_primitive_id()); }
-    uint committed_shape(thread MaskedQuery& query) const { return shape(query.get_committed_primitive_id()); }
+  void reset(thread MaskedQuery& query, metal::raytracing::ray r,
+             metal::raytracing::intersection_params params) const {
+    query.reset(r, structure, params);
+  }
+  uint candidate_shape(thread MaskedQuery& query) const {
+    return shape(query.get_candidate_primitive_id());
+  }
+  uint committed_shape(thread MaskedQuery& query) const {
+    return shape(query.get_committed_primitive_id());
+  }
 };
 
-inline MaskedStructure masked(SceneStructure structures, serenity::contracts::RayMask mask) {
-    if (mask == serenity::contracts::RayMask::everything) {
-        return MaskedStructure{structures->everything, nullptr, false};
-    }
-    return MaskedStructure{structures->occluders, structures->occluder_shapes, structures->occluder_count == 0u};
+inline MaskedStructure masked(SceneStructure structures,
+                              serenity::contracts::RayMask mask) {
+  if (mask == serenity::contracts::RayMask::everything) {
+    return MaskedStructure{structures->everything, nullptr, false};
+  }
+  return MaskedStructure{structures->occluders, structures->occluder_shapes,
+                         structures->occluder_count == 0u};
 }
 
 struct Hit {
-    bool found;
-    float t;         // the ray's parameter: its distance, the direction being unit
-    uint primitive;  // the shape, as primitive i is shape i (shapes/primitive.h)
+  bool found;
+  float t;  // the ray's parameter: its distance, the direction being unit
+  uint primitive;  // the shape, as primitive i is shape i (shapes/primitive.h)
 };
 
 // The nearest shape `mask` finds along `r`, its direction unit length.
-inline Hit trace(SceneStructure structures, Shapes shapes, metal::raytracing::ray r,
-                 serenity::contracts::RayMask mask) {
-    using namespace metal::raytracing;
-    const MaskedStructure traversed = masked(structures, mask);
-    if (traversed.empty) {
-        return Hit{false, 0.0f, 0u};
-    }
-    intersection_params params;
-    params.assume_geometry_type(geometry_type::bounding_box);
-    params.accept_any_intersection(false);
+inline Hit trace(SceneStructure structures, Shapes shapes,
+                 metal::raytracing::ray r, serenity::contracts::RayMask mask) {
+  using namespace metal::raytracing;
+  const MaskedStructure traversed = masked(structures, mask);
+  if (traversed.empty) {
+    return Hit{false, 0.0f, 0u};
+  }
+  intersection_params params;
+  params.assume_geometry_type(geometry_type::bounding_box);
+  params.accept_any_intersection(false);
 
-    MaskedQuery query;
-    traversed.reset(query, r, params);
-    ray nearer = r;  // hits nearer than the nearest so far
-    while (query.next()) {
-        if (query.get_candidate_intersection_type() != intersection_type::bounding_box) {
-            continue;
-        }
-        const Crossing crossing = intersect_shape(shapes, traversed.candidate_shape(query), nearer);
-        if (crossing.found) {
-            query.commit_bounding_box_intersection(crossing.t);
-            nearer.max_distance = crossing.t;
-        }
+  MaskedQuery query;
+  traversed.reset(query, r, params);
+  ray nearer = r;  // hits nearer than the nearest so far
+  while (query.next()) {
+    if (query.get_candidate_intersection_type() !=
+        intersection_type::bounding_box) {
+      continue;
     }
+    const Crossing crossing =
+        intersect_shape(shapes, traversed.candidate_shape(query), nearer);
+    if (crossing.found) {
+      query.commit_bounding_box_intersection(crossing.t);
+      nearer.max_distance = crossing.t;
+    }
+  }
 
-    const bool found = query.get_committed_intersection_type() == intersection_type::bounding_box;
-    return Hit{found, found ? query.get_committed_distance() : 0.0f,
-               found ? traversed.committed_shape(query) : 0u};
+  const bool found = query.get_committed_intersection_type() ==
+                     intersection_type::bounding_box;
+  return Hit{found, found ? query.get_committed_distance() : 0.0f,
+             found ? traversed.committed_shape(query) : 0u};
 }
 
 // Whether any shape `mask` finds but `ignore` lies along `r`: a shadow
@@ -132,30 +143,32 @@ inline Hit trace(SceneStructure structures, Shapes shapes, metal::raytracing::ra
 // carries the occluders, which hold no light, so its light's shape is not
 // among the candidates at all; `ignore` stays for a ray that carries
 // everything, and costs a comparison.
-inline bool occluded(SceneStructure structures, Shapes shapes, metal::raytracing::ray r,
+inline bool occluded(SceneStructure structures, Shapes shapes,
+                     metal::raytracing::ray r,
                      serenity::contracts::RayMask mask, uint ignore) {
-    using namespace metal::raytracing;
-    const MaskedStructure traversed = masked(structures, mask);
-    if (traversed.empty) {
-        return false;
-    }
-    intersection_params params;
-    params.assume_geometry_type(geometry_type::bounding_box);
-    params.accept_any_intersection(true);
-
-    MaskedQuery query;
-    traversed.reset(query, r, params);
-    while (query.next()) {
-        if (query.get_candidate_intersection_type() != intersection_type::bounding_box) {
-            continue;
-        }
-        const uint shape = traversed.candidate_shape(query);
-        if (shape != ignore && intersect_shape(shapes, shape, r).found) {
-            query.abort();
-            return true;
-        }
-    }
+  using namespace metal::raytracing;
+  const MaskedStructure traversed = masked(structures, mask);
+  if (traversed.empty) {
     return false;
+  }
+  intersection_params params;
+  params.assume_geometry_type(geometry_type::bounding_box);
+  params.accept_any_intersection(true);
+
+  MaskedQuery query;
+  traversed.reset(query, r, params);
+  while (query.next()) {
+    if (query.get_candidate_intersection_type() !=
+        intersection_type::bounding_box) {
+      continue;
+    }
+    const uint shape = traversed.candidate_shape(query);
+    if (shape != ignore && intersect_shape(shapes, shape, r).found) {
+      query.abort();
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace shaders

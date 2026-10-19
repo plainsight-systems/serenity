@@ -37,7 +37,8 @@ std::optional<std::string_view> invalid(const contracts::Camera& camera);
 // `camera` framed for an image of `size`. Preconditions, checked (I.5, E.2):
 // `camera` valid (invalid() gives none) and `size` non-empty; throws
 // std::invalid_argument otherwise.
-contracts::CameraData shader_form(const contracts::Camera& camera, frame::Extent size);
+contracts::CameraData shader_form(const contracts::Camera& camera,
+                                  frame::Extent size);
 
 // The circle of confusion's scale for `camera` in an image of `size`
 // (contract 21, core/contracts/depth_of_field.h): a point at view depth z
@@ -55,7 +56,8 @@ contracts::CameraData shader_form(const contracts::Camera& camera, frame::Extent
 // depth-of-field pass blurs by it; tests/gpu/camera_test.cpp holds it to
 // the lens rays camera/thin_lens.metal.h traces (a test of a match between
 // implementations). Precondition as shader_form()'s, checked.
-float circle_of_confusion_scale(const contracts::Camera& camera, frame::Extent size);
+float circle_of_confusion_scale(const contracts::Camera& camera,
+                                frame::Extent size);
 
 // The camera's view axes, each unit length: right, up, and backward
 // (toward the viewer, -forward), the axes the denoiser's network reads
@@ -64,9 +66,9 @@ float circle_of_confusion_scale(const contracts::Camera& camera, frame::Extent s
 // member has a default member initializer, as a Camera's does (contract
 // 8), so a ViewAxes is never garbage (ES.20).
 struct ViewAxes {
-    contracts::Float3 right{};
-    contracts::Float3 up{};
-    contracts::Float3 backward{};
+  contracts::Float3 right{};
+  contracts::Float3 up{};
+  contracts::Float3 backward{};
 };
 ViewAxes view_axes(const contracts::Camera& camera);
 

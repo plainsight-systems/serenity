@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Foundation/Foundation.hpp>
+#include <Metal/Metal.hpp>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -10,14 +12,11 @@
 #include <variant>
 #include <vector>
 
-#include <Foundation/Foundation.hpp>
-#include <Metal/Metal.hpp>
-
 #include "core/animation/animate.h"
 #include "core/contracts/camera.h"
+#include "core/denoise/network.h"
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
-#include "core/denoise/network.h"
 #include "core/frame/schedule.h"
 #include "core/sampling/jitter.h"
 #include "core/scene/scene.h"
@@ -29,7 +28,6 @@
 #include "metal/device/presenter.h"
 #include "metal/device/static_arrays.h"
 #include "metal/device/submission.h"
-#include "metal/frame/frame_resources.h"
 #include "metal/film/failure_count.h"
 #include "metal/frame/accumulation.h"
 #include "metal/frame/checkerboard_images.h"
@@ -37,6 +35,7 @@
 #include "metal/frame/depth_of_field_images.h"
 #include "metal/frame/feature_images.h"
 #include "metal/frame/frame_images.h"
+#include "metal/frame/frame_resources.h"
 #include "metal/frame/mnee_list.h"
 #include "metal/passes/checkerboard_fill/checkerboard_fill.h"
 #include "metal/passes/denoise/denoise.h"
@@ -50,9 +49,9 @@
 #include "metal/passes/restir_pt_temporal/restir_pt_temporal.h"
 #include "metal/passes/test_pattern/test_pattern.h"
 #include "metal/passes/tone_map/tone_map.h"
-#include "metal/scene/shape_transforms.h"
 #include "metal/scene/light_glows.h"
 #include "metal/scene/scene_buffers.h"
+#include "metal/scene/shape_transforms.h"
 
 namespace serenity::metal {
 
@@ -73,12 +72,11 @@ namespace serenity::metal {
 // The scene. A frame graph whose passes read a scene (frame::needs_scene)
 // needs one: the renderer copies it to the GPU (scene_buffers.h) and builds
 // its acceleration structures (scene_acceleration.h) at construction, and
-// refuses, by MetalError, a graph that needs a scene when given none. Each frame
-// then gives
-// every pass the same resources (frame_resources.h), the scene among them.
-// A graph that reads no scene runs with or without one; given one, it is not
-// copied, and the structure is built over the scene's shapes as the Shape
-// family bounds them (shapes/shapes.h).
+// refuses, by MetalError, a graph that needs a scene when given none. Each
+// frame then gives every pass the same resources (frame_resources.h), the scene
+// among them. A graph that reads no scene runs with or without one; given one,
+// it is not copied, and the structure is built over the scene's shapes as the
+// Shape family bounds them (shapes/shapes.h).
 //
 // Animate (logical-overview.md). The shapes' transforms and the lights'
 // glows are kept apart from the scene's still arrays
@@ -114,16 +112,16 @@ namespace serenity::metal {
 // The accumulated image. A frame graph with a pass that averages its frames
 // (frame::accumulates) has one (accumulation.h), and at most one such pass,
 // a rule of the core's (frame::invalid, core/frame/schedule.h) that the
-// renderer applies at construction, refusing by MetalError any schedule the core
-// would not accept. Each frame, prepare() readies it from the frame's inputs
-// before the frame's submission begins, since remaking it for a new size
+// renderer applies at construction, refusing by MetalError any schedule the
+// core would not accept. Each frame, prepare() readies it from the frame's
+// inputs before the frame's submission begins, since remaking it for a new size
 // waits for the frames in flight; record() then gives the pass the image and
 // the count of frames it holds, through the frame constants, and Film's
 // counter of samples left out for not being finite (metal/film/
 // failure_count.h), which non_finite_samples() reads. A frame whose inputs
-// claim an image the history does not hold is refused, by MetalError, and so is a
-// frame recorded without being prepared, and, when the scene changes, a
-// frame at another time than the frames the image holds (accumulation.h).
+// claim an image the history does not hold is refused, by MetalError, and so is
+// a frame recorded without being prepared, and, when the scene changes, a frame
+// at another time than the frames the image holds (accumulation.h).
 //
 // The target is a texture and its size, whatever owns it: the window's
 // drawable (presenter.h) or an offscreen image (offscreen.h). The renderer
@@ -403,298 +401,328 @@ namespace serenity::metal {
 // build: last frame's structure is the one last frame built. Nothing is
 // allocated.
 class Renderer {
-public:
-    // Builds a pass for each entry of `schedule` from the backend's shader
-    // library, compiled into the program (cmake/MetalLibrary.cmake), makes the
-    // ring resident through `submission`, and, if any pass reads the scene,
-    // puts `scene` on the GPU. `scene` may be null when no pass reads it.
-    // Throws MetalError if the schedule is invalid (frame::invalid), a pass needs a
-    // scene and there is none, a glowing light is not one of the scene's, a
-    // ReSTIR PT graph's scene has more media, shapes or lights or a wider
-    // material value than its G-buffer and light tiles hold (above), or a
-    // pipeline, buffer or structure cannot be built.
-    Renderer(const Device& device, Submission& submission, const frame::Schedule& schedule,
-             const scene::SceneDescription* scene);
+ public:
+  // Builds a pass for each entry of `schedule` from the backend's shader
+  // library, compiled into the program (cmake/MetalLibrary.cmake), makes the
+  // ring resident through `submission`, and, if any pass reads the scene,
+  // puts `scene` on the GPU. `scene` may be null when no pass reads it.
+  // Throws MetalError if the schedule is invalid (frame::invalid), a pass needs
+  // a scene and there is none, a glowing light is not one of the scene's, a
+  // ReSTIR PT graph's scene has more media, shapes or lights or a wider
+  // material value than its G-buffer and light tiles hold (above), or a
+  // pipeline, buffer or structure cannot be built.
+  Renderer(const Device& device, Submission& submission,
+           const frame::Schedule& schedule,
+           const scene::SceneDescription* scene);
 
-    Renderer(const Renderer&) = delete;
-    Renderer& operator=(const Renderer&) = delete;
-    Renderer(Renderer&&) = delete;
-    Renderer& operator=(Renderer&&) = delete;
-    // Waits for the GPU before anything of the renderer's is released
-    // (submission.h, Lifetime).
-    ~Renderer();
+  Renderer(const Renderer&) = delete;
+  Renderer& operator=(const Renderer&) = delete;
+  Renderer(Renderer&&) = delete;
+  Renderer& operator=(Renderer&&) = delete;
+  // Waits for the GPU before anything of the renderer's is released
+  // (submission.h, Lifetime).
+  ~Renderer();
 
-    // Checks frame `inputs` and readies what it needs from before it: its
-    // time must be finite within float's range, which the shaders read; a
-    // graph that reads a scene needs the frame's camera; the accumulated
-    // image, if the graph has one (accumulation.h), must hold what the
-    // inputs claim; and the images between passes, if the graph has any
-    // (frame_images.h), are made at `size`; and, for a graph with the
-    // features pass, the frame before, if given, must have a finite time and
-    // a camera that can be framed. Called before the frame's submission
-    // begins, for every graph; throws MetalError if any fails.
-    //
-    // Everything a frame's inputs or the scene can get wrong is checked here
-    // or at construction, before the submission begins (E.4): an exception
-    // after begin() leaves the submission open, never to be committed
-    // (submission.h), so record() throws only for a broken protocol or a
-    // Metal failure, which end the run.
-    void prepare(const frame::FrameInputs& inputs, frame::Extent size);
+  // Checks frame `inputs` and readies what it needs from before it: its
+  // time must be finite within float's range, which the shaders read; a
+  // graph that reads a scene needs the frame's camera; the accumulated
+  // image, if the graph has one (accumulation.h), must hold what the
+  // inputs claim; and the images between passes, if the graph has any
+  // (frame_images.h), are made at `size`; and, for a graph with the
+  // features pass, the frame before, if given, must have a finite time and
+  // a camera that can be framed. Called before the frame's submission
+  // begins, for every graph; throws MetalError if any fails.
+  //
+  // Everything a frame's inputs or the scene can get wrong is checked here
+  // or at construction, before the submission begins (E.4): an exception
+  // after begin() leaves the submission open, never to be committed
+  // (submission.h), so record() throws only for a broken protocol or a
+  // Metal failure, which end the run.
+  void prepare(const frame::FrameInputs& inputs, frame::Extent size);
 
-    // How many parts a frame's submission has (above, "Two halves"): two
-    // for a denoised graph, one for any other.
-    Parts parts() const noexcept { return denoises_ ? Parts::two : Parts::one; }
+  // How many parts a frame's submission has (above, "Two halves"): two
+  // for a denoised graph, one for any other.
+  Parts parts() const noexcept { return denoises_ ? Parts::two : Parts::one; }
 
-    // Records frame `inputs` into `begun`, writing `target`, of `size`.
-    // `begun` is what Submission::begin() returned, of parts() or of one
-    // part (above, "One part for a denoised graph"). Throws MetalError if
-    // the frame was not prepared at this size, if the graph uses images or
-    // accumulates; if it has no camera and the graph reads a scene; if
-    // `begun` has two parts and the graph one; or if Metal makes no
-    // encoder.
-    void record(const FrameSlot& begun, const frame::FrameInputs& inputs, MTL::Texture* target,
-                frame::Extent size);
+  // Records frame `inputs` into `begun`, writing `target`, of `size`.
+  // `begun` is what Submission::begin() returned, of parts() or of one
+  // part (above, "One part for a denoised graph"). Throws MetalError if
+  // the frame was not prepared at this size, if the graph uses images or
+  // accumulates; if it has no camera and the graph reads a scene; if
+  // `begun` has two parts and the graph one; or if Metal makes no
+  // encoder.
+  void record(const FrameSlot& begun, const frame::FrameInputs& inputs,
+              MTL::Texture* target, frame::Extent size);
 
-    // Samples left out for not being finite (metal/film/failure_count.h),
-    // over every completed frame; 0 for a graph that accumulates nothing.
-    // Reads no counter a frame in flight may be writing.
-    std::uint64_t non_finite_samples() const noexcept;
+  // Samples left out for not being finite (metal/film/failure_count.h),
+  // over every completed frame; 0 for a graph that accumulates nothing.
+  // Reads no counter a frame in flight may be writing.
+  std::uint64_t non_finite_samples() const noexcept;
 
-    // MNEE requests the work list had no room for, their light lost
-    // (contract 16), over every completed frame, as non_finite_samples()
-    // counts; 0 for a graph without ReSTIR PT's passes.
-    std::uint64_t mnee_lost_requests() const noexcept;
+  // MNEE requests the work list had no room for, their light lost
+  // (contract 16), over every completed frame, as non_finite_samples()
+  // counts; 0 for a graph without ReSTIR PT's passes.
+  std::uint64_t mnee_lost_requests() const noexcept;
 
-    // The accumulated image's floats into `out`, RGBA a pixel, rows top to
-    // bottom: what the passes read, at full precision, for a test or tool
-    // that compares images below what 8 bits a channel can show. In a graph
-    // with the denoise pass, its radiance image instead: what the
-    // presenting pass reads, at the target's size. A readback
-    // (GPU.1), not for a frame loop: it waits for every frame committed
-    // before it and then for its copy (metal/device/readback.h). Throws
-    // MetalError if the graph has no accumulated image, no frame has made it
-    // yet, or `out` is not its size.
-    void read_accumulated(std::span<float> out);
+  // The accumulated image's floats into `out`, RGBA a pixel, rows top to
+  // bottom: what the passes read, at full precision, for a test or tool
+  // that compares images below what 8 bits a channel can show. In a graph
+  // with the denoise pass, its radiance image instead: what the
+  // presenting pass reads, at the target's size. A readback
+  // (GPU.1), not for a frame loop: it waits for every frame committed
+  // before it and then for its copy (metal/device/readback.h). Throws
+  // MetalError if the graph has no accumulated image, no frame has made it
+  // yet, or `out` is not its size.
+  void read_accumulated(std::span<float> out);
 
-    // The feature images (contract 17) as the last frame wrote them, read
-    // back (feature_images.h, FeatureImages::read): a readback (GPU.1), not
-    // for a frame loop, as read_accumulated() is. Throws
-    // MetalError if the graph has no features pass or no frame has made its
-    // images yet.
-    FeatureImages::Read read_features() const;
+  // The feature images (contract 17) as the last frame wrote them, read
+  // back (feature_images.h, FeatureImages::read): a readback (GPU.1), not
+  // for a frame loop, as read_accumulated() is. Throws
+  // MetalError if the graph has no features pass or no frame has made its
+  // images yet.
+  FeatureImages::Read read_features() const;
 
-    // What the last recorded frame hands the network (logical-overview.md,
-    // principle 13), read back as read_accumulated() reads: the fill's
-    // light, RGBA a pixel at the light size, rows top to bottom (a denoised
-    // graph's hand-off; a graph without the denoise pass's filled image,
-    // the one it shows and writes), and the camera jitter the frame's rays
-    // took and a denoised graph's network was given. A readback (GPU.1), for
-    // a test or a tool, not a frame loop. Throws MetalError if the graph's
-    // light is not the network's input (core/frame/schedule.h,
-    // feeds_network) or no frame has been recorded.
-    struct NetworkInput {
-        frame::Extent size;
-        std::vector<float> rgba;
-        sampling::CameraJitter jitter;
-    };
-    NetworkInput read_network_input();
+  // What the last recorded frame hands the network (logical-overview.md,
+  // principle 13), read back as read_accumulated() reads: the fill's
+  // light, RGBA a pixel at the light size, rows top to bottom (a denoised
+  // graph's hand-off; a graph without the denoise pass's filled image,
+  // the one it shows and writes), and the camera jitter the frame's rays
+  // took and a denoised graph's network was given. A readback (GPU.1), for
+  // a test or a tool, not a frame loop. Throws MetalError if the graph's
+  // light is not the network's input (core/frame/schedule.h,
+  // feeds_network) or no frame has been recorded.
+  struct NetworkInput {
+    frame::Extent size;
+    std::vector<float> rgba;
+    sampling::CameraJitter jitter;
+  };
+  NetworkInput read_network_input();
 
-private:
-    using Pass = std::variant<TestPatternPass, PathPass, ToneMapPass, RestirPtInitialPass, RestirPtTemporalPass,
-                              RestirPtSpatialPass, RestirPtShadePass, RestirPtDuplicationPass, FeaturesPass,
-                              DenoisePass, DepthOfFieldPass>;
+ private:
+  using Pass =
+      std::variant<TestPatternPass, PathPass, ToneMapPass, RestirPtInitialPass,
+                   RestirPtTemporalPass, RestirPtSpatialPass, RestirPtShadePass,
+                   RestirPtDuplicationPass, FeaturesPass, DenoisePass,
+                   DepthOfFieldPass>;
 
-    // A pass of the schedule, with its kind (C.1).
-    struct Step {
-        frame::PassKind kind;
-        Pass pass;
-    };
+  // A pass of the schedule, with its kind (C.1).
+  struct Step {
+    frame::PassKind kind;
+    Pass pass;
+  };
 
-    // The frame prepare() readied, until it is recorded.
-    struct Prepared {
-        std::uint64_t index = 0;
-        frame::Extent size;
-        std::uint32_t accumulated_frames = 0;
-        std::uint64_t reused_frames = 0;  // the reuse history's frames before this one
-        bool denoise_history = false;     // the denoiser reads last frame's output
-        bool fill_history = false;        // the checkerboard's fill reads the frame before's light
-    };
+  // The frame prepare() readied, until it is recorded.
+  struct Prepared {
+    std::uint64_t index = 0;
+    frame::Extent size;
+    std::uint32_t accumulated_frames = 0;
+    std::uint64_t reused_frames =
+        0;                         // the reuse history's frames before this one
+    bool denoise_history = false;  // the denoiser reads last frame's output
+    bool fill_history =
+        false;  // the checkerboard's fill reads the frame before's light
+  };
 
-    // Each family's state (above), one struct each, held in place in an
-    // optional, present only for a graph with the family's passes (C.1,
-    // R.5). Each binds its share of a frame's resources.
-    //
-    // ReSTIR PT's: its arrays, its settings and reuse textures, and with
-    // temporal reuse the ring of its reuse constants.
-    struct RestirPtFamily {
-        RestirPtFamily(const Device& device, Submission& submission, const contracts::PathReuseSettings& settings,
-                       std::span<const std::uint16_t> textures, bool spatial, bool temporal, std::uint32_t lights);
-        void bind(FrameResources& resources, const FrameSlot& begun, std::uint64_t index,
-                  const std::optional<contracts::Camera>& previous_camera, frame::Extent light);
+  // Each family's state (above), one struct each, held in place in an
+  // optional, present only for a graph with the family's passes (C.1,
+  // R.5). Each binds its share of a frame's resources.
+  //
+  // ReSTIR PT's: its arrays, its settings and reuse textures, and with
+  // temporal reuse the ring of its reuse constants.
+  struct RestirPtFamily {
+    RestirPtFamily(const Device& device, Submission& submission,
+                   const contracts::PathReuseSettings& settings,
+                   std::span<const std::uint16_t> textures, bool spatial,
+                   bool temporal, std::uint32_t lights);
+    void bind(FrameResources& resources, const FrameSlot& begun,
+              std::uint64_t index,
+              const std::optional<contracts::Camera>& previous_camera,
+              frame::Extent light);
 
-        PathReuseImages images;
-        StaticArrays statics;                // the settings, then the reuse textures
-        std::optional<FrameArray> constants;  // with restir_pt_temporal: contracts::PathReuseConstants
-    };
-    // MNEE's (contract 16): its work list and its count of lost requests.
-    struct MneeFamily {
-        MneeFamily(const Device& device, Submission& submission);
-        void bind(FrameResources& resources, const FrameSlot& begun);
+    PathReuseImages images;
+    StaticArrays statics;  // the settings, then the reuse textures
+    std::optional<FrameArray>
+        constants;  // with restir_pt_temporal: contracts::PathReuseConstants
+  };
+  // MNEE's (contract 16): its work list and its count of lost requests.
+  struct MneeFamily {
+    MneeFamily(const Device& device, Submission& submission);
+    void bind(FrameResources& resources, const FrameSlot& begun);
 
-        MneeList list;
-        FailureCount lost;
-    };
-    // The features pass's: its images, one set or, handed off, one per
-    // frame slot (above, "Two halves"); its constants' ring; and the shapes
-    // as the previous frame placed them, when shapes move.
-    struct FeatureFamily {
-        enum class Sets { one, per_slot };
-        FeatureFamily(const Device& device, Submission& submission, const scene::SceneDescription& scene,
-                      bool moves, Sets sets);
-        void prepare(frame::Extent light);
-        // The set frame slot `slot`'s frame writes.
-        const FeatureImages& images(std::uint32_t slot) const;
-        void bind(FrameResources& resources, const FrameSlot& begun,
-                  const std::optional<frame::PreviousFrame>& previous, frame::Extent light);
+    MneeList list;
+    FailureCount lost;
+  };
+  // The features pass's: its images, one set or, handed off, one per
+  // frame slot (above, "Two halves"); its constants' ring; and the shapes
+  // as the previous frame placed them, when shapes move.
+  struct FeatureFamily {
+    enum class Sets { one, per_slot };
+    FeatureFamily(const Device& device, Submission& submission,
+                  const scene::SceneDescription& scene, bool moves, Sets sets);
+    void prepare(frame::Extent light);
+    // The set frame slot `slot`'s frame writes.
+    const FeatureImages& images(std::uint32_t slot) const;
+    void bind(FrameResources& resources, const FrameSlot& begun,
+              const std::optional<frame::PreviousFrame>& previous,
+              frame::Extent light);
 
-        std::array<std::optional<FeatureImages>, frames_in_flight> sets;  // the second only per slot
-        FrameArray constants;
-        std::optional<ShapeTransforms> previous_transforms;
-        std::uint32_t last_slot = 0;  // the slot of the frame bound last, which read_features() reads
-    };
-    // The denoise pass's: the network's last width, its buffers, the
-    // target-size ring, its constants' ring, and the full-size albedo's
-    // images, constants and kernel.
-    struct DenoiseFamily {
-        DenoiseFamily(const Device& device, Submission& submission, const Library& library,
-                      const denoise::Network& network);
+    std::array<std::optional<FeatureImages>, frames_in_flight>
+        sets;  // the second only per slot
+    FrameArray constants;
+    std::optional<ShapeTransforms> previous_transforms;
+    std::uint32_t last_slot =
+        0;  // the slot of the frame bound last, which read_features() reads
+  };
+  // The denoise pass's: the network's last width, its buffers, the
+  // target-size ring, its constants' ring, and the full-size albedo's
+  // images, constants and kernel.
+  struct DenoiseFamily {
+    DenoiseFamily(const Device& device, Submission& submission,
+                  const Library& library, const denoise::Network& network);
 
-        std::uint32_t features;
-        DenoiseImages images;
-        FrameArray output_constants;
-        FrameArray constants;
-        std::array<std::optional<FeatureImages>, frames_in_flight> full_features;  // a set per slot (above)
-        FrameArray full_feature_constants;
-        FeaturesPass full_features_pass;
-    };
-    // Checkerboard rendering's (above), a denoised graph's: the fill, its
-    // constants' ring and its history.
-    struct CheckerboardFamily {
-        CheckerboardFamily(const Device& device, Submission& submission, const Library& library,
-                           CheckerboardImages::Filled filled);
+    std::uint32_t features;
+    DenoiseImages images;
+    FrameArray output_constants;
+    FrameArray constants;
+    std::array<std::optional<FeatureImages>, frames_in_flight>
+        full_features;  // a set per slot (above)
+    FrameArray full_feature_constants;
+    FeaturesPass full_features_pass;
+  };
+  // Checkerboard rendering's (above), a denoised graph's: the fill, its
+  // constants' ring and its history.
+  struct CheckerboardFamily {
+    CheckerboardFamily(const Device& device, Submission& submission,
+                       const Library& library,
+                       CheckerboardImages::Filled filled);
 
-        CheckerboardFillPass fill;
-        FrameArray constants;
-        CheckerboardImages images;
-    };
-    // The depth of field's (above): its images and its constants' ring.
-    struct DepthOfFieldFamily {
-        DepthOfFieldFamily(const Device& device, Submission& submission);
+    CheckerboardFillPass fill;
+    FrameArray constants;
+    CheckerboardImages images;
+  };
+  // The depth of field's (above): its images and its constants' ring.
+  struct DepthOfFieldFamily {
+    DepthOfFieldFamily(const Device& device, Submission& submission);
 
-        DepthOfFieldImages images;
-        FrameArray constants;
-    };
-    // A denoised graph's resources from the denoise pass on (renderer.cpp,
-    // denoise_resources()); every pass's own without the pass; and whether
-    // the depth of field blurs this frame (passes::blurs).
-    struct DenoiseResources {
-        FrameResources output;
-        FrameResources denoising;
-        FrameResources full_features;
-        FrameResources depth_of_field;
-        bool blurs = false;
-    };
+    DepthOfFieldImages images;
+    FrameArray constants;
+  };
+  // A denoised graph's resources from the denoise pass on (renderer.cpp,
+  // denoise_resources()); every pass's own without the pass; and whether
+  // the depth of field blurs this frame (passes::blurs).
+  struct DenoiseResources {
+    FrameResources output;
+    FrameResources denoising;
+    FrameResources full_features;
+    FrameResources depth_of_field;
+    bool blurs = false;
+  };
 
-    // The constructor's parts (F.3), in its order.
-    void make_steps(const Device& device, const frame::Schedule& schedule,
-                    const std::optional<denoise::Network>& network);
-    void make_images(const Device& device, const frame::Schedule& schedule);
-    void make_restir_pt(const Device& device, const frame::Schedule& schedule, const scene::SceneDescription* scene);
-    void make_mnee(const Device& device, const frame::Schedule& schedule, const scene::SceneDescription* scene);
-    void make_scene(const Device& device, const scene::SceneDescription& scene);
+  // The constructor's parts (F.3), in its order.
+  void make_steps(const Device& device, const frame::Schedule& schedule,
+                  const std::optional<denoise::Network>& network);
+  void make_images(const Device& device, const frame::Schedule& schedule);
+  void make_restir_pt(const Device& device, const frame::Schedule& schedule,
+                      const scene::SceneDescription* scene);
+  void make_mnee(const Device& device, const frame::Schedule& schedule,
+                 const scene::SceneDescription* scene);
+  void make_scene(const Device& device, const scene::SceneDescription& scene);
 
-    // Whether the graph has anything prepare() readies, so record() asks
-    // that it was: every member prepare() prepares (I.5; one test, so the
-    // two cannot disagree).
-    bool prepares() const noexcept;
+  // Whether the graph has anything prepare() readies, so record() asks
+  // that it was: every member prepare() prepares (I.5; one test, so the
+  // two cannot disagree).
+  bool prepares() const noexcept;
 
-    // record()'s parts (F.3), in its order.
-    Prepared take_prepared(const frame::FrameInputs& inputs, frame::Extent size);
-    // `jitter` the camera's, for a ring whose frames take it (above, "The
-    // camera's jitter"), none for one whose do not.
-    static std::pair<MTL::GPUAddress, MTL::GPUAddress> write_constants(
-        FrameArray& ring, const FrameSlot& begun, const frame::FrameInputs& inputs, frame::Extent at,
-        std::uint32_t accumulated_frames, std::optional<sampling::CameraJitter> jitter);
-    FrameResources frame_resources(const FrameSlot& begun, const frame::FrameInputs& inputs, MTL::Texture* target,
-                                   frame::Extent light, const Prepared& prepared, bool previous);
-    void animate(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun, const frame::FrameInputs& inputs,
-                 bool previous);
-    // `traced` the frame's inputs as its light is traced, `lens` the
-    // frame's own camera, its lens on (above, "The depth of field").
-    DenoiseResources denoise_resources(const FrameResources& resources, const FrameSlot& begun,
-                                       const frame::FrameInputs& traced, const contracts::Camera& lens,
-                                       frame::Extent size, const Prepared& prepared);
-    // The light half (every step before the denoise pass; all of them in a
-    // graph without it), then the full-size albedo and the checkerboard's
-    // fill, which writes the hand-off;
-    // and the image half, from the denoise pass on (above, "Two halves").
-    // Steps [first, last) of the light half; the whole of a graph without
-    // the denoise pass, the fill between its last two in a graph that
-    // feeds the network.
-    void record_light(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources, std::size_t first,
-                      std::size_t last);
-    void record_hand_off(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun,
-                         const FrameResources& resources, const Prepared& prepared, MTL::Texture* hand_off);
-    void record_image(MTL4::ComputeCommandEncoder* encoder, const DenoiseResources& denoised_resources);
+  // record()'s parts (F.3), in its order.
+  Prepared take_prepared(const frame::FrameInputs& inputs, frame::Extent size);
+  // `jitter` the camera's, for a ring whose frames take it (above, "The
+  // camera's jitter"), none for one whose do not.
+  static std::pair<MTL::GPUAddress, MTL::GPUAddress> write_constants(
+      FrameArray& ring, const FrameSlot& begun,
+      const frame::FrameInputs& inputs, frame::Extent at,
+      std::uint32_t accumulated_frames,
+      std::optional<sampling::CameraJitter> jitter);
+  FrameResources frame_resources(const FrameSlot& begun,
+                                 const frame::FrameInputs& inputs,
+                                 MTL::Texture* target, frame::Extent light,
+                                 const Prepared& prepared, bool previous);
+  void animate(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun,
+               const frame::FrameInputs& inputs, bool previous);
+  // `traced` the frame's inputs as its light is traced, `lens` the
+  // frame's own camera, its lens on (above, "The depth of field").
+  DenoiseResources denoise_resources(const FrameResources& resources,
+                                     const FrameSlot& begun,
+                                     const frame::FrameInputs& traced,
+                                     const contracts::Camera& lens,
+                                     frame::Extent size,
+                                     const Prepared& prepared);
+  // The light half (every step before the denoise pass; all of them in a
+  // graph without it), then the full-size albedo and the checkerboard's
+  // fill, which writes the hand-off;
+  // and the image half, from the denoise pass on (above, "Two halves").
+  // Steps [first, last) of the light half; the whole of a graph without
+  // the denoise pass, the fill between its last two in a graph that
+  // feeds the network.
+  void record_light(MTL4::ComputeCommandEncoder* encoder,
+                    const FrameResources& resources, std::size_t first,
+                    std::size_t last);
+  void record_hand_off(MTL4::ComputeCommandEncoder* encoder,
+                       const FrameSlot& begun, const FrameResources& resources,
+                       const Prepared& prepared, MTL::Texture* hand_off);
+  void record_image(MTL4::ComputeCommandEncoder* encoder,
+                    const DenoiseResources& denoised_resources);
 
-    Submission& submission_;
-    Library library_;
-    FrameArray constants_;  // the ring: one slot per frame in flight
-    NS::SharedPtr<MTL4::ArgumentTable> arguments_;  // every frame's: Metal snapshots it at each dispatch
-    bool denoises_ = false;
-    bool feeds_network_ = false;  // core/frame/schedule.h: traced checkerboarded and filled
-    frame::Schedule schedule_;  // for light_size()
-    bool needs_scene_ = false;  // some pass in the schedule reads the scene
-    std::unique_ptr<SceneBuffers> scene_;
-    std::unique_ptr<SceneAcceleration> acceleration_;
-    std::unique_ptr<ShapeTransforms> transforms_;
-    std::unique_ptr<LightGlows> glows_;
-    animation::Animation animation_;  // empty unless the scene changes
-    std::unique_ptr<FrameImages> images_;         // when a pass writes radiance, unless into the accumulated image
-    std::unique_ptr<Accumulation> accumulation_;  // when a pass accumulates
-    std::unique_ptr<FailureCount> non_finite_;    // with it: samples not finite
-    std::optional<RestirPtFamily> restir_pt_;
-    std::optional<MneeFamily> mnee_;
-    std::optional<FeatureFamily> features_;
-    std::optional<DenoiseFamily> denoise_;
-    std::optional<CheckerboardFamily> checkerboard_;
-    std::optional<DepthOfFieldFamily> depth_of_field_;
-    // A temporal graph's last frame (above): its transforms and glows,
-    // animated at its time each frame, only when the scene changes (a still
-    // scene's one copy is last frame's too); and the camera and time the
-    // frame before was recorded with, none before the first.
-    bool reuses_history_ = false;
-    std::unique_ptr<ShapeTransforms> last_transforms_;
-    std::unique_ptr<LightGlows> last_glows_;
-    std::optional<contracts::Camera> previous_camera_;
-    frame::Seconds previous_time_{0.0};
-    std::optional<Prepared> prepared_;
-    std::vector<Step> steps_;  // in schedule order
-    // The first pass that writes the images between passes, accumulates or
-    // is one of ReSTIR PT's (whose arrays the frames share), before which
-    // the queue barrier is recorded; none if none does.
-    std::optional<std::size_t> first_cross_frame_;
-    // The denoise pass's step, where the image half begins; steps_.size()
-    // in a graph without it, all of whose steps are the light half's.
-    std::size_t image_begins_ = 0;
-    // Where the fill is recorded, before this step: the denoise pass's in a
-    // denoised graph, the presenting pass's in another that feeds the
-    // network; steps_.size() in any other graph, which has no fill.
-    std::size_t fill_at_ = 0;
-    // The last recorded frame's slot and the jitter its light took, for
-    // read_network_input().
-    std::optional<std::uint32_t> last_slot_;
-    sampling::CameraJitter last_jitter_{};
+  Submission& submission_;
+  Library library_;
+  FrameArray constants_;  // the ring: one slot per frame in flight
+  NS::SharedPtr<MTL4::ArgumentTable>
+      arguments_;  // every frame's: Metal snapshots it at each dispatch
+  bool denoises_ = false;
+  bool feeds_network_ =
+      false;  // core/frame/schedule.h: traced checkerboarded and filled
+  frame::Schedule schedule_;  // for light_size()
+  bool needs_scene_ = false;  // some pass in the schedule reads the scene
+  std::unique_ptr<SceneBuffers> scene_;
+  std::unique_ptr<SceneAcceleration> acceleration_;
+  std::unique_ptr<ShapeTransforms> transforms_;
+  std::unique_ptr<LightGlows> glows_;
+  animation::Animation animation_;       // empty unless the scene changes
+  std::unique_ptr<FrameImages> images_;  // when a pass writes radiance, unless
+                                         // into the accumulated image
+  std::unique_ptr<Accumulation> accumulation_;  // when a pass accumulates
+  std::unique_ptr<FailureCount> non_finite_;    // with it: samples not finite
+  std::optional<RestirPtFamily> restir_pt_;
+  std::optional<MneeFamily> mnee_;
+  std::optional<FeatureFamily> features_;
+  std::optional<DenoiseFamily> denoise_;
+  std::optional<CheckerboardFamily> checkerboard_;
+  std::optional<DepthOfFieldFamily> depth_of_field_;
+  // A temporal graph's last frame (above): its transforms and glows,
+  // animated at its time each frame, only when the scene changes (a still
+  // scene's one copy is last frame's too); and the camera and time the
+  // frame before was recorded with, none before the first.
+  bool reuses_history_ = false;
+  std::unique_ptr<ShapeTransforms> last_transforms_;
+  std::unique_ptr<LightGlows> last_glows_;
+  std::optional<contracts::Camera> previous_camera_;
+  frame::Seconds previous_time_{0.0};
+  std::optional<Prepared> prepared_;
+  std::vector<Step> steps_;  // in schedule order
+  // The first pass that writes the images between passes, accumulates or
+  // is one of ReSTIR PT's (whose arrays the frames share), before which
+  // the queue barrier is recorded; none if none does.
+  std::optional<std::size_t> first_cross_frame_;
+  // The denoise pass's step, where the image half begins; steps_.size()
+  // in a graph without it, all of whose steps are the light half's.
+  std::size_t image_begins_ = 0;
+  // Where the fill is recorded, before this step: the denoise pass's in a
+  // denoised graph, the presenting pass's in another that feeds the
+  // network; steps_.size() in any other graph, which has no fill.
+  std::size_t fill_at_ = 0;
+  // The last recorded frame's slot and the jitter its light took, for
+  // read_network_input().
+  std::optional<std::uint32_t> last_slot_;
+  sampling::CameraJitter last_jitter_{};
 };
 
 // One frame, start to finish, for each kind of target. The window and the
@@ -723,12 +751,15 @@ private:
 // returned. It drains an autorelease pool of its own too, so a caller with
 // none (the headless renderer) leaks nothing a frame.
 struct WindowFrame {
-    std::uint64_t sequence = 0;
-    std::optional<Completed> settled;
+  std::uint64_t sequence = 0;
+  std::optional<Completed> settled;
 };
-WindowFrame render_to_window(Submission& submission, const Presenter& presenter, Renderer& renderer,
-                             const frame::FrameInputs& inputs, CA::MetalDrawable* drawable);
-std::uint64_t render_to_offscreen(Submission& submission, Offscreen& target, Renderer& renderer,
+WindowFrame render_to_window(Submission& submission, const Presenter& presenter,
+                             Renderer& renderer,
+                             const frame::FrameInputs& inputs,
+                             CA::MetalDrawable* drawable);
+std::uint64_t render_to_offscreen(Submission& submission, Offscreen& target,
+                                  Renderer& renderer,
                                   const frame::FrameInputs& inputs);
 
 }  // namespace serenity::metal

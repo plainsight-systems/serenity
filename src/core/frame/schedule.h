@@ -180,18 +180,27 @@ namespace serenity::frame {
 // list fails to compile (P.5). A kind is added before `last`, and `last`
 // set to it.
 enum class PassKind {
-    test_pattern,  // a diagnostic image, a function of pixel and time; writes the target
-    path,          // path tracing, naive, accumulating while the image holds still; needs a scene; writes radiance
-    tone_map,      // radiance exposed, bloomed and rolled off (core/passes/tone_map.h), then sRGB; writes the target
-    restir_pt_initial,      // ReSTIR PT: the path tree, resampled to one path a pixel; needs a scene
-    restir_pt_temporal,     // ReSTIR PT's temporal reuse; needs a scene
-    restir_pt_spatial,      // ReSTIR PT's paired spatial reuse; needs a scene
-    restir_pt_shade,        // ReSTIR PT's light into the accumulated image; accumulates; writes radiance
-    restir_pt_duplication,  // ReSTIR PT's duplication map, for the next frame's temporal reuse
-    features,               // the denoiser's albedo, normal, depth and motion (contract 17); needs a scene
-    denoise,                // the trained network: light and features in, radiance at twice the size out
-    depth_of_field,         // the scene's lens, applied after the network from depth (contract 21)
-    last = depth_of_field,
+  test_pattern,  // a diagnostic image, a function of pixel and time; writes the
+                 // target
+  path,  // path tracing, naive, accumulating while the image holds still; needs
+         // a scene; writes radiance
+  tone_map,            // radiance exposed, bloomed and rolled off
+                       // (core/passes/tone_map.h), then sRGB; writes the target
+  restir_pt_initial,   // ReSTIR PT: the path tree, resampled to one path a
+                       // pixel; needs a scene
+  restir_pt_temporal,  // ReSTIR PT's temporal reuse; needs a scene
+  restir_pt_spatial,   // ReSTIR PT's paired spatial reuse; needs a scene
+  restir_pt_shade,     // ReSTIR PT's light into the accumulated image;
+                       // accumulates; writes radiance
+  restir_pt_duplication,  // ReSTIR PT's duplication map, for the next frame's
+                          // temporal reuse
+  features,  // the denoiser's albedo, normal, depth and motion (contract 17);
+             // needs a scene
+  denoise,  // the trained network: light and features in, radiance at twice the
+            // size out
+  depth_of_field,  // the scene's lens, applied after the network from depth
+                   // (contract 21)
+  last = depth_of_field,
 };
 
 // Whether a pass of `kind` reads the scene. A frame graph with such a pass
@@ -215,18 +224,18 @@ bool writes_features(PassKind kind);
 bool is_restir_pt(PassKind kind);
 
 struct Schedule {
-    std::vector<PassKind> passes;  // run in this order; at least one
-    // The tone-map pass's settings: present exactly when the schedule has
-    // that pass (graph_file.h, core/passes/tone_map.h).
-    std::optional<passes::ToneMap> tone_map;
-    // ReSTIR PT's settings: present exactly when the schedule has its
-    // passes (graph_file.h, core/contracts/path_reuse_settings.h). None
-    // unless given, as every member after it, so a schedule written
-    // {passes, tone_map} keeps its meaning.
-    std::optional<passes::RestirPt> restir_pt = std::nullopt;
-    // The denoiser's settings: present exactly when the schedule has its
-    // pass (core/passes/denoise.h).
-    std::optional<passes::Denoise> denoise = std::nullopt;
+  std::vector<PassKind> passes;  // run in this order; at least one
+  // The tone-map pass's settings: present exactly when the schedule has
+  // that pass (graph_file.h, core/passes/tone_map.h).
+  std::optional<passes::ToneMap> tone_map;
+  // ReSTIR PT's settings: present exactly when the schedule has its
+  // passes (graph_file.h, core/contracts/path_reuse_settings.h). None
+  // unless given, as every member after it, so a schedule written
+  // {passes, tone_map} keeps its meaning.
+  std::optional<passes::RestirPt> restir_pt = std::nullopt;
+  // The denoiser's settings: present exactly when the schedule has its
+  // pass (core/passes/denoise.h).
+  std::optional<passes::Denoise> denoise = std::nullopt;
 };
 
 // Whether any pass of `schedule` accumulates: whether its frames build on
@@ -270,7 +279,8 @@ bool feeds_network(const Schedule& schedule);
 // filter it converges to), and the features alone, the data set's
 // full-size albedo, as the denoised graph's full-size albedo does: an
 // output-resolution image, which production upscalers write unjittered.
-std::optional<sampling::CameraJitter> camera_jitter(const Schedule& schedule, std::uint64_t index);
+std::optional<sampling::CameraJitter> camera_jitter(const Schedule& schedule,
+                                                    std::uint64_t index);
 
 // Whether `schedule` applies the camera's lens after the network, by the
 // depth_of_field pass, rather than in its rays (above): a denoised graph.
@@ -279,9 +289,9 @@ bool lens_after_network(const Schedule& schedule);
 // The frame `inputs` as `schedule`'s passes before the depth of field trace
 // it (above): in a graph that feeds the network, the frame's camera and
 // the frame before's with their lens taken off (a radius of 0, a pinhole,
-// the rest of each camera as it was); `inputs` itself in every other. Pure (F.8): the renderer traces through this and
-// reads the lens for the depth of field from `inputs`' own camera
-// (metal/frame/renderer.h).
+// the rest of each camera as it was); `inputs` itself in every other. Pure
+// (F.8): the renderer traces through this and reads the lens for the depth of
+// field from `inputs`' own camera (metal/frame/renderer.h).
 FrameInputs traced_inputs(const Schedule& schedule, const FrameInputs& inputs);
 
 // Whether `schedule` has a pass that writes the target: every graph but
@@ -331,7 +341,8 @@ std::optional<std::string> invalid(const passes::ToneMap& settings);
 // ReSTIR PT's settings alone: whether `settings` hold what `passes` read,
 // in range, and its zero for what they do not (core/passes/restir_pt.h).
 // For the graph reader, to name the line of the setting.
-std::optional<std::string> invalid(const passes::RestirPt& settings, std::span<const PassKind> passes);
+std::optional<std::string> invalid(const passes::RestirPt& settings,
+                                   std::span<const PassKind> passes);
 
 // The name each kind is written as in a frame graph file, and back: name()
 // is the one mapping, a switch with no default (-Wswitch), and pass_kind()

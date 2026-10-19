@@ -20,26 +20,27 @@ namespace {
 // The arguments after the program's name; none if the system gave not even
 // that (POSIX allows argc == 0).
 std::span<const char* const> arguments(int argc, char** argv) {
-    if (argc < 1) {
-        return {};
-    }
-    return {argv + 1, static_cast<std::size_t>(argc - 1)};
+  if (argc < 1) {
+    return {};
+  }
+  return {argv + 1, static_cast<std::size_t>(argc - 1)};
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-    namespace measure = serenity::measure;
-    try {
-        const measure::Command command = measure::parse(arguments(argc, argv));
-        const std::string printed = std::visit([](const auto& which) { return measure::run(which); }, command);
-        std::cout << printed << std::flush;
-        if (!std::cout) {
-            throw std::runtime_error("its result could not be written to stdout");
-        }
-        return 0;
-    } catch (const std::exception& error) {
-        std::cerr << "serenity-measure: " << error.what() << '\n';
-        return 1;
+  namespace measure = serenity::measure;
+  try {
+    const measure::Command command = measure::parse(arguments(argc, argv));
+    const std::string printed = std::visit(
+        [](const auto& which) { return measure::run(which); }, command);
+    std::cout << printed << std::flush;
+    if (!std::cout) {
+      throw std::runtime_error("its result could not be written to stdout");
     }
+    return 0;
+  } catch (const std::exception& error) {
+    std::cerr << "serenity-measure: " << error.what() << '\n';
+    return 1;
+  }
 }

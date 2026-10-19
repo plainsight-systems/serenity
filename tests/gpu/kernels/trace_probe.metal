@@ -29,21 +29,27 @@ kernel void trace_probe(device TraceHit* out [[buffer(0)]],
                         device const TraceRay* rays [[buffer(1)]],
                         constant uint& count [[buffer(2)]],
                         SceneStructure structure [[buffer(3)]],
-                        constant serenity::shapes::ShapeRecord* records [[buffer(4)]],
-                        constant serenity::contracts::Transform* transforms [[buffer(5)]],
+                        constant serenity::shapes::ShapeRecord* records
+                        [[buffer(4)]],
+                        constant serenity::contracts::Transform* transforms
+                        [[buffer(5)]],
                         constant serenity::shapes::BoxData* boxes [[buffer(6)]],
                         uint i [[thread_position_in_grid]]) {
-    if (i >= count) {
-        return;
-    }
-    const Shapes shapes{records, transforms, boxes};
-    const TraceRay r = rays[i];
-    const Hit hit =
-        trace(structure, shapes, metal::raytracing::ray(to_float3(r.origin), to_float3(r.direction), 0.0f, unbounded),
-              r.mask);
-    const bool blocked =
-        occluded(structure, shapes, metal::raytracing::ray(to_float3(r.origin), to_float3(r.direction), 0.0f, r.reach),
-                 r.mask, serenity::contracts::no_primitive);
-    out[i] = TraceHit{hit.found ? hit.t : 0.0f, hit.found ? hit.primitive : 0u, hit.found ? 1u : 0u,
-                      blocked ? 1u : 0u};
+  if (i >= count) {
+    return;
+  }
+  const Shapes shapes{records, transforms, boxes};
+  const TraceRay r = rays[i];
+  const Hit hit =
+      trace(structure, shapes,
+            metal::raytracing::ray(to_float3(r.origin), to_float3(r.direction),
+                                   0.0f, unbounded),
+            r.mask);
+  const bool blocked =
+      occluded(structure, shapes,
+               metal::raytracing::ray(to_float3(r.origin),
+                                      to_float3(r.direction), 0.0f, r.reach),
+               r.mask, serenity::contracts::no_primitive);
+  out[i] = TraceHit{hit.found ? hit.t : 0.0f, hit.found ? hit.primitive : 0u,
+                    hit.found ? 1u : 0u, blocked ? 1u : 0u};
 }

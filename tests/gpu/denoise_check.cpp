@@ -18,25 +18,27 @@
 #include "gpu/support/denoise_fixture.h"
 
 int main(int argc, char** argv) {
-    using namespace serenity;
-    if (argc != 3) {
-        std::cerr << "usage: denoise_check FIXTURE OUT\n";
-        return 2;
+  using namespace serenity;
+  if (argc != 3) {
+    std::cerr << "usage: denoise_check FIXTURE OUT\n";
+    return 2;
+  }
+  try {
+    const std::vector<char*> args(argv, argv + argc);
+    const tests::DenoiseFixture fixture = tests::read_denoise_fixture(args[1]);
+    const std::filesystem::path out = args[2];
+    std::filesystem::create_directories(out);
+    const std::vector<contracts::LinearImage> outputs =
+        tests::run_denoise_fixture(fixture);
+    for (std::size_t k = 0; k < outputs.size(); ++k) {
+      const std::filesystem::path path =
+          out / ("frame-" + std::to_string(k) + "-gpu.pfm");
+      output::write_pfm(path, outputs[k]);
+      std::cout << path.string() << '\n';
     }
-    try {
-        const std::vector<char*> args(argv, argv + argc);
-        const tests::DenoiseFixture fixture = tests::read_denoise_fixture(args[1]);
-        const std::filesystem::path out = args[2];
-        std::filesystem::create_directories(out);
-        const std::vector<contracts::LinearImage> outputs = tests::run_denoise_fixture(fixture);
-        for (std::size_t k = 0; k < outputs.size(); ++k) {
-            const std::filesystem::path path = out / ("frame-" + std::to_string(k) + "-gpu.pfm");
-            output::write_pfm(path, outputs[k]);
-            std::cout << path.string() << '\n';
-        }
-        return 0;
-    } catch (const std::exception& error) {
-        std::cerr << "denoise_check: " << error.what() << '\n';
-        return 1;
-    }
+    return 0;
+  } catch (const std::exception& error) {
+    std::cerr << "denoise_check: " << error.what() << '\n';
+    return 1;
+  }
 }

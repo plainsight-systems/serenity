@@ -47,8 +47,8 @@ inline constexpr std::size_t linear_image_channels = 3;
 inline constexpr std::size_t accumulated_image_channels = 4;
 
 struct LinearImage {
-    frame::Extent extent;
-    std::vector<float> rgb;  // 3 x width x height, rows from the top
+  frame::Extent extent;
+  std::vector<float> rgb;  // 3 x width x height, rows from the top
 };
 
 // An image of `extent`, every value 0. Throws std::invalid_argument for a

@@ -36,47 +36,47 @@ namespace serenity::metal {
 // Throws MetalError if the frame's size is not one Metal makes an image of
 // (metal/device/device.h, max_texture_side), or the device cannot make one.
 class FeatureImages {
-public:
-    FeatureImages(const Device& device, Submission& submission);
+ public:
+  FeatureImages(const Device& device, Submission& submission);
 
-    FeatureImages(const FeatureImages&) = delete;
-    FeatureImages& operator=(const FeatureImages&) = delete;
-    FeatureImages(FeatureImages&&) = delete;
-    FeatureImages& operator=(FeatureImages&&) = delete;
-    ~FeatureImages() = default;
+  FeatureImages(const FeatureImages&) = delete;
+  FeatureImages& operator=(const FeatureImages&) = delete;
+  FeatureImages(FeatureImages&&) = delete;
+  FeatureImages& operator=(FeatureImages&&) = delete;
+  ~FeatureImages() = default;
 
-    // Ready for a frame of `size`: made, or remade, if not made at it.
-    void prepare(frame::Extent size);
+  // Ready for a frame of `size`: made, or remade, if not made at it.
+  void prepare(frame::Extent size);
 
-    // Null before the first prepare().
-    MTL::Texture* albedo() const noexcept { return albedo_.texture.get(); }
-    MTL::Texture* normal() const noexcept { return normal_.texture.get(); }
-    MTL::Texture* depth() const noexcept { return depth_.texture.get(); }
-    MTL::Texture* motion() const noexcept { return motion_.texture.get(); }
+  // Null before the first prepare().
+  MTL::Texture* albedo() const noexcept { return albedo_.texture.get(); }
+  MTL::Texture* normal() const noexcept { return normal_.texture.get(); }
+  MTL::Texture* depth() const noexcept { return depth_.texture.get(); }
+  MTL::Texture* motion() const noexcept { return motion_.texture.get(); }
 
-    // The four images as they are, read back (above).
-    struct Read {
-        contracts::LinearImage albedo;
-        contracts::LinearImage normal;
-        contracts::LinearImage depth;
-        contracts::LinearImage motion;
-    };
+  // The four images as they are, read back (above).
+  struct Read {
+    contracts::LinearImage albedo;
+    contracts::LinearImage normal;
+    contracts::LinearImage depth;
+    contracts::LinearImage motion;
+  };
 
-    // Reads the images back, through the submission, as every frame
-    // committed before wrote them (metal/device/readback.h). Throws
-    // MetalError before the first prepare().
-    Read read() const;
+  // Reads the images back, through the submission, as every frame
+  // committed before wrote them (metal/device/readback.h). Throws
+  // MetalError before the first prepare().
+  Read read() const;
 
-private:
-    NS::SharedPtr<MTL::Device> device_;
-    Submission& submission_;
-    frame::Extent size_;
-    // Each image with its residency, released after the GPU is done with it
-    // (metal/device/resident.h).
-    ResidentTexture albedo_;
-    ResidentTexture normal_;
-    ResidentTexture depth_;
-    ResidentTexture motion_;
+ private:
+  NS::SharedPtr<MTL::Device> device_;
+  Submission& submission_;
+  frame::Extent size_;
+  // Each image with its residency, released after the GPU is done with it
+  // (metal/device/resident.h).
+  ResidentTexture albedo_;
+  ResidentTexture normal_;
+  ResidentTexture depth_;
+  ResidentTexture motion_;
 };
 
 }  // namespace serenity::metal

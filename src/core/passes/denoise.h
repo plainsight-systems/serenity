@@ -17,7 +17,7 @@ namespace serenity::passes {
 //            (core/frame/graph_file.h, load_schedule), so a graph names the
 //            network beside the checkout wherever it is run from.
 struct Denoise {
-    std::filesystem::path weights;
+  std::filesystem::path weights;
 };
 
 }  // namespace serenity::passes

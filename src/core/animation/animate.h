@@ -52,38 +52,40 @@ namespace serenity::animation {
 // (MEM.9).
 
 struct Mover {
-    std::uint32_t target = 0;  // the index of its transform
-    MotionRecord motion;
+  std::uint32_t target = 0;  // the index of its transform
+  MotionRecord motion;
 };
 
 struct Glower {
-    std::uint32_t target = 0;  // the index of its glow factor
-    GlowRecord glow;
+  std::uint32_t target = 0;  // the index of its glow factor
+  GlowRecord glow;
 };
 
 struct Animation {
-    Motions motions;
-    Glows glows;
-    std::vector<Mover> movers;    // in target order
-    std::vector<Glower> glowers;  // in target order
+  Motions motions;
+  Glows glows;
+  std::vector<Mover> movers;    // in target order
+  std::vector<Glower> glowers;  // in target order
 };
 
 inline bool moves(const Animation& animation) noexcept {
-    return !animation.movers.empty();
+  return !animation.movers.empty();
 }
 
 inline bool changes(const Animation& animation) noexcept {
-    return !animation.movers.empty() || !animation.glowers.empty();
+  return !animation.movers.empty() || !animation.glowers.empty();
 }
 
 // Places every mover and lights every glower at `t`; see above.
-void animate(const Animation& animation, frame::Seconds t, std::span<contracts::Transform> transforms,
+void animate(const Animation& animation, frame::Seconds t,
+             std::span<contracts::Transform> transforms,
              std::span<float> glows);
 
 // Places every mover at `t`, and lights nothing: animate()'s first half,
 // for what reads where the shapes were and not how bright (the features'
 // motion, core/contracts/features.h). Throws as animate() does for a
 // mover's target.
-void place(const Animation& animation, frame::Seconds t, std::span<contracts::Transform> transforms);
+void place(const Animation& animation, frame::Seconds t,
+           std::span<contracts::Transform> transforms);
 
 }  // namespace serenity::animation

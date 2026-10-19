@@ -46,48 +46,51 @@ namespace serenity {
 namespace shaders {
 
 struct Shapes {
-    constant serenity::shapes::ShapeRecord* records;
-    constant serenity::contracts::Transform* transforms;  // as this frame places them
-    constant serenity::shapes::BoxData* boxes;
+  constant serenity::shapes::ShapeRecord* records;
+  constant serenity::contracts::Transform*
+      transforms;  // as this frame places them
+  constant serenity::shapes::BoxData* boxes;
 };
 
 // The exact crossing of world ray `world` with shape `shape`'s geometry,
 // tested in its object space; its t is the world's.
-inline Crossing intersect_shape(Shapes shapes, uint shape, metal::raytracing::ray world) {
-    const serenity::shapes::ShapeRecord record = shapes.records[shape];
-    const metal::raytracing::ray object = transform_ray_to_object(shapes.transforms[shape], world);
-    switch (record.kind) {
+inline Crossing intersect_shape(Shapes shapes, uint shape,
+                                metal::raytracing::ray world) {
+  const serenity::shapes::ShapeRecord record = shapes.records[shape];
+  const metal::raytracing::ray object =
+      transform_ray_to_object(shapes.transforms[shape], world);
+  switch (record.kind) {
     case serenity::shapes::ShapeKind::sphere:
-        return intersect_sphere(object);
+      return intersect_sphere(object);
     case serenity::shapes::ShapeKind::box:
-        return intersect_box(shapes.boxes[record.geometry], object);
-    }
-    return no_crossing();
+      return intersect_box(shapes.boxes[record.geometry], object);
+  }
+  return no_crossing();
 }
 
 // A point found near shape `shape`'s surface, in its own coordinates, put
 // back on it, and the outward normal there, both in its own coordinates.
 struct OnShape {
-    float3 point;
-    float3 normal;
+  float3 point;
+  float3 normal;
 };
 
 // By its kind: a sphere's along the same direction from its center, a box's
 // onto the plane of the face it is nearest.
 inline OnShape on_shape(Shapes shapes, uint shape, float3 at) {
-    const serenity::shapes::ShapeRecord record = shapes.records[shape];
-    switch (record.kind) {
+  const serenity::shapes::ShapeRecord record = shapes.records[shape];
+  switch (record.kind) {
     case serenity::shapes::ShapeKind::sphere: {
-        const float3 on = sphere_surface_point(at);
-        return OnShape{on, on};
+      const float3 on = sphere_surface_point(at);
+      return OnShape{on, on};
     }
     case serenity::shapes::ShapeKind::box: {
-        const serenity::shapes::BoxData box = shapes.boxes[record.geometry];
-        const float3 normal = box_normal(box, at);
-        return OnShape{box_surface_point(box, at, normal), normal};
+      const serenity::shapes::BoxData box = shapes.boxes[record.geometry];
+      const float3 normal = box_normal(box, at);
+      return OnShape{box_surface_point(box, at, normal), normal};
     }
-    }
-    return OnShape{at, float3(0.0f, 1.0f, 0.0f)};
+  }
+  return OnShape{at, float3(0.0f, 1.0f, 0.0f)};
 }
 
 // Contract 1: where a ray along `direction` met shape `shape` near world
@@ -98,22 +101,26 @@ inline OnShape on_shape(Shapes shapes, uint shape, float3 at) {
 // however far the ray came, as leaving it needs (integrator/
 // surface.metal.h). The object-space point is found once, for the normal,
 // the world's point and the textures laid on the shape.
-inline serenity::contracts::SurfaceInteraction surface_interaction(Shapes shapes, uint shape, float3 point,
-                                                                    float3 direction) {
-    const serenity::shapes::ShapeRecord record = shapes.records[shape];
-    const serenity::contracts::Transform placed = shapes.transforms[shape];
-    const OnShape on = on_shape(shapes, shape, transform_to_object(placed, point));
-    const float3 normal = metal::normalize(transform_direction(placed, on.normal));
-    serenity::contracts::SurfaceInteraction s{};
-    s.position = to_packed(transform_to_world(placed, on.point));
-    s.material = record.material;
-    s.geometric_normal = to_packed(normal);
-    s.primitive = shape;
-    s.shading_normal = to_packed(normal);
-    s.flags = metal::dot(direction, normal) < 0.0f ? serenity::contracts::arrived_from_outside : 0u;
-    s.object_position = to_packed(on.point);
-    s.interior = record.interior;
-    return s;
+inline serenity::contracts::SurfaceInteraction surface_interaction(
+    Shapes shapes, uint shape, float3 point, float3 direction) {
+  const serenity::shapes::ShapeRecord record = shapes.records[shape];
+  const serenity::contracts::Transform placed = shapes.transforms[shape];
+  const OnShape on =
+      on_shape(shapes, shape, transform_to_object(placed, point));
+  const float3 normal =
+      metal::normalize(transform_direction(placed, on.normal));
+  serenity::contracts::SurfaceInteraction s{};
+  s.position = to_packed(transform_to_world(placed, on.point));
+  s.material = record.material;
+  s.geometric_normal = to_packed(normal);
+  s.primitive = shape;
+  s.shading_normal = to_packed(normal);
+  s.flags = metal::dot(direction, normal) < 0.0f
+                ? serenity::contracts::arrived_from_outside
+                : 0u;
+  s.object_position = to_packed(on.point);
+  s.interior = record.interior;
+  return s;
 }
 
 }  // namespace shaders

@@ -1,10 +1,9 @@
 #pragma once
 
-#include <cstddef>
-#include <span>
-
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
+#include <cstddef>
+#include <span>
 
 #include "metal/device/device.h"
 
@@ -22,8 +21,8 @@ namespace serenity::metal {
 // then fixed by the source revision, and a shader that does not compile fails
 // the build rather than a run.
 //
-// Failures throw MetalError, naming the cause and Metal's own description where it
-// gave one (E.2, E.14): bytes Metal will not load as a library, a function
+// Failures throw MetalError, naming the cause and Metal's own description where
+// it gave one (E.2, E.14): bytes Metal will not load as a library, a function
 // the library does not have, a function that cannot be a compute pipeline.
 //
 // Every call that can receive an autoreleased object from Metal (an
@@ -34,28 +33,29 @@ namespace serenity::metal {
 // Not performance-sensitive: a library is loaded and its pipelines are built
 // once, at start-up.
 class Library {
-public:
-    // Loads the library in `metallib`, on `device`. The bytes are copied, so
-    // the span need not outlive the call.
-    Library(const Device& device, std::span<const std::byte> metallib);
+ public:
+  // Loads the library in `metallib`, on `device`. The bytes are copied, so
+  // the span need not outlive the call.
+  Library(const Device& device, std::span<const std::byte> metallib);
 
-    Library(const Library&) = delete;
-    Library& operator=(const Library&) = delete;
-    Library(Library&&) = delete;
-    Library& operator=(Library&&) = delete;
-    ~Library() = default;
+  Library(const Library&) = delete;
+  Library& operator=(const Library&) = delete;
+  Library(Library&&) = delete;
+  Library& operator=(Library&&) = delete;
+  ~Library() = default;
 
-    // A compute pipeline for the kernel named `function`, a null-terminated
-    // name that must not be null (F.25). Built on the device the library was
-    // loaded on.
-    NS::SharedPtr<MTL::ComputePipelineState> compute_pipeline(const char* function) const;
+  // A compute pipeline for the kernel named `function`, a null-terminated
+  // name that must not be null (F.25). Built on the device the library was
+  // loaded on.
+  NS::SharedPtr<MTL::ComputePipelineState> compute_pipeline(
+      const char* function) const;
 
-    // Valid for the Library's lifetime; not retained for the caller.
-    MTL::Library* handle() const noexcept { return library_.get(); }
+  // Valid for the Library's lifetime; not retained for the caller.
+  MTL::Library* handle() const noexcept { return library_.get(); }
 
-private:
-    NS::SharedPtr<MTL::Device> device_;
-    NS::SharedPtr<MTL::Library> library_;
+ private:
+  NS::SharedPtr<MTL::Device> device_;
+  NS::SharedPtr<MTL::Library> library_;
 };
 
 }  // namespace serenity::metal

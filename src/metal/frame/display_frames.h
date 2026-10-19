@@ -64,35 +64,38 @@ namespace serenity::metal {
 // must outlive what uses them; the client is held only while run() runs.
 // Copying and moving are deleted (C.21): the display link holds this
 // object as its client while run() runs.
-class DisplayFrames final : public presentation::FrameSource, private DisplayLink::Client {
-public:
-    // Frames at `rate`, refused by MetalError when run() makes the display
-    // link if it is not one the link takes (display_link.h).
-    DisplayFrames(Submission& submission, Presenter& presenter, Renderer& renderer, presentation::FrameRate rate);
+class DisplayFrames final : public presentation::FrameSource,
+                            private DisplayLink::Client {
+ public:
+  // Frames at `rate`, refused by MetalError when run() makes the display
+  // link if it is not one the link takes (display_link.h).
+  DisplayFrames(Submission& submission, Presenter& presenter,
+                Renderer& renderer, presentation::FrameRate rate);
 
-    DisplayFrames(const DisplayFrames&) = delete;
-    DisplayFrames& operator=(const DisplayFrames&) = delete;
-    DisplayFrames(DisplayFrames&&) = delete;
-    DisplayFrames& operator=(DisplayFrames&&) = delete;
-    ~DisplayFrames() = default;
+  DisplayFrames(const DisplayFrames&) = delete;
+  DisplayFrames& operator=(const DisplayFrames&) = delete;
+  DisplayFrames(DisplayFrames&&) = delete;
+  DisplayFrames& operator=(DisplayFrames&&) = delete;
+  ~DisplayFrames() = default;
 
-    void run(presentation::FrameClient& client) override;
+  void run(presentation::FrameClient& client) override;
 
-private:
-    // The display link's callback; steps 1 to 6 above, failures kept.
-    void frame(const DisplayUpdate& update) noexcept override;
-    void render(const DisplayUpdate& update, presentation::FrameClient& client);
+ private:
+  // The display link's callback; steps 1 to 6 above, failures kept.
+  void frame(const DisplayUpdate& update) noexcept override;
+  void render(const DisplayUpdate& update, presentation::FrameClient& client);
 
-    Submission& submission_;
-    Presenter& presenter_;
-    Renderer& renderer_;
-    presentation::FrameRate rate_;
+  Submission& submission_;
+  Presenter& presenter_;
+  Renderer& renderer_;
+  presentation::FrameRate rate_;
 
-    // During run() only.
-    presentation::FrameClient* client_ = nullptr;
-    std::uint64_t first_frame_ = 0;  // the sequence of the run's first frame's submission
-    bool view_changed_ = false;      // the size changed since the last frame rendered
-    std::exception_ptr failure_;     // the first a frame threw; frames stop at it
+  // During run() only.
+  presentation::FrameClient* client_ = nullptr;
+  std::uint64_t first_frame_ =
+      0;  // the sequence of the run's first frame's submission
+  bool view_changed_ = false;  // the size changed since the last frame rendered
+  std::exception_ptr failure_;  // the first a frame threw; frames stop at it
 };
 
 }  // namespace serenity::metal

@@ -13,11 +13,13 @@
 namespace serenity::tests {
 
 inline bool same_bits(std::span<const float> a, std::span<const float> b) {
-    return a.size() == b.size() && std::memcmp(a.data(), b.data(), a.size_bytes()) == 0;
+  return a.size() == b.size() &&
+         std::memcmp(a.data(), b.data(), a.size_bytes()) == 0;
 }
 
-inline bool same_bits(const contracts::LinearImage& a, const contracts::LinearImage& b) {
-    return a.extent == b.extent && same_bits(a.rgb, b.rgb);
+inline bool same_bits(const contracts::LinearImage& a,
+                      const contracts::LinearImage& b) {
+  return a.extent == b.extent && same_bits(a.rgb, b.rgb);
 }
 
 }  // namespace serenity::tests

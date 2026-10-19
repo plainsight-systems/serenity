@@ -69,26 +69,26 @@ namespace serenity::measurement {
 // rendering. One pass over the batches: Welford's, never a second.
 
 class ReferenceBuilder {
-public:
-    // Folds `batch` in; see above.
-    void add(const contracts::LinearImage& batch);
+ public:
+  // Folds `batch` in; see above.
+  void add(const contracts::LinearImage& batch);
 
-    std::size_t batches() const noexcept { return count_; }
+  std::size_t batches() const noexcept { return count_; }
 
-    // The reference: the batches' mean, rounded to float. Throws
-    // std::logic_error before the first batch.
-    contracts::LinearImage mean() const;
+  // The reference: the batches' mean, rounded to float. Throws
+  // std::logic_error before the first batch.
+  contracts::LinearImage mean() const;
 
-    // The two floors, above. Throw std::logic_error with fewer than two
-    // batches.
-    double mse_floor() const;
-    double relative_mse_floor() const;
+  // The two floors, above. Throw std::logic_error with fewer than two
+  // batches.
+  double mse_floor() const;
+  double relative_mse_floor() const;
 
-private:
-    frame::Extent extent_{};
-    std::size_t count_ = 0;
-    std::vector<double> mean_;  // 3 a pixel, rows from the top
-    std::vector<double> m2_;    // the same, the sum of squared deviations
+ private:
+  frame::Extent extent_{};
+  std::size_t count_ = 0;
+  std::vector<double> mean_;  // 3 a pixel, rows from the top
+  std::vector<double> m2_;    // the same, the sum of squared deviations
 };
 
 }  // namespace serenity::measurement

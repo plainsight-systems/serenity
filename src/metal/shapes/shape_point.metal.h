@@ -37,54 +37,68 @@
 namespace serenity {
 namespace shaders {
 
-constant constexpr float shape_point_scale = 65535.0f;  // a 16-bit fraction's largest code
+constant constexpr float shape_point_scale =
+    65535.0f;  // a 16-bit fraction's largest code
 
 // `world`, a point on shape `shape`, in that shape's coordinates.
-inline serenity::contracts::ShapePoint encode_shape_point(Shapes shapes, uint shape, float3 world) {
-    const serenity::shapes::ShapeRecord record = shapes.records[shape];
-    const float3 object = transform_to_object(shapes.transforms[shape], world);
-    switch (record.kind) {
+inline serenity::contracts::ShapePoint encode_shape_point(Shapes shapes,
+                                                          uint shape,
+                                                          float3 world) {
+  const serenity::shapes::ShapeRecord record = shapes.records[shape];
+  const float3 object = transform_to_object(shapes.transforms[shape], world);
+  switch (record.kind) {
     case serenity::shapes::ShapeKind::sphere:
-        return serenity::contracts::ShapePoint{encode_unit(sphere_surface_point(object)), 0u};
+      return serenity::contracts::ShapePoint{
+          encode_unit(sphere_surface_point(object)), 0u};
     case serenity::shapes::ShapeKind::box: {
-        const serenity::shapes::BoxData box = shapes.boxes[record.geometry];
-        const float3 normal = box_normal(box, object);
-        const uint axis = normal.x != 0.0f ? 0u : (normal.y != 0.0f ? 1u : 2u);
-        const float3 low = to_float3(box.min);
-        const float3 across = metal::saturate((object - low) / (to_float3(box.max) - low));
-        const float2 uv = axis == 0u ? across.yz : (axis == 1u ? across.xz : across.xy);
-        const uint2 codes = uint2(metal::rint(uv * shape_point_scale));
-        return serenity::contracts::ShapePoint{codes.x | (codes.y << 16u), axis * 2u + (normal[axis] > 0.0f ? 1u : 0u)};
+      const serenity::shapes::BoxData box = shapes.boxes[record.geometry];
+      const float3 normal = box_normal(box, object);
+      const uint axis = normal.x != 0.0f ? 0u : (normal.y != 0.0f ? 1u : 2u);
+      const float3 low = to_float3(box.min);
+      const float3 across =
+          metal::saturate((object - low) / (to_float3(box.max) - low));
+      const float2 uv =
+          axis == 0u ? across.yz : (axis == 1u ? across.xz : across.xy);
+      const uint2 codes = uint2(metal::rint(uv * shape_point_scale));
+      return serenity::contracts::ShapePoint{
+          codes.x | (codes.y << 16u),
+          axis * 2u + (normal[axis] > 0.0f ? 1u : 0u)};
     }
-    }
-    return serenity::contracts::ShapePoint{0u, 0u};
+  }
+  return serenity::contracts::ShapePoint{0u, 0u};
 }
 
 // The world point `point` stands for on shape `shape`, as the shape is placed
 // now.
-inline float3 decode_shape_point(Shapes shapes, uint shape, serenity::contracts::ShapePoint point) {
-    const serenity::shapes::ShapeRecord record = shapes.records[shape];
-    float3 object = float3(0.0f);
-    switch (record.kind) {
+inline float3 decode_shape_point(Shapes shapes, uint shape,
+                                 serenity::contracts::ShapePoint point) {
+  const serenity::shapes::ShapeRecord record = shapes.records[shape];
+  float3 object = float3(0.0f);
+  switch (record.kind) {
     case serenity::shapes::ShapeKind::sphere:
-        object = decode_unit(point.point);
-        break;
+      object = decode_unit(point.point);
+      break;
     case serenity::shapes::ShapeKind::box: {
-        const serenity::shapes::BoxData box = shapes.boxes[record.geometry];
-        const float3 low = to_float3(box.min);
-        const float3 high = to_float3(box.max);
-        const float2 uv = float2(float(point.point & 0xffffu), float(point.point >> 16u)) / shape_point_scale;
-        const uint axis = metal::min(point.face / 2u, 2u);
-        const float side = (point.face & 1u) != 0u ? high[axis] : low[axis];
-        const float3 at = metal::mix(low, high, axis == 0u ? float3(0.0f, uv) : (axis == 1u ? float3(uv.x, 0.0f, uv.y)
-                                                                                           : float3(uv, 0.0f)));
-        object = axis == 0u   ? float3(side, at.y, at.z)
-                 : axis == 1u ? float3(at.x, side, at.z)
-                              : float3(at.x, at.y, side);
-        break;
+      const serenity::shapes::BoxData box = shapes.boxes[record.geometry];
+      const float3 low = to_float3(box.min);
+      const float3 high = to_float3(box.max);
+      const float2 uv =
+          float2(float(point.point & 0xffffu), float(point.point >> 16u)) /
+          shape_point_scale;
+      const uint axis = metal::min(point.face / 2u, 2u);
+      const float side = (point.face & 1u) != 0u ? high[axis] : low[axis];
+      const float3 at = metal::mix(
+          low, high,
+          axis == 0u
+              ? float3(0.0f, uv)
+              : (axis == 1u ? float3(uv.x, 0.0f, uv.y) : float3(uv, 0.0f)));
+      object = axis == 0u   ? float3(side, at.y, at.z)
+               : axis == 1u ? float3(at.x, side, at.z)
+                            : float3(at.x, at.y, side);
+      break;
     }
-    }
-    return transform_to_world(shapes.transforms[shape], object);
+  }
+  return transform_to_world(shapes.transforms[shape], object);
 }
 
 }  // namespace shaders

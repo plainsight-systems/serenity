@@ -6,9 +6,9 @@
 
 kernel void delay(device uint* out [[buffer(0)]],
                   constant uint& count [[buffer(1)]]) {
-    uint x = 1u;
-    for (uint i = 0; i < count; ++i) {
-        x = x * 1664525u + 1013904223u;
-    }
-    out[0] = x;
+  uint x = 1u;
+  for (uint i = 0; i < count; ++i) {
+    x = x * 1664525u + 1013904223u;
+  }
+  out[0] = x;
 }

@@ -43,31 +43,45 @@ namespace shaders {
 
 template <typename Selection>
 struct SceneView {
-    SceneStructure structure;  // the structures by mask (acceleration/structure_block.h)
-    constant serenity::gpu::SceneBlock* block;
-    constant serenity::contracts::Transform* transforms;  // as this frame places the shapes
-    constant float* glows;                                // as bright as this frame lights them
-    const device float* light_power = nullptr;            // ReSTIR PT's: the frame's power pyramid
+  SceneStructure
+      structure;  // the structures by mask (acceleration/structure_block.h)
+  constant serenity::gpu::SceneBlock* block;
+  constant serenity::contracts::Transform*
+      transforms;         // as this frame places the shapes
+  constant float* glows;  // as bright as this frame lights them
+  const device float* light_power =
+      nullptr;  // ReSTIR PT's: the frame's power pyramid
 
-    Shapes shapes() const { return Shapes{block->shapes, transforms, block->boxes}; }
+  Shapes shapes() const {
+    return Shapes{block->shapes, transforms, block->boxes};
+  }
 
-    Materials materials() const {
-        return Materials{block->materials, block->roughs, block->dielectrics, block->conductors, block->coateds};
-    }
+  Materials materials() const {
+    return Materials{block->materials, block->roughs, block->dielectrics,
+                     block->conductors, block->coateds};
+  }
 
-    Textures textures() const { return Textures{block->textures, block->checkers, block->woods, block->swirls}; }
+  Textures textures() const {
+    return Textures{block->textures, block->checkers, block->woods,
+                    block->swirls};
+  }
 
-    Lights lights() const {
-        return Lights{block->light_records, block->shape_lights, block->sphere_lights, transforms, glows};
-    }
+  Lights lights() const {
+    return Lights{block->light_records, block->shape_lights,
+                  block->sphere_lights, transforms, glows};
+  }
 
-    Media media() const { return Media{block->media, block->absorbings}; }
+  Media media() const { return Media{block->media, block->absorbings}; }
 
-    serenity::lights::GradientSkyData sky() const { return *block->environment; }
+  serenity::lights::GradientSkyData sky() const { return *block->environment; }
 
-    Selection selection() const { return Selection{block->light_records, block->light_counts->lights}; }
+  Selection selection() const {
+    return Selection{block->light_records, block->light_counts->lights};
+  }
 
-    PowerLight power() const { return power_light(light_power, block->light_counts->lights); }
+  PowerLight power() const {
+    return power_light(light_power, block->light_counts->lights);
+  }
 };
 
 }  // namespace shaders

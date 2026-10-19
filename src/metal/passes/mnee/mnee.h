@@ -42,23 +42,24 @@ namespace serenity::metal {
 //
 // Why a list (contract 16): solved inside the loop, every SIMD group waited
 // on its lanes that solved (a tenth of the paths), the path tracer's pass
-// 4.1 times as long when it had MNEE; solved here, lanes are requests (GDSA.13: divergent work grouped
-// by key, as Cycles' intersect_mnee kernel groups it).
+// 4.1 times as long when it had MNEE; solved here, lanes are requests (GDSA.13:
+// divergent work grouped by key, as Cycles' intersect_mnee kernel groups it).
 //
 // Cost per frame: the requests' 128 bytes written and read once (on the
 // marbles a tenth of the paths write one: some 28 MB at 1920 x 1080); their
 // solves and n + 1 rays each. Measured in docs/research/2026-10-12-mnee.md.
 class MneePass {
-public:
-    explicit MneePass(const Library& library);
+ public:
+  explicit MneePass(const Library& library);
 
-    // Records the two dispatches. Throws MetalError if `resources` has no
-    // scene, work list, counters or light buffer.
-    void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+  // Records the two dispatches. Throws MetalError if `resources` has no
+  // scene, work list, counters or light buffer.
+  void record(MTL4::ComputeCommandEncoder* encoder,
+              const FrameResources& resources) const;
 
-private:
-    NS::SharedPtr<MTL::ComputePipelineState> grid_;
-    NS::SharedPtr<MTL::ComputePipelineState> solve_;
+ private:
+  NS::SharedPtr<MTL::ComputePipelineState> grid_;
+  NS::SharedPtr<MTL::ComputePipelineState> solve_;
 };
 
 }  // namespace serenity::metal

@@ -34,8 +34,8 @@ namespace serenity::scene {
 // the materials, the shapes that wear them, the lights, which are the
 // spheres that wear an emissive material, and how the shapes that move
 // move; and swarms, many fireflies from one entry (swarm.h). Read from a
-// scene file in scenes/, kept apart from frame graph files (core/frame/graph_file.h), so
-// one scene runs under any graph.
+// scene file in scenes/, kept apart from frame graph files
+// (core/frame/graph_file.h), so one scene runs under any graph.
 //
 // The description is the scene as the GPU will hold it, built on the CPU: an
 // array per kind in its shared layout (shapes/, materials/, textures/,
@@ -58,7 +58,8 @@ namespace serenity::scene {
 //   [environment]
 //   kind = "gradient"
 //   zenith = [0.02, 0.03, 0.08]     # linear RGB, 0 or more: all 0 is a
-//   horizon = [0.15, 0.17, 0.25]    # black sky, the scene lit by its lights alone
+//   horizon = [0.15, 0.17, 0.25]    # black sky, the scene lit by its lights
+//   alone
 //
 //   [textures.floor_checks]         # a name, used by materials
 //   kind = "checker"
@@ -75,12 +76,11 @@ namespace serenity::scene {
 //   seed = 3
 //
 //   [textures.cats_eye]
-//   kind = "swirl"                  # a marble's core, on its shape (core/textures/swirl.h)
-//   a = [0.9, 0.35, 0.05]           # the two colors, linear RGB in [0, 1]
-//   b = [0.95, 0.9, 0.8]
-//   vanes = 3                       # bands of each color around; 1 to 16
-//   twist = 0.5                     # turns per unit of height
-//   seed = 2
+//   kind = "swirl"                  # a marble's core, on its shape
+//   (core/textures/swirl.h) a = [0.9, 0.35, 0.05]           # the two colors,
+//   linear RGB in [0, 1] b = [0.95, 0.9, 0.8] vanes = 3                       #
+//   bands of each color around; 1 to 16 twist = 0.5                     # turns
+//   per unit of height seed = 2
 //
 //   [materials.glass]               # a name, used by shapes
 //   kind = "dielectric"
@@ -136,7 +136,8 @@ namespace serenity::scene {
 //   radius = 0.03
 //   material = "glow"
 //   motion = { kind = "wander", reach = 0.25, speed = 0.3, seed = 7 }
-//   glow = { kind = "rhythm", period = 5.5, flash = 0.35, dim = 0.05, seed = 3 }
+//   glow = { kind = "rhythm", period = 5.5, flash = 0.35, dim = 0.05, seed = 3
+//   }
 //
 //   [[shapes]]
 //   kind = "sphere"
@@ -147,7 +148,8 @@ namespace serenity::scene {
 //              targets = ["marble"], speed = 0.5, clearance = 0.08,
 //              circle = 3, swoop = 1, drift = 1, seed = 11,
 //              prelude = { kind = "perch", at = [2, 0.8305, 0], until = 9 } }
-//                                   # optional: hold (until), or perch (at, until)
+//                                   # optional: hold (until), or perch (at,
+//                                   until)
 //   glow = { kind = "flight", flash = 0.35, dim = 0.05,
 //            wake = { at = 4, ramp = 1.5 } }  # optional: dark until at
 //
@@ -296,72 +298,72 @@ namespace serenity::scene {
 inline constexpr double world_extent = 1.0e6;
 
 class SceneError : public std::runtime_error {
-public:
-    explicit SceneError(const std::string& what) : std::runtime_error(what) {}
+ public:
+  explicit SceneError(const std::string& what) : std::runtime_error(what) {}
 };
 
 struct SceneDescription {
-    // The camera as the file places it (contracts/camera.h); valid
-    // (camera/thin_lens.h). Each frame is seen through it until the camera
-    // moves.
-    contracts::Camera camera;
-    lights::GradientSkyData environment;
+  // The camera as the file places it (contracts/camera.h); valid
+  // (camera/thin_lens.h). Each frame is seen through it until the camera
+  // moves.
+  contracts::Camera camera;
+  lights::GradientSkyData environment;
 
-    // Each kind's array is named for its kind, plural, adjectives included
-    // (NL.8): MaterialKind::coated's is `coateds`, MediumKind::absorbing's
-    // `absorbings`; gpu::SceneBlock names them the same.
-    std::vector<textures::TextureRecord> textures;
-    std::vector<textures::CheckerData> checkers;
-    std::vector<textures::WoodData> woods;
-    std::vector<textures::SwirlData> swirls;
+  // Each kind's array is named for its kind, plural, adjectives included
+  // (NL.8): MaterialKind::coated's is `coateds`, MediumKind::absorbing's
+  // `absorbings`; gpu::SceneBlock names them the same.
+  std::vector<textures::TextureRecord> textures;
+  std::vector<textures::CheckerData> checkers;
+  std::vector<textures::WoodData> woods;
+  std::vector<textures::SwirlData> swirls;
 
-    std::vector<materials::MaterialRecord> materials;
-    std::vector<materials::RoughData> roughs;
-    std::vector<materials::DielectricData> dielectrics;
-    std::vector<materials::ConductorData> conductors;
-    std::vector<materials::EmissiveData> emissives;
-    std::vector<materials::CoatedData> coateds;
-    // Each material's name in the file, in record order, for an error that
-    // names one (packed_range.h). Empty for a description built in code
-    // rather than read, whose errors name a material by its record's index.
-    std::vector<std::string> material_names;
+  std::vector<materials::MaterialRecord> materials;
+  std::vector<materials::RoughData> roughs;
+  std::vector<materials::DielectricData> dielectrics;
+  std::vector<materials::ConductorData> conductors;
+  std::vector<materials::EmissiveData> emissives;
+  std::vector<materials::CoatedData> coateds;
+  // Each material's name in the file, in record order, for an error that
+  // names one (packed_range.h). Empty for a description built in code
+  // rather than read, whose errors name a material by its record's index.
+  std::vector<std::string> material_names;
 
-    // The media shapes are filled with (contract 12): one record per
-    // medium, one array per kind, as for materials. A shape names one by
-    // its record's index in ShapeRecord::interior.
-    std::vector<media::MediumRecord> media;
-    std::vector<media::AbsorbingData> absorbings;
+  // The media shapes are filled with (contract 12): one record per
+  // medium, one array per kind, as for materials. A shape names one by
+  // its record's index in ShapeRecord::interior.
+  std::vector<media::MediumRecord> media;
+  std::vector<media::AbsorbingData> absorbings;
 
-    // In file order, the [[shapes]] and then each swarm's fireflies
-    // (swarm.h): shape i is shapes.records[i] and shapes.transforms[i],
-    // each at rest, and primitive i of the acceleration structure
-    // (shapes/primitive.h). A sphere is the unit sphere placed at its center,
-    // scaled by its radius; a box, its corners as the file gives them,
-    // placed by the identity transform.
-    shapes::Shapes shapes;
+  // In file order, the [[shapes]] and then each swarm's fireflies
+  // (swarm.h): shape i is shapes.records[i] and shapes.transforms[i],
+  // each at rest, and primitive i of the acceleration structure
+  // (shapes/primitive.h). A sphere is the unit sphere placed at its center,
+  // scaled by its radius; a box, its corners as the file gives them,
+  // placed by the identity transform.
+  shapes::Shapes shapes;
 
-    // One record per light, and one array per light kind: a sphere light
-    // for each sphere that wears an emissive material, in shape order.
-    std::vector<lights::LightRecord> lights;
-    std::vector<lights::SphereLightData> sphere_lights;
-    // One per shape, in primitive order: its light record's index, or
-    // lights::no_light (core/lights/light.h).
-    std::vector<std::uint32_t> shape_lights;
-    lights::LightCounts light_counts{};
+  // One record per light, and one array per light kind: a sphere light
+  // for each sphere that wears an emissive material, in shape order.
+  std::vector<lights::LightRecord> lights;
+  std::vector<lights::SphereLightData> sphere_lights;
+  // One per shape, in primitive order: its light record's index, or
+  // lights::no_light (core/lights/light.h).
+  std::vector<std::uint32_t> shape_lights;
+  lights::LightCounts light_counts{};
 
-    // Which shapes move and which lights glow, and how: a mover per moving
-    // shape, its target the shape's index, and a glower per glowing light,
-    // its target the light's index among the sphere lights
-    // (core/animation/animate.h). Empty for a still scene. The transforms
-    // above place each moving shape at its anchor or start, where nothing
-    // renders it: a frame places it at its time first.
-    animation::Animation animation;
+  // Which shapes move and which lights glow, and how: a mover per moving
+  // shape, its target the shape's index, and a glower per glowing light,
+  // its target the light's index among the sphere lights
+  // (core/animation/animate.h). Empty for a still scene. The transforms
+  // above place each moving shape at its anchor or start, where nothing
+  // renders it: a frame places it at its time first.
+  animation::Animation animation;
 };
 
 // Whether anything in `scene` changes with time, moving or glowing: what
 // the history plans ask (core/frame/history.h).
 inline bool changes(const SceneDescription& scene) {
-    return animation::changes(scene.animation);
+  return animation::changes(scene.animation);
 }
 
 // The shapes that are lights, by index, in increasing order: those whose

@@ -52,59 +52,65 @@ namespace shaders {
 // through sphere_light() from the same three entries, by sphere_light_at()
 // or place_light(), so none can see it brighter or elsewhere than another.
 struct Lights {
-    constant serenity::lights::LightRecord* records;
-    constant uint* shape_lights;
-    constant serenity::lights::SphereLightData* spheres;
-    constant serenity::contracts::Transform* transforms;
-    constant float* sphere_glows;
+  constant serenity::lights::LightRecord* records;
+  constant uint* shape_lights;
+  constant serenity::lights::SphereLightData* spheres;
+  constant serenity::contracts::Transform* transforms;
+  constant float* sphere_glows;
 };
 
 // Sphere light `index`, where its shape is this frame, as bright as its glow.
 inline SphereLight sphere_light_at(Lights lights, uint index) {
-    const serenity::lights::SphereLightData light = lights.spheres[index];
-    return sphere_light(light, lights.transforms[light.shape], lights.sphere_glows[index]);
+  const serenity::lights::SphereLightData light = lights.spheres[index];
+  return sphere_light(light, lights.transforms[light.shape],
+                      lights.sphere_glows[index]);
 }
 
 // Whether a shape is a light, and if so which: one result (F.21).
 struct ShapeLight {
-    bool is_light;
-    serenity::lights::LightRecord light;  // read only where is_light
+  bool is_light;
+  serenity::lights::LightRecord light;  // read only where is_light
 };
 
 // Whether shape `primitive` is a light, and if so which.
 inline ShapeLight light_at(Lights lights, uint primitive) {
-    const uint index = lights.shape_lights[primitive];
-    if (index == serenity::lights::no_light) {
-        return ShapeLight{false, serenity::lights::LightRecord{}};
-    }
-    return ShapeLight{true, lights.records[index]};
+  const uint index = lights.shape_lights[primitive];
+  if (index == serenity::lights::no_light) {
+    return ShapeLight{false, serenity::lights::LightRecord{}};
+  }
+  return ShapeLight{true, lights.records[index]};
 }
 
-inline serenity::contracts::LightSample sample_light(Lights lights, serenity::lights::LightRecord light, float3 point,
-                                                     float2 u) {
-    switch (light.kind) {
+inline serenity::contracts::LightSample sample_light(
+    Lights lights, serenity::lights::LightRecord light, float3 point,
+    float2 u) {
+  switch (light.kind) {
     case serenity::lights::LightKind::sphere:
-        return sphere_sample_light(sphere_light_at(lights, light.index), point, u);
-    }
-    return serenity::contracts::LightSample{};
+      return sphere_sample_light(sphere_light_at(lights, light.index), point,
+                                 u);
+  }
+  return serenity::contracts::LightSample{};
 }
 
 // The radiance `light` sends from a point on it along a direction; the
 // sphere's is the same for every point and direction.
-inline float3 light_emitted(Lights lights, serenity::lights::LightRecord light, float3, float3) {
-    switch (light.kind) {
+inline float3 light_emitted(Lights lights, serenity::lights::LightRecord light,
+                            float3, float3) {
+  switch (light.kind) {
     case serenity::lights::LightKind::sphere:
-        return sphere_emitted(sphere_light_at(lights, light.index));
-    }
-    return float3(0.0f);
+      return sphere_emitted(sphere_light_at(lights, light.index));
+  }
+  return float3(0.0f);
 }
 
-inline float light_pdf(Lights lights, serenity::lights::LightRecord light, float3 point, float3 direction) {
-    switch (light.kind) {
+inline float light_pdf(Lights lights, serenity::lights::LightRecord light,
+                       float3 point, float3 direction) {
+  switch (light.kind) {
     case serenity::lights::LightKind::sphere:
-        return sphere_light_pdf(sphere_light_at(lights, light.index), point, direction);
-    }
-    return 0.0f;
+      return sphere_light_pdf(sphere_light_at(lights, light.index), point,
+                              direction);
+  }
+  return 0.0f;
 }
 
 // Contract 4 (above).
@@ -114,55 +120,61 @@ inline float light_pdf(Lights lights, serenity::lights::LightRecord light, float
 // sphere_light_at() reads, and the transform it is read through; a kind
 // added adds its own fields here and its case to each switch below.
 struct PlacedLight {
-    serenity::lights::LightRecord record;
-    SphereLight sphere;                     // read where record.kind is sphere
-    serenity::contracts::Transform placed;  // the sphere's shape's: where it is, and how big
+  serenity::lights::LightRecord record;
+  SphereLight sphere;  // read where record.kind is sphere
+  serenity::contracts::Transform
+      placed;  // the sphere's shape's: where it is, and how big
 };
 
 // Light record `light`, placed by `lights`: this frame's arrays, or last
 // frame's for a shift to last frame's pixel.
 inline PlacedLight place_light(Lights lights, uint light) {
-    PlacedLight placed{};
-    placed.record = lights.records[light];
-    switch (placed.record.kind) {
+  PlacedLight placed{};
+  placed.record = lights.records[light];
+  switch (placed.record.kind) {
     case serenity::lights::LightKind::sphere: {
-        const serenity::lights::SphereLightData data = lights.spheres[placed.record.index];
-        placed.placed = lights.transforms[data.shape];
-        placed.sphere = sphere_light(data, placed.placed, lights.sphere_glows[placed.record.index]);
-        break;
+      const serenity::lights::SphereLightData data =
+          lights.spheres[placed.record.index];
+      placed.placed = lights.transforms[data.shape];
+      placed.sphere = sphere_light(data, placed.placed,
+                                   lights.sphere_glows[placed.record.index]);
+      break;
     }
-    }
-    return placed;
+  }
+  return placed;
 }
 
 // The identity of `reached`, a point on `light`, light record `index`: a
 // light sample's point, or one a ray struck (metal/integrator/nee.metal.h,
 // kept_point). Precondition: `reached` on the light's surface, up to
 // rounding.
-inline serenity::contracts::LightPoint light_point_at(PlacedLight light, uint index, float3 reached) {
-    switch (light.record.kind) {
+inline serenity::contracts::LightPoint light_point_at(PlacedLight light,
+                                                      uint index,
+                                                      float3 reached) {
+  switch (light.record.kind) {
     case serenity::lights::LightKind::sphere:
-        return serenity::contracts::LightPoint{serenity::contracts::light_valid | index,
-                                               sphere_point_at(light.placed, reached)};
-    }
-    return serenity::contracts::LightPoint{0u, 0u};
+      return serenity::contracts::LightPoint{
+          serenity::contracts::light_valid | index,
+          sphere_point_at(light.placed, reached)};
+  }
+  return serenity::contracts::LightPoint{0u, 0u};
 }
 
 // Which light record shape `primitive` is, or lights::no_light: what a ray
 // that struck it found, by index, for light_point_at().
 inline uint light_index_at(Lights lights, uint primitive) {
-    return lights.shape_lights[primitive];
+  return lights.shape_lights[primitive];
 }
 
 // What `light` at `sample`'s point gives `point`. Precondition:
 // holds_light(sample), and `light` placed from sample's record.
-inline serenity::contracts::LightReceived evaluate_light_point(PlacedLight light,
-                                                               serenity::contracts::LightPoint sample, float3 point) {
-    switch (light.record.kind) {
+inline serenity::contracts::LightReceived evaluate_light_point(
+    PlacedLight light, serenity::contracts::LightPoint sample, float3 point) {
+  switch (light.record.kind) {
     case serenity::lights::LightKind::sphere:
-        return sphere_evaluate_point(light.sphere, light.placed, sample, point);
-    }
-    return serenity::contracts::LightReceived{};
+      return sphere_evaluate_point(light.sphere, light.placed, sample, point);
+  }
+  return serenity::contracts::LightReceived{};
 }
 
 // Contract 3's density for a light point: the density with which
@@ -170,12 +182,13 @@ inline serenity::contracts::LightReceived evaluate_light_point(PlacedLight light
 // `received` describes (evaluate_light_point()), asked of the point rather
 // than of a direction, so a point on the light's rim is not lost to the
 // rounding of a direction's test against the rim (sphere_point_pdf()).
-inline float light_point_pdf(PlacedLight light, float3 point, serenity::contracts::LightReceived received) {
-    switch (light.record.kind) {
+inline float light_point_pdf(PlacedLight light, float3 point,
+                             serenity::contracts::LightReceived received) {
+  switch (light.record.kind) {
     case serenity::lights::LightKind::sphere:
-        return sphere_point_pdf(light.sphere, point, received);
-    }
-    return 0.0f;
+      return sphere_point_pdf(light.sphere, point, received);
+  }
+  return 0.0f;
 }
 
 // A placed light's power, what it emits in all, RTXDI's GetPower(): the
@@ -184,23 +197,22 @@ inline float light_point_pdf(PlacedLight light, float3 point, serenity::contract
 // Lambertian emitter's radiance to its exitance), times its radiance's
 // luminance, at this frame's glow.
 inline float light_power(PlacedLight light) {
-    switch (light.record.kind) {
+  switch (light.record.kind) {
     case serenity::lights::LightKind::sphere:
-        return sphere_light_power(light.sphere);
-    }
-    return 0.0f;
+      return sphere_light_power(light.sphere);
+  }
+  return 0.0f;
 }
 
 // Contract 3's density for a placed light: as light_pdf() above, the
 // density with which sample_light() draws `direction` from `point`.
 inline float light_pdf(PlacedLight light, float3 point, float3 direction) {
-    switch (light.record.kind) {
+  switch (light.record.kind) {
     case serenity::lights::LightKind::sphere:
-        return sphere_light_pdf(light.sphere, point, direction);
-    }
-    return 0.0f;
+      return sphere_light_pdf(light.sphere, point, direction);
+  }
+  return 0.0f;
 }
-
 
 // Contract 3's presampled form, ReSTIR PT's light tiles (contracts/
 // light_tile.h): light record `index` placed and packed as a tile's entry,
@@ -208,23 +220,28 @@ inline float light_pdf(PlacedLight light, float3 point, float3 direction) {
 // sample_light() draws it toward the light the entry was packed from (the
 // same SphereLight, so the same numbers give the same direction, distance,
 // radiance and density).
-inline serenity::contracts::LightTileEntry compact_light(Lights lights, uint index) {
-    const PlacedLight placed = place_light(lights, index);
-    switch (placed.record.kind) {
+inline serenity::contracts::LightTileEntry compact_light(Lights lights,
+                                                         uint index) {
+  const PlacedLight placed = place_light(lights, index);
+  switch (placed.record.kind) {
     case serenity::lights::LightKind::sphere:
-        return serenity::contracts::LightTileEntry{
-            to_packed(placed.sphere.center), placed.sphere.radius, to_packed(placed.sphere.radiance),
-            (index & serenity::contracts::tile_index_mask) |
-                (placed.sphere.primitive << serenity::contracts::tile_shape_shift)};
-    }
-    return serenity::contracts::LightTileEntry{};
+      return serenity::contracts::LightTileEntry{
+          to_packed(placed.sphere.center), placed.sphere.radius,
+          to_packed(placed.sphere.radiance),
+          (index & serenity::contracts::tile_index_mask) |
+              (placed.sphere.primitive
+               << serenity::contracts::tile_shape_shift)};
+  }
+  return serenity::contracts::LightTileEntry{};
 }
 
-inline serenity::contracts::LightSample sample_tile_light(serenity::contracts::LightTileEntry entry, float3 point,
-                                                          float2 u) {
-    return sphere_sample_light(SphereLight{to_float3(entry.center), entry.radius, to_float3(entry.radiance),
-                                           entry.ids >> serenity::contracts::tile_shape_shift},
-                               point, u);
+inline serenity::contracts::LightSample sample_tile_light(
+    serenity::contracts::LightTileEntry entry, float3 point, float2 u) {
+  return sphere_sample_light(
+      SphereLight{to_float3(entry.center), entry.radius,
+                  to_float3(entry.radiance),
+                  entry.ids >> serenity::contracts::tile_shape_shift},
+      point, u);
 }
 
 }  // namespace shaders

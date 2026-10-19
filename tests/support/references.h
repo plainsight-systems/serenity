@@ -5,11 +5,11 @@
 // through a point of the image (contracts/camera.h), and Fresnel's
 // reflectance at a smooth boundary (metal/materials/fresnel.metal.h).
 
+#include <doctest/doctest.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-
-#include <doctest/doctest.h>
 
 #include "core/contracts/camera.h"
 #include "core/frame/extent.h"
@@ -19,47 +19,49 @@ namespace serenity::tests {
 
 // Linear `v` encoded as sRGB, to 8 bits, clamped to [0, 1] first.
 inline int srgb8(double v) {
-    v = std::clamp(v, 0.0, 1.0);
-    const double e = v <= 0.0031308 ? 12.92 * v : 1.055 * std::pow(v, 1.0 / 2.4) - 0.055;
-    return static_cast<int>(std::lround(e * 255.0));
+  v = std::clamp(v, 0.0, 1.0);
+  const double e =
+      v <= 0.0031308 ? 12.92 * v : 1.055 * std::pow(v, 1.0 / 2.4) - 0.055;
+  return static_cast<int>(std::lround(e * 255.0));
 }
 
 // An 8-bit sRGB value back to linear.
 inline double linear_of(int encoded) {
-    const double c = encoded / 255.0;
-    return c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+  const double c = encoded / 255.0;
+  return c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
 }
 
 // The pinhole camera ray's unit direction through (px, py), in pixels from
 // the top left, of an image of `size` (contracts/camera.h).
-inline Vec3 camera_direction(const contracts::CameraData& c, double px, double py, frame::Extent size) {
-    const double sx = 2.0 * px / size.width - 1.0;
-    const double sy = 1.0 - 2.0 * py / size.height;
-    return normalized(vec(c.forward) + sx * vec(c.right) + sy * vec(c.up));
+inline Vec3 camera_direction(const contracts::CameraData& c, double px,
+                             double py, frame::Extent size) {
+  const double sx = 2.0 * px / size.width - 1.0;
+  const double sy = 1.0 - 2.0 * py / size.height;
+  return normalized(vec(c.forward) + sx * vec(c.right) + sy * vec(c.up));
 }
 
 // A pixel of an image, from its top left.
 struct Pixel {
-    std::uint32_t x = 0;
-    std::uint32_t y = 0;
+  std::uint32_t x = 0;
+  std::uint32_t y = 0;
 };
 
 // The unpolarized Fresnel reflectance of light arriving at a smooth boundary
 // at cos_i, with eta = n_from / n_to; 1 past the critical angle.
 inline double fresnel_reflectance(double cos_i, double eta) {
-    const double sin2_t = eta * eta * (1.0 - cos_i * cos_i);
-    if (sin2_t >= 1.0) {
-        return 1.0;
-    }
-    const double cos_t = std::sqrt(1.0 - sin2_t);
-    const double r_s = (eta * cos_i - cos_t) / (eta * cos_i + cos_t);
-    const double r_p = (cos_i - eta * cos_t) / (cos_i + eta * cos_t);
-    return 0.5 * (r_s * r_s + r_p * r_p);
+  const double sin2_t = eta * eta * (1.0 - cos_i * cos_i);
+  if (sin2_t >= 1.0) {
+    return 1.0;
+  }
+  const double cos_t = std::sqrt(1.0 - sin2_t);
+  const double r_s = (eta * cos_i - cos_t) / (eta * cos_i + cos_t);
+  const double r_p = (cos_i - eta * cos_t) / (cos_i + eta * cos_t);
+  return 0.5 * (r_s * r_s + r_p * r_p);
 }
 
 // The reflectance from air into a medium of index `ior`.
 inline double fresnel_from_air(double cos_i, double ior) {
-    return fresnel_reflectance(cos_i, 1.0 / ior);
+  return fresnel_reflectance(cos_i, 1.0 / ior);
 }
 
 }  // namespace serenity::tests

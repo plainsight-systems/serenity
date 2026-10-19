@@ -10,8 +10,9 @@
 // asks:
 //
 //   everything   what does this ray reach? The camera's rays and the
-//                features', a path's bounces, a shift's replay: a ray that may strike a light, as MIS's
-//                BSDF strategy and the camera do, and must find it.
+//                features', a path's bounces, a shift's replay: a ray that may
+//                strike a light, as MIS's BSDF strategy and the camera do, and
+//                must find it.
 //   occluders    is this chosen light visible from here? Every shadow ray
 //                toward a light sample (next event estimation in the path
 //                tracer and ReSTIR PT, and a shift's
@@ -54,20 +55,21 @@ namespace contracts {
 
 // A shape's class: the bit its instance carries in a two-level structure.
 enum class ShapeClass : uint32_t {
-    surface = 1u << 0u,  // every shape that is not a light
-    light = 1u << 1u,    // a shape that is a light (contract 3, light_at)
+  surface = 1u << 0u,  // every shape that is not a light
+  light = 1u << 1u,    // a shape that is a light (contract 3, light_at)
 };
 
 // The classes a ray finds.
 enum class RayMask : uint32_t {
-    occluders = static_cast<uint32_t>(ShapeClass::surface),
-    everything = static_cast<uint32_t>(ShapeClass::surface) | static_cast<uint32_t>(ShapeClass::light),
+  occluders = static_cast<uint32_t>(ShapeClass::surface),
+  everything = static_cast<uint32_t>(ShapeClass::surface) |
+               static_cast<uint32_t>(ShapeClass::light),
 };
 
 // Whether a ray carrying `mask` finds a shape of class `shape` (Enum.4: the
 // one operation on the two, named, so no caller tests bits).
 constexpr bool finds(RayMask mask, ShapeClass shape) {
-    return (static_cast<uint32_t>(mask) & static_cast<uint32_t>(shape)) != 0u;
+  return (static_cast<uint32_t>(mask) & static_cast<uint32_t>(shape)) != 0u;
 }
 
 }  // namespace contracts

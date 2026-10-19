@@ -20,8 +20,10 @@ namespace serenity::headless {
 namespace {
 
 constexpr std::string_view usage =
-    "usage: serenity-headless --graph FILE [--scene FILE] --out DIRECTORY [--frames N] [--first I] "
-    "[--step SECONDS | --time SECONDS] [--size WIDTHxHEIGHT] [--write all|last|doubling] [--samples N] "
+    "usage: serenity-headless --graph FILE [--scene FILE] --out DIRECTORY "
+    "[--frames N] [--first I] "
+    "[--step SECONDS | --time SECONDS] [--size WIDTHxHEIGHT] [--write "
+    "all|last|doubling] [--samples N] "
     "[--format KIND] [--features]; "
     "DIRECTORY must be new or empty";
 
@@ -31,259 +33,292 @@ constexpr std::string_view usage =
 // (headless/options.h). Each step is bounded before the next is computed,
 // so nothing here wraps (ES.103): first + frames at most 2^32, then times
 // n, at most 2^24 - 1, under 2^56. `n` is at least 1.
-bool past_last_sample(std::uint64_t first, std::uint64_t frames, std::uint64_t n) {
-    constexpr std::uint64_t sample_indices = std::uint64_t{1} << 32;  // 0 .. 2^32 - 1
-    return first > sample_indices || frames > sample_indices - first || (first + frames) * n > sample_indices;
+bool past_last_sample(std::uint64_t first, std::uint64_t frames,
+                      std::uint64_t n) {
+  constexpr std::uint64_t sample_indices = std::uint64_t{1}
+                                           << 32;  // 0 .. 2^32 - 1
+  return first > sample_indices || frames > sample_indices - first ||
+         (first + frames) * n > sample_indices;
 }
 
 // The whole of `text` as a T, or none: std::from_chars reads no locale and
 // sets no errno (E.28), and takes no sign or space before the number.
 template <typename T>
 std::optional<T> parsed(std::string_view text) {
-    T value{};
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (error != std::errc{} || end != text.data() + text.size()) {
-        return std::nullopt;
-    }
-    return value;
+  T value{};
+  const auto [end, error] =
+      std::from_chars(text.data(), text.data() + text.size(), value);
+  if (error != std::errc{} || end != text.data() + text.size()) {
+    return std::nullopt;
+  }
+  return value;
 }
 
 // Seconds from `text`: finite, and > 0 when `positive`, else >= 0.
 double seconds(std::string_view option, std::string_view text, bool positive) {
-    const std::optional<double> value = parsed<double>(text);
-    if (!value || !std::isfinite(*value) || (positive ? *value <= 0.0 : *value < 0.0)) {
-        throw OptionsError(std::string{option} +
-                           (positive ? " needs a positive number of seconds, not '"
-                                     : " needs a number of seconds, 0 or more, not '") +
-                           std::string{text} + "'");
-    }
-    return *value;
+  const std::optional<double> value = parsed<double>(text);
+  if (!value || !std::isfinite(*value) ||
+      (positive ? *value <= 0.0 : *value < 0.0)) {
+    throw OptionsError(std::string{option} +
+                       (positive
+                            ? " needs a positive number of seconds, not '"
+                            : " needs a number of seconds, 0 or more, not '") +
+                       std::string{text} + "'");
+  }
+  return *value;
 }
 
 std::uint64_t whole_number(std::string_view option, std::string_view text) {
-    const std::optional<std::uint64_t> value = parsed<std::uint64_t>(text);
-    if (!value) {
-        throw OptionsError(std::string{option} + " needs a whole number, not '" + std::string{text} + "'");
-    }
-    return *value;
+  const std::optional<std::uint64_t> value = parsed<std::uint64_t>(text);
+  if (!value) {
+    throw OptionsError(std::string{option} + " needs a whole number, not '" +
+                       std::string{text} + "'");
+  }
+  return *value;
 }
 
 // One side of --size: a whole number from 1 to what a uint32 holds, or
 // none.
 std::optional<std::uint32_t> side(std::string_view text) {
-    const std::optional<std::uint64_t> value = parsed<std::uint64_t>(text);
-    if (!value || *value == 0 || *value > std::numeric_limits<std::uint32_t>::max()) {
-        return std::nullopt;
-    }
-    return static_cast<std::uint32_t>(*value);
+  const std::optional<std::uint64_t> value = parsed<std::uint64_t>(text);
+  if (!value || *value == 0 ||
+      *value > std::numeric_limits<std::uint32_t>::max()) {
+    return std::nullopt;
+  }
+  return static_cast<std::uint32_t>(*value);
 }
 
 // The arguments in order, each value taken by the option before it: a
 // cursor, so no loop index is stepped inside the loop's body (ES.86).
 class Arguments {
-public:
-    explicit Arguments(std::span<const char* const> args) : args_(args) {}
+ public:
+  explicit Arguments(std::span<const char* const> args) : args_(args) {}
 
-    std::optional<std::string_view> next() {
-        if (at_ == args_.size()) {
-            return std::nullopt;
-        }
-        return args_[at_++];
+  std::optional<std::string_view> next() {
+    if (at_ == args_.size()) {
+      return std::nullopt;
     }
+    return args_[at_++];
+  }
 
-private:
-    std::span<const char* const> args_;
-    std::size_t at_ = 0;
+ private:
+  std::span<const char* const> args_;
+  std::size_t at_ = 0;
 };
 
 }  // namespace
 
 Options parse(std::span<const char* const> args) {
-    Options options;
-    bool stepped = false;
-    std::vector<std::string_view> given;  // the options read so far
-    Arguments arguments(args);
-    while (const std::optional<std::string_view> next = arguments.next()) {
-        const std::string_view option = *next;
-        // Each option once: a second would silently replace the first's
-        // value (E.2), so `--samples 1024 --samples 1` is refused, not run.
-        if (std::ranges::find(given, option) != given.end()) {
-            throw OptionsError(std::string{option} + " is given twice; each option is given once");
-        }
-        given.push_back(option);
-        const auto value = [&] {
-            const std::optional<std::string_view> given = arguments.next();
-            if (!given) {
-                throw OptionsError(std::string{option} + " needs a value");
-            }
-            return *given;
-        };
+  Options options;
+  bool stepped = false;
+  std::vector<std::string_view> given;  // the options read so far
+  Arguments arguments(args);
+  while (const std::optional<std::string_view> next = arguments.next()) {
+    const std::string_view option = *next;
+    // Each option once: a second would silently replace the first's
+    // value (E.2), so `--samples 1024 --samples 1` is refused, not run.
+    if (std::ranges::find(given, option) != given.end()) {
+      throw OptionsError(std::string{option} +
+                         " is given twice; each option is given once");
+    }
+    given.push_back(option);
+    const auto value = [&] {
+      const std::optional<std::string_view> given = arguments.next();
+      if (!given) {
+        throw OptionsError(std::string{option} + " needs a value");
+      }
+      return *given;
+    };
 
-        if (option == "--graph") {
-            options.graph = value();
-        } else if (option == "--scene") {
-            options.scene = value();
-        } else if (option == "--out") {
-            options.out = value();
-        } else if (option == "--frames") {
-            options.frames = whole_number(option, value());
-            if (options.frames == 0) {
-                throw OptionsError("--frames must be at least 1");
-            }
-        } else if (option == "--samples") {
-            options.samples = whole_number(option, value());
-            if (options.samples == 0 || options.samples > frame::max_accumulated_frames) {
-                throw OptionsError("--samples must be from 1 to " + std::to_string(frame::max_accumulated_frames) +
-                                   ", the most an image holds");
-            }
-        } else if (option == "--first") {
-            options.first = whole_number(option, value());
-        } else if (option == "--step") {
-            options.step = frame::Seconds{seconds(option, value(), true)};
-            stepped = true;
-        } else if (option == "--time") {
-            options.time = frame::Seconds{seconds(option, value(), false)};
-        } else if (option == "--write") {
-            const std::string_view which = value();
-            if (which == "all") {
-                options.write = Write::all;
-            } else if (which == "last") {
-                options.write = Write::last;
-            } else if (which == "doubling") {
-                options.write = Write::doubling;
-            } else {
-                throw OptionsError("--write needs all, last or doubling, not '" + std::string{which} + "'");
-            }
-        } else if (option == "--format") {
-            // Output's list of kinds, not one of this program's (image_format.h).
-            const std::string_view which = value();
-            const std::optional<output::ImageFormat> format = output::image_format_named(which);
-            if (!format) {
-                throw OptionsError("--format needs " + output::image_format_names() + ", not '" + std::string{which} +
-                                   "'");
-            }
-            options.format = *format;
-        } else if (option == "--features") {
-            options.features = true;
-        } else if (option == "--size") {
-            const std::string_view text = value();
-            const std::size_t x = text.find('x');
-            const std::optional<std::uint32_t> width =
-                x == std::string_view::npos ? std::nullopt : side(text.substr(0, x));
-            const std::optional<std::uint32_t> height =
-                x == std::string_view::npos ? std::nullopt : side(text.substr(x + 1));
-            if (!width || !height) {
-                throw OptionsError("--size needs WIDTHxHEIGHT, each a whole number at least 1, not '" +
-                                   std::string{text} + "'");
-            }
-            options.size = frame::Extent{*width, *height};
-        } else {
-            throw OptionsError("unknown option '" + std::string{option} + "'; " + std::string{usage});
-        }
+    if (option == "--graph") {
+      options.graph = value();
+    } else if (option == "--scene") {
+      options.scene = value();
+    } else if (option == "--out") {
+      options.out = value();
+    } else if (option == "--frames") {
+      options.frames = whole_number(option, value());
+      if (options.frames == 0) {
+        throw OptionsError("--frames must be at least 1");
+      }
+    } else if (option == "--samples") {
+      options.samples = whole_number(option, value());
+      if (options.samples == 0 ||
+          options.samples > frame::max_accumulated_frames) {
+        throw OptionsError("--samples must be from 1 to " +
+                           std::to_string(frame::max_accumulated_frames) +
+                           ", the most an image holds");
+      }
+    } else if (option == "--first") {
+      options.first = whole_number(option, value());
+    } else if (option == "--step") {
+      options.step = frame::Seconds{seconds(option, value(), true)};
+      stepped = true;
+    } else if (option == "--time") {
+      options.time = frame::Seconds{seconds(option, value(), false)};
+    } else if (option == "--write") {
+      const std::string_view which = value();
+      if (which == "all") {
+        options.write = Write::all;
+      } else if (which == "last") {
+        options.write = Write::last;
+      } else if (which == "doubling") {
+        options.write = Write::doubling;
+      } else {
+        throw OptionsError("--write needs all, last or doubling, not '" +
+                           std::string{which} + "'");
+      }
+    } else if (option == "--format") {
+      // Output's list of kinds, not one of this program's (image_format.h).
+      const std::string_view which = value();
+      const std::optional<output::ImageFormat> format =
+          output::image_format_named(which);
+      if (!format) {
+        throw OptionsError("--format needs " + output::image_format_names() +
+                           ", not '" + std::string{which} + "'");
+      }
+      options.format = *format;
+    } else if (option == "--features") {
+      options.features = true;
+    } else if (option == "--size") {
+      const std::string_view text = value();
+      const std::size_t x = text.find('x');
+      const std::optional<std::uint32_t> width =
+          x == std::string_view::npos ? std::nullopt : side(text.substr(0, x));
+      const std::optional<std::uint32_t> height =
+          x == std::string_view::npos ? std::nullopt : side(text.substr(x + 1));
+      if (!width || !height) {
+        throw OptionsError(
+            "--size needs WIDTHxHEIGHT, each a whole number at least 1, not '" +
+            std::string{text} + "'");
+      }
+      options.size = frame::Extent{*width, *height};
+    } else {
+      throw OptionsError("unknown option '" + std::string{option} + "'; " +
+                         std::string{usage});
     }
-    if (options.graph.empty()) {
-        throw OptionsError("missing --graph; " + std::string{usage});
-    }
-    if (options.out.empty()) {
-        throw OptionsError("missing --out; " + std::string{usage});
-    }
-    if (stepped && options.time) {
-        throw OptionsError("--time and --step are exclusive: --time freezes every frame at one time");
-    }
-    // What parse() can check of the sample bound without the graph: every
-    // frame renders one sample at least, so the last frame's index must be
-    // under 2^32. The plan's own samples a frame are check_samples()'s.
-    if (past_last_sample(options.first, options.frames, 1)) {
-        throw OptionsError("--first " + std::to_string(options.first) + " plus --frames " +
-                           std::to_string(options.frames) +
-                           " is past frame index 2^32 - 1, the last whose sample's random numbers are its own");
-    }
-    return options;
+  }
+  if (options.graph.empty()) {
+    throw OptionsError("missing --graph; " + std::string{usage});
+  }
+  if (options.out.empty()) {
+    throw OptionsError("missing --out; " + std::string{usage});
+  }
+  if (stepped && options.time) {
+    throw OptionsError(
+        "--time and --step are exclusive: --time freezes every frame at one "
+        "time");
+  }
+  // What parse() can check of the sample bound without the graph: every
+  // frame renders one sample at least, so the last frame's index must be
+  // under 2^32. The plan's own samples a frame are check_samples()'s.
+  if (past_last_sample(options.first, options.frames, 1)) {
+    throw OptionsError("--first " + std::to_string(options.first) +
+                       " plus --frames " + std::to_string(options.frames) +
+                       " is past frame index 2^32 - 1, the last whose sample's "
+                       "random numbers are its own");
+  }
+  return options;
 }
 
 void check_samples(const Options& options, std::uint64_t samples_per_frame) {
-    if (samples_per_frame == 0 || samples_per_frame > frame::max_accumulated_frames) {
-        throw std::invalid_argument("check_samples: " + std::to_string(samples_per_frame) +
-                                    " samples a frame, where a plan renders from 1 to " +
-                                    std::to_string(frame::max_accumulated_frames));
-    }
-    if (past_last_sample(options.first, options.frames, samples_per_frame)) {
-        throw OptionsError("--first " + std::to_string(options.first) + " plus --frames " +
-                           std::to_string(options.frames) + ", at " + std::to_string(samples_per_frame) +
-                           " samples a frame, is past sample index 2^32 - 1, the last whose random numbers are its "
-                           "own");
-    }
+  if (samples_per_frame == 0 ||
+      samples_per_frame > frame::max_accumulated_frames) {
+    throw std::invalid_argument(
+        "check_samples: " + std::to_string(samples_per_frame) +
+        " samples a frame, where a plan renders from 1 to " +
+        std::to_string(frame::max_accumulated_frames));
+  }
+  if (past_last_sample(options.first, options.frames, samples_per_frame)) {
+    throw OptionsError("--first " + std::to_string(options.first) +
+                       " plus --frames " + std::to_string(options.frames) +
+                       ", at " + std::to_string(samples_per_frame) +
+                       " samples a frame, is past sample index 2^32 - 1, the "
+                       "last whose random numbers are its "
+                       "own");
+  }
 }
 
 bool written(Write write, RunFrame frame) {
-    const std::uint64_t n = frame.after_first;
-    // No default: a way of writing without a rule fails to compile.
-    switch (write) {
+  const std::uint64_t n = frame.after_first;
+  // No default: a way of writing without a rule fails to compile.
+  switch (write) {
     case Write::all:
-        return true;
+      return true;
     case Write::last:
-        return n + 1 == frame.frames;
+      return n + 1 == frame.frames;
     case Write::doubling:
-        // The 1st, 2nd, 4th ... frame, counting from 1: n + 1 a power of two.
-        return n + 1 == frame.frames || ((n + 1) & n) == 0;
-    }
-    // Reached only by a value no enumerator names: not a reason to write.
-    throw std::logic_error("written: a way of writing with no rule");
+      // The 1st, 2nd, 4th ... frame, counting from 1: n + 1 a power of two.
+      return n + 1 == frame.frames || ((n + 1) & n) == 0;
+  }
+  // Reached only by a value no enumerator names: not a reason to write.
+  throw std::logic_error("written: a way of writing with no rule");
 }
 
 void prepare_output(const std::filesystem::path& out) {
-    // Before making it: create_directories() throws its own filesystem_error
-    // for a file in the directory's place, not this refusal.
-    if (std::filesystem::exists(out) && !std::filesystem::is_directory(out)) {
-        throw OptionsError("--out " + out.string() + " is not a directory");
-    }
-    if (std::filesystem::create_directories(out)) {
-        return;  // made just now, empty
-    }
-    if (!std::filesystem::is_empty(out)) {
-        throw OptionsError("--out " + out.string() +
-                           " already holds files, which would sit beside this run's frames as if they were its own; "
-                           "empty it or name another");
-    }
+  // Before making it: create_directories() throws its own filesystem_error
+  // for a file in the directory's place, not this refusal.
+  if (std::filesystem::exists(out) && !std::filesystem::is_directory(out)) {
+    throw OptionsError("--out " + out.string() + " is not a directory");
+  }
+  if (std::filesystem::create_directories(out)) {
+    return;  // made just now, empty
+  }
+  if (!std::filesystem::is_empty(out)) {
+    throw OptionsError("--out " + out.string() +
+                       " already holds files, which would sit beside this "
+                       "run's frames as if they were its own; "
+                       "empty it or name another");
+  }
 }
 
 void check_graph(const Options& options, const frame::Schedule& schedule) {
-    if (output::source(options.format) == output::ImageSource::accumulated && !frame::accumulates(schedule)) {
-        throw OptionsError("--format " + std::string{output::extension(options.format)} +
-                           " is written from the accumulated image, and the graph " + options.graph.string() +
-                           " accumulates nothing");
-    }
-    if (options.features && !frame::writes_features(schedule)) {
-        throw OptionsError("--features writes the feature images, and the graph " + options.graph.string() +
-                           " has no features pass");
-    }
-    if (!frame::presents(schedule) && !options.features) {
-        throw OptionsError("the graph " + options.graph.string() +
-                           " shows no image, only features: ask for them with --features");
-    }
+  if (output::source(options.format) == output::ImageSource::accumulated &&
+      !frame::accumulates(schedule)) {
+    throw OptionsError(
+        "--format " + std::string{output::extension(options.format)} +
+        " is written from the accumulated image, and the graph " +
+        options.graph.string() + " accumulates nothing");
+  }
+  if (options.features && !frame::writes_features(schedule)) {
+    throw OptionsError("--features writes the feature images, and the graph " +
+                       options.graph.string() + " has no features pass");
+  }
+  if (!frame::presents(schedule) && !options.features) {
+    throw OptionsError(
+        "the graph " + options.graph.string() +
+        " shows no image, only features: ask for them with --features");
+  }
 }
 
-std::filesystem::path frame_path(const std::filesystem::path& out, std::uint64_t index, output::ImageFormat format) {
-    return out / std::format("frame-{:06}.{}", index, output::extension(format));
+std::filesystem::path frame_path(const std::filesystem::path& out,
+                                 std::uint64_t index,
+                                 output::ImageFormat format) {
+  return out / std::format("frame-{:06}.{}", index, output::extension(format));
 }
 
-std::array<std::filesystem::path, 4> feature_paths(const std::filesystem::path& out, std::uint64_t index) {
-    const auto path = [&](std::string_view feature) { return out / std::format("frame-{:06}-{}.pfm", index, feature); };
-    return {path("albedo"), path("normal"), path("depth"), path("motion")};
+std::array<std::filesystem::path, 4> feature_paths(
+    const std::filesystem::path& out, std::uint64_t index) {
+  const auto path = [&](std::string_view feature) {
+    return out / std::format("frame-{:06}-{}.pfm", index, feature);
+  };
+  return {path("albedo"), path("normal"), path("depth"), path("motion")};
 }
 
 frame::Seconds frame_time(const Options& options, std::uint64_t index) {
-    return options.time ? *options.time : options.step * static_cast<double>(index);
+  return options.time ? *options.time
+                      : options.step * static_cast<double>(index);
 }
 
-std::optional<frame::Seconds> previous_time(const Options& options, std::uint64_t index) {
-    if (options.time) {
-        return *options.time;
-    }
-    if (index == 0) {
-        return std::nullopt;
-    }
-    return options.step * static_cast<double>(index - 1);
+std::optional<frame::Seconds> previous_time(const Options& options,
+                                            std::uint64_t index) {
+  if (options.time) {
+    return *options.time;
+  }
+  if (index == 0) {
+    return std::nullopt;
+  }
+  return options.step * static_cast<double>(index - 1);
 }
 
 }  // namespace serenity::headless

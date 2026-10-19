@@ -79,45 +79,49 @@ SERENITY_CONSTANT float checkerboard_lattice_step = 1.41421356f;
 
 // Whether frame `frame` traces the pixel (x, y).
 constexpr bool checkerboard_traced(uint32_t x, uint32_t y, uint32_t frame) {
-    return ((x + y + frame) & 1u) == 0u;
+  return ((x + y + frame) & 1u) == 0u;
 }
 
 // The packed grid's width, in slots, for an image `width` pixels wide.
 constexpr uint32_t checkerboard_width(uint32_t width) {
-    return width / 2u + (width & 1u);
+  return width / 2u + (width & 1u);
 }
 
 // The pixel's x that column `column` of row `y` of the packed grid holds in
 // frame `frame`: the one of 2 column and 2 column + 1 that the frame
 // traces. Possibly the width itself, past an odd width's last column.
 constexpr uint32_t checkerboard_x(uint32_t column, uint32_t y, uint32_t frame) {
-    return 2u * column + ((y + frame) & 1u);
+  return 2u * column + ((y + frame) & 1u);
 }
 
 // The packed slot of the pixel (x, y) of an image `width` pixels wide, in
 // either field.
 constexpr uint32_t checkerboard_slot(uint32_t x, uint32_t y, uint32_t width) {
-    return y * checkerboard_width(width) + x / 2u;
+  return y * checkerboard_width(width) + x / 2u;
 }
 
 // The x of the pixel frame `frame - 1` traced beside the pixel (x, y)
 // (above): x itself, or x - 1 in an odd frame and x + 1 in an even one.
 // Signed: x - 1 may be -1, outside the image, which the caller tests.
-constexpr int32_t checkerboard_previous_x(int32_t x, int32_t y, uint32_t frame) {
-    if (checkerboard_traced(static_cast<uint32_t>(x), static_cast<uint32_t>(y), frame - 1u)) {
-        return x;
-    }
-    return (frame & 1u) != 0u ? x - 1 : x + 1;
+constexpr int32_t checkerboard_previous_x(int32_t x, int32_t y,
+                                          uint32_t frame) {
+  if (checkerboard_traced(static_cast<uint32_t>(x), static_cast<uint32_t>(y),
+                          frame - 1u)) {
+    return x;
+  }
+  return (frame & 1u) != 0u ? x - 1 : x + 1;
 }
 
 // What the fill reads beyond the frame's constants (above).
 struct CheckerboardConstants {
-    uint32_t history;  // 1 when the fill's history holds this history's frame before
-    uint32_t padding[3];
+  uint32_t
+      history;  // 1 when the fill's history holds this history's frame before
+  uint32_t padding[3];
 };
 
 static_assert(sizeof(CheckerboardConstants) == 16,
-              "CheckerboardConstants must be the same 16 bytes on the host and in shaders");
+              "CheckerboardConstants must be the same 16 bytes on the host and "
+              "in shaders");
 #if !defined(__METAL_VERSION__)
 static_assert(std::is_trivially_copyable_v<CheckerboardConstants>,
               "CheckerboardConstants is written to the GPU as bytes");

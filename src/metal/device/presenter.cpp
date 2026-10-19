@@ -12,62 +12,65 @@ namespace {
 constexpr NS::UInteger drawable_count = 3;
 
 NS::SharedPtr<CA::MetalLayer> retained(LayerHandle layer) {
-    if (layer.ca_metal_layer == nullptr) {
-        throw MetalError("Presenter: the layer handle is null");
-    }
-    return NS::RetainPtr(static_cast<CA::MetalLayer*>(layer.ca_metal_layer));
+  if (layer.ca_metal_layer == nullptr) {
+    throw MetalError("Presenter: the layer handle is null");
+  }
+  return NS::RetainPtr(static_cast<CA::MetalLayer*>(layer.ca_metal_layer));
 }
 
 }  // namespace
 
-Presenter::Presenter(const Device& device, Submission& submission, LayerHandle layer, frame::Extent size)
+Presenter::Presenter(const Device& device, Submission& submission,
+                     LayerHandle layer, frame::Extent size)
     : submission_(submission), layer_(retained(layer)) {
-    // A size to render at from the first frame (C.41); resize() keeps the
-    // last one for a window minimized later.
-    check_texture_size(size, "Presenter");
-    layer_->setDevice(device.handle());
-    layer_->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
-    layer_->setFramebufferOnly(false);
-    layer_->setMaximumDrawableCount(drawable_count);
-    layer_->setDisplaySyncEnabled(true);
-    resize(size);
+  // A size to render at from the first frame (C.41); resize() keeps the
+  // last one for a window minimized later.
+  check_texture_size(size, "Presenter");
+  layer_->setDevice(device.handle());
+  layer_->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+  layer_->setFramebufferOnly(false);
+  layer_->setMaximumDrawableCount(drawable_count);
+  layer_->setDisplaySyncEnabled(true);
+  resize(size);
 
-    MTL::ResidencySet* drawables = layer_->residencySet();
-    if (drawables == nullptr) {
-        throw MetalError("Presenter: the layer has no residency set");
-    }
-    submission.add_residency_set(drawables);
-    drawables_ = NS::RetainPtr(drawables);
+  MTL::ResidencySet* drawables = layer_->residencySet();
+  if (drawables == nullptr) {
+    throw MetalError("Presenter: the layer has no residency set");
+  }
+  submission.add_residency_set(drawables);
+  drawables_ = NS::RetainPtr(drawables);
 }
 
 Presenter::~Presenter() {
-    if (drawables_) {
-        submission_.remove_residency_set(drawables_.get());
-    }
+  if (drawables_) {
+    submission_.remove_residency_set(drawables_.get());
+  }
 }
 
 void Presenter::resize(frame::Extent size) {
-    if (size.width == 0 || size.height == 0) {
-        return;  // a minimized window: keep the last size, render nothing new
-    }
-    // As the constructor checks: past it Metal stops the program rather
-    // than failing (device.h).
-    check_texture_size(size, "the window's drawable");
-    const CGSize wanted{static_cast<CGFloat>(size.width), static_cast<CGFloat>(size.height)};
-    const CGSize layer = layer_->drawableSize();
-    // Set only on a change, the window's or another's (presenter.h).
-    if (layer.width != wanted.width || layer.height != wanted.height) {
-        layer_->setDrawableSize(wanted);
-    }
-    size_ = size;
+  if (size.width == 0 || size.height == 0) {
+    return;  // a minimized window: keep the last size, render nothing new
+  }
+  // As the constructor checks: past it Metal stops the program rather
+  // than failing (device.h).
+  check_texture_size(size, "the window's drawable");
+  const CGSize wanted{static_cast<CGFloat>(size.width),
+                      static_cast<CGFloat>(size.height)};
+  const CGSize layer = layer_->drawableSize();
+  // Set only on a change, the window's or another's (presenter.h).
+  if (layer.width != wanted.width || layer.height != wanted.height) {
+    layer_->setDrawableSize(wanted);
+  }
+  size_ = size;
 }
 
 bool Presenter::renders_into(CA::MetalDrawable* drawable) const {
-    if (drawable == nullptr) {
-        return false;
-    }
-    const MTL::Texture* texture = drawable->texture();
-    return texture != nullptr && texture->width() == size_.width && texture->height() == size_.height;
+  if (drawable == nullptr) {
+    return false;
+  }
+  const MTL::Texture* texture = drawable->texture();
+  return texture != nullptr && texture->width() == size_.width &&
+         texture->height() == size_.height;
 }
 
 }  // namespace serenity::metal

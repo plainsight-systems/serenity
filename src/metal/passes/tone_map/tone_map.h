@@ -52,27 +52,29 @@ namespace serenity::metal {
 // 4.3 P reads; step 3, 9 per pixel over levels 0 to 4, about 3 P; step 4, 1
 // full-size read and 9 of B_0, 10 P; 17 P reads in all, most of them of half
 // floats at reduced size, and 12 dispatches with 11 barriers. What it costs
-// a frame against a plain display of the radiance, and the clamping of step 1 done on
-// exact reads instead of filtered ones, which cost more and was not kept:
-// docs/research/2026-10-09-pass-costs.md.
+// a frame against a plain display of the radiance, and the clamping of step 1
+// done on exact reads instead of filtered ones, which cost more and was not
+// kept: docs/research/2026-10-09-pass-costs.md.
 class ToneMapPass {
-public:
-    // Throws MetalError if `settings` are out of range (core/passes/tone_map.h),
-    // the device cannot filter 32-bit floats, or it cannot make the
-    // pipelines or the settings' buffer.
-    ToneMapPass(const Device& device, const Library& library, Submission& submission,
-                const passes::ToneMap& settings);
+ public:
+  // Throws MetalError if `settings` are out of range (core/passes/tone_map.h),
+  // the device cannot filter 32-bit floats, or it cannot make the
+  // pipelines or the settings' buffer.
+  ToneMapPass(const Device& device, const Library& library,
+              Submission& submission, const passes::ToneMap& settings);
 
-    // Records the pass. Throws MetalError if `resources` has no radiance image or
-    // no bloom pyramid.
-    void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+  // Records the pass. Throws MetalError if `resources` has no radiance image or
+  // no bloom pyramid.
+  void record(MTL4::ComputeCommandEncoder* encoder,
+              const FrameResources& resources) const;
 
-private:
-    NS::SharedPtr<MTL::ComputePipelineState> down_first_;  // step 2, from the exposed radiance
-    NS::SharedPtr<MTL::ComputePipelineState> down_;        // step 2, from a level
-    NS::SharedPtr<MTL::ComputePipelineState> up_;          // step 3
-    NS::SharedPtr<MTL::ComputePipelineState> finish_;      // steps 4 to 6
-    ResidentBuffer settings_;
+ private:
+  NS::SharedPtr<MTL::ComputePipelineState>
+      down_first_;  // step 2, from the exposed radiance
+  NS::SharedPtr<MTL::ComputePipelineState> down_;    // step 2, from a level
+  NS::SharedPtr<MTL::ComputePipelineState> up_;      // step 3
+  NS::SharedPtr<MTL::ComputePipelineState> finish_;  // steps 4 to 6
+  ResidentBuffer settings_;
 };
 
 }  // namespace serenity::metal

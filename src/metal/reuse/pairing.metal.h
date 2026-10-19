@@ -56,45 +56,50 @@ namespace pairing {
 
 // One frame's map of one texture (above).
 struct Framing {
-    bool flip_x;
-    bool flip_y;
-    bool transpose;
-    int2 offset;  // within [0, width)
+  bool flip_x;
+  bool flip_y;
+  bool transpose;
+  int2 offset;  // within [0, width)
 };
 
 inline Framing framing(uint frame, uint texture) {
-    const uint h = pcg_hash(pcg_hash(frame) ^ (texture * golden_ratio_32));
-    const int width = int(serenity::contracts::pairing_widths[texture]);
-    const uint g = pcg_hash(h);
-    return Framing{(h & 1u) != 0u, (h & 2u) != 0u, (h & 4u) != 0u,
-                   int2(int((h >> 8u) % uint(width)), int((g >> 8u) % uint(width)))};
+  const uint h = pcg_hash(pcg_hash(frame) ^ (texture * golden_ratio_32));
+  const int width = int(serenity::contracts::pairing_widths[texture]);
+  const uint g = pcg_hash(h);
+  return Framing{
+      (h & 1u) != 0u, (h & 2u) != 0u, (h & 4u) != 0u,
+      int2(int((h >> 8u) % uint(width)), int((g >> 8u) % uint(width)))};
 }
 
 // `pixel`'s partner through texture `texture` of `textures`, the textures
 // one after another (contracts/path_reuse_settings.h, pairing_starts),
 // under `map`: possibly outside the image.
-inline int2 partner(constant ushort* textures, int2 pixel, uint texture, Framing map) {
-    const int width = int(serenity::contracts::pairing_widths[texture]);
-    int2 s = map.transpose ? pixel.yx : pixel;
-    s.x = map.flip_x ? -s.x : s.x;
-    s.y = map.flip_y ? -s.y : s.y;
-    const int2 t = ((s + map.offset) % width + width) % width;
-    const uint packed = textures[serenity::contracts::pairing_starts[texture] + uint(t.y * width + t.x)];
-    // Two signed 8-bit offsets, read as two's complement (core/sampling/
-    // pairing.h).
-    int2 d = int2(signed_byte(packed, 0u), signed_byte(packed, 8u));
-    d.y = map.flip_y ? -d.y : d.y;
-    d.x = map.flip_x ? -d.x : d.x;
-    return pixel + (map.transpose ? d.yx : d);
+inline int2 partner(constant ushort* textures, int2 pixel, uint texture,
+                    Framing map) {
+  const int width = int(serenity::contracts::pairing_widths[texture]);
+  int2 s = map.transpose ? pixel.yx : pixel;
+  s.x = map.flip_x ? -s.x : s.x;
+  s.y = map.flip_y ? -s.y : s.y;
+  const int2 t = ((s + map.offset) % width + width) % width;
+  const uint packed = textures[serenity::contracts::pairing_starts[texture] +
+                               uint(t.y * width + t.x)];
+  // Two signed 8-bit offsets, read as two's complement (core/sampling/
+  // pairing.h).
+  int2 d = int2(signed_byte(packed, 0u), signed_byte(packed, 8u));
+  d.y = map.flip_y ? -d.y : d.y;
+  d.x = map.flip_x ? -d.x : d.x;
+  return pixel + (map.transpose ? d.yx : d);
 }
 
 // `pixel`'s partner through texture `texture` under `map`, over the
 // lattice of the traced field of parity `phase` (above): possibly outside
 // the image. Precondition: the field holds `pixel` (x + y - phase even).
-inline int2 lattice_partner(constant ushort* textures, int2 pixel, uint texture, Framing map, int phase) {
-    const int2 lattice = int2((pixel.x + pixel.y - phase) / 2, (pixel.x - pixel.y - phase) / 2);
-    const int2 found = partner(textures, lattice, texture, map);
-    return int2(found.x + found.y + phase, found.x - found.y);
+inline int2 lattice_partner(constant ushort* textures, int2 pixel, uint texture,
+                            Framing map, int phase) {
+  const int2 lattice =
+      int2((pixel.x + pixel.y - phase) / 2, (pixel.x - pixel.y - phase) / 2);
+  const int2 found = partner(textures, lattice, texture, map);
+  return int2(found.x + found.y + phase, found.x - found.y);
 }
 
 }  // namespace pairing

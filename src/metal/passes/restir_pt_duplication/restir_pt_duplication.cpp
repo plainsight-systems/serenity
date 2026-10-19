@@ -3,7 +3,6 @@
 #include <string>
 
 #include "core/contracts/path_reuse_settings.h"
-
 #include "metal/device/error.h"
 #include "metal/passes/bindings.h"
 
@@ -18,30 +17,36 @@ constexpr NS::UInteger group = contracts::duplication_group;
 
 RestirPtDuplicationPass::RestirPtDuplicationPass(const Library& library)
     : pipeline_(library.compute_pipeline("restir_pt_duplication")) {
-    if (pipeline_->maxTotalThreadsPerThreadgroup() < group * group) {
-        throw MetalError("RestirPtDuplicationPass: the pipeline takes " +
-                         std::to_string(pipeline_->maxTotalThreadsPerThreadgroup()) + " threads a group, under its " +
-                         std::to_string(group * group));
-    }
+  if (pipeline_->maxTotalThreadsPerThreadgroup() < group * group) {
+    throw MetalError(
+        "RestirPtDuplicationPass: the pipeline takes " +
+        std::to_string(pipeline_->maxTotalThreadsPerThreadgroup()) +
+        " threads a group, under its " + std::to_string(group * group));
+  }
 }
 
-void RestirPtDuplicationPass::record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const {
-    if (resources.path_settings == 0 || resources.path_finals == 0 || resources.duplication == 0) {
-        throw MetalError("RestirPtDuplicationPass: the frame lacks ReSTIR PT's settings, its final path reservoirs "
-                         "or duplication map");
-    }
-    namespace binding = bindings::restir_pt;
-    MTL4::ArgumentTable* arguments = resources.arguments;
-    arguments->setAddress(resources.constants, binding::constants);
-    arguments->setAddress(resources.path_settings, binding::settings);
-    arguments->setAddress(resources.path_finals, binding::finals);
-    arguments->setAddress(resources.duplication, binding::duplication);
-    encoder->setComputePipelineState(pipeline_.get());
-    // Over the arrays' grid, the packed one with the checkerboard
-    // (frame_resources.h, traced).
-    const frame::Extent grid = resources.traced;
-    encoder->dispatchThreadgroups(
-        MTL::Size{(grid.width + group - 1) / group, (grid.height + group - 1) / group, 1}, MTL::Size{group, group, 1});
+void RestirPtDuplicationPass::record(MTL4::ComputeCommandEncoder* encoder,
+                                     const FrameResources& resources) const {
+  if (resources.path_settings == 0 || resources.path_finals == 0 ||
+      resources.duplication == 0) {
+    throw MetalError(
+        "RestirPtDuplicationPass: the frame lacks ReSTIR PT's settings, its "
+        "final path reservoirs "
+        "or duplication map");
+  }
+  namespace binding = bindings::restir_pt;
+  MTL4::ArgumentTable* arguments = resources.arguments;
+  arguments->setAddress(resources.constants, binding::constants);
+  arguments->setAddress(resources.path_settings, binding::settings);
+  arguments->setAddress(resources.path_finals, binding::finals);
+  arguments->setAddress(resources.duplication, binding::duplication);
+  encoder->setComputePipelineState(pipeline_.get());
+  // Over the arrays' grid, the packed one with the checkerboard
+  // (frame_resources.h, traced).
+  const frame::Extent grid = resources.traced;
+  encoder->dispatchThreadgroups(MTL::Size{(grid.width + group - 1) / group,
+                                          (grid.height + group - 1) / group, 1},
+                                MTL::Size{group, group, 1});
 }
 
 }  // namespace serenity::metal

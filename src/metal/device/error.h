@@ -19,8 +19,8 @@ namespace serenity::metal {
 // recover from: the GPU reporting an error, or not finishing a frame in time,
 // or the frame protocol being broken (submission.h).
 class MetalError : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
+ public:
+  using std::runtime_error::runtime_error;
 };
 
 }  // namespace serenity::metal

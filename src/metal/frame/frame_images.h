@@ -1,12 +1,11 @@
 #pragma once
 
+#include <Foundation/Foundation.hpp>
+#include <Metal/Metal.hpp>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
-
-#include <Foundation/Foundation.hpp>
-#include <Metal/Metal.hpp>
 
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
@@ -67,8 +66,8 @@ namespace serenity::metal {
 //
 // Cost: at 3456 x 2234 (P = 7.7 M pixels), the radiance image is 123 MB, in
 // a denoised graph, and the pyramid 21 MB. Per frame, the denoise pass
-// writes the radiance image once, P texels. The tone-map pass reads it twice, in two
-// dispatches ten apart, too far for one read to leave it cached for the
+// writes the radiance image once, P texels. The tone-map pass reads it twice,
+// in two dispatches ten apart, too far for one read to leave it cached for the
 // other: 13 filtered samples for each of B_0's P / 4 texels, then P exact
 // reads (passes/tone_map/tone_map.h); what that costs in memory traffic is
 // the pass's measured time, not a count here.
@@ -76,43 +75,44 @@ namespace serenity::metal {
 // Throws MetalError if the frame's size is not one Metal makes an image of
 // (metal/device/device.h, max_texture_side), or the device cannot make one.
 class FrameImages {
-public:
-    // Whether the frame's radiance is an image of its own, or the light
-    // pass's accumulated image (accumulation.h), which this then does not
-    // make. Types, not bools, so the call says which (I.4).
-    enum class Radiance { image, accumulated };
+ public:
+  // Whether the frame's radiance is an image of its own, or the light
+  // pass's accumulated image (accumulation.h), which this then does not
+  // make. Types, not bools, so the call says which (I.4).
+  enum class Radiance { image, accumulated };
 
-    // Whether the schedule has the tone-map pass, which needs the pyramid.
-    enum class Bloom { none, pyramid };
+  // Whether the schedule has the tone-map pass, which needs the pyramid.
+  enum class Bloom { none, pyramid };
 
-    // The radiance image as `radiance` says, and the pyramid as `bloom`
-    // says (a schedule with no light pass makes no FrameImages).
-    FrameImages(const Device& device, Submission& submission, Radiance radiance, Bloom bloom);
+  // The radiance image as `radiance` says, and the pyramid as `bloom`
+  // says (a schedule with no light pass makes no FrameImages).
+  FrameImages(const Device& device, Submission& submission, Radiance radiance,
+              Bloom bloom);
 
-    FrameImages(const FrameImages&) = delete;
-    FrameImages& operator=(const FrameImages&) = delete;
-    FrameImages(FrameImages&&) = delete;
-    FrameImages& operator=(FrameImages&&) = delete;
-    ~FrameImages() = default;
+  FrameImages(const FrameImages&) = delete;
+  FrameImages& operator=(const FrameImages&) = delete;
+  FrameImages(FrameImages&&) = delete;
+  FrameImages& operator=(FrameImages&&) = delete;
+  ~FrameImages() = default;
 
-    // Ready for a frame of `size`: made, or remade, if not made at it.
-    void prepare(frame::Extent size);
+  // Ready for a frame of `size`: made, or remade, if not made at it.
+  void prepare(frame::Extent size);
 
-    // Null when the schedule does not use it, or before the first prepare().
-    // bloom() throws MetalError for a level past passes::bloom_levels.
-    MTL::Texture* radiance() const noexcept { return radiance_.texture.get(); }
-    MTL::Texture* bloom(std::uint32_t level) const;
+  // Null when the schedule does not use it, or before the first prepare().
+  // bloom() throws MetalError for a level past passes::bloom_levels.
+  MTL::Texture* radiance() const noexcept { return radiance_.texture.get(); }
+  MTL::Texture* bloom(std::uint32_t level) const;
 
-private:
-    NS::SharedPtr<MTL::Device> device_;
-    Submission& submission_;
-    Radiance radiance_kind_;
-    Bloom bloom_;
-    frame::Extent size_;
-    // Each image with its residency, released after the GPU is done with it
-    // (submission.h, Lifetime).
-    ResidentTexture radiance_;
-    std::array<ResidentTexture, passes::bloom_levels> pyramid_;
+ private:
+  NS::SharedPtr<MTL::Device> device_;
+  Submission& submission_;
+  Radiance radiance_kind_;
+  Bloom bloom_;
+  frame::Extent size_;
+  // Each image with its residency, released after the GPU is done with it
+  // (submission.h, Lifetime).
+  ResidentTexture radiance_;
+  std::array<ResidentTexture, passes::bloom_levels> pyramid_;
 };
 
 // ReSTIR PT's arrays between its passes and across frames (metal/passes/
@@ -189,77 +189,79 @@ private:
 // the device cannot make a buffer, or the core's history rule refuses a
 // frame.
 class PathReuseImages {
-public:
-    enum class Spatial { none, merged };
-    enum class Temporal { none, merged };
+ public:
+  enum class Spatial { none, merged };
+  enum class Temporal { none, merged };
 
-    // `lights`: the scene's light records, which the power pyramids hold.
-    PathReuseImages(const Device& device, Submission& submission, Spatial spatial, Temporal temporal,
-                    std::uint32_t lights);
+  // `lights`: the scene's light records, which the power pyramids hold.
+  PathReuseImages(const Device& device, Submission& submission, Spatial spatial,
+                  Temporal temporal, std::uint32_t lights);
 
-    PathReuseImages(const PathReuseImages&) = delete;
-    PathReuseImages& operator=(const PathReuseImages&) = delete;
-    PathReuseImages(PathReuseImages&&) = delete;
-    PathReuseImages& operator=(PathReuseImages&&) = delete;
-    ~PathReuseImages() = default;
+  PathReuseImages(const PathReuseImages&) = delete;
+  PathReuseImages& operator=(const PathReuseImages&) = delete;
+  PathReuseImages(PathReuseImages&&) = delete;
+  PathReuseImages& operator=(PathReuseImages&&) = delete;
+  ~PathReuseImages() = default;
 
-    // Ready for frame `inputs` at `size`: the arrays made or remade, and
-    // the frames the history holds before this one (always 0 without
-    // temporal reuse).
-    std::uint64_t prepare(const frame::FrameInputs& inputs, frame::Extent size);
+  // Ready for frame `inputs` at `size`: the arrays made or remade, and
+  // the frames the history holds before this one (always 0 without
+  // temporal reuse).
+  std::uint64_t prepare(const frame::FrameInputs& inputs, frame::Extent size);
 
-    // The arrays frame `index` reads and writes: this frame's halves and
-    // last frame's by its parity; 0 for what the graph does not have.
-    struct Addresses {
-        MTL::GPUAddress reservoirs = 0;
-        MTL::GPUAddress primaries = 0;
-        MTL::GPUAddress last_primaries = 0;
-        MTL::GPUAddress light = 0;
-        MTL::GPUAddress shifts = 0;
-        MTL::GPUAddress replays = 0;
-        MTL::GPUAddress counter = 0;
-        MTL::GPUAddress grid = 0;
-        MTL::GPUAddress light_tiles = 0;
-        MTL::GPUAddress light_power = 0;
-        MTL::GPUAddress last_light_power = 0;
-        MTL::GPUAddress finals = 0;
-        MTL::GPUAddress last_finals = 0;
-        MTL::GPUAddress previous_positions = 0;
-        MTL::GPUAddress previous_pixels = 0;
-        MTL::GPUAddress duplication = 0;
-    };
-    Addresses addresses(std::uint64_t index) const noexcept;
+  // The arrays frame `index` reads and writes: this frame's halves and
+  // last frame's by its parity; 0 for what the graph does not have.
+  struct Addresses {
+    MTL::GPUAddress reservoirs = 0;
+    MTL::GPUAddress primaries = 0;
+    MTL::GPUAddress last_primaries = 0;
+    MTL::GPUAddress light = 0;
+    MTL::GPUAddress shifts = 0;
+    MTL::GPUAddress replays = 0;
+    MTL::GPUAddress counter = 0;
+    MTL::GPUAddress grid = 0;
+    MTL::GPUAddress light_tiles = 0;
+    MTL::GPUAddress light_power = 0;
+    MTL::GPUAddress last_light_power = 0;
+    MTL::GPUAddress finals = 0;
+    MTL::GPUAddress last_finals = 0;
+    MTL::GPUAddress previous_positions = 0;
+    MTL::GPUAddress previous_pixels = 0;
+    MTL::GPUAddress duplication = 0;
+  };
+  Addresses addresses(std::uint64_t index) const noexcept;
 
-    // Where the indirect grid is in the counter's buffer: past the count,
-    // at its own alignment (metal/device/indirect_grid.h) and the constant
-    // offset alignment (support.h), which every binding meets; the buffer's
-    // bytes, the grid within them.
-    static constexpr std::size_t grid_offset = 64;
-    static constexpr std::size_t counter_bytes = 128;
+  // Where the indirect grid is in the counter's buffer: past the count,
+  // at its own alignment (metal/device/indirect_grid.h) and the constant
+  // offset alignment (support.h), which every binding meets; the buffer's
+  // bytes, the grid within them.
+  static constexpr std::size_t grid_offset = 64;
+  static constexpr std::size_t counter_bytes = 128;
 
-private:
-    using Array = ResidentBuffer;  // metal/device/resident.h
+ private:
+  using Array = ResidentBuffer;  // metal/device/resident.h
 
-    void make(Array& array, std::size_t bytes, std::string_view what);
+  void make(Array& array, std::size_t bytes, std::string_view what);
 
-    NS::SharedPtr<MTL::Device> device_;
-    Submission& submission_;
-    Spatial spatial_;
-    Temporal temporal_;
-    frame::Extent size_;
-    frame::ReuseHistory history_;  // asked only with temporal reuse
-    Array reservoirs_;
-    std::array<Array, 2> primaries_;  // [0] for even frames; [0] alone without temporal reuse
-    Array light_;
-    Array shifts_;
-    Array replays_;
-    Array counter_;  // shared storage, zeroed once
-    Array light_tiles_;  // contracts/light_tile.h: a frame's, whatever its size
-    std::array<Array, 2> light_power_;  // [0] for even frames; [0] alone without temporal reuse
-    std::array<Array, 2> finals_;
-    Array previous_positions_;
-    Array previous_pixels_;
-    Array duplication_;
+  NS::SharedPtr<MTL::Device> device_;
+  Submission& submission_;
+  Spatial spatial_;
+  Temporal temporal_;
+  frame::Extent size_;
+  frame::ReuseHistory history_;  // asked only with temporal reuse
+  Array reservoirs_;
+  std::array<Array, 2>
+      primaries_;  // [0] for even frames; [0] alone without temporal reuse
+  Array light_;
+  Array shifts_;
+  Array replays_;
+  Array counter_;      // shared storage, zeroed once
+  Array light_tiles_;  // contracts/light_tile.h: a frame's, whatever its size
+  std::array<Array, 2>
+      light_power_;  // [0] for even frames; [0] alone without temporal reuse
+  std::array<Array, 2> finals_;
+  Array previous_positions_;
+  Array previous_pixels_;
+  Array duplication_;
 };
 
 }  // namespace serenity::metal

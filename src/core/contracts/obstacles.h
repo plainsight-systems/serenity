@@ -33,26 +33,26 @@ namespace contracts {
 // An axis-aligned box, min below max on every axis: in the world, or a
 // geometry's in object space (shapes::Bounds, core/shapes/primitive.h).
 struct Box {
-    Float3 min;
-    Float3 max;
+  Float3 min;
+  Float3 max;
 };
 
 class Obstacles {
-public:
-    virtual ~Obstacles() = default;
-    Obstacles(const Obstacles&) = delete;
-    Obstacles& operator=(const Obstacles&) = delete;
-    Obstacles(Obstacles&&) = delete;
-    Obstacles& operator=(Obstacles&&) = delete;
+ public:
+  virtual ~Obstacles() = default;
+  Obstacles(const Obstacles&) = delete;
+  Obstacles& operator=(const Obstacles&) = delete;
+  Obstacles(Obstacles&&) = delete;
+  Obstacles& operator=(Obstacles&&) = delete;
 
-    // The distance from `point` to the nearest still shape's surface.
-    virtual double distance(Float3 point) const = 0;
+  // The distance from `point` to the nearest still shape's surface.
+  virtual double distance(Float3 point) const = 0;
 
-    // Whether any still shape meets or touches `box`.
-    virtual bool touches(const Box& box) const = 0;
+  // Whether any still shape meets or touches `box`.
+  virtual bool touches(const Box& box) const = 0;
 
-protected:
-    Obstacles() = default;
+ protected:
+  Obstacles() = default;
 };
 
 }  // namespace contracts

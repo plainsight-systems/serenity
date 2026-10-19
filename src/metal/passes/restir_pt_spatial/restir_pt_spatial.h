@@ -34,15 +34,16 @@ namespace serenity::metal {
 // the merge's reads (restir_pt.metal.h counts them). Measured in
 // docs/research/2026-10-11-restir-pt-phase2.md.
 class RestirPtSpatialPass {
-public:
-    explicit RestirPtSpatialPass(const Library& library);
+ public:
+  explicit RestirPtSpatialPass(const Library& library);
 
-    // Records the pass. Throws MetalError if `resources` lacks anything it
-    // reads or writes above.
-    void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+  // Records the pass. Throws MetalError if `resources` lacks anything it
+  // reads or writes above.
+  void record(MTL4::ComputeCommandEncoder* encoder,
+              const FrameResources& resources) const;
 
-private:
-    ShiftReplay reuse_;  // its four dispatches (restir_pt/shift_replay.h)
+ private:
+  ShiftReplay reuse_;  // its four dispatches (restir_pt/shift_replay.h)
 };
 
 }  // namespace serenity::metal

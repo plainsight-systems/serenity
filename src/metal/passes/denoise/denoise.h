@@ -1,10 +1,9 @@
 #pragma once
 
-#include <array>
-#include <memory>
-
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
+#include <array>
+#include <memory>
 
 #include "core/denoise/network.h"
 #include "metal/device/device.h"
@@ -59,32 +58,39 @@ namespace serenity::metal {
 // about 2 x 9 x the widths' sum bytes a pixel through the cache. Measured
 // in the note.
 class DenoisePass {
-public:
-    DenoisePass(const Device& device, const Library& library, Submission& submission, const denoise::Network& network);
+ public:
+  DenoisePass(const Device& device, const Library& library,
+              Submission& submission, const denoise::Network& network);
 
-    // Records the pass. Throws MetalError if `resources` lacks one of the
-    // inputs above.
-    void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+  // Records the pass. Throws MetalError if `resources` lacks one of the
+  // inputs above.
+  void record(MTL4::ComputeCommandEncoder* encoder,
+              const FrameResources& resources) const;
 
-private:
-    // The convolution kernel that computes `chunk` output blocks a
-    // threadgroup; owned by this pass.
-    MTL::ComputePipelineState* pipeline(std::uint32_t chunk) const;
+ private:
+  // The convolution kernel that computes `chunk` output blocks a
+  // threadgroup; owned by this pass.
+  MTL::ComputePipelineState* pipeline(std::uint32_t chunk) const;
 
-    // The four steps above, in order; record() checks `resources` first.
-    void record_median(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
-    void record_input(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
-    void record_unet(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
-    void record_output(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+  // The four steps above, in order; record() checks `resources` first.
+  void record_median(MTL4::ComputeCommandEncoder* encoder,
+                     const FrameResources& resources) const;
+  void record_input(MTL4::ComputeCommandEncoder* encoder,
+                    const FrameResources& resources) const;
+  void record_unet(MTL4::ComputeCommandEncoder* encoder,
+                   const FrameResources& resources) const;
+  void record_output(MTL4::ComputeCommandEncoder* encoder,
+                     const FrameResources& resources) const;
 
-    std::array<NS::SharedPtr<MTL::ComputePipelineState>, 3> histogram_;
-    std::array<NS::SharedPtr<MTL::ComputePipelineState>, 3> select_;
-    NS::SharedPtr<MTL::ComputePipelineState> input_;
-    std::array<NS::SharedPtr<MTL::ComputePipelineState>, 4> conv_;  // conv3x3_n1 .. n4
-    NS::SharedPtr<MTL::ComputePipelineState> maxpool_;
-    NS::SharedPtr<MTL::ComputePipelineState> output_;
-    // Each convolution's weights and bias, then the head's (above).
-    std::unique_ptr<StaticArrays> weights_;
+  std::array<NS::SharedPtr<MTL::ComputePipelineState>, 3> histogram_;
+  std::array<NS::SharedPtr<MTL::ComputePipelineState>, 3> select_;
+  NS::SharedPtr<MTL::ComputePipelineState> input_;
+  std::array<NS::SharedPtr<MTL::ComputePipelineState>, 4>
+      conv_;  // conv3x3_n1 .. n4
+  NS::SharedPtr<MTL::ComputePipelineState> maxpool_;
+  NS::SharedPtr<MTL::ComputePipelineState> output_;
+  // Each convolution's weights and bias, then the head's (above).
+  std::unique_ptr<StaticArrays> weights_;
 };
 
 }  // namespace serenity::metal

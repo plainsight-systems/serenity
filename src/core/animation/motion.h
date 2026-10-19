@@ -41,18 +41,18 @@ namespace serenity::animation {
 // shapes' transforms (core/animation/animate.h).
 
 enum class MotionKind {
-    wander,  // a drift about a fixed point (wander.h)
-    flight,  // flying free among the still shapes (flight.h)
+  wander,  // a drift about a fixed point (wander.h)
+  flight,  // flying free among the still shapes (flight.h)
 };
 
 struct MotionRecord {
-    MotionKind kind = MotionKind::wander;
-    std::uint32_t index = 0;  // into that kind's array
+  MotionKind kind = MotionKind::wander;
+  std::uint32_t index = 0;  // into that kind's array
 };
 
 struct Motions {
-    std::vector<Wander> wanders;
-    std::vector<Flight> flights;
+  std::vector<Wander> wanders;
+  std::vector<Flight> flights;
 };
 
 // Where the motion `record` names places its point at `t`. The record must
@@ -60,7 +60,8 @@ struct Motions {
 // kind to position is a switch with no default, so a kind without one fails
 // the build, and a value no enumerator names is refused by std::logic_error,
 // never answered with a point that looks real (P.6).
-contracts::Float3 position(const Motions& motions, MotionRecord record, frame::Seconds t);
+contracts::Float3 position(const Motions& motions, MotionRecord record,
+                           frame::Seconds t);
 
 // The box the motion `record` names keeps its point inside, for all t.
 Extent extent(const Motions& motions, MotionRecord record);

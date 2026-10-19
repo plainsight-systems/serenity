@@ -15,17 +15,17 @@ namespace serenity {
 namespace shaders {
 
 inline float3 to_float3(serenity::contracts::Float3 a) {
-    return float3(a.x, a.y, a.z);
+  return float3(a.x, a.y, a.z);
 }
 
 inline serenity::contracts::Float3 to_packed(float3 a) {
-    return serenity::contracts::Float3{a.x, a.y, a.z};
+  return serenity::contracts::Float3{a.x, a.y, a.z};
 }
 
 // The signed 8-bit value at bit `shift` of `word`, as layouts pack one: its
 // bits taken apart as unsigned (ES.101) and read back as two's complement.
 inline int signed_byte(uint word, uint shift) {
-    return int(as_type<char>(uchar((word >> shift) & 0xffu)));
+  return int(as_type<char>(uchar((word >> shift) & 0xffu)));
 }
 
 }  // namespace shaders

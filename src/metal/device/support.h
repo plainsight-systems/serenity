@@ -1,11 +1,10 @@
 #pragma once
 
+#include <Foundation/Foundation.hpp>
+#include <Metal/Metal.hpp>
 #include <cstddef>
 #include <string>
 #include <string_view>
-
-#include <Foundation/Foundation.hpp>
-#include <Metal/Metal.hpp>
 
 #include "core/frame/extent.h"
 
@@ -56,28 +55,32 @@ static_assert(buffer_alignment % constant_offset_alignment == 0);
 
 // `bytes` rounded up to a multiple of buffer_alignment.
 constexpr std::size_t align_up(std::size_t bytes) noexcept {
-    return (bytes + buffer_alignment - 1) / buffer_alignment * buffer_alignment;
+  return (bytes + buffer_alignment - 1) / buffer_alignment * buffer_alignment;
 }
 
 // A 2D image of `format` and `size` in private storage, read and written by
-// shaders: the GPU's alone. Throws MetalError naming `what` if `size` is not one
-// Metal makes (check_texture_size, device.h) or the device makes none. Not
+// shaders: the GPU's alone. Throws MetalError naming `what` if `size` is not
+// one Metal makes (check_texture_size, device.h) or the device makes none. Not
 // made resident: the caller keeps it so (submission.h, keep_resident).
-NS::SharedPtr<MTL::Texture> make_private_texture(MTL::Device* device, MTL::PixelFormat format, frame::Extent size,
+NS::SharedPtr<MTL::Texture> make_private_texture(MTL::Device* device,
+                                                 MTL::PixelFormat format,
+                                                 frame::Extent size,
                                                  std::string_view what);
 
 // Dispatches `pipeline`, already set on `encoder`, over `size`, one thread
 // per pixel, in threadgroups one execution width wide and as many rows as
 // the pipeline allows, so adjacent threads take adjacent pixels of a row
 // (GPU.2).
-void dispatch_per_pixel(MTL4::ComputeCommandEncoder* encoder, const MTL::ComputePipelineState* pipeline,
+void dispatch_per_pixel(MTL4::ComputeCommandEncoder* encoder,
+                        const MTL::ComputePipelineState* pipeline,
                         frame::Extent size);
 
 // A barrier from the encoder's dispatches before to its dispatches after,
 // their device memory made visible: what a dispatch that reads an earlier
 // one's writes records between them, Metal 4 tracking no hazards (GPU.8).
 inline void barrier_after_dispatch(MTL4::ComputeCommandEncoder* encoder) {
-    encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch, MTL4::VisibilityOptionDevice);
+  encoder->barrierAfterEncoderStages(MTL::StageDispatch, MTL::StageDispatch,
+                                     MTL4::VisibilityOptionDevice);
 }
 
 }  // namespace serenity::metal

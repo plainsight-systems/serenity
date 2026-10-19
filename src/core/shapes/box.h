@@ -12,8 +12,8 @@
 // first scene, are boxes. The shader half (metal/shapes/box.metal.h)
 // computes the exact entry point and the face's normal.
 
-#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/transform.h"
 #include "core/shapes/primitive.h"
 
@@ -21,32 +21,36 @@ namespace serenity {
 namespace shapes {
 
 struct BoxData {
-    contracts::Float3 min;  // min < max on every axis
-    uint32_t padding0;
-    contracts::Float3 max;
-    uint32_t padding1;
+  contracts::Float3 min;  // min < max on every axis
+  uint32_t padding0;
+  contracts::Float3 max;
+  uint32_t padding1;
 };
 
-static_assert(sizeof(BoxData) == 32, "BoxData must be the same 32 bytes on the host and in shaders");
+static_assert(sizeof(BoxData) == 32,
+              "BoxData must be the same 32 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<BoxData>, "BoxData is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<BoxData>,
+              "BoxData is written to the GPU as bytes");
 #endif
 
 #if !defined(__METAL_VERSION__)
 // Its extent in object space: itself.
 constexpr Bounds bounds(const BoxData& box) noexcept {
-    return Bounds{box.min, box.max};
+  return Bounds{box.min, box.max};
 }
 
 // Whether the box `transform` places meets or touches the world box
 // `other`: their ranges overlap or meet on every axis. The transform is a
-// translation and a uniform scale (contracts/transform.h), so the placed box is still
-// axis-aligned.
-bool box_touches(const BoxData& box, const contracts::Transform& transform, const Bounds& other);
+// translation and a uniform scale (contracts/transform.h), so the placed box is
+// still axis-aligned.
+bool box_touches(const BoxData& box, const contracts::Transform& transform,
+                 const Bounds& other);
 
 // The distance from `point` to the box's surface, in double: outside, to its
 // nearest point; inside, minus the distance to its nearest face.
-double box_distance(const BoxData& box, const contracts::Transform& transform, contracts::Float3 point);
+double box_distance(const BoxData& box, const contracts::Transform& transform,
+                    contracts::Float3 point);
 #endif
 
 }  // namespace shapes

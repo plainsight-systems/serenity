@@ -35,20 +35,20 @@ namespace serenity::app {
 //
 // parse() throws OptionsError naming the argument for an unknown option, an
 // option given twice, a missing or malformed value, a scale outside (0, 1],
-// or a missing --graph (E.2, E.14). Numbers are read whole, by std::from_chars: no sign, space
-// or locale (E.28). It reads neither file; they are loaded after parsing
-// succeeds (core/frame/graph_file.h, core/scene/scene.h).
+// or a missing --graph (E.2, E.14). Numbers are read whole, by std::from_chars:
+// no sign, space or locale (E.28). It reads neither file; they are loaded after
+// parsing succeeds (core/frame/graph_file.h, core/scene/scene.h).
 class OptionsError : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
+ public:
+  using std::runtime_error::runtime_error;
 };
 
 // What parse() read: plain values, which parse() alone makes and checks
 // (C.2: a struct, since nothing here keeps an invariant after it).
 struct Options {
-    std::filesystem::path graph;
-    std::filesystem::path scene;  // empty when none was given
-    double scale = 1.0;           // in (0, 1]
+  std::filesystem::path graph;
+  std::filesystem::path scene;  // empty when none was given
+  double scale = 1.0;           // in (0, 1]
 };
 
 // The size frames are rendered at for a window of `window` pixels at

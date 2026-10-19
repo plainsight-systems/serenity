@@ -81,10 +81,11 @@ namespace serenity {
 namespace shaders {
 
 struct Shading {
-    serenity::contracts::SurfaceInteraction surface;
-    serenity::contracts::Bsdf bsdf;
-    float3 wo;    // unit, toward where the light goes
-    uint medium;  // the medium on wo's side: an index into the media, or no_medium
+  serenity::contracts::SurfaceInteraction surface;
+  serenity::contracts::Bsdf bsdf;
+  float3 wo;  // unit, toward where the light goes
+  uint
+      medium;  // the medium on wo's side: an index into the media, or no_medium
 };
 
 // offset_ray()'s constants (above; ES.45): the band about 0 given a fixed
@@ -96,36 +97,44 @@ constant constexpr float int_scale = 256.0f;
 
 // `p` moved off its surface along unit `n` by its own rounding (above).
 inline float3 offset_ray(float3 p, float3 n) {
-    const int3 steps = int3(int_scale * n);  // |steps| <= 256, toward zero
-    // Adding to a float's bits moves it away from 0; so toward +n a negative
-    // coordinate's bits take the step away.
-    const uint3 bits = as_type<uint3>(p) + as_type<uint3>(metal::select(steps, -steps, p < 0.0f));
-    return metal::select(as_type<float3>(bits), p + float_scale * n, metal::abs(p) < origin_band);
+  const int3 steps = int3(int_scale * n);  // |steps| <= 256, toward zero
+  // Adding to a float's bits moves it away from 0; so toward +n a negative
+  // coordinate's bits take the step away.
+  const uint3 bits = as_type<uint3>(p) +
+                     as_type<uint3>(metal::select(steps, -steps, p < 0.0f));
+  return metal::select(as_type<float3>(bits), p + float_scale * n,
+                       metal::abs(p) < origin_band);
 }
 
 // Whether `direction` leaves `surface` on the side its geometric normal
 // points to (a direction in the tangent plane counts as that side).
-inline bool leaves_outward(serenity::contracts::SurfaceInteraction surface, float3 direction) {
-    return metal::dot(direction, to_float3(surface.geometric_normal)) >= 0.0f;
+inline bool leaves_outward(serenity::contracts::SurfaceInteraction surface,
+                           float3 direction) {
+  return metal::dot(direction, to_float3(surface.geometric_normal)) >= 0.0f;
 }
 
 // Whether rays along `a` and `b` leave `surface` from the same point: both
 // on the same side of its geometric normal.
-inline bool leave_alike(serenity::contracts::SurfaceInteraction surface, float3 a, float3 b) {
-    return leaves_outward(surface, a) == leaves_outward(surface, b);
+inline bool leave_alike(serenity::contracts::SurfaceInteraction surface,
+                        float3 a, float3 b) {
+  return leaves_outward(surface, a) == leaves_outward(surface, b);
 }
 
 // The point a ray along `direction` leaves `surface` from (above).
-inline float3 leaving_point(serenity::contracts::SurfaceInteraction surface, float3 direction) {
-    const float3 n = to_float3(surface.geometric_normal);
-    return offset_ray(to_float3(surface.position), leaves_outward(surface, direction) ? n : -n);
+inline float3 leaving_point(serenity::contracts::SurfaceInteraction surface,
+                            float3 direction) {
+  const float3 n = to_float3(surface.geometric_normal);
+  return offset_ray(to_float3(surface.position),
+                    leaves_outward(surface, direction) ? n : -n);
 }
 
 // The ray leaving `surface` along unit `direction`, its hits up to `far`
 // from where it starts.
-inline metal::raytracing::ray leave(serenity::contracts::SurfaceInteraction surface, float3 direction,
-                                    float far = unbounded) {
-    return metal::raytracing::ray(leaving_point(surface, direction), direction, 0.0f, far);
+inline metal::raytracing::ray leave(
+    serenity::contracts::SurfaceInteraction surface, float3 direction,
+    float far = unbounded) {
+  return metal::raytracing::ray(leaving_point(surface, direction), direction,
+                                0.0f, far);
 }
 
 }  // namespace shaders

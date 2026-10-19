@@ -13,13 +13,11 @@ namespace serenity {
 namespace shaders {
 
 struct Crossing {
-    bool found;
-    float t;  // the ray's parameter at the crossing; 0 where none was found
+  bool found;
+  float t;  // the ray's parameter at the crossing; 0 where none was found
 };
 
-inline Crossing no_crossing() {
-    return Crossing{false, 0.0f};
-}
+inline Crossing no_crossing() { return Crossing{false, 0.0f}; }
 
 }  // namespace shaders
 }  // namespace serenity

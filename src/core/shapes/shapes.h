@@ -28,9 +28,9 @@ namespace serenity::shapes {
 // CPU only: shaders read the records, the transforms and the arrays, each in
 // its shared layout, from the GPU (metal/scene/scene_buffers.h).
 struct Shapes {
-    std::vector<ShapeRecord> records;    // shape i is records[i]
-    std::vector<contracts::Transform> transforms;  // and transforms[i]
-    std::vector<BoxData> boxes;          // the box geometries
+  std::vector<ShapeRecord> records;              // shape i is records[i]
+  std::vector<contracts::Transform> transforms;  // and transforms[i]
+  std::vector<BoxData> boxes;                    // the box geometries
 };
 
 // The extent of geometry `record` names, in its object space, by its kind's
@@ -55,14 +55,16 @@ Bounds object_bounds(const Shapes& shapes, ShapeRecord record);
 //
 // Performance-sensitive: once per moving shape per frame. Some 30 flops,
 // nothing allocated.
-Bounds world_bounds(const Bounds& object, const contracts::Transform& transform);
+Bounds world_bounds(const Bounds& object,
+                    const contracts::Transform& transform);
 
 // The distance from world `point` to shape `shape`'s surface, where its
 // transform places it, by its kind's exact test (sphere.h, box.h): 0 on it,
 // negative inside. In double. A switch with no default, as below. For one
 // shape; the many questions a load asks of every still shape are
 // StillShapes' (below).
-double distance(const Shapes& shapes, std::uint32_t shape, contracts::Float3 point);
+double distance(const Shapes& shapes, std::uint32_t shape,
+                contracts::Float3 point);
 
 // Whether shape `shape`, where its transform places it, meets or touches the
 // world box `box`, by its kind's exact test (sphere.h, box.h): what the scene
@@ -95,30 +97,30 @@ bool touches(const Shapes& shapes, std::uint32_t shape, const Bounds& box);
 // transform with a rotation, and std::logic_error for a kind no
 // enumerator names.
 class StillShapes {
-public:
-    StillShapes(const Shapes& shapes, std::span<const std::uint32_t> which);
+ public:
+  StillShapes(const Shapes& shapes, std::span<const std::uint32_t> which);
 
-    // The distance from `point` to the nearest shape's surface; infinity
-    // if there are none.
-    double distance(contracts::Float3 point) const noexcept;
+  // The distance from `point` to the nearest shape's surface; infinity
+  // if there are none.
+  double distance(contracts::Float3 point) const noexcept;
 
-    // Whether any shape meets or touches `box`.
-    bool touches(const Bounds& box) const noexcept;
+  // Whether any shape meets or touches `box`.
+  bool touches(const Bounds& box) const noexcept;
 
-    // A sphere where its transform places it, and a box's world-space
-    // faces, in double: what each kind's tests read.
-    struct PlacedSphere {
-        std::array<double, 3> center{};
-        double radius = 0.0;
-    };
-    struct PlacedBox {
-        std::array<double, 3> low{};
-        std::array<double, 3> high{};
-    };
+  // A sphere where its transform places it, and a box's world-space
+  // faces, in double: what each kind's tests read.
+  struct PlacedSphere {
+    std::array<double, 3> center{};
+    double radius = 0.0;
+  };
+  struct PlacedBox {
+    std::array<double, 3> low{};
+    std::array<double, 3> high{};
+  };
 
-private:
-    std::vector<PlacedSphere> spheres_;
-    std::vector<PlacedBox> boxes_;
+ private:
+  std::vector<PlacedSphere> spheres_;
+  std::vector<PlacedBox> boxes_;
 };
 
 }  // namespace serenity::shapes

@@ -1,12 +1,11 @@
 #pragma once
 
+#include <Foundation/Foundation.hpp>
+#include <Metal/Metal.hpp>
 #include <array>
 #include <cstdint>
 #include <string>
 #include <string_view>
-
-#include <Foundation/Foundation.hpp>
-#include <Metal/Metal.hpp>
 
 #include "metal/device/device.h"
 #include "metal/device/resident.h"
@@ -56,35 +55,37 @@ namespace serenity::metal {
 // Throws MetalError if the device cannot make the counters. Not
 // performance-sensitive: a few bytes, once a frame.
 class FailureCount {
-public:
-    // `what` names what it counts, for its errors: "samples not finite".
-    FailureCount(const Device& device, Submission& submission, std::string_view what);
+ public:
+  // `what` names what it counts, for its errors: "samples not finite".
+  FailureCount(const Device& device, Submission& submission,
+               std::string_view what);
 
-    FailureCount(const FailureCount&) = delete;
-    FailureCount& operator=(const FailureCount&) = delete;
-    FailureCount(FailureCount&&) = delete;
-    FailureCount& operator=(FailureCount&&) = delete;
-    ~FailureCount() = default;
+  FailureCount(const FailureCount&) = delete;
+  FailureCount& operator=(const FailureCount&) = delete;
+  FailureCount(FailureCount&&) = delete;
+  FailureCount& operator=(FailureCount&&) = delete;
+  ~FailureCount() = default;
 
-    // Before frame `sequence` is recorded into `slot`; see above.
-    void begin_frame(std::uint32_t slot, std::uint64_t sequence);
+  // Before frame `sequence` is recorded into `slot`; see above.
+  void begin_frame(std::uint32_t slot, std::uint64_t sequence);
 
-    // Slot `slot`'s counter, as a shader binds it. Throws MetalError for a slot
-    // that is not one, as begin_frame() does.
-    MTL::GPUAddress address(std::uint32_t slot) const;
+  // Slot `slot`'s counter, as a shader binds it. Throws MetalError for a slot
+  // that is not one, as begin_frame() does.
+  MTL::GPUAddress address(std::uint32_t slot) const;
 
-    // The failures over every completed frame; see above.
-    std::uint64_t count() const noexcept;
+  // The failures over every completed frame; see above.
+  std::uint64_t count() const noexcept;
 
-private:
-    std::uint32_t* counter(std::uint32_t slot) noexcept;
-    const std::uint32_t* counter(std::uint32_t slot) const noexcept;
+ private:
+  std::uint32_t* counter(std::uint32_t slot) noexcept;
+  const std::uint32_t* counter(std::uint32_t slot) const noexcept;
 
-    const Submission& submission_;
-    std::string what_;
-    ResidentBuffer counters_;  // one uint per slot
-    std::array<std::uint64_t, frames_in_flight> counting_{};  // sequence + 1 each slot counts for; 0 for none
-    std::uint64_t total_ = 0;
+  const Submission& submission_;
+  std::string what_;
+  ResidentBuffer counters_;  // one uint per slot
+  std::array<std::uint64_t, frames_in_flight>
+      counting_{};  // sequence + 1 each slot counts for; 0 for none
+  std::uint64_t total_ = 0;
 };
 
 }  // namespace serenity::metal

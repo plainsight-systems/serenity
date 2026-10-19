@@ -79,10 +79,10 @@
 // The packed form. A Bsdf as a G-buffer stores one, 16 bytes against its
 // 48, for ReSTIR PT's primary hits (contract 5, core/contracts/
 // primary_hit.h) and MNEE's requests (contract 16), which every shift and
-// solve reads and so is much of their traffic. Material owns it, here, beside the Bsdf it packs: one
-// definition of what a resolved material is, in two forms, so a field
-// Material adds is packed where it is added (ES.3). Two functions, each
-// backend's (metal/materials/bsdf.metal.h), to these semantics:
+// solve reads and so is much of their traffic. Material owns it, here, beside
+// the Bsdf it packs: one definition of what a resolved material is, in two
+// forms, so a field Material adds is packed where it is added (ES.3). Two
+// functions, each backend's (metal/materials/bsdf.metal.h), to these semantics:
 //
 //   PackedBsdf pack_bsdf(Bsdf)     the kind as it is; the shading normal
 //                                  by the equal-area octahedral map in two
@@ -145,8 +145,8 @@
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
-#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace contracts {
@@ -154,11 +154,12 @@ namespace contracts {
 // The kinds a Bsdf resolves to: one per way of scattering, not per material
 // kind. A material kind resolves to one of these (materials/material.h).
 enum class BsdfKind : uint32_t {
-    none = 0,        // scatters nothing: an emissive surface
-    lambert = 1,     // rough: albedo / pi, every way
-    conductor = 2,   // metal: GGX microfacets, Schlick's Fresnel from f0
-    dielectric = 3,  // smooth glass: mirror reflection and refraction, by Fresnel
-    coated = 4,      // a smooth clear coat's mirror reflection over a Lambert base (materials/coated.h)
+  none = 0,        // scatters nothing: an emissive surface
+  lambert = 1,     // rough: albedo / pi, every way
+  conductor = 2,   // metal: GGX microfacets, Schlick's Fresnel from f0
+  dielectric = 3,  // smooth glass: mirror reflection and refraction, by Fresnel
+  coated = 4,  // a smooth clear coat's mirror reflection over a Lambert base
+               // (materials/coated.h)
 };
 
 // Bits of lobes() and BsdfSample::lobe, as pbrt-v4's BxDFFlags: each lobe
@@ -178,26 +179,30 @@ SERENITY_CONSTANT uint32_t lobe_delta = 16u;
 // Whether a surface with `lobes` can be lit by aiming at a light: it has a
 // lobe that is not delta.
 constexpr bool aims_at_lights(uint32_t lobes) {
-    return (lobes & (lobe_diffuse | lobe_glossy)) != 0u;
+  return (lobes & (lobe_diffuse | lobe_glossy)) != 0u;
 }
 
 // A material resolved at one surface.
 struct Bsdf {
-    Float3 normal;   // the normal to shade with, unit, outward: the surface's shading normal
-                     // (contracts/surface_interaction.h), as the material perturbs it, if it does
-    BsdfKind kind;
-    Float3 color;    // lambert, coated: albedo; conductor: f0; dielectric: unused, 1
-    float alpha;     // conductor: GGX alpha = roughness^2; otherwise 0
-    float ior;       // dielectric: index of refraction inside; coated: the coat's; against 1 outside;
-                     // otherwise 0
-    float escape;    // coated: 1 - F_in, what the coat lets out of the base's light (materials/coated.h);
-                     // otherwise 0
-    uint32_t padding[2];
+  Float3 normal;  // the normal to shade with, unit, outward: the surface's
+                  // shading normal (contracts/surface_interaction.h), as the
+                  // material perturbs it, if it does
+  BsdfKind kind;
+  Float3
+      color;    // lambert, coated: albedo; conductor: f0; dielectric: unused, 1
+  float alpha;  // conductor: GGX alpha = roughness^2; otherwise 0
+  float ior;    // dielectric: index of refraction inside; coated: the coat's;
+                // against 1 outside; otherwise 0
+  float escape;  // coated: 1 - F_in, what the coat lets out of the base's light
+                 // (materials/coated.h); otherwise 0
+  uint32_t padding[2];
 };
 
-static_assert(sizeof(Bsdf) == 48, "Bsdf must be the same 48 bytes on the host and in shaders");
+static_assert(sizeof(Bsdf) == 48,
+              "Bsdf must be the same 48 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<Bsdf>, "Bsdf is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<Bsdf>,
+              "Bsdf is written to the GPU as bytes");
 #endif
 
 // PackedBsdf's fields (below), named once (ES.45): a half in a word's low
@@ -208,22 +213,31 @@ SERENITY_CONSTANT uint32_t packed_kind_shift = 16u;
 SERENITY_CONSTANT uint32_t packed_kind_mask = 0xffu;
 
 // The packed form's range and tolerance (above), named once (ES.45).
-SERENITY_CONSTANT float packed_largest = 65504.0f;            // half's largest finite value
-SERENITY_CONSTANT float packed_least_normal = 6.103515625e-5f;  // 2^-14, half's least normal value
-SERENITY_CONSTANT float packed_relative = 4.8828125e-4f;      // 2^-11, at and above packed_least_normal
-SERENITY_CONSTANT float packed_absolute = 5.9604644775390625e-8f;  // 2^-24, below packed_least_normal
+SERENITY_CONSTANT float packed_largest =
+    65504.0f;  // half's largest finite value
+SERENITY_CONSTANT float packed_least_normal =
+    6.103515625e-5f;  // 2^-14, half's least normal value
+SERENITY_CONSTANT float packed_relative =
+    4.8828125e-4f;  // 2^-11, at and above packed_least_normal
+SERENITY_CONSTANT float packed_absolute =
+    5.9604644775390625e-8f;  // 2^-24, below packed_least_normal
 
 // A Bsdf packed (above): four words, read whole.
 struct PackedBsdf {
-    uint32_t normal;           // equal-area octahedral, x in bits 0-15, y in bits 16-31
-    uint32_t color_rg;         // halves: red in bits 0-15, green in bits 16-31
-    uint32_t color_b_scalar;   // halves: blue in bits 0-15; alpha or ior, as the kind reads, in bits 16-31
-    uint32_t escape_kind;      // half: escape (coated; else 0) in bits 0-15; BsdfKind in bits 16-23; 0 above
+  uint32_t normal;    // equal-area octahedral, x in bits 0-15, y in bits 16-31
+  uint32_t color_rg;  // halves: red in bits 0-15, green in bits 16-31
+  uint32_t color_b_scalar;  // halves: blue in bits 0-15; alpha or ior, as the
+                            // kind reads, in bits 16-31
+  uint32_t escape_kind;  // half: escape (coated; else 0) in bits 0-15; BsdfKind
+                         // in bits 16-23; 0 above
 };
 
-static_assert(sizeof(PackedBsdf) == 16, "PackedBsdf must be the same 16 bytes on the host and in shaders");
+static_assert(
+    sizeof(PackedBsdf) == 16,
+    "PackedBsdf must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<PackedBsdf>, "PackedBsdf is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<PackedBsdf>,
+              "PackedBsdf is written to the GPU as bytes");
 #endif
 
 // The kind alone, read without unpacking the rest: whether a stored surface
@@ -231,20 +245,26 @@ static_assert(std::is_trivially_copyable_v<PackedBsdf>, "PackedBsdf is written t
 // layout, so the Integrator and Sample reuse, which meet at contracts
 // alone, read it one way.
 constexpr BsdfKind packed_kind(PackedBsdf packed) {
-    return static_cast<BsdfKind>((packed.escape_kind >> packed_kind_shift) & packed_kind_mask);
+  return static_cast<BsdfKind>((packed.escape_kind >> packed_kind_shift) &
+                               packed_kind_mask);
 }
 
 // What sample() returns.
 struct BsdfSample {
-    Float3 direction;  // wi, unit
-    float pdf;         // per unit solid angle, or a delta lobe's probability; 0 for no sample
-    Float3 value;      // f(wo, wi), or for a delta lobe as described above
-    uint32_t lobe;     // the lobe chosen: reflection or transmission, and diffuse, glossy or delta
+  Float3 direction;  // wi, unit
+  float pdf;  // per unit solid angle, or a delta lobe's probability; 0 for no
+              // sample
+  Float3 value;   // f(wo, wi), or for a delta lobe as described above
+  uint32_t lobe;  // the lobe chosen: reflection or transmission, and diffuse,
+                  // glossy or delta
 };
 
-static_assert(sizeof(BsdfSample) == 32, "BsdfSample must be the same 32 bytes on the host and in shaders");
+static_assert(
+    sizeof(BsdfSample) == 32,
+    "BsdfSample must be the same 32 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<BsdfSample>, "BsdfSample is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<BsdfSample>,
+              "BsdfSample is written to the GPU as bytes");
 #endif
 
 }  // namespace contracts

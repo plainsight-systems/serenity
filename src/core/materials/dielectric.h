@@ -18,13 +18,16 @@ namespace serenity {
 namespace materials {
 
 struct DielectricData {
-    float ior;  // index of refraction inside; outside is 1 (air). Greater than 1.
-    uint32_t padding[3];
+  float ior;  // index of refraction inside; outside is 1 (air). Greater than 1.
+  uint32_t padding[3];
 };
 
-static_assert(sizeof(DielectricData) == 16, "DielectricData must be the same 16 bytes on the host and in shaders");
+static_assert(
+    sizeof(DielectricData) == 16,
+    "DielectricData must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<DielectricData>, "DielectricData is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<DielectricData>,
+              "DielectricData is written to the GPU as bytes");
 #endif
 
 }  // namespace materials

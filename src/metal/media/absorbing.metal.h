@@ -13,8 +13,9 @@
 namespace serenity {
 namespace shaders {
 
-inline float3 absorbing_transmittance(serenity::media::AbsorbingData medium, float t) {
-    return metal::exp(-to_float3(medium.absorption) * t);
+inline float3 absorbing_transmittance(serenity::media::AbsorbingData medium,
+                                      float t) {
+  return metal::exp(-to_float3(medium.absorption) * t);
 }
 
 }  // namespace shaders

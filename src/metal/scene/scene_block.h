@@ -37,8 +37,9 @@
 #if defined(__METAL_VERSION__)
 #include <metal_stdlib>
 #else
-#include <cstdint>
 #include <stdint.h>  // uint32_t in the global namespace, where the shading language has it
+
+#include <cstdint>
 #endif
 
 #include "core/lights/gradient_sky.h"
@@ -71,28 +72,30 @@ using Array = std::uint64_t;  // the array's GPU address
 #endif
 
 struct SceneBlock {
-    Array<lights::GradientSkyData> environment;  // one
-    Array<textures::TextureRecord> textures;
-    Array<textures::CheckerData> checkers;
-    Array<textures::WoodData> woods;
-    Array<textures::SwirlData> swirls;
-    Array<materials::MaterialRecord> materials;
-    Array<materials::RoughData> roughs;
-    Array<materials::DielectricData> dielectrics;
-    Array<materials::ConductorData> conductors;
-    Array<materials::EmissiveData> emissives;
-    Array<materials::CoatedData> coateds;
-    Array<media::MediumRecord> media;
-    Array<media::AbsorbingData> absorbings;
-    Array<shapes::ShapeRecord> shapes;
-    Array<shapes::BoxData> boxes;
-    Array<lights::LightRecord> light_records;
-    Array<uint32_t> shape_lights;
-    Array<lights::SphereLightData> sphere_lights;
-    Array<lights::LightCounts> light_counts;  // one
+  Array<lights::GradientSkyData> environment;  // one
+  Array<textures::TextureRecord> textures;
+  Array<textures::CheckerData> checkers;
+  Array<textures::WoodData> woods;
+  Array<textures::SwirlData> swirls;
+  Array<materials::MaterialRecord> materials;
+  Array<materials::RoughData> roughs;
+  Array<materials::DielectricData> dielectrics;
+  Array<materials::ConductorData> conductors;
+  Array<materials::EmissiveData> emissives;
+  Array<materials::CoatedData> coateds;
+  Array<media::MediumRecord> media;
+  Array<media::AbsorbingData> absorbings;
+  Array<shapes::ShapeRecord> shapes;
+  Array<shapes::BoxData> boxes;
+  Array<lights::LightRecord> light_records;
+  Array<uint32_t> shape_lights;
+  Array<lights::SphereLightData> sphere_lights;
+  Array<lights::LightCounts> light_counts;  // one
 };
 
-static_assert(sizeof(SceneBlock) == 19 * 8, "SceneBlock must be the same 19 addresses on the host and in shaders");
+static_assert(
+    sizeof(SceneBlock) == 19 * 8,
+    "SceneBlock must be the same 19 addresses on the host and in shaders");
 
 }  // namespace gpu
 }  // namespace serenity

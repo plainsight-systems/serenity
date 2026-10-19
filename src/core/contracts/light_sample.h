@@ -84,8 +84,8 @@
 // Layout: two words, 8 bytes. Layout rules as for every shared contract
 // (contracts/frame_constants.h).
 
-#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace contracts {
@@ -101,40 +101,47 @@ SERENITY_CONSTANT uint32_t light_valid = 0x80000000u;
 SERENITY_CONSTANT uint32_t light_index_mask = 0x7fffffffu;
 
 struct LightPoint {
-    uint32_t light;  // light_valid | a light record's index; 0 for none
-    uint32_t point;  // equal-area octahedral, x in bits 0-15, y in bits 16-31
+  uint32_t light;  // light_valid | a light record's index; 0 for none
+  uint32_t point;  // equal-area octahedral, x in bits 0-15, y in bits 16-31
 };
 
-static_assert(sizeof(LightPoint) == 8, "LightPoint must be the same 8 bytes on the host and in shaders");
+static_assert(sizeof(LightPoint) == 8,
+              "LightPoint must be the same 8 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<LightPoint>, "LightPoint is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<LightPoint>,
+              "LightPoint is written to the GPU as bytes");
 #endif
 
 // Whether `sample` holds a light, and which record: the one reading of
 // `light`'s bits, so no pass tests the bit its own way (ES.3).
 constexpr bool holds_light(LightPoint sample) {
-    return (sample.light & light_valid) != 0u;
+  return (sample.light & light_valid) != 0u;
 }
 constexpr uint32_t light_index(LightPoint sample) {
-    return sample.light & light_index_mask;
+  return sample.light & light_index_mask;
 }
 
 // What evaluate_light_point() answers (above). Never stored: a shader's
 // value, laid out here beside the identity it answers for, as contract 3's
 // LightSample is.
 struct LightReceived {
-    Float3 direction;    // unit, from the point asking toward the light's point
-    float distance;      // to it
-    Float3 radiance;     // arriving along direction, if nothing is in the way
-    float cos_light;     // at the light, its normal against -direction; <= 0 gives nothing
-    float area_scale;    // world area per unit of the light's own area
-    uint32_t primitive;  // the light's own shape, which a shadow ray ignores; or no_primitive
-    uint32_t padding[2];
+  Float3 direction;  // unit, from the point asking toward the light's point
+  float distance;    // to it
+  Float3 radiance;   // arriving along direction, if nothing is in the way
+  float cos_light;   // at the light, its normal against -direction; <= 0 gives
+                     // nothing
+  float area_scale;  // world area per unit of the light's own area
+  uint32_t primitive;  // the light's own shape, which a shadow ray ignores; or
+                       // no_primitive
+  uint32_t padding[2];
 };
 
-static_assert(sizeof(LightReceived) == 48, "LightReceived must be the same 48 bytes on the host and in shaders");
+static_assert(
+    sizeof(LightReceived) == 48,
+    "LightReceived must be the same 48 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<LightReceived>, "LightReceived is laid out as bytes");
+static_assert(std::is_trivially_copyable_v<LightReceived>,
+              "LightReceived is laid out as bytes");
 #endif
 
 }  // namespace contracts

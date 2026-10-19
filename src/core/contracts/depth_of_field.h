@@ -49,36 +49,44 @@
 namespace serenity {
 namespace contracts {
 
-SERENITY_CONSTANT float dof_max_radius = 0.025f;  // of the output's width, as a radius
-SERENITY_CONSTANT uint32_t dof_scale = 2u;        // the gather's grid: the output's, halved each way
-SERENITY_CONSTANT uint32_t dof_tile = 8u;         // half-resolution pixels on a tile's side
+SERENITY_CONSTANT float dof_max_radius =
+    0.025f;  // of the output's width, as a radius
+SERENITY_CONSTANT uint32_t dof_scale =
+    2u;  // the gather's grid: the output's, halved each way
+SERENITY_CONSTANT uint32_t dof_tile =
+    8u;  // half-resolution pixels on a tile's side
 SERENITY_CONSTANT uint32_t dof_rings = 3u;
-SERENITY_CONSTANT uint32_t dof_ring_taps = 8u;  // ring k's taps: dof_ring_taps x k
-SERENITY_CONSTANT uint32_t dof_taps = 49u;      // the pixel's own and the rings'
-static_assert(dof_taps == 1u + dof_ring_taps * dof_rings * (dof_rings + 1u) / 2u,
+SERENITY_CONSTANT uint32_t dof_ring_taps =
+    8u;                                     // ring k's taps: dof_ring_taps x k
+SERENITY_CONSTANT uint32_t dof_taps = 49u;  // the pixel's own and the rings'
+static_assert(dof_taps ==
+                  1u + dof_ring_taps * dof_rings * (dof_rings + 1u) / 2u,
               "dof_taps is the pixel and its rings' taps");
 SERENITY_CONSTANT float dof_alpha_gain = 2.0f;
 
 // What the pass's kernels read beyond the frame's constants, one per frame
 // in flight. Sizes in pixels.
 struct DepthOfFieldConstants {
-    float coc_scale;       // output pixels: coc(z) = coc_scale (z - focus_distance) / z
-    float focus_distance;  // meters along the camera's forward axis, > 0
-    float max_radius;      // output pixels: |coc| at most
-    uint32_t width;        // the output's
-    uint32_t height;
-    uint32_t half_width;  // the gather's grid: (width + 1) / 2
-    uint32_t half_height;
-    uint32_t tiles_x;  // the grid's tiles: ceil(half_width / dof_tile)
-    uint32_t tiles_y;
-    uint32_t dilation;  // tiles a tile's dilation reaches each way
-    uint32_t padding[2];
+  float
+      coc_scale;  // output pixels: coc(z) = coc_scale (z - focus_distance) / z
+  float focus_distance;  // meters along the camera's forward axis, > 0
+  float max_radius;      // output pixels: |coc| at most
+  uint32_t width;        // the output's
+  uint32_t height;
+  uint32_t half_width;  // the gather's grid: (width + 1) / 2
+  uint32_t half_height;
+  uint32_t tiles_x;  // the grid's tiles: ceil(half_width / dof_tile)
+  uint32_t tiles_y;
+  uint32_t dilation;  // tiles a tile's dilation reaches each way
+  uint32_t padding[2];
 };
 
 static_assert(sizeof(DepthOfFieldConstants) == 48,
-              "DepthOfFieldConstants must be the same 48 bytes on the host and in shaders");
+              "DepthOfFieldConstants must be the same 48 bytes on the host and "
+              "in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<DepthOfFieldConstants>, "DepthOfFieldConstants is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<DepthOfFieldConstants>,
+              "DepthOfFieldConstants is written to the GPU as bytes");
 #endif
 
 }  // namespace contracts

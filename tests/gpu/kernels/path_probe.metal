@@ -54,73 +54,89 @@ using serenity::tests::MisQuery;
 // as 7751a65 did, and its density of a bounce's direction is asked there.
 //
 // Inputs: the lights (1 to 5), the query, the Bsdf.
-kernel void mis_weights(device MisDraw* out [[buffer(0)]],
-                        constant serenity::lights::LightRecord* records [[buffer(1)]],
-                        constant serenity::lights::SphereLightData* spheres [[buffer(2)]],
-                        constant serenity::contracts::Transform* transforms [[buffer(3)]],
-                        constant float* glows [[buffer(4)]],
-                        constant uint* shape_lights [[buffer(5)]],
-                        constant MisQuery& query [[buffer(6)]],
-                        constant Bsdf& bsdf [[buffer(7)]],
-                        uint i [[thread_position_in_grid]]) {
-    if (i >= 2u * query.draws) {
-        return;
-    }
-    const Lights lights{records, shape_lights, spheres, transforms, glows};
-    const UniformLight step_5{records, query.light_count};
-    const UniformLight step_3{records, query.struck_light_count};
-    const serenity::lights::LightRecord light = records[0];
-    serenity::contracts::SurfaceInteraction surface{};
-    surface.position = query.point;
-    surface.geometric_normal = query.normal;
-    const float3 wo = to_float3(query.wo);
-    const Shading here{surface, bsdf, wo, serenity::contracts::no_medium};
-    const float3 light_origin =
-        query.light_from_point != 0u ? to_float3(surface.position) : path::next_event_origin(surface, wo);
-    const uint h = pcg_hash(i ^ 0x2545f491u);
-    const float3 u = float3(unit_float(h), unit_float(pcg_hash(h)), unit_float(pcg_hash(h ^ 0x9e3779b9u)));
-    MisDraw draw{};
-    if (i < query.draws) {
-        // As step 5 chooses its light: the probability select_light() gives.
-        const SelectedLight chosen = select_light(step_5, 0.0f);
-        const serenity::contracts::LightSample sample = sample_light(lights, light, light_origin, u.xy);
-        const float3 wi = to_float3(sample.direction);
-        draw.light_density = leave_alike(surface, wi, wo) ? chosen.probability * sample.pdf : 0.0f;
-        draw.bsdf_density = bsdf_pdf(bsdf, wo, wi);
-        draw.light_weight = draw.light_density > 0.0f ? path::next_event_weight(draw.light_density, bsdf, wo, wi) : 0.0f;
-        draw.bsdf_weight = draw.bsdf_density > 0.0f ? path::emission_weight(step_3, lights, light,
-                                                                             leave(surface, wi).origin, wi,
-                                                                             draw.bsdf_density)
-                                                    : 0.0f;
-        draw.by_bsdf = 0u;
-    } else {
-        const serenity::contracts::BsdfSample sample = bsdf_sample(bsdf, wo, u);
-        const float3 wi = to_float3(sample.direction);
-        draw.bsdf_density = sample.pdf;
-        draw.light_density = leave_alike(surface, wi, wo)
-                                 ? light_probability(step_5, light) * light_pdf(lights, light, light_origin, wi)
-                                 : 0.0f;
-        draw.bsdf_weight = sample.pdf > 0.0f ? path::emission_weight(step_3, lights, light, leave(surface, wi).origin,
-                                                                     wi, path::handed_on(sample, here))
-                                             : 0.0f;
-        draw.light_weight = draw.light_density > 0.0f ? path::next_event_weight(draw.light_density, bsdf, wo, wi) : 0.0f;
-        draw.by_bsdf = 1u;
-    }
-    out[i] = draw;
+kernel void mis_weights(
+    device MisDraw* out [[buffer(0)]],
+    constant serenity::lights::LightRecord* records [[buffer(1)]],
+    constant serenity::lights::SphereLightData* spheres [[buffer(2)]],
+    constant serenity::contracts::Transform* transforms [[buffer(3)]],
+    constant float* glows [[buffer(4)]],
+    constant uint* shape_lights [[buffer(5)]],
+    constant MisQuery& query [[buffer(6)]], constant Bsdf& bsdf [[buffer(7)]],
+    uint i [[thread_position_in_grid]]) {
+  if (i >= 2u * query.draws) {
+    return;
+  }
+  const Lights lights{records, shape_lights, spheres, transforms, glows};
+  const UniformLight step_5{records, query.light_count};
+  const UniformLight step_3{records, query.struck_light_count};
+  const serenity::lights::LightRecord light = records[0];
+  serenity::contracts::SurfaceInteraction surface{};
+  surface.position = query.point;
+  surface.geometric_normal = query.normal;
+  const float3 wo = to_float3(query.wo);
+  const Shading here{surface, bsdf, wo, serenity::contracts::no_medium};
+  const float3 light_origin = query.light_from_point != 0u
+                                  ? to_float3(surface.position)
+                                  : path::next_event_origin(surface, wo);
+  const uint h = pcg_hash(i ^ 0x2545f491u);
+  const float3 u = float3(unit_float(h), unit_float(pcg_hash(h)),
+                          unit_float(pcg_hash(h ^ 0x9e3779b9u)));
+  MisDraw draw{};
+  if (i < query.draws) {
+    // As step 5 chooses its light: the probability select_light() gives.
+    const SelectedLight chosen = select_light(step_5, 0.0f);
+    const serenity::contracts::LightSample sample =
+        sample_light(lights, light, light_origin, u.xy);
+    const float3 wi = to_float3(sample.direction);
+    draw.light_density =
+        leave_alike(surface, wi, wo) ? chosen.probability * sample.pdf : 0.0f;
+    draw.bsdf_density = bsdf_pdf(bsdf, wo, wi);
+    draw.light_weight =
+        draw.light_density > 0.0f
+            ? path::next_event_weight(draw.light_density, bsdf, wo, wi)
+            : 0.0f;
+    draw.bsdf_weight = draw.bsdf_density > 0.0f
+                           ? path::emission_weight(step_3, lights, light,
+                                                   leave(surface, wi).origin,
+                                                   wi, draw.bsdf_density)
+                           : 0.0f;
+    draw.by_bsdf = 0u;
+  } else {
+    const serenity::contracts::BsdfSample sample = bsdf_sample(bsdf, wo, u);
+    const float3 wi = to_float3(sample.direction);
+    draw.bsdf_density = sample.pdf;
+    draw.light_density = leave_alike(surface, wi, wo)
+                             ? light_probability(step_5, light) *
+                                   light_pdf(lights, light, light_origin, wi)
+                             : 0.0f;
+    draw.bsdf_weight =
+        sample.pdf > 0.0f ? path::emission_weight(step_3, lights, light,
+                                                  leave(surface, wi).origin, wi,
+                                                  path::handed_on(sample, here))
+                          : 0.0f;
+    draw.light_weight =
+        draw.light_density > 0.0f
+            ? path::next_event_weight(draw.light_density, bsdf, wo, wi)
+            : 0.0f;
+    draw.by_bsdf = 1u;
+  }
+  out[i] = draw;
 }
 
 // For each query, the path tracer's power_heuristic() both ways, and the
 // directly squared form as a control (path_probe.h, HeuristicWeights).
 // Inputs: the queries, their count.
 kernel void heuristic_weights(device HeuristicWeights* out [[buffer(0)]],
-                              device const HeuristicQuery* queries [[buffer(1)]],
+                              device const HeuristicQuery* queries
+                              [[buffer(1)]],
                               constant uint& count [[buffer(2)]],
                               uint i [[thread_position_in_grid]]) {
-    if (i >= count) {
-        return;
-    }
-    const HeuristicQuery q = queries[i];
-    const float d2 = q.drawn * q.drawn;
-    out[i] = HeuristicWeights{path::power_heuristic(q.drawn, q.other), path::power_heuristic(q.other, q.drawn),
-                              d2 / (d2 + q.other * q.other), 0u};
+  if (i >= count) {
+    return;
+  }
+  const HeuristicQuery q = queries[i];
+  const float d2 = q.drawn * q.drawn;
+  out[i] = HeuristicWeights{path::power_heuristic(q.drawn, q.other),
+                            path::power_heuristic(q.other, q.drawn),
+                            d2 / (d2 + q.other * q.other), 0u};
 }

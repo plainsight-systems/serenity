@@ -59,71 +59,72 @@ namespace serenity::app {
 // time passes, and drains the events that came with it.
 
 class WindowError : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
+ public:
+  using std::runtime_error::runtime_error;
 };
 
 // A window's size in points.
 struct Points {
-    std::uint32_t width = 0;
-    std::uint32_t height = 0;
+  std::uint32_t width = 0;
+  std::uint32_t height = 0;
 };
 
 class Window {
-public:
-    // Opens a resizable, high-density window titled `title`, `size` across,
-    // on the main display. Must be called on the main thread; throws WindowError
-    // if it is not.
-    Window(const char* title, Points size);
+ public:
+  // Opens a resizable, high-density window titled `title`, `size` across,
+  // on the main display. Must be called on the main thread; throws WindowError
+  // if it is not.
+  Window(const char* title, Points size);
 
-    Window(const Window&) = delete;
-    Window& operator=(const Window&) = delete;
-    Window(Window&&) = delete;
-    Window& operator=(Window&&) = delete;
-    ~Window();
+  Window(const Window&) = delete;
+  Window& operator=(const Window&) = delete;
+  Window(Window&&) = delete;
+  Window& operator=(Window&&) = delete;
+  ~Window();
 
-    // What happened since the last wait.
-    struct Events {
-        bool quit = false;  // the window was closed, Escape pressed, or the program interrupted
-    };
-    // Blocks until an event comes, or `longest` passes (at most the
-    // Window's own bound, above), and returns what came; nothing, if
-    // nothing did. A `longest` of 0 does not wait.
-    Events wait(frame::Seconds longest);
+  // What happened since the last wait.
+  struct Events {
+    bool quit = false;  // the window was closed, Escape pressed, or the program
+                        // interrupted
+  };
+  // Blocks until an event comes, or `longest` passes (at most the
+  // Window's own bound, above), and returns what came; nothing, if
+  // nothing did. A `longest` of 0 does not wait.
+  Events wait(frame::Seconds longest);
 
-    frame::Extent size_in_pixels() const;
+  frame::Extent size_in_pixels() const;
 
-    // Sets the window's title: where the frame time is shown.
-    void set_title(const std::string& title);
+  // Sets the window's title: where the frame time is shown.
+  void set_title(const std::string& title);
 
-    // The Metal view's CAMetalLayer, valid for the Window's lifetime.
-    void* metal_layer() const;
+  // The Metal view's CAMetalLayer, valid for the Window's lifetime.
+  void* metal_layer() const;
 
-private:
-    // SDL_Init(SDL_INIT_VIDEO), and at the end SDL_Quit, which shuts down
-    // every subsystem: the program starts no other. Held by value (R.5); it
-    // is a call and its undoing, with nothing to hand on.
-    struct SdlVideo {
-        SdlVideo();
-        ~SdlVideo();
-        SdlVideo(const SdlVideo&) = delete;
-        SdlVideo& operator=(const SdlVideo&) = delete;
-        SdlVideo(SdlVideo&&) = delete;
-        SdlVideo& operator=(SdlVideo&&) = delete;
-    };
-    struct DestroyWindow {
-        void operator()(SDL_Window* window) const;
-    };
-    // SDL_Metal_DestroyView, for the view SDL_Metal_CreateView made (an
-    // SDL_MetalView, which is a void*).
-    struct DestroyView {
-        void operator()(void* view) const;
-    };
+ private:
+  // SDL_Init(SDL_INIT_VIDEO), and at the end SDL_Quit, which shuts down
+  // every subsystem: the program starts no other. Held by value (R.5); it
+  // is a call and its undoing, with nothing to hand on.
+  struct SdlVideo {
+    SdlVideo();
+    ~SdlVideo();
+    SdlVideo(const SdlVideo&) = delete;
+    SdlVideo& operator=(const SdlVideo&) = delete;
+    SdlVideo(SdlVideo&&) = delete;
+    SdlVideo& operator=(SdlVideo&&) = delete;
+  };
+  struct DestroyWindow {
+    void operator()(SDL_Window* window) const;
+  };
+  // SDL_Metal_DestroyView, for the view SDL_Metal_CreateView made (an
+  // SDL_MetalView, which is a void*).
+  struct DestroyView {
+    void operator()(void* view) const;
+  };
 
-    // Declaration order is the reverse of release order.
-    SdlVideo video_;
-    std::unique_ptr<SDL_Window, DestroyWindow> window_;
-    std::unique_ptr<void, DestroyView> view_;
+  // Declaration order is the reverse of release order.
+  SdlVideo video_;
+  std::unique_ptr<SDL_Window, DestroyWindow> window_;
+  std::unique_ptr<void, DestroyView> view_;
 };
 
 }  // namespace serenity::app

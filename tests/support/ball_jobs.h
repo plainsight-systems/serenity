@@ -18,7 +18,8 @@ namespace serenity::tests {
 // 4 m across from just over the floor to 2.2 m.
 inline constexpr float job_body = 0.02f;
 inline constexpr float job_clearance = 0.05f;
-inline constexpr contracts::Box job_volume{{-2.0f, 0.05f, -2.0f}, {2.0f, 2.2f, 2.0f}};
+inline constexpr contracts::Box job_volume{{-2.0f, 0.05f, -2.0f},
+                                           {2.0f, 2.2f, 2.0f}};
 
 // A start clear of the ball and the floor, and one inside the ball.
 inline constexpr contracts::Float3 clear_start{1.2f, 1.0f, 0.8f};
@@ -26,14 +27,14 @@ inline constexpr contracts::Float3 inside_ball{0.0f, 0.5f, 0.0f};
 
 // A flight job about the ball, in the job's volume, from `start`.
 inline animation::FlightJob job(std::uint64_t seed, contracts::Float3 start) {
-    return {.params = {.volume = job_volume,
-                       .targets = {{{0.0f, 0.5f, 0.0f}, 0.5f}},
-                       .speed = 0.4f,
-                       .clearance = job_clearance,
-                       .weights = {2.0f, 1.0f, 2.0f},
-                       .seed = seed},
-            .start = start,
-            .body = job_body};
+  return {.params = {.volume = job_volume,
+                     .targets = {{{0.0f, 0.5f, 0.0f}, 0.5f}},
+                     .speed = 0.4f,
+                     .clearance = job_clearance,
+                     .weights = {2.0f, 1.0f, 2.0f},
+                     .seed = seed},
+          .start = start,
+          .body = job_body};
 }
 
 }  // namespace serenity::tests

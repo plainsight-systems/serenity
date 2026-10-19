@@ -1,10 +1,9 @@
 #pragma once
 
-#include <array>
-#include <cstdint>
-
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
+#include <array>
+#include <cstdint>
 
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
@@ -62,41 +61,46 @@ namespace serenity::metal {
 // Throws MetalError if the size is not one Metal makes an image of
 // (metal/device/device.h, max_texture_side), or the device cannot make one.
 class CheckerboardImages {
-public:
-    // Whether the graph keeps `filled` (above).
-    enum class Filled { none, kept };
+ public:
+  // Whether the graph keeps `filled` (above).
+  enum class Filled { none, kept };
 
-    CheckerboardImages(const Device& device, Submission& submission, Filled filled);
+  CheckerboardImages(const Device& device, Submission& submission,
+                     Filled filled);
 
-    CheckerboardImages(const CheckerboardImages&) = delete;
-    CheckerboardImages& operator=(const CheckerboardImages&) = delete;
-    CheckerboardImages(CheckerboardImages&&) = delete;
-    CheckerboardImages& operator=(CheckerboardImages&&) = delete;
-    ~CheckerboardImages() = default;
+  CheckerboardImages(const CheckerboardImages&) = delete;
+  CheckerboardImages& operator=(const CheckerboardImages&) = delete;
+  CheckerboardImages(CheckerboardImages&&) = delete;
+  CheckerboardImages& operator=(CheckerboardImages&&) = delete;
+  ~CheckerboardImages() = default;
 
-    // Ready for frame `inputs` at the light's `size`: made, or remade, if
-    // not made at it; and whether the image before(inputs.index) holds its
-    // frame before (above). Throws MetalError if the core's history rule
-    // refuses the frame.
-    bool prepare(const frame::FrameInputs& inputs, frame::Extent size);
+  // Ready for frame `inputs` at the light's `size`: made, or remade, if
+  // not made at it; and whether the image before(inputs.index) holds its
+  // frame before (above). Throws MetalError if the core's history rule
+  // refuses the frame.
+  bool prepare(const frame::FrameInputs& inputs, frame::Extent size);
 
-    // The image frame `index` writes, and the one it reads, its frame
-    // before's (above). Null before the first prepare().
-    MTL::Texture* written(std::uint64_t index) const noexcept { return light_[index % 2u].texture.get(); }
-    MTL::Texture* before(std::uint64_t index) const noexcept { return light_[(index + 1u) % 2u].texture.get(); }
+  // The image frame `index` writes, and the one it reads, its frame
+  // before's (above). Null before the first prepare().
+  MTL::Texture* written(std::uint64_t index) const noexcept {
+    return light_[index % 2u].texture.get();
+  }
+  MTL::Texture* before(std::uint64_t index) const noexcept {
+    return light_[(index + 1u) % 2u].texture.get();
+  }
 
-    // The filled light of a graph without the denoise pass (above); null in
-    // a denoised graph and before the first prepare().
-    MTL::Texture* filled() const noexcept { return filled_.texture.get(); }
+  // The filled light of a graph without the denoise pass (above); null in
+  // a denoised graph and before the first prepare().
+  MTL::Texture* filled() const noexcept { return filled_.texture.get(); }
 
-private:
-    NS::SharedPtr<MTL::Device> device_;
-    Submission& submission_;
-    Filled kept_;
-    frame::Extent size_;
-    frame::ReuseHistory history_;
-    std::array<ResidentTexture, 2> light_;
-    ResidentTexture filled_;
+ private:
+  NS::SharedPtr<MTL::Device> device_;
+  Submission& submission_;
+  Filled kept_;
+  frame::Extent size_;
+  frame::ReuseHistory history_;
+  std::array<ResidentTexture, 2> light_;
+  ResidentTexture filled_;
 };
 
 }  // namespace serenity::metal

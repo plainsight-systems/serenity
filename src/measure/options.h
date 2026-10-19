@@ -54,18 +54,18 @@ namespace serenity::measure {
 // independent (core/measurement/error.h).
 
 class OptionsError : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
+ public:
+  using std::runtime_error::runtime_error;
 };
 
 struct MakeReference {
-    std::filesystem::path out;
-    std::vector<std::filesystem::path> batches;  // two or more
+  std::filesystem::path out;
+  std::vector<std::filesystem::path> batches;  // two or more
 };
 
 struct MeasureError {
-    std::filesystem::path reference;
-    std::vector<std::filesystem::path> images;  // one or more
+  std::filesystem::path reference;
+  std::vector<std::filesystem::path> images;  // one or more
 };
 
 // One of the two commands, each with only its own arguments, a

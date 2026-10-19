@@ -1,8 +1,7 @@
 #pragma once
 
-#include <memory>
-
 #include <QuartzCore/QuartzCore.hpp>
+#include <memory>
 
 #include "core/frame/frame_inputs.h"
 #include "core/presentation/frame_source.h"
@@ -40,15 +39,15 @@ namespace serenity::metal {
 //
 // The run loop, not this object, decides when frames are called: only while
 // the main thread runs its run loop, which SDL does while it waits for
-// events (metal/frame/display_frames.h, run). Nothing here blocks or waits for the
-// display; the display link's drawable is ready when the frame is called.
+// events (metal/frame/display_frames.h, run). Nothing here blocks or waits for
+// the display; the display link's drawable is ready when the frame is called.
 // So the window's pacing is the display's, and nothing in the frame waits
 // on a drawable as Presenter used to (nextDrawable).
 //
 // The rate. CAMetalDisplayLink calls the frame at a rate within the
-// presentation::FrameRate asked for (preferredFrameRateRange), one the display can show
-// and the system allows (Low Power Mode and thermal state lower it); the
-// caller asks for one its frames can keep up with (Apple: "Choose a frame
+// presentation::FrameRate asked for (preferredFrameRateRange), one the display
+// can show and the system allows (Low Power Mode and thermal state lower it);
+// the caller asks for one its frames can keep up with (Apple: "Choose a frame
 // rate range that your app can consistently maintain"). A FrameRate whose
 // rates are not positive and in order (minimum <= preferred <= maximum) is
 // refused by MetalError (I.5, E.2).
@@ -75,8 +74,8 @@ namespace serenity::metal {
 // loop, through Objective-C and AppKit frames that an exception must not
 // unwind; a client that can fail catches there, where it can stop its run
 // and say why (E.17: the boundary is where the handling is), as Metal's
-// frame source does (display_frames.h). One indirect call a frame; nothing is allocated
-// for it by this object (MEM.9): the update and its drawable are Core
+// frame source does (display_frames.h). One indirect call a frame; nothing is
+// allocated for it by this object (MEM.9): the update and its drawable are Core
 // Animation's.
 //
 // Threads (CP.1): made, called and destroyed on the main thread only. The
@@ -86,55 +85,56 @@ namespace serenity::metal {
 // (R.1).
 //
 // Copying and moving are deleted (C.21): an object is one link, made once
-// for a run of frames and invalidated once. Its Objective-C objects, the link and its delegate, are held
-// behind the pointer to State, defined in display_link.mm: I.27's form,
-// here to keep a language out of the header rather than for an ABI, so
-// this header is C++ and whoever includes it sees no Objective-C. The app
-// never includes it (make check, rule 6).
+// for a run of frames and invalidated once. Its Objective-C objects, the link
+// and its delegate, are held behind the pointer to State, defined in
+// display_link.mm: I.27's form, here to keep a language out of the header
+// rather than for an ABI, so this header is C++ and whoever includes it sees no
+// Objective-C. The app never includes it (make check, rule 6).
 //
 // Not performance-sensitive in itself: one callback a frame, whose cost is
 // the frame's.
 
 // One frame the display asks for.
 struct DisplayUpdate {
-    // Core Animation's, valid for the call (above); never null.
-    CA::MetalDrawable* drawable = nullptr;
-    // When the display is expected to show the frame, host time (the clock
-    // CACurrentMediaTime reads), as the display link targets it.
-    frame::Seconds presentation{0.0};
+  // Core Animation's, valid for the call (above); never null.
+  CA::MetalDrawable* drawable = nullptr;
+  // When the display is expected to show the frame, host time (the clock
+  // CACurrentMediaTime reads), as the display link targets it.
+  frame::Seconds presentation{0.0};
 };
 
 class DisplayLink {
-public:
-    class Client {
-    public:
-        virtual void frame(const DisplayUpdate& update) noexcept = 0;
+ public:
+  class Client {
+   public:
+    virtual void frame(const DisplayUpdate& update) noexcept = 0;
 
-    protected:
-        Client() = default;
-        Client(const Client&) = default;
-        Client& operator=(const Client&) = default;
-        Client(Client&&) = default;
-        Client& operator=(Client&&) = default;
-        ~Client() = default;
-    };
+   protected:
+    Client() = default;
+    Client(const Client&) = default;
+    Client& operator=(const Client&) = default;
+    Client(Client&&) = default;
+    Client& operator=(Client&&) = default;
+    ~Client() = default;
+  };
 
-    // Makes the link on `presenter`'s layer at `rate`, adds it to the main
-    // run loop, and calls `client` for each frame from then on. Throws
-    // MetalError off the main thread, for a rate refused above, or if Core
-    // Animation makes no link.
-    DisplayLink(const Presenter& presenter, presentation::FrameRate rate, Client& client);
+  // Makes the link on `presenter`'s layer at `rate`, adds it to the main
+  // run loop, and calls `client` for each frame from then on. Throws
+  // MetalError off the main thread, for a rate refused above, or if Core
+  // Animation makes no link.
+  DisplayLink(const Presenter& presenter, presentation::FrameRate rate,
+              Client& client);
 
-    DisplayLink(const DisplayLink&) = delete;
-    DisplayLink& operator=(const DisplayLink&) = delete;
-    DisplayLink(DisplayLink&&) = delete;
-    DisplayLink& operator=(DisplayLink&&) = delete;
-    // Invalidates the link: no frame is called after.
-    ~DisplayLink();
+  DisplayLink(const DisplayLink&) = delete;
+  DisplayLink& operator=(const DisplayLink&) = delete;
+  DisplayLink(DisplayLink&&) = delete;
+  DisplayLink& operator=(DisplayLink&&) = delete;
+  // Invalidates the link: no frame is called after.
+  ~DisplayLink();
 
-private:
-    struct State;
-    std::unique_ptr<State> state_;
+ private:
+  struct State;
+  std::unique_ptr<State> state_;
 };
 
 }  // namespace serenity::metal

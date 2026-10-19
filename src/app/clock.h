@@ -32,11 +32,11 @@ namespace serenity::app {
 // so a test drives it with numbers. Not a pure function (F.8): the first
 // call sets the origin.
 class PresentationClock {
-public:
-    frame::Seconds at(frame::Seconds presentation);
+ public:
+  frame::Seconds at(frame::Seconds presentation);
 
-private:
-    std::optional<frame::Seconds> first_;
+ private:
+  std::optional<frame::Seconds> first_;
 };
 
 }  // namespace serenity::app

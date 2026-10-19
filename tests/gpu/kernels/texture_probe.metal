@@ -20,28 +20,30 @@ kernel void noise_probe(device float* out [[buffer(0)]],
                         device const TexturePoint* points [[buffer(1)]],
                         constant uint& count [[buffer(2)]],
                         uint i [[thread_position_in_grid]]) {
-    if (i < count) {
-        out[i] = gradient_noise(to_float3(points[i].point), points[i].seed);
-    }
+  if (i < count) {
+    out[i] = gradient_noise(to_float3(points[i].point), points[i].seed);
+  }
 }
 
 kernel void wood_probe(device serenity::contracts::Float3* out [[buffer(0)]],
                        device const TexturePoint* points [[buffer(1)]],
                        constant uint& count [[buffer(2)]],
-                       constant serenity::textures::WoodData& wood_data [[buffer(3)]],
+                       constant serenity::textures::WoodData& wood_data
+                       [[buffer(3)]],
                        uint i [[thread_position_in_grid]]) {
-    if (i < count) {
-        out[i] = to_packed(wood(wood_data, to_float3(points[i].point)));
-    }
+  if (i < count) {
+    out[i] = to_packed(wood(wood_data, to_float3(points[i].point)));
+  }
 }
 
 // The swirl at a point in its shape's own coordinates.
 kernel void swirl_probe(device serenity::contracts::Float3* out [[buffer(0)]],
                         device const TexturePoint* points [[buffer(1)]],
                         constant uint& count [[buffer(2)]],
-                        constant serenity::textures::SwirlData& swirl_data [[buffer(3)]],
+                        constant serenity::textures::SwirlData& swirl_data
+                        [[buffer(3)]],
                         uint i [[thread_position_in_grid]]) {
-    if (i < count) {
-        out[i] = to_packed(swirl(swirl_data, to_float3(points[i].point)));
-    }
+  if (i < count) {
+    out[i] = to_packed(swirl(swirl_data, to_float3(points[i].point)));
+  }
 }

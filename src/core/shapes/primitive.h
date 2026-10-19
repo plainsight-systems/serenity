@@ -23,8 +23,8 @@
 // object-space bounds, and its object-space test; it changes no other kind,
 // and nothing outside the Shape family.
 
-#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
+#include "core/contracts/shared_layout.h"
 #if !defined(__METAL_VERSION__)
 #include "core/contracts/obstacles.h"
 #endif
@@ -33,21 +33,27 @@ namespace serenity {
 namespace shapes {
 
 enum class ShapeKind : uint32_t {
-    sphere = 0,  // the unit sphere (sphere.h): no data of its own; `geometry` is 0
-    box = 1,     // an axis-aligned box, min to max (box.h): `geometry` indexes the boxes
+  sphere =
+      0,    // the unit sphere (sphere.h): no data of its own; `geometry` is 0
+  box = 1,  // an axis-aligned box, min to max (box.h): `geometry` indexes the
+            // boxes
 };
 
 struct ShapeRecord {
-    ShapeKind kind;
-    uint32_t geometry;  // into that kind's geometry array
-    uint32_t material;  // index into the material records
-    uint32_t interior;  // the medium inside it (contract 12): an index into the medium records
-                        // (media/medium.h), or contracts::no_medium for air
+  ShapeKind kind;
+  uint32_t geometry;  // into that kind's geometry array
+  uint32_t material;  // index into the material records
+  uint32_t
+      interior;  // the medium inside it (contract 12): an index into the medium
+                 // records (media/medium.h), or contracts::no_medium for air
 };
 
-static_assert(sizeof(ShapeRecord) == 16, "ShapeRecord must be the same 16 bytes on the host and in shaders");
+static_assert(
+    sizeof(ShapeRecord) == 16,
+    "ShapeRecord must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<ShapeRecord>, "ShapeRecord is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<ShapeRecord>,
+              "ShapeRecord is written to the GPU as bytes");
 #endif
 
 #if !defined(__METAL_VERSION__)
@@ -59,8 +65,10 @@ static_assert(std::is_trivially_copyable_v<ShapeRecord>, "ShapeRecord is written
 // still shapes answer contract 11's touches() with it as it is.
 using Bounds = contracts::Box;
 
-static_assert(sizeof(Bounds) == 24, "Bounds must be two packed triples of floats");
-static_assert(std::is_trivially_copyable_v<Bounds>, "Bounds is written to the GPU as bytes");
+static_assert(sizeof(Bounds) == 24,
+              "Bounds must be two packed triples of floats");
+static_assert(std::is_trivially_copyable_v<Bounds>,
+              "Bounds is written to the GPU as bytes");
 #endif
 
 }  // namespace shapes

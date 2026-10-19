@@ -15,8 +15,8 @@ namespace serenity::animation {
 // std::invalid_argument; numbers out of a kind's range, which the reader
 // checks before it asks, are a plain std::invalid_argument.
 class MotionError : public std::invalid_argument {
-public:
-    using std::invalid_argument::invalid_argument;
+ public:
+  using std::invalid_argument::invalid_argument;
 };
 
 }  // namespace serenity::animation

@@ -90,11 +90,11 @@ namespace serenity::animation {
 //              prelude.
 //
 // A perched firefly sits closer to the surface below it than the clearance
-// allows the loop, by design: `perch_gap` from it. Its perch and its rise are held instead to keeping the body at
-// least perch_gap / 2 from every still surface, at every point of the path,
-// not only at samples (steps P1 and P2). So the guarantee that a flight
-// never touches a still shape holds through the prelude; the clearance is
-// the loop's.
+// allows the loop, by design: `perch_gap` from it. Its perch and its rise are
+// held instead to keeping the body at least perch_gap / 2 from every still
+// surface, at every point of the path, not only at samples (steps P1 and P2).
+// So the guarantee that a flight never touches a still shape holds through the
+// prelude; the clearance is the loop's.
 //
 // make_flight(), by these steps, which the code carries by number:
 //
@@ -167,8 +167,8 @@ namespace serenity::animation {
 //            (P2), rho the rounding allowance of the rise's hull; and that
 //            rho under perch_gap / 8, so float can place a body at its
 //            perch's scale there at all (it can within 512 m of the
-//            origin, where float's spacing is at most 3 x 10^-5 m). A perch nearer, or too far out for
-//            its gap, is refused, as an episode is.
+//            origin, where float's spacing is at most 3 x 10^-5 m). A perch
+//            nearer, or too far out for its gap, is refused, as an episode is.
 //   Step P2  The opening's segments: for hold, a still segment at the
 //            loop's first point lasting `until`; for perch, a still segment
 //            at the perch lasting `until`, then the rise, a transit from the
@@ -181,19 +181,20 @@ namespace serenity::animation {
 //            loop whose first point is straight above the perch, as a
 //            swarm's perched firefly's is (core/scene/swarm.h, step 2p,
 //            which places the start by first_offset() so that it is). A
-//            still segment of no length is left out. The rise is checked by conservative advancement
-//            (Mirtich 1996; Hart 1996, sphere tracing): from u = 0, at the
-//            point p(u) the distance d to the still surfaces is exact for
-//            the kinds there are (contract 11), so no surface lies within
-//            d - r of any point within r of p; the slack s = d - body -
-//            perch_gap / 2 - rho is how far the path may go before it could come
-//            too near, and the next sample is at u + s / V, V bounding the
-//            curve's speed in u (its derivative's Bezier hull, as step 3's
-//            bound). A slack under perch_gap / 4 refuses the rise, which
-//            keeps every step at least perch_gap / (4 V) and the samples at
-//            most 4 V / perch_gap and the last at u = 1: compared with
-//            most_steps as a double before the walk (ES.46). The rise must also keep within the
-//            world, which its hull, below, shows the reader.
+//            still segment of no length is left out. The rise is checked by
+//            conservative advancement (Mirtich 1996; Hart 1996, sphere
+//            tracing): from u = 0, at the point p(u) the distance d to the
+//            still surfaces is exact for the kinds there are (contract 11), so
+//            no surface lies within d - r of any point within r of p; the slack
+//            s = d - body - perch_gap / 2 - rho is how far the path may go
+//            before it could come too near, and the next sample is at u + s /
+//            V, V bounding the curve's speed in u (its derivative's Bezier
+//            hull, as step 3's bound). A slack under perch_gap / 4 refuses the
+//            rise, which keeps every step at least perch_gap / (4 V) and the
+//            samples at most 4 V / perch_gap and the last at u = 1: compared
+//            with most_steps as a double before the walk (ES.46). The rise must
+//            also keep within the world, which its hull, below, shows the
+//            reader.
 //
 //            The one join that is not smooth is a hold's end: the firefly
 //            holds still, then its loop starts at the drift's own speed, a
@@ -207,19 +208,19 @@ namespace serenity::animation {
 //            0.
 //
 // The rounding allowance, rho, of a box (rounding_allowance(), below): sqrt
-// 3 times float's spacing (one ulp) at the largest |coordinate| in it. A point of the double curve is
-// rounded to float when its distance is asked (contract 11 takes a Float3)
-// and when it is placed (position() returns a Float3): each moves it at
-// most half an ulp an axis, so the two together at most rho. At the
+// 3 times float's spacing (one ulp) at the largest |coordinate| in it. A point
+// of the double curve is rounded to float when its distance is asked (contract
+// 11 takes a Float3) and when it is placed (position() returns a Float3): each
+// moves it at most half an ulp an axis, so the two together at most rho. At the
 // marbles' meter scale rho is some 2 x 10^-7 m; at the world's edge, 10^6
 // m, some 0.1 m, which no gap of a millimeter survives, and which P1
 // refuses for a perch.
 //
 // If an episode cannot be drawn clear within those redraws, make_flight throws
-// a MotionError (motion_error.h) naming it: a target with no room to circle it, a
-// volume too tight for the clearance. The scene reader reports it against
-// the motion's line (core/scene/scene.h). Numbers out of range, which the
-// reader checks first, are a std::invalid_argument.
+// a MotionError (motion_error.h) naming it: a target with no room to circle it,
+// a volume too tight for the clearance. The scene reader reports it against the
+// motion's line (core/scene/scene.h). Numbers out of range, which the reader
+// checks first, are a std::invalid_argument.
 //
 // position(), by these steps, of a flight make_flight made: one with
 // segments and a loop longer than 0, which it checks, throwing
@@ -247,10 +248,10 @@ namespace serenity::animation {
 // Cost. At load, per firefly: 64 episodes and 64 transits, each some tens to
 // a few hundred samples, each sample one distance (contract 11) over every
 // still shape: some 10^4 to 10^5 distance tests per firefly per still
-// shape, the load's largest cost. A rise adds tens to hundreds (step P2). The load's measurements, and when a
-// spatial index behind the obstacles would pay, are in
-// docs/research/2026-10-10-flight-load.md. Memory: some 140 segments of 22
-// doubles, some 25 KB per firefly. Per frame: one binary search over some
+// shape, the load's largest cost. A rise adds tens to hundreds (step P2). The
+// load's measurements, and when a spatial index behind the obstacles would pay,
+// are in docs/research/2026-10-10-flight-load.md. Memory: some 140 segments of
+// 22 doubles, some 25 KB per firefly. Per frame: one binary search over some
 // 140 starts and one closed form of a few sines or a cubic, nothing
 // allocated (MEM.9); a flight with an opening, one comparison with begin
 // more, and before it a search of at most two segments.
@@ -289,26 +290,29 @@ inline constexpr double perch_gap = 0.0005;
 
 // A still sphere a flight circles: where it is and how big.
 struct Target {
-    contracts::Float3 center{};
-    float radius = 0.0f;
+  contracts::Float3 center{};
+  float radius = 0.0f;
 };
 
 struct FlightParams {
-    Extent volume;                 // where it flies; its body stays inside
-    std::vector<Target> targets;   // what it circles; none, and it does not circle
-    float speed = 0.0f;            // cruising, in meters a second; > 0
-    float clearance = 0.0f;        // from every still surface to its own, in meters; >= 0
-    std::array<float, 3> weights{};  // circle, swoop, drift: >= 0, summing > 0; circle 0 with no targets
-    std::uint64_t seed = 0;
-    std::int64_t most_steps = flight_most_steps;  // step 3's bound on one segment's samples; > 0
+  Extent volume;                // where it flies; its body stays inside
+  std::vector<Target> targets;  // what it circles; none, and it does not circle
+  float speed = 0.0f;           // cruising, in meters a second; > 0
+  float clearance =
+      0.0f;  // from every still surface to its own, in meters; >= 0
+  std::array<float, 3> weights{};  // circle, swoop, drift: >= 0, summing > 0;
+                                   // circle 0 with no targets
+  std::uint64_t seed = 0;
+  std::int64_t most_steps =
+      flight_most_steps;  // step 3's bound on one segment's samples; > 0
 };
 
 enum class Behaviour {
-    transit,
-    circle,
-    swoop,
-    drift,
-    still,
+  transit,
+  circle,
+  swoop,
+  drift,
+  still,
 };
 
 // What a flight does before its loop begins (above): one of three kinds,
@@ -319,12 +323,12 @@ enum class Behaviour {
 struct NoPrelude {};
 
 struct Hold {
-    double until = 0.0;  // seconds it waits; 0 to most_wait
+  double until = 0.0;  // seconds it waits; 0 to most_wait
 };
 
 struct Perch {
-    contracts::Float3 at{};  // where its center rests (step P1)
-    double until = 0.0;      // seconds it rests; 0 to most_wait
+  contracts::Float3 at{};  // where its center rests (step P1)
+  double until = 0.0;      // seconds it rests; 0 to most_wait
 };
 
 using Prelude = std::variant<NoPrelude, Hold, Perch>;
@@ -334,9 +338,9 @@ using Prelude = std::variant<NoPrelude, Hold, Perch>;
 // here and the swarm's start (core/scene/swarm.h). Each case a class, a
 // lambda's closure, which is all an overload set can inherit (T.10).
 template <typename... Cases>
-    requires(std::is_class_v<Cases> && ...)
+  requires(std::is_class_v<Cases> && ...)
 struct Visit : Cases... {
-    using Cases::operator()...;
+  using Cases::operator()...;
 };
 
 // One stretch of the path: its behaviour, when it starts within the loop,
@@ -347,20 +351,23 @@ struct Visit : Cases... {
 inline constexpr std::size_t segment_numbers = 19;
 
 struct Segment {
-    Behaviour behaviour = Behaviour::transit;
-    double start = 0.0;
-    double duration = 0.0;
-    std::array<double, segment_numbers> numbers{};
+  Behaviour behaviour = Behaviour::transit;
+  double start = 0.0;
+  double duration = 0.0;
+  std::array<double, segment_numbers> numbers{};
 };
 
 struct Flight {
-    Extent volume;                  // the loop's
-    Extent reach;                   // the box its center never leaves: the volume, grown to hold the opening
-    std::vector<Segment> opening;   // the prelude, in time order, covering [0, begin); none without one
-    double begin = 0.0;             // when the loop begins, in seconds
-    std::vector<Segment> segments;  // the loop, in time order, covering [0, loop) from begin
-    double loop = 0.0;              // the loop's length, in seconds
-    FlashSchedule flashes;          // its flashes, over the opening and the loop (step 7)
+  Extent volume;  // the loop's
+  Extent reach;   // the box its center never leaves: the volume, grown to hold
+                  // the opening
+  std::vector<Segment> opening;  // the prelude, in time order, covering [0,
+                                 // begin); none without one
+  double begin = 0.0;            // when the loop begins, in seconds
+  std::vector<Segment>
+      segments;       // the loop, in time order, covering [0, loop) from begin
+  double loop = 0.0;  // the loop's length, in seconds
+  FlashSchedule flashes;  // its flashes, over the opening and the loop (step 7)
 };
 
 // One flight's inputs: the shared numbers, where its loop starts (episode
@@ -368,10 +375,10 @@ struct Flight {
 // for make_flight() rather than five (I.23), the same record make_flights()
 // takes a vector of.
 struct FlightJob {
-    FlightParams params;
-    contracts::Float3 start{};
-    float body = 0.0f;
-    Prelude prelude;
+  FlightParams params;
+  contracts::Float3 start{};
+  float body = 0.0f;
+  Prelude prelude;
 };
 
 // The flight for `job`, of a body of radius job.body, kept clear of
@@ -404,22 +411,26 @@ Flight make_flight(const FlightJob& job, const contracts::Obstacles& obstacles);
 // is thrown and caught: the reason is kept in a std::runtime_error, whose
 // copies share one message rather than allocate one, beside its base's.
 class FlightsError : public MotionError {
-public:
-    FlightsError(std::size_t job, const std::string& reason)
-        : MotionError("flight " + std::to_string(job) + ": " + reason), job_(job), reason_(reason) {}
+ public:
+  FlightsError(std::size_t job, const std::string& reason)
+      : MotionError("flight " + std::to_string(job) + ": " + reason),
+        job_(job),
+        reason_(reason) {}
 
-    // Which job was refused.
-    std::size_t job() const noexcept { return job_; }
-    // Why, as make_flight said it (I.4: not parsed back out of what()).
-    std::string_view reason() const noexcept { return reason_.what(); }
+  // Which job was refused.
+  std::size_t job() const noexcept { return job_; }
+  // Why, as make_flight said it (I.4: not parsed back out of what()).
+  std::string_view reason() const noexcept { return reason_.what(); }
 
-private:
-    std::size_t job_;
-    std::runtime_error reason_;
+ private:
+  std::size_t job_;
+  std::runtime_error reason_;
 };
-static_assert(std::is_nothrow_copy_constructible_v<FlightsError>, "an exception's copy never throws (E.16)");
+static_assert(std::is_nothrow_copy_constructible_v<FlightsError>,
+              "an exception's copy never throws (E.16)");
 
-std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles,
+std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs,
+                                 const contracts::Obstacles& obstacles,
                                  std::size_t workers);
 
 // Many flights, made as make_flights() makes them, each job's outcome kept
@@ -441,10 +452,11 @@ std::vector<Flight> make_flights(const std::vector<FlightJob>& jobs, const contr
 // batch once every thread has finished (I.10: the failure is the caller's
 // to see, never lost in a worker).
 struct FlightRefusal {
-    std::string reason;  // as make_flight said it
+  std::string reason;  // as make_flight said it
 };
 using FlightOutcome = std::variant<Flight, FlightRefusal>;
-std::vector<FlightOutcome> try_flights(const std::vector<FlightJob>& jobs, const contracts::Obstacles& obstacles,
+std::vector<FlightOutcome> try_flights(const std::vector<FlightJob>& jobs,
+                                       const contracts::Obstacles& obstacles,
                                        std::size_t workers);
 
 // As many workers as the machine has cores (std::thread::hardware_concurrency),

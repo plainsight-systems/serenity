@@ -56,28 +56,31 @@ namespace serenity::app {
 // Not performance-sensitive: a handful of values a frame; the title's text
 // is made once a second.
 class WindowFrames final : public presentation::FrameClient {
-public:
-    // `scene`, none for a graph that reads none, and `window` must outlive
-    // this object; `scale` is in (0, 1] (options.h).
-    WindowFrames(Window& window, const scene::SceneDescription* scene, double scale);
+ public:
+  // `scene`, none for a graph that reads none, and `window` must outlive
+  // this object; `scale` is in (0, 1] (options.h).
+  WindowFrames(Window& window, const scene::SceneDescription* scene,
+               double scale);
 
-    bool events(frame::Seconds longest) override;
-    frame::Extent size() override;
-    frame::FrameInputs inputs(frame::Seconds shown_at, frame::View view) override;
-    void shown(const presentation::FrameReport& report) override;
+  bool events(frame::Seconds longest) override;
+  frame::Extent size() override;
+  frame::FrameInputs inputs(frame::Seconds shown_at, frame::View view) override;
+  void shown(const presentation::FrameReport& report) override;
 
-private:
-    Window& window_;
-    const scene::SceneDescription* scene_;
-    double scale_;
+ private:
+  Window& window_;
+  const scene::SceneDescription* scene_;
+  double scale_;
 
-    PresentationClock clock_;
-    measurement::FrameTimes frame_times_;
-    std::uint64_t index_ = 0;
-    frame::LiveHistory history_;
-    frame::LiveReuse reuse_;
-    std::optional<frame::PreviousFrame> previous_;  // the last frame shown, none before the first
-    std::optional<frame::FrameInputs> pending_;     // the frame inputs() gave, until shown()
+  PresentationClock clock_;
+  measurement::FrameTimes frame_times_;
+  std::uint64_t index_ = 0;
+  frame::LiveHistory history_;
+  frame::LiveReuse reuse_;
+  std::optional<frame::PreviousFrame>
+      previous_;  // the last frame shown, none before the first
+  std::optional<frame::FrameInputs>
+      pending_;  // the frame inputs() gave, until shown()
 };
 
 }  // namespace serenity::app

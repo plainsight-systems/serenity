@@ -17,21 +17,24 @@ namespace serenity {
 namespace materials {
 
 enum class MaterialKind : uint32_t {
-    rough = 0,       // takes light, and scatters it every way
-    dielectric = 1,  // glass: passed through, reflecting and refracting
-    conductor = 2,   // metal: reflects, sharply or softly by its roughness
-    emissive = 3,    // gives light: a sphere that wears it is a light
-    coated = 4,      // opaque glossy: a clear coat over a matte color (coated.h)
+  rough = 0,       // takes light, and scatters it every way
+  dielectric = 1,  // glass: passed through, reflecting and refracting
+  conductor = 2,   // metal: reflects, sharply or softly by its roughness
+  emissive = 3,    // gives light: a sphere that wears it is a light
+  coated = 4,      // opaque glossy: a clear coat over a matte color (coated.h)
 };
 
 struct MaterialRecord {
-    MaterialKind kind;
-    uint32_t index;  // into that kind's array
+  MaterialKind kind;
+  uint32_t index;  // into that kind's array
 };
 
-static_assert(sizeof(MaterialRecord) == 8, "MaterialRecord must be the same 8 bytes on the host and in shaders");
+static_assert(
+    sizeof(MaterialRecord) == 8,
+    "MaterialRecord must be the same 8 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<MaterialRecord>, "MaterialRecord is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<MaterialRecord>,
+              "MaterialRecord is written to the GPU as bytes");
 #endif
 
 }  // namespace materials

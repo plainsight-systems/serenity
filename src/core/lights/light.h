@@ -16,17 +16,20 @@ namespace serenity {
 namespace lights {
 
 enum class LightKind : uint32_t {
-    sphere = 0,  // a glowing sphere: the fireflies (sphere_light.h)
+  sphere = 0,  // a glowing sphere: the fireflies (sphere_light.h)
 };
 
 struct LightRecord {
-    LightKind kind;
-    uint32_t index;  // into that kind's array
+  LightKind kind;
+  uint32_t index;  // into that kind's array
 };
 
-static_assert(sizeof(LightRecord) == 8, "LightRecord must be the same 8 bytes on the host and in shaders");
+static_assert(
+    sizeof(LightRecord) == 8,
+    "LightRecord must be the same 8 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<LightRecord>, "LightRecord is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<LightRecord>,
+              "LightRecord is written to the GPU as bytes");
 #endif
 
 // Which light, if any, each shape is: one entry per primitive (shapes/
@@ -38,14 +41,17 @@ SERENITY_CONSTANT uint32_t no_light = 0xffffffffu;
 // How many lights a scene has, for a shader to choose among: a count is not
 // in an array's address.
 struct LightCounts {
-    uint32_t lights;   // records, of every kind
-    uint32_t spheres;  // sphere lights, the length of their array
-    uint32_t padding[2];
+  uint32_t lights;   // records, of every kind
+  uint32_t spheres;  // sphere lights, the length of their array
+  uint32_t padding[2];
 };
 
-static_assert(sizeof(LightCounts) == 16, "LightCounts must be the same 16 bytes on the host and in shaders");
+static_assert(
+    sizeof(LightCounts) == 16,
+    "LightCounts must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<LightCounts>, "LightCounts is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<LightCounts>,
+              "LightCounts is written to the GPU as bytes");
 #endif
 
 }  // namespace lights

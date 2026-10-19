@@ -55,30 +55,35 @@
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
-#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace contracts {
 
 // Bits of SurfaceInteraction::flags.
-SERENITY_CONSTANT uint32_t arrived_from_outside = 1u;  // against the outward normal
+SERENITY_CONSTANT uint32_t arrived_from_outside =
+    1u;  // against the outward normal
 
 struct SurfaceInteraction {
-    Float3 position;
-    uint32_t material;   // index into the material records (materials/material.h)
-    Float3 geometric_normal;  // unit, outward
-    uint32_t primitive;  // the shape, as primitive i is shape i (shapes/primitive.h)
-    Float3 shading_normal;    // unit, outward
-    uint32_t flags;      // arrived_from_outside, or 0
-    Float3 object_position;   // the point in the shape's own coordinates (contract 10)
-    uint32_t interior;   // the medium inside the shape (contract 12), or no_medium
+  Float3 position;
+  uint32_t material;  // index into the material records (materials/material.h)
+  Float3 geometric_normal;  // unit, outward
+  uint32_t
+      primitive;  // the shape, as primitive i is shape i (shapes/primitive.h)
+  Float3 shading_normal;   // unit, outward
+  uint32_t flags;          // arrived_from_outside, or 0
+  Float3 object_position;  // the point in the shape's own coordinates (contract
+                           // 10)
+  uint32_t interior;  // the medium inside the shape (contract 12), or no_medium
 };
 
-static_assert(sizeof(SurfaceInteraction) == 64,
-              "SurfaceInteraction must be the same 64 bytes on the host and in shaders");
+static_assert(
+    sizeof(SurfaceInteraction) == 64,
+    "SurfaceInteraction must be the same 64 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<SurfaceInteraction>, "SurfaceInteraction is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<SurfaceInteraction>,
+              "SurfaceInteraction is written to the GPU as bytes");
 #endif
 
 }  // namespace contracts

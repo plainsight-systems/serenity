@@ -1,10 +1,9 @@
 #pragma once
 
-#include <cstddef>
-#include <string_view>
-
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
+#include <cstddef>
+#include <string_view>
 
 #include "core/frame/extent.h"
 #include "metal/device/device.h"
@@ -30,33 +29,34 @@ namespace serenity::metal {
 // read the old arrays). Throws MetalError if the device cannot make a
 // buffer.
 class MneeList {
-public:
-    MneeList(const Device& device, Submission& submission);
+ public:
+  MneeList(const Device& device, Submission& submission);
 
-    MneeList(const MneeList&) = delete;
-    MneeList& operator=(const MneeList&) = delete;
-    MneeList(MneeList&&) = delete;
-    MneeList& operator=(MneeList&&) = delete;
-    ~MneeList() = default;
+  MneeList(const MneeList&) = delete;
+  MneeList& operator=(const MneeList&) = delete;
+  MneeList(MneeList&&) = delete;
+  MneeList& operator=(MneeList&&) = delete;
+  ~MneeList() = default;
 
-    // Ready for a frame at `size`.
-    void prepare(frame::Extent size);
+  // Ready for a frame at `size`.
+  void prepare(frame::Extent size);
 
-    struct Addresses {
-        MTL::GPUAddress requests = 0;
-        MTL::GPUAddress header = 0;
-        MTL::GPUAddress grid = 0;
-    };
-    Addresses addresses() const noexcept;
+  struct Addresses {
+    MTL::GPUAddress requests = 0;
+    MTL::GPUAddress header = 0;
+    MTL::GPUAddress grid = 0;
+  };
+  Addresses addresses() const noexcept;
 
-private:
-    void make(ResidentBuffer& array, std::size_t bytes, MTL::ResourceOptions storage, std::string_view what);
+ private:
+  void make(ResidentBuffer& array, std::size_t bytes,
+            MTL::ResourceOptions storage, std::string_view what);
 
-    NS::SharedPtr<MTL::Device> device_;
-    Submission& submission_;
-    frame::Extent size_;
-    ResidentBuffer requests_;
-    ResidentBuffer header_;
+  NS::SharedPtr<MTL::Device> device_;
+  Submission& submission_;
+  frame::Extent size_;
+  ResidentBuffer requests_;
+  ResidentBuffer header_;
 };
 
 }  // namespace serenity::metal

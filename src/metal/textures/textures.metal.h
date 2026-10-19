@@ -20,28 +20,30 @@ namespace serenity {
 namespace shaders {
 
 struct Textures {
-    constant serenity::textures::TextureRecord* records;
-    constant serenity::textures::CheckerData* checkers;
-    constant serenity::textures::WoodData* woods;
-    constant serenity::textures::SwirlData* swirls;
+  constant serenity::textures::TextureRecord* records;
+  constant serenity::textures::CheckerData* checkers;
+  constant serenity::textures::WoodData* woods;
+  constant serenity::textures::SwirlData* swirls;
 };
 
 // `reference` names a texture: its index is not no_texture. `world` is the
 // point in the world, `object` the same point in its shape's own
 // coordinates (textures/texture.h): a kind laid on the world reads the
 // first, one laid on its shape the second.
-inline float3 evaluate_texture(Textures textures, serenity::contracts::TextureReference reference, float3 world,
-                               float3 object) {
-    const serenity::textures::TextureRecord record = textures.records[reference.index];
-    switch (record.kind) {
+inline float3 evaluate_texture(Textures textures,
+                               serenity::contracts::TextureReference reference,
+                               float3 world, float3 object) {
+  const serenity::textures::TextureRecord record =
+      textures.records[reference.index];
+  switch (record.kind) {
     case serenity::textures::TextureKind::checker:
-        return checker(textures.checkers[record.index], world);
+      return checker(textures.checkers[record.index], world);
     case serenity::textures::TextureKind::wood:
-        return wood(textures.woods[record.index], world);
+      return wood(textures.woods[record.index], world);
     case serenity::textures::TextureKind::swirl:
-        return swirl(textures.swirls[record.index], object);
-    }
-    return float3(0.0f);
+      return swirl(textures.swirls[record.index], object);
+  }
+  return float3(0.0f);
 }
 
 }  // namespace shaders

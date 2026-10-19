@@ -21,14 +21,17 @@ namespace serenity {
 namespace gpu {
 
 struct IndirectGrid {
-    uint32_t threads[3];  // the grid's, at least one
-    uint32_t group[3];    // the threadgroup's
-    uint32_t count;       // the survivors, which the grid's first threads take
+  uint32_t threads[3];  // the grid's, at least one
+  uint32_t group[3];    // the threadgroup's
+  uint32_t count;       // the survivors, which the grid's first threads take
 };
 
-static_assert(sizeof(IndirectGrid) == 28, "IndirectGrid must be the same 28 bytes on the host and in shaders");
+static_assert(
+    sizeof(IndirectGrid) == 28,
+    "IndirectGrid must be the same 28 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<IndirectGrid>, "IndirectGrid is written by the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<IndirectGrid>,
+              "IndirectGrid is written by the GPU as bytes");
 #endif
 
 }  // namespace gpu

@@ -15,16 +15,18 @@ using serenity::tests::PathNumbersQuery;
 // (queries[i].x, queries[i].y) in frame queries[i].frame. Inputs: the
 // queries, their count.
 kernel void path_numbers_probe(device PathNumbersDraw* out [[buffer(0)]],
-                               device const PathNumbersQuery* queries [[buffer(1)]],
+                               device const PathNumbersQuery* queries
+                               [[buffer(1)]],
                                constant uint& count [[buffer(2)]],
                                uint i [[thread_position_in_grid]]) {
-    if (i >= count) {
-        return;
-    }
-    PathNumbers numbers = path_numbers(uint2(queries[i].x, queries[i].y), queries[i].frame);
-    PathNumbersDraw drawn;
-    for (uint k = 0; k < serenity::tests::path_numbers_drawn; ++k) {
-        drawn.u[k] = next_number(numbers);
-    }
-    out[i] = drawn;
+  if (i >= count) {
+    return;
+  }
+  PathNumbers numbers =
+      path_numbers(uint2(queries[i].x, queries[i].y), queries[i].frame);
+  PathNumbersDraw drawn;
+  for (uint k = 0; k < serenity::tests::path_numbers_drawn; ++k) {
+    drawn.u[k] = next_number(numbers);
+  }
+  out[i] = drawn;
 }

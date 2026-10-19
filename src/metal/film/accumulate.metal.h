@@ -42,7 +42,7 @@ namespace serenity {
 namespace shaders {
 
 inline bool finite(float3 sample) {
-    return metal::all(metal::isfinite(sample));
+  return metal::all(metal::isfinite(sample));
 }
 
 // The pixel after folding in `sample`: `pixel` as the image held it, rgb the
@@ -50,21 +50,22 @@ inline bool finite(float3 sample) {
 // before it. A sample that is not finite leaves the pixel as it was (or
 // empty, starting over); the caller reports it with count_non_finite().
 inline float4 accumulate(float4 pixel, float3 sample, bool starting_over) {
-    const float4 held = starting_over ? float4(0.0f) : pixel;
-    if (!finite(sample)) {
-        return held;
-    }
-    const float n = held.a;
-    return float4(held.rgb + (sample - held.rgb) / (n + 1.0f), n + 1.0f);
+  const float4 held = starting_over ? float4(0.0f) : pixel;
+  if (!finite(sample)) {
+    return held;
+  }
+  const float n = held.a;
+  return float4(held.rgb + (sample - held.rgb) / (n + 1.0f), n + 1.0f);
 }
 
 // Adds to `counter` the number of threads in the SIMD group whose `failed`
 // is true, with one atomic for the group. Every thread of the group calls it.
 inline void count_non_finite(bool failed, device metal::atomic_uint* counter) {
-    const uint failures = metal::simd_sum(failed ? 1u : 0u);
-    if (failures != 0u && metal::simd_is_first()) {
-        metal::atomic_fetch_add_explicit(counter, failures, metal::memory_order_relaxed);
-    }
+  const uint failures = metal::simd_sum(failed ? 1u : 0u);
+  if (failures != 0u && metal::simd_is_first()) {
+    metal::atomic_fetch_add_explicit(counter, failures,
+                                     metal::memory_order_relaxed);
+  }
 }
 
 }  // namespace shaders

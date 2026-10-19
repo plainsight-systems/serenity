@@ -1,9 +1,8 @@
 #pragma once
 
+#include <Metal/Metal.hpp>
 #include <cstdint>
 #include <span>
-
-#include <Metal/Metal.hpp>
 
 #include "metal/device/device.h"
 #include "metal/device/frame_array.h"
@@ -40,27 +39,30 @@ namespace serenity::metal {
 //
 // Throws MetalError if the backend cannot make the array.
 class LightGlows {
-public:
-    // `lights` factors of 1: one copy when `glowing` is false, one per frame
-    // in flight when it is true.
-    LightGlows(const Device& device, Submission& submission, std::uint32_t lights, bool glowing);
+ public:
+  // `lights` factors of 1: one copy when `glowing` is false, one per frame
+  // in flight when it is true.
+  LightGlows(const Device& device, Submission& submission, std::uint32_t lights,
+             bool glowing);
 
-    LightGlows(const LightGlows&) = delete;
-    LightGlows& operator=(const LightGlows&) = delete;
-    LightGlows(LightGlows&&) = delete;
-    LightGlows& operator=(LightGlows&&) = delete;
-    ~LightGlows() = default;
+  LightGlows(const LightGlows&) = delete;
+  LightGlows& operator=(const LightGlows&) = delete;
+  LightGlows(LightGlows&&) = delete;
+  LightGlows& operator=(LightGlows&&) = delete;
+  ~LightGlows() = default;
 
-    // Frame slot `slot`'s factors, to light the frame's lights in, under
-    // FrameArray's rule for writing (frame_array.h).
-    std::span<float> glows(std::uint32_t slot);
+  // Frame slot `slot`'s factors, to light the frame's lights in, under
+  // FrameArray's rule for writing (frame_array.h).
+  std::span<float> glows(std::uint32_t slot);
 
-    // Frame slot `slot`'s factors, as a shader binds them.
-    MTL::GPUAddress address(std::uint32_t slot) const { return array_.address(slot); }
+  // Frame slot `slot`'s factors, as a shader binds them.
+  MTL::GPUAddress address(std::uint32_t slot) const {
+    return array_.address(slot);
+  }
 
-private:
-    std::uint32_t lights_;
-    FrameArray array_;
+ private:
+  std::uint32_t lights_;
+  FrameArray array_;
 };
 
 }  // namespace serenity::metal

@@ -37,30 +37,29 @@ constant constexpr uint lcg_increment = 1013904223u;
 constant constexpr float unit_spacing = 0x1p-24f;
 
 inline uint pcg_hash(uint v) {
-    const uint state = v * pcg_multiplier + pcg_increment;
-    const uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * pcg_output_multiplier;
-    return (word >> 22u) ^ word;
+  const uint state = v * pcg_multiplier + pcg_increment;
+  const uint word =
+      ((state >> ((state >> 28u) + 4u)) ^ state) * pcg_output_multiplier;
+  return (word >> 22u) ^ word;
 }
 
 inline uint3 pcg3d(uint3 v) {
-    v = v * lcg_multiplier + lcg_increment;
-    v.x += v.y * v.z;
-    v.y += v.z * v.x;
-    v.z += v.x * v.y;
-    v ^= v >> 16u;
-    v.x += v.y * v.z;
-    v.y += v.z * v.x;
-    v.z += v.x * v.y;
-    return v;
+  v = v * lcg_multiplier + lcg_increment;
+  v.x += v.y * v.z;
+  v.y += v.z * v.x;
+  v.z += v.x * v.y;
+  v ^= v >> 16u;
+  v.x += v.y * v.z;
+  v.y += v.z * v.x;
+  v.z += v.x * v.y;
+  return v;
 }
 
 // A number in [0, 1) from the top 24 bits of `bits`.
-inline float unit_float(uint bits) {
-    return float(bits >> 8u) * unit_spacing;
-}
+inline float unit_float(uint bits) { return float(bits >> 8u) * unit_spacing; }
 
 inline float3 unit_float3(uint3 bits) {
-    return float3(bits >> 8u) * unit_spacing;
+  return float3(bits >> 8u) * unit_spacing;
 }
 
 }  // namespace shaders

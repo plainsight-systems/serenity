@@ -29,24 +29,26 @@ namespace serenity::denoise {
 // Not performance-sensitive: one small file, once.
 
 class JsonError : public std::runtime_error {
-public:
-    explicit JsonError(const std::string& what) : std::runtime_error(what) {}
+ public:
+  explicit JsonError(const std::string& what) : std::runtime_error(what) {}
 };
 
 struct Json;
 using JsonArray = std::vector<Json>;
-using JsonObject = std::vector<std::pair<std::string, Json>>;  // in the file's order
+using JsonObject =
+    std::vector<std::pair<std::string, Json>>;  // in the file's order
 
 struct Json {
-    std::variant<std::nullptr_t, bool, double, std::string, JsonArray, JsonObject> value;
+  std::variant<std::nullptr_t, bool, double, std::string, JsonArray, JsonObject>
+      value;
 
-    // The member `key` of an object; throws JsonError, naming `key`, if this
-    // is no object or has no such member.
-    const Json& at(std::string_view key) const;
-    // This as each kind; throws JsonError, naming `what`, if it is another.
-    double number(std::string_view what) const;
-    const std::string& string(std::string_view what) const;
-    const JsonArray& array(std::string_view what) const;
+  // The member `key` of an object; throws JsonError, naming `key`, if this
+  // is no object or has no such member.
+  const Json& at(std::string_view key) const;
+  // This as each kind; throws JsonError, naming `what`, if it is another.
+  double number(std::string_view what) const;
+  const std::string& string(std::string_view what) const;
+  const JsonArray& array(std::string_view what) const;
 };
 
 // Reads `text` as one JSON value; throws JsonError if it is not exactly one.

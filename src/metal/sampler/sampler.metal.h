@@ -32,28 +32,28 @@ namespace shaders {
 // A path's numbers: its stream, `key`, the pixel's key and the frame's
 // index; `dimension` counting the numbers drawn.
 struct PathNumbers {
-    uint2 key;
-    uint dimension;
+  uint2 key;
+  uint dimension;
 };
 
 inline PathNumbers path_numbers(uint2 pixel, uint frame) {
-    return PathNumbers{uint2(pixel.x | (pixel.y << 16u), frame), 0u};
+  return PathNumbers{uint2(pixel.x | (pixel.y << 16u), frame), 0u};
 }
 
 // The path's next number, in [0, 1).
 inline float next_number(thread PathNumbers& numbers) {
-    return unit_float(pcg3d(uint3(numbers.key, numbers.dimension++)).x);
+  return unit_float(pcg3d(uint3(numbers.key, numbers.dimension++)).x);
 }
 
 inline float2 next_numbers2(thread PathNumbers& numbers) {
-    const float a = next_number(numbers);
-    return float2(a, next_number(numbers));
+  const float a = next_number(numbers);
+  return float2(a, next_number(numbers));
 }
 
 inline float3 next_numbers3(thread PathNumbers& numbers) {
-    const float a = next_number(numbers);
-    const float b = next_number(numbers);
-    return float3(a, b, next_number(numbers));
+  const float a = next_number(numbers);
+  const float b = next_number(numbers);
+  return float3(a, b, next_number(numbers));
 }
 
 // Another purpose's numbers in the same pixel and frame: `stream`, a
@@ -68,7 +68,7 @@ inline float3 next_numbers3(thread PathNumbers& numbers) {
 // value, not its pixel and frame, so a frame's index and a dimension, both
 // words, cannot be passed in each other's places (I.24).
 inline PathNumbers purpose_numbers(PathNumbers stream, uint first) {
-    return PathNumbers{stream.key, first};
+  return PathNumbers{stream.key, first};
 }
 
 // Every purpose's first dimension, in one table (P.1, ES.45): a path's own

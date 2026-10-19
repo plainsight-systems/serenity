@@ -37,15 +37,15 @@ namespace serenity::output {
 // write_image() is its writer's cost.
 
 enum class ImageFormat {
-    png,
-    pfm,
+  png,
+  pfm,
 };
 
 // What a frame is read back as for a kind's writer: a source, which a
 // backend knows how to read, where a kind is Output's.
 enum class ImageSource {
-    displayed,    // the frame as shown, 8-bit RGBA (metal/device/offscreen.h)
-    accumulated,  // the accumulated image's radiance (contract 13, from_rgba)
+  displayed,    // the frame as shown, 8-bit RGBA (metal/device/offscreen.h)
+  accumulated,  // the accumulated image's radiance (contract 13, from_rgba)
 };
 
 // The kind a program writes when none is asked for.
@@ -66,8 +66,8 @@ ImageSource source(ImageFormat format);
 // A frame as displayed: `rgba`, 4 bytes a pixel, rows from the top, of
 // `extent` (png.h's contract). A view, held for the call it is made for.
 struct DisplayedImage {
-    frame::Extent extent;
-    std::span<const std::uint8_t> rgba;
+  frame::Extent extent;
+  std::span<const std::uint8_t> rgba;
 };
 
 // Writes `image` to `path` as `format`, by that kind's writer, with its
@@ -76,7 +76,9 @@ struct DisplayedImage {
 // before anything is written (I.5): an accumulated image is not written as
 // a PNG, nor a displayed frame as a PFM. extension() and source() throw
 // std::logic_error for a value no kind names (P.6), as write_image() does.
-void write_image(ImageFormat format, const std::filesystem::path& path, const DisplayedImage& image);
-void write_image(ImageFormat format, const std::filesystem::path& path, const contracts::LinearImage& image);
+void write_image(ImageFormat format, const std::filesystem::path& path,
+                 const DisplayedImage& image);
+void write_image(ImageFormat format, const std::filesystem::path& path,
+                 const contracts::LinearImage& image);
 
 }  // namespace serenity::output

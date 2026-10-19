@@ -17,16 +17,18 @@ namespace tests {
 
 // Four floats, a shading language float4's sixteen bytes.
 struct Float4 {
-    float x;
-    float y;
-    float z;
-    float w;
+  float x;
+  float y;
+  float z;
+  float w;
 };
 
-static_assert(sizeof(Float4) == 16, "Float4 must be the same 16 bytes on the host and in shaders");
+static_assert(sizeof(Float4) == 16,
+              "Float4 must be the same 16 bytes on the host and in shaders");
 
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<Float4>, "Float4 is copied to and from the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<Float4>,
+              "Float4 is copied to and from the GPU as bytes");
 #endif
 
 }  // namespace tests

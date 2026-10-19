@@ -28,13 +28,14 @@ namespace serenity {
 namespace shaders {
 
 struct UniformLight {
-    constant serenity::lights::LightRecord* records;
-    uint count;  // 0 in a scene with no light, which select_light() must not be asked of
+  constant serenity::lights::LightRecord* records;
+  uint count;  // 0 in a scene with no light, which select_light() must not be
+               // asked of
 };
 
 struct SelectedLight {
-    serenity::lights::LightRecord light;
-    float probability;  // 1 / count
+  serenity::lights::LightRecord light;
+  float probability;  // 1 / count
 };
 
 // The probability a uniform choice takes any one light with: the one place
@@ -42,19 +43,21 @@ struct SelectedLight {
 // assume uniform selection itself (I.1). Precondition: count is at least
 // 1, as it is wherever a light exists to be asked of.
 inline float selection_probability(UniformLight selection) {
-    return 1.0f / float(selection.count);
+  return 1.0f / float(selection.count);
 }
 
 // The index `u`, a number in [0, 1), chooses, and its probability.
-// ReSTIR PT draws its tiles by power instead (power_light.metal.h). Precondition: count is at least 1; the estimator
-// tests it before asking (path.metal.h, step 5).
+// ReSTIR PT draws its tiles by power instead (power_light.metal.h).
+// Precondition: count is at least 1; the estimator tests it before asking
+// (path.metal.h, step 5).
 struct SelectedIndex {
-    uint index;         // into the light records
-    float probability;  // 1 / count
+  uint index;         // into the light records
+  float probability;  // 1 / count
 };
 inline SelectedIndex select_light_index(UniformLight selection, float u) {
-    const uint i = metal::min(uint(u * float(selection.count)), selection.count - 1u);
-    return SelectedIndex{i, selection_probability(selection)};
+  const uint i =
+      metal::min(uint(u * float(selection.count)), selection.count - 1u);
+  return SelectedIndex{i, selection_probability(selection)};
 }
 
 // The light `u` chooses: the same choice, its record. Built on
@@ -62,13 +65,14 @@ inline SelectedIndex select_light_index(UniformLight selection, float u) {
 // tracer's image is the same to the bit as when the formula was written
 // twice (docs/research/2026-10-16-codebase-guidelines-pass.md, C18).
 inline SelectedLight select_light(UniformLight selection, float u) {
-    const SelectedIndex chosen = select_light_index(selection, u);
-    return SelectedLight{selection.records[chosen.index], chosen.probability};
+  const SelectedIndex chosen = select_light_index(selection, u);
+  return SelectedLight{selection.records[chosen.index], chosen.probability};
 }
 
 // The probability select_light() chooses `light` with (above).
-inline float light_probability(UniformLight selection, serenity::lights::LightRecord) {
-    return selection_probability(selection);
+inline float light_probability(UniformLight selection,
+                               serenity::lights::LightRecord) {
+  return selection_probability(selection);
 }
 
 }  // namespace shaders

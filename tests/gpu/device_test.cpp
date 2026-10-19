@@ -6,23 +6,25 @@
 // no machine available to these tests can show it; the refusal is the one
 // branch in metal/device.cpp that says so.
 
-#include <string>
+#include "metal/device/device.h"
 
 #include <doctest/doctest.h>
 
-#include "metal/device/device.h"
+#include <string>
 
 TEST_CASE("a Metal device with ray tracing is acquired") {
-    serenity::metal::Device device;
-    const auto& info = device.info();
+  serenity::metal::Device device;
+  const auto& info = device.info();
 
-    MESSAGE("device: " << info.name << ", architecture " << info.architecture
-                       << ", Apple" << info.apple_family << ", unified memory "
-                       << std::string(info.unified_memory ? "yes" : "no") << ", working set "
-                       << (info.recommended_max_working_set_size >> 20) << " MiB");
+  MESSAGE("device: " << info.name << ", architecture " << info.architecture
+                     << ", Apple" << info.apple_family << ", unified memory "
+                     << std::string(info.unified_memory ? "yes" : "no")
+                     << ", working set "
+                     << (info.recommended_max_working_set_size >> 20)
+                     << " MiB");
 
-    CHECK(device.handle() != nullptr);
-    CHECK(device.handle()->supportsRaytracing());
-    CHECK_FALSE(info.name.empty());
-    CHECK(info.apple_family >= 7);
+  CHECK(device.handle() != nullptr);
+  CHECK(device.handle()->supportsRaytracing());
+  CHECK_FALSE(info.name.empty());
+  CHECK(info.apple_family >= 7);
 }

@@ -43,19 +43,25 @@ namespace contracts {
 
 SERENITY_CONSTANT uint32_t denoise_scale = 2u;
 SERENITY_CONSTANT uint32_t unet_alignment = 16u;
-SERENITY_CONSTANT uint32_t unet_levels = 4u;  // max pools below the input's level
+SERENITY_CONSTANT uint32_t unet_levels =
+    4u;  // max pools below the input's level
 SERENITY_CONSTANT uint32_t network_inputs = 30u;
-SERENITY_CONSTANT uint32_t channel_block = 8u;  // a simdgroup matrix's side: every stored width a multiple
-SERENITY_CONSTANT uint32_t input_channels = 32u;  // network_inputs, padded to channel_block
+SERENITY_CONSTANT uint32_t channel_block =
+    8u;  // a simdgroup matrix's side: every stored width a multiple
+SERENITY_CONSTANT uint32_t input_channels =
+    32u;  // network_inputs, padded to channel_block
 SERENITY_CONSTANT uint32_t denoise_taps = 9u;
 SERENITY_CONSTANT uint32_t denoise_spacings = 3u;  // 1, 2 and 4
 // Each spacing's taps, a weight per spacing and the history blend: 31.
-SERENITY_CONSTANT uint32_t denoise_scores = denoise_taps * denoise_spacings + denoise_spacings + 1u;
+SERENITY_CONSTANT uint32_t denoise_scores =
+    denoise_taps * denoise_spacings + denoise_spacings + 1u;
 SERENITY_CONSTANT uint32_t denoise_subpixels = 4u;
-SERENITY_CONSTANT uint32_t head_outputs = denoise_scores * denoise_subpixels;  // 124
-static_assert(input_channels % channel_block == 0u && input_channels >= network_inputs &&
-                  input_channels - network_inputs < channel_block,
-              "input_channels is network_inputs padded to the next channel_block");
+SERENITY_CONSTANT uint32_t head_outputs =
+    denoise_scores * denoise_subpixels;  // 124
+static_assert(
+    input_channels % channel_block == 0u && input_channels >= network_inputs &&
+        input_channels - network_inputs < channel_block,
+    "input_channels is network_inputs padded to the next channel_block");
 SERENITY_CONSTANT float masked_score = -1.0e4f;
 SERENITY_CONSTANT float albedo_floor = 0.02f;
 
@@ -74,7 +80,8 @@ SERENITY_CONSTANT uint32_t input_motion = 10u;
 SERENITY_CONSTANT uint32_t input_history = 12u;
 SERENITY_CONSTANT uint32_t input_validity = 24u;
 SERENITY_CONSTANT uint32_t input_jitter = 28u;
-static_assert(input_validity + denoise_subpixels == input_jitter && input_jitter + 2u == network_inputs,
+static_assert(input_validity + denoise_subpixels == input_jitter &&
+                  input_jitter + 2u == network_inputs,
               "the inputs fill network_inputs channels");
 
 // The threadgroups the host dispatches and the kernels are written for
@@ -88,9 +95,12 @@ SERENITY_CONSTANT uint32_t conv_rows = 4u;
 SERENITY_CONSTANT uint32_t conv_pixels = 32u;
 SERENITY_CONSTANT uint32_t denoise_threads = conv_rows * simd_width;
 SERENITY_CONSTANT uint32_t head_columns = 128u;
-static_assert(conv_pixels == simd_width, "a row's pixels are its simdgroup's lanes");
-static_assert(denoise_threads / simd_width == denoise_subpixels, "the output kernel's simdgroups are the subpixels");
-static_assert(head_columns == denoise_subpixels * simd_width && head_outputs <= head_columns,
+static_assert(conv_pixels == simd_width,
+              "a row's pixels are its simdgroup's lanes");
+static_assert(denoise_threads / simd_width == denoise_subpixels,
+              "the output kernel's simdgroups are the subpixels");
+static_assert(head_columns == denoise_subpixels * simd_width &&
+                  head_outputs <= head_columns,
               "the head's outputs, padded, are simd_width a simdgroup");
 
 // OIDN's PU2 fit, as training/loss.py has it; pu_norm_scale is 1 / pu(65504).
@@ -111,23 +121,26 @@ SERENITY_CONSTANT float pu_norm_scale = 0.318967155f;
 // multiple of unet_alignment, at least the extent), and the output
 // written (at most twice the extent).
 struct DenoiseConstants {
-    Float3 right;  // the camera's unit right axis
-    uint32_t light_width;
-    Float3 up;  // its unit up axis
-    uint32_t light_height;
-    Float3 backward;  // toward the viewer: -forward
-    uint32_t history;  // 1 when last frame's output is this frame's history, else 0
-    uint32_t padded_width;
-    uint32_t padded_height;
-    uint32_t output_width;
-    uint32_t output_height;
-    uint32_t features;  // the U-Net's last width: the head's inputs a pixel
-    float jitter_x;     // the frame's camera jitter, input pixels (input_jitter)
-    float jitter_y;
-    uint32_t padding;
+  Float3 right;  // the camera's unit right axis
+  uint32_t light_width;
+  Float3 up;  // its unit up axis
+  uint32_t light_height;
+  Float3 backward;  // toward the viewer: -forward
+  uint32_t
+      history;  // 1 when last frame's output is this frame's history, else 0
+  uint32_t padded_width;
+  uint32_t padded_height;
+  uint32_t output_width;
+  uint32_t output_height;
+  uint32_t features;  // the U-Net's last width: the head's inputs a pixel
+  float jitter_x;     // the frame's camera jitter, input pixels (input_jitter)
+  float jitter_y;
+  uint32_t padding;
 };
 
-static_assert(sizeof(DenoiseConstants) == 80, "DenoiseConstants must be the same 80 bytes on the host and in shaders");
+static_assert(
+    sizeof(DenoiseConstants) == 80,
+    "DenoiseConstants must be the same 80 bytes on the host and in shaders");
 
 // One 3 x 3 convolution's dispatch (metal/passes/denoise/denoise.metal,
 // conv3x3): its level's size, where it reads and writes in its buffers
@@ -138,41 +151,47 @@ static_assert(sizeof(DenoiseConstants) == 80, "DenoiseConstants must be the same
 // stride), and the rest from `input`, the skip: the concatenation
 // [upsampled | skip] is never written.
 struct ConvParams {
-    uint32_t width;
-    uint32_t height;
-    uint32_t in_pitch;     // pixels a row of the input, borders included
-    uint32_t in_stride;    // channels a pixel of the input
-    uint32_t in_blocks;    // input channels read, / channel_block: the upsampled ones and the skip's
-    uint32_t out_pitch;
-    uint32_t out_stride;   // channels a pixel of the output buffer
-    uint32_t out_offset;   // the first output channel written
-    uint32_t out_blocks;   // output channels, / channel_block
-    uint32_t chunk_blocks; // output blocks one threadgroup computes
-    uint32_t relu;         // 1: ReLU after the bias
-    uint32_t up_blocks;    // of in_blocks, read upsampled from the level below; 0 but in a decoder
-    uint32_t up_pitch;     // that level's pitch and stride
-    uint32_t up_stride;
-    uint32_t padding[2];
+  uint32_t width;
+  uint32_t height;
+  uint32_t in_pitch;   // pixels a row of the input, borders included
+  uint32_t in_stride;  // channels a pixel of the input
+  uint32_t in_blocks;  // input channels read, / channel_block: the upsampled
+                       // ones and the skip's
+  uint32_t out_pitch;
+  uint32_t out_stride;    // channels a pixel of the output buffer
+  uint32_t out_offset;    // the first output channel written
+  uint32_t out_blocks;    // output channels, / channel_block
+  uint32_t chunk_blocks;  // output blocks one threadgroup computes
+  uint32_t relu;          // 1: ReLU after the bias
+  uint32_t up_blocks;  // of in_blocks, read upsampled from the level below; 0
+                       // but in a decoder
+  uint32_t up_pitch;   // that level's pitch and stride
+  uint32_t up_stride;
+  uint32_t padding[2];
 };
 
-static_assert(sizeof(ConvParams) == 64, "ConvParams must be the same 64 bytes on the host and in shaders");
+static_assert(
+    sizeof(ConvParams) == 64,
+    "ConvParams must be the same 64 bytes on the host and in shaders");
 
 // One max pool's or nearest upsample's dispatch: the destination's size,
 // and each buffer's pitch, stride and first channel; `channels` copied.
 struct ResampleParams {
-    uint32_t width;  // of the destination
-    uint32_t height;
-    uint32_t channels;
-    uint32_t in_pitch;
-    uint32_t in_stride;
-    uint32_t in_offset;
-    uint32_t out_pitch;
-    uint32_t out_stride;
-    uint32_t out_offset;
-    uint32_t padding[3];
+  uint32_t width;  // of the destination
+  uint32_t height;
+  uint32_t channels;
+  uint32_t in_pitch;
+  uint32_t in_stride;
+  uint32_t in_offset;
+  uint32_t out_pitch;
+  uint32_t out_stride;
+  uint32_t out_offset;
+  uint32_t padding[3];
 };
 
-static_assert(sizeof(ResampleParams) == 48, "ResampleParams must be the same 48 bytes on the host and in shaders");
+static_assert(
+    sizeof(ResampleParams) == 48,
+    "ResampleParams must be the same 48 bytes on the host and in shaders");
 
 // The depth median's working state (training/data.py normalizes depth by
 // the median over the frame's surface pixels): found exactly, as numpy's
@@ -180,22 +199,29 @@ static_assert(sizeof(ResampleParams) == 48, "ResampleParams must be the same 48 
 // bits, 11, 10 and 10 of them (metal/passes/denoise/denoise.metal). For
 // both middle ranks, (n - 1) / 2 and n / 2, whose mean is the median of an
 // even count.
-SERENITY_CONSTANT uint32_t median_bins = 2048u;  // per level: 2^11, or two ranks' 2^10
+SERENITY_CONSTANT uint32_t median_bins =
+    2048u;  // per level: 2^11, or two ranks' 2^10
 struct MedianState {
-    uint32_t count;      // surface pixels: depth > 0
-    uint32_t rank[2];    // each middle rank, within the bins selected so far
-    uint32_t prefix[2];  // each one's bits selected so far
-    float median;        // 1 where there is no surface, as training/data.py
-    uint32_t padding[2];
+  uint32_t count;      // surface pixels: depth > 0
+  uint32_t rank[2];    // each middle rank, within the bins selected so far
+  uint32_t prefix[2];  // each one's bits selected so far
+  float median;        // 1 where there is no surface, as training/data.py
+  uint32_t padding[2];
 };
 
-static_assert(sizeof(MedianState) == 32, "MedianState must be the same 32 bytes on the host and in shaders");
+static_assert(
+    sizeof(MedianState) == 32,
+    "MedianState must be the same 32 bytes on the host and in shaders");
 
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<DenoiseConstants>, "DenoiseConstants is written to the GPU as bytes");
-static_assert(std::is_trivially_copyable_v<ConvParams>, "ConvParams is written to the GPU as bytes");
-static_assert(std::is_trivially_copyable_v<ResampleParams>, "ResampleParams is written to the GPU as bytes");
-static_assert(std::is_trivially_copyable_v<MedianState>, "MedianState is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<DenoiseConstants>,
+              "DenoiseConstants is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<ConvParams>,
+              "ConvParams is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<ResampleParams>,
+              "ResampleParams is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<MedianState>,
+              "MedianState is written to the GPU as bytes");
 #endif
 
 }  // namespace contracts

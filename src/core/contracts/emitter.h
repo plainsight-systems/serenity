@@ -60,8 +60,8 @@
 //
 // Layout rules as for every shared contract (contracts/frame_constants.h).
 
-#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace contracts {
@@ -70,17 +70,21 @@ namespace contracts {
 SERENITY_CONSTANT uint32_t no_primitive = 0xffffffffu;
 
 struct LightSample {
-    Float3 direction;    // unit, from the point toward the light
-    float distance;      // along it, to the light's surface
-    Float3 radiance;     // arriving along it, if nothing is in the way
-    float pdf;           // per unit solid angle, given the light; 0 for no sample
-    uint32_t primitive;  // the light's own shape, which a shadow ray ignores; or no_primitive
-    uint32_t padding[3];
+  Float3 direction;    // unit, from the point toward the light
+  float distance;      // along it, to the light's surface
+  Float3 radiance;     // arriving along it, if nothing is in the way
+  float pdf;           // per unit solid angle, given the light; 0 for no sample
+  uint32_t primitive;  // the light's own shape, which a shadow ray ignores; or
+                       // no_primitive
+  uint32_t padding[3];
 };
 
-static_assert(sizeof(LightSample) == 48, "LightSample must be the same 48 bytes on the host and in shaders");
+static_assert(
+    sizeof(LightSample) == 48,
+    "LightSample must be the same 48 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<LightSample>, "LightSample is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<LightSample>,
+              "LightSample is written to the GPU as bytes");
 #endif
 
 }  // namespace contracts

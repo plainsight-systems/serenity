@@ -75,24 +75,29 @@
 // function of the ior (F.8), computed once a material, at load, rather than
 // at every hit that resolves it; the shaders read the result. CPU only.
 
-#include "core/contracts/shared_layout.h"
 #include "core/contracts/float3.h"
+#include "core/contracts/shared_layout.h"
 #include "core/contracts/texture_reference.h"
 
 namespace serenity {
 namespace materials {
 
 struct CoatedData {
-    contracts::Float3 color;              // the base's albedo, each in [0, 1]; used when texture.index is no_texture
-    contracts::TextureReference texture;  // the base's albedo from a texture, or no_texture
-    float ior;                            // the coat's index of refraction; greater than 1
-    float escape;                         // internal_escape(ior), 1 - F_in, filled at load
-    uint32_t padding[2];
+  contracts::Float3 color;  // the base's albedo, each in [0, 1]; used when
+                            // texture.index is no_texture
+  contracts::TextureReference
+      texture;   // the base's albedo from a texture, or no_texture
+  float ior;     // the coat's index of refraction; greater than 1
+  float escape;  // internal_escape(ior), 1 - F_in, filled at load
+  uint32_t padding[2];
 };
 
-static_assert(sizeof(CoatedData) == 32, "CoatedData must be the same 32 bytes on the host and in shaders");
+static_assert(
+    sizeof(CoatedData) == 32,
+    "CoatedData must be the same 32 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<CoatedData>, "CoatedData is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<CoatedData>,
+              "CoatedData is written to the GPU as bytes");
 #endif
 
 #if !defined(__METAL_VERSION__)

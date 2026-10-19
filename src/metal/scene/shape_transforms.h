@@ -1,9 +1,8 @@
 #pragma once
 
+#include <Metal/Metal.hpp>
 #include <cstdint>
 #include <span>
-
-#include <Metal/Metal.hpp>
 
 #include "core/contracts/transform.h"
 #include "metal/device/device.h"
@@ -52,28 +51,32 @@ namespace serenity::metal {
 // needs none: its one copy is last frame's too. Only a graph with a
 // temporal merge has it.
 //
-// Throws MetalError if there are no shapes or the backend cannot make the array.
+// Throws MetalError if there are no shapes or the backend cannot make the
+// array.
 class ShapeTransforms {
-public:
-    // One copy of `at_rest`, or one per frame in flight when the shapes move.
-    ShapeTransforms(const Device& device, Submission& submission, std::span<const contracts::Transform> at_rest,
-                    FrameArray::Copies copies);
+ public:
+  // One copy of `at_rest`, or one per frame in flight when the shapes move.
+  ShapeTransforms(const Device& device, Submission& submission,
+                  std::span<const contracts::Transform> at_rest,
+                  FrameArray::Copies copies);
 
-    ShapeTransforms(const ShapeTransforms&) = delete;
-    ShapeTransforms& operator=(const ShapeTransforms&) = delete;
-    ShapeTransforms(ShapeTransforms&&) = delete;
-    ShapeTransforms& operator=(ShapeTransforms&&) = delete;
-    ~ShapeTransforms() = default;
+  ShapeTransforms(const ShapeTransforms&) = delete;
+  ShapeTransforms& operator=(const ShapeTransforms&) = delete;
+  ShapeTransforms(ShapeTransforms&&) = delete;
+  ShapeTransforms& operator=(ShapeTransforms&&) = delete;
+  ~ShapeTransforms() = default;
 
-    // Frame slot `slot`'s transforms, to place the frame's shapes in, under
-    // FrameArray's rule for writing (frame_array.h).
-    std::span<contracts::Transform> transforms(std::uint32_t slot);
+  // Frame slot `slot`'s transforms, to place the frame's shapes in, under
+  // FrameArray's rule for writing (frame_array.h).
+  std::span<contracts::Transform> transforms(std::uint32_t slot);
 
-    // Frame slot `slot`'s transforms, as a shader binds them.
-    MTL::GPUAddress address(std::uint32_t slot) const { return array_.address(slot); }
+  // Frame slot `slot`'s transforms, as a shader binds them.
+  MTL::GPUAddress address(std::uint32_t slot) const {
+    return array_.address(slot);
+  }
 
-private:
-    FrameArray array_;
+ private:
+  FrameArray array_;
 };
 
 }  // namespace serenity::metal

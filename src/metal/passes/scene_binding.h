@@ -1,10 +1,9 @@
 #pragma once
 
-#include <string>
-#include <string_view>
-
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
+#include <string>
+#include <string_view>
 
 #include "metal/device/error.h"
 #include "metal/frame/frame_resources.h"
@@ -28,23 +27,31 @@ enum class SceneCamera { bound, none };
 // Binds the frame's scene into `resources.arguments`, and the camera when
 // `camera` says. Throws MetalError, naming `pass`, if the frame lacks its
 // scene, structures, transforms or glows, or, bound, its camera.
-inline void bind_scene(const FrameResources& resources, SceneCamera camera, std::string_view pass) {
-    const bool with_camera = camera == SceneCamera::bound;
-    if (resources.scene == 0 || resources.acceleration == 0 || resources.transforms == 0 || resources.glows == 0 ||
-        (with_camera && resources.camera == 0)) {
-        throw MetalError(std::string(pass) + ": the frame lacks one of its scene, structures, transforms, glows" +
-                         (with_camera ? " or camera" : ""));
-    }
-    namespace binding = bindings::scene_view;
-    MTL4::ArgumentTable* arguments = resources.arguments;
-    arguments->setAddress(resources.constants, binding::constants);
-    if (with_camera) {
-        arguments->setAddress(resources.camera, binding::camera);
-    }
-    arguments->setAddress(resources.acceleration, binding::structure);  // the structures by mask
-    arguments->setAddress(resources.scene, binding::scene);
-    arguments->setAddress(resources.glows, binding::glows);  // the sphere lights' glows this frame
-    arguments->setAddress(resources.transforms, binding::transforms);  // as this frame places the shapes
+inline void bind_scene(const FrameResources& resources, SceneCamera camera,
+                       std::string_view pass) {
+  const bool with_camera = camera == SceneCamera::bound;
+  if (resources.scene == 0 || resources.acceleration == 0 ||
+      resources.transforms == 0 || resources.glows == 0 ||
+      (with_camera && resources.camera == 0)) {
+    throw MetalError(
+        std::string(pass) +
+        ": the frame lacks one of its scene, structures, transforms, glows" +
+        (with_camera ? " or camera" : ""));
+  }
+  namespace binding = bindings::scene_view;
+  MTL4::ArgumentTable* arguments = resources.arguments;
+  arguments->setAddress(resources.constants, binding::constants);
+  if (with_camera) {
+    arguments->setAddress(resources.camera, binding::camera);
+  }
+  arguments->setAddress(resources.acceleration,
+                        binding::structure);  // the structures by mask
+  arguments->setAddress(resources.scene, binding::scene);
+  arguments->setAddress(resources.glows,
+                        binding::glows);  // the sphere lights' glows this frame
+  arguments->setAddress(
+      resources.transforms,
+      binding::transforms);  // as this frame places the shapes
 }
 
 }  // namespace serenity::metal

@@ -104,16 +104,17 @@ namespace serenity::metal {
 // copy's 62 MB; no ray. Measured in docs/research/2026-10-17-milestone-4-
 // plan.md, Step 4.
 class CheckerboardFillPass {
-public:
-    explicit CheckerboardFillPass(const Library& library);
+ public:
+  explicit CheckerboardFillPass(const Library& library);
 
-    // Records the fill. Throws MetalError if `resources` lacks the fill's
-    // constants, the accumulated image, this frame's features or hand-off,
-    // or either frame's history.
-    void record(MTL4::ComputeCommandEncoder* encoder, const FrameResources& resources) const;
+  // Records the fill. Throws MetalError if `resources` lacks the fill's
+  // constants, the accumulated image, this frame's features or hand-off,
+  // or either frame's history.
+  void record(MTL4::ComputeCommandEncoder* encoder,
+              const FrameResources& resources) const;
 
-private:
-    NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
+ private:
+  NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
 };
 
 }  // namespace serenity::metal

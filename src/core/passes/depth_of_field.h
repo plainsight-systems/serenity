@@ -33,14 +33,16 @@ namespace serenity::passes {
 //
 // Precondition: `camera` can be framed and `size` is not empty
 // (camera/thin_lens.h); throws std::invalid_argument otherwise (I.5).
-contracts::DepthOfFieldConstants depth_of_field_constants(const contracts::Camera& camera, frame::Extent size);
+contracts::DepthOfFieldConstants depth_of_field_constants(
+    const contracts::Camera& camera, frame::Extent size);
 
 // Whether a frame with `constants` blurs at all: false for a pinhole (a
 // scale of 0), whose depth of field is the image itself, so the pass
 // records nothing and the image is the network's to the bit
 // (metal/passes/depth_of_field/depth_of_field.h).
-constexpr bool blurs(const contracts::DepthOfFieldConstants& constants) noexcept {
-    return constants.coc_scale > 0.0f;
+constexpr bool blurs(
+    const contracts::DepthOfFieldConstants& constants) noexcept {
+  return constants.coc_scale > 0.0f;
 }
 
 }  // namespace serenity::passes

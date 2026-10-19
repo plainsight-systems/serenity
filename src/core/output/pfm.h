@@ -75,11 +75,12 @@ namespace serenity::output {
 // docs/research/2026-10-10-reference.md).
 
 class PfmError : public std::runtime_error {
-public:
-    explicit PfmError(const std::string& what) : std::runtime_error(what) {}
+ public:
+  explicit PfmError(const std::string& what) : std::runtime_error(what) {}
 };
 
-void write_pfm(const std::filesystem::path& path, const contracts::LinearImage& image);
+void write_pfm(const std::filesystem::path& path,
+               const contracts::LinearImage& image);
 
 contracts::LinearImage read_pfm(const std::filesystem::path& path);
 

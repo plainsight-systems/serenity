@@ -95,48 +95,56 @@ SERENITY_CONSTANT uint32_t replay_group = 64u;
 // different sizes, so their repeats do not line up), in the order the
 // shaders and the host read them, and where each starts in the one array
 // that holds them all, row by row.
-SERENITY_CONSTANT uint32_t pairing_widths[max_path_neighbors] = {254u, 230u, 210u};
+SERENITY_CONSTANT uint32_t pairing_widths[max_path_neighbors] = {254u, 230u,
+                                                                 210u};
 SERENITY_CONSTANT uint32_t pairing_starts[max_path_neighbors] = {
     0u,
     pairing_widths[0] * pairing_widths[0],
-    pairing_widths[0] * pairing_widths[0] + pairing_widths[1] * pairing_widths[1],
+    pairing_widths[0] * pairing_widths[0] +
+        pairing_widths[1] * pairing_widths[1],
 };
-SERENITY_CONSTANT uint32_t pairing_entries = pairing_starts[2] + pairing_widths[2] * pairing_widths[2];
-static_assert(max_path_neighbors == 3u, "pairing_starts is written out for three textures");
+SERENITY_CONSTANT uint32_t pairing_entries =
+    pairing_starts[2] + pairing_widths[2] * pairing_widths[2];
+static_assert(max_path_neighbors == 3u,
+              "pairing_starts is written out for three textures");
 
 struct PathReuseSettings {
-    uint32_t nee_candidates;
-    uint32_t max_surfaces;
-    float footprint;
-    float roughness;
-    uint32_t neighbors;
-    float sigma;
-    float confidence_cap;
-    float cap_floor;
-    float cap_exponent;
-    uint32_t checkerboard;
-    uint32_t padding[2];
+  uint32_t nee_candidates;
+  uint32_t max_surfaces;
+  float footprint;
+  float roughness;
+  uint32_t neighbors;
+  float sigma;
+  float confidence_cap;
+  float cap_floor;
+  float cap_exponent;
+  uint32_t checkerboard;
+  uint32_t padding[2];
 };
 
-static_assert(sizeof(PathReuseSettings) == 48,
-              "PathReuseSettings must be the same 48 bytes on the host and in shaders");
+static_assert(
+    sizeof(PathReuseSettings) == 48,
+    "PathReuseSettings must be the same 48 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<PathReuseSettings>, "PathReuseSettings is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<PathReuseSettings>,
+              "PathReuseSettings is written to the GPU as bytes");
 #endif
 
 // What ReSTIR PT's temporal reuse is told each frame, beside its settings:
 // the previous frame's camera, framed for this frame's size, and whether that
 // frame is this one's history (1) or the history starts over here (0).
 struct PathReuseConstants {
-    CameraData previous_camera;
-    uint32_t previous;
-    uint32_t padding[3];
+  CameraData previous_camera;
+  uint32_t previous;
+  uint32_t padding[3];
 };
 
-static_assert(sizeof(PathReuseConstants) == 80,
-              "PathReuseConstants must be the same 80 bytes on the host and in shaders");
+static_assert(
+    sizeof(PathReuseConstants) == 80,
+    "PathReuseConstants must be the same 80 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<PathReuseConstants>, "PathReuseConstants is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<PathReuseConstants>,
+              "PathReuseConstants is written to the GPU as bytes");
 #endif
 
 }  // namespace contracts

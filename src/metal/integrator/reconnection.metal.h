@@ -63,55 +63,59 @@ constant constexpr float least_geometry = 1.0e-30f;
 // largest float for a primary hit seen edge on, whose footprint has no
 // bound.
 inline float footprint_threshold(float c, float3 x0, float3 x1, float3 n1) {
-    const float3 to_camera = x0 - x1;
-    const float d2 = metal::dot(to_camera, to_camera);
-    const float cosine = metal::abs(metal::dot(n1, to_camera)) * metal::rsqrt(d2);
-    const float spread = d2 * (4.0f * M_PI_F) / metal::max(cosine, least_cosine);
-    return cosine > 0.0f ? (c / 100.0f) * spread : largest;
+  const float3 to_camera = x0 - x1;
+  const float d2 = metal::dot(to_camera, to_camera);
+  const float cosine = metal::abs(metal::dot(n1, to_camera)) * metal::rsqrt(d2);
+  const float spread = d2 * (4.0f * M_PI_F) / metal::max(cosine, least_cosine);
+  return cosine > 0.0f ? (c / 100.0f) * spread : largest;
 }
 
 // The roughness of `lobe` (contract 2's bits) sampled at a surface of `bsdf`
 // (above). A lobe of 0, a direction NEE drew, is taken as the surface's own
 // lobe that is not delta.
 inline float lobe_roughness(uint lobe, serenity::contracts::Bsdf bsdf) {
-    if ((lobe & serenity::contracts::lobe_delta) != 0u) {
-        return 0.0f;
-    }
-    if ((lobe & serenity::contracts::lobe_glossy) != 0u ||
-        (lobe == 0u && bsdf.kind == serenity::contracts::BsdfKind::conductor)) {
-        return metal::sqrt(bsdf.alpha);
-    }
-    return 1.0f;  // diffuse
+  if ((lobe & serenity::contracts::lobe_delta) != 0u) {
+    return 0.0f;
+  }
+  if ((lobe & serenity::contracts::lobe_glossy) != 0u ||
+      (lobe == 0u && bsdf.kind == serenity::contracts::BsdfKind::conductor)) {
+    return metal::sqrt(bsdf.alpha);
+  }
+  return 1.0f;  // diffuse
 }
 
 // The footprint of the vertex `to`, normal `to_normal`, reached from `from`
 // along a direction drawn with solid-angle density `density` (> 0): the
 // area it stands for, ||from - to||^2 / (density |cos at to|). 0 for a
 // direction a delta lobe drew.
-inline float footprint(bool delta, float density, float3 from, float3 to, float3 to_normal) {
-    const float3 d = to - from;
-    const float d2 = metal::dot(d, d);
-    const float cosine = metal::abs(metal::dot(to_normal, d)) * metal::rsqrt(d2);
-    return delta || !(density > 0.0f) ? 0.0f : d2 / (density * metal::max(cosine, least_cosine));
+inline float footprint(bool delta, float density, float3 from, float3 to,
+                       float3 to_normal) {
+  const float3 d = to - from;
+  const float d2 = metal::dot(d, d);
+  const float cosine = metal::abs(metal::dot(to_normal, d)) * metal::rsqrt(d2);
+  return delta || !(density > 0.0f)
+             ? 0.0f
+             : d2 / (density * metal::max(cosine, least_cosine));
 }
 
 // A pair's three quantities, by name (I.24).
 struct Pair {
-    float roughness_before;  // of the lobe sampled at x_{k-1}
-    float forward;           // the ray footprint of x_k
-    float inverse;           // the inverse footprint of x_{k-1}; `largest` where skipped
+  float roughness_before;  // of the lobe sampled at x_{k-1}
+  float forward;           // the ray footprint of x_k
+  float inverse;  // the inverse footprint of x_{k-1}; `largest` where skipped
 };
 
 // Whether the pair passes, against the primary footprint's `threshold`
 // (footprint_threshold()) and alpha_min.
 inline bool connectable(Pair pair, float threshold, float min_roughness) {
-    return pair.roughness_before >= min_roughness && metal::min(pair.forward, pair.inverse) >= threshold;
+  return pair.roughness_before >= min_roughness &&
+         metal::min(pair.forward, pair.inverse) >= threshold;
 }
 
 // Whether x_k's inverse test is skipped for the lobe sampled there
 // (above): a diffuse one, or NEE's (lobe 0).
 inline bool inverse_skipped(uint lobe) {
-    return lobe == 0u || (lobe & serenity::contracts::lobe_diffuse) != 0u;
+  return lobe == 0u || (lobe & serenity::contracts::lobe_diffuse) != 0u;
 }
 
 }  // namespace reconnection

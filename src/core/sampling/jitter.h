@@ -35,31 +35,33 @@ namespace serenity::sampling {
 // with the same formula (scripts/make_denoiser_dataset.py, camera_jitter),
 // both held to one table of values by their tests.
 
-static_assert(contracts::jitter_phases == 8u * contracts::denoise_scale * contracts::denoise_scale,
+static_assert(contracts::jitter_phases ==
+                  8u * contracts::denoise_scale * contracts::denoise_scale,
               "the jitter's phases are DLSS's rule for the network's upscale");
 
 struct CameraJitter {
-    float x = 0.0f;  // pixels, to the right
-    float y = 0.0f;  // pixels, down
+  float x = 0.0f;  // pixels, to the right
+  float y = 0.0f;  // pixels, down
 };
 
 // The radical inverse of `k` in `base`: its digits mirrored about the
 // point. Precondition: base >= 2.
 constexpr double radical_inverse(std::uint64_t k, std::uint64_t base) noexcept {
-    double result = 0.0;
-    double scale = 1.0 / static_cast<double>(base);
-    while (k > 0) {
-        result += static_cast<double>(k % base) * scale;
-        k /= base;
-        scale /= static_cast<double>(base);
-    }
-    return result;
+  double result = 0.0;
+  double scale = 1.0 / static_cast<double>(base);
+  while (k > 0) {
+    result += static_cast<double>(k % base) * scale;
+    k /= base;
+    scale /= static_cast<double>(base);
+  }
+  return result;
 }
 
 // Frame `index`'s offset (above).
 constexpr CameraJitter camera_jitter(std::uint64_t index) noexcept {
-    const std::uint64_t k = index % contracts::jitter_phases + 1u;
-    return {static_cast<float>(radical_inverse(k, 2) - 0.5), static_cast<float>(radical_inverse(k, 3) - 0.5)};
+  const std::uint64_t k = index % contracts::jitter_phases + 1u;
+  return {static_cast<float>(radical_inverse(k, 2) - 0.5),
+          static_cast<float>(radical_inverse(k, 3) - 0.5)};
 }
 
 }  // namespace serenity::sampling

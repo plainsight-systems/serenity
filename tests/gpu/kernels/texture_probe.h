@@ -10,23 +10,25 @@
 // and its inputs after it in the order its comment lists them
 // (tests/gpu/support/probe_runner.h).
 
-#include "core/contracts/shared_layout.h"
-
 #include "core/contracts/float3.h"
+#include "core/contracts/shared_layout.h"
 
 namespace serenity {
 namespace tests {
 
 // A point a texture is evaluated at, and the noise's seed (noise_probe only).
 struct TexturePoint {
-    contracts::Float3 point;
-    uint32_t seed;
+  contracts::Float3 point;
+  uint32_t seed;
 };
 
-static_assert(sizeof(TexturePoint) == 16, "TexturePoint must be the same 16 bytes on the host and in shaders");
+static_assert(
+    sizeof(TexturePoint) == 16,
+    "TexturePoint must be the same 16 bytes on the host and in shaders");
 
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<TexturePoint>, "TexturePoint is copied to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<TexturePoint>,
+              "TexturePoint is copied to the GPU as bytes");
 #endif
 
 }  // namespace tests

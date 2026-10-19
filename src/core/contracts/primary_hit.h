@@ -43,12 +43,13 @@
 // less the packing: wo and the geometric normal turned by under 10^-4
 // radians, the BSDF's parameters to a half's precision (bsdf.h states each:
 // for a glossy lobe, a turn of under 10^-4 radians; for a color, under
-// 5 x 10^-4 of it; the position is exact). The canonical path's own F at its own pixel was computed on the
-// unpacked surface; its shifts to neighbors, and theirs to it, on the packed
-// one. A bias of the packing's size, as a G-buffer's is in production;
-// tests/gpu/restir_pt_test.cpp holds the shifted F to the retraced one's.
-// The shading normal is the geometric one for every shape so far (contract
-// 1), so the surface a shift rebuilds takes bsdf's normal for both.
+// 5 x 10^-4 of it; the position is exact). The canonical path's own F at its
+// own pixel was computed on the unpacked surface; its shifts to neighbors, and
+// theirs to it, on the packed one. A bias of the packing's size, as a
+// G-buffer's is in production; tests/gpu/restir_pt_test.cpp holds the shifted F
+// to the retraced one's. The shading normal is the geometric one for every
+// shape so far (contract 1), so the surface a shift rebuilds takes bsdf's
+// normal for both.
 //
 // Cost, at P pixels: 48 bytes a pixel; two arrays in a graph with temporal
 // reuse (this frame's and last frame's, MEM.4), one otherwise: 371 MB each
@@ -69,21 +70,25 @@ namespace contracts {
 // sides' fields (above), named once (ES.45).
 SERENITY_CONSTANT uint32_t primary_flags_mask = 0xffu;
 SERENITY_CONSTANT uint32_t primary_interior_shift = 16u;
-SERENITY_CONSTANT uint32_t primary_no_medium = 0xffffu;  // contract 12's no_medium, in 16 bits
+SERENITY_CONSTANT uint32_t primary_no_medium =
+    0xffffu;  // contract 12's no_medium, in 16 bits
 
 struct PrimaryHit {
-    Float3 position;  // y1, world space, full precision
-    uint32_t normal;  // geometric, equal-area octahedral
-    PackedBsdf bsdf;  // contract 2; kind none: no surface a path starts from
-    uint32_t wo;      // unit, toward the lens point, equal-area octahedral
-    float distance;   // from the lens point; 0: no surface
-    float threshold;  // the primary footprint's threshold
-    uint32_t sides;   // contract 1's flags (bits 0-7), the interior medium (16-31)
+  Float3 position;  // y1, world space, full precision
+  uint32_t normal;  // geometric, equal-area octahedral
+  PackedBsdf bsdf;  // contract 2; kind none: no surface a path starts from
+  uint32_t wo;      // unit, toward the lens point, equal-area octahedral
+  float distance;   // from the lens point; 0: no surface
+  float threshold;  // the primary footprint's threshold
+  uint32_t sides;  // contract 1's flags (bits 0-7), the interior medium (16-31)
 };
 
-static_assert(sizeof(PrimaryHit) == 48, "PrimaryHit must be the same 48 bytes on the host and in shaders");
+static_assert(
+    sizeof(PrimaryHit) == 48,
+    "PrimaryHit must be the same 48 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
-static_assert(std::is_trivially_copyable_v<PrimaryHit>, "PrimaryHit is written to the GPU as bytes");
+static_assert(std::is_trivially_copyable_v<PrimaryHit>,
+              "PrimaryHit is written to the GPU as bytes");
 #endif
 
 }  // namespace contracts
