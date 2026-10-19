@@ -73,11 +73,21 @@ It decides how; the core still decides what (principle 10).
 
 | A pass that | is | its code |
 |---|---|---|
-| traces rays: path, ReSTIR PT's initial, temporal, spatial and shade, MNEE, features | an OptiX launch: a ray generation program that is the pass's body, traversing with `optixTraverse` and reading the hit object itself, with no closest-hit or miss program; the shapes' intersection programs | `passes/<pass>/<pass>.cu`, compiled to PTX, one module and one pipeline per pass |
-| traces none: denoise, tone map, depth of field, duplication, checkerboard fill, accumulation | a CUDA kernel | `passes/<pass>/<pass>.cu`, compiled to the machine's code (sm_86) |
+| traces rays: path, ReSTIR PT's initial, temporal and spatial, MNEE, features | an OptiX launch: a ray generation program that is the pass's body, traversing with `optixTraverse` and reading the hit object itself, with no closest-hit or miss program; the shapes' intersection programs | `passes/<pass>/<pass>.cu`, compiled to PTX, one module and one pipeline per pass |
+| traces none: ReSTIR PT's shade and duplication, denoise, tone map, depth of field, checkerboard fill, accumulation, test pattern | a CUDA kernel | `passes/<pass>/<pass>.cu`, compiled to the machine's code (sm_86) |
 
-Every pass runs on the frame's stream in the schedule's order, as Metal's
-encoder does.
+Which is which is read from the Metal passes' includes (2026-10-19): the
+six that trace reach `acceleration/trace.metal.h` through the integrator;
+shade and duplication include ReSTIR PT's header but trace nothing, and
+the denoiser's full-size albedo is the features pass run again, not the
+denoiser's own tracing. Every pass runs on the frame's stream in the
+schedule's order, as Metal's encoder does.
+
+The headers say `optixTraverse` traverses and fills the hit object
+without running closest-hit or miss; they do not say in words that a
+custom primitive's intersection program runs during it. It must, for a
+traversal to hit one at all, and Cycles' shadow rays rely on it; Phase 2's
+first launch proves it on this machine.
 
 **What it ports first, and what is tuning later.** The first port is
 Metal's design carried over: shapes as bounding boxes with their own
@@ -123,6 +133,15 @@ presets keep their names (`native-debug`, `native-release`,
 script: clang 18.1.3 as the host compiler (one compiler family across
 both machines; `nvcc -ccbin` the same), `nvcc` 13.2.86, CMake 3.28.3, the
 driver 595.91.07 (it is the OptiX runtime), and the OptiX headers' commit.
+CUDA 13.2 takes both clang 18 and g++ 13 as host compiler (a kernel built
+with each, 2026-10-19).
+
+**The lint.** Formatting needs no headers, so `make format-check` checks
+every file, `src/cuda/` included, on the Mac with the pinned LLVM 21.1.8.
+The static checks need each file's compile line: `src/cuda/`'s host code
+is checked on the 3090, which needs LLVM 21.1.8 there (Ubuntu's archive
+stops at 20; LLVM's own apt repository has it), a dependency for the
+user's yes in Phase 0.
 
 **The data-set script.** Three things in it assume macOS: the GPU's
 utilization read from `ioreg`, the Metal compiler's flags in the
