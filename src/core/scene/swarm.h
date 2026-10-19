@@ -196,8 +196,8 @@ struct Swarm {
   animation::FlightParams flight;  // the swarm's seed in flight.seed
   float flash = 0.0f;              // the flight glow's (glow.h)
   float dim = 0.0f;
-  SwarmStart start;               // none written: air
-  std::optional<SwarmWake> wake;  // none written: lit from the start
+  SwarmStart start{};               // none written: air
+  std::optional<SwarmWake> wake{};  // none written: lit from the start
 };
 
 // One firefly as steps 2 to 3 draw it: where its loop starts, its prelude

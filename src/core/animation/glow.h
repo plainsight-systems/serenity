@@ -113,7 +113,7 @@ struct Rhythm {
   double flash = 0.0;   // a flash's length; in (0, period / 2]
   float dim = 0.0f;     // brightness between flashes; in [0, 1)
   std::uint64_t seed = 0;
-  std::optional<Wake> wake;  // none: lit from the start
+  std::optional<Wake> wake{};  // none: lit from the start
 };
 
 struct ScheduleGlow {
@@ -121,7 +121,7 @@ struct ScheduleGlow {
   double flash = 0.0;  // a flash's length; in (0, flash_spacing): a schedule's
                        // flashes are that far apart
   float dim = 0.0f;    // brightness between flashes; in [0, 1)
-  std::optional<Wake> wake;  // none: lit from the start
+  std::optional<Wake> wake{};  // none: lit from the start
 };
 
 struct Glows {

@@ -295,9 +295,10 @@ struct Target {
 };
 
 struct FlightParams {
-  Extent volume{};              // where it flies; its body stays inside
-  std::vector<Target> targets;  // what it circles; none, and it does not circle
-  float speed = 0.0f;           // cruising, in meters a second; > 0
+  Extent volume{};  // where it flies; its body stays inside
+  std::vector<Target>
+      targets{};       // what it circles; none, and it does not circle
+  float speed = 0.0f;  // cruising, in meters a second; > 0
   float clearance =
       0.0f;  // from every still surface to its own, in meters; >= 0
   std::array<float, 3> weights{};  // circle, swoop, drift: >= 0, summing > 0;
@@ -361,9 +362,9 @@ struct Flight {
   Extent volume{};  // the loop's
   Extent reach{};  // the box its center never leaves: the volume, grown to hold
                    // the opening
-  std::vector<Segment> opening;  // the prelude, in time order, covering [0,
-                                 // begin); none without one
-  double begin = 0.0;            // when the loop begins, in seconds
+  std::vector<Segment> opening{};  // the prelude, in time order, covering [0,
+                                   // begin); none without one
+  double begin = 0.0;              // when the loop begins, in seconds
   std::vector<Segment>
       segments;       // the loop, in time order, covering [0, loop) from begin
   double loop = 0.0;  // the loop's length, in seconds
@@ -378,7 +379,7 @@ struct FlightJob {
   FlightParams params;
   contracts::Float3 start{};
   float body = 0.0f;
-  Prelude prelude;
+  Prelude prelude{};
 };
 
 // The flight for `job`, of a body of radius job.body, kept clear of

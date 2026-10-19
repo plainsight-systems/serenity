@@ -95,7 +95,7 @@ struct FrameResources {
   // or with checkerboard rendering the packed grid of the frame's traced
   // field (contract 20, core/contracts/checkerboard.h), which the kernels
   // map back to pixels by the same contract. Empty without its passes.
-  frame::Extent traced;
+  frame::Extent traced{};
 
   // With ReSTIR PT's passes: MNEE's work list (contract 16), its header
   // and the solve's indirect grid in it (mnee_list.h); the frame's

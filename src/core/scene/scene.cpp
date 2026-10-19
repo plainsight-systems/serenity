@@ -782,8 +782,9 @@ struct Pending {
   std::uint32_t firefly = 0;         // which of it
   std::uint32_t draw = 0;     // and which of its draws (swarm.h, steps 1 and 5)
   contracts::Float3 start{};  // and where it starts (swarm.h, step 2)
-  animation::Prelude prelude;  // what it does before its loop (swarm.h, step 4)
-  std::optional<animation::Wake> wake;  // and when its glow wakes (step 3)
+  animation::Prelude
+      prelude{};  // what it does before its loop (swarm.h, step 4)
+  std::optional<animation::Wake> wake{};  // and when its glow wakes (step 3)
 };
 
 // The indices of the shapes that do not move.

@@ -100,7 +100,7 @@ struct FrameInputs {
   // timeline, where the motion is 0 (as DLSS's reset). Read only by a
   // graph with the features pass; none needed by any other. Last, after
   // the members callers name in order.
-  std::optional<PreviousFrame> previous;
+  std::optional<PreviousFrame> previous{};
 };
 
 }  // namespace serenity::frame
