@@ -41,6 +41,13 @@ run_guarded() {
     wait "${pid}" 2>/dev/null && echo 0 || echo $?
 }
 
+# The script refuses to run without the codex CLI before it reaches the
+# servers' check, so without it this test cannot see that check: it fails
+# here, naming what is missing, rather than reporting the guard broken or
+# passing on a refusal it did not test.
+command -v codex >/dev/null 2>&1 ||
+    fail "the codex CLI is not on PATH: scripts/codex-review.sh needs it, so its preflight cannot be tested on this machine"
+
 for var in CPP_GUIDELINES_URL CPP_PERF_URL; do
     status="$(run_guarded "${var}")"
     case "${status}" in
