@@ -44,7 +44,9 @@ This repo is C++-dominant and performance-sensitive.
   reference render, sampling against the distribution it should draw from.
 - **Independent review is on request,** not per commit:
   `scripts/codex-review.sh <commit>` checks a commit for correctness and
-  speed and writes its findings to `.cache/reviews/`.
+  speed and writes its findings to `.cache/reviews/`. It needs the codex
+  CLI; its own test is `make review-check`, apart from `make check`, so a
+  developer without it builds and checks everything else.
 - A frame's path, acceleration-structure builds, memory footprint and GPU
   dispatch are performance-sensitive by default.
 - GPU behavior is environment-sensitive. Verification names the machine it
@@ -60,8 +62,7 @@ This repo is C++-dominant and performance-sensitive.
   reach it by git bundle (as for training, `/data/serenity/serenity`'s
   remote), the work branch as a worktree, `/data/serenity/cuda`. Until its
   backend arrives it builds the core, the measuring program and the tests
-  that need no GPU. `make check` there needs the codex CLI for the review
-  script's test, which fails by name without it.
+  that need no GPU.
 - **Python is outside the C++ gates.** `scripts/` and `training/` are
   reviewed for correctness, not against the C++ corpora; `training/` keeps
   its own pinned environment (`training/README.md`), and nothing the

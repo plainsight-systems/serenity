@@ -75,10 +75,11 @@ add_test(NAME serenity_tests COMMAND serenity_tests)
 # (tools/check_boundaries.sh), and the proofs that each of its rules and the
 # toolchain check's fire. The probe tests write files into src/ for a moment,
 # so none runs beside another that reads the tree. The review script's
-# preflight test (tests/test_codex_review_preflight.sh) stays in make check
-# alone: it needs the codex CLI on PATH, which nothing here builds or pins,
-# and should its guard regress it starts a model call before its watchdog
-# stops it, which a test run must never do.
+# preflight test (tests/test_codex_review_preflight.sh) is not here, nor in
+# make check: it is our review workflow's, run by make review-check, since
+# it needs the codex CLI on PATH, which nothing here builds or pins, and
+# should its guard regress it starts a model call before its watchdog stops
+# it, which a test run must never do.
 add_test(NAME boundaries COMMAND sh "${PROJECT_SOURCE_DIR}/tools/check_boundaries.sh")
 add_test(NAME boundaries_fire COMMAND sh "${PROJECT_SOURCE_DIR}/tests/test_check_boundaries.sh")
 add_test(NAME toolchain_fires COMMAND sh "${PROJECT_SOURCE_DIR}/tests/test_check_toolchain.sh")

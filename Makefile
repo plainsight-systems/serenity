@@ -8,7 +8,7 @@
 # (docs/research/2026-10-10-sanitizers.md). There is no CI yet
 # (docs/process/QUEUE.md).
 
-.PHONY: test test-release test-sanitize run headless movie reference convergence weights check toolchain format format-check tidy clean
+.PHONY: test test-release test-sanitize run headless movie reference convergence weights check toolchain format format-check tidy review-check clean
 
 # Configure quietly: dependencies' status summaries (SDL prints its whole
 # option list) are hidden; warnings and errors still show. VERBOSE=1 shows all.
@@ -245,9 +245,15 @@ check:
 	./tools/check_toolchain.py
 	./tests/test_check_boundaries.sh
 	./tests/test_check_toolchain.sh
-	./tests/test_codex_review_preflight.sh
 	$(MAKE) format-check
 	$(MAKE) tidy
+
+## The review script's own test (scripts/codex-review.sh): that it refuses
+## to run without its MCP servers. Our review workflow's, not the build's,
+## so not in check: it needs the codex CLI, which nothing here builds or
+## pins, and a developer without it can still build and check everything.
+review-check:
+	./tests/test_codex_review_preflight.sh
 
 clean:
 	rm -rf build

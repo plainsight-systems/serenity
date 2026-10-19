@@ -259,8 +259,9 @@ backend.
    the RTX 3090 Ti: the three presets at 0 warnings under clang 18, ctest's
    six tests green under each (UBSan's included), `make format-check` and
    `make tidy` clean. g++'s `-Wshadow` was not one under the pinned clang.
-   The review script's test needs the codex CLI, which that machine lacks;
-   it now fails by name for it rather than calling the guard broken.
+   The review script's test, which needs the codex CLI, left `make check`
+   for `make review-check` (the user: our review workflow's, not every
+   developer's); it fails by name without the CLI.
 2. **The device and the headless seam.** Context, stream, memory,
    readback, the offline target; the headless program split, Metal byte
    identical; the test pattern rendered on the 3090 to a file.
