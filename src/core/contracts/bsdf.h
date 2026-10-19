@@ -153,6 +153,7 @@ namespace contracts {
 
 // The kinds a Bsdf resolves to: one per way of scattering, not per material
 // kind. A material kind resolves to one of these (materials/material.h).
+// NOLINTNEXTLINE(performance-enum-size): the layout Metal reads
 enum class BsdfKind : uint32_t {
   none = 0,        // scatters nothing: an emissive surface
   lambert = 1,     // rough: albedo / pi, every way
@@ -195,9 +196,11 @@ struct Bsdf {
                 // against 1 outside; otherwise 0
   float escape;  // coated: 1 - F_in, what the coat lets out of the base's light
                  // (materials/coated.h); otherwise 0
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[2];
 };
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
 static_assert(sizeof(Bsdf) == 48,
               "Bsdf must be the same 48 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
@@ -233,6 +236,7 @@ struct PackedBsdf {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(PackedBsdf) == 16,
     "PackedBsdf must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
@@ -260,6 +264,7 @@ struct BsdfSample {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(BsdfSample) == 32,
     "BsdfSample must be the same 32 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

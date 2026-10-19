@@ -79,6 +79,7 @@ struct CameraData {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(CameraData) == 64,
     "CameraData must be the same 64 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

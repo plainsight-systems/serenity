@@ -56,6 +56,7 @@ struct LightSampleDraw {
   contracts::Float3 radiance;
   float distance;
   float pdf_asked;  // pdf() asked of the drawn direction afterwards
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[3];
 };
 

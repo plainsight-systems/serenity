@@ -116,9 +116,11 @@ constexpr int32_t checkerboard_previous_x(int32_t x, int32_t y,
 struct CheckerboardConstants {
   uint32_t
       history;  // 1 when the fill's history holds this history's frame before
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[3];
 };
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
 static_assert(sizeof(CheckerboardConstants) == 16,
               "CheckerboardConstants must be the same 16 bytes on the host and "
               "in shaders");

@@ -21,6 +21,7 @@ struct CheckerData {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(CheckerData) == 32,
     "CheckerData must be the same 32 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

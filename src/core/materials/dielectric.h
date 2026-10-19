@@ -19,10 +19,12 @@ namespace materials {
 
 struct DielectricData {
   float ior;  // index of refraction inside; outside is 1 (air). Greater than 1.
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[3];
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(DielectricData) == 16,
     "DielectricData must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

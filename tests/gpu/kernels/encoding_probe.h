@@ -45,6 +45,7 @@ struct LightPointQuery {
   contracts::Float3 point;
   float u0;
   float u1;
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[3];
 };
 

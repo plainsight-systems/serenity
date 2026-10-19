@@ -27,6 +27,7 @@ struct BoxData {
   uint32_t padding1;
 };
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
 static_assert(sizeof(BoxData) == 32,
               "BoxData must be the same 32 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

@@ -19,6 +19,7 @@ struct EmissiveData {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(EmissiveData) == 16,
     "EmissiveData must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

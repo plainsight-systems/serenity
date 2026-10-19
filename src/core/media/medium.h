@@ -16,6 +16,7 @@
 namespace serenity {
 namespace media {
 
+// NOLINTNEXTLINE(performance-enum-size): the layout Metal reads
 enum class MediumKind : uint32_t {
   absorbing = 0,  // absorbs and does not scatter: tinted glass (absorbing.h)
 };
@@ -26,6 +27,7 @@ struct MediumRecord {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(MediumRecord) == 8,
     "MediumRecord must be the same 8 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

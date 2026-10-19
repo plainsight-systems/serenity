@@ -105,6 +105,7 @@ struct LightPoint {
   uint32_t point;  // equal-area octahedral, x in bits 0-15, y in bits 16-31
 };
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
 static_assert(sizeof(LightPoint) == 8,
               "LightPoint must be the same 8 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
@@ -133,10 +134,12 @@ struct LightReceived {
   float area_scale;  // world area per unit of the light's own area
   uint32_t primitive;  // the light's own shape, which a shadow ray ignores; or
                        // no_primitive
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[2];
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(LightReceived) == 48,
     "LightReceived must be the same 48 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

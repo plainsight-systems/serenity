@@ -89,10 +89,12 @@ struct CoatedData {
       texture;   // the base's albedo from a texture, or no_texture
   float ior;     // the coat's index of refraction; greater than 1
   float escape;  // internal_escape(ior), 1 - F_in, filled at load
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[2];
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(CoatedData) == 32,
     "CoatedData must be the same 32 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

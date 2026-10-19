@@ -66,6 +66,7 @@ struct StructureBlock {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(StructureBlock) == 32,
     "StructureBlock must be the same 32 bytes on the host and in shaders");
 

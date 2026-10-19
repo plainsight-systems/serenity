@@ -32,6 +32,7 @@ SERENITY_CONSTANT uint32_t path_numbers_drawn = 8u;
 
 // The first path_numbers_drawn numbers of one path.
 struct PathNumbersDraw {
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   float u[path_numbers_drawn];
 };
 

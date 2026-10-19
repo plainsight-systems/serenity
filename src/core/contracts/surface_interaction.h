@@ -79,6 +79,7 @@ struct SurfaceInteraction {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(SurfaceInteraction) == 64,
     "SurfaceInteraction must be the same 64 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

@@ -95,8 +95,10 @@ SERENITY_CONSTANT uint32_t replay_group = 64u;
 // different sizes, so their repeats do not line up), in the order the
 // shaders and the host read them, and where each starts in the one array
 // that holds them all, row by row.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
 SERENITY_CONSTANT uint32_t pairing_widths[max_path_neighbors] = {254u, 230u,
                                                                  210u};
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
 SERENITY_CONSTANT uint32_t pairing_starts[max_path_neighbors] = {
     0u,
     pairing_widths[0] * pairing_widths[0],
@@ -119,10 +121,12 @@ struct PathReuseSettings {
   float cap_floor;
   float cap_exponent;
   uint32_t checkerboard;
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[2];
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(PathReuseSettings) == 48,
     "PathReuseSettings must be the same 48 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
@@ -136,10 +140,12 @@ static_assert(std::is_trivially_copyable_v<PathReuseSettings>,
 struct PathReuseConstants {
   CameraData previous_camera;
   uint32_t previous;
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[3];
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(PathReuseConstants) == 80,
     "PathReuseConstants must be the same 80 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

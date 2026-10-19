@@ -84,6 +84,7 @@ struct PrimaryHit {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(PrimaryHit) == 48,
     "PrimaryHit must be the same 48 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

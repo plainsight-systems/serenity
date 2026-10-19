@@ -23,6 +23,7 @@ struct Float3 {
   float z;
 };
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
 static_assert(sizeof(Float3) == 12,
               "Float3 must be the same 12 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

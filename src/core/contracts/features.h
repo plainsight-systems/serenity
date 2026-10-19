@@ -106,10 +106,12 @@ SERENITY_CONSTANT uint32_t feature_delta_hops = 8u;
 struct FeatureConstants {
   CameraData previous_camera;
   uint32_t previous;  // 1 when there is a frame before, else 0
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[3];
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(FeatureConstants) == 80,
     "FeatureConstants must be the same 80 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

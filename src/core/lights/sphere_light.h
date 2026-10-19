@@ -43,6 +43,7 @@ struct SphereLightData {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(SphereLightData) == 16,
     "SphereLightData must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

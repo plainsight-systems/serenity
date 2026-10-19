@@ -78,9 +78,11 @@ struct DepthOfFieldConstants {
   uint32_t tiles_x;  // the grid's tiles: ceil(half_width / dof_tile)
   uint32_t tiles_y;
   uint32_t dilation;  // tiles a tile's dilation reaches each way
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[2];
 };
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
 static_assert(sizeof(DepthOfFieldConstants) == 48,
               "DepthOfFieldConstants must be the same 48 bytes on the host and "
               "in shaders");

@@ -20,6 +20,7 @@ struct RoughData {
   contracts::TextureReference texture;
 };
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
 static_assert(sizeof(RoughData) == 16,
               "RoughData must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

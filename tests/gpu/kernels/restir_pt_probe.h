@@ -119,6 +119,7 @@ struct ShiftResult {
       retraced;  // F at the destination, its primary ray traced again
   float retraced_jacobian;
   uint32_t retraced_succeeded;
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[3];
 };
 
@@ -144,6 +145,7 @@ struct PathMergeQuery {
   float duplication;
   float u0;  // the merge's two numbers
   float u1;
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[2];
 };
 

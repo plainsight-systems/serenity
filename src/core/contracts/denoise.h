@@ -67,6 +67,7 @@ SERENITY_CONSTANT float albedo_floor = 0.02f;
 
 // Each kernel's tap spacing, in input pixels (training/model.py, SPACINGS):
 // the shaders' taps and the loader's check read this one list.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
 SERENITY_CONSTANT uint32_t spacing_pixels[denoise_spacings] = {1u, 2u, 4u};
 
 // Where each input lies among the network_inputs channels (above): the
@@ -139,6 +140,7 @@ struct DenoiseConstants {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(DenoiseConstants) == 80,
     "DenoiseConstants must be the same 80 bytes on the host and in shaders");
 
@@ -167,10 +169,12 @@ struct ConvParams {
                        // but in a decoder
   uint32_t up_pitch;   // that level's pitch and stride
   uint32_t up_stride;
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[2];
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(ConvParams) == 64,
     "ConvParams must be the same 64 bytes on the host and in shaders");
 
@@ -186,10 +190,12 @@ struct ResampleParams {
   uint32_t out_pitch;
   uint32_t out_stride;
   uint32_t out_offset;
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[3];
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(ResampleParams) == 48,
     "ResampleParams must be the same 48 bytes on the host and in shaders");
 
@@ -202,14 +208,18 @@ static_assert(
 SERENITY_CONSTANT uint32_t median_bins =
     2048u;  // per level: 2^11, or two ranks' 2^10
 struct MedianState {
-  uint32_t count;      // surface pixels: depth > 0
-  uint32_t rank[2];    // each middle rank, within the bins selected so far
+  uint32_t count;  // surface pixels: depth > 0
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
+  uint32_t rank[2];  // each middle rank, within the bins selected so far
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t prefix[2];  // each one's bits selected so far
   float median;        // 1 where there is no surface, as training/data.py
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[2];
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(MedianState) == 32,
     "MedianState must be the same 32 bytes on the host and in shaders");
 

@@ -89,16 +89,20 @@ struct MneeRequest {
   uint32_t medium;     // on wo's side: an index into the media, or no_medium
   Float3 wo;           // unit, toward where the light goes
   uint32_t crossings;  // how many, 1 to mnee_most_crossings
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   float t[mnee_most_crossings];  // each crossing's distance along the segment,
                                  // nearest first
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t shapes[mnee_most_crossings /
                   mnee_shapes_a_word];  // each crossing's shape, a half a word,
                                         // the first low
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[2];
   PackedBsdf bsdf;  // the receiver's
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(MneeRequest) == 128,
     "MneeRequest must be the same 128 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

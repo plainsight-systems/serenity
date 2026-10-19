@@ -64,6 +64,7 @@ struct FrameConstants {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(FrameConstants) == 32,
     "FrameConstants must be the same 32 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

@@ -54,12 +54,14 @@ namespace serenity {
 namespace contracts {
 
 // A shape's class: the bit its instance carries in a two-level structure.
+// NOLINTNEXTLINE(performance-enum-size): the layout Metal reads
 enum class ShapeClass : uint32_t {
   surface = 1u << 0u,  // every shape that is not a light
   light = 1u << 1u,    // a shape that is a light (contract 3, light_at)
 };
 
 // The classes a ray finds.
+// NOLINTNEXTLINE(performance-enum-size): the layout Metal reads
 enum class RayMask : uint32_t {
   occluders = static_cast<uint32_t>(ShapeClass::surface),
   everything = static_cast<uint32_t>(ShapeClass::surface) |

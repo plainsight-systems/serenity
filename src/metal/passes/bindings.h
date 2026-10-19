@@ -14,8 +14,13 @@
 // the shading language's attributes and Metal's setters both take an index
 // as an integer, which a scoped enumeration would need a cast for at every
 // use; the values are the binding layout (Enum.8). Buffers and textures are
-// numbered apart, as Metal numbers them.
+// numbered apart, as Metal numbers them. Each is a byte, which every
+// table's indices fit (Enum.7: the underlying type saves space).
 
+#include "core/contracts/shared_layout.h"
+
+// NOLINTBEGIN(cppcoreguidelines-use-enum-class): [[buffer(n)]], [[texture(n)]]
+// and Metal's setters take an integer index (Enum.3 deviation, AGENTS.md).
 namespace serenity {
 namespace bindings {
 
@@ -27,7 +32,7 @@ namespace bindings {
 // its kernels' parameter lists to name, and is asserted to (below, at the
 // end); a pass that reads no camera leaves its index unbound.
 namespace scene_view {
-enum Buffer : unsigned {
+enum Buffer : uint8_t {
   constants = 0,
   camera = 1,
   structure = 2,
@@ -38,12 +43,12 @@ enum Buffer : unsigned {
 }  // namespace scene_view
 
 namespace test_pattern {
-enum Buffer : unsigned { constants = 0 };
-enum Texture : unsigned { target = 0 };
+enum Buffer : uint8_t { constants = 0 };
+enum Texture : uint8_t { target = 0 };
 }  // namespace test_pattern
 
 namespace path {
-enum Buffer : unsigned {
+enum Buffer : uint8_t {
   constants = 0,
   camera = 1,
   structure = 2,
@@ -53,7 +58,7 @@ enum Buffer : unsigned {
   non_finite = 6,  // the frame's count of samples not finite
                    // (metal/film/failure_count.h)
 };
-enum Texture : unsigned {
+enum Texture : uint8_t {
   accumulated = 0
 };  // also the frame's radiance (path/path.h)
 }  // namespace path
@@ -64,7 +69,7 @@ enum Texture : unsigned {
 // request adds to its pixel (a float4 a pixel), and the frame's count of
 // requests lost to a full list (metal/film/failure_count.h).
 namespace mnee {
-enum Buffer : unsigned {
+enum Buffer : uint8_t {
   constants = 0,
   structure = 2,
   scene = 3,
@@ -83,14 +88,14 @@ enum Buffer : unsigned {
 // input at texture 0 and writes at 1; the last reads B_0 at 1 and writes
 // the target at 2.
 namespace tone_map {
-enum Buffer : unsigned { settings = 0 };
-enum Texture : unsigned { input = 0, level = 1, bloom = 1, target = 2 };
+enum Buffer : uint8_t { settings = 0 };
+enum Texture : uint8_t { input = 0, level = 1, bloom = 1, target = 2 };
 }  // namespace tone_map
 
 // ReSTIR PT's passes (metal/passes/restir_pt/restir_pt.metal.h) share one
 // layout, each kernel binding the part it reads or writes.
 namespace restir_pt {
-enum Buffer : unsigned {
+enum Buffer : uint8_t {
   constants = 0,
   camera = 1,
   structure = 2,
@@ -127,7 +132,7 @@ enum Buffer : unsigned {
   last_light_power =
       29,  // last frame's, which a shift to last frame's pixel weighs by
 };
-enum Texture : unsigned {
+enum Texture : uint8_t {
   accumulated = 0
 };  // the shade's: also the frame's radiance, as the path pass's
 }  // namespace restir_pt
@@ -136,7 +141,7 @@ enum Texture : unsigned {
 // tracer's indices, its constants (contract 17's FeatureConstants) and last
 // frame's transforms; the four feature images it writes.
 namespace features {
-enum Buffer : unsigned {
+enum Buffer : uint8_t {
   constants = 0,
   camera = 1,
   structure = 2,
@@ -146,7 +151,7 @@ enum Buffer : unsigned {
   feature_constants = 6,
   last_transforms = 7,
 };
-enum Texture : unsigned { albedo = 0, normal = 1, depth = 2, motion = 3 };
+enum Texture : uint8_t { albedo = 0, normal = 1, depth = 2, motion = 3 };
 }  // namespace features
 
 // The denoise pass's kernels (passes/denoise/denoise.h), one layout for all
@@ -158,7 +163,7 @@ enum Texture : unsigned { albedo = 0, normal = 1, depth = 2, motion = 3 };
 // pass's accumulated image and the four features at the light size, the
 // full-size albedo, and the radiance image it writes.
 namespace denoise {
-enum Buffer : unsigned {
+enum Buffer : uint8_t {
   constants = 0,
   params = 1,
   input = 2,
@@ -172,7 +177,7 @@ enum Buffer : unsigned {
   next_history = 10,
   coarse = 11,  // a decoder convolution's level below, upsampled as read
 };
-enum Texture : unsigned {
+enum Texture : uint8_t {
   light = 0,
   albedo = 1,
   normal = 2,
@@ -190,8 +195,8 @@ enum Texture : unsigned {
 // depth) and this frame's depth and motion, read; this frame's hand-off
 // and history, written.
 namespace checkerboard_fill {
-enum Buffer : unsigned { constants = 0, fill_constants = 1 };
-enum Texture : unsigned {
+enum Buffer : uint8_t { constants = 0, fill_constants = 1 };
+enum Texture : uint8_t {
   accumulated = 0,
   previous_light = 1,
   depth = 2,
@@ -208,8 +213,8 @@ enum Texture : unsigned {
 // full-size depth, and its half-resolution images
 // (metal/frame/depth_of_field_images.h).
 namespace depth_of_field {
-enum Buffer : unsigned { constants = 0, tiles = 1, dilated = 2 };
-enum Texture : unsigned {
+enum Buffer : uint8_t { constants = 0, tiles = 1, dilated = 2 };
+enum Texture : uint8_t {
   radiance = 0,
   depth = 1,
   presort = 2,
@@ -246,3 +251,4 @@ static_assert(camera_at(restir_pt::camera));
 
 }  // namespace bindings
 }  // namespace serenity
+// NOLINTEND(cppcoreguidelines-use-enum-class)

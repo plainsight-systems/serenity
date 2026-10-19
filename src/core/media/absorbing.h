@@ -25,6 +25,7 @@ struct AbsorbingData {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(AbsorbingData) == 16,
     "AbsorbingData must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

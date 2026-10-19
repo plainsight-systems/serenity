@@ -94,7 +94,8 @@ struct SceneBlock {
 };
 
 static_assert(
-    sizeof(SceneBlock) == 19 * 8,
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
+    sizeof(SceneBlock) == 19 * sizeof(uint64_t),
     "SceneBlock must be the same 19 addresses on the host and in shaders");
 
 }  // namespace gpu

@@ -58,6 +58,7 @@ namespace serenity {
 namespace textures {
 
 // Step 3's gradients, in the order h.x mod 12 picks them.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
 SERENITY_CONSTANT int noise_gradients[12][3] = {
     {1, 1, 0}, {-1, 1, 0}, {1, -1, 0}, {-1, -1, 0},  //
     {1, 0, 1}, {-1, 0, 1}, {1, 0, -1}, {-1, 0, -1},  //

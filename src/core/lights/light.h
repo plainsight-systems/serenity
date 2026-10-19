@@ -15,6 +15,7 @@
 namespace serenity {
 namespace lights {
 
+// NOLINTNEXTLINE(performance-enum-size): the layout Metal reads
 enum class LightKind : uint32_t {
   sphere = 0,  // a glowing sphere: the fireflies (sphere_light.h)
 };
@@ -25,6 +26,7 @@ struct LightRecord {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(LightRecord) == 8,
     "LightRecord must be the same 8 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
@@ -43,10 +45,12 @@ SERENITY_CONSTANT uint32_t no_light = 0xffffffffu;
 struct LightCounts {
   uint32_t lights;   // records, of every kind
   uint32_t spheres;  // sphere lights, the length of their array
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[2];
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(LightCounts) == 16,
     "LightCounts must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

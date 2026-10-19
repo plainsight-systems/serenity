@@ -22,6 +22,7 @@ struct ConductorData {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(ConductorData) == 16,
     "ConductorData must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

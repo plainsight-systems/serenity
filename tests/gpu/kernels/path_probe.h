@@ -34,6 +34,7 @@ struct MisQuery {
   uint32_t struck_light_count;  // N, step 3's
   uint32_t light_from_point;    // 0: step 5 draws as the path tracer does; 1:
                                 // from the surface's point
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[3];
 };
 
@@ -51,6 +52,7 @@ struct MisDraw {
                         // draw it
   uint32_t
       by_bsdf;  // 0: drawn toward the light (step 5); 1: by the BSDF (step 6)
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[3];
 };
 

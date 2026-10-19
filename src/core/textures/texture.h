@@ -23,6 +23,7 @@
 namespace serenity {
 namespace textures {
 
+// NOLINTNEXTLINE(performance-enum-size): the layout Metal reads
 enum class TextureKind : uint32_t {
   checker = 0,  // laid on the world (checker.h)
   wood = 1,     // a plank tabletop, laid on the world (wood.h)
@@ -35,6 +36,7 @@ struct TextureRecord {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(TextureRecord) == 8,
     "TextureRecord must be the same 8 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

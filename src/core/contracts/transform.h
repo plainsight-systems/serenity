@@ -38,9 +38,11 @@ namespace serenity {
 namespace contracts {
 
 struct Transform {
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   float m[3][4];
 };
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
 static_assert(sizeof(Transform) == 48,
               "Transform must be the same 48 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

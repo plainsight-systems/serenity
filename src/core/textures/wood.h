@@ -120,9 +120,11 @@ struct WoodData {
   contracts::Float3 dark;  // latewood, linear RGB in [0, 1]
   float board;  // meters across a board; wood_least_board to wood_most_board
   uint32_t seed;
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[3];
 };
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
 static_assert(sizeof(WoodData) == 48,
               "WoodData must be the same 48 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

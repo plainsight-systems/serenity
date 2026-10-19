@@ -16,6 +16,7 @@
 namespace serenity {
 namespace materials {
 
+// NOLINTNEXTLINE(performance-enum-size): the layout Metal reads
 enum class MaterialKind : uint32_t {
   rough = 0,       // takes light, and scatters it every way
   dielectric = 1,  // glass: passed through, reflecting and refracting
@@ -30,6 +31,7 @@ struct MaterialRecord {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(MaterialRecord) == 8,
     "MaterialRecord must be the same 8 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

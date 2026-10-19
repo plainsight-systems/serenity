@@ -1,0 +1,7 @@
+# The root configuration (../.clang-tidy), with one deviation decided by the
+# user (2026-10-19, docs/process/workflow.md): in a test the literal is the
+# expectation, written where it is checked, and ES.45 (avoid magic
+# constants) targets constants in program logic. Everything else applies.
+InheritParentConfig: true
+Checks: >
+  -cppcoreguidelines-avoid-magic-numbers

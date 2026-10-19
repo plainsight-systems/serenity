@@ -21,12 +21,15 @@ namespace serenity {
 namespace gpu {
 
 struct IndirectGrid {
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t threads[3];  // the grid's, at least one
-  uint32_t group[3];    // the threadgroup's
-  uint32_t count;       // the survivors, which the grid's first threads take
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
+  uint32_t group[3];  // the threadgroup's
+  uint32_t count;     // the survivors, which the grid's first threads take
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(IndirectGrid) == 28,
     "IndirectGrid must be the same 28 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

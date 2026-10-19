@@ -83,6 +83,7 @@ struct LightTileEntry {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(LightTileEntry) == 32,
     "LightTileEntry must be the same 32 bytes on the host and in shaders");
 

@@ -1,0 +1,30 @@
+# clang-tidy, LLVM 21.1.8 (cmake/toolchain.json), run by `make tidy` over
+# build/native-debug/compile_commands.json and by clangd on save. Every
+# finding is an error. The deviations, each decided by the user
+# (docs/process/workflow.md, "Formatting and static checks"), are where the
+# Metal compiler or Metal's own types require them, each suppressed on its
+# line with its reason, and the two below:
+#
+#  - tests/.clang-tidy: cppcoreguidelines-avoid-magic-numbers is off in
+#    tests/, where a literal is the expected value.
+#  - clang-analyzer-core.CallAndMessage's CXXThisMethodCall (below): a call
+#    through a null C++ object pointer. metal-cpp's NS::SharedPtr releases
+#    what it held by calling release() through its pointer, null when it
+#    held nothing, Objective-C's message to nil, which does nothing and
+#    which metal-cpp relies on (as cmake/ubsan_ignorelist.txt lets it pass
+#    the sanitizer). Every assignment to an empty SharedPtr is such a call,
+#    reported inside metal-cpp, where no NOLINT can be written.
+Checks: >
+  -*,
+  google-*,
+  cppcoreguidelines-*,
+  bugprone-*,
+  performance-*,
+  clang-analyzer-*
+WarningsAsErrors: '*'
+# This project's own headers; third-party ones, fetched into build/, are
+# compiled as system headers (CMakeLists.txt) and not checked.
+HeaderFilterRegex: '.*/(src|tests)/.*'
+ExcludeHeaderFilterRegex: '.*/build/.*'
+CheckOptions:
+  clang-analyzer-core.CallAndMessage:CXXThisMethodCall: false

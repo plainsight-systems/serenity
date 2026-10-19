@@ -121,9 +121,11 @@ SERENITY_CONSTANT float max_exposure = 10.0f;  // stops, either way
 struct ToneMap {
   float exposure;  // stops; finite, within [-max_exposure, max_exposure]
   float bloom;     // in [0, 1)
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   float padding[2];
 };
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
 static_assert(sizeof(ToneMap) == 16,
               "ToneMap must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

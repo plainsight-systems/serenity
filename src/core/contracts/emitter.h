@@ -76,10 +76,12 @@ struct LightSample {
   float pdf;           // per unit solid angle, given the light; 0 for no sample
   uint32_t primitive;  // the light's own shape, which a shadow ray ignores; or
                        // no_primitive
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[3];
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(LightSample) == 48,
     "LightSample must be the same 48 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

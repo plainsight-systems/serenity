@@ -94,6 +94,7 @@ namespace serenity {
 namespace contracts {
 
 // How a path ends (flags bits 16 to 17).
+// NOLINTNEXTLINE(performance-enum-size): the layout Metal reads
 enum class PathEnd : uint32_t {
   none = 0,    // an empty reservoir
   nee = 1,     // on a light NEE at x_{d-1} drew
@@ -146,6 +147,7 @@ struct PathReservoir {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(PathReservoir) == 64,
     "PathReservoir must be the same 64 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)

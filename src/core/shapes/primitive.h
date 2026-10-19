@@ -32,6 +32,7 @@
 namespace serenity {
 namespace shapes {
 
+// NOLINTNEXTLINE(performance-enum-size): the layout Metal reads
 enum class ShapeKind : uint32_t {
   sphere =
       0,    // the unit sphere (sphere.h): no data of its own; `geometry` is 0
@@ -49,6 +50,7 @@ struct ShapeRecord {
 };
 
 static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
     sizeof(ShapeRecord) == 16,
     "ShapeRecord must be the same 16 bytes on the host and in shaders");
 #if !defined(__METAL_VERSION__)
@@ -65,6 +67,7 @@ static_assert(std::is_trivially_copyable_v<ShapeRecord>,
 // still shapes answer contract 11's touches() with it as it is.
 using Bounds = contracts::Box;
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
 static_assert(sizeof(Bounds) == 24,
               "Bounds must be two packed triples of floats");
 static_assert(std::is_trivially_copyable_v<Bounds>,

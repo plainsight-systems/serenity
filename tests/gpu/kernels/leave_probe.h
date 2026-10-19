@@ -46,6 +46,7 @@ struct LeaveResult {
   uint32_t hit_shape;
   float t;       // the leaving ray's hit distance, where it hit
   float cosine;  // its direction's dot product with the geometric normal
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t padding[2];
 };
 
