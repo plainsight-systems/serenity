@@ -86,7 +86,7 @@ schedule's order, as Metal's encoder does.
 The headers say `optixTraverse` traverses and fills the hit object
 without running closest-hit or miss; they do not say in words that a
 custom primitive's intersection program runs during it. It must, for a
-traversal to hit one at all, and Cycles' shadow rays rely on it; Phase 2's
+traversal to hit one at all, and Cycles' shadow rays rely on it; Phase 3's
 first launch proves it on this machine.
 
 **What it ports first, and what is tuning later.** The first port is
@@ -141,7 +141,7 @@ every file, `src/cuda/` included, on the Mac with the pinned LLVM 21.1.8.
 The static checks need each file's compile line: `src/cuda/`'s host code
 is checked on the 3090, which needs LLVM 21.1.8 there (Ubuntu's archive
 stops at 20; LLVM's own apt repository has it), a dependency for the
-user's yes in Phase 0.
+user's yes in Phase 1.
 
 **The data-set script.** Three things in it assume macOS: the GPU's
 utilization read from `ioreg`, the Metal compiler's flags in the
@@ -155,31 +155,86 @@ them, each family's kernels against the core's CPU computations (shapes,
 BSDFs, camera, lights, sampling), the denoiser against PyTorch's fixture,
 no allocation per frame, the same command writing the same files, and the
 network's input graph rendering the demo's light to the bit
-(`features_test.cpp`'s check). Metal's argument-table and encoding tests
-have no counterpart. No test matches the 3090's output to the Mac's.
+(`features_test.cpp`'s check). Metal's argument-table, library and
+device tests have no counterpart. No test matches the 3090's output to the Mac's.
 
 **The measurement.** The demo graph's frame time at 1920 x 1080 headless,
 by CUDA events around a frame's work on its stream, with nothing else on
 the GPU (training stopped). Per-pass events when a change targets a pass.
 
+## What carries over, and what does not
+
+Mapped file by file over `src/metal/` (2026-10-19): 9,857 lines of host
+code and 10,019 of shaders (30% of either comments). Line counts in mixed
+files are estimates.
+
+**Host code.**
+
+| Class | Lines | What | On CUDA |
+|---|---|---|---|
+| Not Metal at all | ~1,700 | the scene block's layout (`scene/scene_block.h`) and its entries table; the denoiser's network plan (sizes, levels, strides, history parity: `frame/denoise_images.cpp`); the renderer's frame plan and every per-frame constants block it fills (`FrameConstants`, `PathReuseConstants`, `DenoiseConstants`, checkerboard, depth of field); the scene and frame refusals (`check_time`, `check_packable`, the light-tile, MNEE and glower limits); the image and array sizes per configuration (ReSTIR PT's, bloom's, depth of field's, duplicated in two files today, MNEE's capacity); "keep the history on a copy, remake on a new size", written four times; the acceleration build's plan (members, the surfaces, the moving boxes' pairing); the failure counts' bookkeeping; the headless seam's types (`FeatureImages::Read`, `NetworkInput`) | **moves into `src/core/` first**, so both backends use one copy |
+| Metal's API | ~2,600 | device, library and pipelines, buffers, readback, encoders, barriers, the acceleration build's calls, every pass's dispatch | rewritten: `CUcontext`, `CUstream`, `cuMemAlloc`, `cuModuleLoadData`, `cuLaunchKernel`; `optixAccelBuild`, modules, program groups, pipelines, `optixLaunch`; events for the two queues' ordering |
+| Metal only | ~900 | residency sets, argument tables and their binding indices, the indirect grids, the display link and presenter | none; each pass's bindings become its launch parameters; the window's comes later |
+| the rest of the mixed files | ~4,600 | the Metal halves of the files above | rewritten with them |
+
+**Shaders.**
+
+| Class | Lines | What | On CUDA |
+|---|---|---|---|
+| Line for line | ~7,960 (79%) | the integrator, shifts, NEE, MNEE's solve, materials, lights, sampler, hashing, warps, media, textures, reuse, shapes' intersection math, camera, shade, fill, duplication, tone map, depth of field | translated: address spaces, `as_type`, `simd_*` to warp intrinsics, `half`, and the vector types, which CUDA lacks (operators, swizzles, `dot`, `normalize`: 88 swizzles, 118 `dot`; `src/cuda/math/` first) |
+| Restructured | ~890 (9%) | `acceleration/trace.metal.h`'s candidate loops (175); MNEE's segment seeding (~80); the denoiser's convolutions on `simdgroup_float8x8` and its threadgroup memory (~310); the six tracing passes' entry points (~230); the indirect grids (~40); the scene's structure views (~30) | the loops become intersection programs (and any-hit for MNEE's seeding, which collects up to four crossings and aborts on glass that is not a sphere); trace and occluded keep their signatures as wrappers over `optixTraverse`; the denoiser on `mma.sync` (WMMA's smallest half tile, 16 x 16 x 16, would not keep contract 18's blocks of 8 channels) |
+| Layouts | 2,522 | `core/contracts/` | included as they are, with a `__CUDACC__` branch in `shared_layout.h` |
+
+**Not in Metal's design, needed here.**
+
+- **No indirect launch.** The replays and MNEE's solve take their grid
+  sizes from GPU memory; neither a CUDA kernel nor `optixLaunch` can. They
+  launch at capacity and return past the count (the guard exists), or the
+  count is read back; measured when they are built.
+- **Memory is not shared.** Per-frame arrays, constants, counters and
+  MNEE's list header are written by the CPU in place on Apple's unified
+  memory. On the discrete 3090 each is an upload on the frame's stream,
+  or mapped pinned memory; chosen per array, by what it costs.
+- **Math mode.** Metal compiles with `-fmetal-math-mode=fast` (no
+  infinities or NaNs assumed). CUDA's default is IEEE division and square
+  root, denormals kept, contraction on. The CUDA backend keeps the default:
+  `-ftz` would break the BSDF packing's subnormal bound (contract), and
+  the GPU tests compare with the CPU, which is IEEE.
+
+**To verify as each step comes:** warp intrinsics inside ray generation
+programs (MNEE's and the replays' appends, the non-finite count use them;
+OptiX forbids shared memory there); any-hit called once per primitive for
+MNEE's seeding (`OPTIX_GEOMETRY_FLAG_REQUIRE_SINGLE_ANYHIT_CALL`); a
+`constexpr` array indexed at run time in `contracts/denoise.h`
+(`spacing_pixels`) in device code.
+
+**Tests.** Every invariant `tests/gpu/` checks carries but three: the
+argument tables, the library and the device's Apple family. The encoding
+tests carry (they test contract layouts, not Metal's). Their probe kernels'
+layouts (`tests/gpu/kernels/`, ~950 lines) are shared; the harness is per
+backend.
+
 ## Phases
 
-0. **The core on Linux.** CMake's per-platform selection, the presets,
+0. **What is not Metal's moves into the core,** on the Mac, before any
+   CUDA: the list above, each move a refactor with every graph's output
+   the same to the bit.
+1. **The core on Linux.** CMake's per-platform selection, the presets,
    the toolchain's Linux section, the fetched dependencies, the shadow
    warning; the core's tests green there, `make check`'s rules extended.
-1. **The device and the headless seam.** Context, stream, memory,
+2. **The device and the headless seam.** Context, stream, memory,
    readback, the offline target; the headless program split, Metal byte
    identical; the test pattern rendered on the 3090 to a file.
-2. **The scene and the path tracer.** Scene buffers, the two structures,
+3. **The scene and the path tracer.** Scene buffers, the two structures,
    the shapes' intersection programs, the materials, lights and sampler
    with their CPU checks, the path pass and the accumulation: the
    reference graph on the 3090.
-3. **ReSTIR PT and MNEE.** Initial, temporal, spatial, shade, duplication,
+4. **ReSTIR PT and MNEE.** Initial, temporal, spatial, shade, duplication,
    MNEE's work list; the features pass.
-4. **The denoised frame.** The denoiser on the tensor cores (matched to
+5. **The denoised frame.** The denoiser on the tensor cores (matched to
    PyTorch), the fill, depth of field, tone mapping: the demo graph, its
    frame time.
-5. **The data set on the 3090.** The script run there, its manifest
+6. **The data set on the 3090.** The script run there, its manifest
    naming the machine.
 
 Each phase ends with its gates once; the report gives the frame time where
@@ -187,16 +242,17 @@ there is a frame.
 
 ## Rollback
 
-The backend is a directory and a branch of the build. Nothing in
-`src/metal/` changes but its headless half moving behind the seam, which
-Metal's byte identity guards; nothing in `src/core/` changes but the seam's
-interface and what Linux's compilers find. Removing `src/cuda/` and the
-Linux branch of the build returns the project to one backend.
+The backend is a directory and a branch of the build. `src/metal/`
+changes only by what moves into the core (Phase 0) and its headless half
+moving behind the seam, each a commit of its own guarded by Metal's
+output being the same to the bit; those stand on their own whether or
+not the CUDA backend stays. Removing `src/cuda/` and the Linux branch of
+the build returns the project to one backend.
 
 ## Not decided here
 
 - The window on the 3090: a thin graphics API for presentation alone
-  (CUDA interop), its own step after Phase 5.
+  (CUDA interop), its own step after Phase 6.
 - AMD's Strix Halo (HIP, HIPRT) and the Xbox Series X (Direct3D 12):
   later milestones. Whether hardware ray tracing is reachable in the
   retail console's developer mode, or only through the GDK on a
