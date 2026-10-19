@@ -1,7 +1,10 @@
 // The headless program on the CUDA backend, as its user runs it, an
-// integration test: the test pattern written as PNGs, each the CPU's
-// pattern at its frame's time, blue within a level; and a graph with a pass
-// the backend does not build refused by name, before any directory is made.
+// integration test and the one test here that runs the GPU: the test
+// pattern written as PNGs, each the CPU's pattern at its frame's time, red
+// and green to the bit and blue within a level (the GPU's sinf and the CPU's
+// sin may differ in the last bit); and a graph with a pass the backend does
+// not build refused by name, before any directory is made. It names the
+// machine it ran on, as every GPU verification does.
 
 #include <doctest/doctest.h>
 
@@ -16,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "cuda/device/device.h"
 #include "headless_program.h"
 #include "support/files.h"
 #include "support/run_program.h"
@@ -39,6 +43,7 @@ using serenity::tests::ScratchDirectory;
 using Decoded = std::unique_ptr<stbi_uc, decltype(&stbi_image_free)>;
 
 TEST_CASE("the headless program writes the test pattern on CUDA") {
+  MESSAGE("device: " << serenity::cuda::Device().name());
   const ScratchDirectory scratch("cuda-headless");
   const std::filesystem::path graph = scratch.path() / "pattern.toml";
   serenity::tests::write_bytes(graph, "passes = [\"test_pattern\"]\n");

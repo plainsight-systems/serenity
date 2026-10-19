@@ -4,11 +4,18 @@
 
 #include <array>
 #include <cstdint>
-#include <optional>
 
 #include "cuda/device/device.h"
+#include "cuda/device/frame_sequence.h"
 
 namespace serenity::cuda {
+
+// A frame begun: the stream to record on, its slot and its sequence.
+struct FrameSlot {
+  CUstream stream = nullptr;
+  std::uint32_t slot = 0;
+  std::uint64_t sequence = 0;
+};
 
 // Axis: GPU backend.
 //
@@ -30,6 +37,10 @@ namespace serenity::cuda {
 // synchronizes (error.h), so settling throws CudaError for it, and the run
 // ends with it, as Metal's settling reports a failed command buffer.
 //
+// The bookkeeping, which frame takes which slot and which are settled, and
+// the misuses refused, is FrameSequence's (frame_sequence.h), apart from the
+// driver; this class waits on the events and tells it what it settled.
+//
 // Lifetime. Everything a frame uses must outlive the frame's work on the
 // GPU: the destructor waits for the stream, and every owner of device
 // memory a frame uses is released after it (its renderer's destructor
@@ -37,15 +48,6 @@ namespace serenity::cuda {
 // allocated per frame (MEM.9).
 //
 // Throws CudaError if the stream or its events cannot be made.
-inline constexpr std::uint32_t frames_in_flight = 2;
-
-// A frame begun: the stream to record on, its slot and its sequence.
-struct FrameSlot {
-  CUstream stream = nullptr;
-  std::uint32_t slot = 0;
-  std::uint64_t sequence = 0;
-};
-
 class Submission {
  public:
   explicit Submission(const Device& device);
@@ -76,7 +78,7 @@ class Submission {
   bool has_completed(std::uint64_t sequence) const noexcept;
 
   // The sequence the next begin() hands out.
-  std::uint64_t next_sequence() const noexcept { return next_; }
+  std::uint64_t next_sequence() const noexcept { return frames_.next(); }
 
   // Blocks until the stream is idle; reports nothing, for destructors.
   void wait_idle() noexcept;
@@ -86,11 +88,7 @@ class Submission {
 
   CUstream stream_ = nullptr;
   std::array<CUevent, frames_in_flight> events_{};
-  // Each slot's committed frame not yet settled, if any.
-  std::array<std::optional<std::uint64_t>, frames_in_flight> pending_{};
-  std::uint64_t next_ = 0;
-  std::uint64_t settled_through_ = 0;  // every frame before it is settled
-  bool open_ = false;                  // a frame begun and not committed
+  FrameSequence frames_;
 };
 
 }  // namespace serenity::cuda

@@ -424,15 +424,16 @@ construction, every pass kind it does not build yet.
 | the device and its primary context; the machine it names | GPU backend | `src/cuda/device/device.{h,cpp}` |
 | the kernels' module, loaded from the embedded fatbin; a kernel by name, launched | GPU backend | `src/cuda/device/module.{h,cpp}` |
 | device memory, owned | GPU backend | `src/cuda/device/buffer.{h,cpp}` |
-| the stream, frames in flight by event, sequences, waiting, the lifetime rule | GPU backend | `src/cuda/device/submission.{h,cpp}` |
+| the stream, frames in flight by event, waiting, the lifetime rule | GPU backend | `src/cuda/device/submission.{h,cpp}` |
+| the submission's bookkeeping apart from the driver: sequences, slots, what is settled, the misuses refused | GPU backend | `src/cuda/device/frame_sequence.{h,cpp}` |
 | the offscreen target and its readback | GPU backend | `src/cuda/device/offscreen.{h,cpp}` |
 | the test pattern, the kernel and its launch | Pass | `src/cuda/passes/test_pattern/test_pattern.{cu,h,cpp}` |
-| the schedule carried out: each pass kind this backend builds, every other refused | Frame graph | `src/cuda/frame/renderer.{h,cpp}` |
+| the schedule carried out: each pass kind this backend builds, every other refused (`unbuilt_pass`) | Frame graph | `src/cuda/frame/renderer.{h,cpp}` |
 | CUDA's offline renderer and the factory | GPU backend | `src/cuda/frame/offline_frames.{h,cpp}` |
 | the kernels compiled by `nvcc` with flags pinned in one place, embedded; the bytes-to-header script both backends' libraries use | build | `cmake/CudaModules.cmake`, new; `cmake/embed_bytes_script.cmake`, from `embed_metallib_script.cmake` |
 | `nvcc` and the driver pinned | build | `cmake/toolchain.json`, "linux"; `tools/check_toolchain.py` |
 | only `src/cuda/` uses CUDA's host API; its kernels include the core's shared layouts only | build | `tools/check_boundaries.sh`, rules 3 and 7 and their proofs |
-| the device, the submission's protocol, the test pattern against the CPU's, determinism; the headless program on the test pattern | tests | `tests/cuda/`, new |
+| unit tests with no GPU: the submission's bookkeeping, which passes the backend builds; one integration test on the GPU: the headless program on the test pattern, against the CPU's | tests | `tests/cuda/`, new |
 
 ## Not here yet
 

@@ -311,6 +311,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         src/cuda/device/buffer.cpp
         src/cuda/device/device.cpp
         src/cuda/device/error.cpp
+        src/cuda/device/frame_sequence.cpp
         src/cuda/device/module.cpp
         src/cuda/device/offscreen.cpp
         src/cuda/device/submission.cpp

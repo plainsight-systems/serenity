@@ -282,11 +282,17 @@ backend.
    one place, sm_86 machine code alone, no fast math) and the one
    bytes-to-header script both backends' libraries use; `nvcc` 13.2.86 and
    the driver 595.91.07 pinned; rules 3b and 7 of the boundary check over
-   `src/cuda/`. `tests/cuda` on the RTX 3090 Ti: the device, the
-   submission's protocol, the test pattern against the CPU's (red and
-   green to the bit, blue within a level), the same frame the same bytes,
-   a pass not built refused by name, and `serenity-headless` writing the
-   pattern as PNGs. The `headless` integration test renders the path
+   `src/cuda/`. `tests/cuda`: unit tests of the backend's own logic, which
+   run no GPU (the submission's bookkeeping, `cuda/device/
+   frame_sequence.h`, apart from the driver; which passes it builds,
+   `unbuilt_pass`); and one integration test on the RTX 3090 Ti,
+   `serenity-headless` writing the pattern as PNGs, each the CPU's (red
+   and green to the bit, blue within a level), refusing a graph it cannot
+   render yet, and naming the machine. A first version had more tests
+   that ran the GPU to check logic (the protocol, the refusal) or repeated
+   the integration test (the pattern against the CPU, rendered twice); by
+   the user's rule (unit tests test units) the logic moved into units and
+   the repeats were removed. The `headless` integration test renders the path
    tracer, so it joins Linux's tests in Phase 3.
 3. **The scene and the path tracer.** Scene buffers, the two structures,
    the shapes' intersection programs, the materials, lights and sampler

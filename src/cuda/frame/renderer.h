@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
@@ -58,6 +59,12 @@ class Renderer {
   Submission& submission_;
   std::optional<TestPatternPass> test_pattern_;
 };
+
+// The first pass of `schedule` this backend does not build yet, refused by
+// name: the reason, or none when it builds every one. A pure function of
+// the schedule (F.8), so which passes the backend builds is a unit, tested
+// as one.
+std::optional<std::string> unbuilt_pass(const frame::Schedule& schedule);
 
 // Records frame `inputs` into `target` and commits it, without waiting;
 // returns its sequence, for Submission::wait_until_complete().

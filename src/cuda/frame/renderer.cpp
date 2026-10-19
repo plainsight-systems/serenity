@@ -21,21 +21,26 @@ void refuse(const std::optional<std::string>& reason,
 
 }  // namespace
 
+std::optional<std::string> unbuilt_pass(const frame::Schedule& schedule) {
+  for (const frame::PassKind kind : schedule.passes) {
+    if (kind != frame::PassKind::test_pattern) {
+      return "the CUDA backend has no " + std::string(name(kind)) +
+             " pass yet (docs/research/2026-10-19-cuda-backend.md, its "
+             "phases 3 to 5)";
+    }
+  }
+  return std::nullopt;
+}
+
 Renderer::Renderer(Submission& submission, const frame::Schedule& schedule,
                    const scene::SceneDescription* scene)
     : submission_(submission) {
   refuse(frame::invalid(schedule));
   refuse(frame::scene_refusal(schedule, scene));
+  refuse(unbuilt_pass(schedule));
   for (const frame::PassKind kind : schedule.passes) {
-    switch (kind) {
-      case frame::PassKind::test_pattern:
-        test_pattern_.emplace();
-        break;
-      default:
-        throw CudaError(
-            "Renderer: the CUDA backend has no " + std::string(name(kind)) +
-            " pass yet (docs/research/2026-10-19-cuda-backend.md, its phases "
-            "3 to 5)");
+    if (kind == frame::PassKind::test_pattern) {
+      test_pattern_.emplace();
     }
   }
 }
