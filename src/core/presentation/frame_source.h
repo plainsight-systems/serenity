@@ -24,7 +24,7 @@ namespace serenity::presentation {
 //   - Metal's source (metal/frame/display_frames.h) waits in the client's
 //     events while a display link calls frames from the main run loop,
 //     as SDL3 drives SDL_AppIterate from a CADisplayLink on iOS;
-//   - a Vulkan or Direct3D 12 source would run the loop an engine's game
+//   - a CUDA or Direct3D 12 source would run the loop an engine's game
 //     loop runs, Unreal's among them (its engine loop pumps the platform's
 //     messages, then renders, and its RHI's present waits on the
 //     swapchain): the events polled without waiting, an image acquired,

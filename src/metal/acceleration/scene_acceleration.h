@@ -96,7 +96,7 @@ namespace serenity::metal {
 // alone, as it would have found them unmasked. Metal tests masks only
 // against instances (MTLAccelerationStructureInstanceDescriptor's mask,
 // tested by an intersection query over an instance structure; a primitive
-// structure's query takes none), as DXR and Vulkan do; this level has no
+// structure's query takes none), as DXR and OptiX do; this level has no
 // instances, for the cost measured in the note above. So each mask is a
 // structure of its own, over the shapes of its classes, and a ray traces
 // the one its mask names (trace.metal.h):

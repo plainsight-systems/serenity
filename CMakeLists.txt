@@ -7,9 +7,9 @@ cmake_minimum_required(VERSION 3.25)
 project(serenity LANGUAGES C CXX OBJC OBJCXX)
 
 # ---------------------------------------------------------------------------
-# One target for now: Apple silicon, through Metal. The Vulkan backend for the
-# AMD machine comes later, behind the same core, as a backend of its own
-# (docs/process/MEMORY.md).
+# One target for now: Apple silicon, through Metal. The CUDA backend for the
+# RTX 3090 Ti comes next, behind the same core, as a backend of its own
+# (docs/research/2026-10-19-cuda-backend.md).
 # ---------------------------------------------------------------------------
 if(NOT APPLE)
     message(FATAL_ERROR "serenity: only the Metal backend exists yet, which needs macOS.")
@@ -92,7 +92,8 @@ target_link_libraries(metal_cpp INTERFACE "-framework Metal" "-framework Foundat
 # SDL3: the window (src/app/ only). Pinned by its release tarball's SHA-256:
 # its git history is far larger than the release. Static, and only the parts
 # the window uses: no OpenGL or OpenGL ES, which nothing here draws with.
-# Vulkan stays, for the second backend's window.
+# Vulkan stays until the CUDA backend's window chooses the graphics API it
+# presents through (docs/research/2026-10-19-cuda-backend.md).
 # ---------------------------------------------------------------------------
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)

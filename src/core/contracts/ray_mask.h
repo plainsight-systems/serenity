@@ -35,7 +35,7 @@
 // a light.
 //
 // The values are bits, a class each, and a mask is the union of its
-// classes' bits, as DXR's InstanceMask, Vulkan's cull mask and Metal's
+// classes' bits, as DXR's InstanceMask, OptiX's visibility mask and Metal's
 // instance mask test them (an instance is found when its mask and the
 // ray's share a bit; 8 bits in each): so a two-level structure gives each
 // instance its class's bit and passes the ray's mask to the query as it

@@ -24,6 +24,7 @@ REUSE_APART="src/metal/reuse/ includes the Integrator or a Pass"
 INTEGRATOR_APART="src/metal/integrator/ includes Sample reuse or a Pass"
 APP_NEUTRAL="src/app/ includes a backend outside main.cpp"
 APP_PACING="src/app/ reaches Metal's display link"
+SHADER_LAYOUTS="a shader includes a core header that is not a shared layout"
 SEARCH_FAILED="failed (status"
 
 # src/core/ may hold no files yet, and git keeps no empty directory.
@@ -66,7 +67,7 @@ probe() {
 probe "Metal host include in core" "${CORE_PLATFORM}" src/core/_probe1.h '#pragma once\n#include <Metal/Metal.hpp>\n'
 probe "QuartzCore include in core" "${CORE_PLATFORM}" \
     src/core/_probe2.h '#pragma once\n#include <QuartzCore/QuartzCore.hpp>\n'
-probe "Vulkan include in core" "${CORE_PLATFORM}" src/core/_probe3.h '#pragma once\n#include <vulkan/vulkan.h>\n'
+probe "CUDA include in core" "${CORE_PLATFORM}" src/core/_probe3.h '#pragma once\n#include <cuda.h>\n'
 probe "metal-cpp name in core" "${CORE_PLATFORM}" src/core/_probe4.h '#pragma once\nvoid f(MTL::Device* d);\n'
 probe "MetalFX name in core" "${CORE_PLATFORM}" src/core/_probe13.h '#pragma once\nvoid f(MTLFX::SpatialScaler* s);\n'
 probe "Metal 4 MetalFX name in core" "${CORE_PLATFORM}" \
@@ -140,7 +141,7 @@ rm -f "${F}"
 probe "an app file includes the Metal backend" "${APP_NEUTRAL}" src/app/_probe33.h \
     '#pragma once\n#include "metal/device/presenter.h"\n'
 probe "an app file includes a backend by angle" "${APP_NEUTRAL}" src/app/_probe34.h \
-    '#pragma once\n#include <vulkan/frame/swapchain_frames.h>\n'
+    '#pragma once\n#include <cuda/frame/swapchain_frames.h>\n'
 probe "an app file includes the Metal backend by relative path" "${APP_NEUTRAL}" src/app/_probe35.cpp \
     '#include "../metal/frame/display_frames.h"\n'
 probe "an app file includes the display link" "${APP_PACING}" src/app/_probe36.cpp \
@@ -149,6 +150,17 @@ probe "an app file names the display link" "${APP_PACING}" src/app/_probe37.cpp 
     'void f(serenity::metal::DisplayLink& link);\n'
 probe "an app file names the display link's update" "${APP_PACING}" src/app/_probe38.h \
     '#pragma once\nstruct DisplayUpdate;\n'
+
+# 4d. A shader including the core's math, a header that is not a shared
+#     layout; one that is, and shared_layout.h itself, pass.
+probe "a Metal shader includes the core's sampling" "${SHADER_LAYOUTS}" src/metal/_probe39.metal \
+    '#include "core/sampling/jitter.h"\n'
+probe "a Metal shader header includes the core's scene" "${SHADER_LAYOUTS}" src/metal/_probe40.metal.h \
+    '#pragma once\n#include "core/scene/scene.h"\n'
+F=src/metal/_probe41.metal.h; CREATED="${CREATED} ${F}"
+printf '#pragma once\n#include "core/contracts/shared_layout.h"\n#include "core/scene/scene_block.h"\n' > "${F}"
+"${CHECK}" >/dev/null 2>&1 || fail "a shared layout included by a shader was refused"
+rm -f "${F}"
 
 # 5. A search that cannot read a file fails the check, rather than finding
 #    nothing in it and passing.

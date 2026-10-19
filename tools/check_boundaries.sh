@@ -1,10 +1,12 @@
 #!/bin/sh
-# Enforces the boundary that keeps the core platform-neutral, and the one
-# between two shader families that only a Pass composes (rule 5).
+# Enforces the boundary that keeps the core platform-neutral, the one
+# between two shader families that only a Pass composes (rule 5), and the
+# one between the core and the shaders (rule 7).
 #
 # src/core/ is the scene, the sampling and the math every backend shares. It
 # must build and be tested with no GPU API at all, so that a second backend
-# (Vulkan, for the AMD machine) renders the same scene from the same code.
+# (CUDA and OptiX, for the RTX 3090 Ti) renders the same scene from the same
+# code.
 # Only src/metal/ may touch Metal's host API. A reviewer noticing a stray
 # include is not a control; this is. Covered by tests/test_check_boundaries.sh,
 # which proves each rule fires; both run under ctest (tests/CMakeLists.txt).
@@ -19,17 +21,20 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
-# The host APIs of Apple's GPU and windowing frameworks, and Vulkan's: any
+# The host APIs of Apple's GPU and windowing frameworks: any
 # include or import from them, an Objective-C module import of one, and
 # metal-cpp's namespaces (MTL, MTL4, MTLFX, MTL4FX and any MTL-prefixed one,
 # NS, CA). Every Metal framework (Metal, MetalKit, MetalFX,
 # MetalPerformanceShaders, MetalPerformanceShadersGraph ...), and the
 # surfaces and video frames that hold their images (IOSurface, CoreVideo).
-FRAMEWORKS='(Metal[A-Za-z]*|Foundation|QuartzCore|AppKit|Cocoa|IOSurface|CoreVideo|objc|dispatch|vulkan)'
+FRAMEWORKS='(Metal[A-Za-z]*|Foundation|QuartzCore|AppKit|Cocoa|IOSurface|CoreVideo|objc|dispatch)'
 PLATFORM_INCLUDES="#[[:space:]]*(include|import)[[:space:]]*[<\"]${FRAMEWORKS}/"
 PLATFORM_MODULES="@import[[:space:]]+${FRAMEWORKS}([[:space:];.]|\$)"
 PLATFORM_TOKENS='(^|[^[:alnum:]_])(MTL[A-Z0-9]*|NS|CA)::'
 PLATFORM="${PLATFORM_INCLUDES}|${PLATFORM_MODULES}|${PLATFORM_TOKENS}"
+# NVIDIA's: CUDA's and OptiX's headers, which the core may not include
+# either (rule 1).
+CUDA_INCLUDES='#[[:space:]]*include[[:space:]]*[<"](cuda|optix|nvrtc)[A-Za-z_]*\.h[>"]'
 
 # The directory permitted to use Metal's host API.
 METAL_DIR=src/metal/
@@ -56,7 +61,7 @@ search() {
 }
 
 # 1. The core uses no platform API.
-hits="$(search -rnE "${PLATFORM}" src/core/)"
+hits="$(search -rnE "${PLATFORM}|${CUDA_INCLUDES}" src/core/)"
 if [ -n "${hits}" ]; then
     echo "${hits}" | sed 's/^/  /' >&2
     fail "src/core/ uses a platform GPU or windowing API. The core must build with none."
@@ -65,7 +70,7 @@ fi
 # 2. The core does not depend outward on a backend or a program (the app,
 #    the headless renderer, the measuring program). Quoted and angled forms
 #    alike, and any relative path into them.
-hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal|vulkan|app|headless|measure)/' src/core/)"
+hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal|cuda|app|headless|measure)/' src/core/)"
 if [ -n "${hits}" ]; then
     echo "${hits}" | sed 's/^/  /' >&2
     fail "src/core/ includes from a backend or a program. Dependencies point into the core only."
@@ -75,7 +80,7 @@ fi
 #     includes from no backend and no other program, so a reference is made
 #     and judged on any machine the core builds on. Rule 3 keeps the
 #     platform APIs out of it, as out of all of src/ but src/metal/.
-hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal|vulkan|app|headless)/' src/measure/)"
+hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal|cuda|app|headless)/' src/measure/)"
 if [ -n "${hits}" ]; then
     echo "${hits}" | sed 's/^/  /' >&2
     fail "src/measure/ includes from a backend or another program. It uses the core alone."
@@ -130,7 +135,7 @@ fi
 #    no backend, by quoted, angled or relative path; and no file of
 #    src/app/, main.cpp included, includes Metal's display link or names
 #    its types, which only Metal's frame source uses.
-hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal|vulkan)/' --exclude=main.cpp src/app/)"
+hits="$(search -rnE '#[[:space:]]*include[[:space:]]*[<"](\.\./)*(metal|cuda)/' --exclude=main.cpp src/app/)"
 if [ -n "${hits}" ]; then
     echo "${hits}" | sed 's/^/  /' >&2
     fail "src/app/ includes a backend outside main.cpp. The window meets a backend through the frame source alone."
@@ -140,6 +145,23 @@ if [ -n "${hits}" ]; then
     echo "${hits}" | sed 's/^/  /' >&2
     fail "src/app/ reaches Metal's display link. How frames are paced is the backend's frame source's."
 fi
+
+# 7. A shader includes from the core only its shared layouts
+#    (file-mapping.md, "The contracts"): headers that include
+#    core/contracts/shared_layout.h, the layouts and their encodings, never
+#    the core's math, so the GPU tests check each backend's own code
+#    against the core's. Every Metal shader and header of src/ and of the
+#    GPU tests' kernels.
+shaders="$(find src tests/gpu/kernels -type f \( -name '*.metal' -o -name '*.metal.h' \) | sort)"
+for shader in ${shaders}; do
+    for header in $(search -hoE '#[[:space:]]*include[[:space:]]*[<"]core/[^">]+' "${shader}" | sed -E 's/.*[<"]//'); do
+        [ "${header}" = core/contracts/shared_layout.h ] && continue
+        if [ ! -r "src/${header}" ] || ! grep -q 'core/contracts/shared_layout.h' "src/${header}"; then
+            echo "  ${shader}: ${header}" >&2
+            fail "a shader includes a core header that is not a shared layout. Shaders take the core's layouts, never its math."
+        fi
+    done
+done
 
 if [ "${status}" -eq 0 ]; then
     echo "boundaries OK"

@@ -165,7 +165,7 @@ PROJECT CONTEXT
 Serenity is a real-time path tracer: a scene lit by many moving lights,
 sampled with resampled importance sampling (ReSTIR), then denoised. C++20,
 native, on macOS through Metal (metal-cpp and Metal shaders compiled at build
-time); a Vulkan backend for an AMD machine comes later. src/core/ is
+time); a CUDA and OptiX backend for an RTX 3090 Ti comes next. src/core/ is
 platform-neutral and uses no GPU API; only src/metal/ uses Metal's host API.
 There is one target: an Apple M3 Max,
 on the toolchain pinned in cmake/toolchain.json.

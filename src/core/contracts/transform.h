@@ -9,8 +9,8 @@
 // reads where it is and how big from it (lights/sphere_light.h), and the
 // acceleration structure places each shape's box by it, so the families meet
 // here and depend on nothing of each other's. Shared with shaders, and the
-// same 3 x 4 row-major affine matrix Vulkan's instance descriptors take
-// (VkTransformMatrixKHR) and Metal's take when built with
+// same 3 x 4 row-major affine matrix OptiX's instances take
+// (OptixInstance::transform) and Metal's take when built with
 // MTLMatrixLayoutRowMajor, so the bytes could be given to either as they are
 // when a shape is a mesh under an instance.
 // Row r is (m[r][0], m[r][1], m[r][2], m[r][3]): the linear part in the
@@ -23,7 +23,7 @@
 //     rotated, is the world's, with no inverse-transpose;
 //   - a sphere stays a sphere, so a sphere light's center is the
 //     translation and its radius the scale (lights/sphere_light.h);
-//   - a ray's parameter t is the same in both spaces: Metal and Vulkan carry
+//   - a ray's parameter t is the same in both spaces: Metal and OptiX carry
 //     the world's ray into object space without renormalizing its
 //     direction, so an object-space hit at t is the world's hit at t.
 //

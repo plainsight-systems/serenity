@@ -61,7 +61,7 @@ static_assert(std::is_trivially_copyable_v<ShapeRecord>,
 #if !defined(__METAL_VERSION__)
 // An axis-aligned box: a geometry's extent in object space, what its
 // acceleration structure holds; or a shape's extent in the world (shapes.h).
-// Two packed triples, the layout of Metal's and Vulkan's bounding boxes
+// Two packed triples, the layout of Metal's and OptiX's bounding boxes
 // alike. Contract 11's box (contracts/obstacles.h), the same two corners,
 // not a second type of them (ES.3), as animation/extent.h takes it too: the
 // still shapes answer contract 11's touches() with it as it is.
