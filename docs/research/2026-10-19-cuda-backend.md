@@ -223,7 +223,18 @@ backend.
 
 0. **What is not Metal's moves into the core,** on the Mac, before any
    CUDA: the list above, each move a refactor with every graph's output
-   the same to the bit.
+   the same to the bit. **Done 2026-10-19** (branch `cuda`, 315ef86 to
+   2aa9c2c; file-mapping.md, "What every backend computes the same, in
+   the core"): the scene's block and arrays, each frame's constants
+   blocks, the refusals, the U-Net's dispatches, the depth of field's,
+   bloom's and ReSTIR PT's sizes, and the structures' plan, about 1,000
+   lines out of `src/metal/` into nine core files, with unit tests for the
+   refusals, the U-Net's wiring and the structures' plan; rule 7 of the
+   boundary check (shaders include shared layouts only). Every graph's
+   94 output files the same to the bit and the refusals' words the same;
+   three presets at 0 warnings, ctest and `make check` green. Left in
+   Metal, each for its reason: the history joined on a copy, the failure
+   counts, the submission's protocol, MNEE's capacity.
 1. **The core on Linux.** CMake's per-platform selection, the presets,
    the toolchain's Linux section, the fetched dependencies, the shadow
    warning; the core's tests green there, `make check`'s rules extended.
