@@ -236,7 +236,14 @@ backend.
    94 output files the same to the bit and the refusals' words the same;
    three presets at 0 warnings, ctest and `make check` green. Left in
    Metal, each for its reason: the history joined on a copy, the failure
-   counts, the submission's protocol, MNEE's capacity.
+   counts, the submission's protocol, MNEE's capacity. The demo graph's
+   frame interval, before (0633a78) and after (2aa9c2c), the marbles at
+   t = 120, AC power and an idle GPU, 3 rounds each, interleaved
+   (serenity-scratch/phase0/): 1920 x 1080, 17.40 -> 17.45 ms (57.5 ->
+   57.3 fps); 3456 x 2234, 58.08 -> 58.14 ms (17.2 fps both; the medians
+   of the rounds, one of the before's at 59.49). Each round 0.05 ms
+   slower after, 0.3%, the before always run first; not separated
+   further.
 1. **The core on Linux.** CMake's per-platform selection, the presets,
    the toolchain's Linux section, the fetched dependencies, the shadow
    warning; the core's tests green there, `make check`'s rules extended.
