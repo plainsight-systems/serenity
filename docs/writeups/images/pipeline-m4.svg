@@ -14,16 +14,17 @@
 <circle cx="41" cy="164" r="7" fill="#2f6fdf" stroke="#faf8f4" stroke-width="2.5"/>
 <text x="56" y="168.5" font-size="12.5" font-weight="600" fill="#2f6fdf">at the same time</text>
 <rect x="150" y="45" width="130" height="70" rx="8" fill="#fff" stroke="#9b958a" stroke-width="1"/><text x="215" y="74" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Scene</text><text x="215" y="94" text-anchor="middle" font-size="12" fill="#555">fireflies move</text><circle cx="266" cy="45" r="7" fill="#169e6c" stroke="#faf8f4" stroke-width="2.5"/>
-<rect x="300" y="45" width="130" height="70" rx="8" fill="#fff" stroke="#9b958a" stroke-width="1"/><text x="365" y="74" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Trace paths</text><text x="365" y="94" text-anchor="middle" font-size="12" fill="#555">ReSTIR PT samples</text><circle cx="416" cy="45" r="7" fill="#e47a14" stroke="#faf8f4" stroke-width="2.5"/><circle cx="398" cy="45" r="7" fill="#169e6c" stroke="#faf8f4" stroke-width="2.5"/>
+<rect x="300" y="45" width="130" height="70" rx="8" fill="#fff" stroke="#9b958a" stroke-width="1"/><text x="365" y="74" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Trace paths</text><text x="365" y="94" text-anchor="middle" font-size="12" fill="#555">ReSTIR PT samples</text><circle cx="416" cy="45" r="7" fill="#d6457a" stroke="#faf8f4" stroke-width="2.5"/><circle cx="398" cy="45" r="7" fill="#e47a14" stroke="#faf8f4" stroke-width="2.5"/><circle cx="380" cy="45" r="7" fill="#169e6c" stroke="#faf8f4" stroke-width="2.5"/>
 <rect x="450" y="45" width="130" height="70" rx="8" fill="#fff" stroke="#9b958a" stroke-width="1"/><text x="515" y="74" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Caustics</text><text x="515" y="94" text-anchor="middle" font-size="12" fill="#555">MNEE through glass</text><circle cx="566" cy="45" r="7" fill="#e47a14" stroke="#faf8f4" stroke-width="2.5"/><circle cx="548" cy="45" r="7" fill="#169e6c" stroke="#faf8f4" stroke-width="2.5"/>
 <rect x="600" y="45" width="130" height="70" rx="8" fill="#fff" stroke="#9b958a" stroke-width="1"/><text x="665" y="74" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Reuse in time</text><text x="665" y="94" text-anchor="middle" font-size="12" fill="#555">last frame's paths</text><circle cx="716" cy="45" r="7" fill="#e47a14" stroke="#faf8f4" stroke-width="2.5"/><circle cx="698" cy="45" r="7" fill="#169e6c" stroke="#faf8f4" stroke-width="2.5"/>
 <rect x="750" y="45" width="130" height="70" rx="8" fill="#fff" stroke="#9b958a" stroke-width="1"/><text x="815" y="74" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Reuse in space</text><text x="815" y="94" text-anchor="middle" font-size="12" fill="#555">neighbors' paths</text><circle cx="866" cy="45" r="7" fill="#e47a14" stroke="#faf8f4" stroke-width="2.5"/><circle cx="848" cy="45" r="7" fill="#169e6c" stroke="#faf8f4" stroke-width="2.5"/>
 <rect x="900" y="45" width="130" height="70" rx="8" fill="#fff" stroke="#9b958a" stroke-width="1"/><text x="965" y="74" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Shade</text><text x="965" y="94" text-anchor="middle" font-size="12" fill="#555">the noisy light</text><circle cx="1016" cy="45" r="7" fill="#e47a14" stroke="#faf8f4" stroke-width="2.5"/>
 <rect x="1050" y="45" width="130" height="70" rx="8" fill="#fdf0e2" stroke="#e47a14" stroke-width="2"/><text x="1115" y="74" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Fill</text><text x="1115" y="94" text-anchor="middle" font-size="12" fill="#555">the untraced half</text><circle cx="1166" cy="45" r="7" fill="#e47a14" stroke="#faf8f4" stroke-width="2.5"/>
-<rect x="150" y="213" width="130" height="70" rx="8" fill="#fff" stroke="#9b958a" stroke-width="1"/><text x="215" y="242" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Surface features</text><text x="215" y="262" text-anchor="middle" font-size="12" fill="#555">color, depth, motion</text>
+<rect x="150" y="213" width="130" height="70" rx="8" fill="#fff" stroke="#9b958a" stroke-width="1"/><text x="215" y="242" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Surface features</text><text x="215" y="262" text-anchor="middle" font-size="12" fill="#555">color, depth, motion</text><circle cx="266" cy="213" r="7" fill="#d6457a" stroke="#faf8f4" stroke-width="2.5"/>
 <rect x="450" y="213" width="130" height="70" rx="8" fill="#fff" stroke="#9b958a" stroke-width="1"/><text x="515" y="242" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Denoise, upscale</text><text x="515" y="262" text-anchor="middle" font-size="12" fill="#555">the trained network</text><circle cx="566" cy="213" r="7" fill="#8a4fd6" stroke="#faf8f4" stroke-width="2.5"/>
-<rect x="600" y="213" width="130" height="70" rx="8" fill="#fff" stroke="#9b958a" stroke-width="1"/><text x="665" y="242" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Tone map</text><text x="665" y="262" text-anchor="middle" font-size="12" fill="#555">exposure, glare</text>
-<rect x="750" y="213" width="130" height="70" rx="8" fill="#fff" stroke="#9b958a" stroke-width="1"/><text x="815" y="242" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Screen</text><text x="815" y="262" text-anchor="middle" font-size="12" fill="#555">the finished frame</text>
+<rect x="600" y="213" width="130" height="70" rx="8" fill="#fbe6ee" stroke="#d6457a" stroke-width="2"/><text x="665" y="242" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Depth of field</text><text x="665" y="262" text-anchor="middle" font-size="12" fill="#555">blur by distance</text><circle cx="716" cy="213" r="7" fill="#d6457a" stroke="#faf8f4" stroke-width="2.5"/>
+<rect x="750" y="213" width="130" height="70" rx="8" fill="#fff" stroke="#9b958a" stroke-width="1"/><text x="815" y="242" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Tone map</text><text x="815" y="262" text-anchor="middle" font-size="12" fill="#555">exposure, glare</text>
+<rect x="900" y="213" width="130" height="70" rx="8" fill="#fff" stroke="#9b958a" stroke-width="1"/><text x="965" y="242" text-anchor="middle" font-size="14" font-weight="600" fill="#1f1f1f">Screen</text><text x="965" y="262" text-anchor="middle" font-size="12" fill="#555">paced by the display</text><circle cx="1016" cy="213" r="7" fill="#d6457a" stroke="#faf8f4" stroke-width="2.5"/>
 <g stroke="#6b6b6b" stroke-width="1.6" fill="none" marker-end="url(#a)">
 <line x1="280" y1="80" x2="298" y2="80"/>
 <line x1="430" y1="80" x2="448" y2="80"/>
@@ -34,14 +35,12 @@
 <line x1="280" y1="248" x2="448" y2="248"/>
 <line x1="580" y1="248" x2="598" y2="248"/>
 <line x1="730" y1="248" x2="748" y2="248"/>
+<line x1="880" y1="248" x2="898" y2="248"/>
 <polyline points="1115,115 1115,164 515,164 515,211"/>
 </g>
-<circle cx="41" cy="342" r="7" fill="#2f6fdf"/>
-<text x="56" y="346.5" font-size="13" fill="#2b2b2b">Light and image overlap</text>
-<circle cx="260.0" cy="342" r="7" fill="#169e6c"/>
-<text x="275.0" y="346.5" font-size="13" fill="#2b2b2b">Shadow rays skip the fireflies</text>
-<circle cx="528.0" cy="342" r="7" fill="#e47a14"/>
-<text x="543.0" y="346.5" font-size="13" fill="#2b2b2b">Half the pixels each frame</text>
-<circle cx="768.0" cy="342" r="7" fill="#8a4fd6"/>
-<text x="783.0" y="346.5" font-size="13" fill="#2b2b2b">Network retrained</text>
+<circle cx="41" cy="342" r="7" fill="#2f6fdf"/><text x="56" y="346.5" font-size="13" fill="#2b2b2b">Light and image overlap</text>
+<circle cx="247.1" cy="342" r="7" fill="#169e6c"/><text x="262.1" y="346.5" font-size="13" fill="#2b2b2b">Shadow rays skip the fireflies</text>
+<circle cx="500.1" cy="342" r="7" fill="#e47a14"/><text x="515.1" y="346.5" font-size="13" fill="#2b2b2b">Half the pixels each frame</text>
+<circle cx="726.3000000000001" cy="342" r="7" fill="#8a4fd6"/><text x="741.3000000000001" y="346.5" font-size="13" fill="#2b2b2b">Network retrained</text>
+<circle cx="892.2" cy="342" r="7" fill="#d6457a"/><text x="907.2" y="346.5" font-size="13" fill="#2b2b2b">Matched to shipped engines</text>
 </svg>

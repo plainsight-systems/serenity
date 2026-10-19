@@ -410,21 +410,30 @@ rendering moved into functions tested directly (`src/headless/options.h`,
   checkerboard rendering of the light (how every denoised graph traces).
   The split scene is skipped on Metal, kept for the Vulkan and Xbox
   milestones.
-- **The network retrained on checkerboard input, by the user's decision,
-  2026-10-17/18:** new inputs over denoiser-v1's targets, kept by the user
-  (the masks moved them +0.1% in the mean), as
-  `../serenity-data/denoiser-v1-checkerboard`; the run
-  `denoiser-v1-runs/v1-wide-checkerboard`, exported to
-  `denoiser-v1-checkerboard-model/wide`, which the demo graph names and
-  `make weights` fetches. Kept by the user 2026-10-18.
+- **The network retrained on denoiser-v2** (2026-10-19, kept by the
+  user): the whole data set rendered again on the Mac (3.55 h), sharp,
+  checkerboarded and jittered as the demo traces, proved to the bit by
+  tests/gpu/features_test.cpp; trained on the RTX 3090 Ti (3.5 h);
+  exported to `../serenity-data/denoiser-v2-model/wide`, which the demo
+  graph names and `make weights` fetches. Corrects an earlier claim: the
+  2026-10-18 "checkerboard retrain" (denoiser-v1-checkerboard) was not
+  on checkerboard input, the input graph having traced every pixel.
+- **The production sweep** (`research/2026-10-18-production-sweep.md`,
+  kept by the user): depth of field after the denoiser (half resolution),
+  Halton jitter as two network inputs, light tiles drawn by power, frame
+  pacing by the display link behind a backend-neutral frame source (30 to
+  60 frames a second). **The user's rule: denoiser-v2 is the last
+  data-set render on the Mac; any later one waits for the RTX 3090
+  renderer.**
 - **Training runs on either GPU:** `train.py --device cuda|mps`, by
   default the machine's; the data is held on the GPU when it fits beside
   training's own memory, measured at the start, and in host memory when
   not. The RTX 3090 Ti (`ssh ai`, the checkout and environment under
   `/data/serenity`) is where training runs; the data set is rendered on
   the Mac and copied over.
-- **The final frame:** 16.7 ms at 1920 x 1080 (60 fps), 56.1 ms at the
-  window's 3456 x 2234 (17.8 fps).
+- **The final frame:** 17.5 ms at 1920 x 1080 (57 fps), 58.5 ms at the
+  window's 3456 x 2234 (17.1 fps), accepted by the user 2026-10-19 with
+  depth of field after the denoiser (before the sweep: 16.7 and 56.1).
 
 ## The production sweep (Milestone 4, 2026-10-18)
 

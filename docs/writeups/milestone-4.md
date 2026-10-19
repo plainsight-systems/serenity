@@ -1,8 +1,8 @@
 # Milestone 4: making the frame fast
 
-![The marbles twenty seconds into the opening, the swarm perched among them, traced in a checkerboard and denoised by the retrained network](images/marbles-m4-20s.jpg)
+![The marbles twenty seconds into the opening, the swarm perched among them, the near marbles softly out of focus](images/marbles-m4-20s.jpg)
 
-*Twenty seconds into the opening, at 60 frames a second on my M3 Max.*
+*Twenty seconds into the opening, at 57 frames a second on my M3 Max.*
 
 ## Where Milestone 3 left the frame
 
@@ -23,7 +23,7 @@ Milestone 3 uses those to decide how much each noisy neighbor should
 count, removes the noise, and fills in the full resolution. A tone map
 turns the light into display colors.
 
-That frame looked right. It ran at about 43 frames a second at
+That frame looked mostly right. It ran at about 43 frames a second at
 1920 × 1080, and about 13 at the full size of my laptop's display.
 
 ## What this milestone set out to do
@@ -34,11 +34,13 @@ much of it is computed each frame and how well the GPU is kept busy while
 doing it.
 
 This milestone applied four of those standard optimizations to the
-Milestone 3 pipeline and kept three. It also retrained the network for the
-input that changed. Here is the same frame, with each change marked where
-it acts:
+Milestone 3 pipeline and kept three. Then a closer look at the marbles
+sent me back over every stage of the frame, comparing each with how
+shipped engines build it, and that added four more changes. Finally, I
+retrained the network for the input that had changed. Here is the same
+frame, with each change marked where it acts:
 
-![Milestone 4's frame: the same stages, the light of frame N + 1 running at the same time as the image of frame N; shadow rays skipping the fireflies in the scene, path tracing, caustics and both reuse steps; those stages and shading running on half the pixels each frame, with a new fill stage for the untraced half; and the network retrained](images/pipeline-m4.svg)
+![Milestone 4's frame: the same stages, the light of frame N + 1 running at the same time as the image of frame N; shadow rays skipping the fireflies; the light stages running on half the pixels each frame, with a new fill stage; the network retrained; and, matched to shipped engines, a sharp trace with a depth-of-field stage after the network, and frames paced by the display](images/pipeline-m4.svg)
 
 ## Running the light and the image at the same time
 
@@ -116,28 +118,74 @@ and the untraced half drifted darker frame by frame. Taking only pixels
 that were actually traced fixed it. The image came out a little smoother
 and a little softer.
 
+## Checking the whole frame against shipped engines
+
+With those three in place, I looked at the marbles up close. The large
+ones nearest the camera had ragged, speckled outlines, and had since
+Milestone 3. The marbles further back were clean.
+
+The cause was where the blur came from. Serenity made its depth of field
+the way an offline renderer does: every pixel's ray passes through a
+random point on a lens, every frame. At a blurred edge, a single ray lands
+on the marble or on the table at random, so the surface information the
+network relies on flickered between the two from pixel to pixel, and the
+network kept that speckle as if it were a real edge. The near marbles are
+the most out of focus, so they suffered most.
+
+Real-time engines don't blur inside the trace. They trace a sharp image,
+denoise it, and apply depth of field afterward, using each pixel's depth.
+I had checked each optimization against production practice, but never
+the camera. So I went over every stage of the frame against how Unreal,
+NVIDIA's RTXDI and denoisers, and Apple's own samples do it, and kept four
+changes:
+
+- **Depth of field after the network.** The light is traced sharp, and a
+  new stage blurs the finished image by each pixel's distance from focus,
+  following the method from *Call of Duty: Advanced Warfare*, at half
+  resolution as shipped games run it.
+- **A fixed jitter pattern.** Upscalers like DLSS shift the camera by a
+  fraction of a pixel each frame along a fixed sequence and tell the
+  network the offset. Serenity's network upscales, so it now gets the same.
+- **Brighter lights drawn more often.** RTXDI picks which lights to sample
+  in proportion to their power, so noise moves away from dim fireflies
+  that barely matter.
+- **Frames paced by the display.** The window now renders when the display
+  asks for a frame, as Apple recommends, behind a seam that a Vulkan or
+  Xbox backend can implement its own way.
+
+![The near marbles before (left) and after (right): the speckled outlines become smooth, out-of-focus discs](images/m4-depth-of-field-near-marbles.jpg)
+
 ## Teaching the network the new input
 
-The network had learned from complete frames of light, and checkerboard
-changed what it sees, so I retrained it. The targets it learns toward come
-from the path tracer, which checkerboard does not change. Only the noisy
-inputs had to be rendered again:
+Checkerboard, the sharp trace and the jitter all change what the network
+sees, so I retrained it on a new data set. The targets it learns toward
+come from the path tracer, which now renders them sharp too, so this time
+everything had to be rendered again:
 
-![Retraining: the targets kept, the inputs rendered again with checkerboard on the Mac, training on the RTX 3090, the retrained network running in the renderer on the Mac](images/m4-retrain.svg)
+![Retraining: new sharp targets and new inputs, traced exactly as the demo traces, rendered on the Mac; training on the RTX 3090; the retrained network running in the renderer on the Mac](images/m4-retrain.svg)
+
+That was also where I found a mistake of my own. A first retrain I
+believed was on checkerboard input wasn't: the graph that renders the
+training inputs traced every pixel, because only the demo itself
+switched checkerboard on. Training data has to be exactly what the
+network sees at run time. So the input graph now traces the way the demo
+does, and a test checks that the two match, bit for bit, before anything
+is rendered.
 
 This was the first training run on my RTX 3090. Training now runs on
-either GPU. It keeps its data on the card when it fits, and in system
-memory when it doesn't, as on the 3090.
-
-The retrained network is about as accurate on the held-out marbles as the
-original was on complete frames.
+either GPU, keeping its data on the card when it fits and in system
+memory when it doesn't, as on the 3090. On the held-out marbles the
+retrained network has 22 to 41% less error than Intel's Open Image
+Denoise.
 
 ## Where it stands
 
-The fully lit scene now runs at 60 frames a second at 1920 × 1080 on my
-M3 Max, up from 43, and about 18 at my laptop display's full size, up from
-13. The largest gain came from tracing half the pixels. The smallest,
-running the two halves together, taught me the most.
+The fully lit scene now runs at 57 frames a second at 1920 × 1080 on my
+M3 Max, up from 43, and about 17 at my laptop display's full size, up
+from 13. Tracing half the pixels gained the most. Depth of field gave a
+little back, and was worth it: it is what made the near marbles look like
+glass instead of noise. Running the two halves together gained the
+least, and taught me the most.
 
 The network and the reuse steps are now the larger costs. The reuse steps
 merge reservoirs much as attention merges partial softmax results, and so

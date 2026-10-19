@@ -478,6 +478,13 @@ traces its light, not a setting. Retrained on, below.
 
 ## Retraining on checkerboard input (2026-10-17/18)
 
+**Correction, 2026-10-18:** this retrain was not on checkerboard input.
+The data set's input graph (graphs/restir_pt_features.toml) had no denoise
+pass, and checkerboard tracing was tied to it, so these inputs were traced
+every pixel. The network the demo runs since 2026-10-19 is trained on
+denoiser-v2, whose inputs trace as the demo does
+(docs/research/2026-10-18-production-sweep.md).
+
 By the user's decision, the network trained again on checkerboarded light.
 
 **The data set: inputs new, targets reused.** The targets are the path
@@ -543,3 +550,20 @@ since then the cleanup removed code and kept every image, and the
 retrained network has the same shape. A frame's span on the GPU, from the
 light half's start to the image half's end: 112 ms at the window's size,
 33 at 1920 × 1080.
+
+## After the close: the production sweep (2026-10-18/19)
+
+The milestone reopened for a check of every stage against shipped
+engines: docs/research/2026-10-18-production-sweep.md. The final frame,
+measured as above on the merged tree with the network trained on
+denoiser-v2, 3 rounds within 0.1 ms (serenity-scratch/checkerboard/
+campaign_final_v2.sh, out-v2/):
+
+| Output, time | Before the sweep | After | frames a second |
+|---|---|---|---|
+| 3456 × 2234, t = 120 | 56.1 ms | 58.5 ms | 17.8 → 17.1 |
+| 3456 × 2234, t = 20 | 57.0 | 59.4 | 17.6 → 16.8 |
+| 1920 × 1080, t = 120 | 16.7 | 17.5 | 60.0 → 57.1 |
+| 1920 × 1080, t = 20 | 16.9 | 17.7 | 59.2 → 56.4 |
+
+Accepted by the user 2026-10-19.
