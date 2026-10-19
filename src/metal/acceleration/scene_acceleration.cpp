@@ -1,11 +1,11 @@
 #include "metal/acceleration/scene_acceleration.h"
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
-#include <iterator>
+#include <optional>
 #include <string>
 #include <type_traits>
+#include <utility>
 
 #include "metal/acceleration/structure_block.h"
 #include "metal/device/error.h"
@@ -27,52 +27,15 @@ static_assert(std::is_trivially_copyable_v<shapes::Bounds>);
 static_assert(sizeof(MTL::ResourceID) == sizeof(gpu::Structure));
 static_assert(std::is_trivially_copyable_v<gpu::StructureBlock>);
 
-namespace {
-
-// Whether `indices` are shapes' indices, of `count`, in increasing order.
-bool increasing_shapes(std::span<const std::uint32_t> indices,
-                       std::size_t count) {
-  for (std::size_t i = 0; i < indices.size(); ++i) {
-    if (indices[i] >= count || (i > 0 && indices[i] <= indices[i - 1])) {
-      return false;
-    }
-  }
-  return true;
-}
-
-}  // namespace
-
 SceneAcceleration::Tree SceneAcceleration::make_tree(
-    const Device& device, Submission& submission, const shapes::Shapes& shapes,
-    std::span<const std::uint32_t> members,
-    std::span<const std::uint32_t> moving, MTL::ResidencySet* build_only) {
+    const Device& device, Submission& submission, shapes::TreePlan plan,
+    MTL::ResidencySet* build_only) {
   Tree tree;
-  // Its moving shapes, by the box each is in: both lists increasing, so one
-  // walk pairs them.
-  std::size_t next = 0;
-  for (std::size_t box = 0; box < members.size(); ++box) {
-    while (next < moving.size() && moving[next] < members[box]) {
-      ++next;
-    }
-    if (next < moving.size() && moving[next] == members[box]) {
-      tree.moving_boxes.push_back(static_cast<std::uint32_t>(box));
-      tree.moving_shapes.push_back(members[box]);
-      tree.moving_bounds.push_back(
-          shapes::object_bounds(shapes, shapes.records[members[box]]));
-    }
-  }
+  tree.plan = std::move(plan);
   const bool moves = tree.moves();
-
-  // Every member's box at rest: its geometry's bounds placed by its transform.
-  std::vector<shapes::Bounds> at_rest(members.size());
-  for (std::size_t box = 0; box < members.size(); ++box) {
-    const std::uint32_t shape = members[box];
-    at_rest[box] = shapes::world_bounds(
-        shapes::object_bounds(shapes, shapes.records[shape]),
-        shapes.transforms[shape]);
-  }
+  const std::size_t members = tree.plan.members.size();
   tree.boxes = std::make_unique<FrameArray>(
-      device, submission, std::as_bytes(std::span(at_rest)),
+      device, submission, std::as_bytes(std::span(tree.plan.at_rest)),
       moves ? FrameArray::Copies::per_frame : FrameArray::Copies::one);
 
   MTL::Device* metal_device = device.handle();
@@ -84,7 +47,7 @@ SceneAcceleration::Tree SceneAcceleration::make_tree(
             ->init());
     geometry->setBoundingBoxBuffer(MTL4::BufferRange(
         tree.boxes->address(slot), tree.boxes->bytes(slot).size()));
-    geometry->setBoundingBoxCount(members.size());
+    geometry->setBoundingBoxCount(members);
     geometry->setBoundingBoxStride(sizeof(shapes::Bounds));
     geometry->setOpaque(true);
     built.descriptor = NS::TransferPtr(
@@ -120,32 +83,12 @@ SceneAcceleration::SceneAcceleration(const Device& device,
                                      Submission& submission,
                                      const shapes::Shapes& shapes,
                                      Roles roles) {
-  const std::span<const std::uint32_t> moving = roles.moving;
-  const std::span<const std::uint32_t> lights = roles.lights;
-  const std::size_t count = shapes.records.size();
-  if (count == 0 || shapes.transforms.size() != count) {
-    throw MetalError(
-        "SceneAcceleration: no shapes, or not one transform per shape");
+  if (const std::optional<std::string> reason =
+          shapes::structure_refusal(shapes, roles.moving, roles.lights)) {
+    throw MetalError("SceneAcceleration: " + *reason);
   }
-  if (!increasing_shapes(moving, count)) {
-    throw MetalError(
-        "SceneAcceleration: the moving shapes are not shapes' indices in "
-        "increasing order");
-  }
-  if (!increasing_shapes(lights, count)) {
-    throw MetalError(
-        "SceneAcceleration: the lights are not shapes' indices in increasing "
-        "order");
-  }
-
-  // Everything's members are every shape, so its box i is shape i; the
-  // occluders', the shapes that are not lights, in order.
-  std::vector<std::uint32_t> every(count);
-  for (std::size_t i = 0; i < count; ++i) {
-    every[i] = static_cast<std::uint32_t>(i);
-  }
-  std::vector<std::uint32_t> surfaces;
-  std::ranges::set_difference(every, lights, std::back_inserter(surfaces));
+  shapes::StructurePlan plan =
+      shapes::plan_structures(shapes, roles.moving, roles.lights);
 
   const auto pool = scoped_pool();
   MTL::Device* metal_device = device.handle();
@@ -162,18 +105,15 @@ SceneAcceleration::SceneAcceleration(const Device& device,
                      describe(error));
   }
 
-  everything_ =
-      make_tree(device, submission, shapes, every, moving, build_only.get());
+  everything_ = make_tree(device, submission, std::move(plan.everything),
+                          build_only.get());
   // Its own tree only when it differs from everything and holds something
-  // (structure_block.h): with no light it is everything; with no surface,
-  // nothing.
-  if (!lights.empty() && !surfaces.empty()) {
-    occluders_ = make_tree(device, submission, shapes, surfaces, moving,
+  // (structure_block.h; the core's plan).
+  if (plan.occluders) {
+    occluders_ = make_tree(device, submission, std::move(*plan.occluders),
                            build_only.get());
   }
-  const std::span<const std::uint32_t> table =
-      lights.empty() ? std::span<const std::uint32_t>(every)
-                     : std::span<const std::uint32_t>(surfaces);
+  const std::span<const std::uint32_t> table = plan.occluder_table;
   const std::array<std::span<const std::byte>, 1> arrays{std::as_bytes(table)};
   occluder_table_ = std::make_unique<StaticArrays>(device, submission, arrays);
 
@@ -264,12 +204,8 @@ void SceneAcceleration::update(
     }
     // Step 1: the tree's moving boxes, where this frame places their shapes.
     // made from boxes
-    const std::span<shapes::Bounds> boxes =
-        tree->boxes->view<shapes::Bounds>(slot);
-    for (std::size_t i = 0; i < tree->moving_boxes.size(); ++i) {
-      boxes[tree->moving_boxes[i]] = shapes::world_bounds(
-          tree->moving_bounds[i], transforms[tree->moving_shapes[i]]);
-    }
+    shapes::place_moving(tree->plan, transforms,
+                         tree->boxes->view<shapes::Bounds>(slot));
     // Step 2: the slot's structure, over every box.
     const Built& built = tree->structures.at(slot);
     encoder->buildAccelerationStructure(

@@ -169,6 +169,7 @@ add_library(serenity_core STATIC
     src/core/scene/swarm.cpp
     src/core/sampling/pairing.cpp
     src/core/shapes/shapes.cpp
+    src/core/shapes/structure_plan.cpp
 )
 target_include_directories(serenity_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(serenity_core PRIVATE tomlplusplus::tomlplusplus stb_image_write)

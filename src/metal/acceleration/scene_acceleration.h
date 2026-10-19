@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "core/shapes/shapes.h"
+#include "core/shapes/structure_plan.h"
 #include "metal/device/device.h"
 #include "metal/device/frame_array.h"
 #include "metal/device/static_arrays.h"
@@ -199,31 +200,25 @@ class SceneAcceleration {
   // indexed by slot, when one does. Made whole by make_tree() alone
   // (C.41).
   struct Tree {
-    // the boxes of its moving shapes, which update() writes
-    std::vector<std::uint32_t> moving_boxes;
-    // their shapes, whose transforms place them
-    std::vector<std::uint32_t> moving_shapes;
-    // their object-space bounds, in the same order
-    std::vector<shapes::Bounds> moving_bounds;
+    // its shapes, which move, and its boxes at rest (the core's plan,
+    // core/shapes/structure_plan.h)
+    shapes::TreePlan plan;
     std::unique_ptr<FrameArray> boxes;  // one box per member, per structure
     std::array<Built, frames_in_flight> structures;
 
-    bool moves() const { return !moving_boxes.empty(); }
+    bool moves() const { return plan.moves(); }
     // The structure slot `slot` traces.
     const Built& in(std::uint32_t slot) const {
       return moves() ? structures.at(slot) : structures[0];
     }
   };
 
-  // Makes a tree over `members`, the shapes it holds in increasing order,
-  // of which `moving` (increasing) move: its boxes at rest, descriptors,
-  // structures and scratch, resident; a still tree's scratch is added to
-  // `build_only` instead, for the constructor's one start-up build.
+  // Makes the tree the core planned, `plan`: its boxes at rest,
+  // descriptors, structures and scratch, resident; a still tree's scratch
+  // is added to `build_only` instead, for the constructor's one start-up
+  // build.
   static Tree make_tree(const Device& device, Submission& submission,
-                        const shapes::Shapes& shapes,
-                        std::span<const std::uint32_t> members,
-                        std::span<const std::uint32_t> moving,
-                        MTL::ResidencySet* build_only);
+                        shapes::TreePlan plan, MTL::ResidencySet* build_only);
 
   Tree everything_;
   // The occluders' own, when the scene has lights and surfaces both;
