@@ -13,8 +13,10 @@
 
 #include "core/frame/frame_inputs.h"
 #include "core/frame/schedule.h"
+#include "core/measurement/frame_times.h"
 #include "core/output/image_format.h"
 #include "headless/options.h"
+#include "headless/times.h"
 #include "support/required.h"
 #include "support/schedules.h"
 #include "support/text.h"
@@ -380,4 +382,31 @@ TEST_CASE(
                  "the graph s has no features pass"));
   CHECK(contains(refusal(headless({}), features_alone),
                  "shows no image, only features"));
+}
+
+TEST_CASE(
+    "headless: --times times the frames' work alone: the last frame written, "
+    "one sample a frame") {
+  CHECK_FALSE(headless({}).times);
+  CHECK(headless({"--times", "--write", "last"}).times);
+  CHECK(contains(headless_error({"--times"}), "--times needs --write last"));
+  CHECK(contains(headless_error({"--times", "--write", "doubling"}),
+                 "--times needs --write last"));
+  CHECK(
+      contains(headless_error({"--times", "--write", "last", "--samples", "2"}),
+               "--times needs one sample a frame"));
+}
+
+TEST_CASE(
+    "headless: --times' line gives the size and that the headless renderer "
+    "measured it beside the milliseconds") {
+  const serenity::measurement::Summary summary{
+      .frames = 57,
+      .mean = serenity::frame::Seconds{0.017374},
+      .shortest = serenity::frame::Seconds{0.0169},
+      .longest = serenity::frame::Seconds{0.018206},
+  };
+  CHECK(serenity::headless::times_line({1920, 1080}, summary) ==
+        "1920 x 1080: GPU 17.37 ms mean, 16.90 to 18.21, over 57 frames "
+        "(headless)");
 }

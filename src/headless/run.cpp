@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <format>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -20,8 +21,13 @@ Run::Run(const Options& options, const frame::Schedule& schedule,
       plan_(plan),
       source_(source),
       renderer_(presentation::make_offline_renderer(
-          schedule, loaded ? &*loaded : nullptr, options.size)) {
+          schedule, loaded ? &*loaded : nullptr, options.size)),
+      times_(times_period) {
   prepare_output(options.out);
+  // A frame's settled samples, at most the frames in flight and the one
+  // waited for, taken each frame (MEM.9).
+  constexpr std::size_t settled_at_once = 4;
+  settled_.reserve(settled_at_once);
   // The one buffer a written frame is read back into, for its source. No
   // default: a source with no readback fails to compile (ES.79).
   switch (source_) {
@@ -40,6 +46,21 @@ Run::Run(const Options& options, const frame::Schedule& schedule,
 
 void Run::render(std::uint64_t index) {
   renderer_->wait(render_samples(index));
+}
+
+void Run::commit(std::uint64_t index) { (void)render_samples(index); }
+
+void Run::report_times(std::ostream& out) {
+  renderer_->take_settled(settled_);
+  for (const presentation::OfflineRenderer::SettledSample& sample : settled_) {
+    times_.add(sample.gpu_start, sample.gpu_end);
+    // The period is GPU time: each sample's end is the summary's now.
+    if (const std::optional<measurement::Summary> summary =
+            times_.take(sample.gpu_end)) {
+      out << times_line(options_.size, *summary) << '\n';
+    }
+  }
+  settled_.clear();
 }
 
 void Run::check_finite(std::uint64_t index) const {

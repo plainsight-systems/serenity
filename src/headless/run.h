@@ -10,10 +10,12 @@
 #include "core/frame/frame_inputs.h"
 #include "core/frame/history.h"
 #include "core/frame/schedule.h"
+#include "core/measurement/frame_times.h"
 #include "core/output/image_format.h"
 #include "core/presentation/offline_renderer.h"
 #include "core/scene/scene.h"
 #include "headless/options.h"
+#include "headless/times.h"
 
 namespace serenity::headless {
 
@@ -53,6 +55,15 @@ class Run {
   // Frame `index`'s samples, each committed, and the last waited for.
   void render(std::uint64_t index);
 
+  // Frame `index`'s samples, each committed, none waited for: a frame
+  // --times runs back to back (options.h).
+  void commit(std::uint64_t index);
+
+  // Under --times: the instants of every sample settled since the last
+  // call added to the run's frame times, and the summary's line written
+  // onto `out` each time a second of GPU time has passed (options.h).
+  void report_times(std::ostream& out);
+
   // Refuses frame `index`, rendered, if it left out samples for not being
   // finite, or lost MNEE requests to a full work list.
   void check_finite(std::uint64_t index) const;
@@ -80,6 +91,10 @@ class Run {
   // allocated once (MEM.9).
   std::vector<std::uint8_t> rgba_;
   std::vector<float> accumulated_;
+  // --times: the frames' summary, a second of GPU time a period, and the
+  // settled samples taken each frame into one list, made once (MEM.9).
+  measurement::FrameTimes times_;
+  std::vector<presentation::OfflineRenderer::SettledSample> settled_;
 };
 
 }  // namespace serenity::headless

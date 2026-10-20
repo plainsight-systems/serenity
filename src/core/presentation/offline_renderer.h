@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <vector>
 
 #include "core/contracts/linear_image.h"
 #include "core/frame/extent.h"
@@ -45,6 +46,17 @@ namespace serenity::presentation {
 // in flight before anything the GPU may still use is released.
 class OfflineRenderer {
  public:
+  // A sample's instants on the GPU, as the backend's submission reported
+  // them when the sample settled: when its work began and ended, on one
+  // timeline, the backend's (host time on Metal, the GPU's own on CUDA), of
+  // which only differences mean anything (core/measurement/frame_times.h;
+  // TLM.11).
+  struct SettledSample {
+    std::uint64_t sequence = 0;
+    frame::Seconds gpu_start{0.0};
+    frame::Seconds gpu_end{0.0};
+  };
+
   // The four feature images (contract 17) as the last frame wrote them.
   struct Features {
     contracts::LinearImage albedo;
@@ -87,6 +99,12 @@ class OfflineRenderer {
 
   // Blocks until every committed sample has completed.
   virtual void finish() = 0;
+
+  // Appends to `into` the instants of every sample settled since the last
+  // call, in the order committed, each once, and forgets them. A caller
+  // that takes them each frame keeps the backend's list from growing
+  // (MEM.9); one that never asks lets it grow by a few bytes a sample.
+  virtual void take_settled(std::vector<SettledSample>& into) = 0;
 
  protected:
   OfflineRenderer() = default;

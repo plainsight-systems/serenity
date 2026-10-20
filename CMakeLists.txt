@@ -434,7 +434,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 endif()
 
-add_library(serenity_headless_options STATIC src/headless/options.cpp)
+add_library(serenity_headless_options STATIC src/headless/options.cpp src/headless/times.cpp)
 target_link_libraries(serenity_headless_options PUBLIC serenity_core)
 target_compile_options(serenity_headless_options PRIVATE ${SERENITY_SOURCE_WARNINGS})
 

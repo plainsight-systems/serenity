@@ -24,6 +24,7 @@ namespace serenity::headless {
 //                     [--step SECONDS | --time SECONDS]
 //                     [--size WIDTHxHEIGHT] [--write all|last|doubling]
 //                     [--samples N] [--format KIND] [--features]
+//                     [--times]
 //
 // DIRECTORY must be new or empty (prepare_output, below). It renders the
 // frame graph in FILE (core/frame/graph_file.h), over the scene in
@@ -98,12 +99,31 @@ namespace serenity::headless {
 // same instant under --time (frame::FrameInputs::previous); frame 0 has
 // none, and its motion is 0.
 //
+// --times: the frame time, the demo's one measurement, where there is no
+// window to show it (docs/research/2026-10-19-cuda-backend.md, "Phase 5's
+// design"). Each second of GPU time, a line on standard output: the
+// window's summary (core/measurement/frame_times.h) of the frames settled
+// in it, the mean, the shortest and the longest frame and how many, at
+// --size; times_line() (times.h) writes it, a line for every period of the
+// run, the frames a graph that reuses history replays before the first
+// among them (core/frame/history.h). The frames run as a window's do,
+// back to back: a frame is not waited for unless it is written, so a
+// denoised frame's image half runs beside the next frame's light half, and
+// the failure counts are checked at each frame over the frames completed
+// so far and once more at the end. Only the frames' work is measured; a
+// written frame's readback stalls the next, so --times asks for --write
+// last and one sample a frame, and is refused by OptionsError otherwise
+// (a frame of several samples would be timed as several frames). The
+// figure is this machine's, build's and run's (TLM.6): quoted as the
+// renderer's speed, it is the release build's with the GPU otherwise idle.
+//
 // parse() checks everything it can before anything renders and throws
 // OptionsError naming the argument (E.2, E.14): an unknown option, an
 // option given twice (the second would replace the first), a missing or
 // malformed value (a --write other than all, last or doubling,
 // a --format that names none of Output's kinds; a number with a sign, a
 // space or anything after it, read by std::from_chars, E.28), zero frames,
+// --times with a --write other than last or with --samples other than 1,
 // zero samples or more than an image holds (2^24 - 1,
 // frame::max_accumulated_frames, core/frame/frame_inputs.h), a size with a
 // zero side, a step that is not positive and finite, a time that is not
@@ -166,6 +186,8 @@ struct Options {
   output::ImageFormat format = output::default_format;
   // --features: the feature images beside each frame written
   bool features = false;
+  // --times: the frame-time summary each second of GPU time
+  bool times = false;
 };
 
 // Which of a run's frames: the one `after_first` frames after its first, of

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
@@ -30,7 +31,11 @@ namespace serenity::metal {
 // and waited for by the submission; the reads are the target's and the
 // renderer's own, each a readback (GPU.1). The renderer's and the
 // target's refusals throw MetalError, a std::exception, with the words they
-// had (I.10).
+// had (I.10). The settled samples it hands over are its submissions'
+// Completed records, from every call that settles one (Submission::begin(),
+// wait_until_complete(), finish()), of the frames it rendered, by their
+// sequences: the submissions made before the first sample, the structures'
+// build among them, are no samples and are not handed over.
 class OfflineFrames final : public presentation::OfflineRenderer {
  public:
   OfflineFrames(const frame::Schedule& schedule,
@@ -51,12 +56,22 @@ class OfflineFrames final : public presentation::OfflineRenderer {
   void read_accumulated(std::span<float> out) override;
   Features read_features() override;
   void finish() override;
+  void take_settled(std::vector<SettledSample>& into) override;
 
  private:
+  // `completed`, if it is one of the run's samples, kept for take_settled().
+  void keep(const Completed& completed);
+
   Device device_;
   Submission submission_;
   Offscreen target_;
   Renderer renderer_;
+  // The first sample's sequence: the submission's next once the renderer
+  // is made.
+  std::uint64_t first_sample_;
+  // Settled samples not yet taken, made once for the frames in flight
+  // (MEM.9).
+  std::vector<SettledSample> settled_;
 };
 
 }  // namespace serenity::metal

@@ -1,6 +1,8 @@
 #include "metal/frame/offline_frames.h"
 
 #include <memory>
+#include <optional>
+#include <vector>
 
 namespace serenity::metal {
 
@@ -9,14 +11,32 @@ OfflineFrames::OfflineFrames(const frame::Schedule& schedule,
                              frame::Extent size)
     : submission_(device_),
       target_(device_, submission_, size),
-      renderer_(device_, submission_, schedule, scene) {}
+      renderer_(device_, submission_, schedule, scene),
+      first_sample_(submission_.next_sequence()) {
+  settled_.reserve(frames_in_flight);
+}
+
+void OfflineFrames::keep(const Completed& completed) {
+  if (completed.sequence >= first_sample_) {
+    settled_.push_back(SettledSample{completed.sequence, completed.gpu_start,
+                                     completed.gpu_end});
+  }
+}
 
 std::uint64_t OfflineFrames::render(const frame::FrameInputs& inputs) {
-  return render_to_offscreen(submission_, target_, renderer_, inputs);
+  const WindowFrame frame =
+      render_offscreen_frame(submission_, target_, renderer_, inputs);
+  if (frame.settled) {
+    keep(*frame.settled);
+  }
+  return frame.sequence;
 }
 
 void OfflineFrames::wait(std::uint64_t sequence) {
-  (void)submission_.wait_until_complete(sequence);
+  if (const std::optional<Completed> settled =
+          submission_.wait_until_complete(sequence)) {
+    keep(*settled);
+  }
 }
 
 std::uint64_t OfflineFrames::non_finite_samples() const {
@@ -43,7 +63,16 @@ presentation::OfflineRenderer::Features OfflineFrames::read_features() {
   return renderer_.read_features();
 }
 
-void OfflineFrames::finish() { (void)submission_.finish(); }
+void OfflineFrames::finish() {
+  for (const Completed& settled : submission_.finish()) {
+    keep(settled);
+  }
+}
+
+void OfflineFrames::take_settled(std::vector<SettledSample>& into) {
+  into.insert(into.end(), settled_.begin(), settled_.end());
+  settled_.clear();
+}
 
 }  // namespace serenity::metal
 

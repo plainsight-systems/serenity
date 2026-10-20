@@ -27,8 +27,11 @@ namespace serenity::measurement {
 // (the window's display link, metal/device/display_link.h), the GPU waits
 // between frames, which no frame counts: the mean is then the GPU's time
 // a frame, and the interval between frames is the display's. A frame that
-// ends before the frame before it added no time: 0. Both instants are host
-// time, on one clock, so their difference is a duration on that clock (TLM.11).
+// ends before the frame before it added no time: 0. Every instant is on
+// one clock, the backend's: host time on Metal (its commit feedback), the
+// GPU's own timeline on CUDA (cuda/device/submission.h, "Instants"); only
+// instants of one clock are ever subtracted, so each difference is a
+// duration on that clock, and the clocks are never mixed (TLM.11).
 //
 // The caller adds each frame once, and only frames: it knows which
 // submissions were frames by their sequences, and the backend hands each
@@ -57,8 +60,8 @@ class FrameTimes {
   explicit FrameTimes(frame::Seconds period) : period_(period) {}
 
   // Adds one frame, from when the GPU began it to when it finished, both
-  // in host time, counted from the end of the frame added before it if
-  // that is later (above). Frames are added in the order they were
+  // on the backend's clock (above), counted from the end of the frame added
+  // before it if that is later (above). Frames are added in the order they were
   // submitted. Precondition, checked (I.5, E.2): `gpu_end` is not before
   // `gpu_start`, or the frame is refused by std::invalid_argument and
   // nothing is added.

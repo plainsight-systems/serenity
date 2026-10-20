@@ -1185,9 +1185,9 @@ WindowFrame render_to_window(Submission& submission, const Presenter& presenter,
   return WindowFrame{begun.sequence, begun.settled};
 }
 
-std::uint64_t render_to_offscreen(Submission& submission, Offscreen& target,
-                                  Renderer& renderer,
-                                  const frame::FrameInputs& inputs) {
+WindowFrame render_offscreen_frame(Submission& submission, Offscreen& target,
+                                   Renderer& renderer,
+                                   const frame::FrameInputs& inputs) {
   // What recording gets from Metal autoreleased (the frame's encoder) is
   // released at the end of the frame, not whenever the caller's pool, if it
   // has one, drains (P.8).
@@ -1196,7 +1196,13 @@ std::uint64_t render_to_offscreen(Submission& submission, Offscreen& target,
   const FrameSlot begun = submission.begin(renderer.parts());
   renderer.record(begun, inputs, target.texture(), target.size());
   submission.commit();
-  return begun.sequence;
+  return WindowFrame{begun.sequence, begun.settled};
+}
+
+std::uint64_t render_to_offscreen(Submission& submission, Offscreen& target,
+                                  Renderer& renderer,
+                                  const frame::FrameInputs& inputs) {
+  return render_offscreen_frame(submission, target, renderer, inputs).sequence;
 }
 
 }  // namespace serenity::metal

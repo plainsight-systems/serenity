@@ -746,10 +746,11 @@ class Renderer {
 //
 // render_to_offscreen() records the frame into `target` and commits it,
 // without waiting; it returns the submission's sequence, for
-// Submission::wait_until_complete() before reading `target` back. The
-// headless renderer measures nothing, so what its begin() settled is not
-// returned. It drains an autorelease pool of its own too, so a caller with
-// none (the headless renderer) leaks nothing a frame.
+// Submission::wait_until_complete() before reading `target` back. It
+// drains an autorelease pool of its own too, so a caller with none (the
+// headless renderer) leaks nothing a frame. render_offscreen_frame() is
+// the same frame, and returns too what its begin() settled, for a caller
+// that measures (the headless renderer's --times, headless/options.h).
 struct WindowFrame {
   std::uint64_t sequence = 0;
   std::optional<Completed> settled;
@@ -761,5 +762,8 @@ WindowFrame render_to_window(Submission& submission, const Presenter& presenter,
 std::uint64_t render_to_offscreen(Submission& submission, Offscreen& target,
                                   Renderer& renderer,
                                   const frame::FrameInputs& inputs);
+WindowFrame render_offscreen_frame(Submission& submission, Offscreen& target,
+                                   Renderer& renderer,
+                                   const frame::FrameInputs& inputs);
 
 }  // namespace serenity::metal

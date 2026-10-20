@@ -13,9 +13,13 @@
 // Readback is the point of this program, and it is not held to the frame
 // budget (GPU.1). A frame that left out samples for not being finite, or
 // lost MNEE requests to a full work list, fails the run once it has
-// completed, naming the count. Any failure ends the run with its message and
-// a non-zero status; the renderer waits for the frames in flight before
-// what it renders with is released.
+// completed, naming the count. Under --times, a frame not written is
+// committed and not waited for, so frames run back to back, and the
+// frame-time summary is printed each second of GPU time (headless/
+// options.h); the failure counts are checked each frame over the frames
+// completed so far, and once more after the last. Any failure ends the run with
+// its message and a non-zero status; the renderer waits for the frames in
+// flight before what it renders with is released.
 
 #include <cstddef>
 #include <cstdint>
@@ -78,22 +82,41 @@ int main(int argc, char** argv) {
     headless::Run run(options, schedule, loaded, plan, source);
     // A graph that reuses history first replays the frames before the
     // run's first, writing none (core/frame/history.h, plan.first).
+    // Under --times they are frames of the timeline like the rest,
+    // committed back to back and measured.
     for (std::uint64_t index = plan.first; index < plan.first_written;
          ++index) {
-      run.render(index);
+      if (options.times) {
+        run.commit(index);
+        run.report_times(std::cout);
+      } else {
+        run.render(index);
+      }
     }
     // Counted, so the last frame there can be is reachable without its
     // successor (headless/options.h).
     for (std::uint64_t n = 0; n < options.frames; ++n) {
       const std::uint64_t index = options.first + n;
-      run.render(index);
+      const bool written = headless::written(
+          options.write, {.after_first = n, .frames = options.frames});
+      if (options.times && !written) {
+        run.commit(index);
+      } else {
+        run.render(index);
+      }
       run.check_finite(index);
-      if (headless::written(options.write,
-                            {.after_first = n, .frames = options.frames})) {
+      if (written) {
         run.write(index, std::cout);
+      }
+      if (options.times) {
+        run.report_times(std::cout);
       }
     }
     run.finish();
+    if (options.times) {
+      run.check_finite(options.first + options.frames - 1);
+      run.report_times(std::cout);
+    }
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "serenity-headless: " << error.what() << '\n';

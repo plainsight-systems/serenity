@@ -25,7 +25,7 @@ constexpr std::string_view usage =
     "[--frames N] [--first I] "
     "[--step SECONDS | --time SECONDS] [--size WIDTHxHEIGHT] [--write "
     "all|last|doubling] [--samples N] "
-    "[--format KIND] [--features]; "
+    "[--format KIND] [--features] [--times]; "
     "DIRECTORY must be new or empty";
 
 // Whether a run of `frames` frames from `first`, `n` samples a frame, has
@@ -181,6 +181,8 @@ Options parse(std::span<const char* const> args) {
       options.format = *format;
     } else if (option == "--features") {
       options.features = true;
+    } else if (option == "--times") {
+      options.times = true;
     } else if (option == "--size") {
       const std::string_view text = value();
       const std::size_t x = text.find('x');
@@ -209,6 +211,17 @@ Options parse(std::span<const char* const> args) {
     throw OptionsError(
         "--time and --step are exclusive: --time freezes every frame at one "
         "time");
+  }
+  // What --times measures is the frames' work (options.h): a frame read
+  // back each time, or timed as several samples, is not that.
+  if (options.times && options.write != Write::last) {
+    throw OptionsError(
+        "--times needs --write last: a frame written is read back, which "
+        "stalls the next and would be timed with it");
+  }
+  if (options.times && options.samples != 1) {
+    throw OptionsError(
+        "--times needs one sample a frame: each sample is timed as a frame");
   }
   // What parse() can check of the sample bound without the graph: every
   // frame renders one sample at least, so the last frame's index must be
