@@ -600,6 +600,41 @@ headless shell writes the demo graph's frames the same twice; the
 submission's parts, unit tested without the GPU; the times' line, a
 function tested directly.
 
+## Phase 6's design, checked 2026-10-20
+
+**What runs.** `scripts/make_denoiser_dataset.py`, unchanged in what it
+asks: the same plan (its seeds drawn from the data set's name, so
+denoiser-v2's), the same graphs, sizes, samples and units, the same
+manifest and resuming, driving `serenity-headless` on the 3090 from the
+checkout's worktree there (`/data/serenity/cuda`, a clean tree, so a commit
+names the renderer). The data set it writes is denoiser-v2's plan from
+another renderer, `/data/serenity/denoiser-v2-cuda`, beside the Mac's
+denoiser-v2 there; the manifest says which renderer and which machine made
+each.
+
+**What changes in the script: the three macOS assumptions** ("The
+data-set script", above), each the backend's own, chosen by the platform
+as the build chooses (macOS Metal, Linux CUDA; any other refused):
+
+- the GPU's utilization before the first render: `ioreg`'s on macOS,
+  `nvidia-smi`'s on Linux;
+- the renderer's build record: on macOS the Metal compiler's flags and
+  the deployment target, as today; on Linux the CUDA compiler's
+  (`cmake/CudaModules.cmake`'s flag variables, as the Metal flags are read
+  from `cmake/MetalLibrary.cmake`), `nvcc`'s version and the file's
+  checksum, since part of each command line is written in it; no
+  deployment target;
+- and the machine, which the manifest did not name: the host, the
+  operating system, and the GPU with its driver (`nvidia-smi`; on macOS
+  the chip, `sysctl`).
+
+The parsing of each tool's output and each CMake file is a function tested
+directly on text the test writes, not on the machine's.
+
+**How it is checked.** The script's test on both machines; a trial on
+the 3090 (two sequences, two frames each, few target samples) run,
+interrupted and resumed, and verified; then the estimate, and the run.
+
 ## Phases
 
 0. **What is not Metal's moves into the core,** on the Mac, before any
@@ -810,7 +845,24 @@ function tested directly.
    Mac's 17.37 and 58.30 ms in its window. Every pass is the port's,
    untuned: the kernels' tuning is after the other backends.
 6. **The data set on the 3090.** The script run there, its manifest
-   naming the machine.
+   naming the machine. Its design: "Phase 6's design", above. **Done
+   2026-10-20** (19afc26): `scripts/make_denoiser_dataset.py` chooses the
+   backend by the platform and records it; on the 3090 it reads the GPU's
+   utilization from `nvidia-smi`, records the CUDA compiler's flags,
+   `nvcc` 13.2.86 and `cmake/CudaModules.cmake`'s checksum, and names the
+   machine (the host, the OS, the RTX 3090 Ti and driver 595.91.07); the
+   Mac's record is as it was, the machine (Apple M3 Max) added. On the
+   3090, from the checkout's worktree: a trial of two sequences run with
+   no failure, a changed file found by its checksum and its unit rendered
+   again, a run killed after a sequence's input resumed with the input
+   kept and the rest rendered, `--verify` matching every checksum, and the
+   estimate for the whole plan, 2.6 h and 32 GB (0.5 h of inputs, 400
+   targets at 18.4 s, the first target's; the targets measured 19.6 s at
+   the median and up to 56 s over 21 sequences, so the whole would take
+   longer). The whole data set was not rendered: started, it was stopped
+   after 21 of 50 sequences, with no failure, by the user's decision, no
+   training being planned on it (QUEUE.md, "Not scheduled"), and its
+   partial files deleted. The next data set renders here.
 
 Each phase ends with its gates once; the report gives the frame time where
 there is a frame.

@@ -243,7 +243,10 @@ This file tracks active and accepted work.
    2026-10-20 (the reference graph, the data set's input graph and the
    demo graph render on the RTX 3090 Ti, the same pictures as the Mac's;
    the demo's frame 11.2 ms at 1920 x 1080 and 39.6 ms at 3456 x 2234,
-   the Mac's 17.37 and 58.30); next Phase 6, the data set on the 3090.
+   the Mac's 17.37 and 58.30). Phase 6 done 2026-10-20: the data-set
+   script runs on the 3090 (trialled, resumed and verified; the whole plan
+   about 2.6 h there), so the next data set renders there. Next: the
+   3090's window, then HIP with HIPRT on Strix Halo.
 
 3. Reservoir reuse as kernels, tuned per target: tiling, layout and
    fusion of the merge passes, what each costs and where the bytes go, on
