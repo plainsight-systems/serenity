@@ -485,8 +485,11 @@ parameters, Metal's frame resources as one uploaded struct.
 |---|---|---|
 | the frame's launch parameters: its constants, camera and the address of every array its passes read or write, uploaded once a frame; the path pass's from Phase 3 folded in | Frame graph | `src/cuda/frame/frame_launch.h`, new; `src/cuda/passes/path/path_launch.h`, removed |
 | a pipeline's hit groups, one an intersection program, and a hit record each structure and program | GPU backend | `src/cuda/device/pipeline.{h,cpp}` |
-| appending to a list, one atomic a warp, the lanes' places from ballots | GPU backend | `src/cuda/device/append.cuh`, new |
-| MNEE's seed as an intersection program, filling the ray's seed through a payload pointer | Acceleration | `src/cuda/acceleration/seed_intersection.cuh`, new |
+| appending to a list, one atomic a warp, the lanes' places from ballots; the lane and the lanes below it, from PTX | GPU backend | `src/cuda/device/append.cuh`, `lanes.cuh`, new |
+| a kernel's launch shape, its grid for a count of threads | GPU backend | `src/cuda/device/module.{h,cpp}` |
+| the passes' one OptiX module: the launch parameters' declaration and both intersection programs; a pass's pipeline over the scene's hit records | Frame graph | `src/cuda/frame/traced_module.cuh`, `traced_program.{h,cpp}`, new |
+| MNEE's seed as an intersection program, filling the ray's seed through a payload pointer | Integrator | `src/cuda/integrator/mnee_seed.cuh`, new |
+| the reuse textures' seed, one constant both backends read | Sample reuse | `src/core/sampling/pairing.h`; `src/metal/frame/renderer.cpp` |
 | device code: NEE, MNEE, the shifts, reconnection, the reuse family, selection by power, shape points, ReSTIR PT's pass header | each its family | `src/cuda/<family>/*.cuh`, from `src/metal/<family>/*.metal.h` |
 | ReSTIR PT's arrays at the core's sizes, ping-ponged by the frame's parity, by the core's reuse history | Frame graph | `src/cuda/frame/path_reuse_images.{h,cpp}`, new |
 | MNEE's work list and its header | Frame graph | `src/cuda/frame/mnee_list.{h,cpp}`, new |
@@ -494,7 +497,9 @@ parameters, Metal's frame resources as one uploaded struct.
 | the fill's history and image | Frame graph | `src/cuda/frame/checkerboard_images.{h,cpp}`, new |
 | each pass: its programs (`<pass>.cu`), its kernels (`<pass>_kernels.cu`), its launches | Pass | `src/cuda/passes/{restir_pt_initial,restir_pt_temporal,restir_pt_spatial,restir_pt_shade,restir_pt_duplication,mnee,features,checkerboard_fill}/`, new; `src/cuda/passes/restir_pt/` (the shift and replay sequence both reuses record) |
 | the schedule carried out with ReSTIR PT's, MNEE's, the features' and the fill's families; last frame's transforms and glows; the feature images and the lost MNEE requests read back | Frame graph | `src/cuda/frame/renderer.{h,cpp}`, `offline_frames.{h,cpp}` |
-| the probe tests of the families that trace, one source for both backends, each backend's traced-probe harness behind one name | tests | `tests/gpu/*_test.cpp`, `tests/{gpu,cuda}/support/` |
+| the probe tests of the families that trace (acceleration, leave, path, MNEE, scene block), one source for both backends; each backend's traced-probe and accumulating harness behind one name, found by the include path | tests | `tests/gpu/*_test.cpp`; `tests/{gpu,cuda}/support/{traced_probe,accumulating_rig}.h` |
+| CUDA's probes for those families: the tracing ones as ray generation programs of one OptiX module over positional bindings, the others kernels | tests | `tests/cuda/kernels/{traced_probes.cu,probe_launch.h,path_probe.cu,mnee_probe.cu,scene_block_probe.cu}`, new |
+| the headless shell: the input graph's frames the same bytes twice | tests | `tests/cuda/headless_test.cpp` |
 
 ## Not here yet
 

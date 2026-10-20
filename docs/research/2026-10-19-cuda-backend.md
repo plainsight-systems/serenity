@@ -618,7 +618,48 @@ graph's light to the bit, needs the demo graph, and joins in Phase 5.
 4. **ReSTIR PT and MNEE.** Initial, temporal, spatial, shade, duplication,
    MNEE's work list; the features pass; and the checkerboard's fill, from
    Phase 5: the data set's input graph (`graphs/restir_pt_features.toml`)
-   on the 3090. Its design: "Phase 4's design", above.
+   on the 3090. Its design: "Phase 4's design", above. **Done
+   2026-10-19** (branch `cuda`; file-mapping.md, "ReSTIR PT, MNEE and the
+   features on CUDA"): ReSTIR PT's five passes, MNEE's solve and settle,
+   the features and the fill on the RTX 3090 Ti, every pass reading the
+   frame's one launch struct (`cuda/frame/frame_launch.h`); `src/metal/`
+   changes only by the reuse textures' seed moving into the core
+   (`core/sampling/pairing.h`), guarded by Metal's 94 outputs the same
+   to the bit. What the translation found: OptiX's `threadIdx` is the
+   launch index, not the thread's place in its block, so the appends'
+   lane is read from PTX (`%laneid`, `%lanemask_lt`; `cuda/device/
+   lanes.cuh`); the renderer must trace the network's inputs through a
+   pinhole (`frame::traced_inputs`), which the first port left out, so
+   the input graph traced through the lens until the features were set
+   beside Metal's; a `using namespace` at a `.cu` file's scope makes
+   CUDA's own `make_float2` ambiguous with the translation's, so each
+   file's kernels sit in the namespace behind `extern "C"` wrappers;
+   device code may not subscript `std::array`, so the probes' bindings
+   are a C array. Tests: the probe tests of the families that trace (the
+   structures, leaving a surface, the path loop, MNEE, the scene block)
+   are one source for both backends, CUDA's tracing probes ray generation
+   programs of one OptiX module (`tests/cuda/kernels/traced_probes.cu`)
+   behind the same harness names as Metal's (`<traced_probe.h>`,
+   `<accumulating_rig.h>`). ReSTIR PT's probe test dispatches Metal's
+   kernels itself and stays Metal's until the test audit. Two of MNEE's
+   test's assumptions were Metal's: its CPU reference fixed the
+   refraction's plane by a cross product that is 0 for a receiver on the
+   axis through the sphere's center (on the Mac, the compiler's fused
+   products left rounding that happened to pick a plane), now any plane
+   through the line; and its rim receiver converged on Metal by
+   rounding's chance, which a sweep of 300 rim points on the 3090 showed
+   (a third converge, scattered, none in a patch), so the test holds the
+   core alone. Its probes now take their count, as every other probe
+   does. The integration test renders the input graph on a moving scene
+   and writes the same bytes twice. Gates: both machines' three presets
+   at 0 warnings, ctest green under each, `make check` green, Metal's
+   outputs and refusals the same as at 4a021ec. The image: the input
+   graph on the marbles at 960 x 540, its last of 38 frames at t = 120,
+   on both machines, side by side: the same picture, each channel's
+   mean within 0.3 of a level; its features match Metal's to rounding.
+   The 3090 reset once during the gates, a machine check logged at the
+   next boot (a hardware error, as once before that night), and passed
+   them on the rerun. Not timed: the demo graph comes in Phase 5.
 5. **The denoised frame.** The denoiser on the tensor cores (matched to
    PyTorch), depth of field, the frame's two halves: the demo graph, its
    frame time.
