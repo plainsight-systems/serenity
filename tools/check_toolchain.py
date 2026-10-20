@@ -20,8 +20,10 @@ Objective-C, the display link with Objective-C++), the SDK the build
 compiles against (its root, CMAKE_OSX_SYSROOT), Xcode and its Metal
 compiler, and CMake itself, whose version decides the compile lines. On
 Linux: the C++ and C compilers, CMake, CUDA's nvcc, which compiles the
-kernels, and NVIDIA's driver, which runs them (CUDA's runtime and, from the
-backend's Phase 3, OptiX's are the driver's). Run by hand, each defaults to
+kernels, NVIDIA's driver, which runs them (CUDA's runtime and, from the
+backend's Phase 3, OptiX's are the driver's), and Vulkan's loader and
+headers, which the window presents through (docs/research/
+2026-10-20-cuda-window.md), by the version pkg-config gives them. Run by hand, each defaults to
 what the presets select: /usr/bin/clang++ (C++ and Objective-C++),
 /usr/bin/clang (C and Objective-C), the macosx SDK, and the cmake on PATH.
 The one on PATH may be another clang entirely (Homebrew's, on the
@@ -60,7 +62,7 @@ LINE = {"macos": {"xcode_build": 1}, "linux": {"clang_tidy": 1, "nvcc": 3}}
 # The tools each platform's build uses (commands(), below).
 BUILD_KEYS = {
     "macos": ["xcode", "xcode_build", "macos_sdk", "metal", "cxx", "cc", "objc", "objcxx", "cmake"],
-    "linux": ["cxx", "cc", "cmake", "nvcc", "driver"],
+    "linux": ["cxx", "cc", "cmake", "nvcc", "driver", "vulkan"],
 }
 LLVM_BIN = {"macos": "/opt/homebrew/opt/llvm/bin",
             "linux": str(pathlib.Path.home() / ".local/opt/llvm-21.1.8/bin")}
@@ -91,6 +93,7 @@ def commands(tools, platform):
         "cmake": [tools["cmake"], "--version"],
         "nvcc": [tools["nvcc"], "--version"],
         "driver": ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
+        "vulkan": ["pkg-config", "--modversion", "vulkan"],
     }
     return {key: every[key] for key in BUILD_KEYS[platform]}
 
