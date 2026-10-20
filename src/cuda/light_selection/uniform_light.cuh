@@ -52,7 +52,7 @@ __device__ inline float selection_probability(UniformLight selection) {
 // The index `u`, a number in [0, 1), chooses, and its probability.
 // ReSTIR PT draws its tiles by power instead
 // (metal/light_selection/power_light.metal.h). Precondition: count is at least
-// 1; the estimator tests it before asking (metal/light_selection/path.metal.h,
+// 1; the estimator tests it before asking (integrator/path.cuh,
 // step 5).
 struct SelectedIndex {
   uint index;         // into the light records

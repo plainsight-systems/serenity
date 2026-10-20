@@ -37,10 +37,21 @@
 
 namespace serenity::cuda {
 
-// The hit records a pass's pipeline holds, in this order (pipeline.h).
+// The hit records a pass's pipeline holds, in this order (pipeline.h): the
+// shapes' program over each structure, and MNEE's seed's over the
+// occluders' (integrator/mnee_seed.cuh), each traced with its record's
+// index as its SBT offset.
 inline constexpr unsigned everything_record = 0;
 inline constexpr unsigned occluders_record = 1;
-inline constexpr unsigned structure_records = 2;
+inline constexpr unsigned seed_record = 2;
+inline constexpr unsigned structure_records = 3;
+
+// The hit groups, their intersection programs, in the order a pass's
+// pipeline is given them, and the payload words a trace carries: the
+// shape it ignores, and a seed's address in two.
+inline constexpr unsigned shape_group = 0;
+inline constexpr unsigned seed_group = 1;
+inline constexpr unsigned trace_payload_values = 3;
 
 struct StructureBlock {
   OptixTraversableHandle everything;

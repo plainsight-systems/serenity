@@ -100,11 +100,11 @@ class SceneAcceleration {
   // last build.
   StructureBlock block() const noexcept;
 
-  // Each hit record's data, in record order (structure_block.h), for a
-  // pass's pipeline: the shapes' arrays as `scene` and `transforms` place
-  // them, with no table for everything and the occluders' table for the
-  // occluders.
-  std::array<Pipeline::HitData, structure_records> hit_records(
+  // The hit records, in record order (structure_block.h), for a pass's
+  // pipeline: each its program's group and the shapes' arrays as `scene`
+  // and `transforms` place them, with no table for everything and the
+  // occluders' table for the occluders, the seed's among them.
+  std::array<Pipeline::HitRecord, structure_records> hit_records(
       const gpu::SceneBlock& scene, CUdeviceptr transforms) const noexcept;
 
  private:

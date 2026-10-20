@@ -105,7 +105,7 @@ __device__ inline OnShape on_shape(Shapes shapes, uint shape, float3 at) {
 // put back on the shape's surface in its own coordinates and placed in the
 // world from there (above): on it to a few ulps of its own coordinates,
 // however far the ray came, as leaving it needs (integrator/
-// metal/shapes/surface.metal.h). The object-space point is found once, for the
+// integrator/surface.cuh). The object-space point is found once, for the
 // normal, the world's point and the textures laid on the shape.
 __device__ inline serenity::contracts::SurfaceInteraction surface_interaction(
     Shapes shapes, uint shape, float3 point, float3 direction) {

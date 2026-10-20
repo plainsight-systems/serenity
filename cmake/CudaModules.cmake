@@ -62,6 +62,13 @@ function(serenity_add_cuda_module)
         list(APPEND includes "-I${dir}")
     endforeach()
 
+    # OptiX's headers, where fetched: a kernel may include device code that
+    # traces (cuda/acceleration/trace.cuh) without calling it, and its
+    # warnings are OptiX's.
+    if(SERENITY_OPTIX_INCLUDE_DIR)
+        list(APPEND includes "-isystem" "${SERENITY_OPTIX_INCLUDE_DIR}")
+    endif()
+
     set(fatbin "${work}/${ARG_NAME}.fatbin")
     set(dep "${work}/${ARG_NAME}.d")
     add_custom_command(

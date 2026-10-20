@@ -8,7 +8,7 @@
 // rendered again exactly, alone.
 //
 // A path's numbers are independent, each the first word of pcg3d (math/
-// metal/sampler/hash.metal.h) of three, the pixel's key, the frame's index and
+// math/hash.cuh) of three, the pixel's key, the frame's index and
 // the dimension, the count of numbers the path drew before. Counter-based, as
 // GDSA.3 asks: the stream is (pixel, frame), 64 bits, and pcg3d is a
 // bijection of its three words, so no two pixels or frames share a stream;
@@ -63,7 +63,7 @@ __device__ inline float3 next_numbers3(PathNumbers& numbers) {
 // path's (path_numbers()), from dimension `first`, one of the purposes'
 // below, each a span of purpose_span dimensions from its first, where no
 // path reaches: the safety stop bounds a path at 256 surfaces of at most 7
-// numbers each, 4 for the camera, under 2^11 (metal/sampler/path.metal.h, which
+// numbers each, 4 for the camera, under 2^11 (integrator/path.cuh, which
 // asserts it). pcg3d is a bijection of (key, dimension), so the purposes'
 // numbers are distinct words from the path's and from each other's, as
 // independent as any two of the path's (GDSA.3: a stream per pixel and frame, a

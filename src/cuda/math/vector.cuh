@@ -48,6 +48,7 @@ inline constexpr float inverse_pi = 0.318309886183790671538f;
 using ::make_float2;
 using ::make_float3;
 using ::make_float4;
+using ::make_int2;
 using ::make_int3;
 using ::make_uint2;
 using ::make_uint3;
@@ -82,6 +83,16 @@ __device__ inline int3 make_int3(float3 v) {
 __device__ inline uint2 make_uint2(float2 v) {
   return uint2{static_cast<uint>(v.x), static_cast<uint>(v.y)};
 }
+__device__ inline uint2 make_uint2(uint s) { return uint2{s, s}; }
+// The shading language's uint2(int2), for values the caller has made
+// non-negative, and int2(uint2).
+__device__ inline uint2 make_uint2(int2 v) {
+  return uint2{static_cast<uint>(v.x), static_cast<uint>(v.y)};
+}
+__device__ inline int2 make_int2(uint2 v) {
+  return int2{static_cast<int>(v.x), static_cast<int>(v.y)};
+}
+__device__ inline int2 make_int2(int s) { return int2{s, s}; }
 __device__ inline uint3 make_uint3(uint s) { return uint3{s, s, s}; }
 __device__ inline uint3 make_uint3(uint2 v, uint z) {
   return uint3{v.x, v.y, z};
@@ -89,6 +100,7 @@ __device__ inline uint3 make_uint3(uint2 v, uint z) {
 
 // --- Swizzles ---------------------------------------------------------------
 
+__device__ inline int2 yx(int2 v) { return int2{v.y, v.x}; }
 __device__ inline float2 xy(float3 v) { return float2{v.x, v.y}; }
 __device__ inline float2 yz(float3 v) { return float2{v.y, v.z}; }
 __device__ inline float2 xz(float3 v) { return float2{v.x, v.z}; }
@@ -110,6 +122,15 @@ __device__ inline float3 as_float3(uint3 v) {
 }
 __device__ inline uint as_uint(int v) { return static_cast<uint>(v); }
 
+// --- Components by index (the shading language's v[i])
+
+__device__ inline float component(float3 v, uint i) {
+  return i == 0u ? v.x : (i == 1u ? v.y : v.z);
+}
+__device__ inline float component(float4 v, uint i) {
+  return i == 0u ? v.x : (i == 1u ? v.y : (i == 2u ? v.z : v.w));
+}
+
 // --- Comparisons
 // --------------------------------------------------------------
 
@@ -119,6 +140,25 @@ struct bool3 {
   bool z;
 };
 
+struct bool2 {
+  bool x;
+  bool y;
+};
+
+__device__ inline bool any(bool2 b) { return b.x || b.y; }
+__device__ inline bool all(bool2 b) { return b.x && b.y; }
+__device__ inline bool2 operator>=(float2 a, float s) {
+  return bool2{a.x >= s, a.y >= s};
+}
+__device__ inline bool2 operator<(float2 a, float2 b) {
+  return bool2{a.x < b.x, a.y < b.y};
+}
+__device__ inline bool2 operator<(int2 a, int2 b) {
+  return bool2{a.x < b.x, a.y < b.y};
+}
+__device__ inline bool2 operator>=(int2 a, int2 b) {
+  return bool2{a.x >= b.x, a.y >= b.y};
+}
 __device__ inline bool any(bool3 b) { return b.x || b.y || b.z; }
 __device__ inline bool all(bool3 b) { return b.x && b.y && b.z; }
 __device__ inline bool3 operator<(float3 a, float s) {
@@ -235,11 +275,53 @@ __device__ inline float3& operator/=(float3& a, float s) { return a = a / s; }
 __device__ inline float4 operator+(float4 a, float4 b) {
   return float4{a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w};
 }
+__device__ inline float4 operator-(float4 a, float4 b) {
+  return float4{a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w};
+}
+__device__ inline float4 operator-(float4 a) {
+  return float4{-a.x, -a.y, -a.z, -a.w};
+}
+__device__ inline float4 operator*(float4 a, float4 b) {
+  return float4{a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w};
+}
 __device__ inline float4 operator*(float4 a, float s) {
   return float4{a.x * s, a.y * s, a.z * s, a.w * s};
 }
+__device__ inline float4 operator*(float s, float4 a) {
+  return float4{s * a.x, s * a.y, s * a.z, s * a.w};
+}
+__device__ inline float4 operator/(float4 a, float s) {
+  return float4{a.x / s, a.y / s, a.z / s, a.w / s};
+}
+__device__ inline float4& operator+=(float4& a, float4 b) { return a = a + b; }
 
 // --- Arithmetic: integer vectors
+
+__device__ inline int2 operator+(int2 a, int2 b) {
+  return int2{a.x + b.x, a.y + b.y};
+}
+__device__ inline int2 operator-(int2 a, int2 b) {
+  return int2{a.x - b.x, a.y - b.y};
+}
+__device__ inline int2 operator*(int s, int2 a) {
+  return int2{s * a.x, s * a.y};
+}
+// C++'s remainder, the sign of the dividend's, as the shading language's.
+__device__ inline int2 operator%(int2 a, int s) {
+  return int2{a.x % s, a.y % s};
+}
+__device__ inline int2 operator+(int2 a, int s) {
+  return int2{a.x + s, a.y + s};
+}
+__device__ inline uint2 operator/(uint2 a, uint s) {
+  return uint2{a.x / s, a.y / s};
+}
+__device__ inline uint2 operator-(uint2 a, uint s) {
+  return uint2{a.x - s, a.y - s};
+}
+__device__ inline uint2 min(uint2 a, uint2 b) {
+  return uint2{a.x < b.x ? a.x : b.x, a.y < b.y ? a.y : b.y};
+}
 // ----------------------------------------------
 
 __device__ inline int3 operator+(int3 a, int3 b) {

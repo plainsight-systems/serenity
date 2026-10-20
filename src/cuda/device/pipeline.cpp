@@ -69,12 +69,18 @@ Pipeline::Pipeline(const OptixContext& context, std::span<const std::byte> ir,
   if (ir.empty()) {
     throw CudaError("Pipeline: no programs to load");
   }
-  if (programs.hit_records.empty()) {
-    throw CudaError("Pipeline: no structure to trace");
+  if (programs.intersections.empty() || programs.hit_records.empty()) {
+    throw CudaError("Pipeline: no intersection program or structure to trace");
+  }
+  for (const HitRecord& record : programs.hit_records) {
+    if (record.group >= programs.intersections.size()) {
+      throw CudaError("Pipeline: a hit record of no intersection program");
+    }
   }
   // OptiX takes its names as C strings, read while it makes the objects.
   const std::string ray_generation(programs.ray_generation);
-  const std::string intersection(programs.intersection);
+  const std::vector<std::string> intersections(programs.intersections.begin(),
+                                               programs.intersections.end());
   const std::string parameters(programs.launch_parameters);
   const OptixPipelineCompileOptions pipeline_options =
       compile_options(programs.payload_values, parameters);
@@ -92,20 +98,27 @@ Pipeline::Pipeline(const OptixContext& context, std::span<const std::byte> ir,
       "optixModuleCreate", log.view());
   module_.reset(module);
 
-  std::array<OptixProgramGroupDesc, 3> descriptions{};
+  // Ray generation, miss, then a hit group an intersection program.
+  constexpr std::size_t first_hit_group = 2;
+  std::vector<OptixProgramGroupDesc> descriptions(first_hit_group +
+                                                  intersections.size());
   // The C API's descriptor is a union, filled by the member its kind names,
   // as OptiX's documentation fills it.
   // NOLINTBEGIN(cppcoreguidelines-pro-type-union-access)
   descriptions[0].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
   descriptions[0].raygen.module = module;
   descriptions[0].raygen.entryFunctionName = ray_generation.c_str();
-  descriptions[1].kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
-  descriptions[1].hitgroup.moduleIS = module;
-  descriptions[1].hitgroup.entryFunctionNameIS = intersection.c_str();
-  descriptions[2].kind = OPTIX_PROGRAM_GROUP_KIND_MISS;  // no program
+  descriptions[1].kind = OPTIX_PROGRAM_GROUP_KIND_MISS;  // no program
+  for (std::size_t i = 0; i < intersections.size(); ++i) {
+    OptixProgramGroupDesc& hit = descriptions.at(first_hit_group + i);
+    hit.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+    hit.hitgroup.moduleIS = module;
+    hit.hitgroup.entryFunctionNameIS = intersections.at(i).c_str();
+  }
   // NOLINTEND(cppcoreguidelines-pro-type-union-access)
   const OptixProgramGroupOptions group_options{};
-  std::array<OptixProgramGroup, 3> groups{};
+  std::vector<OptixProgramGroup> groups(descriptions.size());
+  groups_.resize(descriptions.size());
   for (std::size_t i = 0; i < groups.size(); ++i) {
     log = Log{};
     check_optix(optixProgramGroupCreate(context.handle(), &descriptions.at(i),
@@ -142,17 +155,20 @@ Pipeline::Pipeline(const OptixContext& context, std::span<const std::byte> ir,
       optixPipelineSetStackSize(pipeline, traversal, state, continuation, 1),
       "optixPipelineSetStackSize");
 
-  // The table: ray generation, miss, then a hit record a structure.
+  // The table: ray generation, miss, then the hit records, each its
+  // group's header and its data.
   std::vector<Record> records(2 + programs.hit_records.size());
   check_optix(optixSbtRecordPackHeader(groups[0], &records[0]),
               "optixSbtRecordPackHeader");
-  check_optix(optixSbtRecordPackHeader(groups[2], &records[1]),
+  check_optix(optixSbtRecordPackHeader(groups[1], &records[1]),
               "optixSbtRecordPackHeader");
   for (std::size_t i = 0; i < programs.hit_records.size(); ++i) {
     Record& record = records.at(2 + i);
-    check_optix(optixSbtRecordPackHeader(groups[1], &record),
+    const HitRecord& hit = programs.hit_records[i];
+    check_optix(optixSbtRecordPackHeader(groups.at(first_hit_group + hit.group),
+                                         &record),
                 "optixSbtRecordPackHeader");
-    record.data = programs.hit_records[i];
+    record.data = hit.data;
   }
   records_ = DeviceBuffer(records.size() * sizeof(Record));
   check(cuMemcpyHtoD(records_.address(), records.data(),

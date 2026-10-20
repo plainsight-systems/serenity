@@ -25,9 +25,9 @@ std::uint64_t OfflineFrames::non_finite_samples() const {
   return renderer_.non_finite_samples();
 }
 
-// No pass the backend builds today counts lost MNEE requests: MNEE arrives
-// with ReSTIR PT (renderer.h).
-std::uint64_t OfflineFrames::mnee_lost_requests() const { return 0; }
+std::uint64_t OfflineFrames::mnee_lost_requests() const {
+  return renderer_.mnee_lost_requests();
+}
 
 std::size_t OfflineFrames::displayed_bytes() const {
   return target_.rgba_size();
@@ -42,9 +42,7 @@ void OfflineFrames::read_accumulated(std::span<float> out) {
 }
 
 presentation::OfflineRenderer::Features OfflineFrames::read_features() {
-  throw CudaError(
-      "OfflineFrames::read_features: the CUDA backend has no features pass "
-      "yet");
+  return renderer_.read_features();
 }
 
 void OfflineFrames::finish() { submission_.finish(); }

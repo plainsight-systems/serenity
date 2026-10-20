@@ -172,18 +172,20 @@ StructureBlock SceneAcceleration::block() const noexcept {
   return StructureBlock{everything_.handle, occluding, occluder_count_, 0u};
 }
 
-std::array<Pipeline::HitData, structure_records> SceneAcceleration::hit_records(
-    const gpu::SceneBlock& scene, CUdeviceptr transforms) const noexcept {
-  const auto record = [&](std::uint64_t table) {
-    const StructureRecord data{table, scene.shapes, scene.boxes, transforms};
+std::array<Pipeline::HitRecord, structure_records>
+SceneAcceleration::hit_records(const gpu::SceneBlock& scene,
+                               CUdeviceptr transforms) const noexcept {
+  const auto data = [&](std::uint64_t table) {
+    const StructureRecord record{table, scene.shapes, scene.boxes, transforms};
     Pipeline::HitData words{};
-    static_assert(sizeof(data) == sizeof(words));
-    std::memcpy(words.data(), &data, sizeof(data));
+    static_assert(sizeof(record) == sizeof(words));
+    std::memcpy(words.data(), &record, sizeof(record));
     return words;
   };
-  std::array<Pipeline::HitData, structure_records> records{};
-  records[everything_record] = record(0);  // box i is shape i
-  records[occluders_record] = record(occluder_table_.address());
+  std::array<Pipeline::HitRecord, structure_records> records{};
+  records[everything_record] = {shape_group, data(0)};  // box i is shape i
+  records[occluders_record] = {shape_group, data(occluder_table_.address())};
+  records[seed_record] = {seed_group, data(occluder_table_.address())};
   return records;
 }
 

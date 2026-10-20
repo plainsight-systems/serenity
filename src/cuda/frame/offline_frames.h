@@ -23,9 +23,8 @@ namespace serenity::cuda {
 // offscreen target of the run's size and the renderer, made once, in that
 // order, released in reverse after the frames in flight; and the factory,
 // make_offline_renderer(), which the headless program reaches by linking
-// this backend. What the backend does not render yet it refuses by name:
-// no pass built today counts lost MNEE requests (0, which is what it
-// counted) or writes features, so reading them back throws CudaError.
+// this backend. What the backend does not render yet, the denoised frame
+// (Phase 5), it refuses by name, when the renderer is made.
 class OfflineFrames final : public presentation::OfflineRenderer {
  public:
   OfflineFrames(const frame::Schedule& schedule,

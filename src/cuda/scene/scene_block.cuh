@@ -11,9 +11,12 @@
 // lights/emitter.cuh, media/media.cuh). A new kind's array joins its
 // family's view here, as it joins the block, so no pass changes for it.
 // `Selection` is how the estimator reading it chooses among the lights
-// (light_selection/): UniformLight for the path tracer. ReSTIR PT's
-// selection by power, and the power pyramid it reads, arrive with it
-// (Phase 4).
+// (light_selection/): UniformLight for the path tracer and the path loop's
+// tests ReSTIR PT shares with it; and ReSTIR PT's own, by power
+// (light_selection/power_light.cuh), power(), from the frame's power
+// pyramid, which a view of ReSTIR PT's names (this frame's, or last
+// frame's for a shift to last frame's pixel), and a view of any other
+// estimator's leaves null and never asks of.
 //
 // The block and the arrays it names are read from global memory, through
 // const pointers (cuda/scene/scene_buffers.h); Metal reads them from its
@@ -23,6 +26,7 @@
 #include "core/lights/gradient_sky.h"
 #include "core/scene/scene_block.h"
 #include "cuda/acceleration/trace.cuh"
+#include "cuda/light_selection/power_light.cuh"
 #include "cuda/lights/emitter.cuh"
 #include "cuda/materials/resolve.cuh"
 #include "cuda/math/vector.cuh"
@@ -41,6 +45,8 @@ struct SceneView {
   const serenity::contracts::Transform*
       transforms;      // as this frame places the shapes
   const float* glows;  // as bright as this frame lights them
+  // ReSTIR PT's: the frame's power pyramid
+  const float* light_power = nullptr;
 
   __device__ Shapes shapes() const {
     return Shapes{block->shapes, transforms, block->boxes};
@@ -71,6 +77,10 @@ struct SceneView {
 
   __device__ Selection selection() const {
     return Selection{block->light_records, block->light_counts->lights};
+  }
+
+  __device__ PowerLight power() const {
+    return power_light(light_power, block->light_counts->lights);
   }
 };
 

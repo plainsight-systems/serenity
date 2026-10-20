@@ -19,11 +19,9 @@
 // warp-aggregated atomic add; docs/research/2026-10-19-cuda-backend.md,
 // "Phase 3's design"): the count is the same whichever do. Unlike Metal's
 // simd_sum, no thread need call it that has no pixel. Which lane adds is
-// read from the lane's own register, %laneid: in an OptiX program
-// threadIdx is the launch index, not the lane (the guide's table of
-// special registers, 6.2), and only threadIdx and its kin have CUDA
-// intrinsics, so the lane is PTX's (inline assembly, as the guide says).
+// read from PTX's register for it (device/lanes.cuh).
 
+#include "cuda/device/lanes.cuh"
 #include "cuda/math/vector.cuh"
 
 namespace serenity {
@@ -45,20 +43,13 @@ __device__ inline float4 accumulate(float4 pixel, float3 sample,
   return make_float4(rgb(held) + (sample - rgb(held)) / (n + 1.0f), n + 1.0f);
 }
 
-// The calling thread's lane in its warp, 0 to 31.
-__device__ inline uint lane() {
-  uint id = 0;
-  asm volatile("mov.u32 %0, %%laneid;" : "=r"(id));
-  return id;
-}
-
 // Adds to `counter` the number of the calling threads of the warp whose
 // `failed` is true, with one atomic for them.
 __device__ inline void count_non_finite(bool failed, uint* counter) {
   const uint active = __activemask();
   const uint failures = __ballot_sync(active, failed);
   // The lowest active lane adds for them all.
-  if (failures != 0u && lane() == uint(__ffs(active) - 1)) {
+  if (failures != 0u && lane_id() == uint(__ffs(active) - 1)) {
     atomicAdd(counter, uint(__popc(failures)));
   }
 }

@@ -209,7 +209,7 @@ __device__ inline float light_point_pdf(
 
 // A placed light's power, what it emits in all, RTXDI's GetPower(): the
 // weight ReSTIR PT's selection draws it by (light_selection/
-// metal/lights/power_light.metal.h). A sphere's: its surface 4 pi r^2, times pi
+// light_selection/power_light.cuh). A sphere's: its surface 4 pi r^2, times pi
 // (a Lambertian emitter's radiance to its exitance), times its radiance's
 // luminance, at this frame's glow.
 __device__ inline float light_power(PlacedLight light) {

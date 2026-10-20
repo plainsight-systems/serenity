@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string_view>
 
@@ -43,6 +44,24 @@ class Module {
 // image kernels on NVIDIA's GPUs (eight warps), tuned per pass when a pass
 // is (Phase 6's tuning, not the port's).
 inline constexpr unsigned per_pixel_block = 16;
+
+// A launch's blocks and the threads in each, in two dimensions (I.24:
+// named, so the two pairs cannot pass in each other's places).
+struct LaunchShape {
+  unsigned blocks_x = 1;
+  unsigned blocks_y = 1;
+  unsigned threads_x = 1;
+  unsigned threads_y = 1;
+};
+
+// Launches `kernel` on `stream` in `shape`, with `arguments` as
+// launch_per_pixel() takes them. Throws CudaError if the launch fails.
+void launch(CUstream stream, CUfunction kernel, LaunchShape shape,
+            std::span<void*> arguments);
+
+// The shape of `count` threads in one dimension, in blocks of `block`, the
+// last block cut short by the kernel's own guard on its count.
+LaunchShape linear_shape(std::uint64_t count, unsigned block);
 
 // Launches `kernel` on `stream` over one thread a pixel of `grid`, in blocks
 // of per_pixel_block squared, with `arguments`, each a pointer to one of

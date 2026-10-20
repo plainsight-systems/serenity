@@ -33,7 +33,7 @@ __device__ inline bool has_lens(const serenity::contracts::CameraData& camera) {
 
 // `position` is in pixels from the top-left corner of an image of `size`
 // pixels: pixel (x, y)'s center is (x + 0.5, y + 0.5). `lens` is a point in
-// the unit square, mapped to the lens's disk (metal/camera/warp.metal.h,
+// the unit square, mapped to the lens's disk (math/warp.cuh,
 // concentric_disk); unread for a pinhole, whose ray is the pinhole's
 // exactly.
 __device__ inline CameraRay camera_ray(
@@ -72,7 +72,7 @@ __device__ inline PixelJitter frame_jitter(
 
 // The camera's ray through pixel `pixel` of an image of `size`, drawn from
 // `numbers`, a pixel's path numbers at their start
-// (metal/camera/sampler.metal.h, path_numbers): the point in the pixel, the
+// (sampler/sampler.cuh, path_numbers): the point in the pixel, the
 // frame's jitter where `jitter` is on (drawing nothing for it) and else drawn,
 // then the point on the lens, drawn only through one, so a pinhole's paths draw
 // what they drew before lenses and an unjittered frame's what it drew before

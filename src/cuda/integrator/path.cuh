@@ -127,7 +127,7 @@
 //           pays for it: docs/research/2026-10-09-medium-cost.md.
 //           A transmission also multiplies eta_scale, 1 at the camera, by
 //           eta_t^2 (bsdf_eta), undoing the 1 / eta_t^2 its value scaled
-//           radiance by (metal/integrator/dielectric.metal.h): beta x eta_scale
+//           radiance by (materials/dielectric.cuh): beta x eta_scale
 //           is the throughput as energy sees it, which no boundary changes.
 //   Step 7  Russian roulette, from the 4th surface: survive with
 //           q = min(the largest channel of beta x eta_scale, 0.95), else
@@ -187,7 +187,7 @@
 // that point, and step 3's is light_probability()'s 1 / N times
 // light_pdf() from that point, each 1 over the cone's solid angle from
 // view_light() of the same light at the same point (lights/
-// metal/integrator/sphere_light.metal.h): the same a. Step 5's p_b is pdf(wo,
+// lights/sphere_light.cuh): the same a. Step 5's p_b is pdf(wo,
 // wi) and step 3's is the pdf sample() drew wi with: the same b, to the
 // rounding of a conductor's half vector found two ways (contract 2). Then w_l =
 // a^2 / (a^2 + b^2) and w_b = b^2 / (b^2 + a^2), which sum to 1. A
@@ -388,7 +388,7 @@ namespace path {
 inline constexpr uint roulette_from = 3;  // the 4th surface, counting from 0
 inline constexpr uint safety_stop = 256;
 // A path's numbers, at most 7 a surface and the camera's 4, lie below every
-// purpose's (metal/integrator/sampler.metal.h).
+// purpose's (sampler/sampler.cuh).
 static_assert(7u * safety_stop + 4u <= purpose_span,
               "a path's numbers stay below the purposes'");
 inline constexpr float max_survival = 0.95f;

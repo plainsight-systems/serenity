@@ -2,26 +2,19 @@
 // a point in the pixel drawn anew each frame, folded into the accumulated
 // image, whose mean is the frame's radiance: the passes after it read the
 // image itself. Metal's path_trace (metal/passes/path/path.metal), as a ray
-// generation program, and the shapes' intersection program it traces with
-// (acceleration/intersection.cuh).
+// generation program reading the frame's launch parameters
+// (frame/traced_module.cuh).
 
 #include <optix.h>
 
 #include "core/contracts/camera.h"
 #include "core/contracts/frame_constants.h"
-#include "cuda/acceleration/intersection.cuh"
 #include "cuda/camera/thin_lens.cuh"
 #include "cuda/film/accumulate.cuh"
+#include "cuda/frame/traced_module.cuh"
 #include "cuda/integrator/path.cuh"
-#include "cuda/passes/path/path_launch.h"
 #include "cuda/sampler/sampler.cuh"
 #include "cuda/scene/scene_block.cuh"
-
-// The launch's parameters (path_launch.h), the pipeline's
-// launch-parameter variable (path.cpp names it).
-extern "C" {
-__constant__ serenity::cuda::PathLaunch launch;
-}
 
 namespace serenity {
 namespace shaders {
@@ -55,8 +48,9 @@ __device__ inline void path_pixel() {
   const float3 sample = path::radiance(scene, ray, numbers);
 
   const bool failed = !finite(sample);
-  float4* row = reinterpret_cast<float4*>(launch.accumulated +
-                                          std::size_t{pixel.y} * launch.pitch);
+  float4* row = reinterpret_cast<float4*>(launch.accumulated.rows +
+                                          std::size_t{pixel.y} *
+                                              launch.accumulated.pitch);
   row[pixel.x] =
       accumulate(row[pixel.x], sample, frame.accumulated_frames == 0u);
   count_non_finite(failed, launch.non_finite);

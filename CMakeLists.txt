@@ -346,10 +346,24 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         src/cuda/device/submission.cpp
         src/cuda/film/failure_count.cpp
         src/cuda/frame/accumulation.cpp
+        src/cuda/frame/checkerboard_images.cpp
+        src/cuda/frame/feature_images.cpp
         src/cuda/frame/frame_images.cpp
+        src/cuda/frame/mnee_list.cpp
         src/cuda/frame/offline_frames.cpp
+        src/cuda/frame/path_reuse_images.cpp
         src/cuda/frame/renderer.cpp
+        src/cuda/frame/traced_program.cpp
+        src/cuda/passes/checkerboard_fill/checkerboard_fill.cpp
+        src/cuda/passes/features/features.cpp
+        src/cuda/passes/mnee/mnee.cpp
         src/cuda/passes/path/path.cpp
+        src/cuda/passes/restir_pt/shift_replay.cpp
+        src/cuda/passes/restir_pt_duplication/restir_pt_duplication.cpp
+        src/cuda/passes/restir_pt_initial/restir_pt_initial.cpp
+        src/cuda/passes/restir_pt_shade/restir_pt_shade.cpp
+        src/cuda/passes/restir_pt_spatial/restir_pt_spatial.cpp
+        src/cuda/passes/restir_pt_temporal/restir_pt_temporal.cpp
         src/cuda/passes/test_pattern/test_pattern.cpp
         src/cuda/passes/tone_map/tone_map.cpp
         src/cuda/scene/light_glows.cpp
@@ -369,6 +383,54 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     serenity_add_optix_module(
         TARGET serenity_cuda NAME path
         SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/path/path.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_optix_module(
+        TARGET serenity_cuda NAME restir_pt_initial
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/restir_pt_initial/restir_pt_initial.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_optix_module(
+        TARGET serenity_cuda NAME mnee
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/mnee/mnee.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_optix_module(
+        TARGET serenity_cuda NAME restir_pt_temporal
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/restir_pt_temporal/restir_pt_temporal.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_optix_module(
+        TARGET serenity_cuda NAME restir_pt_spatial
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/restir_pt_spatial/restir_pt_spatial.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_optix_module(
+        TARGET serenity_cuda NAME features
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/features/features.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_cuda_module(
+        TARGET serenity_cuda NAME restir_pt_initial_kernels
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/restir_pt_initial/restir_pt_initial_kernels.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_cuda_module(
+        TARGET serenity_cuda NAME mnee_kernels
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/mnee/mnee_kernels.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_cuda_module(
+        TARGET serenity_cuda NAME restir_pt_temporal_kernels
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/restir_pt_temporal/restir_pt_temporal_kernels.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_cuda_module(
+        TARGET serenity_cuda NAME restir_pt_spatial_kernels
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/restir_pt_spatial/restir_pt_spatial_kernels.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_cuda_module(
+        TARGET serenity_cuda NAME restir_pt_shade
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/restir_pt_shade/restir_pt_shade.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_cuda_module(
+        TARGET serenity_cuda NAME restir_pt_duplication
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/restir_pt_duplication/restir_pt_duplication.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_cuda_module(
+        TARGET serenity_cuda NAME checkerboard_fill
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/checkerboard_fill/checkerboard_fill.cu"
         INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 endif()
 

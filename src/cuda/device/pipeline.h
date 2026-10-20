@@ -10,6 +10,7 @@
 #include <span>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 #include "core/frame/extent.h"
 #include "cuda/device/buffer.h"
@@ -22,7 +23,7 @@ namespace serenity::cuda {
 // A pass that traces rays, as OptiX runs it (docs/research/2026-10-19-cuda-
 // backend.md, "The design" and "Phase 3's design"): its programs, one `.cu`
 // compiled to OptiX-IR at build time and embedded (cmake/CudaModules.cmake),
-// made into a module, three program groups and a pipeline at construction,
+// made into a module, its program groups and a pipeline at construction,
 // and launched over the frame's pixels on the frame's stream. Metal's
 // compute pipeline for a kernel that traces (metal/device/library.h), and
 // one of Cycles' OptiX pipelines (intern/cycles/device/optix/
@@ -31,19 +32,21 @@ namespace serenity::cuda {
 //   ray generation   the pass's body: one thread a pixel, tracing by
 //                    optixTraverse and reading the hit objects itself
 //                    (cuda/acceleration/trace.cuh)
-//   hit group        the shapes' intersection program alone: no any-hit,
-//                    no closest-hit
+//   hit groups       one an intersection program, alone: no any-hit, no
+//                    closest-hit (the shapes'; MNEE's seed, whose program
+//                    walks a segment's boxes, integrator/mnee_seed.cuh)
 //   miss             no program: a ray that hits nothing leaves a miss in
 //                    its hit object, which the ray generation program reads
 //
-// The shader binding table holds a record for each, and a hit record a
-// structure the pass traces, each record's data four 64-bit words the
-// intersection program reads (optixGetSbtDataPointer): for the shapes, the
-// addresses of what it tests a box's shape with, and of the table that
-// names a box's shape, or 0 for none (cuda/acceleration/structure_block.h,
-// ShapeRecord). The ray generation program picks a structure's record by
-// the SBT offset it traces with. Written once, at
-// construction (CDSA.32: static data put once where its reader reads it).
+// The shader binding table holds a record for each, and a hit record for
+// each structure and program a pass traces with, each record a hit group's
+// and its data four 64-bit words the program reads
+// (optixGetSbtDataPointer): for the shapes, the addresses of what it tests
+// a box's shape with, and of the table that names a box's shape, or 0 for
+// none (cuda/acceleration/structure_block.h, StructureRecord). The ray
+// generation program picks a record by the SBT offset it traces with. Written
+// once, at construction (CDSA.32: static data put once where its reader reads
+// it).
 //
 // What every program of the backend's is compiled for (Programs below, and
 // the pipeline's compile options): a single geometry structure as the
@@ -65,16 +68,24 @@ class Pipeline {
   // program reads (above).
   using HitData = std::array<std::uint64_t, 4>;
 
+  // A hit record: the hit group it runs, an index into the programs'
+  // intersections, and its data.
+  struct HitRecord {
+    unsigned group = 0;
+    HitData data{};
+  };
+
   // What the programs are called, and what the pipeline gives them (I.24:
   // named, so no two strings pass in each other's places).
   struct Programs {
-    std::string_view ray_generation;     // "__raygen__<pass>"
-    std::string_view intersection;       // "__intersection__<shape>"
+    std::string_view ray_generation;  // "__raygen__<pass>"
+    // the hit groups' programs, one each: "__intersection__<what>"
+    std::span<const std::string_view> intersections;
     std::string_view launch_parameters;  // the programs' __constant__ name
     // 32-bit payload values a trace carries, as the programs use them
     unsigned payload_values = 0;
-    // each hit record's data, one record a structure the pass traces
-    std::span<const HitData> hit_records;
+    // the hit records, one a structure and program the pass traces with
+    std::span<const HitRecord> hit_records;
   };
 
   Pipeline(const OptixContext& context, std::span<const std::byte> ir,
@@ -116,8 +127,8 @@ class Pipeline {
       std::unique_ptr<std::remove_pointer_t<OptixPipeline>, DestroyPipeline>;
 
   ModuleHandle module_;
-  // ray generation, hit group, miss
-  std::array<GroupHandle, 3> groups_;
+  // ray generation, miss, then the hit groups
+  std::vector<GroupHandle> groups_;
   PipelineHandle pipeline_;
   DeviceBuffer records_;
   OptixShaderBindingTable table_{};
