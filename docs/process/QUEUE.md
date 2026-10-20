@@ -245,8 +245,11 @@ This file tracks active and accepted work.
    the demo's frame 11.2 ms at 1920 x 1080 and 39.6 ms at 3456 x 2234,
    the Mac's 17.37 and 58.30). Phase 6 done 2026-10-20: the data-set
    script runs on the 3090 (trialled, resumed and verified; the whole plan
-   about 2.6 h there), so the next data set renders there. Next: the
-   3090's window, then HIP with HIPRT on Strix Halo.
+   about 2.6 h there), so the next data set renders there. The 3090's
+   window done 2026-10-20 (`docs/research/2026-10-20-cuda-window.md`:
+   SDL3 on X11, Vulkan presenting CUDA's frames, `make window`; the demo
+   live at 60 fps at 1920 x 1080, 14 ms of GPU a frame). Next: HIP with
+   HIPRT on Strix Halo.
 
 3. Reservoir reuse as kernels, tuned per target: tiling, layout and
    fusion of the merge passes, what each costs and where the bytes go, on

@@ -879,7 +879,8 @@ the build returns the project to one backend.
 ## Not decided here
 
 - The window on the 3090: a thin graphics API for presentation alone
-  (CUDA interop), its own step after Phase 6.
+  (CUDA interop), its own step after Phase 6. Done 2026-10-20, Vulkan
+  for presenting alone: `2026-10-20-cuda-window.md`.
 - AMD's Strix Halo (HIP, HIPRT) and the Xbox Series X (Direct3D 12):
   later milestones. Whether hardware ray tracing is reachable in the
   retail console's developer mode, or only through the GDK on a

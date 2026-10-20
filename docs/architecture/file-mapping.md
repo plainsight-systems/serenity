@@ -524,13 +524,27 @@ streams, and the frame time the headless program reports.
 | the summary's instants: the backend's one timeline, host time on Metal, the GPU's on CUDA | Measurement | `src/core/measurement/frame_times.h` |
 | the denoiser against PyTorch's fixture, the hand-off, the input graph to the demo's hand-off, one source for both backends, each backend's runner and rigs behind one name; the parts' bookkeeping; the times' parse and line; the denoised pipeline's same bytes twice | tests | `tests/gpu/{denoise,features}_test.cpp`; `tests/{gpu,cuda}/support/{denoise_runner,hand_off_rig,frame_rig}.h`, `tests/gpu/support/denoise_fixture.h`; `tests/cuda/kernels/delay.cu`; `tests/cuda/frame_sequence_test.cpp`, `tests/options_test.cpp`, `tests/cuda/headless_test.cpp` |
 
+## The window on the RTX 3090 Ti
+
+`serenity`, the window, on Linux (`docs/research/2026-10-20-cuda-window.md`):
+the same program and its window through SDL3 on X11, the CUDA backend's
+frames presented through Vulkan, which copies them to the screen and
+nothing else.
+
+| What | Axis | Where |
+|---|---|---|
+| the window's size from the command line, `--size` | Presentation | `src/app/options.{h,cpp}` |
+| the window on X11: made for Vulkan, its surface's instance extensions and the surface by opaque handles, as Metal's layer is | Presentation | `src/app/window.{h,cpp}` |
+| the window composed with the platform's backend | Presentation | `src/app/main.cpp` |
+| Vulkan for presenting: the CUDA device's Vulkan device, the swapchain, a frame slot's buffer shared with CUDA, the copy and the blit, the timeline semaphores both sides wait on | GPU backend | `src/cuda/present/presenter.{h,cpp}`, new |
+| the swapchain's choices of what the surface offers: format, present mode, extent, images | GPU backend | `src/cuda/present/swapchain_choice.{h,cpp}`, new |
+| CUDA's frame source: the loop of polled events, acquire, render, present | Frame graph | `src/cuda/frame/swapchain_frames.{h,cpp}`, new |
+| a frame recorded into a target given by address and size; a frame rendered into the window's slot | Frame graph | `src/cuda/frame/renderer.{h,cpp}`, `src/cuda/device/offscreen.h` |
+| SDL3 and Vulkan on Linux, the window's build there; Vulkan pinned | Build | `CMakeLists.txt`, `cmake/toolchain.json`, `tools/check_toolchain.py` |
+| the window launched on the 3090's monitor with an X server of its own | Build | `Makefile` (`window`) |
+| the swapchain's choices and `--size`, units (the presenter itself needs the X server: checked by the window's run) | tests | `tests/cuda/swapchain_choice_test.cpp`, `tests/options_test.cpp` |
+
 ## Not here yet
 
-- **The CUDA backend's files,** tabled here phase by phase as its
-  headers are written (`docs/research/2026-10-19-cuda-backend.md`): a
-  pass that traces is an OptiX launch whose ray generation program is the
-  pass, one that does not is a CUDA kernel; the denoiser on the tensor
-  cores, reading the same exported weights through the same core loader;
-  the headless renderer behind a backend-neutral seam, as the window's.
 - **HIP with HIPRT** on AMD's Strix Halo and **Direct3D 12** on the Xbox
   Series X, later milestones, each its own backend.
