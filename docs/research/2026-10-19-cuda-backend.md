@@ -381,6 +381,113 @@ one pipeline a pass, as Metal makes one a kernel (merging them is tuning);
 and its instance level, which it needs for meshes and motion and this
 scene does not have yet.
 
+## Phase 4's design, checked 2026-10-19
+
+Written before Phase 4's headers, as Phase 3's was: what it rests on
+checked first on the RTX 3090 Ti with a probe outside the repository, and
+in the OptiX 9.1 Programming Guide.
+
+**What it renders.** The data set's input graph, `graphs/
+restir_pt_features.toml`: ReSTIR PT's five passes, MNEE's solve, the
+features and the tone map. That graph feeds the network (core/frame/
+schedule.h, `feeds_network`), so it traces checkerboarded (contract 20)
+and ends in the checkerboard's fill, whose image it shows and writes: the
+fill comes into Phase 4 from Phase 5, which keeps the denoiser, the depth
+of field and the denoised frame's two halves. And `graphs/features.toml`,
+the features alone.
+
+**Proven on the machine.**
+
+- MNEE's seeding as an intersection program. Metal's seed walks every box
+  a light's segment enters with its own query loop, collecting caster
+  spheres' crossings and stopping on a dielectric that is no sphere or
+  more crossings than the solve takes (metal/integrator/mnee.metal.h,
+  seed_segment). Its result does not depend on the order the boxes come
+  in. On OptiX it is a second intersection program: the ray generation
+  program passes the seed, a local of its own, by a pointer in two payload
+  words (the SDK's per-ray-data pattern; the guide's memory model makes a
+  launch index's stack writes visible to the programs its traces run,
+  6.2); the program fills it for each box and reports a hit only to stop,
+  under `TERMINATE_ON_FIRST_HIT`. A box seen twice is skipped by its
+  shape, so the seed is the same whether OptiX calls a program once a box
+  or more. Checked: every ray found each sphere once, and a ray told to
+  stop at a shape stopped without recording it (3072 rays).
+- The appends' warp-aggregated reserve in a ray generation program:
+  ballots on the count's bits, the lane mask (`%lanemask_lt`) and lane
+  from PTX, one shuffle to hand out the base. In a 2D launch with
+  divergent lanes appending 0 to 2 items each, every item appended once
+  (2458 of 2458). The guide allows warp-wide instructions for an algorithm
+  that does not depend on which threads share a warp (6.2); the list's
+  order may differ from Metal's, and nothing reads it in order.
+
+**Two kinds of kernel per pass**, as the plan's table says, now per
+kernel: a pass's kernels that trace are its OptiX programs (`<pass>.cu`,
+a ray generation program each); those that do not are CUDA kernels
+(`<pass>_kernels.cu`):
+
+| Pass | Programs (trace) | Kernels (do not) |
+|---|---|---|
+| ReSTIR PT's initial | the path tree | the power pyramid (one block, `__syncthreads` between its levels), the light tiles |
+| MNEE | the solve | the bookkeeping: lost requests counted, the count set back |
+| temporal | the shift, the replay | the merge |
+| spatial | the shift, the replay | the merge |
+| shade, duplication, the fill | | each one kernel (the duplication's keys in shared memory) |
+| features | the features | |
+
+OptiX's programs may not use shared memory or synchronization (the guide,
+6.2), and no kernel that needs them traces.
+
+**No indirect launch.** The replays and MNEE's solve take their sizes from
+lists the GPU writes; a CUDA launch and `optixLaunch` take theirs from the
+host. Each launches at its list's capacity (a replay list's, its pixels'
+most shifts; MNEE's, the work list's), and a thread past the list's count,
+which it reads on the device, returns: the one the plan listed. Reading
+the count back would stall the stream every frame. What the launches of
+idle threads cost is measured with the demo graph's frame time (Phase 5)
+and tuned after.
+
+**Hit groups.** The pipeline takes a hit group for each intersection
+program its module has, and a hit record for each structure and program:
+the shapes' records for everything and the occluders (Phase 3), then the
+seed's for the occluders. A trace names its record by its SBT offset.
+
+**One frame's launch parameters for every pass.** Metal gives every pass
+one struct of the frame's resources (metal/frame/frame_resources.h) and
+each binds what it reads. Here that struct is the launch parameters
+themselves, `FrameLaunch`: the frame's constants and camera by value and
+the address of every array a pass of the frame reads or writes, written
+once a frame and uploaded once on the stream (GPU.6: one copy, not one a
+pass); every OptiX pass launches with it, and each CUDA kernel takes its
+address. Phase 3's per-pass struct, the path pass's, becomes this one: a
+second pass would otherwise upload what the first already did.
+
+**Per-frame data**, as Phase 3's: the reuse constants (the previous
+camera), the features' and the checkerboard's in the frame's launch
+parameters; last frame's transforms and glows for
+the temporal reuse, and the features' frame before's transforms, each a
+second ShapeTransforms or LightGlows filled by the core at the previous
+time, as Metal's.
+
+**Arrays and images.** ReSTIR PT's arrays (Metal's PathReuseImages) are
+device buffers at the sizes the core gives (core/passes/
+restir_pt_arrays.h), the ping-ponged ones by the frame's parity; the
+feature images contract 17's formats in device buffers (three of four half
+floats, one float), read back widened as Metal's; the fill's history and
+image pitched, the image filtered by the tone map as the accumulated image
+is.
+
+**Device code.** The rest of Metal's shaders the passes reach, translated
+line for line as Phase 3's: the shifts, NEE, MNEE, reconnection, the
+reuse family, the power pyramid's light selection, shape points, ReSTIR
+PT's pass header, the features and the fill.
+
+**Tests.** The probe tests of the families that trace (the structures,
+leaving a surface, the path loop, ReSTIR PT's, MNEE's, the scene block's)
+join the shared sources, each backend's harness behind one name as the
+probe runner's is. The integration test renders the input graph the same
+twice. The features test, the network's input graph rendering the demo
+graph's light to the bit, needs the demo graph, and joins in Phase 5.
+
 ## Phases
 
 0. **What is not Metal's moves into the core,** on the Mac, before any
@@ -509,9 +616,12 @@ scene does not have yet.
    flags and compaction, boxes as triangles on the RT cores, one
    pipeline for every tracing pass.
 4. **ReSTIR PT and MNEE.** Initial, temporal, spatial, shade, duplication,
-   MNEE's work list; the features pass.
+   MNEE's work list; the features pass; and the checkerboard's fill, from
+   Phase 5: the data set's input graph (`graphs/restir_pt_features.toml`)
+   on the 3090. Its design: "Phase 4's design", above.
 5. **The denoised frame.** The denoiser on the tensor cores (matched to
-   PyTorch), the fill, depth of field: the demo graph, its frame time.
+   PyTorch), depth of field, the frame's two halves: the demo graph, its
+   frame time.
 6. **The data set on the 3090.** The script run there, its manifest
    naming the machine.
 

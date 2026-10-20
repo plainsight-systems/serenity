@@ -472,6 +472,30 @@ core's shared layouts are included as they are, with the CUDA branch of
 | the probe tests of eight families (sampler, camera, shapes, textures, lights, film, encodings, BSDFs), one source for both backends, each backend's runner behind `<probe_runner.h>` (SF.12); CUDA's runner and probe kernels | tests | `tests/gpu/*_test.cpp`, `tests/gpu/support/probe_runner.h` (`ProbeScene`), `tests/cuda/support/probe_runner.h`, `tests/cuda/kernels/`, new |
 | the headless program rendering the reference graph, the same bytes twice; the headless shell test on both platforms | tests | `tests/cuda/headless_test.cpp`, `tests/CMakeLists.txt` |
 
+## ReSTIR PT, MNEE and the features on CUDA
+
+The CUDA backend's Phase 4 (`docs/research/2026-10-19-cuda-backend.md`,
+"Phase 4's design"): the data set's input graph, ReSTIR PT's five passes,
+MNEE's solve, the features, the checkerboard's fill and the tone map, on
+the RTX 3090 Ti. Each pass's kernels that trace are OptiX programs, those
+that do not CUDA kernels; every pass reads the frame's one launch
+parameters, Metal's frame resources as one uploaded struct.
+
+| What | Axis | Where |
+|---|---|---|
+| the frame's launch parameters: its constants, camera and the address of every array its passes read or write, uploaded once a frame; the path pass's from Phase 3 folded in | Frame graph | `src/cuda/frame/frame_launch.h`, new; `src/cuda/passes/path/path_launch.h`, removed |
+| a pipeline's hit groups, one an intersection program, and a hit record each structure and program | GPU backend | `src/cuda/device/pipeline.{h,cpp}` |
+| appending to a list, one atomic a warp, the lanes' places from ballots | GPU backend | `src/cuda/device/append.cuh`, new |
+| MNEE's seed as an intersection program, filling the ray's seed through a payload pointer | Acceleration | `src/cuda/acceleration/seed_intersection.cuh`, new |
+| device code: NEE, MNEE, the shifts, reconnection, the reuse family, selection by power, shape points, ReSTIR PT's pass header | each its family | `src/cuda/<family>/*.cuh`, from `src/metal/<family>/*.metal.h` |
+| ReSTIR PT's arrays at the core's sizes, ping-ponged by the frame's parity, by the core's reuse history | Frame graph | `src/cuda/frame/path_reuse_images.{h,cpp}`, new |
+| MNEE's work list and its header | Frame graph | `src/cuda/frame/mnee_list.{h,cpp}`, new |
+| the feature images, contract 17's formats, read back widened | Frame graph | `src/cuda/frame/feature_images.{h,cpp}`, new |
+| the fill's history and image | Frame graph | `src/cuda/frame/checkerboard_images.{h,cpp}`, new |
+| each pass: its programs (`<pass>.cu`), its kernels (`<pass>_kernels.cu`), its launches | Pass | `src/cuda/passes/{restir_pt_initial,restir_pt_temporal,restir_pt_spatial,restir_pt_shade,restir_pt_duplication,mnee,features,checkerboard_fill}/`, new; `src/cuda/passes/restir_pt/` (the shift and replay sequence both reuses record) |
+| the schedule carried out with ReSTIR PT's, MNEE's, the features' and the fill's families; last frame's transforms and glows; the feature images and the lost MNEE requests read back | Frame graph | `src/cuda/frame/renderer.{h,cpp}`, `offline_frames.{h,cpp}` |
+| the probe tests of the families that trace, one source for both backends, each backend's traced-probe harness behind one name | tests | `tests/gpu/*_test.cpp`, `tests/{gpu,cuda}/support/` |
+
 ## Not here yet
 
 - **The CUDA backend's files,** tabled here phase by phase as its
