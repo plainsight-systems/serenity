@@ -20,12 +20,13 @@
 #include <type_traits>
 #include <vector>
 
+// the backend's runner, by the include path (SF.12)
+#include <probe_runner.h>
+
 #include "core/camera/thin_lens.h"
 #include "core/scene/scene.h"
 #include "gpu/kernels/scene_block_probe.h"
-#include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"
-#include "metal/scene/scene_buffers.h"
 #include "support/references.h"
 #include "support/scene_text.h"
 #include "support/vector.h"
@@ -34,7 +35,6 @@ namespace gpu = serenity::gpu;
 namespace lights = serenity::lights;
 namespace materials = serenity::materials;
 namespace media = serenity::media;
-namespace metal = serenity::metal;
 namespace scene = serenity::scene;
 namespace shapes = serenity::shapes;
 namespace tests = serenity::tests;
@@ -215,8 +215,7 @@ TEST_CASE(
   }
 
   tests::ProbeRunner gpu;
-  const metal::SceneBuffers buffers(gpu.device(), gpu.submission(),
-                                    description);
+  const tests::ProbeScene buffers(gpu, description);
   const auto count = static_cast<std::uint32_t>(queries.size());
   const std::vector<std::uint32_t> read =
       gpu.run<std::uint32_t>("scene_block_probe", queries.size(),

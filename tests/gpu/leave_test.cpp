@@ -32,23 +32,16 @@
 #include <utility>
 #include <vector>
 
+// the backend's harness, by the include path (SF.12)
+#include <traced_probe.h>
+
 #include "core/animation/draw.h"
 #include "core/scene/scene.h"
 #include "gpu/kernels/leave_probe.h"
-#include "gpu/support/traced_probe.h"
-#include "metal/acceleration/scene_acceleration.h"
-#include "metal/device/device.h"
-#include "metal/device/library.h"
-#include "metal/device/submission.h"
-#include "metal/scene/scene_buffers.h"
-#include "metal/scene/shape_transforms.h"
-#include "serenity/metallib/probes.h"
 #include "support/scene_text.h"
 #include "support/vector.h"
 
 namespace animation = serenity::animation;
-namespace metal = serenity::metal;
-namespace metallib = serenity::metallib;
 namespace scene = serenity::scene;
 namespace tests = serenity::tests;
 using tests::LeaveQuery;
@@ -61,20 +54,10 @@ namespace {
 // (support/traced_probe.h).
 std::vector<LeaveResult> leave(const scene::SceneDescription& description,
                                const std::vector<LeaveQuery>& queries) {
-  metal::Device device;
-  metal::Submission submission(device);
-  const metal::SceneBuffers buffers(device, submission, description);
-  metal::ShapeTransforms transforms(device, submission,
-                                    description.shapes.transforms,
-                                    metal::FrameArray::Copies::one);
-  const std::vector<std::uint32_t> lights = scene::light_shapes(description);
-  metal::SceneAcceleration acceleration(device, submission, description.shapes,
-                                        {.moving = {}, .lights = lights});
-  const metal::Library library(device, metallib::probes);
+  tests::TracedScene traced(description, {});
   const auto count = static_cast<std::uint32_t>(queries.size());
   return tests::run_traced<LeaveResult>(
-      {device, submission, library, buffers, transforms, acceleration},
-      "leave_probe", std::size_t{count} * tests::leave_directions,
+      traced, "leave_probe", std::size_t{count} * tests::leave_directions,
       {tests::Binding::of(queries), tests::Binding::of(count)});
 }
 

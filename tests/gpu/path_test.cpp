@@ -35,11 +35,13 @@
 #include <utility>
 #include <vector>
 
+// the backend's runner, by the include path (SF.12)
+#include <probe_runner.h>
+
 #include "core/contracts/bsdf.h"
 #include "core/scene/scene.h"
 #include "gpu/kernels/path_probe.h"
 #include "gpu/support/probe_light.h"
-#include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"
 #include "support/lit_floor.h"
 #include "support/scene_text.h"

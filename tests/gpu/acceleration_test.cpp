@@ -19,21 +19,14 @@
 #include <string_view>
 #include <vector>
 
+// the backend's harness, by the include path (SF.12)
+#include <traced_probe.h>
+
 #include "core/scene/scene.h"
 #include "gpu/kernels/trace_probe.h"
-#include "gpu/support/traced_probe.h"
-#include "metal/acceleration/scene_acceleration.h"
-#include "metal/device/device.h"
-#include "metal/device/library.h"
-#include "metal/device/submission.h"
-#include "metal/scene/scene_buffers.h"
-#include "metal/scene/shape_transforms.h"
-#include "serenity/metallib/probes.h"
 #include "support/vector.h"
 
 namespace contracts = serenity::contracts;
-namespace metal = serenity::metal;
-namespace metallib = serenity::metallib;
 namespace scene = serenity::scene;
 namespace tests = serenity::tests;
 using tests::TraceHit;
@@ -46,7 +39,7 @@ namespace {
 // transforms and records the structure's update, as a frame does
 // (support/traced_probe.h).
 std::vector<TraceHit> probe(
-    const tests::Traced& traced, const std::vector<TraceRay>& rays,
+    tests::TracedScene& traced, const std::vector<TraceRay>& rays,
     const std::optional<std::vector<contracts::Transform>>& moved) {
   const auto count = static_cast<std::uint32_t>(rays.size());
   return tests::run_traced<TraceHit>(
@@ -108,17 +101,8 @@ TEST_CASE(
     "a hit, tested in a shape's own space, is at the world's distance, and "
     "names its shape") {
   const scene::SceneDescription description = scene::parse(scales, "scales");
-  metal::Device device;
-  metal::Submission submission(device);
-  const metal::SceneBuffers buffers(device, submission, description);
   // Still: the shapes where the file puts them.
-  metal::ShapeTransforms transforms(device, submission,
-                                    description.shapes.transforms,
-                                    metal::FrameArray::Copies::one);
-  const std::vector<std::uint32_t> lights = scene::light_shapes(description);
-  metal::SceneAcceleration acceleration(device, submission, description.shapes,
-                                        {.moving = {}, .lights = lights});
-  const metal::Library library(device, metallib::probes);
+  tests::TracedScene traced(description, {});
 
   const std::vector<TraceRay> rays = {
       ray({0, 0, 0}, {0, 0, -1}),  // the firefly, 5 away: t = 4.97
@@ -129,9 +113,7 @@ TEST_CASE(
       ray({0, 0.02, 0}, {0, 0, -1}),  // the firefly off its middle: sqrt(0.03^2
                                       // - 0.02^2) short of 5
   };
-  const std::vector<TraceHit> hits =
-      probe({device, submission, library, buffers, transforms, acceleration},
-            rays, std::nullopt);
+  const std::vector<TraceHit> hits = probe(traced, rays, std::nullopt);
   CHECK(hits[0].found == 1u);
   CHECK(hits[0].t == doctest::Approx(firefly_distance - firefly_radius)
                          .scale(0)
@@ -154,17 +136,8 @@ TEST_CASE(
 
 TEST_CASE("a moved shape is hit where it moved to, and not where it was") {
   const scene::SceneDescription description = scene::parse(scales, "scales");
-  metal::Device device;
-  metal::Submission submission(device);
-  const metal::SceneBuffers buffers(device, submission, description);
-  metal::ShapeTransforms transforms(device, submission,
-                                    description.shapes.transforms,
-                                    metal::FrameArray::Copies::per_frame);
   const std::vector<std::uint32_t> moving = {0};
-  const std::vector<std::uint32_t> lights = scene::light_shapes(description);
-  metal::SceneAcceleration acceleration(device, submission, description.shapes,
-                                        {.moving = moving, .lights = lights});
-  const metal::Library library(device, metallib::probes);
+  tests::TracedScene traced(description, moving);
 
   // Each slot in turn, so both structures are built and traced.
   for (int round = 0; round < 4; ++round) {
@@ -175,9 +148,7 @@ TEST_CASE("a moved shape is hit where it moved to, and not where it was") {
         ray({x, 0, 0}, {0, 0, -1}),  // where it is now
         ray({0, 0, 0}, {0, 0, -1}),  // where it was at rest
     };
-    const std::vector<TraceHit> hits =
-        probe({device, submission, library, buffers, transforms, acceleration},
-              rays, moved);
+    const std::vector<TraceHit> hits = probe(traced, rays, moved);
     INFO("round " << round);
     CHECK(hits[0].found == 1u);
     CHECK(hits[0].t == doctest::Approx(firefly_distance - firefly_radius)
@@ -251,16 +222,7 @@ TEST_CASE(
   const scene::SceneDescription description =
       scene::parse(masks_scene(false), "masks");
   REQUIRE(scene::light_shapes(description) == std::vector<std::uint32_t>{0, 2});
-  metal::Device device;
-  metal::Submission submission(device);
-  const metal::SceneBuffers buffers(device, submission, description);
-  metal::ShapeTransforms transforms(device, submission,
-                                    description.shapes.transforms,
-                                    metal::FrameArray::Copies::one);
-  const std::vector<std::uint32_t> lights = scene::light_shapes(description);
-  metal::SceneAcceleration acceleration(device, submission, description.shapes,
-                                        {.moving = {}, .lights = lights});
-  const metal::Library library(device, metallib::probes);
+  tests::TracedScene traced(description, {});
   using contracts::RayMask;
   const std::vector<TraceRay> rays = {
       ray({0, 0, 0}, {0, 0, -1}, RayMask::everything,
@@ -275,9 +237,7 @@ TEST_CASE(
           3.0f),  // through it, to the box at 6
       ray({0, 0, 0}, {0, 1, 0}, RayMask::occluders),  // nothing
   };
-  const std::vector<TraceHit> hits =
-      probe({device, submission, library, buffers, transforms, acceleration},
-            rays, std::nullopt);
+  const std::vector<TraceHit> hits = probe(traced, rays, std::nullopt);
   CHECK(hits[0].found == 1u);
   CHECK(hits[0].shape == 0u);
   CHECK(hits[0].t == doctest::Approx(5.0 - 0.03).scale(0).epsilon(1e-6));
@@ -307,17 +267,8 @@ TEST_CASE(
     "by everything alone") {
   const scene::SceneDescription description =
       scene::parse(masks_scene(true), "masks_moving");
-  metal::Device device;
-  metal::Submission submission(device);
-  const metal::SceneBuffers buffers(device, submission, description);
-  metal::ShapeTransforms transforms(device, submission,
-                                    description.shapes.transforms,
-                                    metal::FrameArray::Copies::per_frame);
   const std::vector<std::uint32_t> moving = {0, 1};
-  const std::vector<std::uint32_t> lights = scene::light_shapes(description);
-  metal::SceneAcceleration acceleration(device, submission, description.shapes,
-                                        {.moving = moving, .lights = lights});
-  const metal::Library library(device, metallib::probes);
+  tests::TracedScene traced(description, moving);
   using contracts::RayMask;
   for (int round = 0; round < 4; ++round) {
     std::vector<contracts::Transform> moved = description.shapes.transforms;
@@ -334,9 +285,7 @@ TEST_CASE(
         ray({0, 0, 0}, {0, 0, -1},
             RayMask::occluders),  // where both were at rest: nothing
     };
-    const std::vector<TraceHit> hits =
-        probe({device, submission, library, buffers, transforms, acceleration},
-              rays, moved);
+    const std::vector<TraceHit> hits = probe(traced, rays, moved);
     INFO("round " << round);
     CHECK(hits[0].found == 1u);
     CHECK(hits[0].shape == 0u);
@@ -382,26 +331,14 @@ color = [0.5, 0.5, 0.5]
       text += "\"\n";
     }
     const scene::SceneDescription description = scene::parse(text, material);
-    metal::Device device;
-    metal::Submission submission(device);
-    const metal::SceneBuffers buffers(device, submission, description);
-    metal::ShapeTransforms transforms(device, submission,
-                                      description.shapes.transforms,
-                                      metal::FrameArray::Copies::one);
-    const std::vector<std::uint32_t> lights = scene::light_shapes(description);
-    metal::SceneAcceleration acceleration(device, submission,
-                                          description.shapes,
-                                          {.moving = {}, .lights = lights});
-    const metal::Library library(device, metallib::probes);
+    tests::TracedScene traced(description, {});
     using contracts::RayMask;
     const std::vector<TraceRay> rays = {
         ray({0, 0, 0}, {0, 0, -1}, RayMask::occluders),
         ray({0, 0, 0}, {1, 0, 0}, RayMask::occluders),
         ray({0, 0, 0}, {1, 0, 0}, RayMask::everything),
     };
-    const std::vector<TraceHit> hits =
-        probe({device, submission, library, buffers, transforms, acceleration},
-              rays, std::nullopt);
+    const std::vector<TraceHit> hits = probe(traced, rays, std::nullopt);
     const bool surfaces = material == "matte";
     INFO(material);
     CHECK(hits[0].found == (surfaces ? 1u : 0u));

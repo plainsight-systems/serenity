@@ -27,6 +27,9 @@
 #include <utility>
 #include <vector>
 
+// the backend's runner, by the include path (SF.12)
+#include <probe_runner.h>
+
 #include "core/contracts/bsdf.h"
 #include "core/contracts/emitter.h"
 #include "core/contracts/medium.h"
@@ -34,9 +37,7 @@
 #include "core/scene/scene.h"
 #include "core/shapes/primitive.h"
 #include "gpu/kernels/mnee_probe.h"
-#include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"
-#include "metal/frame/renderer.h"
 #include "support/required.h"
 #include "support/scene_text.h"
 #include "support/schedules.h"
@@ -100,9 +101,25 @@ struct Traced {
   double miss;
 };
 
+// The plane's normal: that of x0, y and the center; where the center is on
+// the straight line, as for a receiver on the axis from the light point
+// through it, whose path is the straight one by symmetry, any normal to the
+// line, since every plane through it holds the path. Not the cross product
+// there: it is 0, or rounding's, which differs with the compiler's
+// contraction of products into fused ones.
+Vec3 plane_normal(Vec3 x0, Vec3 u) {
+  constexpr double on_line = 1e-9;
+  const Vec3 across = cross(u, sphere_center - x0);
+  if (length(across) > on_line) {
+    return normalized(across);
+  }
+  return normalized(cross(
+      u, std::abs(u.x) < 0.5 ? Vec3{1.0, 0.0, 0.0} : Vec3{0.0, 1.0, 0.0}));
+}
+
 Traced trace_at(Vec3 x0, Vec3 y, double a) {
   const Vec3 u = normalized(y - x0);
-  const Vec3 normal = normalized(cross(u, sphere_center - x0));
+  const Vec3 normal = plane_normal(x0, u);
   const Vec3 v = cross(normal, u);
   const Vec3 d = std::cos(a) * u + std::sin(a) * v;
   const std::optional<double> t1 = root(x0, d, 1e-9);
@@ -163,14 +180,18 @@ std::optional<Traced> refraction_path(Vec3 x0, Vec3 y) {
 }
 
 // Floor points in the sphere's shadow of the light point, whose straight
-// segment to it crosses the sphere: four in the caustic's bright core, one
-// at its rim, where G is a hundredth of the core's. Over a grid of the
-// shadow, the solve from the straight seed converges at the core and at
-// some of the rim; where it does not, MNEE finds no light, part of its
-// bias, which the mean tests below measure.
-const std::array<Vec3, 5> receivers = {
+// segment to it crosses the sphere, in the caustic's bright core, the first
+// on the axis from the light point through the center. Over a grid of the
+// shadow, the solve from the straight seed converges at the core; at the
+// rim, where G is a hundredth of the core's, it wanders (steps shortened,
+// crossings that do not transmit) and converges at scattered points, which
+// ones changing with the backend's rounding (on the RTX 3090 Ti, 100 of
+// 300 over 0.3 to 0.575 from the core, none in a patch), so no rim point is
+// held to converge. Where the solve does not, MNEE finds no light, part of
+// its bias.
+const std::array<Vec3, 4> receivers = {
     Vec3{-0.12, 0.0, 0.08}, Vec3{-0.12, 0.0, -0.02}, Vec3{-0.02, 0.0, 0.08},
-    Vec3{-0.22, 0.0, 0.08}, Vec3{-0.52, 0.0, 0.28}};
+    Vec3{-0.22, 0.0, 0.08}};
 
 }  // namespace
 
@@ -191,9 +212,10 @@ TEST_CASE(
                                        {0.0f, 1.0f, 0.0f},
                                        0u});
   }
+  const auto count = static_cast<std::uint32_t>(queries.size());
   tests::ProbeRunner gpu;
   const std::vector<tests::MneeChain> chains = gpu.run<tests::MneeChain>(
-      "mnee_solve", queries.size(), {Binding::of(queries)});
+      "mnee_solve", queries.size(), {Binding::of(queries), Binding::of(count)});
   REQUIRE(chains.size() == receivers.size());
   for (std::size_t i = 0; i < receivers.size(); ++i) {
     const Vec3 x0 = receivers.at(i);
@@ -282,10 +304,11 @@ TEST_CASE(
   for (const Case& k : cases) {
     queries.push_back(k.query);
   }
+  const auto count = static_cast<std::uint32_t>(queries.size());
   tests::ProbeRunner gpu;
-  const std::vector<std::uint32_t> chains =
-      gpu.run<std::uint32_t>("mnee_chain_after", queries.size(),
-                             {Binding::of(queries), Binding::of(records)});
+  const std::vector<std::uint32_t> chains = gpu.run<std::uint32_t>(
+      "mnee_chain_after", queries.size(),
+      {Binding::of(queries), Binding::of(count), Binding::of(records)});
   REQUIRE(chains.size() == cases.size());
   for (std::size_t i = 0; i < cases.size(); ++i) {
     INFO(cases.at(i).name);
