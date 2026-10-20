@@ -170,8 +170,8 @@ fi
 #    core/contracts/shared_layout.h, the layouts and their encodings, never
 #    the core's math, so the GPU tests check each backend's own code
 #    against the core's. Every Metal shader and header and every CUDA
-#    kernel source and header of src/ and of the GPU tests' kernels.
-shaders="$(find src tests/gpu/kernels -type f \( -name '*.metal' -o -name '*.metal.h' -o -name '*.cu' -o -name '*.cuh' \) | sort)"
+#    kernel source and header of src/ and of both backends' probe kernels.
+shaders="$(find src tests/gpu/kernels tests/cuda/kernels -type f \( -name '*.metal' -o -name '*.metal.h' -o -name '*.cu' -o -name '*.cuh' \) | sort)"
 for shader in ${shaders}; do
     for header in $(search -hoE '#[[:space:]]*include[[:space:]]*[<"]core/[^">]+' "${shader}" | sed -E 's/.*[<"]//'); do
         [ "${header}" = core/contracts/shared_layout.h ] && continue
