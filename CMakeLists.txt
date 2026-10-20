@@ -120,14 +120,29 @@ FetchContent_MakeAvailable(metal_cpp)
 add_library(metal_cpp INTERFACE)
 target_include_directories(metal_cpp SYSTEM INTERFACE "${metal_cpp_SOURCE_DIR}")
 target_link_libraries(metal_cpp INTERFACE "-framework Metal" "-framework Foundation" "-framework QuartzCore")
+endif()
 
 # ---------------------------------------------------------------------------
-# SDL3: the window (src/app/ only). Pinned by its release tarball's SHA-256:
-# its git history is far larger than the release. Static, and only the parts
-# the window uses: no OpenGL or OpenGL ES, which nothing here draws with.
-# Vulkan stays until the CUDA backend's window chooses the graphics API it
-# presents through (docs/research/2026-10-19-cuda-backend.md).
+# SDL3: the window (src/app/ only), on both platforms. Pinned by its release
+# tarball's SHA-256: its git history is far larger than the release. Static,
+# and only the parts the window uses: no OpenGL or OpenGL ES, which nothing
+# here draws with. On Linux its X11 driver alone, no Wayland or KMS: the
+# RTX 3090 Ti's monitor runs an X server for the window's run and nothing
+# else (docs/research/2026-10-20-cuda-window.md); Vulkan, which the CUDA
+# backend presents through, on both.
 # ---------------------------------------------------------------------------
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    foreach(driver WAYLAND KMSDRM)
+        set(SDL_${driver} OFF CACHE BOOL "" FORCE)
+    endforeach()
+    set(SDL_X11 ON CACHE BOOL "" FORCE)
+    # X11's extensions the window does not use (cursors, input devices,
+    # display modes, shapes, screensavers, sync), whose headers the machine
+    # lacks: SDL asks that each be named off.
+    foreach(extension XCURSOR XDBE XINPUT XFIXES XRANDR XSCRNSAVER XSHAPE XSYNC XTEST)
+        set(SDL_X11_${extension} OFF CACHE BOOL "" FORCE)
+    endforeach()
+endif()
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
@@ -142,6 +157,11 @@ FetchContent_Declare(
     SYSTEM  # its headers' warnings are its own, as the other dependencies' are
 )
 FetchContent_MakeAvailable(SDL3)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # SDL's own X11 sources, built without XRANDR and XSYNC (above), leave a
+    # label and a variable unused (SDL_x11toolkit.c, SDL_x11window.c): its
+    # warnings, those two named off for its target alone.
+    target_compile_options(SDL3-static PRIVATE -Wno-unused-label -Wno-unused-variable)
 endif()
 
 # The RTX 3090 Ti's: OptiX's headers, for the CUDA backend's rays.
@@ -315,10 +335,15 @@ add_library(serenity_app_options STATIC src/app/options.cpp src/app/clock.cpp)
 target_link_libraries(serenity_app_options PUBLIC serenity_core)
 target_compile_options(serenity_app_options PRIVATE ${SERENITY_SOURCE_WARNINGS})
 
+# The window, on each platform with its backend: Metal on macOS, CUDA on
+# Linux, which presents through Vulkan (docs/research/2026-10-20-cuda-window.md).
+add_executable(serenity src/app/main.cpp src/app/window.cpp src/app/window_frames.cpp)
+target_link_libraries(serenity PRIVATE serenity_app_options SDL3::SDL3-static)
+target_compile_options(serenity PRIVATE ${SERENITY_SOURCE_WARNINGS})
 if(APPLE)
-    add_executable(serenity src/app/main.cpp src/app/window.cpp src/app/window_frames.cpp)
-    target_link_libraries(serenity PRIVATE serenity_app_options serenity_metal SDL3::SDL3-static)
-    target_compile_options(serenity PRIVATE ${SERENITY_SOURCE_WARNINGS})
+    target_link_libraries(serenity PRIVATE serenity_metal)
+else()
+    target_link_libraries(serenity PRIVATE serenity_cuda)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -355,6 +380,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         src/cuda/frame/offline_frames.cpp
         src/cuda/frame/path_reuse_images.cpp
         src/cuda/frame/renderer.cpp
+        src/cuda/frame/swapchain_frames.cpp
         src/cuda/frame/traced_program.cpp
         src/cuda/passes/checkerboard_fill/checkerboard_fill.cpp
         src/cuda/passes/denoise/denoise.cpp
@@ -374,7 +400,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         src/cuda/scene/scene_buffers.cpp
         src/cuda/scene/shape_transforms.cpp
     )
-    target_link_libraries(serenity_cuda PUBLIC serenity_core CUDA::cuda_driver optix_headers ${CMAKE_DL_LIBS})
+    # Vulkan, for presenting the window's frames (src/cuda/present/): Ubuntu's
+    # loader and headers, pinned (cmake/toolchain.json, vulkan).
+    find_package(Vulkan 1.3 REQUIRED)
+    target_sources(serenity_cuda PRIVATE
+        src/cuda/present/presenter.cpp
+        src/cuda/present/swapchain_choice.cpp)
+    target_link_libraries(serenity_cuda PUBLIC serenity_core CUDA::cuda_driver optix_headers Vulkan::Vulkan ${CMAKE_DL_LIBS})
     target_compile_options(serenity_cuda PRIVATE ${SERENITY_SOURCE_WARNINGS})
     serenity_add_cuda_module(
         TARGET serenity_cuda NAME test_pattern

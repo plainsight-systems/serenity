@@ -8,7 +8,7 @@
 # (docs/research/2026-10-10-sanitizers.md). There is no CI yet
 # (docs/process/QUEUE.md).
 
-.PHONY: test test-release test-sanitize run headless movie reference convergence weights check toolchain format format-check tidy review-check clean
+.PHONY: test test-release test-sanitize run window headless movie reference convergence weights check toolchain format format-check tidy review-check clean
 
 # Configure quietly: dependencies' status summaries (SDL prints its whole
 # option list) are hidden; warnings and errors still show. VERBOSE=1 shows all.
@@ -52,10 +52,25 @@ SCENE ?=
 SCENE_ARG := $(if $(SCENE),--scene $(SCENE),)
 SCALE ?=
 SCALE_ARG := $(if $(SCALE),--scale $(SCALE),)
+SIZE ?=
+SIZE_ARG := $(if $(SIZE),--size $(SIZE),)
 run:
 	cmake --preset native-release $(CONFIGURE_QUIET)
 	cmake --build --preset native-release --target serenity
-	./build/native-release/serenity --graph $(SHOWN_GRAPH) $(SCENE_ARG) $(SCALE_ARG)
+	./build/native-release/serenity --graph $(SHOWN_GRAPH) $(SCENE_ARG) $(SCALE_ARG) $(SIZE_ARG)
+
+## The window on the RTX 3090 Ti's monitor, which has no desktop: run from
+## an ssh session on the machine, it starts an X server on the monitor with
+## the window as its one client, and stops it when the window ends
+## (docs/research/2026-10-20-cuda-window.md). The same variables as run,
+## and SIZE, the window's size in points (WIDTHxHEIGHT; the monitor's
+## 3840x1080 fills it). Escape on the machine's keyboard, or Control-C
+## here, ends it. xinit takes the program by its absolute path.
+window:
+	cmake --preset native-release $(CONFIGURE_QUIET)
+	cmake --build --preset native-release --target serenity
+	xinit $(CURDIR)/build/native-release/serenity --graph $(abspath $(SHOWN_GRAPH)) \
+	    $(if $(SCENE),--scene $(abspath $(SCENE)),) $(SCALE_ARG) $(SIZE_ARG) -- :0 vt1
 
 ## Headless frames of GRAPH, over SCENE if given, release build, as PNGs in
 ## OUT. FRAMES frames from frame 0, a sixtieth of a second apart. The frames

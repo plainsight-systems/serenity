@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <format>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 
@@ -87,7 +88,9 @@ void WindowFrames::shown(const presentation::FrameReport& report) {
     frame_times_.add(report.settled->gpu_start, report.settled->gpu_end);
   }
   if (const auto summary = frame_times_.take(shown_frame.time)) {
-    window_.get().set_title(title(report, *summary));
+    const std::string line = title(report, *summary);
+    window_.get().set_title(line);
+    std::cout << line << '\n' << std::flush;
   }
 }
 

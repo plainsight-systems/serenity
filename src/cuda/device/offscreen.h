@@ -12,6 +12,16 @@
 
 namespace serenity::cuda {
 
+// What a frame renders into (cuda/frame/renderer.h, record): RGBA, 8 bits a
+// channel, rows from the top, tightly packed, at `address` in device
+// memory, `size` across. An offscreen image gives one (below), and so does
+// a window's frame slot (cuda/present/presenter.h). A view, owning
+// nothing (C.2: plain data): its memory outlives the frames written to it.
+struct RenderTarget {
+  CUdeviceptr address = 0;
+  frame::Extent size;
+};
+
 // Axis: GPU backend.
 //
 // An image a frame renders into when there is no window, as Metal's
@@ -36,6 +46,8 @@ class Offscreen {
   frame::Extent size() const noexcept { return size_; }
   // The image's device address, which a pass writes.
   CUdeviceptr address() const noexcept { return image_.address(); }
+  // The image as a frame's target.
+  RenderTarget target() const noexcept { return {address(), size_}; }
 
   // The bytes read_rgba() fills: width x height x 4.
   std::size_t rgba_size() const noexcept;

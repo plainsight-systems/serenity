@@ -1,6 +1,6 @@
 # CUDA tests, as the backend is built a phase at a time
 # (docs/research/2026-10-19-cuda-backend.md): unit tests of its own logic,
-# which run no GPU (the submission's bookkeeping);
+# which run no GPU (the submission's bookkeeping, the swapchain's choices);
 # on the RTX 3090 Ti, the probes, which run each family's device code
 # against the core's, and one integration test, the headless program
 # rendering as its user runs it. With no CUDA device, or one the kernels are
@@ -10,6 +10,7 @@
 # Unit tests of the backend's own logic, apart from the driver: no GPU.
 add_executable(serenity_cuda_unit_tests
     frame_sequence_test.cpp
+    swapchain_choice_test.cpp
     ../main_test.cpp
 )
 target_link_libraries(serenity_cuda_unit_tests PRIVATE serenity_cuda serenity_test_support)

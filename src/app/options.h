@@ -13,7 +13,7 @@ namespace serenity::app {
 //
 // What the window is asked to show, from its command line:
 //
-//   serenity --graph FILE [--scene FILE] [--scale S]
+//   serenity --graph FILE [--scene FILE] [--scale S] [--size WIDTHxHEIGHT]
 //
 // The frame graph is required: there is no default and no path baked into
 // the program, so what the window shows is always named where it is run.
@@ -33,9 +33,15 @@ namespace serenity::app {
 // schedule.h, light_size); a scale below 1 applies on top, the network
 // then upscaling to the scaled size and the layer stretching that.
 //
+// The size is the window's when it opens, in points, the window system's
+// unit (app/window.h): 1280 x 800 by default. On the RTX 3090 Ti's monitor,
+// with no window manager to resize it, it is how the window gets the
+// monitor's size or any other (docs/research/2026-10-20-cuda-window.md).
+//
 // parse() throws OptionsError naming the argument for an unknown option, an
 // option given twice, a missing or malformed value, a scale outside (0, 1],
-// or a missing --graph (E.2, E.14). Numbers are read whole, by std::from_chars:
+// a size with a side of 0 or past what a window takes (2^31 - 1), or a
+// missing --graph (E.2, E.14). Numbers are read whole, by std::from_chars:
 // no sign, space or locale (E.28). It reads neither file; they are loaded after
 // parsing succeeds (core/frame/graph_file.h, core/scene/scene.h).
 class OptionsError : public std::runtime_error {
@@ -45,10 +51,14 @@ class OptionsError : public std::runtime_error {
 
 // What parse() read: plain values, which parse() alone makes and checks
 // (C.2: a struct, since nothing here keeps an invariant after it).
+// The window's size when it opens, by default (above).
+inline constexpr frame::Extent default_window{1280, 800};
+
 struct Options {
   std::filesystem::path graph;
-  std::filesystem::path scene;  // empty when none was given
-  double scale = 1.0;           // in (0, 1]
+  std::filesystem::path scene;            // empty when none was given
+  double scale = 1.0;                     // in (0, 1]
+  frame::Extent window = default_window;  // in points (above)
 };
 
 // The size frames are rendered at for a window of `window` pixels at

@@ -45,6 +45,7 @@
 #include "cuda/passes/restir_pt_temporal/restir_pt_temporal.h"
 #include "cuda/passes/test_pattern/test_pattern.h"
 #include "cuda/passes/tone_map/tone_map.h"
+#include "cuda/present/presenter.h"
 #include "cuda/scene/light_glows.h"
 #include "cuda/scene/scene_buffers.h"
 #include "cuda/scene/shape_transforms.h"
@@ -171,7 +172,7 @@ class Renderer {
   // prepared, it was begun in two parts for a graph of one, or a launch
   // fails.
   void record(const FrameSlot& begun, const frame::FrameInputs& inputs,
-              const Offscreen& target);
+              RenderTarget target);
 
   // Samples a converging pass left out for not being finite, over every
   // completed frame (cuda/film/failure_count.h); 0 for a graph without one.
@@ -313,7 +314,7 @@ class Renderer {
                     const frame::FrameInputs& inputs,
                     const contracts::Camera& lens, const Prepared& prepared,
                     const FrameLaunch& light, const FrameLaunch& output,
-                    const Offscreen& target);
+                    RenderTarget target);
   // The denoise pass, reading the light's struct's features and the
   // output's full-size albedo; the depth of field through `lens`.
   void record_denoise(CUstream stream, const FrameSlot& begun,
@@ -329,7 +330,7 @@ class Renderer {
   void record_pass(frame::PassKind kind, CUstream stream,
                    const FrameSlot& begun, const FrameLaunch& launch,
                    const frame::FrameInputs& inputs, const Prepared& prepared,
-                   const Offscreen& target);
+                   RenderTarget target);
   // The image the presenting pass shows and read_accumulated() reads: the
   // fill's in a graph that feeds the network, else the accumulated image;
   // null before the first frame.
@@ -397,5 +398,17 @@ class Renderer {
 std::uint64_t render_to_offscreen(Submission& submission, Offscreen& target,
                                   Renderer& renderer,
                                   const frame::FrameInputs& inputs);
+
+// Readies, records and commits frame `inputs` into `image`, the
+// swapchain image the presenter acquired for the frame's slot, and
+// presents it (cuda/present/presenter.h): CUDA's wait for the slot's last
+// copy on the stream that writes the target, the frame, and the signal and
+// present after its last work; returns its sequence. Throws CudaError if
+// the frame does not take `image`'s slot, so the slot's buffer is never
+// written by another frame than it was acquired for (I.6).
+std::uint64_t render_to_window(Submission& submission, Presenter& presenter,
+                               Renderer& renderer,
+                               const frame::FrameInputs& inputs,
+                               const WindowImage& image);
 
 }  // namespace serenity::cuda

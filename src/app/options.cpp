@@ -17,7 +17,8 @@ namespace serenity::app {
 namespace {
 
 constexpr std::string_view usage =
-    "usage: serenity --graph FILE [--scene FILE] [--scale S]";
+    "usage: serenity --graph FILE [--scene FILE] [--scale S] "
+    "[--size WIDTHxHEIGHT]";
 
 // The whole of `text` as a number, or none: std::from_chars reads no locale
 // and sets no errno (E.28), and takes no sign or space before the number.
@@ -26,6 +27,19 @@ std::optional<double> number(std::string_view text) {
   const auto [end, error] = std::from_chars(std::to_address(text.begin()),
                                             std::to_address(text.end()), value);
   if (error != std::errc{} || end != std::to_address(text.end())) {
+    return std::nullopt;
+  }
+  return value;
+}
+
+// A window's side: a whole number from 1 to what SDL takes (an int).
+std::optional<std::uint32_t> side(std::string_view text) {
+  std::uint32_t value = 0;
+  const auto [end, error] = std::from_chars(std::to_address(text.begin()),
+                                            std::to_address(text.end()), value);
+  constexpr std::uint32_t most = 2147483647u;  // INT_MAX, as SDL takes it
+  if (error != std::errc{} || end != std::to_address(text.end()) ||
+      value == 0 || value > most) {
     return std::nullopt;
   }
   return value;
@@ -86,6 +100,20 @@ Options parse(std::span<const char* const> args) {
                            std::string{text} + "'");
       }
       options.scale = *scale;
+    } else if (*arg == "--size") {
+      const std::string_view text = value("WIDTHxHEIGHT");
+      const std::size_t x = text.find('x');
+      const std::optional<std::uint32_t> width =
+          x == std::string_view::npos ? std::nullopt : side(text.substr(0, x));
+      const std::optional<std::uint32_t> height =
+          x == std::string_view::npos ? std::nullopt : side(text.substr(x + 1));
+      if (!width || !height) {
+        throw OptionsError(
+            "--size needs WIDTHxHEIGHT, each a whole number from 1 to "
+            "2147483647, not '" +
+            std::string{text} + "'");
+      }
+      options.window = frame::Extent{*width, *height};
     } else {
       throw OptionsError("unknown option '" + std::string{*arg} + "'; " +
                          std::string{usage});

@@ -41,10 +41,13 @@ namespace serenity::app {
 // - shown(): the frame counts as shown, so the next is the next index and
 //   has it as the frame before; the frame its submission settled joins the
 //   frame times, and once a second the title shows them
-//   (core/measurement/frame_times.h), with the bug counters if not 0. It is
-//   a live window's figure, with the window's own work beside it, not a
-//   benchmark, and the title says so (TLM.6). The frames the backend
-//   settles at the end come after the last title and are not shown.
+//   (core/measurement/frame_times.h), with the bug counters if not 0, and
+//   standard output prints the title's line too: on the RTX 3090 Ti's
+//   monitor no window manager draws a title (docs/research/
+//   2026-10-20-cuda-window.md), so the terminal that started the window is
+//   where it is read. It is a live window's figure, with the window's own
+//   work beside it, not a benchmark, and the title says so (TLM.6). The frames
+//   the backend settles at the end come after the last title and are not shown.
 //
 // inputs() is followed by shown() for the frame it gave (frame_source.h),
 // so the frame it gives is held until then (pending_); each call finishes

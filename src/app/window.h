@@ -4,6 +4,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
@@ -17,17 +18,28 @@ namespace serenity::app {
 // The window, through SDL3: the only code that uses SDL, and it keeps SDL's
 // headers in its .cpp so nothing that includes this sees them. Plain C++: SDL
 // builds the Metal-backed view itself, so no Objective-C is written here.
+// One window on each platform, its surface the platform's backend's: on
+// macOS a Metal view, on Linux (the RTX 3090 Ti, X11) a window made for
+// Vulkan, which the CUDA backend presents through
+// (docs/research/2026-10-20-cuda-window.md). Only the surface differs, so
+// only its members are the platform's (below).
 //
-// A Window owns SDL's video subsystem, the window, and the Metal view inside
-// it, each released by its own handle in reverse order (R.1, R.20). Copying
+// A Window owns SDL's video subsystem, the window, and on macOS the Metal
+// view inside it, each released by its own handle in reverse order (R.1,
+// R.20). Copying
 // and moving are deleted: SDL's video subsystem is one per process, started
 // and stopped by the one Window, which a program opens once and keeps for
 // its life, so a moved-from Window, owning nothing, would serve nothing.
 //
-// The window's surface reaches the renderer as metal_layer(): the view's
-// CAMetalLayer, as SDL returns it, an opaque pointer. The app wraps it in
-// metal::LayerHandle; this file names no Metal type (file-mapping.md: the
-// app depends on the backend, and only the backend uses Metal).
+// The window's surface reaches the renderer as metal_layer() on macOS: the
+// view's CAMetalLayer, as SDL returns it, an opaque pointer, which the app
+// wraps in metal::LayerHandle; on Linux as vulkan_instance_extensions(),
+// what an instance needs for the surface, and make_vulkan_surface(), the
+// surface made for an instance, a VkInstance as a pointer and the
+// VkSurfaceKHR as its 64 bits, which the caller then owns and destroys
+// before the instance. This file names no Metal or Vulkan type
+// (file-mapping.md: the app depends on the backend, and only the backend
+// uses its API).
 //
 // Two units of size, kept apart by type (I.4): the window is opened at a
 // size in points, the unit window systems lay windows out in (Points), and
@@ -97,8 +109,17 @@ class Window {
   // Sets the window's title: where the frame time is shown.
   void set_title(const std::string& title);
 
+#if defined(__APPLE__)
   // The Metal view's CAMetalLayer, valid for the Window's lifetime.
   void* metal_layer() const;
+#else
+  // The instance extensions a Vulkan surface for the window needs, SDL's
+  // strings, valid for the Window's lifetime.
+  std::vector<const char*> vulkan_instance_extensions() const;
+  // A Vulkan surface for the window on `instance` (a VkInstance), as its 64
+  // bits; throws WindowError if SDL cannot make one.
+  std::uint64_t make_vulkan_surface(void* instance) const;
+#endif
 
  private:
   // SDL_Init(SDL_INIT_VIDEO), and at the end SDL_Quit, which shuts down
@@ -124,7 +145,9 @@ class Window {
   // Declaration order is the reverse of release order.
   SdlVideo video_;
   std::unique_ptr<SDL_Window, DestroyWindow> window_;
+#if defined(__APPLE__)
   std::unique_ptr<void, DestroyView> view_;
+#endif
 };
 
 }  // namespace serenity::app

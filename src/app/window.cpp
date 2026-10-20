@@ -1,11 +1,19 @@
 #include "app/window.h"
 
 #include <SDL3/SDL.h>
+#if !defined(__APPLE__)
+#include <SDL3/SDL_vulkan.h>
+#include <vulkan/vulkan.h>
+#endif
 
 #include <algorithm>
 #include <chrono>
 #include <climits>
 #include <cstdint>
+#if !defined(__APPLE__)
+#include <span>
+#include <vector>
+#endif
 
 namespace serenity::app {
 
@@ -24,16 +32,25 @@ int points(std::uint32_t side) {
   return static_cast<int>(side);
 }
 
+// The platform's surface (window.h): a Metal view's on macOS, Vulkan's on
+// Linux.
+#if defined(__APPLE__)
+constexpr SDL_WindowFlags surface_flag = SDL_WINDOW_METAL;
+#else
+constexpr SDL_WindowFlags surface_flag = SDL_WINDOW_VULKAN;
+#endif
+
 SDL_Window* open(const char* title, Points size) {
   SDL_Window* window = SDL_CreateWindow(
       title, points(size.width), points(size.height),
-      SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_METAL);
+      SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | surface_flag);
   if (!window) {
     fail("SDL_CreateWindow");
   }
   return window;
 }
 
+#if defined(__APPLE__)
 void* make_view(SDL_Window* window) {
   SDL_MetalView view = SDL_Metal_CreateView(window);
   if (!view) {
@@ -41,6 +58,7 @@ void* make_view(SDL_Window* window) {
   }
   return view;
 }
+#endif
 
 // The longest a wait waits, whatever it is asked (window.h): a tenth of a
 // second, so an interrupt from the terminal ends the run in that time.
@@ -64,12 +82,16 @@ void Window::DestroyWindow::operator()(SDL_Window* window) const {
   SDL_DestroyWindow(window);
 }
 
+#if defined(__APPLE__)
 void Window::DestroyView::operator()(void* view) const {
   SDL_Metal_DestroyView(view);
 }
 
 Window::Window(const char* title, Points size)
     : window_(open(title, size)), view_(make_view(window_.get())) {}
+#else
+Window::Window(const char* title, Points size) : window_(open(title, size)) {}
+#endif
 
 Window::~Window() = default;
 
@@ -127,6 +149,29 @@ void Window::set_title(const std::string& title) {
   }
 }
 
+#if defined(__APPLE__)
 void* Window::metal_layer() const { return SDL_Metal_GetLayer(view_.get()); }
+#else
+std::vector<const char*> Window::vulkan_instance_extensions() const {
+  Uint32 count = 0;
+  const char* const* names = SDL_Vulkan_GetInstanceExtensions(&count);
+  if (names == nullptr) {
+    fail("SDL_Vulkan_GetInstanceExtensions");
+  }
+  const std::span<const char* const> all(names, count);
+  return std::vector<const char*>(all.begin(), all.end());
+}
+
+std::uint64_t Window::make_vulkan_surface(void* instance) const {
+  VkSurfaceKHR surface = VK_NULL_HANDLE;
+  if (!SDL_Vulkan_CreateSurface(window_.get(),
+                                static_cast<VkInstance>(instance), nullptr,
+                                &surface)) {
+    fail("SDL_Vulkan_CreateSurface");
+  }
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): its 64 bits
+  return reinterpret_cast<std::uint64_t>(surface);
+}
+#endif
 
 }  // namespace serenity::app

@@ -519,7 +519,7 @@ Parts Renderer::parts() const noexcept {
 void Renderer::record_pass(frame::PassKind kind, CUstream stream,
                            const FrameSlot& begun, const FrameLaunch& launch,
                            const frame::FrameInputs& inputs,
-                           const Prepared& prepared, const Offscreen& target) {
+                           const Prepared& prepared, RenderTarget target) {
   const CUdeviceptr address = launch_.address();
   switch (kind) {
     case frame::PassKind::test_pattern:
@@ -528,7 +528,7 @@ void Renderer::record_pass(frame::PassKind kind, CUstream stream,
               stream,
               frame::frame_constants(inputs, prepared.size,
                                      prepared.accumulated_frames, std::nullopt),
-              target.address());
+              target.address);
       break;
     case frame::PassKind::path:
       made(path_, "path").record(stream, address, prepared.size);
@@ -539,7 +539,7 @@ void Renderer::record_pass(frame::PassKind kind, CUstream stream,
         throw CudaError("Renderer: the tone map has no image to show");
       }
       made(tone_map_, "tone map")
-          .record(stream, *radiance, *images_, target.address());
+          .record(stream, *radiance, *images_, target.address);
       break;
     }
     case frame::PassKind::restir_pt_initial:
@@ -578,8 +578,7 @@ void Renderer::record_image(CUstream stream, const FrameSlot& begun,
                             const frame::FrameInputs& inputs,
                             const contracts::Camera& lens,
                             const Prepared& prepared, const FrameLaunch& light,
-                            const FrameLaunch& output,
-                            const Offscreen& target) {
+                            const FrameLaunch& output, RenderTarget target) {
   const auto first = static_cast<std::size_t>(
       std::ranges::find(schedule_.passes, frame::PassKind::denoise) -
       schedule_.passes.begin());
@@ -668,8 +667,8 @@ void Renderer::record_depth_of_field(CUstream stream, const FrameSlot& begun,
 }
 
 void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given,
-                      const Offscreen& target) {
-  const frame::Extent size = target.size();
+                      RenderTarget target) {
+  const frame::Extent size = target.size;
   // The frame as its light is traced: through a pinhole in a graph that
   // feeds the network (core/frame/schedule.h, traced_inputs), as Metal's.
   const frame::FrameInputs inputs = frame::traced_inputs(schedule_, given);
@@ -814,7 +813,30 @@ std::uint64_t render_to_offscreen(Submission& submission, Offscreen& target,
                                   const frame::FrameInputs& inputs) {
   renderer.prepare(inputs, target.size());
   const FrameSlot begun = submission.begin(renderer.parts());
-  renderer.record(begun, inputs, target);
+  renderer.record(begun, inputs, target.target());
+  submission.commit();
+  return begun.sequence;
+}
+
+std::uint64_t render_to_window(Submission& submission, Presenter& presenter,
+                               Renderer& renderer,
+                               const frame::FrameInputs& inputs,
+                               const WindowImage& image) {
+  renderer.prepare(inputs, presenter.size());
+  const FrameSlot begun = submission.begin(renderer.parts());
+  if (begun.slot != image.slot) {
+    throw CudaError("render_to_window: frame " +
+                    std::to_string(begun.sequence) +
+                    " takes another slot than its image was acquired for");
+  }
+  // The target is written by the frame's last half: the image stream's in
+  // two parts, which the hand-off joins after this wait (submission.h,
+  // image_stream), the light stream's in one; its last work is there too.
+  const CUstream target_stream =
+      begun.parts == Parts::two ? submission.image_stream() : begun.stream;
+  presenter.wait_for_slot(target_stream, image);
+  renderer.record(begun, inputs, image.target);
+  presenter.present(target_stream, image, begun.sequence);
   submission.commit();
   return begun.sequence;
 }

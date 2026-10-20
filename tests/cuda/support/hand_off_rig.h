@@ -129,7 +129,7 @@ inline HandOffRun run_hand_off(const scene::SceneDescription& scene,
     if (parts == cuda::Parts::two) {
       delay.record(submission.image_stream());
     }
-    renderer.record(begun, inputs, *targets[i]);
+    renderer.record(begun, inputs, targets[i]->target());
     submission.commit();
     if (parts == cuda::Parts::one) {
       submission.wait_until_complete(begun.sequence);

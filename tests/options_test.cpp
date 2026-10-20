@@ -232,7 +232,7 @@ TEST_CASE(
   CHECK_THROWS_AS(parse(std::vector<const char*>{}), OptionsError);
   CHECK_THROWS_AS(parse(std::vector<const char*>{"--graph"}), OptionsError);
   CHECK_THROWS_AS(
-      parse(std::vector<const char*>{"--graph", "s", "--size", "1x1"}),
+      parse(std::vector<const char*>{"--graph", "s", "--frames", "1"}),
       OptionsError);
   // A second of any option, never the last one silently kept.
   CHECK(contains(serenity::tests::error_of<OptionsError>([] {
@@ -269,6 +269,26 @@ TEST_CASE("window: a render scale in (0, 1], and the size it gives") {
   CHECK(render_size(Extent{3456, 2234}, 0.5) == Extent{1728, 1117});
   CHECK(render_size(Extent{2560, 1600}, 0.33) == Extent{845, 528});
   CHECK(render_size(Extent{3, 1}, 0.01) == Extent{1, 1});  // never empty
+}
+
+TEST_CASE("window: its size when it opens, whole sides a window takes") {
+  using serenity::app::OptionsError;
+  using serenity::app::parse;
+  using serenity::frame::Extent;
+  CHECK(parse(std::vector<const char*>{"--graph", "g"}).window ==
+        serenity::app::default_window);
+  CHECK(parse(std::vector<const char*>{"--graph", "g", "--size", "3840x1080"})
+            .window == Extent{3840, 1080});
+  CHECK(
+      parse(std::vector<const char*>{"--graph", "g", "--size", "2147483647x1"})
+          .window == Extent{2147483647u, 1});
+  for (const char* wrong : {"0x1080", "3840x0", "3840", "x1080", "3840x",
+                            "-1x5", "1.5x2", "2147483648x1", "3840 x1080"}) {
+    INFO("--size " << wrong);
+    CHECK_THROWS_AS(
+        parse(std::vector<const char*>{"--graph", "g", "--size", wrong}),
+        OptionsError);
+  }
 }
 
 TEST_CASE("headless: which frames are written, and frozen time") {

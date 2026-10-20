@@ -12,10 +12,13 @@
 // change-axes.md): the backend's frame source owns the loop and calls the
 // window's side of it, app::WindowFrames (app/window_frames.h), for its
 // events and for each frame's inputs (core/presentation/frame_source.h).
-// The backend is Metal's: its source is metal::DisplayFrames
-// (metal/frame/display_frames.h). A graph that shows no image (the
-// features pass alone, core/frame/schedule.h) is refused before the window
-// opens.
+// The backend is the platform's: on macOS Metal's, its source
+// metal::DisplayFrames (metal/frame/display_frames.h); on Linux CUDA's, its
+// source cuda::SwapchainFrames (cuda/frame/swapchain_frames.h), presenting
+// through Vulkan (cuda/present/presenter.h; docs/research/
+// 2026-10-20-cuda-window.md). The window opens at --size points (app/
+// options.h). A graph that shows no image (the features pass alone,
+// core/frame/schedule.h) is refused before the window opens.
 //
 // The frame rate asked of the source is the user's (2026-10-18): 60 frames
 // a second, the project's target (logical-overview.md, "The frame"), down
@@ -40,22 +43,31 @@
 #include "core/frame/graph_file.h"
 #include "core/presentation/frame_source.h"
 #include "core/scene/scene.h"
+#if defined(__APPLE__)
 #include "metal/device/device.h"
 #include "metal/device/presenter.h"
 #include "metal/device/submission.h"
 #include "metal/frame/display_frames.h"
 #include "metal/frame/renderer.h"
+#else
+#include "cuda/device/device.h"
+#include "cuda/device/submission.h"
+#include "cuda/frame/renderer.h"
+#include "cuda/frame/swapchain_frames.h"
+#include "cuda/present/presenter.h"
+#endif
 
 namespace {
 
 namespace app = serenity::app;
 namespace frame = serenity::frame;
+#if defined(__APPLE__)
 namespace metal = serenity::metal;
+#else
+namespace cuda = serenity::cuda;
+#endif
 namespace presentation = serenity::presentation;
 namespace scene = serenity::scene;
-
-// The window's size when it opens, in points.
-constexpr app::Points initial_window{1280, 800};
 
 // The frame rate asked of the frame source (above).
 constexpr presentation::FrameRate frame_rate{
@@ -90,7 +102,9 @@ int main(int argc, char** argv) {
                               : std::optional{scene::load(options.scene)};
     const scene::SceneDescription* described = loaded ? &*loaded : nullptr;
 
-    app::Window window("Serenity", initial_window);
+    app::Window window(
+        "Serenity", app::Points{options.window.width, options.window.height});
+#if defined(__APPLE__)
     metal::Device device;
     metal::Submission submission(device);
     metal::Presenter presenter(
@@ -99,12 +113,32 @@ int main(int argc, char** argv) {
     metal::Renderer renderer(device, submission, schedule, described);
     metal::DisplayFrames metal_frames(submission, presenter, renderer,
                                       frame_rate);
-
     app::WindowFrames frames(window, described, options.scale);
     presentation::FrameSource& source = metal_frames;
     source.run(frames);
-
     submission.finish();
+#else
+    cuda::Device device;
+    cuda::Submission submission(device);
+    // The window's surface, by opaque handles (app/window.h).
+    const cuda::SurfaceSource surface{
+        .instance_extensions = window.vulkan_instance_extensions(),
+        .make_surface =
+            [&window](void* instance) {
+              return window.make_vulkan_surface(instance);
+            },
+    };
+    cuda::Presenter presenter(
+        device, submission, surface,
+        app::render_size(window.size_in_pixels(), options.scale));
+    cuda::Renderer renderer(device, submission, schedule, described);
+    cuda::SwapchainFrames cuda_frames(submission, presenter, renderer,
+                                      frame_rate);
+    app::WindowFrames frames(window, described, options.scale);
+    presentation::FrameSource& source = cuda_frames;
+    source.run(frames);
+    submission.finish();
+#endif
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "serenity: " << error.what() << '\n';
