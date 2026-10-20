@@ -22,6 +22,7 @@
 #include "core/contracts/bsdf.h"
 
 #include <doctest/doctest.h>
+#include <probe_runner.h>  // the backend's runner, by the include path (SF.12)
 
 #include <algorithm>
 #include <array>
@@ -37,15 +38,12 @@
 #include "core/materials/coated.h"
 #include "core/scene/scene.h"
 #include "gpu/kernels/bsdf_probe.h"
-#include "gpu/support/probe_runner.h"
-#include "metal/scene/scene_buffers.h"
 #include "support/references.h"
 #include "support/statistics.h"
 #include "support/vector.h"
 
 namespace contracts = serenity::contracts;
 namespace materials = serenity::materials;
-namespace metal = serenity::metal;
 namespace scene = serenity::scene;
 namespace tests = serenity::tests;
 using contracts::Bsdf;
@@ -835,8 +833,7 @@ material = "a_checks"
       at(0.0f, 0.0f, 5)};
   const auto count = static_cast<std::uint32_t>(surfaces.size());
   ProbeRunner gpu;
-  const metal::SceneBuffers buffers(gpu.device(), gpu.submission(),
-                                    description);
+  const tests::ProbeScene buffers(gpu, description);
   const auto resolved =
       gpu.run<Bsdf>("bsdf_resolve", count,
                     {Binding::of(surfaces), Binding::of(count),

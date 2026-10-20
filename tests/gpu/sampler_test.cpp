@@ -6,6 +6,7 @@
 // dimension, frame or neighbouring pixel predicting another.
 
 #include <doctest/doctest.h>
+#include <probe_runner.h>  // the backend's runner, by the include path (SF.12)
 
 #include <cmath>
 #include <cstddef>
@@ -14,7 +15,6 @@
 #include <vector>
 
 #include "gpu/kernels/sampler_probe.h"
-#include "gpu/support/probe_runner.h"
 #include "support/statistics.h"
 
 namespace tests = serenity::tests;

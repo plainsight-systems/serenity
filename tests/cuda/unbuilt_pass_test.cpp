@@ -19,13 +19,16 @@ bool names(const std::optional<std::string>& reason, const std::string& pass) {
          reason->find("has no " + pass + " pass yet") != std::string::npos;
 }
 
-TEST_CASE("the test pattern is built; every other pass is refused by name") {
+TEST_CASE(
+    "the test pattern, the path pass and the tone map are built; every other "
+    "pass is refused by name") {
   CHECK_FALSE(unbuilt_pass(
       frame::Schedule{{frame::PassKind::test_pattern}, std::nullopt}));
+  CHECK_FALSE(unbuilt_pass(frame::Schedule{
+      {frame::PassKind::path, frame::PassKind::tone_map}, tests::look}));
   CHECK(names(
-      unbuilt_pass(frame::Schedule{
-          {frame::PassKind::path, frame::PassKind::tone_map}, tests::look}),
-      "path"));
+      unbuilt_pass(frame::Schedule{{frame::PassKind::features}, std::nullopt}),
+      "features"));
   CHECK(names(unbuilt_pass(tests::restir_pt_graph(tests::restir_pt_passes)),
               "restir_pt_initial"));
 }

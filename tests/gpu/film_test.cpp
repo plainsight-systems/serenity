@@ -5,13 +5,13 @@
 // are weighed right.
 
 #include <doctest/doctest.h>
+#include <probe_runner.h>  // the backend's runner, by the include path (SF.12)
 
 #include <cstdint>
 #include <limits>
 #include <vector>
 
 #include "gpu/kernels/film_probe.h"
-#include "gpu/support/probe_runner.h"
 
 namespace tests = serenity::tests;
 using tests::Binding;

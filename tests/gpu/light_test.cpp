@@ -7,6 +7,7 @@
 // its center would cover only 26.6.
 
 #include <doctest/doctest.h>
+#include <probe_runner.h>  // the backend's runner, by the include path (SF.12)
 
 #include <algorithm>
 #include <cmath>
@@ -18,7 +19,6 @@
 #include "core/contracts/transform.h"
 #include "core/lights/sphere_light.h"
 #include "gpu/kernels/light_probe.h"
-#include "gpu/support/probe_runner.h"
 #include "support/statistics.h"
 #include "support/vector.h"
 

@@ -17,6 +17,7 @@
 // keyed by the stream's index, so it passes or fails the same every run.
 
 #include <doctest/doctest.h>
+#include <probe_runner.h>  // the backend's runner, by the include path (SF.12)
 
 #include <algorithm>
 #include <cmath>
@@ -29,7 +30,6 @@
 #include "core/contracts/light_sample.h"
 #include "gpu/kernels/encoding_probe.h"
 #include "gpu/support/probe_light.h"
-#include "gpu/support/probe_runner.h"
 #include "support/statistics.h"
 #include "support/vector.h"
 

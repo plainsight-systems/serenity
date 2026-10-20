@@ -8,6 +8,7 @@
 // its axis, and turning with its twist.
 
 #include <doctest/doctest.h>
+#include <probe_runner.h>  // the backend's runner, by the include path (SF.12)
 
 #include <algorithm>
 #include <array>
@@ -23,7 +24,6 @@
 #include "core/textures/swirl.h"
 #include "core/textures/wood.h"
 #include "gpu/kernels/texture_probe.h"
-#include "gpu/support/probe_runner.h"
 #include "support/vector.h"
 
 namespace animation = serenity::animation;

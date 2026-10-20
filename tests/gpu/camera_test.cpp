@@ -5,6 +5,7 @@
 // exactly.
 
 #include <doctest/doctest.h>
+#include <probe_runner.h>  // the backend's runner, by the include path (SF.12)
 
 #include <algorithm>
 #include <cmath>
@@ -16,7 +17,6 @@
 #include "core/animation/draw.h"
 #include "core/camera/thin_lens.h"
 #include "gpu/kernels/camera_probe.h"
-#include "gpu/support/probe_runner.h"
 #include "support/references.h"
 #include "support/vector.h"
 

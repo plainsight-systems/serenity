@@ -3,7 +3,7 @@
 // The one sphere light the probe kernels that ask the emitter read (kernels/
 // encoding_probe.metal, kernels/path_probe.metal), bound as the passes bind
 // theirs, and a probe run with it (ES.3, F.10): one definition for every
-// test that runs such a probe.
+// test that runs such a probe, on either backend.
 
 #include <array>
 #include <cstddef>
@@ -12,11 +12,14 @@
 #include <span>
 #include <vector>
 
+// the backend's runner, by the include path (SF.12: a quoted include would
+// find Metal's beside this file in either backend's build)
+#include <probe_runner.h>
+
 #include "core/contracts/float3.h"
 #include "core/contracts/transform.h"
 #include "core/lights/light.h"
 #include "core/lights/sphere_light.h"
-#include "gpu/support/probe_runner.h"
 
 namespace serenity::tests {
 

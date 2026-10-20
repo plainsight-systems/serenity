@@ -5,6 +5,7 @@
 // shape's medium (contract 12).
 
 #include <doctest/doctest.h>
+#include <probe_runner.h>  // the backend's runner, by the include path (SF.12)
 
 #include <cmath>
 #include <cstdint>
@@ -14,7 +15,6 @@
 #include "core/contracts/surface_interaction.h"
 #include "core/scene/scene.h"
 #include "gpu/kernels/shape_probe.h"
-#include "gpu/support/probe_runner.h"
 
 namespace contracts = serenity::contracts;
 namespace scene = serenity::scene;

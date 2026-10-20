@@ -66,6 +66,10 @@ add_executable(serenity_gpu_tests
     ../main_test.cpp
 )
 target_link_libraries(serenity_gpu_tests PRIVATE serenity_metal serenity_test_support)
+# The probe tests shared with the CUDA backend include their runner as
+# "probe_runner.h", Metal's from here (support/probe_runner.h; CUDA's,
+# tests/cuda/support/).
+target_include_directories(serenity_gpu_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support")
 # headless_pfm_test runs serenity-headless as its user does
 # (tests/support/programs.h.in).
 add_dependencies(serenity_gpu_tests serenity-headless)

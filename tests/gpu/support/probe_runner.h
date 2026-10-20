@@ -2,10 +2,13 @@
 
 // Runs one kernel of the tests' probe library (tests/gpu/kernels, compiled
 // in as serenity::metallib::probes) the way every probe test does (ES.3,
-// F.10): each binding a buffer of its own, or an address the caller keeps
-// resident; one dispatch; a wait; and what the kernel wrote read back. One
-// device, queue and library per runner, so a test case builds them once and
-// runs its probes on them (P.9, GPU.6).
+// F.10), on Metal; the CUDA backend's runner has the same name and
+// interface (tests/cuda/support/probe_runner.h), so a probe test is one
+// source for both, each test target putting its own runner's directory on
+// its include path (tests/gpu/CMakeLists.txt): each binding a buffer of its
+// own, or an address the caller keeps resident; one dispatch; a wait; and what
+// the kernel wrote read back. One device, queue and library per runner, so a
+// test case builds them once and runs its probes on them (P.9, GPU.6).
 //
 // Bindings are positional: binding i is the kernel's [[buffer(i)]]. run()
 // binds its output at 0 and its inputs from 1, in the order given; each
@@ -31,10 +34,12 @@
 #include <utility>
 #include <vector>
 
+#include "core/scene/scene.h"
 #include "gpu/support/shared_resources.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/device/submission.h"
+#include "metal/scene/scene_buffers.h"
 #include "serenity/metallib/probes.h"
 
 namespace serenity::tests {
@@ -197,6 +202,22 @@ class ProbeRunner {
   metal::Device device_;
   metal::Submission submission_{device_};
   metal::Library library_{device_, metallib::probes};
+};
+
+// A scene's arrays and block on the GPU, as the passes read them
+// (metal/scene/scene_buffers.h), for a probe that reads a scene through its
+// block, under the name both backends' runners give it.
+class ProbeScene {
+ public:
+  ProbeScene(ProbeRunner& runner, const scene::SceneDescription& scene)
+      : buffers_(runner.device(), runner.submission(), scene) {}
+
+  std::uint64_t block_address() const noexcept {
+    return buffers_.block_address();
+  }
+
+ private:
+  metal::SceneBuffers buffers_;
 };
 
 }  // namespace serenity::tests
