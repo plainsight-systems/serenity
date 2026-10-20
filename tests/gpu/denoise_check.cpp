@@ -16,7 +16,7 @@
 #include <vector>
 
 #include "core/output/pfm.h"
-#include "gpu/support/denoise_fixture.h"
+#include "gpu/support/denoise_runner.h"
 
 int main(int argc, char** argv) {
   namespace contracts = serenity::contracts;

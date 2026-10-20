@@ -148,10 +148,8 @@ class ProbeRunner {
           std::max<std::size_t>(binding.bytes().size(), 1));
       out.sizes_.push_back(binding.bytes().size());
       if (!binding.bytes().empty()) {
-        cuda::check(
-            cuMemcpyHtoD(out.buffers_.back().address(), binding.bytes().data(),
-                         binding.bytes().size()),
-            "ProbeRunner: cuMemcpyHtoD");
+        cuda::upload_now(out.buffers_.back().address(), binding.bytes(),
+                         "ProbeRunner");
       }
       addresses.push_back(out.buffers_.back().address());
     }

@@ -3,9 +3,8 @@
 // pattern at its frame's time, red and green to the bit and blue within a
 // level (the GPU's sinf and the CPU's sin may differ in the last bit); the
 // reference graph, the path tracer through the tone map, and the data
-// set's input graph, ReSTIR PT with the features, the same command writing
-// the same bytes; and a graph with a pass the backend does not build
-// refused by name, before any directory is made. It names the
+// set's input graph, ReSTIR PT with the features, and the demo's denoised
+// pipeline, the same command writing the same bytes. It names the
 // machine it ran on, as every GPU verification does. What the program's
 // runs and refusals print on any backend is tests/test_headless.sh's.
 
@@ -163,29 +162,47 @@ TEST_CASE(
   CHECK(written[0] == written[1]);
 }
 
-TEST_CASE("a graph the CUDA backend cannot render yet is refused by name") {
-  const ScratchDirectory scratch("cuda-headless-refused");
-  // The denoised pipeline (Phase 5's), the test fixture's network.
+TEST_CASE(
+    "the denoised pipeline writes the same bytes from the same command, its "
+    "frames in two parts") {
+  const ScratchDirectory scratch("cuda-headless-denoised");
+  // The demo graph's passes (graphs/restir_pt_denoised.toml) with the test
+  // fixture's network, on a moving scene with no glass, as above: the light
+  // at half the size, the network, the depth of field and the tone map, the
+  // headless program beginning each frame in the renderer's two parts
+  // (cuda/frame/renderer.h, "A denoised frame"). Three frames, the last
+  // written, twice.
   const std::filesystem::path graph = scratch.path() / "denoised.toml";
   serenity::tests::write_bytes(
       graph,
-      "passes = [\"restir_pt_initial\", \"restir_pt_shade\", \"features\", "
-      "\"denoise\", \"depth_of_field\", \"tone_map\"]\n[restir_pt]\n"
+      "passes = [\"restir_pt_initial\", \"restir_pt_temporal\", "
+      "\"restir_pt_spatial\", \"restir_pt_shade\", "
+      "\"restir_pt_duplication\", \"features\", \"denoise\", "
+      "\"depth_of_field\", \"tone_map\"]\n[restir_pt]\n"
       "nee_candidates = 32\nmax_surfaces = 9\nfootprint = 0.02\nroughness = "
-      "0.2\n[denoise]\nweights = \"" +
+      "0.2\nneighbors = 3\nsigma = 16.0\nconfidence_cap = 20.0\n"
+      "cap_floor = 1.0\ncap_exponent = 0.1\n[denoise]\nweights = \"" +
           (serenity::tests::data_dir / "denoise" / "network").generic_string() +
-          "\"\n[tone_map]\nexposure = 0.0\nbloom = 0.0\n");
-  const std::filesystem::path out = scratch.path() / "out";
-  const Ran ran = serenity::tests::run_program(
-      serenity::tests::headless_program,
-      {"--graph", graph.string(), "--scene",
-       (serenity::tests::scenes_dir / "brass_sphere.toml").string(), "--out",
-       out.string(), "--size", "16x8"},
-      scratch.path());
-  CHECK(ran.status == 1);
-  INFO(ran.err);
-  CHECK(serenity::tests::contains(ran.err, "has no denoise pass yet"));
-  CHECK_FALSE(std::filesystem::exists(out));
+          "\"\n[tone_map]\nexposure = 0.0\nbloom = 0.04\n");
+  std::array<std::string, 2> written;
+  for (std::size_t run = 0; run < written.size(); ++run) {
+    const std::filesystem::path out =
+        scratch.path() / ("out" + std::to_string(run));
+    const Ran ran = serenity::tests::run_program(
+        serenity::tests::headless_program,
+        {"--graph", graph.string(), "--scene",
+         (serenity::tests::scenes_dir / "brass_sphere_flight.toml").string(),
+         "--out", out.string(), "--size", "48x32", "--frames", "3", "--write",
+         "last"},
+        scratch.path());
+    REQUIRE(ran.status == 0);
+    CHECK(ran.err.empty());
+    const std::filesystem::path png = out / "frame-000002.png";
+    REQUIRE(std::filesystem::exists(png));
+    written.at(run) = serenity::tests::read_bytes(png);
+  }
+  CHECK_FALSE(written[0].empty());
+  CHECK(written[0] == written[1]);
 }
 
 }  // namespace

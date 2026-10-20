@@ -128,9 +128,7 @@ std::vector<Out> run_traced(
   for (const Binding& input : inputs) {
     buffers.emplace_back(std::max<std::size_t>(input.bytes().size(), 1));
     if (!input.bytes().empty()) {
-      cuda::check(cuMemcpyHtoD(buffers.back().address(), input.bytes().data(),
-                               input.bytes().size()),
-                  "run_traced: cuMemcpyHtoD");
+      cuda::upload_now(buffers.back().address(), input.bytes(), "run_traced");
     }
   }
   REQUIRE(buffers.size() + 4 <= probe_bindings);

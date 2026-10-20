@@ -6,6 +6,7 @@
 
 #include "bsdf_probe.cu"
 #include "camera_probe.cu"
+#include "delay.cu"
 #include "encoding_probe.cu"
 #include "film_probe.cu"
 #include "light_probe.cu"

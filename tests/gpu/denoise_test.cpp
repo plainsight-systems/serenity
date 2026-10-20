@@ -10,9 +10,11 @@
 // with its own history:
 //
 //   - each output is PyTorch's to within `tolerance`, relative: half
-//     floats in the U-Net (denoise.metal, "Precision"), float sums. On this
-//     fixture the largest is 2.2e-4 (docs/research/2026-10-15-denoiser-
-//     live.md), so 1e-3 leaves a margin of four;
+//     floats in the U-Net, float sums, on either backend (Metal's
+//     simdgroup matrices, denoise.metal, "Precision"; CUDA's tensor cores,
+//     cuda/passes/denoise/denoise.h). On this fixture Metal's largest is
+//     2.2e-4 (docs/research/2026-10-15-denoiser-live.md), so 1e-3 leaves a
+//     margin of four;
 //   - and the check can fail: a network one weight off is not, one of the
 //     last convolution's weights a tenth off giving 4.0e-3, four times the
 //     tolerance.
@@ -26,39 +28,28 @@
 
 #include <doctest/doctest.h>
 
-#include <Foundation/Foundation.hpp>
-#include <Metal/Metal.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <memory>
-#include <utility>
 #include <vector>
 
 #include "core/contracts/linear_image.h"
 #include "core/output/pfm.h"
 #include "core/scene/scene.h"
 #include "gpu/support/denoise_fixture.h"
-#include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"
-#include "metal/device/device.h"
-#include "metal/device/library.h"
-#include "metal/device/offscreen.h"
-#include "metal/device/submission.h"
-#include "metal/device/support.h"
-#include "metal/frame/renderer.h"
-#include "serenity/metallib/probes.h"
 #include "support/same_bits.h"
 #include "support/scene_text.h"
 #include "test_paths.h"
 
+// Each backend's runner and hand-off rig, by the include path (SF.12).
+#include <denoise_runner.h>
+#include <hand_off_rig.h>
+
 namespace contracts = serenity::contracts;
 namespace denoise = serenity::denoise;
 namespace frame = serenity::frame;
-namespace metal = serenity::metal;
-namespace metallib = serenity::metallib;
 namespace output = serenity::output;
 namespace scene = serenity::scene;
 namespace tests = serenity::tests;
@@ -113,9 +104,10 @@ TEST_CASE(
   CHECK(off > tolerance);
 }
 
-// The hand-off (metal/frame/renderer.h, "Two halves"): frame N + 1's light
-// half never writes what frame N's image half reads. Frames with their
-// halves on two queues, two in flight and none waited for, end in the same
+// The hand-off (metal/frame/renderer.h, "Two halves"; cuda/frame/
+// renderer.h, "A denoised frame"): frame N + 1's light half never writes
+// what frame N's image half reads. Frames with their halves on two queues
+// (two streams on CUDA), two in flight and none waited for, end in the same
 // bits as the same frames each recorded into one part and waited for: every
 // frame as displayed, and the last frame's radiance. A hand-off frame N + 1
 // overwrote under frame N's image half would change frame N's image (the
@@ -126,63 +118,17 @@ TEST_CASE(
 // Left to the GPU, frame N's image half reads the hand-off at its start,
 // before frame N + 1's light half has reached its end and written it, so a
 // shared hand-off would pass too. So each frame's image half is held back:
-// its second part begins with the tests' delay kernel (kernels/
-// delay.metal, about 30 ms on the M3 Max), which the image half's queue
-// barrier waits for, while frame N + 1's light half, a few milliseconds
-// here, runs to its end beside it. The test shows it was so: each frame's
-// light half began before the frame before it had finished (submission.h,
-// the records), and every frame after the first was held back for longer
+// its second part begins with the tests' delay kernel (each backend's
+// <hand_off_rig.h>, some 30 ms), which the image half waits for, while
+// frame N + 1's light half, a few milliseconds here, runs to its end
+// beside it. The test shows it was so: each frame's light half began
+// before the frame before it had finished (the records, each backend's
+// submission's), and every frame after the second was held back for longer
 // than the frame before it took to trace its light (by the records too: the
 // image half's start, which the delay sets, is after the next frame's light
 // half ended, within the GPU's own times).
+
 namespace {
-
-// The delay, its count of steps (kernels/delay.metal) and its buffers,
-// recorded at the start of a second part.
-class Delay {
- public:
-  Delay(const metal::Device& device, metal::Submission& submission)
-      : library_(device, metallib::probes),
-        pipeline_(library_.compute_pipeline("delay")) {
-    const auto pool = metal::scoped_pool();
-    MTL::Device* mtl = device.handle();
-    out_ = NS::TransferPtr(
-        mtl->newBuffer(sizeof(std::uint32_t), MTL::ResourceStorageModeShared));
-    count_ = NS::TransferPtr(
-        mtl->newBuffer(sizeof(std::uint32_t), MTL::ResourceStorageModeShared));
-    REQUIRE(out_);
-    REQUIRE(count_);
-    constexpr std::uint32_t steps = 10'000'000;
-    std::memcpy(count_->contents(), &steps, sizeof steps);
-    submission.make_resident(out_.get());
-    submission.make_resident(count_.get());
-    auto descriptor =
-        NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-    descriptor->setMaxBufferBindCount(2);
-    NS::Error* error = nullptr;
-    table_ = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
-    INFO("argument table: " << tests::reason(error));
-    REQUIRE(table_);
-    table_->setAddress(out_->gpuAddress(), 0);
-    table_->setAddress(count_->gpuAddress(), 1);
-  }
-
-  void record(MTL4::CommandBuffer* commands) const {
-    MTL4::ComputeCommandEncoder* encoder = commands->computeCommandEncoder();
-    REQUIRE(encoder != nullptr);
-    encoder->setArgumentTable(table_.get());
-    encoder->setComputePipelineState(pipeline_.get());
-    encoder->dispatchThreads(MTL::Size(1, 1, 1), MTL::Size(1, 1, 1));
-    encoder->endEncoding();
-  }
-
- private:
-  metal::Library library_;
-  NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
-  NS::SharedPtr<MTL::Buffer> out_;
-  NS::SharedPtr<MTL::Buffer> count_;
-  NS::SharedPtr<MTL4::ArgumentTable> table_;
-};
 
 // Frame `index` of the hand-off's run, 50 ms after the one before, so the
 // fireflies move a pixel or so between frames: every image the halves hand
@@ -201,62 +147,15 @@ frame::FrameInputs stepped_frame(std::uint64_t index,
   return inputs;
 }
 
-struct HandOffRun {
-  std::vector<std::vector<std::uint8_t>> shown;  // each frame, as displayed
-  std::vector<float> last;                // the last frame's denoised radiance
-  std::vector<metal::Completed> records;  // the frames', in sequence order
-};
-
-// `frames` frames of the wandering fireflies through the fixture's denoised
-// graph at `size`, each into a target of its own, so every frame's image is
-// read back, not only the last's: of two parts, each image half held back by
-// the delay, none waited for; or of one part, each waited for.
-HandOffRun run_hand_off(const scene::SceneDescription& scene,
-                        frame::Extent size, std::uint64_t frames,
-                        metal::Parts parts) {
-  metal::Device device;
-  metal::Submission submission(device);
-  const Delay delay(device, submission);
-  metal::Renderer renderer(device, submission, tests::fixture_denoised_graph(),
-                           &scene);
-  std::vector<std::unique_ptr<metal::Offscreen>> targets;
-  targets.reserve(frames);
+// The hand-off run's frames: `frames` of them, 50 ms apart.
+std::vector<frame::FrameInputs> stepped_frames(
+    std::uint64_t frames, const scene::SceneDescription& scene) {
+  std::vector<frame::FrameInputs> out;
+  out.reserve(frames);
   for (std::uint64_t i = 0; i < frames; ++i) {
-    targets.push_back(
-        std::make_unique<metal::Offscreen>(device, submission, size));
+    out.push_back(stepped_frame(i, scene));
   }
-  const std::uint64_t first = submission.next_sequence();
-  HandOffRun run;
-  for (std::uint64_t i = 0; i < frames; ++i) {
-    const auto pool = metal::scoped_pool();
-    const frame::FrameInputs inputs = stepped_frame(i, scene);
-    renderer.prepare(inputs, size);
-    const metal::FrameSlot begun = submission.begin(parts);
-    REQUIRE((begun.second != nullptr) == (parts == metal::Parts::two));
-    if (begun.second != nullptr) {
-      delay.record(begun.second);
-    }
-    renderer.record(begun, inputs, targets[i]->texture(), size);
-    submission.commit();
-    if (begun.settled && begun.settled->sequence >= first) {
-      run.records.push_back(*begun.settled);
-    }
-    if (parts == metal::Parts::one) {
-      if (const auto settled = submission.wait_until_complete(begun.sequence)) {
-        run.records.push_back(*settled);
-      }
-    }
-  }
-  for (const metal::Completed& settled : submission.drain()) {
-    run.records.push_back(settled);
-  }
-  std::ranges::sort(run.records, {}, &metal::Completed::sequence);
-  for (const std::unique_ptr<metal::Offscreen>& target : targets) {
-    run.shown.push_back(tests::read_back(*target));
-  }
-  run.last.assign(std::size_t{size.width} * size.height * 4, 0.0f);
-  renderer.read_accumulated(run.last);
-  return run;
+  return out;
 }
 
 }  // namespace
@@ -267,10 +166,11 @@ TEST_CASE(
       scene::parse(tests::wandering_fireflies(), "wandering fireflies");
   constexpr frame::Extent size{256, 192};
   constexpr std::uint64_t frames = 6;
-  const HandOffRun overlapped =
-      run_hand_off(scene, size, frames, metal::Parts::two);
-  const HandOffRun serial =
-      run_hand_off(scene, size, frames, metal::Parts::one);
+  const std::vector<frame::FrameInputs> stepped = stepped_frames(frames, scene);
+  const tests::HandOffRun overlapped =
+      tests::run_hand_off(scene, size, stepped, tests::Halves::overlapped);
+  const tests::HandOffRun serial =
+      tests::run_hand_off(scene, size, stepped, tests::Halves::serial);
   REQUIRE(overlapped.shown.size() == frames);
   for (std::size_t k = 0; k < frames; ++k) {
     INFO("frame " << k);
@@ -288,17 +188,23 @@ TEST_CASE(
   // began, and ended, while the frame before was held back. A serial
   // frame's span is its light half and image half alone, no delay: the
   // longest of them bounds a light half, and each overlapped frame's own
-  // span is far longer, the delay's.
+  // span is far longer, the delay's. Both from the second frame on: on
+  // CUDA, the first frame waits for the device once, as OptiX makes ready
+  // for its first launches (measured on the RTX 3090 Ti: the path tree's
+  // first launch 11 ms, MNEE's 4, every later one 0.01), which bounds no
+  // light half, and holds the overlapped run's second frame back until the
+  // first ends; each frame from the third is the claim's.
   REQUIRE(overlapped.records.size() == frames);
   REQUIRE(serial.records.size() == frames);
   double longest_serial = 0.0;
-  for (const metal::Completed& record : serial.records) {
+  for (std::size_t k = 1; k < serial.records.size(); ++k) {
+    const tests::FrameSpan& record = serial.records[k];
     longest_serial =
         std::max(longest_serial, (record.gpu_end - record.gpu_start).count());
   }
-  for (std::size_t k = 1; k < overlapped.records.size(); ++k) {
-    const metal::Completed& before = overlapped.records[k - 1];
-    const metal::Completed& next = overlapped.records[k];
+  for (std::size_t k = 2; k < overlapped.records.size(); ++k) {
+    const tests::FrameSpan& before = overlapped.records[k - 1];
+    const tests::FrameSpan& next = overlapped.records[k];
     INFO("frame "
          << k << ": began " << (before.gpu_end - next.gpu_start).count() * 1e3
          << " ms before the frame before ended; a serial frame takes at most "

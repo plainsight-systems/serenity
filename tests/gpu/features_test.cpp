@@ -21,21 +21,18 @@
 #include "core/sampling/jitter.h"
 #include "core/scene/scene.h"
 #include "gpu/support/rendering.h"
-#include "metal/device/device.h"
-#include "metal/device/offscreen.h"
-#include "metal/device/submission.h"
-#include "metal/frame/feature_images.h"
-#include "metal/frame/renderer.h"
 #include "support/lit_floor.h"
 #include "support/same_bits.h"
 #include "support/scene_text.h"
 #include "support/schedules.h"
 
+// the backend's frames, by the include path (SF.12)
+#include <frame_rig.h>
+
 namespace animation = serenity::animation;
 namespace camera = serenity::camera;
 namespace contracts = serenity::contracts;
 namespace frame = serenity::frame;
-namespace metal = serenity::metal;
 namespace sampling = serenity::sampling;
 namespace scene = serenity::scene;
 namespace tests = serenity::tests;
@@ -76,13 +73,11 @@ TEST_CASE(
   const frame::Schedule demo = tests::fixture_denoised_graph();
   REQUIRE(frame::feeds_network(input));
   REQUIRE_FALSE(frame::denoises(input));
-  metal::Device device;
-  metal::Submission submission(device);
-  metal::Offscreen input_target(device, submission, size);
-  metal::Offscreen demo_target(device, submission,
-                               {2 * size.width, 2 * size.height});
-  metal::Renderer input_renderer(device, submission, input, &description);
-  metal::Renderer demo_renderer(device, submission, demo, &description);
+  tests::FrameRig rig;
+  const auto input_target = rig.target(size);
+  const auto demo_target = rig.target({2 * size.width, 2 * size.height});
+  const auto input_renderer = rig.renderer(input, &description);
+  const auto demo_renderer = rig.renderer(demo, &description);
   for (std::uint64_t i = 0; i < 5; ++i) {
     // Its reuse history kept from frame 0 (reused_since, the default);
     // the frame before, which the features' motion points to.
@@ -93,24 +88,20 @@ TEST_CASE(
           frame::Seconds(static_cast<double>(i - 1) / 60.0),
           description.camera};
     }
-    (void)submission.wait_until_complete(metal::render_to_offscreen(
-        submission, input_target, input_renderer, inputs));
-    (void)submission.wait_until_complete(metal::render_to_offscreen(
-        submission, demo_target, demo_renderer, inputs));
+    rig.render(*input_target, *input_renderer, inputs);
+    rig.render(*demo_target, *demo_renderer, inputs);
     INFO("frame " << i);
-    const metal::Renderer::NetworkInput written =
-        input_renderer.read_network_input();
-    const metal::Renderer::NetworkInput handed =
-        demo_renderer.read_network_input();
+    const auto written = input_renderer->read_network_input();
+    const auto handed = demo_renderer->read_network_input();
     REQUIRE(written.size == size);
     REQUIRE(handed.size == size);
     CHECK(tests::same_bits(written.rgba, handed.rgba));
     // What the headless renderer writes of the input graph is that light.
     std::vector<float> shown(written.rgba.size());
-    input_renderer.read_accumulated(shown);
+    input_renderer->read_accumulated(shown);
     CHECK(tests::same_bits(shown, written.rgba));
-    const metal::FeatureImages::Read a = input_renderer.read_features();
-    const metal::FeatureImages::Read b = demo_renderer.read_features();
+    const auto a = input_renderer->read_features();
+    const auto b = demo_renderer->read_features();
     CHECK(tests::same_bits(a.albedo.rgb, b.albedo.rgb));
     CHECK(tests::same_bits(a.normal.rgb, b.normal.rgb));
     CHECK(tests::same_bits(a.depth.rgb, b.depth.rgb));
@@ -125,7 +116,7 @@ TEST_CASE(
     // And it holds light: not two black images alike.
     CHECK(std::ranges::max(written.rgba) > 0.0f);
   }
-  CHECK(input_renderer.non_finite_samples() == 0);
+  CHECK(input_renderer->non_finite_samples() == 0);
 }
 
 TEST_CASE(
@@ -138,21 +129,18 @@ TEST_CASE(
   // floor's depth changes some 1% a pixel.
   const scene::SceneDescription description =
       scene::parse(tests::lit_floor(tests::one_firefly), "lit floor");
-  metal::Device device;
-  metal::Submission submission(device);
-  metal::Offscreen target(device, submission, size);
-  metal::Renderer renderer(device, submission, light_graph(true), &description);
+  tests::FrameRig rig;
+  const auto target = rig.target(size);
+  const auto renderer = rig.renderer(light_graph(true), &description);
   const contracts::CameraData camera =
       camera::shader_form(description.camera, size);
   const tests::Vec3 origin = tests::vec(camera.origin);
   const tests::Vec3 forward = tests::vec(camera.forward);
   for (std::uint64_t i = 0; i < 3; ++i) {
-    const std::uint64_t last = metal::render_to_offscreen(
-        submission, target, renderer,
-        tests::frame_at(i, i, static_cast<double>(i) / 60.0,
-                        description.camera));
-    (void)submission.wait_until_complete(last);
-    const contracts::LinearImage depth = renderer.read_features().depth;
+    rig.render(*target, *renderer,
+               tests::frame_at(i, i, static_cast<double>(i) / 60.0,
+                               description.camera));
+    const contracts::LinearImage depth = renderer->read_features().depth;
     const sampling::CameraJitter jitter = sampling::camera_jitter(i);
     double worst = 0.0;
     std::size_t floor_pixels = 0;
