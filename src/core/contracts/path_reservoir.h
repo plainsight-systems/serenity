@@ -167,7 +167,7 @@ struct PathShape {
   uint32_t face;         // x_k's box face
 };
 
-constexpr uint32_t pack_path_flags(PathShape shape) {
+SERENITY_SHARED_FUNCTION constexpr uint32_t pack_path_flags(PathShape shape) {
   return (shape.count & path_count_mask) |
          ((shape.length & path_index_mask) << path_length_shift) |
          ((shape.rc & path_index_mask) << path_rc_shift) |
@@ -178,25 +178,25 @@ constexpr uint32_t pack_path_flags(PathShape shape) {
          ((shape.face & path_face_mask) << path_face_shift);
 }
 
-constexpr uint32_t path_count(uint32_t flags) {
+SERENITY_SHARED_FUNCTION constexpr uint32_t path_count(uint32_t flags) {
   return flags & path_count_mask;
 }
-constexpr uint32_t path_length(uint32_t flags) {
+SERENITY_SHARED_FUNCTION constexpr uint32_t path_length(uint32_t flags) {
   return (flags >> path_length_shift) & path_index_mask;
 }
-constexpr uint32_t path_rc(uint32_t flags) {
+SERENITY_SHARED_FUNCTION constexpr uint32_t path_rc(uint32_t flags) {
   return (flags >> path_rc_shift) & path_index_mask;
 }
-constexpr PathEnd path_end(uint32_t flags) {
+SERENITY_SHARED_FUNCTION constexpr PathEnd path_end(uint32_t flags) {
   return static_cast<PathEnd>((flags >> path_end_shift) & path_end_mask);
 }
-constexpr uint32_t path_lobe_before(uint32_t flags) {
+SERENITY_SHARED_FUNCTION constexpr uint32_t path_lobe_before(uint32_t flags) {
   return (flags >> path_lobe_before_shift) & path_lobe_mask;
 }
-constexpr uint32_t path_lobe_at(uint32_t flags) {
+SERENITY_SHARED_FUNCTION constexpr uint32_t path_lobe_at(uint32_t flags) {
   return (flags >> path_lobe_at_shift) & path_lobe_mask;
 }
-constexpr uint32_t path_face(uint32_t flags) {
+SERENITY_SHARED_FUNCTION constexpr uint32_t path_face(uint32_t flags) {
   return (flags >> path_face_shift) & path_face_mask;
 }
 

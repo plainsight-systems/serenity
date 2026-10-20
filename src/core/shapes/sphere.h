@@ -20,7 +20,7 @@ namespace shapes {
 
 #if !defined(__METAL_VERSION__)
 // Its extent in object space: [-1, 1] on each axis.
-constexpr Bounds sphere_bounds() noexcept {
+SERENITY_SHARED_FUNCTION constexpr Bounds sphere_bounds() noexcept {
   return Bounds{{-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}};
 }
 

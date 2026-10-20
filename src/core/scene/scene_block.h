@@ -16,8 +16,11 @@
 // touches nothing outside its axis but the registry).
 //
 // One layout for every side: on the host each field is a GPU address, 64
-// bits; in a shader, a pointer of the array's type, also 64 bits. Array<T>
-// picks which, a template alias rather than a macro (ES.30). Static: the
+// bits; in a shader, a pointer of the array's type, also 64 bits: Metal's
+// in its constant address space, CUDA's device code's a plain pointer
+// (nvcc compiles its host half too, which reads the block as device code
+// does). Array<T> picks which, a template alias rather than a macro
+// (ES.30). Static: the
 // arrays never move once made, so the block is written once (CDSA.32: static
 // data put once into the layout its consumer reads). What changes per frame,
 // the shapes' transforms and the lights' glows, and the acceleration
@@ -59,6 +62,9 @@ namespace gpu {
 #if defined(__METAL_VERSION__)
 template <typename T>
 using Array = constant T*;
+#elif defined(__CUDACC__)
+template <typename T>
+using Array = const T*;
 #else
 template <typename T>
 using Array = std::uint64_t;  // the array's GPU address

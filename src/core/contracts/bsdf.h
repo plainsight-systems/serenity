@@ -179,7 +179,7 @@ SERENITY_CONSTANT uint32_t lobe_delta = 16u;
 
 // Whether a surface with `lobes` can be lit by aiming at a light: it has a
 // lobe that is not delta.
-constexpr bool aims_at_lights(uint32_t lobes) {
+SERENITY_SHARED_FUNCTION constexpr bool aims_at_lights(uint32_t lobes) {
   return (lobes & (lobe_diffuse | lobe_glossy)) != 0u;
 }
 
@@ -248,7 +248,7 @@ static_assert(std::is_trivially_copyable_v<PackedBsdf>,
 // is one at all (kind none: contracts/primary_hit.h). Here, with the
 // layout, so the Integrator and Sample reuse, which meet at contracts
 // alone, read it one way.
-constexpr BsdfKind packed_kind(PackedBsdf packed) {
+SERENITY_SHARED_FUNCTION constexpr BsdfKind packed_kind(PackedBsdf packed) {
   return static_cast<BsdfKind>((packed.escape_kind >> packed_kind_shift) &
                                packed_kind_mask);
 }

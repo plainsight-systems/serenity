@@ -115,10 +115,10 @@ static_assert(std::is_trivially_copyable_v<LightPoint>,
 
 // Whether `sample` holds a light, and which record: the one reading of
 // `light`'s bits, so no pass tests the bit its own way (ES.3).
-constexpr bool holds_light(LightPoint sample) {
+SERENITY_SHARED_FUNCTION constexpr bool holds_light(LightPoint sample) {
   return (sample.light & light_valid) != 0u;
 }
-constexpr uint32_t light_index(LightPoint sample) {
+SERENITY_SHARED_FUNCTION constexpr uint32_t light_index(LightPoint sample) {
   return sample.light & light_index_mask;
 }
 

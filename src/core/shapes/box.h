@@ -37,7 +37,7 @@ static_assert(std::is_trivially_copyable_v<BoxData>,
 
 #if !defined(__METAL_VERSION__)
 // Its extent in object space: itself.
-constexpr Bounds bounds(const BoxData& box) noexcept {
+SERENITY_SHARED_FUNCTION constexpr Bounds bounds(const BoxData& box) noexcept {
   return Bounds{box.min, box.max};
 }
 

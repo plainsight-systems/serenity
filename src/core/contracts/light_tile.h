@@ -92,7 +92,7 @@ SERENITY_CONSTANT uint32_t light_power_threads = 1024u;
 
 // L, the levels above the leaves, for `count` lights: the least with 4^L
 // at least the count; 0 for one light or none.
-constexpr uint32_t light_power_levels(uint32_t count) {
+SERENITY_SHARED_FUNCTION constexpr uint32_t light_power_levels(uint32_t count) {
   uint32_t levels = 0u;
   while ((1u << (2u * levels)) < count) {
     ++levels;
@@ -102,7 +102,8 @@ constexpr uint32_t light_power_levels(uint32_t count) {
 
 // Where level `level` of a pyramid of `levels` begins, in floats: the
 // levels below it, 4^levels + 4^(levels - 1) + ... in all.
-constexpr uint32_t light_power_offset(uint32_t levels, uint32_t level) {
+SERENITY_SHARED_FUNCTION constexpr uint32_t light_power_offset(uint32_t levels,
+                                                               uint32_t level) {
   uint32_t offset = 0u;
   for (uint32_t below = 0u; below < level; ++below) {
     offset += 1u << (2u * (levels - below));
@@ -111,7 +112,8 @@ constexpr uint32_t light_power_offset(uint32_t levels, uint32_t level) {
 }
 
 // The floats in all, the top's place plus it.
-constexpr uint32_t light_power_floats(uint32_t levels) {
+SERENITY_SHARED_FUNCTION constexpr uint32_t light_power_floats(
+    uint32_t levels) {
   return light_power_offset(levels, levels) + 1u;
 }
 #if !defined(__METAL_VERSION__)

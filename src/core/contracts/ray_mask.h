@@ -70,7 +70,7 @@ enum class RayMask : uint32_t {
 
 // Whether a ray carrying `mask` finds a shape of class `shape` (Enum.4: the
 // one operation on the two, named, so no caller tests bits).
-constexpr bool finds(RayMask mask, ShapeClass shape) {
+SERENITY_SHARED_FUNCTION constexpr bool finds(RayMask mask, ShapeClass shape) {
   return (static_cast<uint32_t>(mask) & static_cast<uint32_t>(shape)) != 0u;
 }
 

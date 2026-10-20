@@ -31,7 +31,8 @@ static_assert(std::is_trivially_copyable_v<Float3>,
               "Float3 is written to the GPU as bytes");
 
 // Coordinate `axis` of `v`: x for 0, y for 1, z for 2.
-constexpr float component(Float3 v, int axis) noexcept {
+SERENITY_SHARED_FUNCTION constexpr float component(Float3 v,
+                                                   int axis) noexcept {
   return axis == 0 ? v.x : (axis == 1 ? v.y : v.z);
 }
 #endif
