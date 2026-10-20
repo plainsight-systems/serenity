@@ -435,6 +435,40 @@ construction, every pass kind it does not build yet.
 | only `src/cuda/` uses CUDA's host API; its kernels include the core's shared layouts only | build | `tools/check_boundaries.sh`, rules 3 and 7 and their proofs |
 | unit tests with no GPU: the submission's bookkeeping, which passes the backend builds; one integration test on the GPU: the headless program on the test pattern, against the CPU's | tests | `tests/cuda/`, new |
 
+## The path tracer on CUDA and OptiX
+
+The CUDA backend's Phase 3 (`docs/research/2026-10-19-cuda-backend.md`,
+"Phase 3's design"): the reference graph, the path pass and the tone map,
+on the RTX 3090 Ti. The path pass is an OptiX launch whose ray generation
+program is the pass, tracing two geometry structures of custom primitives
+through the shapes' intersection program and reading the hit objects
+itself; the tone map is CUDA kernels. The shading code is Metal's,
+translated line for line into `.cuh` files under the same families; the
+core's shared layouts are included as they are, with the CUDA branch of
+`shared_layout.h`.
+
+| What | Axis | Where |
+|---|---|---|
+| a shared layout's function callable from CUDA device code; the scene block's arrays as pointers there | contracts | `src/core/contracts/shared_layout.h`, `src/core/scene/scene_block.h` and the shared layouts' `constexpr` functions |
+| OptiX's headers fetched at a pinned commit; the programs compiled to OptiX-IR with flags pinned in one place, embedded | build | `CMakeLists.txt`, `cmake/toolchain.json`, `cmake/CudaModules.cmake` |
+| OptiX's function table and its device context, over the CUDA context | GPU backend | `src/cuda/device/optix_context.{h,cpp}`, new |
+| a pass's OptiX pipeline: its module from the embedded IR, its program groups, its stack sizes, its shader binding table, its launch | GPU backend | `src/cuda/device/pipeline.{h,cpp}`, new |
+| pinned host memory, owned | GPU backend | `src/cuda/device/buffer.{h,cpp}` |
+| a frame's data staged a slot in pinned memory and uploaded on the frame's stream into one device copy | GPU backend | `src/cuda/device/frame_upload.{h,cpp}`, new |
+| the accumulated image's pitched memory and its filtering texture; the bloom levels' arrays, surfaces and textures | GPU backend | `src/cuda/device/images.{h,cpp}`, new |
+| the scene's still arrays and its block, uploaded once | Scene content | `src/cuda/scene/scene_buffers.{h,cpp}`, new |
+| the shapes' transforms and the lights' glows a frame | Scene content | `src/cuda/scene/shape_transforms.{h,cpp}`, `light_glows.{h,cpp}`, new |
+| the two structures built, a moving one each frame; what a pass traces, by mask | Acceleration | `src/cuda/acceleration/scene_acceleration.{h,cpp}`, `structure_block.h`, new |
+| the samples not finite, counted a slot and collected | Film | `src/cuda/film/failure_count.{h,cpp}`, new |
+| the accumulated image, by the core's history rule | Frame graph | `src/cuda/frame/accumulation.{h,cpp}`, new |
+| the bloom pyramid at the core's sizes | Frame graph | `src/cuda/frame/frame_images.{h,cpp}`, new |
+| the path pass: its ray generation program, its launch parameters, its launch | Pass | `src/cuda/passes/path/path.{cu,h,cpp}`, `path_launch.h`, new |
+| the tone map: its four kernels and their launches | Pass | `src/cuda/passes/tone_map/tone_map.{cu,h,cpp}`, new |
+| the schedule carried out with the path pass and the tone map; the accumulated image and the failure count read back | Frame graph | `src/cuda/frame/renderer.{h,cpp}`, `offline_frames.{h,cpp}` |
+| device code: the vector types' operators and functions, under Metal's names; hashing, warps, transforms, sRGB; packed layouts read | GPU backend | `src/cuda/math/*.cuh`, `src/cuda/device/layout.cuh`, new |
+| device code: the sampler, the camera, the shapes and their intersection program, textures, materials, media, lights, uniform light selection, the scene's view, the film, the path integrator, tracing | each its family | `src/cuda/<family>/*.cuh`, from `src/metal/<family>/*.metal.h` |
+| probes of each family's device code against the core's; the headless program rendering the reference graph | tests | `tests/cuda/` |
+
 ## Not here yet
 
 - **The CUDA backend's files,** tabled here phase by phase as its

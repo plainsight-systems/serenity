@@ -74,7 +74,7 @@ It decides how; the core still decides what (principle 10).
 | A pass that | is | its code |
 |---|---|---|
 | traces rays: path, ReSTIR PT's initial, temporal and spatial, MNEE, features | an OptiX launch: a ray generation program that is the pass's body, traversing with `optixTraverse` and reading the hit object itself, with no closest-hit or miss program; the shapes' intersection programs | `passes/<pass>/<pass>.cu`, compiled to PTX, one module and one pipeline per pass |
-| traces none: ReSTIR PT's shade and duplication, denoise, tone map, depth of field, checkerboard fill, accumulation, test pattern | a CUDA kernel | `passes/<pass>/<pass>.cu`, compiled to the machine's code (sm_86) |
+| traces none: ReSTIR PT's shade and duplication, denoise, tone map, depth of field, checkerboard fill, test pattern | a CUDA kernel | `passes/<pass>/<pass>.cu`, compiled to the machine's code (sm_86) |
 
 Which is which is read from the Metal passes' includes (2026-10-19): the
 six that trace reach `acceleration/trace.metal.h` through the integrator;
@@ -86,8 +86,8 @@ schedule's order, as Metal's encoder does.
 The headers say `optixTraverse` traverses and fills the hit object
 without running closest-hit or miss; they do not say in words that a
 custom primitive's intersection program runs during it. It must, for a
-traversal to hit one at all, and Cycles' shadow rays rely on it; Phase 3's
-first launch proves it on this machine.
+traversal to hit one at all, and Cycles' shadow rays rely on it. Proven
+on this machine before Phase 3's headers ("Phase 3's design").
 
 **What it ports first, and what is tuning later.** The first port is
 Metal's design carried over: shapes as bounding boxes with their own
@@ -208,7 +208,9 @@ files are estimates.
 
 **To verify as each step comes:** warp intrinsics inside ray generation
 programs (MNEE's and the replays' appends, the non-finite count use them;
-OptiX forbids shared memory there); any-hit called once per primitive for
+OptiX forbids shared memory there), checked for the count before Phase 3
+("Phase 3's design"), the appends' warp-wide prefix still to check in
+Phase 4; any-hit called once per primitive for
 MNEE's seeding (`OPTIX_GEOMETRY_FLAG_REQUIRE_SINGLE_ANYHIT_CALL`); a
 `constexpr` array indexed at run time in `contracts/denoise.h`
 (`spacing_pixels`) in device code.
@@ -218,6 +220,159 @@ argument tables, the library and the device's Apple family. The encoding
 tests carry (they test contract layouts, not Metal's). Their probe kernels'
 layouts (`tests/gpu/kernels/`, ~950 lines) are shared; the harness is per
 backend.
+
+## Phase 3's design, checked 2026-10-19
+
+Written before Phase 3's headers. What it rests on was checked on the RTX
+3090 Ti first, with a probe outside the repository (two spheres as custom
+primitives, a ray generation program, OptiX 9.1's headers at `f1f6dd8`),
+and in NVIDIA's OptiX 9.1 Programming Guide (December 2025, its sections
+named below), against Blender Cycles' OptiX device where it does the same
+job.
+
+**Proven on the machine.**
+
+- An intersection program runs during `optixTraverse` over a single
+  geometry structure of custom primitives, from a ray generation program
+  with no closest-hit program and a miss group with no program: the
+  nearest of two spheres, its primitive index, its t and its hit record's
+  data read back from the hit object; with `TERMINATE_ON_FIRST_HIT`, the
+  shadow ray's answer. So the design above holds as written: each pass that
+  traces is its ray generation program, reading hit objects itself.
+- A payload value reaches the intersection program
+  (`optixGetPayload_0`, available in IS): the shape a shadow ray ignores.
+- A warp-aggregated atomic in the ray generation program
+  (`__activemask`, `__ballot_sync`, one lane adding the count) counts
+  exactly. The guide (6.2, "Programming model") forbids shared memory and
+  warp- or block-wide synchronization, and allows vote and ballot for an
+  algorithm independent of which threads share a warp, naming
+  warp-aggregated atomic adds; the failure counts are that.
+- The core's shared layouts all compile in device code under `nvcc` with
+  the project's flags, but for their `constexpr` functions, which device
+  code may call only under nvcc's experimental `--expt-relaxed-constexpr`.
+  So `core/contracts/shared_layout.h` gains `SERENITY_SHARED_FUNCTION`,
+  `__host__ __device__` under `__CUDACC__` and nothing elsewhere, on each
+  of those functions (ES.33: one prefixed name; P.11: written in the one
+  header that holds the languages' differences), the way CUTLASS marks its
+  functions, rather than a flag NVIDIA marks experimental. And its
+  `Array<T>` (`core/scene/scene_block.h`) is a pointer under `__CUDACC__`,
+  as under Metal, where the host keeps the 64-bit address. Neither changes
+  what Metal or the host compiles.
+
+**The programs' input: OptiX-IR.** The guide (6.1, "Program input")
+recommends OptiX-IR over PTX when `nvcc` compiles the programs, for
+optimizations PTX does not carry (its 9.x notes on live state and
+`__restrict__`); Cycles compiles PTX, for the range of toolkits and
+architectures it supports, which this backend does not. Flags, from the
+guide's list: `-optix-ir -m64 -rdc=true -arch=compute_86 -std=c++20 -O3`,
+the pinned host compiler, warnings as errors, and no `--use_fast_math`:
+the guide recommends it for speed and names the exception, precision,
+which the tests' comparisons with the CPU need (the plan's "Math mode").
+They live in `cmake/CudaModules.cmake` beside the kernels', in a second
+function. OptiX compiles the IR to the machine's code when the module is
+made, at start-up: unlike the kernels' fatbin, the code that runs is
+OptiX's, fixed by the pinned driver (595.91.07, its OptiX 9.1.0). OptiX's
+compile cache (guide 4.2) stays at its default, on, as Cycles leaves it: it
+keeps OptiX's compile of the same input, so what runs is the same.
+
+**Tracing.** Metal's one level, carried over:
+
+- Two geometry structures of custom primitives, the core's plan
+  (`core/shapes/structure_plan.h`): everything, box i shape i, and the
+  occluders with their table. The pipeline allows a single geometry
+  structure as the traversable (`ALLOW_SINGLE_GAS`); no instance level,
+  so no masks, as on Metal, and a ray traces the structure its mask names.
+  The occluders with no surface hold nothing: no structure, and a ray
+  carrying them finds nothing, as Metal's `empty`.
+- One hit group, the shapes' intersection program, and one hit record a
+  structure: record 0 for everything, its table none, record 1 for the
+  occluders, its table the occluders' shapes. The ray generation program
+  passes the record of the structure it traces as the SBT offset, and the
+  intersection program names a box's shape through its record's table
+  (`optixGetSbtDataPointer`), as Metal's `MaskedStructure::shape` does.
+  The SDK's own pattern for per-geometry data; the alternative, the table
+  in the launch parameters and the mask in a payload, carries a mask the
+  record already names.
+- The intersection program is the shape's exact test, its ray clipped to
+  the nearest so far (`optixGetRayTmax`, which OptiX narrows as hits are
+  reported), reporting t. Any-hit disabled on the geometry and on the ray.
+  The nearest hit: `DISABLE_ANYHIT`. Occluded: `DISABLE_ANYHIT |
+  TERMINATE_ON_FIRST_HIT`, the shape it ignores in payload 0 (none: all
+  bits set). Trace depth 1; the pipeline's stack sizes from
+  `optix_stack_size.h`'s helpers, for that depth and a single structure.
+- The boxes are the core's `shapes::Bounds`, two packed triples of
+  floats, which is `OptixAabb`'s layout, asserted beside the build.
+  Build flags none, as Metal builds with its defaults; no compaction. A
+  still structure is built once, at construction, and waited for; a
+  moving one rebuilt each frame on the frame's stream, a rebuild not an
+  update, as Metal (refits decay; principle 9). Choosing flags, compaction
+  and boxes as triangles are this machine's tuning, after the port.
+
+**Per-frame data on a discrete GPU.** Apple's memory is the GPU's: Metal's
+CPU writes a frame's arrays where its shaders read them, so it keeps a
+copy a frame in flight. Here each frame's data (the launch parameters, the
+moving boxes, the shapes' transforms, the lights' glows) is staged by the
+CPU in pinned host memory, one copy a frame slot, written only once the
+slot's last frame has settled (`cuda/device/frame_sequence.h`), and
+uploaded on the frame's stream into one device copy (GPU.7). The stream
+orders frame n + 1's upload after frame n's launches, so one device copy
+is enough. The scene's still arrays are uploaded once, at construction.
+Nothing is allocated per frame (MEM.9).
+
+**Launch parameters.** A pass that traces is an `optixLaunch` over the
+frame's pixels; its parameters are one struct in OptiX's launch-parameter
+variable, which OptiX reads from constant memory, the space Metal's
+`constant` buffers are in: the frame's constants and the camera by value,
+and the addresses of the scene's block, the transforms, the glows, the
+accumulated image and the failure counter, and the two structures'
+handles. The struct is the pass's own, one header compiled by both
+compilers.
+
+**Images.** The accumulated image is pitched linear memory, RGBA32Float,
+which the path program writes through its address and the tone map reads
+through a texture object over it, filtered: CUDA filters 32-bit floats,
+with interpolation weights held to 8 fractional bits (the CUDA
+Programming Guide's texture-fetching appendix). The bloom pyramid's
+levels are CUDA arrays of half floats, written through surface objects and
+read through filtering texture objects, at the core's sizes
+(`core/passes/bloom.h`). Every texture object samples clamped to the edge
+with normalized coordinates, as Metal's sampler.
+
+**The failure count.** A counter a frame slot in device memory, zeroed
+on the stream as the frame begins and copied at its commit into pinned
+host memory before the frame's event; the host collects a slot's count
+once the frame has completed, as Metal's `FailureCount` does.
+
+**Device code.** The path slice of `src/metal/`'s shaders translated line
+for line into `.cuh` files under the same families: `math/` first, the
+vector types' operators and functions CUDA lacks, under Metal's names
+(`dot`, `normalize`, `mix`, `saturate`, `select`) so the translation stays
+reviewable against its source; then the sampler and hashing, warps,
+transforms, shapes and their intersection program, textures, materials,
+media, lights, uniform light selection, the camera, the film and the path
+integrator. Not the shifts, MNEE, ReSTIR PT's reuse or the features
+(Phase 4).
+
+**Tests.** As the user's rule has them: the GPU runs only GPU code.
+Probes run each family's device code against the core's CPU computations,
+as `tests/gpu/` does on Metal, sharing its probes' layouts; and the one
+integration test, the headless program on the 3090, renders the reference
+graph at a small size: written, every sample finite, and the same command
+writing the same bytes. No test matches the 3090's frames to the Mac's:
+the two GPUs' arithmetic differs (Metal's fast math, CUDA's IEEE), so the
+same scene is shown from each, side by side, for the user to look at.
+
+**Checked against Cycles** (`intern/cycles/device/optix/device_impl.cpp`,
+`kernel/device/optix/kernel.cu`, `main`, read 2026-10-19). The same: each
+kernel that traces is a ray generation program (closest, shadow,
+subsurface, volume stack, dedicated light), trace depth 1, stack sizes
+set from the program groups' own, the launch parameters one struct in
+constant memory (`kernel_params`), the compile cache left at OptiX's
+default, the work on the device's stream. Not taken: PTX (above); its one
+intersect pipeline holding every tracing kernel, where this backend makes
+one pipeline a pass, as Metal makes one a kernel (merging them is tuning);
+and its instance level, which it needs for meshes and motion and this
+scene does not have yet.
 
 ## Phases
 
@@ -296,13 +451,16 @@ backend.
    tracer, so it joins Linux's tests in Phase 3.
 3. **The scene and the path tracer.** Scene buffers, the two structures,
    the shapes' intersection programs, the materials, lights and sampler
-   with their CPU checks, the path pass and the accumulation: the
-   reference graph on the 3090.
+   with their CPU checks, the path pass and its accumulation, and the
+   tone map: the reference graph (`graphs/path.toml`) on the 3090. Its
+   design: "Phase 3's design", above. The tone map moved here from Phase
+   5: the reference graph ends in it, and it is the data-set script's
+   target graph, so without it the phase renders nothing anyone asked
+   for.
 4. **ReSTIR PT and MNEE.** Initial, temporal, spatial, shade, duplication,
    MNEE's work list; the features pass.
 5. **The denoised frame.** The denoiser on the tensor cores (matched to
-   PyTorch), the fill, depth of field, tone mapping: the demo graph, its
-   frame time.
+   PyTorch), the fill, depth of field: the demo graph, its frame time.
 6. **The data set on the 3090.** The script run there, its manifest
    naming the machine.
 
