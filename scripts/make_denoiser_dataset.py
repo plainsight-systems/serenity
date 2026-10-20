@@ -85,8 +85,11 @@ so: the targets' path tracer differed from OLD's only by the ray masks,
 +0.1% in the mean on a lit frame, by the user's decision.
 
 The renderer: build/native-release/serenity-headless, built from this
-checkout first; its commit, whether the tree was clean, its build flags and
-the binary's checksum go in the manifest. A dirty tree is refused unless
+checkout first, on whichever backend the platform builds (macOS Metal,
+Linux CUDA; docs/research/2026-10-19-cuda-backend.md, "Phase 6's design");
+its commit, whether the tree was clean, its build flags and the binary's
+checksum go in the manifest, and the machine: the host, the operating
+system, and the GPU with its driver. A dirty tree is refused unless
 --allow-dirty (for trial runs; recorded).
 
 Failure. A run that fails (serenity-headless fails a frame whose samples
@@ -97,7 +100,8 @@ floats, and the count recorded (it should be 0).
 
 The GPU. Rendering is not timed for a result, but another serenity process
 shares the GPU and slows it: each sequence logs any serenity process not
-ours and the GPU's utilization (ioreg), and goes on.
+ours and the GPU's utilization (ioreg on macOS, nvidia-smi on Linux), and
+goes on.
 
 Standard library only.
 """
@@ -108,6 +112,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import random
 import re
 import shutil
@@ -339,43 +344,108 @@ def build_renderer() -> None:
             sys.exit(f'building the renderer failed: {" ".join(cmd)}\n{result.stdout}{result.stderr}')
 
 
+def backend() -> str:
+    """The backend this platform builds, as CMake chooses it: Metal on macOS, CUDA on Linux."""
+    if sys.platform == 'darwin':
+        return 'metal'
+    if sys.platform.startswith('linux'):
+        return 'cuda'
+    sys.exit(f'no backend builds on {sys.platform}: the renderer is Metal on macOS and CUDA on Linux')
+
+
+def flag_variables(cmake_text: str, prefix: str) -> dict:
+    """Each `set(NAME "a" "b" ...)` of `cmake_text` whose NAME starts with `prefix`: NAME, its values."""
+    found = {}
+    for name, values in re.findall(r'set\((' + prefix + r'\w*)((?:\s+"[^"]*")+)\)', cmake_text):
+        found[name] = re.findall(r'"([^"]*)"', values)
+    return found
+
+
+def nvidia_smi_fields(text: str) -> list[str]:
+    """The first GPU's fields of `nvidia-smi --query-gpu=... --format=csv,noheader,nounits`."""
+    first = text.strip().splitlines()[0] if text.strip() else ''
+    return [field.strip() for field in first.split(',')] if first else []
+
+
+def nvcc_release(text: str) -> str | None:
+    """nvcc's version, V13.2.86's 13.2.86, from `nvcc --version`; none if it names none."""
+    found = re.search(r'\bV(\d+\.\d+\.\d+)\b', text)
+    return found.group(1) if found else None
+
+
+def run_text(cmd: list) -> str:
+    """`cmd`'s standard output, or '' if it cannot run."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True).stdout
+    except OSError:
+        return ''
+
+
+def machine_record(kind: str) -> dict:
+    """The machine that renders: the host, the operating system, and the GPU with its driver."""
+    record = {'host': platform.node(), 'os': platform.platform(), 'backend': kind}
+    if kind == 'cuda':
+        name, driver = (nvidia_smi_fields(run_text(
+            ['nvidia-smi', '--query-gpu=name,driver_version', '--format=csv,noheader,nounits'])) + ['?', '?'])[:2]
+        record.update(gpu=name, driver=driver)
+    else:
+        record['gpu'] = run_text(['sysctl', '-n', 'machdep.cpu.brand_string']).strip() or '?'
+    return record
+
+
 def renderer_record(allow_dirty: bool) -> dict:
     dirty = [line for line in git('status', '--porcelain').splitlines() if line]
     if dirty and not allow_dirty:
         sys.exit('the checkout has uncommitted changes, so no commit names the renderer; commit them, '
                  'or pass --allow-dirty for a trial:\n' + '\n'.join(dirty))
     cache = (ROOT / 'build/native-release/CMakeCache.txt').read_text(encoding='utf-8')
-    cached = dict(re.findall(r'^([A-Z_]+):[A-Z]+=(.*)$', cache, re.M))
-    metal = (ROOT / 'cmake/MetalLibrary.cmake').read_text(encoding='utf-8')
+    cached = dict(re.findall(r'^([A-Z_a-z]+):[A-Z]+=(.*)$', cache, re.M))
+    kind = backend()
+    build = {
+        'preset': 'native-release',
+        'build_type': cached.get('CMAKE_BUILD_TYPE'),
+        'cxx_compiler': cached.get('CMAKE_CXX_COMPILER'),
+        'cxx_flags': ' '.join(filter(None, (cached.get('CMAKE_CXX_FLAGS'), cached.get('CMAKE_CXX_FLAGS_RELEASE')))),
+        'cxx_standard': 20,
+    }
+    if kind == 'metal':
+        metal = (ROOT / 'cmake/MetalLibrary.cmake').read_text(encoding='utf-8')
+        build['osx_deployment_target'] = cached.get('CMAKE_OSX_DEPLOYMENT_TARGET')
+        build['metal_flags'] = ' '.join(re.findall(r'set\(SERENITY_METAL_\w+ "([^"]*)"\)', metal))
+    else:
+        modules = ROOT / 'cmake/CudaModules.cmake'
+        nvcc = cached.get('CUDAToolkit_NVCC_EXECUTABLE')
+        build['cuda_flags'] = flag_variables(modules.read_text(encoding='utf-8'), 'SERENITY_(?:CUDA|OPTIX)_')
+        build['cuda_modules_sha256'] = sha256(modules)  # part of each command line is written there
+        build['nvcc'] = nvcc
+        build['nvcc_version'] = nvcc_release(run_text([nvcc, '--version'])) if nvcc else None
+    build['toolchain'] = json.loads((ROOT / 'cmake/toolchain.json').read_text(encoding='utf-8'))
     return {
         'commit': git('rev-parse', 'HEAD').strip(),
         'dirty': dirty,
         'binary': str(RENDERER.relative_to(ROOT)),
         'binary_sha256': sha256(RENDERER),
-        'build': {
-            'preset': 'native-release',
-            'build_type': cached.get('CMAKE_BUILD_TYPE'),
-            'cxx_compiler': cached.get('CMAKE_CXX_COMPILER'),
-            'cxx_flags': ' '.join(filter(None, (cached.get('CMAKE_CXX_FLAGS'), cached.get('CMAKE_CXX_FLAGS_RELEASE')))),
-            'cxx_standard': 20,
-            'osx_deployment_target': cached.get('CMAKE_OSX_DEPLOYMENT_TARGET'),
-            'metal_flags': ' '.join(re.findall(r'set\(SERENITY_METAL_\w+ "([^"]*)"\)', metal)),
-            'toolchain': json.loads((ROOT / 'cmake/toolchain.json').read_text(encoding='utf-8')),
-        },
+        'build': build,
+        'machine': machine_record(kind),
     }
 
 
 def gpu_note(utilization: bool) -> str:
     """Any serenity process running (none of ours is, between units), and, if asked, the GPU's
-    utilization: asked before the first render only, since ioreg's lags behind our own last one."""
+    utilization: asked before the first render only, since the tools' lags behind our own last one."""
     others = subprocess.run(['pgrep', '-l', 'serenity'], capture_output=True, text=True).stdout.split('\n')
     others = [line for line in others if line.strip()]
     notes = []
     if utilization:
-        ioreg = subprocess.run(['ioreg', '-r', '-d', '1', '-c', 'IOAccelerator'], capture_output=True,
-                               text=True).stdout
-        util = re.search(r'"Device Utilization %"=(\d+)', ioreg)
-        notes.append(f'GPU {util.group(1) if util else "?"}% busy')
+        if backend() == 'cuda':
+            fields = nvidia_smi_fields(run_text(
+                ['nvidia-smi', '--query-gpu=utilization.gpu', '--format=csv,noheader,nounits']))
+            util = fields[0] if fields else '?'
+        else:
+            ioreg = run_text(['ioreg', '-r', '-d', '1', '-c', 'IOAccelerator'])
+            found = re.search(r'"Device Utilization %"=(\d+)', ioreg)
+            util = found.group(1) if found else '?'
+        notes.append(f'GPU {util}% busy')
     notes.append(f'other serenity processes: {", ".join(others)}' if others else 'no other serenity process')
     return '; '.join(notes)
 

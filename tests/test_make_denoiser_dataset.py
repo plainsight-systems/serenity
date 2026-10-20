@@ -11,8 +11,10 @@ the flood, and no target's sample indices meet an input's. A data set made
 --targets-from another takes its scenes, albedo and targets and never its
 inputs, and refuses one made by another plan. Every scene is written
 through a pinhole: its lens line, and only it, taken off; a lens in a form
-the script does not know is refused. Rendering is the
-renderer's to show (docs/research/2026-10-14-denoiser-dataset.md).
+the script does not know is refused. The renderer's record reads each
+backend's tools and build files (the CUDA compiler's flag variables,
+nvidia-smi's fields, nvcc's version) as written, from text the tests give.
+Rendering is the renderer's to show (docs/research/2026-10-14-denoiser-dataset.md).
 """
 
 import hashlib
@@ -133,6 +135,25 @@ class MakeDenoiserDatasetTests(unittest.TestCase):
         self.assertEqual(make_denoiser_dataset.pinhole_scene(scene), scene)
         with self.assertRaises(SystemExit):
             make_denoiser_dataset.pinhole_scene('[camera]\nlens = {\n radius = 0.1 }\n')
+
+    def test_the_renderer_record_reads_each_tool_as_written(self):
+        cmake = ('set(SERENITY_CUDA_ARCH "-gencode" "arch=compute_86,code=sm_86")\n'
+                 'set(SERENITY_CUDA_STD "-std=c++20")\n'
+                 'set(SERENITY_OPTIX_ARCH "-arch=compute_86")\n'
+                 'set(OTHER_FLAGS "-x")\n'
+                 '# set(SERENITY_CUDA_NOTE note) is not a flag: no quotes\n')
+        self.assertEqual(make_denoiser_dataset.flag_variables(cmake, 'SERENITY_(?:CUDA|OPTIX)_'), {
+            'SERENITY_CUDA_ARCH': ['-gencode', 'arch=compute_86,code=sm_86'],
+            'SERENITY_CUDA_STD': ['-std=c++20'],
+            'SERENITY_OPTIX_ARCH': ['-arch=compute_86'],
+        })
+        self.assertEqual(make_denoiser_dataset.nvidia_smi_fields('NVIDIA GeForce RTX 3090 Ti, 595.91.07\n'),
+                         ['NVIDIA GeForce RTX 3090 Ti', '595.91.07'])
+        self.assertEqual(make_denoiser_dataset.nvidia_smi_fields('42\n17\n'), ['42'])  # the first GPU's
+        self.assertEqual(make_denoiser_dataset.nvidia_smi_fields(''), [])
+        self.assertEqual(make_denoiser_dataset.nvcc_release(
+            'nvcc: NVIDIA (R) Cuda compiler driver\nCuda compilation tools, release 13.2, V13.2.86\n'), '13.2.86')
+        self.assertIsNone(make_denoiser_dataset.nvcc_release('no compiler here'))
 
 
 if __name__ == '__main__':
