@@ -1,6 +1,7 @@
 #include "cuda/device/buffer.h"
 
 #include <cstring>
+#include <string>
 #include <utility>
 
 #include "cuda/device/error.h"
@@ -64,6 +65,18 @@ PinnedBuffer::~PinnedBuffer() {
   if (data_ != nullptr) {
     (void)cuMemFreeHost(data_);
   }
+}
+
+void upload_now(CUdeviceptr target, std::span<const std::byte> bytes,
+                std::string_view what) {
+  check(cuMemcpyHtoD(target, bytes.data(), bytes.size()),
+        std::string(what) + ": cuMemcpyHtoD");
+  check(cuCtxSynchronize(), std::string(what) + ": cuCtxSynchronize");
+}
+
+void zero_now(CUdeviceptr target, std::size_t bytes, std::string_view what) {
+  check(cuMemsetD8(target, 0, bytes), std::string(what) + ": cuMemsetD8");
+  check(cuCtxSynchronize(), std::string(what) + ": cuCtxSynchronize");
 }
 
 }  // namespace serenity::cuda

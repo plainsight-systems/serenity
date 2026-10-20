@@ -7,8 +7,8 @@
 namespace serenity::cuda {
 
 CheckerboardImages::CheckerboardImages(const Device& device,
-                                       Submission& submission)
-    : device_(device), submission_(submission) {}
+                                       Submission& submission, Filled filled)
+    : device_(device), submission_(submission), keeps_(filled) {}
 
 bool CheckerboardImages::prepare(const frame::FrameInputs& inputs,
                                  frame::Extent size) {
@@ -34,7 +34,9 @@ bool CheckerboardImages::prepare(const frame::FrameInputs& inputs,
     image = std::make_unique<PitchedImage>(device_, submission_, size);
   }
   filled_.reset();
-  filled_ = std::make_unique<PitchedImage>(device_, submission_, size);
+  if (keeps_ == Filled::own) {
+    filled_ = std::make_unique<PitchedImage>(device_, submission_, size);
+  }
   size_ = size;
   history_ = joined;
   return held > 0;

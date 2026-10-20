@@ -109,9 +109,8 @@ SceneAcceleration::SceneAcceleration(const OptixContext& context,
   const std::span<const std::uint32_t> table = plan.occluder_table;
   occluder_table_ = DeviceBuffer(std::max<std::size_t>(table.size_bytes(), 4));
   if (!table.empty()) {
-    check(cuMemcpyHtoD(occluder_table_.address(), table.data(),
-                       table.size_bytes()),
-          "SceneAcceleration: cuMemcpyHtoD");
+    upload_now(occluder_table_.address(), std::as_bytes(table),
+               "SceneAcceleration");
   }
 
   // The still trees' structures, built now, in one submission.

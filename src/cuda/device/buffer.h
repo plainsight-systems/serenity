@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <span>
+#include <string_view>
 
 namespace serenity::cuda {
 
@@ -67,5 +68,27 @@ class PinnedBuffer {
   std::byte* data_ = nullptr;
   std::size_t bytes_ = 0;
 };
+
+// Axis: GPU backend.
+//
+// Copies `bytes` from host memory into device memory at `target`, and
+// returns once they are there. The driver's synchronous copy from pageable
+// memory may return before its DMA has reached the device (the CUDA Driver
+// API, "API synchronization behavior"), and it runs on the legacy stream,
+// which the submission's non-blocking streams do not wait for, so a kernel
+// on them could read the memory before it lands: the context is
+// synchronized after the copy (shown on the RTX 3090 Ti: without it, a
+// buffer reused at a freed one's address was read with the old bytes).
+// For what is uploaded once, at construction or a new size, never in a
+// frame: a frame's data goes up on its stream from pinned memory
+// (frame_upload.h; GPU.7). Throws CudaError, naming `what`, if the copy or
+// the wait fails.
+void upload_now(CUdeviceptr target, std::span<const std::byte> bytes,
+                std::string_view what);
+
+// Zeroes `bytes` of device memory at `target`, and returns once they are
+// zero: the driver's memset runs on the legacy stream too, so the same
+// rule as upload_now()'s, for the same uses.
+void zero_now(CUdeviceptr target, std::size_t bytes, std::string_view what);
 
 }  // namespace serenity::cuda

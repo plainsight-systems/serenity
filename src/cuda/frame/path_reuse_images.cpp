@@ -14,7 +14,7 @@ PathReuseImages::PathReuseImages(Submission& submission, Spatial spatial,
       temporal_(temporal),
       counter_(sizeof(std::uint32_t)),
       light_tiles_(passes::light_tiles_bytes()) {
-  check(cuMemsetD32(counter_.address(), 0, 1), "PathReuseImages: cuMemsetD32");
+  zero_now(counter_.address(), sizeof(std::uint32_t), "PathReuseImages");
   const std::size_t copies = temporal == Temporal::merged ? 2 : 1;
   for (std::size_t h = 0; h < copies; ++h) {
     light_power_.at(h) = DeviceBuffer(passes::light_power_bytes(lights));

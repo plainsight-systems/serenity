@@ -24,8 +24,7 @@ void MneeList::prepare(frame::Extent size) {
   header_ = DeviceBuffer(contracts::mnee_header_bytes);
   std::array<std::uint32_t, contracts::mnee_header_bytes / 4> words{};
   words[contracts::mnee_capacity_word] = static_cast<std::uint32_t>(capacity);
-  check(cuMemcpyHtoD(header_.address(), words.data(), sizeof(words)),
-        "MneeList: cuMemcpyHtoD");
+  upload_now(header_.address(), std::as_bytes(std::span(words)), "MneeList");
   size_ = size;
 }
 

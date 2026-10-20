@@ -171,9 +171,7 @@ Pipeline::Pipeline(const OptixContext& context, std::span<const std::byte> ir,
     record.data = hit.data;
   }
   records_ = DeviceBuffer(records.size() * sizeof(Record));
-  check(cuMemcpyHtoD(records_.address(), records.data(),
-                     records.size() * sizeof(Record)),
-        "Pipeline: cuMemcpyHtoD");
+  upload_now(records_.address(), std::as_bytes(std::span(records)), "Pipeline");
   table_.raygenRecord = records_.address();
   table_.missRecordBase = records_.address() + sizeof(Record);
   table_.missRecordStrideInBytes = sizeof(Record);

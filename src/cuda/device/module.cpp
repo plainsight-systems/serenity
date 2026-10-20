@@ -25,10 +25,10 @@ CUfunction Module::kernel(std::string_view name) const {
 
 void launch(CUstream stream, CUfunction kernel, LaunchShape shape,
             std::span<void*> arguments) {
-  check(
-      cuLaunchKernel(kernel, shape.blocks_x, shape.blocks_y, 1, shape.threads_x,
-                     shape.threads_y, 1, 0, stream, arguments.data(), nullptr),
-      "cuLaunchKernel");
+  check(cuLaunchKernel(kernel, shape.blocks_x, shape.blocks_y, shape.blocks_z,
+                       shape.threads_x, shape.threads_y, 1, 0, stream,
+                       arguments.data(), nullptr),
+        "cuLaunchKernel");
 }
 
 LaunchShape linear_shape(std::uint64_t count, unsigned block) {

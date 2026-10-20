@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
@@ -23,8 +24,11 @@ namespace serenity::cuda {
 // offscreen target of the run's size and the renderer, made once, in that
 // order, released in reverse after the frames in flight; and the factory,
 // make_offline_renderer(), which the headless program reaches by linking
-// this backend. What the backend does not render yet, the denoised frame
-// (Phase 5), it refuses by name, when the renderer is made.
+// this backend. A frame is begun in the renderer's parts (renderer.h,
+// parts()). The settled samples it hands over are the frames it rendered,
+// by their sequences: the submissions made before the first, the
+// structures' build among them (cuda/acceleration/scene_acceleration.h),
+// are no samples and are not handed over.
 class OfflineFrames final : public presentation::OfflineRenderer {
  public:
   OfflineFrames(const frame::Schedule& schedule,
@@ -45,12 +49,18 @@ class OfflineFrames final : public presentation::OfflineRenderer {
   void read_accumulated(std::span<float> out) override;
   Features read_features() override;
   void finish() override;
+  void take_settled(std::vector<SettledSample>& into) override;
 
  private:
   Device device_;
   Submission submission_;
   Offscreen target_;
   Renderer renderer_;
+  // The first sample's sequence: the submission's next once the renderer
+  // is made.
+  std::uint64_t first_sample_;
+  // The submission's settled frames, taken into one list made once (MEM.9).
+  std::vector<Completed> completed_;
 };
 
 }  // namespace serenity::cuda

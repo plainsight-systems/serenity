@@ -28,8 +28,7 @@ FrameUpload::FrameUpload(Submission& submission,
   // Before any frame: the device copy as given, whole before the
   // constructor returns.
   submission.finish();
-  check(cuMemcpyHtoD(device_.address(), initial.data(), size_),
-        "FrameUpload: cuMemcpyHtoD");
+  upload_now(device_.address(), initial, "FrameUpload");
 }
 
 std::span<std::byte> FrameUpload::bytes(std::uint32_t slot) {

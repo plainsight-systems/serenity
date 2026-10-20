@@ -21,18 +21,24 @@ namespace serenity::cuda {
 // images of four floats a pixel, the frame's handed-off light and in w each
 // pixel's view depth, frame n writing image n mod 2 and reading image
 // (n - 1) mod 2; whether the other holds this frame's frame before, the
-// core's reuse history (frame::ReuseHistory), kept here. And the filled
-// light the data set's input graph shows and writes (`filled`): this
-// backend builds no network yet, so every graph with the fill keeps it.
-// Pitched (cuda/device/images.h), the filled image read filtered by the tone
-// map as the accumulated image is.
+// core's reuse history (frame::ReuseHistory), kept here. And, as Metal's
+// Filled says, the filled light the data set's input graph shows and
+// writes (`filled`), in a graph without the network; a denoised graph's
+// fill writes the slot's hand-off instead (cuda/frame/denoise_images.h),
+// so it keeps none. Pitched (cuda/device/images.h), the filled image read
+// filtered by the tone map as the accumulated image is.
 //
 // Made when the light's size is first known and remade when it changes,
 // the frames in flight finished first. Throws CudaError if an image cannot
 // be made or the core's history rule refuses a frame.
 class CheckerboardImages {
  public:
-  CheckerboardImages(const Device& device, Submission& submission);
+  // Whether the images keep the filled light (above). A type, so the
+  // choice is named where it is made (I.4).
+  enum class Filled : std::uint8_t { own, none };
+
+  CheckerboardImages(const Device& device, Submission& submission,
+                     Filled filled);
 
   CheckerboardImages(const CheckerboardImages&) = delete;
   CheckerboardImages& operator=(const CheckerboardImages&) = delete;
@@ -53,12 +59,14 @@ class CheckerboardImages {
     return light_.at((index + 1u) % 2u).get();
   }
 
-  // The filled light; null before the first prepare().
+  // The filled light; null before the first prepare(), and for
+  // Filled::none.
   const PitchedImage* filled() const noexcept { return filled_.get(); }
 
  private:
   const Device& device_;
   Submission& submission_;
+  Filled keeps_;
   frame::Extent size_;
   frame::ReuseHistory history_;
   std::array<std::unique_ptr<PitchedImage>, 2> light_;

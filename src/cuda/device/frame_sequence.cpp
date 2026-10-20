@@ -6,24 +6,49 @@
 
 namespace serenity::cuda {
 
-FrameSequence::Begun FrameSequence::begin() {
+FrameSequence::Begun FrameSequence::begin(Parts parts) {
   if (open_) {
     throw CudaError("Submission::begin: a frame is begun and not committed");
   }
   const auto slot = static_cast<std::uint32_t>(next_ % frames_in_flight);
+  std::optional<std::uint32_t> after;
+  if (parts == Parts::one && last_parts_ == Parts::two) {
+    after = static_cast<std::uint32_t>((next_ - 1) % frames_in_flight);
+  }
   open_ = true;
-  return Begun{slot, next_, pending_.at(slot)};
+  parts_ = parts;
+  handed_off_ = false;
+  return Begun{slot, next_, pending_.at(slot), after};
 }
 
-std::uint32_t FrameSequence::commit() {
+std::uint32_t FrameSequence::hand_off() {
+  if (!open_) {
+    throw CudaError("Submission::hand_off: no frame is begun");
+  }
+  if (parts_ != Parts::two) {
+    throw CudaError("Submission::hand_off: the frame was begun in one part");
+  }
+  if (handed_off_) {
+    throw CudaError("Submission::hand_off: the frame is handed off already");
+  }
+  handed_off_ = true;
+  return static_cast<std::uint32_t>(next_ % frames_in_flight);
+}
+
+FrameSequence::Committed FrameSequence::commit() {
   if (!open_) {
     throw CudaError("Submission::commit: no frame is begun");
+  }
+  if (parts_ == Parts::two && !handed_off_) {
+    throw CudaError(
+        "Submission::commit: the frame of two parts was not handed off");
   }
   const auto slot = static_cast<std::uint32_t>(next_ % frames_in_flight);
   pending_.at(slot) = next_;
   ++next_;
   open_ = false;
-  return slot;
+  last_parts_ = parts_;
+  return Committed{slot, parts_};
 }
 
 void FrameSequence::check_committed(std::uint64_t sequence) const {

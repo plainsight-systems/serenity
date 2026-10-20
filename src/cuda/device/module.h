@@ -45,11 +45,12 @@ class Module {
 // is (Phase 6's tuning, not the port's).
 inline constexpr unsigned per_pixel_block = 16;
 
-// A launch's blocks and the threads in each, in two dimensions (I.24:
-// named, so the two pairs cannot pass in each other's places).
+// A launch's blocks, in up to three dimensions, and the threads in each,
+// in two (I.24: named, so the pairs cannot pass in each other's places).
 struct LaunchShape {
   unsigned blocks_x = 1;
   unsigned blocks_y = 1;
+  unsigned blocks_z = 1;
   unsigned threads_x = 1;
   unsigned threads_y = 1;
 };

@@ -347,6 +347,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         src/cuda/film/failure_count.cpp
         src/cuda/frame/accumulation.cpp
         src/cuda/frame/checkerboard_images.cpp
+        src/cuda/frame/denoise_images.cpp
+        src/cuda/frame/depth_of_field_images.cpp
         src/cuda/frame/feature_images.cpp
         src/cuda/frame/frame_images.cpp
         src/cuda/frame/mnee_list.cpp
@@ -355,6 +357,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         src/cuda/frame/renderer.cpp
         src/cuda/frame/traced_program.cpp
         src/cuda/passes/checkerboard_fill/checkerboard_fill.cpp
+        src/cuda/passes/denoise/denoise.cpp
+        src/cuda/passes/depth_of_field/depth_of_field.cpp
         src/cuda/passes/features/features.cpp
         src/cuda/passes/mnee/mnee.cpp
         src/cuda/passes/path/path.cpp
@@ -431,6 +435,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     serenity_add_cuda_module(
         TARGET serenity_cuda NAME checkerboard_fill
         SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/checkerboard_fill/checkerboard_fill.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_cuda_module(
+        TARGET serenity_cuda NAME denoise
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/denoise/denoise.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_cuda_module(
+        TARGET serenity_cuda NAME depth_of_field
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/depth_of_field/depth_of_field.cu"
         INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 endif()
 

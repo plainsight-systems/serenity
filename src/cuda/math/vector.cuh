@@ -93,6 +93,10 @@ __device__ inline int2 make_int2(uint2 v) {
   return int2{static_cast<int>(v.x), static_cast<int>(v.y)};
 }
 __device__ inline int2 make_int2(int s) { return int2{s, s}; }
+// Toward zero, as the shading language's int2(float2).
+__device__ inline int2 make_int2(float2 v) {
+  return int2{static_cast<int>(v.x), static_cast<int>(v.y)};
+}
 __device__ inline uint3 make_uint3(uint s) { return uint3{s, s, s}; }
 __device__ inline uint3 make_uint3(uint2 v, uint z) {
   return uint3{v.x, v.y, z};
@@ -313,6 +317,21 @@ __device__ inline int2 operator%(int2 a, int s) {
 __device__ inline int2 operator+(int2 a, int s) {
   return int2{a.x + s, a.y + s};
 }
+__device__ inline int2 operator-(int2 a, int s) {
+  return int2{a.x - s, a.y - s};
+}
+__device__ inline uint2 operator+(uint2 a, uint2 b) {
+  return uint2{a.x + b.x, a.y + b.y};
+}
+__device__ inline uint2 operator+(uint2 a, uint s) {
+  return uint2{a.x + s, a.y + s};
+}
+__device__ inline uint2 operator*(uint2 a, uint s) {
+  return uint2{a.x * s, a.y * s};
+}
+__device__ inline uint2 operator*(uint s, uint2 a) {
+  return uint2{s * a.x, s * a.y};
+}
 __device__ inline uint2 operator/(uint2 a, uint s) {
   return uint2{a.x / s, a.y / s};
 }
@@ -365,10 +384,14 @@ __device__ inline uint max(uint a, uint b) { return a < b ? b : a; }
 __device__ inline int min(int a, int b) { return a < b ? a : b; }
 __device__ inline int max(int a, int b) { return a < b ? b : a; }
 __device__ inline float abs(float a) { return fabsf(a); }
+__device__ inline int abs(int a) { return a < 0 ? -a : a; }
 __device__ inline float sqrt(float a) { return sqrtf(a); }
 __device__ inline float rsqrt(float a) { return rsqrtf(a); }
 __device__ inline float floor(float a) { return floorf(a); }
 __device__ inline float rint(float a) { return rintf(a); }
+// Halfway cases away from zero, as the shading language's round (rint
+// rounds them to even).
+__device__ inline float round(float a) { return roundf(a); }
 __device__ inline float exp(float a) { return expf(a); }
 __device__ inline float exp2(float a) { return exp2f(a); }
 __device__ inline float pow(float a, float b) { return powf(a, b); }
@@ -383,6 +406,9 @@ __device__ inline float clamp(float x, float lo, float hi) {
   return min(max(x, lo), hi);
 }
 __device__ inline uint clamp(uint x, uint lo, uint hi) {
+  return min(max(x, lo), hi);
+}
+__device__ inline int clamp(int x, int lo, int hi) {
   return min(max(x, lo), hi);
 }
 __device__ inline float saturate(float x) { return clamp(x, 0.0f, 1.0f); }
@@ -438,6 +464,20 @@ __device__ inline float2 floor(float2 a) {
 }
 __device__ inline float2 rint(float2 a) {
   return float2{rintf(a.x), rintf(a.y)};
+}
+__device__ inline float2 round(float2 a) {
+  return float2{roundf(a.x), roundf(a.y)};
+}
+__device__ inline int2 clamp(int2 x, int2 lo, int2 hi) {
+  return int2{clamp(x.x, lo.x, hi.x), clamp(x.y, lo.y, hi.y)};
+}
+__device__ inline float4 min(float4 a, float4 b) {
+  return float4{fminf(a.x, b.x), fminf(a.y, b.y), fminf(a.z, b.z),
+                fminf(a.w, b.w)};
+}
+__device__ inline float4 max(float4 a, float4 b) {
+  return float4{fmaxf(a.x, b.x), fmaxf(a.y, b.y), fmaxf(a.z, b.z),
+                fmaxf(a.w, b.w)};
 }
 __device__ inline float3 fract(float3 a) {
   return float3{fract(a.x), fract(a.y), fract(a.z)};

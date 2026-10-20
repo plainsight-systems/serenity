@@ -45,8 +45,7 @@ SceneBuffers::SceneBuffers(Submission& submission,
   arrays_ = DeviceBuffer(total);
   // Before any frame (the constructor's contract).
   submission.finish();
-  check(cuMemcpyHtoD(arrays_.address(), laid_out.data(), total),
-        "SceneBuffers: cuMemcpyHtoD");
+  upload_now(arrays_.address(), laid_out, "SceneBuffers");
 
   std::array<std::uint64_t, scene::scene_array_count> addresses{};
   for (std::size_t i = 0; i < addresses.size(); ++i) {
@@ -54,8 +53,8 @@ SceneBuffers::SceneBuffers(Submission& submission,
   }
   block_ = scene::scene_block(addresses);
   block_buffer_ = DeviceBuffer(sizeof(block_));
-  check(cuMemcpyHtoD(block_buffer_.address(), &block_, sizeof(block_)),
-        "SceneBuffers: cuMemcpyHtoD");
+  upload_now(block_buffer_.address(), std::as_bytes(std::span(&block_, 1)),
+             "SceneBuffers");
 }
 
 }  // namespace serenity::cuda

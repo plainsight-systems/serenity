@@ -1,17 +1,21 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
 #include "core/animation/animate.h"
 #include "core/contracts/camera.h"
 #include "core/contracts/path_reuse_settings.h"
+#include "core/denoise/network.h"
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
 #include "core/frame/schedule.h"
+#include "core/sampling/jitter.h"
 #include "core/scene/scene.h"
 #include "cuda/acceleration/scene_acceleration.h"
 #include "cuda/device/device.h"
@@ -22,12 +26,16 @@
 #include "cuda/film/failure_count.h"
 #include "cuda/frame/accumulation.h"
 #include "cuda/frame/checkerboard_images.h"
+#include "cuda/frame/denoise_images.h"
+#include "cuda/frame/depth_of_field_images.h"
 #include "cuda/frame/feature_images.h"
 #include "cuda/frame/frame_images.h"
 #include "cuda/frame/frame_launch.h"
 #include "cuda/frame/mnee_list.h"
 #include "cuda/frame/path_reuse_images.h"
 #include "cuda/passes/checkerboard_fill/checkerboard_fill.h"
+#include "cuda/passes/denoise/denoise.h"
+#include "cuda/passes/depth_of_field/depth_of_field.h"
 #include "cuda/passes/features/features.h"
 #include "cuda/passes/path/path.h"
 #include "cuda/passes/restir_pt_duplication/restir_pt_duplication.h"
@@ -56,13 +64,15 @@ namespace serenity::cuda {
 // same as Metal's (metal/frame/renderer.h).
 //
 // The backend is built a phase at a time (docs/research/2026-10-19-cuda-
-// backend.md), and passes it does not build yet are refused, each by name,
+// backend.md), and passes it does not build are refused, each by name,
 // when the renderer is made, before any frame (the no-facade rule: a graph
-// it cannot render never renders a part of itself). Built today: the test
-// pattern, the path pass and the tone map, so the reference graph
-// (graphs/path.toml); ReSTIR PT's five passes with MNEE, the features and
-// the checkerboard's fill, so the data set's input graph
-// (graphs/restir_pt_features.toml), and the features alone.
+// it cannot render never renders a part of itself). Built: every pass the
+// core schedules: the test pattern, the path pass and the tone map, so the
+// reference graph (graphs/path.toml); ReSTIR PT's five passes with MNEE,
+// the features and the checkerboard's fill, so the data set's input graph
+// (graphs/restir_pt_features.toml) and the features alone; and the
+// denoiser and the depth of field, so the demo graph
+// (graphs/restir_pt_denoised.toml).
 //
 // What it makes, by what the schedule has:
 //
@@ -84,6 +94,15 @@ namespace serenity::cuda {
 //   a graph that feeds the      the fill and its history, ReSTIR PT's
 //   network                     settings with checkerboard 1 (contract 20)
 //                               (cuda/frame/checkerboard_images.h)
+//   the denoise pass            the network, read once (core/denoise/
+//                               network.h); its images and the slots'
+//                               hand-offs (cuda/frame/denoise_images.h); a
+//                               set of features a slot at the light size
+//                               and one at the output's, the full-size
+//                               albedo; the radiance image it writes at the
+//                               output's size
+//   the depth of field          its images (cuda/frame/
+//                               depth_of_field_images.h)
 //
 // A frame: prepare() before its submission begins, so remaking an image
 // for a new size may finish the frames in flight; then record(), which
@@ -93,6 +112,31 @@ namespace serenity::cuda {
 // then launches each pass in the schedule's order, the fill before the
 // presenting pass in a graph that feeds the network, as Metal's. Nothing
 // is allocated a frame (MEM.9).
+//
+// A denoised frame (Metal's metal/frame/renderer.h, "The denoise pass" and
+// "Two halves"; docs/research/2026-10-19-cuda-backend.md, "Phase 5's
+// design"). It renders at two sizes (frame::light_size): every pass before
+// the denoise pass at the light size, half the output's each way, and the
+// denoise pass and those after it at the output's. Two launch structs a
+// frame: the light's, which the light half's passes read, and the
+// output's, framed at the output's size, its feature images the slot's
+// full-size set. The frame splits at the denoise pass: the light half,
+// every pass before it, then the full-size albedo (the features pass
+// launched again with the output's struct), then the fill, which writes
+// the slot's hand-off of the light; and the image half, the denoise pass,
+// the depth of field and the tone map. parts() is Parts::two for such a
+// graph and Parts::one for any other; in a frame begun in two parts,
+// record() hands the frame off between its halves (submission.h, "Two
+// parts") and records the image half on the image stream, so frame N's
+// image half runs beside frame N + 1's light half; in one part, both
+// halves on the light stream, the same work in the same order, so the
+// same pixels. The hand-off, what the image half reads of the light
+// half's, is ringed by the slot, as Metal's: the light-size features, the
+// full-size features and the light's radiance, one each a slot (CP.3:
+// frame N + 1's light half never writes what frame N's image half reads;
+// GPU.7). What the image half writes (the denoiser's history, the
+// radiance image, the bloom, the depth of field's images) the light half
+// never reads, and each image half follows the one before on its stream.
 //
 // Throws CudaError, with the core's words for its refusals.
 class Renderer {
@@ -122,8 +166,10 @@ class Renderer {
 
   // Records frame `inputs`, prepared at `target`'s size, on `begun`'s
   // stream, writing `target`, through a pinhole in a graph that feeds the
-  // network (frame::traced_inputs). Throws CudaError if it was not prepared, or
-  // a launch fails.
+  // network (frame::traced_inputs); a denoised frame begun in two parts
+  // handed off between its halves (above). Throws CudaError if it was not
+  // prepared, it was begun in two parts for a graph of one, or a launch
+  // fails.
   void record(const FrameSlot& begun, const frame::FrameInputs& inputs,
               const Offscreen& target);
 
@@ -148,16 +194,36 @@ class Renderer {
   // features pass or no frame has made its images yet.
   FeatureImages::Read read_features() const;
 
+  // The parts a frame of this graph is begun in (above).
+  Parts parts() const noexcept;
+
+  // The network's light input as the last frame recorded it, after every
+  // committed frame, and the jitter it was traced through, as Metal's:
+  // the fill's light in a graph that feeds the network, which a denoised
+  // graph hands its network and the data set's input graph writes, so a
+  // test holds the two to the bit. RGBA32Float a pixel, rows from the top.
+  // Throws CudaError if the graph's light is not the network's input, or
+  // no frame has been recorded.
+  struct NetworkInput {
+    frame::Extent size;
+    std::vector<float> rgba;
+    sampling::CameraJitter jitter;
+  };
+  NetworkInput read_network_input() const;
+
  private:
   // What prepare() readied for the frame, taken by record().
   struct Prepared {
     std::uint64_t index = 0;
-    frame::Extent size;
+    frame::Extent size;   // the output's
+    frame::Extent light;  // the light half's: the output's but when denoised
     std::uint32_t accumulated_frames = 0;
     // the reuse history's frames before this one
     std::uint64_t reused_frames = 0;
     // the checkerboard's fill reads the frame before's light
     bool fill_history = false;
+    // the denoiser reads last frame's output
+    bool denoise_history = false;
   };
 
   // Each family's state, one struct each, present only for a graph with
@@ -181,14 +247,43 @@ class Renderer {
     MneeList list;
     FailureCount lost;
   };
-  // The features pass's: its images and the shapes as the frame before
-  // placed them, when shapes move.
+  // The features pass's: its images, one set, or one a slot when the
+  // denoiser reads them from the image half (above); the slot the last
+  // frame wrote; and the shapes as the frame before placed them, when
+  // shapes move.
   struct FeatureFamily {
+    enum class Sets : std::uint8_t { one, per_slot };
     FeatureFamily(Submission& submission, const scene::SceneDescription& scene,
-                  bool moves);
+                  bool moves, Sets sets);
 
-    FeatureImages images;
+    // The set frame slot `slot` writes.
+    FeatureImages& images(std::uint32_t slot);
+    const FeatureImages& images(std::uint32_t slot) const;
+
+    Sets kept;
+    std::array<std::unique_ptr<FeatureImages>, frames_in_flight> sets;
+    std::uint32_t last_slot = 0;
     std::unique_ptr<ShapeTransforms> previous_transforms;
+  };
+  // The denoise pass's: the network's last width, its pass and images, a
+  // set of full-size features a slot, and the radiance image it writes at
+  // the output's size, which the depth of field and the tone map read.
+  struct DenoiseFamily {
+    DenoiseFamily(const Device& device, Submission& submission,
+                  const denoise::Network& network);
+
+    std::uint32_t features;
+    DenoisePass pass;
+    DenoiseImages images;
+    std::array<std::unique_ptr<FeatureImages>, frames_in_flight> full_features;
+    std::unique_ptr<PitchedImage> radiance;
+  };
+  // The depth of field's: its pass and images.
+  struct DepthOfFieldFamily {
+    explicit DepthOfFieldFamily(Submission& submission);
+
+    DepthOfFieldPass pass;
+    DepthOfFieldImages images;
   };
 
   void make_scene(const Device& device, const scene::SceneDescription& scene);
@@ -206,20 +301,47 @@ class Renderer {
                            const frame::FrameInputs& inputs,
                            const Prepared& prepared, frame::Extent size,
                            bool previous) const;
-  // The pass at `kind`, recorded on `begun`'s stream.
-  void record_pass(frame::PassKind kind, const FrameSlot& begun,
-                   const FrameLaunch& launch, const frame::FrameInputs& inputs,
-                   const Prepared& prepared, const Offscreen& target);
+  // A denoised frame's output struct (above): `light`'s, framed at the
+  // output's `size`, its features the slot's full-size set.
+  FrameLaunch output_launch(const FrameSlot& begun,
+                            const frame::FrameInputs& inputs,
+                            const FrameLaunch& light, frame::Extent size) const;
+  // A denoised frame's image half on `stream`: the denoise pass, the depth
+  // of field through the frame's own `lens` and the tone map, into
+  // `target`.
+  void record_image(CUstream stream, const FrameSlot& begun,
+                    const frame::FrameInputs& inputs,
+                    const contracts::Camera& lens, const Prepared& prepared,
+                    const FrameLaunch& light, const FrameLaunch& output,
+                    const Offscreen& target);
+  // The denoise pass, reading the light's struct's features and the
+  // output's full-size albedo; the depth of field through `lens`.
+  void record_denoise(CUstream stream, const FrameSlot& begun,
+                      const frame::FrameInputs& inputs,
+                      const Prepared& prepared, const FrameLaunch& light,
+                      const FrameLaunch& output) const;
+  void record_depth_of_field(CUstream stream, const FrameSlot& begun,
+                             const contracts::Camera& lens,
+                             const Prepared& prepared) const;
+  // The pass at `kind`, recorded on `stream`, one of `begun`'s; every kind
+  // but the denoise pass and the depth of field, which record_image()
+  // records.
+  void record_pass(frame::PassKind kind, CUstream stream,
+                   const FrameSlot& begun, const FrameLaunch& launch,
+                   const frame::FrameInputs& inputs, const Prepared& prepared,
+                   const Offscreen& target);
   // The image the presenting pass shows and read_accumulated() reads: the
   // fill's in a graph that feeds the network, else the accumulated image;
   // null before the first frame.
   const PitchedImage* shown() const noexcept;
 
+  const Device& device_;
   Submission& submission_;
   frame::Schedule schedule_;
   // The frame's launch parameters, staged a slot and uploaded once a frame
-  // (frame_launch.h).
+  // (frame_launch.h); a denoised graph's output struct beside them.
   FrameUpload launch_;
+  std::unique_ptr<FrameUpload> output_launch_;
   bool needs_scene_;
   // ReSTIR PT's temporal reuse merges last frame (frame::ReuseHistory)
   bool reuses_history_ = false;
@@ -229,6 +351,9 @@ class Renderer {
   // What the next frame's temporal merge asks of this one.
   std::optional<contracts::Camera> previous_camera_;
   frame::Seconds previous_time_{0.0};
+  // What read_network_input() reads of the last frame recorded.
+  std::optional<std::uint32_t> last_slot_;
+  sampling::CameraJitter last_jitter_{};
 
   // The scene's, for a graph that reads it (released after the passes
   // that read it, and before OptiX's context).
@@ -250,6 +375,8 @@ class Renderer {
   std::optional<MneeFamily> mnee_;
   std::optional<FeatureFamily> features_;
   std::unique_ptr<CheckerboardImages> checkerboard_;
+  std::unique_ptr<DenoiseFamily> denoise_;
+  std::unique_ptr<DepthOfFieldFamily> depth_of_field_;
 
   // The passes.
   std::optional<TestPatternPass> test_pattern_;
@@ -264,14 +391,9 @@ class Renderer {
   std::optional<CheckerboardFillPass> fill_;
 };
 
-// The first pass of `schedule` this backend does not build yet, refused by
-// name: the reason, or none when it builds every one. A pure function of
-// the schedule (F.8), so which passes the backend builds is a unit, tested
-// as one.
-std::optional<std::string> unbuilt_pass(const frame::Schedule& schedule);
-
-// Readies, records and commits frame `inputs` into `target`, without
-// waiting; returns its sequence, for Submission::wait_until_complete().
+// Readies, records and commits frame `inputs` into `target`, begun in the
+// renderer's parts, without waiting; returns its sequence, for
+// Submission::wait_until_complete().
 std::uint64_t render_to_offscreen(Submission& submission, Offscreen& target,
                                   Renderer& renderer,
                                   const frame::FrameInputs& inputs);
