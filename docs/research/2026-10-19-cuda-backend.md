@@ -213,7 +213,11 @@ OptiX forbids shared memory there), checked for the count before Phase 3
 Phase 4; any-hit called once per primitive for
 MNEE's seeding (`OPTIX_GEOMETRY_FLAG_REQUIRE_SINGLE_ANYHIT_CALL`); a
 `constexpr` array indexed at run time in `contracts/denoise.h`
-(`spacing_pixels`) in device code.
+(`spacing_pixels`) in device code: device code may index a host constant
+only in a constant expression, so a table is copied at compile time from
+the core's into a `static constexpr __device__` constant (checked on the
+3090, with and without `-rdc`; the noise's gradients in Phase 3, the
+pairing's tables and the spacings when their passes come).
 
 **Tests.** Every invariant `tests/gpu/` checks carries but three: the
 argument tables, the library and the device's Apple family. The encoding
@@ -243,7 +247,10 @@ job.
   (`optixGetPayload_0`, available in IS): the shape a shadow ray ignores.
 - A warp-aggregated atomic in the ray generation program
   (`__activemask`, `__ballot_sync`, one lane adding the count) counts
-  exactly. The guide (6.2, "Programming model") forbids shared memory and
+  exactly. The lane is read from `%laneid`: in an OptiX program
+  `threadIdx` is the launch index (the guide's table of PTX special
+  registers, 6.2), which the probe's one-dimensional launch matched by
+  chance. The guide (6.2, "Programming model") forbids shared memory and
   warp- or block-wide synchronization, and allows vote and ballot for an
   algorithm independent of which threads share a warp, naming
   warp-aggregated atomic adds; the failure counts are that.
@@ -457,6 +464,50 @@ scene does not have yet.
    5: the reference graph ends in it, and it is the data-set script's
    target graph, so without it the phase renders nothing anyone asked
    for.
+   **Done 2026-10-19.** The core: `SERENITY_SHARED_FUNCTION` on the
+   shared layouts' 28 functions, the scene block's arrays pointers under
+   `nvcc`; Metal's output the same to the bit (94 files against 4a021ec)
+   and its refusals' words the same. The build: OptiX's headers fetched
+   at `f1f6dd8`, the programs compiled to OptiX-IR by a second function
+   in `cmake/CudaModules.cmake`. The backend: OptiX's context; a pass's
+   pipeline (module, three program groups, stack sizes, binding table);
+   pinned memory and the frame upload; the pitched and level images; the
+   scene's buffers, transforms and glows; the two structures, whose hit
+   records carry the table and the shapes' arrays, so one intersection
+   program serves every pass; the failure count; the accumulated image
+   and the bloom pyramid; the path pass, a ray generation program, and
+   the tone map, four kernels; the renderer building them. Device code:
+   31 of Metal's headers, the path slice, translated line for line (a
+   script for the mechanical pass, then by hand), on `cuda/math/
+   vector.cuh`'s operators under Metal's names. What the translation
+   found: `nvcc` does not warn of an enumerator a switch leaves out (its
+   front end has no `-Wswitch`), so each kind dispatch traps after its
+   switch (`cuda/device/layout.cuh`, `unhandled_kind`) where Metal refuses
+   at compile time, and the three switches whose cases broke now return;
+   a core constant table read at run time is copied to device memory at
+   compile time (the noise's gradients); a `float3` constant becomes
+   three floats. Tests: the probe tests of eight families (sampler,
+   camera, shapes, textures, lights, film, encodings, BSDFs) are one
+   source for both backends, each backend's runner behind
+   `<probe_runner.h>` (SF.12; a quoted include found Metal's beside the
+   shared helper in either build), and pass on the 3090 against the
+   core's computations; the integration test renders the reference graph
+   on a moving scene and writes the same bytes twice; `tests/
+   test_headless.sh` runs on both platforms, so the failure count's path
+   (a scene whose light overflows) is checked on the 3090 too. The
+   probes of the families that trace (the structures, leaving a surface,
+   the path loop) need OptiX launches in their harness and come with
+   Phase 4's. Gates: both machines' three presets at 0 warnings, ctest
+   green under each, `make check` green (clang-tidy over the new host
+   code on the 3090). The image: the reference graph at 640 x 360, 256
+   samples, t = 120, on both machines, side by side: the same picture,
+   each channel's mean within 0.01 of a level, the noise the same grain
+   (the same numbers drawn); the marbles' accumulated radiance as PFM,
+   mean 0.188579 on both. Not timed: the demo graph comes in Phase 5.
+   For tuning, after the port: the scene's arrays from global memory
+   (Metal reads them from its constant space), the structures' build
+   flags and compaction, boxes as triangles on the RT cores, one
+   pipeline for every tracing pass.
 4. **ReSTIR PT and MNEE.** Initial, temporal, spatial, shade, duplication,
    MNEE's work list; the features pass.
 5. **The denoised frame.** The denoiser on the tensor cores (matched to

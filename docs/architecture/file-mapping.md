@@ -467,7 +467,10 @@ core's shared layouts are included as they are, with the CUDA branch of
 | the schedule carried out with the path pass and the tone map; the accumulated image and the failure count read back | Frame graph | `src/cuda/frame/renderer.{h,cpp}`, `offline_frames.{h,cpp}` |
 | device code: the vector types' operators and functions, under Metal's names; hashing, warps, transforms, sRGB; packed layouts read | GPU backend | `src/cuda/math/*.cuh`, `src/cuda/device/layout.cuh`, new |
 | device code: the sampler, the camera, the shapes and their intersection program, textures, materials, media, lights, uniform light selection, the scene's view, the film, the path integrator, tracing | each its family | `src/cuda/<family>/*.cuh`, from `src/metal/<family>/*.metal.h` |
-| probes of each family's device code against the core's; the headless program rendering the reference graph | tests | `tests/cuda/` |
+| the shapes' intersection program, one for every pass, its shapes and table from its structure's hit record; trace() and occluded() over optixTraverse | Acceleration | `src/cuda/acceleration/intersection.cuh`, `trace.cuh`, new |
+| a kind no case of a dispatch handles, refused when device code runs (nvcc does not warn of an enumerator a switch leaves out, where Metal's -Wswitch refuses it when it compiles) | GPU backend | `src/cuda/device/layout.cuh`, `unhandled_kind` |
+| the probe tests of eight families (sampler, camera, shapes, textures, lights, film, encodings, BSDFs), one source for both backends, each backend's runner behind `<probe_runner.h>` (SF.12); CUDA's runner and probe kernels | tests | `tests/gpu/*_test.cpp`, `tests/gpu/support/probe_runner.h` (`ProbeScene`), `tests/cuda/support/probe_runner.h`, `tests/cuda/kernels/`, new |
+| the headless program rendering the reference graph, the same bytes twice; the headless shell test on both platforms | tests | `tests/cuda/headless_test.cpp`, `tests/CMakeLists.txt` |
 
 ## Not here yet
 
