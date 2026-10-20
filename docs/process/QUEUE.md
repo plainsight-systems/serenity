@@ -239,10 +239,11 @@ This file tracks active and accepted work.
    then its window; then HIP with HIPRT on AMD's Strix Halo; then
    Direct3D 12 on the Xbox Series X (where the split scene and console
    async compute return). The CUDA backend's plan,
-   `docs/research/2026-10-19-cuda-backend.md`: Phases 0 to 4 done
-   2026-10-19 (the reference graph and the data set's input graph render
-   on the RTX 3090 Ti, the same pictures as the Mac's); next Phase 5, the
-   denoised frame, the demo graph and its frame time.
+   `docs/research/2026-10-19-cuda-backend.md`: Phases 0 to 5 done
+   2026-10-20 (the reference graph, the data set's input graph and the
+   demo graph render on the RTX 3090 Ti, the same pictures as the Mac's;
+   the demo's frame 11.2 ms at 1920 x 1080 and 39.6 ms at 3456 x 2234,
+   the Mac's 17.37 and 58.30); next Phase 6, the data set on the 3090.
 
 3. Reservoir reuse as kernels, tuned per target: tiling, layout and
    fusion of the merge passes, what each costs and where the bytes go, on

@@ -428,7 +428,7 @@ construction, every pass kind it does not build yet.
 | the submission's bookkeeping apart from the driver: sequences, slots, what is settled, the misuses refused | GPU backend | `src/cuda/device/frame_sequence.{h,cpp}` |
 | the offscreen target and its readback | GPU backend | `src/cuda/device/offscreen.{h,cpp}` |
 | the test pattern, the kernel and its launch | Pass | `src/cuda/passes/test_pattern/test_pattern.{cu,h,cpp}` |
-| the schedule carried out: each pass kind this backend builds, every other refused (`unbuilt_pass`) | Frame graph | `src/cuda/frame/renderer.{h,cpp}` |
+| the schedule carried out, pass by pass (Phase 3 to 4 refused each kind not built yet by name, `unbuilt_pass`; removed in Phase 5, when every kind is built) | Frame graph | `src/cuda/frame/renderer.{h,cpp}` |
 | CUDA's offline renderer and the factory | GPU backend | `src/cuda/frame/offline_frames.{h,cpp}` |
 | the kernels compiled by `nvcc` with flags pinned in one place, embedded; the bytes-to-header script both backends' libraries use | build | `cmake/CudaModules.cmake`, new; `cmake/embed_bytes_script.cmake`, from `embed_metallib_script.cmake` |
 | `nvcc` and the driver pinned | build | `cmake/toolchain.json`, "linux"; `tools/check_toolchain.py` |
@@ -500,6 +500,29 @@ parameters, Metal's frame resources as one uploaded struct.
 | the probe tests of the families that trace (acceleration, leave, path, MNEE, scene block), one source for both backends; each backend's traced-probe and accumulating harness behind one name, found by the include path | tests | `tests/gpu/*_test.cpp`; `tests/{gpu,cuda}/support/{traced_probe,accumulating_rig}.h` |
 | CUDA's probes for those families: the tracing ones as ray generation programs of one OptiX module over positional bindings, the others kernels | tests | `tests/cuda/kernels/{traced_probes.cu,probe_launch.h,path_probe.cu,mnee_probe.cu,scene_block_probe.cu}`, new |
 | the headless shell: the input graph's frames the same bytes twice | tests | `tests/cuda/headless_test.cpp` |
+
+## The denoised frame on CUDA
+
+The CUDA backend's Phase 5 (`docs/research/2026-10-19-cuda-backend.md`,
+"Phase 5's design"): the demo graph on the RTX 3090 Ti, the network on
+the tensor cores, the depth of field, the frame's two halves on two
+streams, and the frame time the headless program reports.
+
+| What | Axis | Where |
+|---|---|---|
+| a frame begun in one part or two, the second on its own stream after the light half's hand-off event; each frame's GPU instants on one timeline | GPU backend | `src/cuda/device/submission.{h,cpp}`, `frame_sequence.{h,cpp}` |
+| the tensor cores' product: fragments loaded from shared memory and multiplied, half in, float sums | GPU backend | `src/cuda/device/matrix.cuh`, new |
+| the denoiser: the depth median, the input, the convolutions, the pools and the output, and the weights in its layouts | Pass | `src/cuda/passes/denoise/`, new |
+| the depth of field's kernels, line for line | Pass | `src/cuda/passes/depth_of_field/`, new |
+| what is uploaded or zeroed once, at construction or a new size, waited for, as the legacy stream's copies are not ordered before the frames' streams | GPU backend | `src/cuda/device/buffer.{h,cpp}` (upload_now, zero_now) |
+| Metal's vector names the depth of field needs; a launch's third dimension, the convolutions' output chunks | GPU backend | `src/cuda/math/vector.cuh`, `src/cuda/device/module.{h,cpp}` |
+| the denoiser's activations, history, median and hand-off; the depth of field's images | Frame graph | `src/cuda/frame/denoise_images.{h,cpp}`, `depth_of_field_images.{h,cpp}`, new |
+| the output's launch struct beside the light's; the hand-off ringed by the slot (the light-size and full-size features a set a slot, the fill writing the slot's hand-off and keeping no image of its own); the full-size albedo; the two halves recorded; the network's input read back | Frame graph | `src/cuda/frame/renderer.{h,cpp}`, `checkerboard_images.{h,cpp}` |
+| Metal's offscreen frame returning what its begin() settled, for the seam's settled samples | Frame graph | `src/metal/frame/renderer.{h,cpp}` (render_offscreen_frame) |
+| the instants of every settled frame, through the seam, from both backends | Presentation | `src/core/presentation/offline_renderer.h`; `src/{metal,cuda}/frame/offline_frames.{h,cpp}` |
+| `--times`: the frame-time summary each second of GPU time, the frames back to back, a frame waited for only to be read back | Presentation (headless) | `src/headless/{options,run,main}`, `times.{h,cpp}`, new |
+| the summary's instants: the backend's one timeline, host time on Metal, the GPU's on CUDA | Measurement | `src/core/measurement/frame_times.h` |
+| the denoiser against PyTorch's fixture, the hand-off, the input graph to the demo's hand-off, one source for both backends, each backend's runner and rigs behind one name; the parts' bookkeeping; the times' parse and line; the denoised pipeline's same bytes twice | tests | `tests/gpu/{denoise,features}_test.cpp`; `tests/{gpu,cuda}/support/{denoise_runner,hand_off_rig,frame_rig}.h`, `tests/gpu/support/denoise_fixture.h`; `tests/cuda/kernels/delay.cu`; `tests/cuda/frame_sequence_test.cpp`, `tests/options_test.cpp`, `tests/cuda/headless_test.cpp` |
 
 ## Not here yet
 

@@ -488,6 +488,118 @@ probe runner's is. The integration test renders the input graph the same
 twice. The features test, the network's input graph rendering the demo
 graph's light to the bit, needs the demo graph, and joins in Phase 5.
 
+## Phase 5's design, checked 2026-10-20
+
+Written before Phase 5's headers, as Phases 3's and 4's were: what it
+rests on checked first on the RTX 3090 Ti with probes outside the
+repository, in NVIDIA's PTX ISA (9.4, "Matrix Fragments for
+`mma.m16n8k8`", "`ldmatrix`"), and against a shipped denoiser's CUDA
+backend, Intel's Open Image Denoise (`devices/cuda`, `main` at 6602ee2,
+read 2026-10-20).
+
+**What it renders.** The demo graph, `graphs/restir_pt_denoised.toml`:
+Phase 4's light at half the output's size each way, the network at the
+output's size with the full-size albedo, the depth of field after it and
+the tone map; and its frame time, the one measurement, at 1920 x 1080
+and at the Mac's window's 3456 x 2234, beside the Mac's 17.37 and 58.30
+ms. The network is `denoiser-v2-model/wide`, copied to the 3090 beside
+both of its trees (its SHA256SUMS checked there).
+
+**Proven on the machine.**
+
+- The tensor cores' product in the layouts Metal's convolution keeps:
+  `mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32` (sm_75 and later),
+  A 16 pixels by 8 input channels, each pixel's 8 channels contiguous in
+  shared memory, loaded by `ldmatrix.m8n8.x2`; B 8 input channels by 8
+  output channels, a block of the taps' rows `[k][channels]`, loaded by
+  `ldmatrix.m8n8.x1.trans`; C in f32 by the ISA's fragment rows (lane / 4,
+  and 8 more) and columns (2 (lane % 4), and 1 more). Against the CPU in
+  double, 16 x 32 outputs of 8 products and a C of 1: 2.8e-7 at most, the
+  f32 sum's rounding.
+- A frame's two halves on two streams: the light half on one, an event
+  recorded after it, the image half on the other after
+  `cuStreamWaitEvent` on that event. Six frames of 5 ms halves: every
+  image half began after its own light half and ran beside the next
+  frame's light half, five of five; the halves' start and end events, read
+  as `cuEventElapsedTime` from one event recorded at the run's start, put
+  both streams on one timeline.
+
+**Checked against OIDN.** Its CUDA backend runs the same kind of U-Net the
+same way: activations half floats, channels innermost (HWC) in blocks of
+8, "required by Tensor Core operations"; f32 accumulators; bias and ReLU
+fused after the product; the convolution an implicit matrix product
+(CUTLASS's, on `mma.sync`); on the caller's stream. So the port keeps
+Metal's kernels' structure (contract 18's blocks of 8, the half-in,
+float-sum products, the one-pixel zero borders, the decoders reading the
+level below upsampled and the skip where each is) on `mma.sync`. Not
+taken, as tuning after the port: CUTLASS's tiles (256 x 32 x 32 a block,
+its pipelined loads), which are a rewrite of the kernels, not their
+translation.
+
+**The denoiser.** Metal's 23 dispatches as 23 CUDA kernel launches on the
+image half's stream, in its order (passes/denoise/): the depth median's
+histogram and select (its threadgroup atomics shared-memory atomics), the
+input, the convolutions (`conv3x3` for 1 to 4 output blocks a block of
+threads, as Metal's pipelines), the max pools and the output (the head's
+product on `mma.sync` too). A thread block is contract 18's: four warps
+of 32, a warp a row of 32 pixels; a row's four 8 x 8 pixel blocks are two
+16-pixel tiles. The weights converted once, at construction, from the
+core's loader into Metal's layouts. DenoiseImages as Metal's, device
+memory zeroed when made (the borders are never written), the hand-off of
+the light's radiance one image a frame slot.
+
+**The depth of field** (contract 21): Metal's kernels translated line for
+line, their images DepthOfFieldImages at the core's sizes.
+
+**Two sizes, two launch structs.** A denoised graph renders its light at
+the light size and its image half at the output's, as Metal's (two rings
+of frame constants and camera). Each frame uploads two FrameLaunch: the
+light's, which every pass of the light half reads, and the output's, its
+frame constants and camera framed at the output's size and its feature
+images the full-size set, which the full-size albedo's features launch
+and every pass of the image half read. The image half's passes find the
+light half's arrays they read by address in it, the hand-off's slot's.
+
+**Two halves** (Metal's renderer.h, "Two halves"). The submission begins
+a frame with one part or two (Metal's `Parts`); with two, it has a second
+stream, and `hand_off()`, called by the renderer after the light half,
+records the slot's event on the light stream and makes the image stream
+wait for it. A frame's completion event is recorded on the stream its
+last work is on, the image stream for two parts, so a slot is reused only
+once its image half has completed. The hand-off is ringed by the slot as
+Metal's: the features at both sizes and the light's radiance, one copy a
+slot. Which frames are begun, handed off and committed, and the misuses
+refused (a hand-off in a one-part frame, a commit of a two-part frame not
+handed off), are the frame sequence's bookkeeping, apart from the driver,
+and unit tested. One part records both halves on the light stream, the
+same work in the same order: the same pixels, as a test checks.
+
+**The frame time.** The 3090 has no window yet, so the headless program
+measures: `--times` reports the frame-time summary each second of GPU
+time (core/measurement/frame_times.h, the window's), one line a period.
+Each frame's GPU instants are two events, one recorded on the light
+stream as the frame begins and one with its completion event,
+`cuEventElapsedTime` from an event recorded when the submission is made:
+the GPU's timeline, not host time, which the summary only subtracts
+within (its header says so for both backends). The span is float
+milliseconds, its step 0.5 us and, past the first minutes of a run,
+float's (0.004 ms at a minute): stated, not hidden. The program waits for
+a frame only to read it back, so frames not written run back to back and
+the two halves overlap; it reads the instants of every settled frame
+through the seam (`OfflineRenderer::settled_frames()`), which Metal's
+backend fills from its submissions' feedback, so the same command
+measures on both machines. Measured on the release build, the GPU
+otherwise idle (`nvidia-smi`), the window's figure on the Mac unchanged.
+
+**Tests.** The denoiser against PyTorch's fixture (`tests/gpu/
+denoise_test.cpp`: each output within 1e-3, relative, and a network
+perturbed off it; two halves against one, the same pixels) and the input
+graph's light and features to the demo's hand-off to the bit (`features_
+test.cpp`), one source for both backends behind the harness names; the
+headless shell writes the demo graph's frames the same twice; the
+submission's parts, unit tested without the GPU; the times' line, a
+function tested directly.
+
 ## Phases
 
 0. **What is not Metal's moves into the core,** on the Mac, before any
@@ -662,7 +774,41 @@ graph's light to the bit, needs the demo graph, and joins in Phase 5.
    them on the rerun. Not timed: the demo graph comes in Phase 5.
 5. **The denoised frame.** The denoiser on the tensor cores (matched to
    PyTorch), depth of field, the frame's two halves: the demo graph, its
-   frame time.
+   frame time. Its design: "Phase 5's design", above. **Done 2026-10-20**
+   (branch `cuda`; file-mapping.md, "The denoised frame on CUDA"): the
+   demo graph renders on the RTX 3090 Ti, the network's convolutions and
+   head on `mma.sync` (`cuda/device/matrix.cuh`), the depth of field's six
+   kernels line for line, the frame's halves on two streams. Every pass
+   the core schedules is built, so `unbuilt_pass` and its test are gone.
+   What the translation found: the driver's synchronous copy from pageable
+   memory returns before its DMA lands, and its memset too runs on the
+   legacy stream, which the submission's non-blocking streams do not wait
+   for: the backend's one-time uploads and zeroing, Phase 3's and 4's
+   among them, now wait for the copy (`cuda/device/buffer.h`, upload_now,
+   zero_now), found when a probe read a freed buffer's old bytes at its
+   new one's address. OptiX's first launches of a renderer wait for the
+   device once (the path tree's 11 ms, MNEE's 4, every later one 0.01
+   ms): the first frame's, never a later one's. The denoiser's conv3x3
+   against a CPU convolution in double: every output within one half ulp
+   (5.2e-4 relative at worst, half's own step 4.9e-4); its head 3.5e-7.
+   Tests: the denoiser against PyTorch's fixture, the hand-off (two parts
+   against one, the same bits; the hazard exercised from the third frame,
+   the first frame's OptiX wait above holding up the second), and the
+   input graph's light and features to the demo's hand-off to the bit,
+   one source for both backends behind `<denoise_runner.h>`,
+   `<hand_off_rig.h>` and `<frame_rig.h>`; the submission's parts unit
+   tested; the headless shell writes the denoised pipeline's frames the
+   same twice; `--times` parsed and its line, tested directly. Gates: both
+   machines' three presets at 0 warnings, ctest green under each, `make
+   check` green, Metal's outputs and refusals the same as at 4a021ec. The
+   image: the demo graph on the marbles at 1920 x 1080, its last of 38
+   frames at t = 120, on both machines, side by side: the same picture,
+   each channel's mean within 0.25 of a level. **The frame time**, release
+   build, the GPU otherwise idle, headless `--times` over frames 7000 to
+   7599 (t = 116.7 to 126.7 s), each period's mean steady: **11.2 ms at
+   1920 x 1080 (89 fps), 39.6 ms at 3456 x 2234 (25 fps)**, beside the
+   Mac's 17.37 and 58.30 ms in its window. Every pass is the port's,
+   untuned: the kernels' tuning is after the other backends.
 6. **The data set on the 3090.** The script run there, its manifest
    naming the machine.
 
