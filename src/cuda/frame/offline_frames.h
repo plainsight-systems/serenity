@@ -24,9 +24,8 @@ namespace serenity::cuda {
 // order, released in reverse after the frames in flight; and the factory,
 // make_offline_renderer(), which the headless program reaches by linking
 // this backend. What the backend does not render yet it refuses by name:
-// no pass built today counts failures (each count 0, which is what it
-// counted), keeps an accumulated image or writes features, so reading one
-// back throws CudaError.
+// no pass built today counts lost MNEE requests (0, which is what it
+// counted) or writes features, so reading them back throws CudaError.
 class OfflineFrames final : public presentation::OfflineRenderer {
  public:
   OfflineFrames(const frame::Schedule& schedule,

@@ -11,7 +11,7 @@ OfflineFrames::OfflineFrames(const frame::Schedule& schedule,
                              frame::Extent size)
     : submission_(device_),
       target_(submission_, size),
-      renderer_(submission_, schedule, scene) {}
+      renderer_(device_, submission_, schedule, scene) {}
 
 std::uint64_t OfflineFrames::render(const frame::FrameInputs& inputs) {
   return render_to_offscreen(submission_, target_, renderer_, inputs);
@@ -21,8 +21,12 @@ void OfflineFrames::wait(std::uint64_t sequence) {
   submission_.wait_until_complete(sequence);
 }
 
-// No pass the backend builds today counts either (renderer.h).
-std::uint64_t OfflineFrames::non_finite_samples() const { return 0; }
+std::uint64_t OfflineFrames::non_finite_samples() const {
+  return renderer_.non_finite_samples();
+}
+
+// No pass the backend builds today counts lost MNEE requests: MNEE arrives
+// with ReSTIR PT (renderer.h).
 std::uint64_t OfflineFrames::mnee_lost_requests() const { return 0; }
 
 std::size_t OfflineFrames::displayed_bytes() const {
@@ -33,10 +37,8 @@ void OfflineFrames::read_displayed(std::span<std::uint8_t> out) {
   target_.read_rgba(out);
 }
 
-void OfflineFrames::read_accumulated(std::span<float> /*out*/) {
-  throw CudaError(
-      "OfflineFrames::read_accumulated: no pass the CUDA backend builds yet "
-      "keeps an accumulated image");
+void OfflineFrames::read_accumulated(std::span<float> out) {
+  renderer_.read_accumulated(out);
 }
 
 presentation::OfflineRenderer::Features OfflineFrames::read_features() {

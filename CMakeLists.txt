@@ -3,8 +3,7 @@ cmake_minimum_required(VERSION 3.25)
 # ---------------------------------------------------------------------------
 # Two platforms, each with its backend (docs/research/2026-10-19-cuda-backend.md):
 # macOS, Apple silicon, through Metal; Linux, the RTX 3090 Ti, through CUDA
-# and OptiX, whose backend arrives in its Phase 2: until then Linux builds
-# the core, the measuring program and the tests that need no GPU. The
+# and OptiX, built a phase at a time. The
 # presets are the same on both (CMakePresets.json), so `cmake --preset
 # native-release` is one command everywhere; what only the Mac needs is
 # set here, before the languages are enabled.
@@ -35,7 +34,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(serenity_languages CXX C)
     set(serenity_compiler_id "Clang")
 else()
-    message(FATAL_ERROR "serenity: builds on macOS (Metal) and Linux (CUDA, from its Phase 2), not ${CMAKE_SYSTEM_NAME}.")
+    message(FATAL_ERROR "serenity: builds on macOS (Metal) and Linux (CUDA), not ${CMAKE_SYSTEM_NAME}.")
 endif()
 foreach(language ${serenity_languages})
     if(NOT CMAKE_${language}_COMPILER_ID STREQUAL serenity_compiler_id)
@@ -143,6 +142,28 @@ FetchContent_Declare(
     SYSTEM  # its headers' warnings are its own, as the other dependencies' are
 )
 FetchContent_MakeAvailable(SDL3)
+endif()
+
+# The RTX 3090 Ti's: OptiX's headers, for the CUDA backend's rays.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+# ---------------------------------------------------------------------------
+# OptiX 9.1.0: NVIDIA's header-only distribution of the API, whose runtime
+# is the driver's (cmake/toolchain.json pins it). Pinned by commit; fetched
+# here and never committed, since NVIDIA's licence allows redistributing
+# binaries alone (docs/research/2026-10-19-cuda-backend.md). Its host half
+# reaches the driver through a function table (optix_stubs.h), which one
+# file defines (src/cuda/device/optix_context.cpp), and its device half is
+# included by the programs alone.
+# ---------------------------------------------------------------------------
+FetchContent_Declare(
+    optix_dev
+    GIT_REPOSITORY https://github.com/NVIDIA/optix-dev.git
+    GIT_TAG        f1f6dd803f3159992d248178f6e09421c6eb8b6d  # OptiX 9.1.0
+)
+FetchContent_MakeAvailable(optix_dev)
+add_library(optix_headers INTERFACE)
+target_include_directories(optix_headers SYSTEM INTERFACE "${optix_dev_SOURCE_DIR}/include")
+set(SERENITY_OPTIX_INCLUDE_DIR "${optix_dev_SOURCE_DIR}/include")
 endif()
 
 # toml++: reading frame graph and scene files (src/core/frame/graph_file.cpp and
@@ -302,30 +323,52 @@ endif()
 
 # ---------------------------------------------------------------------------
 # CUDA backend, on Linux: the only code that uses CUDA's host API. Its kernels
-# are compiled into it (cmake/CudaModules.cmake), one module a pass, as
-# serenity::cuda_modules::<pass>. Built a phase at a time
+# and its OptiX programs are compiled into it (cmake/CudaModules.cmake), one
+# module a pass, as serenity::cuda_modules::<pass> and
+# serenity::optix_modules::<pass>. Built a phase at a time
 # (docs/research/2026-10-19-cuda-backend.md); its renderer refuses the
 # passes it does not build yet.
 # ---------------------------------------------------------------------------
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     include(CudaModules)
     add_library(serenity_cuda STATIC
+        src/cuda/acceleration/scene_acceleration.cpp
         src/cuda/device/buffer.cpp
         src/cuda/device/device.cpp
         src/cuda/device/error.cpp
         src/cuda/device/frame_sequence.cpp
+        src/cuda/device/frame_upload.cpp
+        src/cuda/device/images.cpp
         src/cuda/device/module.cpp
         src/cuda/device/offscreen.cpp
+        src/cuda/device/optix_context.cpp
+        src/cuda/device/pipeline.cpp
         src/cuda/device/submission.cpp
+        src/cuda/film/failure_count.cpp
+        src/cuda/frame/accumulation.cpp
+        src/cuda/frame/frame_images.cpp
         src/cuda/frame/offline_frames.cpp
         src/cuda/frame/renderer.cpp
+        src/cuda/passes/path/path.cpp
         src/cuda/passes/test_pattern/test_pattern.cpp
+        src/cuda/passes/tone_map/tone_map.cpp
+        src/cuda/scene/light_glows.cpp
+        src/cuda/scene/scene_buffers.cpp
+        src/cuda/scene/shape_transforms.cpp
     )
-    target_link_libraries(serenity_cuda PUBLIC serenity_core CUDA::cuda_driver)
+    target_link_libraries(serenity_cuda PUBLIC serenity_core CUDA::cuda_driver optix_headers ${CMAKE_DL_LIBS})
     target_compile_options(serenity_cuda PRIVATE ${SERENITY_SOURCE_WARNINGS})
     serenity_add_cuda_module(
         TARGET serenity_cuda NAME test_pattern
         SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/test_pattern/test_pattern.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_cuda_module(
+        TARGET serenity_cuda NAME tone_map
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/tone_map/tone_map.cu"
+        INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    serenity_add_optix_module(
+        TARGET serenity_cuda NAME path
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/passes/path/path.cu"
         INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 endif()
 
