@@ -105,10 +105,6 @@ static_assert(bindings::restir_pt::mnee_header < max_restir_pt_buffers);
 static_assert(bindings::restir_pt::last_light_power < max_restir_pt_buffers);
 static_assert(bindings::mnee::lost < max_restir_pt_buffers);
 
-// The reuse textures' seed: fixed, so every run pairs the same pixels
-// (core/sampling/pairing.h).
-constexpr std::uint64_t pairing_seed = 0x5e2e417f;
-
 // Whether `schedule` has a pass of `kind`.
 bool has(const frame::Schedule& schedule, frame::PassKind kind) {
   return std::ranges::find(schedule.passes, kind) != schedule.passes.end();
@@ -545,7 +541,7 @@ void Renderer::make_restir_pt(const Device& device,
   const double sigma =
       sampling::reuse_texture_sigma(settings.sigma, feeds_network_);
   const std::vector<std::uint16_t> textures =
-      spatial ? sampling::reuse_textures(sigma, pairing_seed)
+      spatial ? sampling::reuse_textures(sigma, sampling::reuse_texture_seed)
               : std::vector<std::uint16_t>(1, 0u);
   restir_pt_.emplace(device, submission_, settings, textures, spatial, temporal,
                      scene->light_counts.lights);

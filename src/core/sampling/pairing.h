@@ -75,6 +75,10 @@ std::vector<std::uint16_t> reuse_texture(std::uint32_t width, double sigma,
 // its own seed derived from `seed`.
 std::vector<std::uint16_t> reuse_textures(double sigma, std::uint64_t seed);
 
+// The renderers' seed for reuse_textures(): fixed, so every run, on every
+// backend, pairs the same pixels.
+inline constexpr std::uint64_t reuse_texture_seed = 0x5e2e417f;
+
 // The sigma the reuse textures are built at, for a graph's `sigma` in
 // pixels: the same, or, when the light is traced checkerboarded (contract
 // 20), sigma over the traced lattice's step, so its neighbors are drawn
