@@ -134,7 +134,7 @@ struct FrameLaunch {
 // padding but the contracts' own.
 static_assert(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): the layout
-    sizeof(FrameLaunch) == 656,
-    "FrameLaunch must be the same 656 bytes on the host and in programs");
+    sizeof(FrameLaunch) == 648,
+    "FrameLaunch must be the same 648 bytes on the host and in programs");
 
 }  // namespace serenity::cuda

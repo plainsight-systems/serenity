@@ -1,10 +1,11 @@
 // The acceleration structure (metal/acceleration/scene_acceleration.h), on
 // the GPU, probed ray by ray through the tracing loop (kernels/
 // trace_probe.metal): a hit, tested in a shape's own space, is at the
-// world's distance and names the shape, at any scale; and a moved shape is
-// hit where it moved to and not where it was, through both frame slots;
-// and contract 19's masks (core/contracts/ray_mask.h): the occluders never
-// find a light and find each surface as everything would, moving or not.
+// world's distance, within the backend's gap where it traces a mesh
+// (support/traced_probe.h, hit_gap()), and names the shape, at any scale; and a
+// moved shape is hit where it moved to and not where it was, through both frame
+// slots; and contract 19's masks (core/contracts/ray_mask.h): the occluders
+// never find a light and find each surface as everything would, moving or not.
 //
 // Its own dispatch, not the probe runner's (support/traced_probe.h): it
 // binds the structures' block, and records the structures' update in
@@ -114,24 +115,31 @@ TEST_CASE(
                                       // - 0.02^2) short of 5
   };
   const std::vector<TraceHit> hits = probe(traced, rays, std::nullopt);
+  // Within `relative` of `expected`, and the backend's gap for `shape`
+  // along a ray meeting its surface at `cosine` (traced_probe.h).
+  const auto near = [&](float t, double expected, double relative,
+                        std::uint32_t shape, double cosine) {
+    return std::abs(t - expected) <=
+           relative * expected + traced.hit_gap(shape) / cosine;
+  };
   CHECK(hits[0].found == 1u);
-  CHECK(hits[0].t == doctest::Approx(firefly_distance - firefly_radius)
-                         .scale(0)
-                         .epsilon(1e-6));
+  CHECK(near(hits[0].t, firefly_distance - firefly_radius, 1e-6, 0u, 1.0));
   CHECK(hits[0].shape == 0u);
   CHECK(hits[1].found == 1u);
-  CHECK(hits[1].t == doctest::Approx(12.5).scale(0).epsilon(1e-6));
+  CHECK(near(hits[1].t, 12.5, 1e-6, 1u, 1.0));
   CHECK(hits[1].shape == 1u);
   CHECK(hits[2].found == 1u);
-  CHECK(hits[2].t == doctest::Approx(9.0).scale(0).epsilon(1e-6));
+  CHECK(near(hits[2].t, 9.0, 1e-6, 2u, 1.0));
   CHECK(hits[2].shape == 2u);
   CHECK(hits[3].found == 0u);
   CHECK(hits[4].found == 1u);
-  CHECK(hits[4].t == doctest::Approx(firefly_distance -
-                                     std::sqrt(firefly_radius * firefly_radius -
-                                               0.02 * 0.02))
-                         .scale(0)
-                         .epsilon(1e-5));
+  // Off the firefly's middle by 0.02 of its 0.03: the ray meets its
+  // surface at a cosine of sqrt(1 - (2/3)^2).
+  const double off_cosine = std::sqrt(1.0 - (0.02 / 0.03) * (0.02 / 0.03));
+  CHECK(near(hits[4].t,
+             firefly_distance -
+                 std::sqrt(firefly_radius * firefly_radius - 0.02 * 0.02),
+             1e-5, 0u, off_cosine));
 }
 
 TEST_CASE("a moved shape is hit where it moved to, and not where it was") {

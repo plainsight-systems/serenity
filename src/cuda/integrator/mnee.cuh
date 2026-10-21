@@ -306,12 +306,14 @@ struct Seed {
 
 // Step 1, on OptiX (docs/research/2026-10-19-cuda-backend.md, "Phase 4's
 // design"): Metal walks every box the segment enters with its own query
-// loop; here OptiX walks them and runs the seed's intersection program for
-// each (integrator/mnee_seed.cuh), which runs the loop's body,
-// seed_candidate(), on the seed this function keeps as a local and hands it
-// by a pointer in payload words 1 and 2 (the shape to ignore in word 0, as
-// a shadow ray's). Where the loop stopped, the program reports a hit, which
-// ends the traversal (TERMINATE_ON_FIRST_HIT); every other box it leaves
+// loop; here OptiX walks the occluders' boxes, the seed's own instance in
+// the scene's instance level, met by the seed's mask bit alone
+// (cuda/acceleration/scene_acceleration.h), and runs the seed's
+// intersection program for each (integrator/mnee_seed.cuh), which runs the
+// loop's body, seed_candidate(), on the seed this function keeps as a local and
+// hands it by a pointer in payload words 1 and 2 (the shape to ignore in word
+// 0, as a shadow ray's). Where the loop stopped, the program reports a hit,
+// which ends the traversal (TERMINATE_ON_FIRST_HIT); every other box it leaves
 // unreported, so OptiX goes on to the next. The seed is the same whatever
 // order the boxes come in, as Metal's is.
 //
@@ -392,20 +394,20 @@ __device__ inline Seed seed_segment(SceneT scene, float3 origin,
   SeedQuery query{scene.shapes(), scene.materials(), origin,
                   direction,      distance,          Seed{}};
   query.seed.usable = true;
-  const MaskedStructure traversed =
-      masked(scene.structure, serenity::contracts::RayMask::occluders);
-  if (traversed.empty) {
+  if (scene.structure->occluder_count == 0u) {
     return query.seed;  // no surface: clear
   }
   const auto address = reinterpret_cast<unsigned long long>(&query);
   uint ignored = ignore;
   uint high = uint(address >> 32u);
   uint low = uint(address & 0xffffffffull);
+  // The seed's instance alone carries the seed's bit, and its SBT offset
+  // names the seed's record (cuda/acceleration/structure_block.h).
   optixTraverse(
-      traversed.handle, origin, direction, 0.0f, distance, 0.0f,
-      OptixVisibilityMask(0xffu),
-      OPTIX_RAY_FLAG_DISABLE_ANYHIT | OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT,
-      serenity::cuda::seed_record, 1u, 0u, ignored, high, low);
+      scene.structure->scene, origin, direction, 0.0f, distance, 0.0f,
+      OptixVisibilityMask(serenity::cuda::seed_bit),
+      OPTIX_RAY_FLAG_DISABLE_ANYHIT | OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT, 0u,
+      1u, 0u, ignored, high, low);
   return query.seed;
 }
 

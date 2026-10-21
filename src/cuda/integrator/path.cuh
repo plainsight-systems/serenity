@@ -660,13 +660,13 @@ __device__ __forceinline__ Walk walk_path(Scene scene, Walk walk,
       gather.escaped(scene, L, beta, along, surface);
       break;
     }
-    const float3 point = along.origin + hit.t * along.direction;
+    const float3 point = hit.at.point;
     beta *= transmittance(scene.media(), medium, distance(from, point));
     if constexpr (Gather::observes_vertices) {
       gather.crossed(scene, medium, distance(from, point));
     }
     const serenity::contracts::SurfaceInteraction surface_at =
-        surface_interaction(scene.shapes(), hit.primitive, point,
+        surface_interaction(scene.shapes(), hit.primitive, hit.at,
                             along.direction);
 
     // Step 3.

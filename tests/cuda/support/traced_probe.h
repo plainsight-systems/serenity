@@ -33,7 +33,9 @@
 
 #include "core/contracts/transform.h"
 #include "core/scene/scene.h"
+#include "cuda/acceleration/mesh_levels.h"
 #include "cuda/acceleration/scene_acceleration.h"
+#include "cuda/acceleration/shape_meshes.h"
 #include "cuda/device/buffer.h"
 #include "cuda/device/device.h"
 #include "cuda/device/error.h"
@@ -61,9 +63,19 @@ class TracedScene {
               std::span<const std::uint32_t> moving)
       : buffers_(submission_, description),
         transforms_(submission_, description.shapes.transforms),
+        lights_(scene::light_shapes(description)),
+        levels_(cuda::sphere_levels(description)),
         acceleration_(
             optix_, submission_, description.shapes,
-            {.moving = moving, .lights = scene::light_shapes(description)}) {}
+            {.moving = moving, .lights = lights_, .levels = levels_}) {
+    for (std::size_t i = 0; i < levels_.size(); ++i) {
+      gaps_.push_back(
+          levels_[i] == cuda::no_level
+              ? 0.0
+              : cuda::icosphere_gaps.at(levels_[i]) *
+                    contracts::scale(description.shapes.transforms[i]));
+    }
+  }
   TracedScene(const TracedScene&) = delete;
   TracedScene& operator=(const TracedScene&) = delete;
   TracedScene(TracedScene&&) = delete;
@@ -75,13 +87,18 @@ class TracedScene {
   cuda::ShapeTransforms& transforms() noexcept { return transforms_; }
   cuda::SceneAcceleration& acceleration() noexcept { return acceleration_; }
 
+  // How far inside shape `shape`'s own surface, along its normal, a traced
+  // hit may lie: a sphere's mesh's gap (cuda/acceleration/mesh_levels.h);
+  // 0 for a box, whose triangles lie on its faces.
+  double hit_gap(std::uint32_t shape) const { return gaps_.at(shape); }
+
   // The pipeline of the probe `name`, its ray generation program
   // "__raygen__<name>", made at its first use.
   const cuda::Pipeline& pipeline(const std::string& name) {
     auto found = pipelines_.find(name);
     if (found == pipelines_.end()) {
       static constexpr std::array<std::string_view, 2> intersections{
-          "__intersection__shape", "__intersection__seed"};
+          "", "__intersection__seed"};
       const std::string ray_generation = "__raygen__" + name;
       const std::array<cuda::Pipeline::HitRecord, cuda::structure_records>
           records = acceleration_.hit_records(buffers_.block(),
@@ -108,6 +125,9 @@ class TracedScene {
   cuda::OptixContext optix_{device_};
   cuda::SceneBuffers buffers_;
   cuda::ShapeTransforms transforms_;
+  std::vector<std::uint32_t> lights_;
+  std::vector<std::uint8_t> levels_;
+  std::vector<double> gaps_;  // a shape each, for hit_gap()
   cuda::SceneAcceleration acceleration_;
   std::map<std::string, std::unique_ptr<cuda::Pipeline>> pipelines_;
 };

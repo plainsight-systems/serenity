@@ -77,6 +77,11 @@ class TracedScene {
   metal::ShapeTransforms& transforms() noexcept { return transforms_; }
   metal::SceneAcceleration& acceleration() noexcept { return acceleration_; }
 
+  // How far inside shape `shape`'s own surface, along its normal, a traced
+  // hit may lie: 0 here, where every shape is traced as its own geometry
+  // (each backend's harness says, tests/cuda/support/traced_probe.h).
+  static double hit_gap(std::uint32_t /*shape*/) noexcept { return 0.0; }
+
  private:
   metal::Device device_;
   metal::Submission submission_{device_};

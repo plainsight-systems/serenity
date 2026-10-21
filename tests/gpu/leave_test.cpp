@@ -11,11 +11,22 @@
 //
 // Every shape here is convex, so a ray leaving it outward hits it nowhere,
 // and a ray leaving it inward hits it once, on its far side: a self-hit is
-// an outward ray that hits the shape at all, or an inward ray that hits it
-// nearer than half the way across (for a sphere, half its chord 2 R |cos|;
-// for a box, a hundredth of its least half size, every query's point being
-// in the middle half of its face). An inward ray that hits no shape, or
-// another, started outside the shape: a leak, the offset too large for it.
+// an outward ray that hits the shape at all, or an inward ray that hits the
+// part of it it left nearer than half the way across (for a sphere, half
+// its chord 2 R |cos|; for a box, a hundredth of its least half size,
+// every query's point being in the middle half of its face). Where a
+// backend traces a sphere as a mesh (CUDA's), an inward ray at a grazing
+// angle near a triangle's edge rightly leaves through the next triangle
+// sooner than through a sphere, so a hit on another part at such an angle
+// (a cosine under 0.5, where a mesh's chord and the sphere's part) is no
+// self-hit; a shape of one primitive (Metal's) has one part. An inward ray that
+// hits no shape, or another, started outside the shape: a leak, the offset too
+// large for it.
+//
+// Each case's camera is where the scenes see such a shape from, its
+// surface 0.4 m off or three radii for a larger one, since a backend that
+// traces meshes chooses a sphere's mesh by how it is seen
+// (cuda/acceleration/mesh_levels.h).
 //
 // Its dispatch is support/traced_probe.h's, as acceleration_test.cpp's: it
 // binds the structures' block, which the probe runner does not.
@@ -118,9 +129,16 @@ std::string triple(Vec3 v) {
 }
 
 std::string scene_of(const Case& c) {
-  std::string text = R"([camera]
-position = [0, 0, 10]
-look_at = [0, 0, 0]
+  // The camera above the shape's middle (above).
+  const Vec3 middle = c.sphere ? c.center : 0.5 * (c.min + c.max);
+  const double top = c.sphere ? c.radius : 0.5 * (c.max.z - c.min.z);
+  const double size =
+      c.sphere ? c.radius
+               : 0.5 * std::max({c.max.x - c.min.x, c.max.y - c.min.y,
+                                 c.max.z - c.min.z});
+  const Vec3 eye = middle + Vec3{0.0, 0.0, top + std::max(0.4, 3.0 * size)};
+  std::string text = "[camera]\nposition = " + triple(eye) +
+                     "\nlook_at = " + triple(middle) + R"(
 vertical_fov_degrees = 40
 [environment]
 kind = "gradient"
@@ -220,7 +238,9 @@ Tally tally(const Case& c, const std::vector<LeaveResult>& results) {
                    : 0.01 * least_half;
       if (!again) {
         ++t.leaked;
-      } else if (static_cast<double>(r.t) < half_way) {
+      } else if ((r.hit_part == r.found_part ||
+                  std::abs(static_cast<double>(r.cosine)) >= 0.5) &&
+                 static_cast<double>(r.t) < half_way) {
         ++t.self_in;
       }
     }
@@ -296,9 +316,9 @@ TEST_CASE(
   }
   // And the check can fail, past what the offset promises: a sphere 2 mm
   // across 170 m off, where the step is 256 ulps of 100, 2 mm, its
-  // diameter: rays leaving it inward start near its far side and hit it
-  // short.
+  // diameter: rays leaving it inward start near its far side, and hit it
+  // short, or past it, and leak.
   const Tally small = run(sphere("sphere 2 mm across 170 m off",
                                  {100.0, 100.0, 100.0}, 0.001, {0.1, 300.0}));
-  CHECK(small.self_in > 0u);
+  CHECK(small.self_in + small.leaked > 0u);
 }

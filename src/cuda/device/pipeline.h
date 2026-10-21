@@ -32,9 +32,10 @@ namespace serenity::cuda {
 //   ray generation   the pass's body: one thread a pixel, tracing by
 //                    optixTraverse and reading the hit objects itself
 //                    (cuda/acceleration/trace.cuh)
-//   hit groups       one an intersection program, alone: no any-hit, no
-//                    closest-hit (the shapes'; MNEE's seed, whose program
-//                    walks a segment's boxes, integrator/mnee_seed.cuh)
+//   hit groups       no any-hit, no closest-hit: the shapes' meshes',
+//                    OptiX's built-in triangles with no program at all;
+//                    and MNEE's seed's intersection program, which walks a
+//                    segment's boxes (integrator/mnee_seed.cuh)
 //   miss             no program: a ray that hits nothing leaves a miss in
 //                    its hit object, which the ray generation program reads
 //
@@ -46,15 +47,18 @@ namespace serenity::cuda {
 // none (cuda/acceleration/structure_block.h, StructureRecord). The ray
 // generation program picks a record by the SBT offset it traces with. Written
 // once, at construction (CDSA.32: static data put once where its reader reads
-// it).
+// it). The triangles' record carries no data: a mesh's hit names its shape
+// by its instance (cuda/acceleration/structure_block.h).
 //
 // What every program of the backend's is compiled for (Programs below, and
-// the pipeline's compile options): a single geometry structure as the
-// traversable, of custom primitives, no exceptions enabled (OptiX's
+// the pipeline's compile options): one instance level over geometry
+// structures as the traversable (OptiX's single-level instancing), of
+// triangles and of custom primitives, no exceptions enabled (OptiX's
 // default), OptiX's default optimization and debug levels, and the launch
 // parameters in the variable the programs name. Trace depth 1, no
-// callables, stack sizes from OptiX's own helpers (optix_stack_size.h) for
-// those, as Cycles sets its own from its groups' sizes.
+// callables, a traversable graph two deep, stack sizes from OptiX's own
+// helpers (optix_stack_size.h) for those, as Cycles sets its own from its
+// groups' sizes.
 //
 // Made once, outside the frame loop (MEM.9); released with this object
 // (R.1), after the frames that launched it (submission.h, Lifetime), before
@@ -79,7 +83,8 @@ class Pipeline {
   // named, so no two strings pass in each other's places).
   struct Programs {
     std::string_view ray_generation;  // "__raygen__<pass>"
-    // the hit groups' programs, one each: "__intersection__<what>"
+    // the hit groups' programs, one each: "__intersection__<what>", or
+    // none ("") for built-in triangles
     std::span<const std::string_view> intersections;
     std::string_view launch_parameters;  // the programs' __constant__ name
     // 32-bit payload values a trace carries, as the programs use them

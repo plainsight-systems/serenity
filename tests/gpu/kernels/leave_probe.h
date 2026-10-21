@@ -38,16 +38,18 @@ static_assert(
 // One ray leaving the point a query found: whether the query found its
 // shape first; the side the leaving ray leaves on, as leave() decides it;
 // its cosine to the geometric normal; and what it hit, its distance from
-// where it starts.
+// where it starts. Which part of its shape each hit met: a mesh's
+// triangle where a backend traces one (CUDA's), 0 where a shape is one
+// primitive (Metal's).
 struct LeaveResult {
   uint32_t found;    // the query's ray hit its shape, nearest
   uint32_t outward;  // leaves_outward(): on the geometric normal's side
   uint32_t hit;      // the leaving ray hit a shape
   uint32_t hit_shape;
-  float t;       // the leaving ray's hit distance, where it hit
-  float cosine;  // its direction's dot product with the geometric normal
-  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
-  uint32_t padding[2];
+  float t;              // the leaving ray's hit distance, where it hit
+  float cosine;         // its direction's dot product with the geometric normal
+  uint32_t found_part;  // the part of its shape the query's ray met
+  uint32_t hit_part;    // the part the leaving ray met, where it hit
 };
 
 static_assert(

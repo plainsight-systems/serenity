@@ -1,30 +1,23 @@
 #pragma once
 
-// Axis: Acceleration (on the GPU: the structures a frame traces, by mask).
+// Axis: Acceleration (on the GPU: the structure a frame traces, by mask).
 //
-// What a pass's programs are told to trace the scene (Metal's
-// StructureBlock, metal/acceleration/structure_block.h): one geometry
-// structure for each ray mask (contract 19, core/contracts/ray_mask.h), by
-// its traversable handle, and the hit record each is traced with, whose
-// data, a StructureRecord (below), is what the intersection program tests a
-// box's shape with (cuda/device/pipeline.h). Written by the host
-// (scene_acceleration.h) into a pass's launch parameters each frame, read
-// by the programs (trace.cuh). Compiled by both the host compiler and nvcc;
-// CUDA's C++ on both sides, so one type.
+// What a pass's programs are told to trace the scene: one instance level
+// over the shapes' meshes (scene_acceleration.h,
+// docs/research/2026-10-20-nvidia-hardware-design.md), by its traversable
+// handle, each shape an instance whose id is the shape's index and whose
+// mask bits answer the questions contract 19 asks (core/contracts/
+// ray_mask.h), and one more instance, MNEE's seed's. Written by the host
+// into a pass's launch parameters each frame, read by the programs
+// (trace.cuh). Compiled by both the host compiler and nvcc; CUDA's C++ on
+// both sides, so one type.
 //
-//   everything        every shape, primitive i shape i (shapes/primitive.h),
-//                     traced with hit record everything_record, whose data
-//                     is 0: no table.
-//   occluders         the surfaces alone, in shape order, traced with hit
-//                     record occluders_record, whose data is the address of
-//                     the table naming each box's shape. With no light in
-//                     the scene, everything's own structure, its table the
-//                     identity; with no surface, no structure (handle 0)
-//                     and occluder_count 0, and a ray carrying occluders
-//                     finds nothing.
-//   occluder_count    the table's entries.
+//   scene            the instance level: every shape, and the seed's boxes.
+//   occluder_count   how many shapes are surfaces: 0 in a scene of lights
+//                    alone, where a ray carrying occluders finds nothing
+//                    and is not traced.
 //
-// 24 bytes, the handles first (CACHE.5), read once by each trace.
+// 16 bytes, the handle first (CACHE.5), read once by each trace.
 
 #include <optix_types.h>
 
@@ -37,43 +30,49 @@
 
 namespace serenity::cuda {
 
-// The hit records a pass's pipeline holds, in this order (pipeline.h): the
-// shapes' program over each structure, and MNEE's seed's over the
-// occluders' (integrator/mnee_seed.cuh), each traced with its record's
-// index as its SBT offset.
-inline constexpr unsigned everything_record = 0;
-inline constexpr unsigned occluders_record = 1;
-inline constexpr unsigned seed_record = 2;
-inline constexpr unsigned structure_records = 3;
+// The instances' mask bits (OptiX tests ray mask & instance mask, 8 bits):
+// every shape carries everything_bit, a surface occluder_bit too (no light
+// does), and the seed's instance seed_bit alone. A ray carries the one bit
+// of its question, so the seed's boxes are met only by a seed's segment.
+inline constexpr unsigned everything_bit = 1u;
+inline constexpr unsigned occluder_bit = 2u;
+inline constexpr unsigned seed_bit = 4u;
 
-// The hit groups, their intersection programs, in the order a pass's
-// pipeline is given them, and the payload words a trace carries: the
-// shape it ignores, and a seed's address in two.
-inline constexpr unsigned shape_group = 0;
+// The hit records a pass's pipeline holds, in this order (pipeline.h),
+// picked by the instance's SBT offset, a trace's own being 0: the shapes'
+// meshes, OptiX's built-in triangles with no program; and MNEE's seed's
+// intersection program over the occluders' boxes (integrator/
+// mnee_seed.cuh).
+inline constexpr unsigned triangles_record = 0;
+inline constexpr unsigned seed_record = 1;
+inline constexpr unsigned structure_records = 2;
+
+// The hit groups, in the order a pass's pipeline is given them, and the
+// payload words a trace carries: the shape a seed skips, and a seed's
+// address in two.
+inline constexpr unsigned triangles_group = 0;
 inline constexpr unsigned seed_group = 1;
 inline constexpr unsigned trace_payload_values = 3;
 
 struct StructureBlock {
-  OptixTraversableHandle everything;
-  OptixTraversableHandle occluders;
+  OptixTraversableHandle scene;
   std::uint32_t occluder_count;
   std::uint32_t padding;
 };
 
 static_assert(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): the layout
-    sizeof(StructureBlock) == 24,
-    "StructureBlock must be the same 24 bytes on the host and in programs");
+    sizeof(StructureBlock) == 16,
+    "StructureBlock must be the same 16 bytes on the host and in programs");
 
-// What the intersection program reads from its structure's hit record:
-// the table that names a box's shape, 0 where box i is shape i; and the
-// shapes' records, boxes and this frame's transforms (the scene's block's,
-// core/scene/scene_block.h, and cuda/scene/shape_transforms.h), each one
-// device copy for the run, so the record is written once, when the pass's
-// pipeline is made. In the record, not in a pass's launch parameters: the
-// program is the same for every pass that traces. Addresses on the host,
-// pointers in the programs (gpu::Array, scene_block.h); four 64-bit words,
-// the pipeline's HitData.
+// What MNEE's seed program reads from its hit record: the table that
+// names an occluders' box's shape, and the shapes' records, boxes and this
+// frame's transforms (the scene's block's, core/scene/scene_block.h, and
+// cuda/scene/shape_transforms.h), each one device copy for the run, so the
+// record is written once, when the pass's pipeline is made. Addresses on
+// the host, pointers in the programs (gpu::Array, scene_block.h); four
+// 64-bit words, the pipeline's HitData. The triangles' record carries
+// none: a mesh's hit names its shape by its instance.
 struct StructureRecord {
   gpu::Array<uint32_t> table;
   gpu::Array<shapes::ShapeRecord> shapes;

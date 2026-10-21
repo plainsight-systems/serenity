@@ -357,7 +357,9 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     include(CudaModules)
     add_library(serenity_cuda STATIC
+        src/cuda/acceleration/mesh_levels.cpp
         src/cuda/acceleration/scene_acceleration.cpp
+        src/cuda/acceleration/shape_meshes.cpp
         src/cuda/device/buffer.cpp
         src/cuda/device/device.cpp
         src/cuda/device/error.cpp

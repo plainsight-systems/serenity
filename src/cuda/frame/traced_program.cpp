@@ -6,11 +6,12 @@ namespace serenity::cuda {
 
 namespace {
 
-// The backend's intersection programs, in their groups' order
-// (structure_block.h).
-constexpr std::array<std::string_view, 2> intersections{"__intersection__shape",
+// The backend's hit groups' intersection programs, in their groups' order
+// (structure_block.h): none for the triangles, whose hits are OptiX's, and
+// the seed's.
+constexpr std::array<std::string_view, 2> intersections{"",
                                                         "__intersection__seed"};
-static_assert(shape_group == 0 && seed_group == 1);
+static_assert(triangles_group == 0 && seed_group == 1);
 
 }  // namespace
 

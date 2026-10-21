@@ -39,12 +39,15 @@ OptixPipelineCompileOptions compile_options(unsigned payload_values,
                                             const std::string& parameters) {
   OptixPipelineCompileOptions options{};
   options.usesMotionBlur = 0;
-  options.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
+  options.traversableGraphFlags =
+      OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
   options.numPayloadValues = static_cast<int>(payload_values);
   options.numAttributeValues = 2;  // OptiX's minimum; the hits carry none
   options.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
   options.pipelineLaunchParamsVariableName = parameters.c_str();
-  options.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_CUSTOM;
+  options.usesPrimitiveTypeFlags =
+      static_cast<unsigned>(OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE) |
+      static_cast<unsigned>(OPTIX_PRIMITIVE_TYPE_FLAGS_CUSTOM);
   return options;
 }
 
@@ -112,8 +115,11 @@ Pipeline::Pipeline(const OptixContext& context, std::span<const std::byte> ir,
   for (std::size_t i = 0; i < intersections.size(); ++i) {
     OptixProgramGroupDesc& hit = descriptions.at(first_hit_group + i);
     hit.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
-    hit.hitgroup.moduleIS = module;
-    hit.hitgroup.entryFunctionNameIS = intersections.at(i).c_str();
+    // No name: built-in triangles, intersected by OptiX, no program.
+    if (!intersections.at(i).empty()) {
+      hit.hitgroup.moduleIS = module;
+      hit.hitgroup.entryFunctionNameIS = intersections.at(i).c_str();
+    }
   }
   // NOLINTEND(cppcoreguidelines-pro-type-union-access)
   const OptixProgramGroupOptions group_options{};
@@ -150,9 +156,9 @@ Pipeline::Pipeline(const OptixContext& context, std::span<const std::byte> ir,
   check_optix(optixUtilComputeStackSizes(&sizes, link_options.maxTraceDepth, 0,
                                          0, &traversal, &state, &continuation),
               "optixUtilComputeStackSizes");
-  // One level: a single geometry structure.
+  // Two levels: the instances, then their geometry structures.
   check_optix(
-      optixPipelineSetStackSize(pipeline, traversal, state, continuation, 1),
+      optixPipelineSetStackSize(pipeline, traversal, state, continuation, 2),
       "optixPipelineSetStackSize");
 
   // The table: ray generation, miss, then the hit records, each its

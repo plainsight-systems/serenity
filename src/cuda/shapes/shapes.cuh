@@ -128,5 +128,52 @@ __device__ inline serenity::contracts::SurfaceInteraction surface_interaction(
   return s;
 }
 
+// Where a traced ray met a shape's mesh (acceleration/trace.cuh): the
+// point on the triangle it hit, in the world, from the triangle's vertices
+// and the hit's barycentrics, as Falcor and RTXDI find a hit's point; and
+// the triangle's outward unit normal, in the world.
+struct MeshPoint {
+  float3 point;
+  float3 face;
+};
+
+// Contract 1 for a traced hit on shape `shape`'s mesh, the ray along
+// `direction` (docs/research/2026-10-20-nvidia-hardware-design.md, "The
+// spheres as triangles"). The point is the triangle's: on the surface the
+// ray traced to a few ulps of its own coordinates, which is what a leaving
+// ray's offset assumes (integrator/surface.cuh), wherever the shape is and
+// whichever way the ray leaves. The geometric normal is the triangle's, so
+// a ray leaves on the side of the surface it traced and arrives from the
+// side it crossed. The shading normal is the shape's own at the point's
+// place on it, as a smooth mesh's interpolated normal stands for it: a
+// sphere's along its radius, a box's its face's (the triangle's). So the
+// BSDF sees the sphere and the ray sees the mesh, which differ by under a
+// degree at the levels used (mesh_levels.h); a direction the BSDF samples
+// above the shading normal's plane and below the triangle's, at a grazing
+// angle, leaves on the triangle's far side, as pbrt-v4 and Falcor let it
+// (both offset by the geometric normal, neither drops such a sample). The
+// object-space position is the shape's own point too, so a texture laid on
+// it (contract 1's object_position) is continuous across the triangles.
+__device__ inline serenity::contracts::SurfaceInteraction surface_interaction(
+    Shapes shapes, uint shape, MeshPoint at, float3 direction) {
+  const serenity::shapes::ShapeRecord record = shapes.records[shape];
+  const serenity::contracts::Transform placed = shapes.transforms[shape];
+  const OnShape on =
+      on_shape(shapes, shape, transform_to_object(placed, at.point));
+  serenity::contracts::SurfaceInteraction s{};
+  s.position = to_packed(at.point);
+  s.material = record.material;
+  s.geometric_normal = to_packed(at.face);
+  s.primitive = shape;
+  s.shading_normal =
+      to_packed(normalize(transform_direction(placed, on.normal)));
+  s.flags = dot(direction, at.face) < 0.0f
+                ? serenity::contracts::arrived_from_outside
+                : 0u;
+  s.object_position = to_packed(on.point);
+  s.interior = record.interior;
+  return s;
+}
+
 }  // namespace shaders
 }  // namespace serenity

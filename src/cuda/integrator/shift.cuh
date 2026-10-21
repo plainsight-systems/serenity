@@ -192,15 +192,14 @@ __device__ inline Primary primary_hit(path::Scene scene, CameraRay camera,
   if (!hit.found || light_at(scene.lights(), hit.primitive).is_light) {
     return Primary{false, Shading{}, 0.0f};
   }
-  const float3 point = along.origin + hit.t * along.direction;
   const serenity::contracts::SurfaceInteraction surface = surface_interaction(
-      scene.shapes(), hit.primitive, point, along.direction);
+      scene.shapes(), hit.primitive, hit.at, along.direction);
   const Shading here{surface,
                      resolve_bsdf(scene.materials(), scene.textures(), surface),
                      -along.direction, serenity::contracts::no_medium};
   return Primary{
       here.bsdf.kind != serenity::contracts::BsdfKind::none, here,
-      reconnection::footprint_threshold(footprint, camera.origin, point,
+      reconnection::footprint_threshold(footprint, camera.origin, hit.at.point,
                                         to_float3(surface.geometric_normal))};
 }
 
@@ -602,13 +601,13 @@ __device__ inline Shifted replay_end(
                                       here.surface.primitive))) {
     return failed();
   }
-  const float3 point = along.origin + hit.t * along.direction;
+  const float3 point = hit.at.point;
   beta *= transmittance(scene.media(), medium,
                         distance(to_float3(here.surface.position), point));
   // The struck light must not pass the criteria from y_{d-1}: the source's
   // did not.
   const c::SurfaceInteraction lit =
-      surface_interaction(scene.shapes(), hit.primitive, point, wi);
+      surface_interaction(scene.shapes(), hit.primitive, hit.at, wi);
   const Before last{to_float3(here.surface.position),
                     to_float3(here.surface.geometric_normal),
                     reconnection::lobe_roughness(next.lobe, here.bsdf),
@@ -689,11 +688,11 @@ __device__ inline Shifted shift_path(
     if (!hit.found || light_at(scene.lights(), hit.primitive).is_light) {
       return failed();
     }
-    const float3 point = along.origin + hit.t * along.direction;
+    const float3 point = hit.at.point;
     beta *=
         transmittance(scene.media(), medium, distance(before.position, point));
     const c::SurfaceInteraction surface =
-        surface_interaction(scene.shapes(), hit.primitive, point, wi);
+        surface_interaction(scene.shapes(), hit.primitive, hit.at, wi);
     here = Shading{surface,
                    resolve_bsdf(scene.materials(), scene.textures(), surface),
                    -wi, medium};

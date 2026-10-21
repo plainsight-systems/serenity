@@ -4,8 +4,8 @@
 // shares with Metal: Metal's trace_probe and leave_probe
 // (tests/gpu/kernels/), their bindings read from the launch parameters at
 // the places Metal binds them (probe_launch.h), the structures among them.
-// The module holds the backend's two intersection programs, as every
-// tracing module does (cuda/frame/traced_module.cuh).
+// The module holds the backend's one intersection program, MNEE's seed's,
+// as every tracing module does (cuda/frame/traced_module.cuh).
 
 #include <optix.h>
 
@@ -13,7 +13,6 @@
 #include "core/contracts/transform.h"
 #include "core/shapes/box.h"
 #include "core/shapes/primitive.h"
-#include "cuda/acceleration/intersection.cuh"
 #include "cuda/acceleration/trace.cuh"
 #include "cuda/device/layout.cuh"
 #include "cuda/integrator/mnee_seed.cuh"
@@ -107,9 +106,11 @@ __device__ inline void leave_one() {
     return;
   }
   result.found = 1u;
-  const serenity::contracts::SurfaceInteraction surface = surface_interaction(
-      shapes, found.primitive, aimed.origin + found.t * aimed.direction,
-      aimed.direction);
+  result.found_part = optixHitObjectGetPrimitiveIndex();  // its triangle
+  // The surface as the path tracer finds it: the hit triangle's point
+  // (shapes/shapes.cuh).
+  const serenity::contracts::SurfaceInteraction surface =
+      surface_interaction(shapes, found.primitive, found.at, aimed.direction);
   const float3 n = to_float3(surface.geometric_normal);
   const float cosine = leave_cosines[j / 2u] * ((j % 2u) == 0u ? 1.0f : -1.0f);
   const float angle = 2.0f * pi * unit_float(pcg_hash(i ^ 0x6a09e667u));
@@ -119,6 +120,7 @@ __device__ inline void leave_one() {
       cosine * n + sine * (cos(angle) * about.t + sin(angle) * about.b));
   const Hit hit = trace(&probe.structures, shapes, leave(surface, direction),
                         serenity::contracts::RayMask::everything);
+  result.hit_part = hit.found ? optixHitObjectGetPrimitiveIndex() : 0u;
   result.outward = leaves_outward(surface, direction) ? 1u : 0u;
   result.hit = hit.found ? 1u : 0u;
   result.hit_shape = hit.primitive;
