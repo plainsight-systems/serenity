@@ -565,6 +565,12 @@ the two questions.
 The shapes' intersection program (`src/cuda/acceleration/intersection.cuh`)
 is removed: a triangle's hit is OptiX's.
 
+## The depth median by the block (Phase 2)
+
+| What | Axis | Where |
+|---|---|---|
+| the depth median's selection by the whole block, CUB's block scan | Pass | `src/cuda/passes/denoise/denoise.{cu,cpp}` |
+
 ## Not here yet
 
 - **HIP with HIPRT** on AMD's Strix Halo and **Direct3D 12** on the Xbox

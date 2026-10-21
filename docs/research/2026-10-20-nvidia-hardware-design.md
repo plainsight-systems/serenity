@@ -32,6 +32,9 @@ Ti answered it; a letter is the source (end of the note).
 
 ## 2. The frame on it today
 
+As it was when this was designed, before Phase 1 (section 7 says what
+each phase changed).
+
 The demo graph on marbles at 1920 x 1080 (read from the code and one
 trace's launch records, 2026-10-20). The light half runs at 960 x 540 and
 traces a 480 x 540 checkerboard; the image half runs at 960 x 540 and
@@ -223,7 +226,11 @@ runs through the structure, so it is first.
    as one (the four cannot be separated without code written to be
    thrown away: an instanced structure of custom boxes). Done
    2026-10-20; results in section 7.
-2. **Fewer passes and idle threads**: changes 5 and 6.
+2. **Fewer passes and idle threads**: changes 5 and 6. Narrowed by the
+   user 2026-10-21 after the passes' own times (section 7): change 6 and
+   the depth median's selection by the block; change 5's fusions not
+   made (they hold under 0.6 ms, most of it beside the light half). Done
+   2026-10-21: change 6 tried and removed, the selection kept.
 3. **The tensor cores**: change 7, then change 8 by the user's decision.
 4. **Bytes and launches**: changes 9 and 10.
 
@@ -295,6 +302,47 @@ are under a degree, and the frame's mean matched the frame before the
 meshes to 0.01 of a level. **Kept: a thirtieth of a pixel**, the user's
 decision 2026-10-21: the coarser bounds buy 3% at most and change the
 picture.
+
+**Phase 2** (2026-10-21). Before it, each pass's GPU time on the demo
+at 1920 x 1080 (an Nsight Systems trace of frames 7020 to 7039, the
+passes Phase 2 aimed at, as section 5 allows): the light half, the
+frame's critical path, about 8.9 of its 10.1 ms:
+
+| Pass | GPU time |
+|---|---|
+| ReSTIR PT's initial (path tree, NEE, MNEE's seeds) | 2.65 ms |
+| MNEE's solve | 2.57 ms |
+| the spatial shift | 1.22 ms |
+| the features at the output's size | 0.74 ms |
+| the temporal shift | 0.50 ms |
+| the features at the light's size | 0.28 ms |
+| the temporal and spatial replays | 0.23 and 0.18 ms |
+| the instance level's rebuild | 0.14 ms |
+| the rest (merges, shade, duplication, fill, light tiles) | about 0.4 ms |
+
+Change 5's fusions would save under 0.6 ms of passes that mostly run
+beside the light half (ReSTIR PT's shade, 0.016 ms; the depth of field's
+and the tone map's chains); the three tracing programs at the top hold
+6.4 ms. So the user narrowed the phase (section 5):
+
+- **Change 6, tried and removed.** The replays and MNEE's solve launched
+  over the GPU's resident threads (84 x 1,536), each striding over its
+  list: MNEE's solve went from 2.57 to 6.29 ms, the replays from 0.23 and
+  0.18 to 0.26 and 0.21 ms, the outputs the same to the bit. A list
+  launched at its capacity lets the hardware give a finished warp's place
+  to the next; a fixed set of threads striding over requests of very
+  different lengths (MNEE's Newton walks) waits on each warp's slowest
+  chain (GDSA.8). The threads that return at once cost less than that.
+- **The depth median's selection by the block, kept.** One thread walked
+  up to 2,048 bins a level, 0.21 ms in all on one SM of 84; the block's
+  scan (CUB's) takes 0.011 ms, the median the same to the bit. On the
+  image half, beside the light half, so the frame does not show it: 98.3
+  to 98.8 fps (10.17 to 10.12 ms) at 1920 x 1080 and 27.7 to 27.8 fps
+  (36.1 to 35.95 ms) at 3456 x 2234, within a run's spread; the 94
+  outputs the same as Phase 1's.
+
+The time is in the three tracing programs: their design is next
+(section 6, "Binning by material").
 
 What it found on the way: the hit point put back on the sphere needs the
 mesh to clear the ray offset inward, a bound no level meets for a glass
