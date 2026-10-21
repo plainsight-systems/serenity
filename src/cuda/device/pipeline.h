@@ -54,8 +54,9 @@ namespace serenity::cuda {
 // the pipeline's compile options): one instance level over geometry
 // structures as the traversable (OptiX's single-level instancing), of
 // triangles and of custom primitives, no exceptions enabled (OptiX's
-// default), OptiX's default optimization and debug levels, and the launch
-// parameters in the variable the programs name. Trace depth 1, no
+// default), OptiX's default optimization and debug levels, at most
+// max_registers registers a thread (below), and the launch parameters in
+// the variable the programs name. Trace depth 1, no
 // callables, a traversable graph two deep, stack sizes from OptiX's own
 // helpers (optix_stack_size.h) for those, as Cycles sets its own from its
 // groups' sizes.
@@ -68,6 +69,16 @@ namespace serenity::cuda {
 // the module, a program or the pipeline.
 class Pipeline {
  public:
+  // The registers a thread of every program may hold, in place of OptiX's
+  // own choice of 128 (OptixModuleCompileOptions::maxRegisterCount; GPU.3,
+  // ES.45). At 128 every tracing program spilled to local memory (direct
+  // spills of 64 to 540 bytes); at 160 only the initial pass (200) and
+  // MNEE's finish (60) do, and an SM holds 12 of its 48 warps for 16.
+  // Measured on the RTX 3090 Ti, the demo at 1920 x 1080: 64 registers
+  // 75.4 fps, 96 107.5, 128 112.7, 160 117.0, 192 115.6, 255 116.1
+  // (docs/research/2026-10-21-tracing-divergence.md, section 7).
+  static constexpr int max_registers = 160;
+
   // A hit record's data: four 64-bit words, addresses the intersection
   // program reads (above).
   using HitData = std::array<std::uint64_t, 4>;

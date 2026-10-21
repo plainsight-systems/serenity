@@ -224,6 +224,49 @@ a round's walks take at most 8 iterations: 9.19 ms a frame at 1920 x
 walks', not its launch's: the fifth of the walks that fail go on through
 every round.
 
+**The programs' register limit** (2026-10-21, section 5's lever). OptiX,
+asked for its compile report (the context's log at level 4), gives each
+program's registers and the bytes it spills to local memory: at its own
+limit of 128 every tracing program spilled, the initial pass most.
+
+| Program | 128 registers: direct spills | continuation spills | 160 registers: registers, direct spills |
+|---|---|---|---|
+| ReSTIR PT's initial pass | 540 B | 1,762 B | 160, 200 B |
+| MNEE's finish | 204 B | 744 B | 160, 60 B |
+| the temporal shift | 156 B | 3,788 B | 155, 0 |
+| the temporal replay | 64 B | 910 B | 154, 0 |
+| the spatial shift | 264 B | 3,933 B | 160, 0 |
+| the spatial replay | 52 B | 910 B | 153, 0 |
+| the features | 0 | 510 B | 119, 0 |
+| MNEE's seed (intersection) | 20 B | 0 | 108, 20 B |
+
+The continuation spills, the values held across a trace call, move by a
+few bytes at most at any limit from 64 to 255: the limit trades only the
+direct spills against the warps an SM holds (12 of its 48 at 160, 16 at
+128). The demo, as above, one limit for every program:
+
+| Limit | 1920 x 1080 |
+|---|---|
+| 64 | 75.4 fps (13.26 ms) |
+| 96 | 107.5 fps (9.30 ms) |
+| 128 (OptiX's) | 112.7 fps (8.87 ms) |
+| **160** | **117.0 fps (8.55 ms)**, +3.8% |
+| 192 | 115.6 fps (8.65 ms) |
+| 255 | 116.1 fps (8.61 ms) |
+
+At 3456 x 2234, 128 against 160, twice each: 33.3 fps (29.99 ms) against
+**34.8 fps (28.72 ms)**, +4.4%. Kept at 160 (`cuda/device/pipeline.h`,
+max_registers), one limit for every program: the differences between
+160, 192 and 255 are a tenth of a millisecond, too small to tune each
+program to. Cycles leaves the limit at OptiX's choice; here the spills
+measured otherwise (GPU.3). The 94 outputs the same to the bit.
+
+The compile report also warns of double precision in every program
+with a sine or cosine: CUDA's sinf and cosf reduce an argument beyond
+about 10^5 radians in doubles (Payne and Hanek's reduction). No angle
+the programs take comes near it, so the branch is never run; left as
+CUDA ships it.
+
 ## Sources
 
 - Blender Cycles —
