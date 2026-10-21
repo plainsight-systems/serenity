@@ -15,6 +15,11 @@ namespace {
 // the kernel, reading only its place, does not assume.
 constexpr unsigned tiles_block = 256;
 
+// The tree program's register limit, by Pipeline::Programs' rule: 200, 10
+// warps an SM, the lowest step's top where OptiX's compile report shows no
+// direct spills (184: 52 bytes; the RTX 3090 Ti, fast math, 2026-10-21).
+constexpr int tree_registers = 200;
+
 }  // namespace
 
 RestirPtInitialPass::RestirPtInitialPass(const OptixContext& context,
@@ -23,7 +28,7 @@ RestirPtInitialPass::RestirPtInitialPass(const OptixContext& context,
       power_(kernels_.kernel("restir_pt_light_power")),
       tiles_(kernels_.kernel("restir_pt_light_tiles")),
       tree_(context, optix_modules::restir_pt_initial,
-            "__raygen__restir_pt_initial", records),
+            "__raygen__restir_pt_initial", tree_registers, records),
       mnee_(context, records) {}
 
 void RestirPtInitialPass::record(CUstream stream, CUdeviceptr launch,

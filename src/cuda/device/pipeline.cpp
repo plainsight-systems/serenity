@@ -88,7 +88,7 @@ Pipeline::Pipeline(const OptixContext& context, std::span<const std::byte> ir,
   const OptixPipelineCompileOptions pipeline_options =
       compile_options(programs.payload_values, parameters);
   OptixModuleCompileOptions module_options{};  // OptiX's defaults, but:
-  module_options.maxRegisterCount = max_registers;
+  module_options.maxRegisterCount = programs.max_registers;
 
   Log log;
   OptixModule module = nullptr;

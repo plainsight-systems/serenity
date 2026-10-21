@@ -17,8 +17,19 @@ constexpr unsigned walk_threads = 256;
 
 }  // namespace
 
+namespace {
+
+// The finish program's register limit, by Pipeline::Programs' rule: 168,
+// 12 warps an SM, the lowest step's top where OptiX's compile report shows
+// no direct spills (152: 20 bytes; the RTX 3090 Ti, fast math,
+// 2026-10-21).
+constexpr int finish_registers = 168;
+
+}  // namespace
+
 MneePass::MneePass(const OptixContext& context, TracedProgram::Records records)
-    : finish_(context, optix_modules::mnee, "__raygen__mnee_finish", records),
+    : finish_(context, optix_modules::mnee, "__raygen__mnee_finish",
+              finish_registers, records),
       kernels_(cuda_modules::mnee_kernels),
       start_(kernels_.kernel("mnee_walk_start")),
       round_(kernels_.kernel("mnee_walk_round")),

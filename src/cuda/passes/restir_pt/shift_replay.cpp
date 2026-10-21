@@ -8,12 +8,21 @@
 
 namespace serenity::cuda {
 
+namespace {
+
+// The register limit of both reuses' shift programs, by
+// Pipeline::Programs' rule: 128, 16 warps an SM, where OptiX's compile
+// report shows no direct spills (the RTX 3090 Ti, fast math, 2026-10-21).
+constexpr int shift_registers = 128;
+
+}  // namespace
+
 ShiftReplay::ShiftReplay(const OptixContext& context,
                          std::span<const std::byte> programs,
                          std::span<const std::byte> kernels, Names names,
                          TracedProgram::Records records)
-    : reconnect_(context, programs, names.reconnect, records),
-      replay_(context, programs, names.replay, records),
+    : reconnect_(context, programs, names.reconnect, shift_registers, records),
+      replay_(context, programs, names.replay, shift_registers, records),
       kernels_(kernels),
       pair_(kernels_.kernel(names.pair)),
       merge_(kernels_.kernel(names.merge)) {}

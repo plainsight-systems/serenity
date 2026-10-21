@@ -5,10 +5,19 @@
 
 namespace serenity::cuda {
 
+namespace {
+
+// The features program's register limit, by Pipeline::Programs' rule:
+// 128, 16 warps an SM, where OptiX's compile report shows no direct spills
+// (the RTX 3090 Ti, fast math, 2026-10-21).
+constexpr int features_registers = 128;
+
+}  // namespace
+
 FeaturesPass::FeaturesPass(const OptixContext& context,
                            TracedProgram::Records records)
     : program_(context, optix_modules::features, "__raygen__features",
-               records) {}
+               features_registers, records) {}
 
 void FeaturesPass::record(CUstream stream, CUdeviceptr launch,
                           const FrameLaunch& frame) const {

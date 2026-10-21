@@ -113,6 +113,9 @@ class TracedScene {
                                    .launch_parameters = "probe",
                                    .payload_values = cuda::trace_payload_values,
                                    .hit_records = records,
+                                   // OptiX's own choice: a probe's time is
+                                   // not measured
+                                   .max_registers = 0,
                                }))
                   .first;
     }

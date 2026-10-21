@@ -54,8 +54,8 @@ namespace serenity::cuda {
 // the pipeline's compile options): one instance level over geometry
 // structures as the traversable (OptiX's single-level instancing), of
 // triangles and of custom primitives, no exceptions enabled (OptiX's
-// default), OptiX's default optimization and debug levels, at most
-// max_registers registers a thread (below), and the launch parameters in
+// default), OptiX's default optimization and debug levels, at most the
+// program's own register limit (Programs, below), and the launch parameters in
 // the variable the programs name. Trace depth 1, no
 // callables, a traversable graph two deep, stack sizes from OptiX's own
 // helpers (optix_stack_size.h) for those, as Cycles sets its own from its
@@ -69,16 +69,6 @@ namespace serenity::cuda {
 // the module, a program or the pipeline.
 class Pipeline {
  public:
-  // The registers a thread of every program may hold, in place of OptiX's
-  // own choice of 128 (OptixModuleCompileOptions::maxRegisterCount; GPU.3,
-  // ES.45). At 128 every tracing program spilled to local memory (direct
-  // spills of 64 to 540 bytes); at 160 only the initial pass (200) and
-  // MNEE's finish (60) do, and an SM holds 12 of its 48 warps for 16.
-  // Measured on the RTX 3090 Ti, the demo at 1920 x 1080: 64 registers
-  // 75.4 fps, 96 107.5, 128 112.7, 160 117.0, 192 115.6, 255 116.1
-  // (docs/research/2026-10-21-tracing-divergence.md, section 7).
-  static constexpr int max_registers = 160;
-
   // A hit record's data: four 64-bit words, addresses the intersection
   // program reads (above).
   using HitData = std::array<std::uint64_t, 4>;
@@ -102,6 +92,17 @@ class Pipeline {
     unsigned payload_values = 0;
     // the hit records, one a structure and program the pass traces with
     std::span<const HitRecord> hit_records;
+    // The registers a thread of the programs may hold
+    // (OptixModuleCompileOptions::maxRegisterCount), in place of OptiX's
+    // own choice of 128. Each pass sets its program's by one rule, the
+    // hardware's and the program's (GPU.3): an SM's 65,536 registers make
+    // its warps' occupancy a step function of a thread's registers
+    // (allocated in eights), so a limit is a step's top, and the program's
+    // is the lowest top at which OptiX's compile report (its log at level
+    // 4) shows no direct spills: 128 (16 warps an SM), 136, 144, 152, 168
+    // (12), 184, 200 (10), 224, 255
+    // (docs/research/2026-10-21-tracing-divergence.md, section 8.6).
+    int max_registers = 0;
   };
 
   Pipeline(const OptixContext& context, std::span<const std::byte> ir,

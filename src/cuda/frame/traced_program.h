@@ -33,8 +33,11 @@ class TracedProgram {
  public:
   using Records = std::span<const Pipeline::HitRecord, structure_records>;
 
+  // `max_registers`: the program's register limit, by Pipeline::Programs'
+  // rule.
   TracedProgram(const OptixContext& context, std::span<const std::byte> module,
-                std::string_view ray_generation, Records records);
+                std::string_view ray_generation, int max_registers,
+                Records records);
 
   // Launches the program over `grid` on `stream`, the frame's launch
   // parameters at `launch`. Throws CudaError if the launch is refused.

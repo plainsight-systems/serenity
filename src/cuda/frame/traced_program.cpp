@@ -17,7 +17,8 @@ static_assert(triangles_group == 0 && seed_group == 1);
 
 TracedProgram::TracedProgram(const OptixContext& context,
                              std::span<const std::byte> module,
-                             std::string_view ray_generation, Records records)
+                             std::string_view ray_generation, int max_registers,
+                             Records records)
     : pipeline_(context, module,
                 Pipeline::Programs{
                     .ray_generation = ray_generation,
@@ -25,6 +26,7 @@ TracedProgram::TracedProgram(const OptixContext& context,
                     .launch_parameters = "launch",
                     .payload_values = trace_payload_values,
                     .hit_records = records,
+                    .max_registers = max_registers,
                 }) {}
 
 void TracedProgram::launch(CUstream stream, CUdeviceptr launch,

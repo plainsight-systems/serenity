@@ -255,8 +255,8 @@ direct spills against the warps an SM holds (12 of its 48 at 160, 16 at
 | 255 | 116.1 fps (8.61 ms) |
 
 At 3456 x 2234, 128 against 160, twice each: 33.3 fps (29.99 ms) against
-**34.8 fps (28.72 ms)**, +4.4%. Kept at 160 (`cuda/device/pipeline.h`,
-max_registers), one limit for every program: the differences between
+**34.8 fps (28.72 ms)**, +4.4%. Kept at 160 (superseded by each program's
+limit by rule, section 8.6), one limit for every program: the differences between
 160, 192 and 255 are a tenth of a millisecond, too small to tune each
 program to. Cycles leaves the limit at OptiX's choice; here the spills
 measured otherwise (GPU.3). The 94 outputs the same to the bit.
@@ -522,6 +522,32 @@ the hardware changes (shader execution reordering, from Ada). The initial
 pass stays one program, as ReSTIR PT Enhanced's is. Fast math taken on
 its own (below), and each program's register limit by the rule, on the
 megakernel.
+
+**The register limits by rule** (2026-10-21, change 1's rule on the
+megakernel, fast math). An SM's 65,536 registers make its warps a step
+function of a thread's registers (allocated in eights), so a limit is a
+step's top (128, 136, 144, 152, 168, 184, 200, 224, 255; 160 holds the
+same 12 warps as 168). The rule: each program's limit the lowest top at
+which OptiX's compile report shows no direct spills. The reports:
+
+| Program | Direct spills at 128 / 152 / 168 / 184 / 200 | The rule |
+|---|---|---|
+| ReSTIR PT's tree | 272 / 180 / 112 / 52 / 0 | 200 (10 warps) |
+| MNEE's finish | 116 / 20 / 0 / 0 / 0 | 168 (12 warps) |
+| the four shifts | 0 at every top | 128 (16 warps) |
+| the features | 0 (124 registers at most) | 128 |
+| the path tracer (not in the demo) | 0 | 128 |
+
+Each program's own GPU time at each top (Nsight Systems, every frame of
+a run to frame 7020 at 1920 x 1080), the rule's choice the fastest of
+each: the tree 1,486 us at 200 (1,565 at 184, 1,535 at 168, 1,619 at
+152, 1,875 at 128); MNEE's finish 59.5 us at 168 (60 to 65 elsewhere);
+the shifts 225, 115, 271 and 105 us at 128 against 240, 136, 295 and 118
+at 160; the features the same at every top. The 94 outputs the same to
+the bit. The demo, as above, against fast math alone (every program at
+160), twice each: **168.6 fps (5.93 ms)** against 163.7 (6.11 ms) at 1920
+x 1080, +3.0%; **48.2 fps (20.73 ms)** against 47.0 (21.26 ms) at 3456 x
+2234, +2.6%.
 
 ### 8.7 What the first draft got wrong, recorded
 

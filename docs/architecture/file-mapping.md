@@ -595,6 +595,14 @@ their own.
 | the spatial reuse's pairing (each partner, the pairs that only store, the lists); its reconnections and replays | Pass | `src/cuda/passes/restir_pt_spatial/restir_pt_spatial_kernels.cu`, `restir_pt_spatial.{cu,cpp}` |
 | the reconnection list and its count beside the replays' | Frame graph | `src/cuda/frame/path_reuse_images.{h,cpp}`, `frame_launch.h`, `renderer.cpp` |
 
+## Each program's register limit by rule (`docs/research/2026-10-21-tracing-divergence.md`, section 8.6)
+
+| What | Axis | Where |
+|---|---|---|
+| a pipeline's register limit its own, the rule stated: the lowest occupancy step's top where OptiX's compile report shows no direct spills | GPU backend | `src/cuda/device/pipeline.{h,cpp}`, `src/cuda/frame/traced_program.{h,cpp}` |
+| each pass's program's limit by the rule | Pass | `src/cuda/passes/{path,features,mnee,restir_pt,restir_pt_initial}/*.cpp` |
+| the probes at OptiX's own limit | tests | `tests/cuda/support/traced_probe.h` |
+
 ## Not here yet
 
 - **HIP with HIPRT** on AMD's Strix Halo and **Direct3D 12** on the Xbox
