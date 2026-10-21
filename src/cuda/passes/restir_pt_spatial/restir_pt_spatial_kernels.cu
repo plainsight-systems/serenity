@@ -1,11 +1,14 @@
-// ReSTIR PT's paired spatial reuse's kernel (restir_pt_spatial.h) that
-// traces nothing: step 11, the merge, Metal's restir_pt_spatial
-// (metal/passes/restir_pt_spatial/restir_pt_spatial.metal), taking the
-// frame's launch parameters by address (frame/frame_launch.h).
+// ReSTIR PT's paired spatial reuse's kernels (restir_pt_spatial.h), which
+// trace nothing, taking the frame's launch parameters by address
+// (frame/frame_launch.h): the pairing, step 8's choices before its shifts
+// (cuda/passes/restir_pt/shift_replay.h), and step 11, the merge, Metal's
+// restir_pt_spatial (metal/passes/restir_pt_spatial/restir_pt_spatial.metal).
 
 #include "core/contracts/frame_constants.h"
 #include "core/contracts/path_reservoir.h"
 #include "core/contracts/path_reuse_settings.h"
+#include "core/contracts/primary_hit.h"
+#include "cuda/device/append.cuh"
 #include "cuda/frame/frame_launch.h"
 #include "cuda/math/srgb.cuh"
 #include "cuda/passes/restir_pt/restir_pt.cuh"
@@ -13,6 +16,61 @@
 
 namespace serenity {
 namespace shaders {
+
+// Step 8's pairing, one thread a traced pixel: each of its partners not
+// paired (outside the image, or not similar) or with nothing to shift
+// stored as such; each pair that shifts appended to the list of its kind,
+// the pairs that reconnect at x2 or those that replay (restir_pt.cuh,
+// replays()), a warp's at once (device/append.cuh). Every thread reaches
+// both reserves: none returns before them.
+__device__ inline void spatial_pair(const serenity::cuda::FrameLaunch& launch) {
+  constexpr uint slots = serenity::contracts::max_path_neighbors;
+  const serenity::contracts::FrameConstants& frame = launch.frame;
+  const serenity::contracts::PathReuseSettings& settings = launch.path_settings;
+  const restir_pt::Traced traced = restir_pt::traced(frame, settings);
+  const uint2 pixel =
+      traced.pixel(make_uint2(blockIdx.x * blockDim.x + threadIdx.x,
+                              blockIdx.y * blockDim.y + threadIdx.y));
+  const bool inside = traced.inside(pixel);
+  const uint i = traced.slot(pixel);
+  uint reconnecting[slots];
+  uint replaying[slots];
+  uint reconnects = 0u;
+  uint replays = 0u;
+  if (inside) {
+    const serenity::contracts::PathReservoir reservoir =
+        launch.path_reservoirs[i];
+    const bool held = serenity::contracts::path_end(reservoir.flags) !=
+                      serenity::contracts::PathEnd::none;
+    const bool replay = restir_pt::replays(reservoir);
+    const serenity::contracts::PrimaryHit own = launch.primaries[i];
+    for (uint t = 0u; t < settings.neighbors; ++t) {
+      const spatial::Partner partner =
+          spatial::partner_of(launch.pairing, pixel, t, traced);
+      const uint j = traced.slot(partner.pixel);
+      if (!partner.inside || !restir_pt::similar(own, launch.primaries[j])) {
+        launch.shifts[i * slots + t] =
+            make_float4(0.0f, 0.0f, 0.0f, restir_pt::not_paired);
+      } else if (!held) {
+        launch.shifts[i * slots + t] = make_float4(0.0f);
+      } else if (replay) {
+        replaying[replays++] = restir_pt::replay_item(i, t);
+      } else {
+        reconnecting[reconnects++] = restir_pt::replay_item(i, t);
+      }
+    }
+  }
+  // The warp's appended pairs, one atomic a list for all (GDSA.10).
+  const uint first_reconnect =
+      warp_reserve(launch.reconnect_counter, reconnects);
+  for (uint n = 0u; n < reconnects; ++n) {
+    launch.reconnects[first_reconnect + n] = reconnecting[n];
+  }
+  const uint first_replay = warp_reserve(launch.replay_counter, replays);
+  for (uint n = 0u; n < replays; ++n) {
+    launch.replays[first_replay + n] = replaying[n];
+  }
+}
 
 // Step 11: the merge, one thread a traced pixel; its estimate added to the
 // light buffer (its own pixel's alone, so in place); with temporal reuse in
@@ -100,6 +158,11 @@ __device__ inline void spatial_merge(
 
 }  // namespace shaders
 }  // namespace serenity
+
+extern "C" __global__ void restir_pt_spatial_pair(
+    const serenity::cuda::FrameLaunch* launch) {
+  serenity::shaders::spatial_pair(*launch);
+}
 
 extern "C" __global__ void restir_pt_spatial(
     const serenity::cuda::FrameLaunch* launch) {

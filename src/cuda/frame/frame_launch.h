@@ -80,8 +80,10 @@ struct FrameLaunch {
   // grid of traced pixels (every pixel, or the checkerboard's field packed:
   // contract 20), the reuse textures and its arrays, this frame's halves and
   // last frame's by the frame's parity; with temporal reuse its constants
-  // and last frame's transforms and glows. The replays' count is where the
-  // shifts append and the replays read it.
+  // and last frame's transforms and glows. The shifts' two lists of pairs
+  // (cuda/passes/restir_pt/shift_replay.h), the pairs that reconnect and
+  // the pairs that replay, and their counts, where the pairing appends and
+  // the shifts read them.
   contracts::PathReuseSettings path_settings;
   contracts::PathReuseConstants path_constants;
   uint2 traced;
@@ -90,6 +92,8 @@ struct FrameLaunch {
   Writes<contracts::PrimaryHit> primaries;
   Writes<float4> light;
   Writes<float4> shifts;
+  Writes<std::uint32_t> reconnects;
+  Writes<std::uint32_t> reconnect_counter;
   Writes<std::uint32_t> replays;
   Writes<std::uint32_t> replay_counter;
   Writes<contracts::LightTileEntry> light_tiles;
@@ -141,7 +145,7 @@ struct FrameLaunch {
 // padding but the contracts' own.
 static_assert(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): the layout
-    sizeof(FrameLaunch) == 680,
-    "FrameLaunch must be the same 680 bytes on the host and in programs");
+    sizeof(FrameLaunch) == 696,
+    "FrameLaunch must be the same 696 bytes on the host and in programs");
 
 }  // namespace serenity::cuda

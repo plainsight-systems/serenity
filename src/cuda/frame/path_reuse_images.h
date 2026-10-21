@@ -19,8 +19,9 @@ namespace serenity::cuda {
 // (metal/frame/frame_images.h, which says what each holds and why one set
 // serves every frame in flight), at the core's sizes (core/passes/
 // restir_pt_arrays.h) in device memory, which only the GPU touches but the
-// replay list's count, zeroed once and set back after each replay on the
-// stream (cuda/passes/restir_pt/shift_replay.h).
+// shifts' lists' counts, zeroed once and set back after each reuse's
+// shifts on the stream (cuda/passes/restir_pt/shift_replay.h); and beside
+// them CUDA's list of the pairs that reconnect, the replay list's size.
 //
 // Which half of a ping-pong is this frame's is its index's parity
 // (passes::this_frame_copy). Which frames the arrays hold is the core's
@@ -66,8 +67,10 @@ class PathReuseImages {
     CUdeviceptr last_primaries = 0;
     CUdeviceptr light = 0;
     CUdeviceptr shifts = 0;
+    CUdeviceptr reconnects = 0;
+    CUdeviceptr reconnect_counter = 0;
     CUdeviceptr replays = 0;
-    CUdeviceptr counter = 0;
+    CUdeviceptr replay_counter = 0;
     CUdeviceptr light_tiles = 0;
     CUdeviceptr light_power = 0;
     CUdeviceptr last_light_power = 0;
@@ -90,8 +93,14 @@ class PathReuseImages {
   std::array<DeviceBuffer, 2> primaries_;
   DeviceBuffer light_;
   DeviceBuffer shifts_;
+  // The shifts' lists of pairs (cuda/passes/restir_pt/shift_replay.h), each
+  // the core's replay list's size, the pairs that reconnect a CUDA list of
+  // its own beside the core's arrays.
+  DeviceBuffer reconnects_;
   DeviceBuffer replays_;
-  DeviceBuffer counter_;      // the replay list's count, zeroed once
+  // The two lists' counts, zeroed once: the reconnections' (word 0), the
+  // replays' (word 1).
+  DeviceBuffer counters_;
   DeviceBuffer light_tiles_;  // contracts/light_tile.h: whatever the size
   // [0] for even frames; [0] alone without temporal reuse
   std::array<DeviceBuffer, 2> light_power_;

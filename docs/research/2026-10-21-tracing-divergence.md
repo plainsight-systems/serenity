@@ -451,7 +451,27 @@ Each phase measured on the demo (fps at both sizes), the per-pass times
 for the passes it changes, and gated. A phase that loses is reverted by
 its commit; the megakernel is in git until phase 2's switch holds.
 
-### 8.6 What the first draft got wrong, recorded
+### 8.6 Results
+
+**Phase 1, the shifts over lists of pairs** (2026-10-21, change 2 as
+designed). The demo, release, the GPU otherwise idle, headless
+`--times` over frames 7000 to 7599; before is the work branch at
+d6f8dd6 (the 160-register limit), built and run the same hour,
+alternated, twice each:
+
+| Size | Before | After |
+|---|---|---|
+| 1920 x 1080 | 117.0 fps (8.55 ms) | **129.7 fps (7.71 ms)**, +10.9% |
+| 3456 x 2234 | 34.8 fps (28.77 ms) | **37.5 fps (26.68 ms)**, +7.8% |
+
+The picture: the marbles' outputs the same to the bit; seven of the
+brass sphere's ReSTIR PT frames differ, in at most 0.15% of their pixels
+and each by one level of 255, the same twice over (no race). The shift
+is the same arithmetic, now compiled in a program of its own, where the
+compiler fuses its multiplies and adds differently (an inference, not
+shown). Shown to the user side by side.
+
+### 8.7 What the first draft got wrong, recorded
 
 - *The initial pass split after its second surface*: withdrawn, fitted
   to the marbles' path lengths; the wavefront compacts after every

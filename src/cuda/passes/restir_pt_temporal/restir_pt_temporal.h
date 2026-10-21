@@ -17,7 +17,8 @@ namespace serenity::cuda {
 // (and this pixel's path there), the replays, the Talbot merge into the
 // reservoirs or the final reservoirs and the light buffer. The sequence both
 // reuses record (cuda/passes/restir_pt/shift_replay.h), with this pass's
-// programs (restir_pt_temporal.cu) and merge (restir_pt_temporal_kernels.cu).
+// pairing and merge (restir_pt_temporal_kernels.cu) and its reconnections
+// and replays (restir_pt_temporal.cu).
 //
 // Throws CudaError if OptiX refuses a program or the module cannot be
 // loaded.

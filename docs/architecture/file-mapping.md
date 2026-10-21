@@ -580,6 +580,21 @@ is removed: a triangle's hit is OptiX's.
 |---|---|---|
 | the depth median's selection by the whole block, CUB's block scan | Pass | `src/cuda/passes/denoise/denoise.{cu,cpp}` |
 
+## The shifts over lists of pairs (`docs/research/2026-10-21-tracing-divergence.md`, section 8)
+
+ReSTIR PT Enhanced's pair lists (its 6.2.2), on every pair that shifts:
+each reuse pairs its pixels in a kernel, and its shifts run one thread a
+pair of a list, the pairs that reconnect and the pairs that replay each
+their own.
+
+| What | Axis | Where |
+|---|---|---|
+| the sequence both reuses record: pair, reconnect, replay, the lists' counts set back, merge | Pass | `src/cuda/passes/restir_pt/shift_replay.{h,cpp}` |
+| a pair's shift, one thread an item of a list, whichever list | Pass | `src/cuda/passes/restir_pt/restir_pt.cuh` |
+| the temporal reuse's pairing, a kernel that traces nothing (the pixel last frame, the pairs that only store, the lists appended to); its reconnections and replays | Pass | `src/cuda/passes/restir_pt_temporal/restir_pt_temporal_kernels.cu`, `restir_pt_temporal.{cu,cpp}` |
+| the spatial reuse's pairing (each partner, the pairs that only store, the lists); its reconnections and replays | Pass | `src/cuda/passes/restir_pt_spatial/restir_pt_spatial_kernels.cu`, `restir_pt_spatial.{cu,cpp}` |
+| the reconnection list and its count beside the replays' | Frame graph | `src/cuda/frame/path_reuse_images.{h,cpp}`, `frame_launch.h`, `renderer.cpp` |
+
 ## Not here yet
 
 - **HIP with HIPRT** on AMD's Strix Halo and **Direct3D 12** on the Xbox

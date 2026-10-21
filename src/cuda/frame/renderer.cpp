@@ -427,8 +427,10 @@ FrameLaunch Renderer::frame_launch(const FrameSlot& begun,
     launch.primaries = at(arrays.primaries);
     launch.light = at(arrays.light);
     launch.shifts = at(arrays.shifts);
+    launch.reconnects = at(arrays.reconnects);
+    launch.reconnect_counter = at(arrays.reconnect_counter);
     launch.replays = at(arrays.replays);
-    launch.replay_counter = at(arrays.counter);
+    launch.replay_counter = at(arrays.replay_counter);
     launch.light_tiles = at(arrays.light_tiles);
     launch.light_power = at(arrays.light_power);
     launch.last_light_power = at(arrays.last_light_power);

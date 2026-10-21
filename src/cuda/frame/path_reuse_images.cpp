@@ -12,9 +12,9 @@ PathReuseImages::PathReuseImages(Submission& submission, Spatial spatial,
     : submission_(submission),
       spatial_(spatial),
       temporal_(temporal),
-      counter_(sizeof(std::uint32_t)),
+      counters_(2 * sizeof(std::uint32_t)),
       light_tiles_(passes::light_tiles_bytes()) {
-  zero_now(counter_.address(), sizeof(std::uint32_t), "PathReuseImages");
+  zero_now(counters_.address(), 2 * sizeof(std::uint32_t), "PathReuseImages");
   const std::size_t copies = temporal == Temporal::merged ? 2 : 1;
   for (std::size_t h = 0; h < copies; ++h) {
     light_power_.at(h) = DeviceBuffer(passes::light_power_bytes(lights));
@@ -61,6 +61,7 @@ std::uint64_t PathReuseImages::prepare(const frame::FrameInputs& inputs,
   }
   light_ = make(sizes.light);
   shifts_ = make(sizes.shifts);
+  reconnects_ = make(sizes.replays);
   replays_ = make(sizes.replays);
   previous_positions_ = make(sizes.previous_positions);
   previous_pixels_ = make(sizes.previous_pixels);
@@ -80,8 +81,10 @@ PathReuseImages::Addresses PathReuseImages::addresses(
   out.primaries = primaries_.at(now).address();
   out.light = light_.address();
   out.shifts = shifts_.address();
+  out.reconnects = reconnects_.address();
+  out.reconnect_counter = counters_.address();
   out.replays = replays_.address();
-  out.counter = counter_.address();
+  out.replay_counter = counters_.address() + sizeof(std::uint32_t);
   out.light_tiles = light_tiles_.address();
   out.light_power = light_power_.at(now).address();
   if (temporal) {

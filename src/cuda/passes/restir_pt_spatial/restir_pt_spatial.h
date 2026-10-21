@@ -16,8 +16,9 @@ namespace serenity::cuda {
 // which gives what it reads, writes and costs): the shifts to the paired
 // neighbors, the replays, the pairwise merge into the light buffer and, with
 // temporal reuse, the final reservoirs. The sequence both reuses record
-// (cuda/passes/restir_pt/shift_replay.h), with this pass's programs
-// (restir_pt_spatial.cu) and merge (restir_pt_spatial_kernels.cu).
+// (cuda/passes/restir_pt/shift_replay.h), with this pass's pairing and
+// merge (restir_pt_spatial_kernels.cu) and its reconnections and replays
+// (restir_pt_spatial.cu).
 //
 // Throws CudaError if OptiX refuses a program or the module cannot be
 // loaded.
