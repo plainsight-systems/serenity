@@ -267,6 +267,136 @@ about 10^5 radians in doubles (Payne and Hanek's reduction). No angle
 the programs take comes near it, so the branch is never run; left as
 CUDA ships it.
 
+## 8. The initial pass and the spatial shift: measured, then designed
+
+Status: design, 2026-10-21, for the user's review before any header or
+code. Section 5's promise: their design after the rounds' result.
+
+### 8.1 Where their lanes are idle
+
+Nsight Compute's source counters (the programs built with line
+information, a throwaway build) on frame 7000 at 1920 x 1080, at 160
+registers: the initial pass 2.38 ms with its lanes 67.3% busy, the
+spatial shift 1.20 ms at 48.0%. The idle lanes are spread over all the
+code, not gathered in the materials: in the initial pass the four
+materials' own code (Fresnel, dielectric, conductor, coated) runs with 5
+to 11 lanes of 32, but it holds 8% of the idle lane-slots. So sorting by
+material (section 5's first thought, Cycles' and pbrt-v4's answer) is not
+where the time is here. Two throwaway counters on the same frame showed
+where it is:
+
+**The initial pass: path length.** How many surfaces each of the
+259,200 traced pixels' paths walked (`path::walk_path`'s loop):
+
+| Surfaces | 1 | 2 | 3 | 4 | 5 | 6 | 7 to 10 |
+|---|---|---|---|---|---|---|---|
+| Paths | 0.4% | 83.8% | 3.2% | 11.4% | 0.9% | 0.2% | 0.07% |
+
+The mean is 2.30, and a warp's longest path 3.12 (over the 8,100
+warps): with every lane in step through each surface, the loop's lanes
+would be busy 73.5% of its surfaces, and the pass measures 67.3%. Most
+of the initial pass's idle lanes are its sixth of paths (15.8%) that go
+past the second surface, holding their warps.
+
+**The spatial shift: the partners' outcomes.** Each pixel's three
+partners (777,600 pairs), at `spatial_shift()`'s branches:
+
+| Outcome | Pairs |
+|---|---|
+| shifted, reconnecting to a light | 71.3% |
+| not paired (a store) | 22.6% |
+| appended to the replay list | 5.4% |
+| shifted, reconnecting to a surface | 0.5% |
+| not held (a store) | 0.3% |
+
+A thread walks its three partners in turn, so at each a warp's lanes
+that only store wait for the lanes that shift: three lanes in ten idle
+before the shift's own branches.
+
+These are one frame's counts, as section 2's were 100 frames'.
+
+**And what shipped since:** ReSTIR PT Enhanced (Lin et al. 2026,
+section 6.2), NVIDIA's own, measured the same divergence in its
+megakernel (active threads a warp 15.3 of 32, 19.9 after its changes)
+and took four steps: branches made selects (6.2.1), the replay pairs
+compacted and run one thread a pair (6.2.2), the forced reconnection to
+NEE's lights (6.2.3), Russian roulette at the initial pass only (6.2.4).
+This pass already has 6.2.2 to 6.2.4. It keeps the megakernel; no
+wavefront.
+
+### 8.2 The design: two changes, each its own
+
+**1. The spatial shift over a list of the pairs that shift** (first: the
+larger idle share, and the smaller change). ReSTIR PT Enhanced's 6.2.2,
+taken from the replays to every pair that shifts.
+
+- **Pairing** (a plain CUDA kernel: it traces nothing): one thread a
+  traced pixel, its three partners as now; a pair not paired or not
+  held stored as now; a pair that replays appended to the replay list
+  as now; a pair that shifts appended to a new list of shift pairs (the
+  same item, pixel and slot, `restir_pt::replay_item`), a warp's at once
+  (`device/append.cuh`, GDSA.10).
+- **Shift** (the OptiX launch it is now, over the list): one thread a
+  pair, launched at the list's capacity (three a traced pixel), a thread
+  past the count returning, as the replay launch is (Phase 2's
+  measurement: cheaper than striding).
+- **What it saves**, and what is not known: the pairs that only store
+  stop holding lanes; the shift's own exits (a light not visible, the
+  criteria) stay. Not estimated beyond that: the per-pass time says.
+- **The picture: the same to the bit.** Each shift does the same
+  arithmetic on the same inputs and writes its own slot; nothing
+  accumulates. Guard: the 94 outputs, and the demo frame's bytes.
+- **Costs:** one launch, a list of 4-byte items at three a traced
+  pixel (12 MB at 3456 x 2234), its counter set back each frame with the
+  replays'.
+
+**2. The initial pass split after its second surface.** The walk
+resumable, as section 4 made MNEE's: the first launch walks every path
+through at most two surfaces; a path still going appends its state to a
+list, and a second launch, at the list's capacity, walks those to their
+ends. One split, not rounds: past the fourth surface 1.2% of paths are
+left.
+
+- **The state a path carries across:** the walk's (`path::Walk`, about
+  60 bytes), the tree's gather (`restir_pt::TreeGather`: its reservoir
+  of 64 bytes, the main path's vertex before and its reconnection
+  vertex, the light seen; about 200 bytes), where its numbers are in
+  their stream, and the surface it is at. 16% of the traced pixels:
+  about 12 MB written, and read back, at 1920 x 1080.
+- **What it should save:** by the histogram, the loop's warp-surfaces
+  from 25,306 to about 19,850 (22% fewer), if the survivors' warps are
+  as divergent among themselves as now (an estimate); about 0.4 ms of
+  the pass's 2.38 if the loop is most of the pass. Modest, against a
+  new resumable state and a second launch: the user's to weigh.
+- **The picture:** each path's arithmetic the same. The survivors'
+  MNEE requests are appended from the second launch, so MNEE's finish
+  adds the solves' light in another order, float atomics' (as section
+  7's rounds): the graphs without MNEE the same to the bit, the MNEE
+  graphs' frame shown side by side.
+
+**Considered, not taken:**
+
+- **A wavefront with sorting by material** (Cycles', pbrt-v4's): the
+  materials hold 8% of the idle lanes; it would move every path's whole
+  state every surface for that.
+- **Reconverging the lanes after the path loop** (its epilogue runs with
+  14 lanes of 32): 0.6% of the pass's warp instructions.
+- **Branches made selects** (ReSTIR PT Enhanced 6.2.1): line by line,
+  after these two, if the per-line counters still show a branch worth it.
+
+### 8.3 Separate, and the user's call: fast math
+
+The counters' busiest lines in both passes are the IEEE operations:
+`normalize`'s three divisions, square roots, sines and cosines (in the
+initial pass 30% of the stall samples, in the shift 36%). The build
+declines fast math so the GPU computes as the CPU does, which the GPU
+tests compare against (`cmake/CudaModules.cmake`;
+`2026-10-19-cuda-backend.md`, "Math mode"). Cycles (`--use_fast_math`,
+`intern/cycles/device/cuda/device_impl.cpp`) and pbrt-v4 (its CMake)
+build their GPU kernels with it. Taking it changes every graph's bits
+and needs the GPU tests' comparisons decided again: not part of 8.2, and
+measured only if the user wants the number.
+
 ## Sources
 
 - Blender Cycles —
