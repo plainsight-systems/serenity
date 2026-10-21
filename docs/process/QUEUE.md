@@ -248,8 +248,13 @@ This file tracks active and accepted work.
    about 2.6 h there), so the next data set renders there. The 3090's
    window done 2026-10-20 (`docs/research/2026-10-20-cuda-window.md`:
    SDL3 on X11, Vulkan presenting CUDA's frames, `make window`; the demo
-   live at 60 fps at 1920 x 1080, 14 ms of GPU a frame). Next: HIP with
-   HIPRT on Strix Halo.
+   live at 60 fps at 1920 x 1080, 14 ms of GPU a frame); on main
+   2026-10-20, untagged. Next (the user, 2026-10-20): the frame designed
+   for the 3090's hardware (`docs/research/2026-10-20-nvidia-hardware-design.md`:
+   the scene's shapes as triangles on the RT cores, one instance level,
+   fused passes, the denoiser on the tensor cores' own shape, RTXDI's
+   reservoir layout), which closes Milestone 5; then HIP with HIPRT on
+   Strix Halo.
 
 3. Reservoir reuse as kernels, tuned per target: tiling, layout and
    fusion of the merge passes, what each costs and where the bytes go, on
