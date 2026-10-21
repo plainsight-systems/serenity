@@ -450,6 +450,10 @@ FrameLaunch Renderer::frame_launch(const FrameSlot& begun,
     launch.mnee_requests = at(mnee_->list.requests());
     launch.mnee_header = at(mnee_->list.header());
     launch.mnee_lost = mnee_->lost.address(begun.slot);
+    launch.mnee_walks_a = at(mnee_->list.walks(0));
+    launch.mnee_walks_b = at(mnee_->list.walks(1));
+    launch.mnee_converged = at(mnee_->list.converged());
+    launch.mnee_walk_header = at(mnee_->list.walk_header());
   }
   if (features_) {
     // Whether there is a frame before, and its camera framed for this

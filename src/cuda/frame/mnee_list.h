@@ -2,9 +2,13 @@
 
 #include <cuda.h>
 
+#include <array>
+#include <cstddef>
+
 #include "core/frame/extent.h"
 #include "cuda/device/buffer.h"
 #include "cuda/device/submission.h"
+#include "cuda/frame/mnee_walk.h"
 
 namespace serenity::cuda {
 
@@ -15,9 +19,12 @@ namespace serenity::cuda {
 // mnee.h), Metal's MneeList (metal/frame/mnee_list.h, which gives their
 // sizes): the requests, one a pixel; and the header, the count, which the
 // trees append to and the settling sets back to 0 after the solve, and the
-// capacity, written once with each make. In device memory, the header
-// written by the host before any frame that uses it. Nothing is carried
-// from frame to frame but zeros. Made at the frame's size, remade when it
+// capacity, written once with each make. And the walks the solve takes in
+// rounds (mnee_walk.h): two lists that the rounds pass the walks still
+// going between, the converged walks' list, each the requests' capacity,
+// and their header of counts. In device memory, the headers written by
+// the host before any frame that uses them. Nothing is carried from frame
+// to frame but zeros. Made at the frame's size, remade when it
 // changes, the frames in flight finished first (they may still read the
 // old arrays). Throws CudaError if the memory cannot be made or written.
 class MneeList {
@@ -34,12 +41,21 @@ class MneeList {
 
   CUdeviceptr requests() const noexcept { return requests_.address(); }
   CUdeviceptr header() const noexcept { return header_.address(); }
+  // The rounds' lists, 0 and 1; the converged walks'; their counts.
+  CUdeviceptr walks(std::size_t list) const {
+    return walks_.at(list).address();
+  }
+  CUdeviceptr converged() const noexcept { return converged_.address(); }
+  CUdeviceptr walk_header() const noexcept { return walk_header_.address(); }
 
  private:
   Submission& submission_;
   frame::Extent size_;
   DeviceBuffer requests_;
   DeviceBuffer header_;
+  std::array<DeviceBuffer, mnee_walk_lists> walks_;
+  DeviceBuffer converged_;
+  DeviceBuffer walk_header_;
 };
 
 }  // namespace serenity::cuda
