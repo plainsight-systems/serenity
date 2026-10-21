@@ -267,141 +267,211 @@ about 10^5 radians in doubles (Payne and Hanek's reduction). No angle
 the programs take comes near it, so the branch is never run; left as
 CUDA ships it.
 
-## 8. The initial pass and the spatial shift: measured, then designed
+## 8. The tracing passes as a wavefront, as Cycles runs its integrator
 
 Status: design, 2026-10-21, for the user's review before any header or
-code. Section 5's promise: their design after the rounds' result.
+code. It replaces the first draft of this section (2958b6c), which split
+the initial pass after its second surface because one frame of the
+marbles ended most paths there: a parameter fitted to one scene, not a
+design. The rule here: take the production design whole, and set each of
+its parameters from the 3090's properties and the programs' own (their
+registers, spills and state bytes), never from a scene's statistics.
+Scenes confirm a design; they do not choose its numbers.
 
-### 8.1 Where their lanes are idle
+### 8.1 What the hardware does with the megakernels now
 
-Nsight Compute's source counters (the programs built with line
-information, a throwaway build) on frame 7000 at 1920 x 1080, at 160
-registers: the initial pass 2.38 ms with its lanes 67.3% busy, the
-spatial shift 1.20 ms at 48.0%. The idle lanes are spread over all the
-code, not gathered in the materials: in the initial pass the four
-materials' own code (Fresnel, dielectric, conductor, coated) runs with 5
-to 11 lanes of 32, but it holds 8% of the idle lane-slots. So sorting by
-material (section 5's first thought, Cycles' and pbrt-v4's answer) is not
-where the time is here. Two throwaway counters on the same frame showed
-where it is:
+Nsight Compute's source counters on the demo's frame 7000 at 1920 x 1080
+(a throwaway build with line information, 160 registers): the initial
+pass 2.38 ms with its lanes 67.3% busy, the spatial shift 1.20 ms at
+48.0%. In both, every line inside a path's loop or a partner's loop runs
+with the lanes of whichever paths are still there; lanes that leave a
+loop wait, and after the loop they do not run together again (the
+initial pass's epilogue, its reservoir written, runs with 14 lanes of
+32). That is the megakernel's shape on a GPU without shader execution
+reordering, whatever the scene: a warp runs as long as its longest
+path, through every branch any of its paths takes (Laine, Karras and Aila
+2013; section 3). Two throwaway counters on that frame show it there (the
+paths' lengths: a warp's longest 3.12 surfaces against a mean of 2.30;
+the shift's partners: 71% shift, 29% only store or append) and nothing
+more: another scene moves both.
 
-**The initial pass: path length.** How many surfaces each of the
-259,200 traced pixels' paths walked (`path::walk_path`'s loop):
+### 8.2 What production does
 
-| Surfaces | 1 | 2 | 3 | 4 | 5 | 6 | 7 to 10 |
-|---|---|---|---|---|---|---|---|
-| Paths | 0.4% | 83.8% | 3.2% | 11.4% | 0.9% | 0.2% | 0.07% |
+- **Cycles' GPU integrator** (`intern/cycles/integrator/
+  path_trace_work_gpu.cpp`, `kernel/integrator/`):
+  - a path's state in arrays, one a member (structure of arrays), so a
+    kernel reads only the members it uses, coalesced;
+  - the work as kernels each with one job: from the camera, intersect
+    closest, shade the background, shade a surface, intersect a shadow
+    ray, shade a shadow, intersect MNEE's seed;
+  - each kernel launched over the paths queued for it, their indices
+    gathered first (`integrator_queued_paths_array`): compaction before
+    every launch, of every kernel, at no chosen point;
+  - the surface shading launched over its paths sorted by shader (a
+    counting sort, `kernel_uses_sorting`), in partitions of 65,536
+    states for the locality of their state's reads
+    (`num_sort_partitions`);
+  - shadow rays in their own states and kernels;
+  - as many states as `max(SMs x threads an SM, 65,536) x 16` (the CUDA
+    queue's `concurrent_states_params`), against device memory;
+  - no explicit register limit (OptiX's own choice), and `--use_fast_math`
+    (`device/cuda/device_impl.cpp`).
+- **pbrt-v4's GPU integrator**: the same wavefront, a queue a kernel and
+  a kernel a material (`src/pbrt/wavefront/`), `--use_fast_math`.
+- **ReSTIR PT Enhanced** (Lin et al. 2026, NVIDIA's ReSTIR PT, section
+  6.2): the shifts run one thread a pixel and neighbor pair, compacted
+  (6.2.2); branches made selects (6.2.1); the forced light reconnection
+  (6.2.3) and roulette at the initial pass only (6.2.4), both already
+  here.
 
-The mean is 2.30, and a warp's longest path 3.12 (over the 8,100
-warps): with every lane in step through each surface, the loop's lanes
-would be busy 73.5% of its surfaces, and the pass measures 67.3%. Most
-of the initial pass's idle lanes are its sixth of paths (15.8%) that go
-past the second surface, holding their warps.
+### 8.3 The design
 
-**The spatial shift: the partners' outcomes.** Each pixel's three
-partners (777,600 pairs), at `spatial_shift()`'s branches:
+**1. The initial pass as a wavefront** (CUDA: this note is the 3090's;
+Metal's design is its own).
 
-| Outcome | Pairs |
-|---|---|
-| shifted, reconnecting to a light | 71.3% |
-| not paired (a store) | 22.6% |
-| appended to the replay list | 5.4% |
-| shifted, reconnecting to a surface | 0.5% |
-| not held (a store) | 0.3% |
+- **State.** A path's state in arrays, a member each (Cycles'): the
+  walk's (`path::Walk`: throughput, radiance, the ray, the medium, MIS's
+  density, where it left from), the tree's gather
+  (`restir_pt::TreeGather`: the reservoir, the main path's vertex before
+  and its reconnection vertex, the light seen, MNEE's chain), where its
+  numbers are in their stream, its surface number, and the hit its
+  intersect left. One state a traced pixel: Cycles' count for this GPU,
+  `max(84 x 1,536, 65,536) x 16` = 2,064,384, holds every traced pixel of
+  the largest size in play (965,088 at 3456 x 2234), so the frame's paths
+  are all in flight at once and none waits for a state. Made once at the
+  largest size (MEM.9).
+- **Kernels**, each launched over a compacted list of the paths queued
+  for it, appended a warp's at once by the kernel before
+  (`device/append.cuh`, GDSA.10):
+  - *camera* (CUDA): the primary ray, the gather started; every path to
+    intersect.
+  - *intersect closest* (OptiX, a ray generation program that traces
+    and nothing else): the hit into the state; a miss to *background*,
+    a hit to *surface*, with the hit's material as its sort key.
+  - *background* (CUDA): the sky's light offered to the gather (step 2);
+    the path ends.
+  - *surface* (CUDA, sorted by material): emission offered (step 3), the
+    BSDF resolved (step 4), the light sample drawn and weighed (step 5)
+    and, if it gives light, a shadow ray queued with its candidate
+    whole; MNEE's seed queued where its chain is; the BSDF sampled
+    (step 6), roulette (step 7), the next ray queued to intersect (step
+    8) or the path ended.
+  - *intersect shadow* (OptiX): visibility; *shade shadow* (CUDA): the
+    candidate offered to the gather if the light is visible.
+  - *MNEE's seed* (OptiX): the seed's segment traversed and the request
+    appended, as now.
+  - *finish* (CUDA): the reservoir, the primary hit, last frame's
+    position and the light seen written, as the pass's epilogue now.
+- **The schedule.** Cycles picks the next kernel on the host from the
+  queues' counts, read back each iteration: for an offline render. A
+  frame cannot stop for a read-back each step, and a ReSTIR PT path has
+  at most `max_surfaces` surfaces (14 by contract, 9 in the shipped
+  graphs), so the schedule is fixed: for each surface, intersect
+  closest, background, surface, intersect shadow, shade shadow, MNEE's
+  seed, each launched at its list's capacity with the threads past its
+  count returning (Phase 2's measurement: cheaper than striding). Every
+  list is the previous step's compacted output, so each launch's warps
+  hold only paths with that work.
+- **The order a path offers its candidates is the megakernel's.** At a
+  surface the megakernel offers emission, then the light sample, then
+  scatters; here the shadow's candidate is offered by *shade shadow*,
+  after *surface* has scattered, so the shadow state carries everything
+  the offer reads at that moment (the integrand, the stored path, the
+  roulette survival so far) and *shade shadow* runs before the next
+  surface's offers. Each path's reservoir then sees the same candidates
+  with the same numbers in the same order: its pick the same to the bit.
+- **Sorting** (Cycles' counting sort): *surface*'s list ordered by
+  material, in partitions of 65,536 states, Cycles' number, for the
+  locality of the states' reads (an inference, to be measured: at the
+  hundred-odd bytes a surface reads of a state, a partition's reads are
+  about the 3090's 6 MB L2). The key is the scene's material, as Cycles'
+  is its shader.
+- **Registers**: each kernel compiled at the top of the occupancy step
+  that holds its registers with no direct spills, read from OptiX's
+  compile report for the OptiX programs and nvcc's for the kernels
+  (the GA102's steps: an SM's 65,536 registers over 32 lanes a warp,
+  allocated in eights). The rule is the programs' own; section 7's one
+  limit of 160 for every program becomes the rule applied to each.
 
-A thread walks its three partners in turn, so at each a warp's lanes
-that only store wait for the lanes that shift: three lanes in ten idle
-before the shift's own branches.
+**2. Both shifts over lists of pairs** (ReSTIR PT Enhanced's 6.2.2, on
+every pair that shifts, not only the replays). The temporal and the
+spatial shift alike:
 
-These are one frame's counts, as section 2's were 100 frames'.
+- *pairing* (CUDA: it traces nothing): one thread a traced pixel and
+  its partners as now; the pairs that only store, stored; the pairs that
+  replay appended to the replay list as now; the pairs that shift
+  appended to a shift list.
+- *shift* (OptiX): one thread a pair of the shift list, launched at its
+  capacity; then the replays as now.
+- Each pair's shift is the same arithmetic into its own slot: the same
+  to the bit.
 
-**And what shipped since:** ReSTIR PT Enhanced (Lin et al. 2026,
-section 6.2), NVIDIA's own, measured the same divergence in its
-megakernel (active threads a warp 15.3 of 32, 19.9 after its changes)
-and took four steps: branches made selects (6.2.1), the replay pairs
-compacted and run one thread a pair (6.2.2), the forced reconnection to
-NEE's lights (6.2.3), Russian roulette at the initial pass only (6.2.4).
-This pass already has 6.2.2 to 6.2.4. It keeps the megakernel; no
-wavefront.
+**3. MNEE's rounds' length from the program.** Cycles walks MNEE whole
+in its own kernel; on Ampere the rounds stay (section 4), and their 8
+iterations, chosen from the marbles' walks, become the program's: the
+fewest iterations whose arithmetic outlasts carrying a walk's 96-byte
+state out and back in (the round kernel's cycles an iteration from
+Nsight Compute, against the state's bytes at the GPU's bandwidth).
 
-### 8.2 The design: two changes, each its own
+**4. Fast math** (Cycles', pbrt-v4's). The counters' busiest lines in
+both passes are IEEE division, square root, sine and cosine (30% of the
+initial pass's stall samples, 36% of the shift's), which
+`--use_fast_math` makes hardware instructions. The build declines it so
+the GPU computes as the CPU does, which the GPU tests compare against
+(`cmake/CudaModules.cmake`; `2026-10-19-cuda-backend.md`, "Math mode").
+Taking it changes every graph's bits and the GPU tests' comparisons
+need tolerances: listed here with the production design, the user's
+call to take.
 
-**1. The spatial shift over a list of the pairs that shift** (first: the
-larger idle share, and the smaller change). ReSTIR PT Enhanced's 6.2.2,
-taken from the replays to every pair that shifts.
+### 8.4 The picture and the guards
 
-- **Pairing** (a plain CUDA kernel: it traces nothing): one thread a
-  traced pixel, its three partners as now; a pair not paired or not
-  held stored as now; a pair that replays appended to the replay list
-  as now; a pair that shifts appended to a new list of shift pairs (the
-  same item, pixel and slot, `restir_pt::replay_item`), a warp's at once
-  (`device/append.cuh`, GDSA.10).
-- **Shift** (the OptiX launch it is now, over the list): one thread a
-  pair, launched at the list's capacity (three a traced pixel), a thread
-  past the count returning, as the replay launch is (Phase 2's
-  measurement: cheaper than striding).
-- **What it saves**, and what is not known: the pairs that only store
-  stop holding lanes; the shift's own exits (a light not visible, the
-  criteria) stay. Not estimated beyond that: the per-pass time says.
-- **The picture: the same to the bit.** Each shift does the same
-  arithmetic on the same inputs and writes its own slot; nothing
-  accumulates. Guard: the 94 outputs, and the demo frame's bytes.
-- **Costs:** one launch, a list of 4-byte items at three a traced
-  pixel (12 MB at 3456 x 2234), its counter set back each frame with the
-  replays'.
+- Changes 1 and 2 keep each path's and each shift's arithmetic and each
+  reservoir's order: the graphs without MNEE the same to the bit (the 94
+  outputs). MNEE's requests are appended from other launches, so the
+  finish's float atomics add in another order: the MNEE graphs' frame
+  side by side, as section 7's rounds.
+- Change 3 changes when a walk is regathered, not its arithmetic: the
+  same.
+- Change 4 changes every bit: the demo's frame side by side.
+- Tests (invariants, not settings): the state's layout (host and device
+  agree, as `MneeWalk`'s); the wavefront's paths equal to the megakernel's
+  on built inputs (the same reservoir to the bit), the megakernel
+  removed once that holds (a decision removes the alternative).
 
-**2. The initial pass split after its second surface.** The walk
-resumable, as section 4 made MNEE's: the first launch walks every path
-through at most two surfaces; a path still going appends its state to a
-list, and a second launch, at the list's capacity, walks those to their
-ends. One split, not rounds: past the fourth surface 1.2% of paths are
-left.
+### 8.5 Phases, and the way back
 
-- **The state a path carries across:** the walk's (`path::Walk`, about
-  60 bytes), the tree's gather (`restir_pt::TreeGather`: its reservoir
-  of 64 bytes, the main path's vertex before and its reconnection
-  vertex, the light seen; about 200 bytes), where its numbers are in
-  their stream, and the surface it is at. 16% of the traced pixels:
-  about 12 MB written, and read back, at 1920 x 1080.
-- **What it should save:** by the histogram, the loop's warp-surfaces
-  from 25,306 to about 19,850 (22% fewer), if the survivors' warps are
-  as divergent among themselves as now (an estimate); about 0.4 ms of
-  the pass's 2.38 if the loop is most of the pass. Modest, against a
-  new resumable state and a second launch: the user's to weigh.
-- **The picture:** each path's arithmetic the same. The survivors'
-  MNEE requests are appended from the second launch, so MNEE's finish
-  adds the solves' light in another order, float atomics' (as section
-  7's rounds): the graphs without MNEE the same to the bit, the MNEE
-  graphs' frame shown side by side.
+1. The shifts' pair lists (change 2): the smallest step, its own commit.
+2. The wavefront's state and kernels beside the megakernel, the test of
+   their equality; then the pass switched and the megakernel deleted.
+3. Sorting, then each kernel's register limit.
+4. MNEE's round length from its program.
+5. Fast math, if the user takes it.
 
-**Considered, not taken:**
+Each phase measured on the demo (fps at both sizes), the per-pass times
+for the passes it changes, and gated. A phase that loses is reverted by
+its commit; the megakernel is in git until phase 2's switch holds.
 
-- **A wavefront with sorting by material** (Cycles', pbrt-v4's): the
-  materials hold 8% of the idle lanes; it would move every path's whole
-  state every surface for that.
-- **Reconverging the lanes after the path loop** (its epilogue runs with
-  14 lanes of 32): 0.6% of the pass's warp instructions.
-- **Branches made selects** (ReSTIR PT Enhanced 6.2.1): line by line,
-  after these two, if the per-line counters still show a branch worth it.
+### 8.6 What the first draft got wrong, recorded
 
-### 8.3 Separate, and the user's call: fast math
-
-The counters' busiest lines in both passes are the IEEE operations:
-`normalize`'s three divisions, square roots, sines and cosines (in the
-initial pass 30% of the stall samples, in the shift 36%). The build
-declines fast math so the GPU computes as the CPU does, which the GPU
-tests compare against (`cmake/CudaModules.cmake`;
-`2026-10-19-cuda-backend.md`, "Math mode"). Cycles (`--use_fast_math`,
-`intern/cycles/device/cuda/device_impl.cpp`) and pbrt-v4 (its CMake)
-build their GPU kernels with it. Taking it changes every graph's bits
-and needs the GPU tests' comparisons decided again: not part of 8.2, and
-measured only if the user wants the number.
+- *The initial pass split after its second surface*: withdrawn, fitted
+  to the marbles' path lengths; the wavefront compacts after every
+  surface by construction.
+- *"Sorting by material is not where the time is"*: true of one frame of
+  a scene with few materials, not of the design; sorting is Cycles' and
+  is taken.
+- *Section 7's one register limit of 160*, chosen by one scene's frame
+  times: kept until phase 3 replaces it by the per-program rule.
 
 ## Sources
 
 - Blender Cycles —
   https://github.com/blender/blender, intern/cycles/integrator/path_trace_work_gpu.cpp,
-  intern/cycles/kernel/integrator/mnee.h, intern/cycles/kernel/types.h
+  intern/cycles/kernel/integrator/mnee.h, intern/cycles/kernel/types.h,
+  intern/cycles/kernel/integrator/state_template.h, intern/cycles/device/queue.cpp,
+  intern/cycles/device/cuda/queue.cpp, intern/cycles/device/cuda/device_impl.cpp,
+  intern/cycles/device/optix/device_impl.cpp
+- Lin et al., "ReSTIR PT Enhanced", 2026 —
+  https://research.nvidia.com/labs/rtr/publication/lin2026restirptenhanced/
 - pbrt-v4 — https://github.com/mmp/pbrt-v4, src/pbrt/wavefront/surfscatter.cpp
 - Falcor — https://github.com/NVIDIAGameWorks/Falcor, Source/RenderPasses/PathTracer
 - RTXPT — https://github.com/NVIDIA-RTX/RTXPT
