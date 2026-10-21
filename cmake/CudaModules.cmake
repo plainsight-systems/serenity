@@ -34,17 +34,22 @@
 #                         (cuda/device/device.h refuses any other device)
 #   -std=c++20            the project's language
 #   -O3                   device code's optimization, named, nvcc's default
+#   --use_fast_math       the hardware's own division, square root, sine,
+#                         cosine and exponential (approximate), float
+#                         denormals flushed to 0, as Blender Cycles and
+#                         pbrt-v4 build their GPU kernels and as Metal's
+#                         fast math mode is (decided by the user 2026-10-21:
+#                         docs/research/2026-10-21-tracing-divergence.md,
+#                         section 8.3; the GPU tests' comparisons with the
+#                         CPU hold under it, their tolerances unchanged)
 #   -ccbin                the pinned host compiler (cmake/toolchain.json)
 #   -Werror all-warnings  a warning in a kernel fails the build
 #
-# No fast math (no --use_fast_math, no -ftz): IEEE division and square root,
-# denormals kept, as the CPU computes, which the GPU tests compare with
-# (docs/research/2026-10-19-cuda-backend.md, "Math mode"). Dependencies on
-# included headers are tracked through nvcc's depfile.
+# Dependencies on included headers are tracked through nvcc's depfile.
 
 set(SERENITY_CUDA_ARCH "-gencode" "arch=compute_86,code=sm_86")
 set(SERENITY_CUDA_STD "-std=c++20")
-set(SERENITY_CUDA_OPTIMIZATION "-O3")
+set(SERENITY_CUDA_OPTIMIZATION "-O3" "--use_fast_math")
 
 function(serenity_add_cuda_module)
     cmake_parse_arguments(ARG "" "TARGET;NAME;SOURCE" "INCLUDE_DIRS" ${ARGN})
@@ -124,12 +129,11 @@ endfunction()
 #   -m64                  64-bit code, the only kind OptiX takes
 #   -rdc=true             relocatable device code, as the guide asks, so
 #                         nvcc removes no program as unreferenced
-#   -std=c++20 -O3 -ccbin -Werror all-warnings, as the kernels'
+#   -std=c++20 -O3 --use_fast_math -ccbin -Werror all-warnings, as the
+#                         kernels' (above; fast math the guide's
+#                         recommendation for speed)
 #   -isystem              OptiX's headers (SERENITY_OPTIX_INCLUDE_DIR, set
 #                         where they are fetched), whose warnings are theirs
-#
-# No --use_fast_math, which the guide recommends for speed and declines for
-# precision, the kernels' reason above.
 
 set(SERENITY_OPTIX_ARCH "-arch=compute_86")
 

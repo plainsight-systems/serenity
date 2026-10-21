@@ -471,6 +471,58 @@ is the same arithmetic, now compiled in a program of its own, where the
 compiler fuses its multiplies and adds differently (an inference, not
 shown). Shown to the user side by side.
 
+**Phase 2, the initial pass as a wavefront** (2026-10-21, change 1 as
+designed, sorting with it). The picture: the marbles' outputs the same
+to the bit, MNEE's among them; the brass sphere's ReSTIR PT frames by one
+level of 255 in at most 0.47% of their pixels, every channel's mean the
+same; both the same twice over. The lanes: the first surface's kernel
+keeps 31.45 of 32 busy (the megakernel's 21.3). The time did not
+follow.
+
+The state's layout, the initial pass's kernels at 1920 x 1080 (an Nsight
+Systems trace, frame 7000 on):
+
+| Layout | Initial pass | Camera | First surface | Later surfaces |
+|---|---|---|---|---|
+| a record a path | 3.66 ms | 454 us | 1,393 us | 162, 152, 94 us |
+| 4-byte words sliced | 4.36 ms | 146 us | 1,217 us | 449, 397, 223 us |
+| **16-byte chunks sliced** | **2.69 ms** | 99 us | 889 us | 150, 121, 70 us |
+
+A record a path spread each word a warp stores over 32 sectors (the
+camera: 20 million); sliced words made a sorted path's record a sector a
+word. The megakernel's initial pass on the same trace: 2.35 ms.
+
+The frame, as section 7's, twice each, alternated:
+
+| | 1920 x 1080 | 3456 x 2234 |
+|---|---|---|
+| phase 1 (megakernel) | 129.7 fps (7.71 ms) | 37.5 fps (26.61 ms) |
+| the wavefront | 116.6 fps (8.58 ms) | 37.1 fps (26.99 ms) |
+| phase 1, fast math | **163.7 fps (6.11 ms)** | **46.9 fps (21.34 ms)** |
+| the wavefront, fast math, its surface at 168 registers | 140.8 fps (7.10 ms) | 43.7 fps (22.88 ms) |
+
+Where the wavefront's time goes (fast math, 1920 x 1080): the surface
+kernel 1.02 ms over its ten surfaces at 168 registers (190 unbounded, no
+spills, 1.11 ms; 128, 248 bytes spilled, 1.17 ms), its first surface
+0.60 ms of it, NEE's 32 resampled candidates at a primary hit; the
+programs that trace 0.96 ms; the camera, the sort and the finish
+0.31 ms; the GPU idle between the pass's 64 launches 0.22 ms; and every
+launch at its list's capacity, so the late surfaces' few paths still pay
+a launch's empty waves (17 to 30 us each). An inference, not measured:
+the megakernel's warps on an SM overlap one path's traversal on the RT
+core with another's shading, where the wavefront runs traversal and
+shading in separate launches.
+
+**Decided** (the user, 2026-10-21): the wavefront reverted, as 8.5 says of
+a phase that loses; what was left to try (a CUDA graph for the 0.22 ms of
+gaps, launches sized to their lists for the late surfaces' empty waves)
+is about 0.4 ms against a gap of 1.0 to 1.5 ms. Kept, not merged, on the
+local branch `wavefront-measured` (2157daf), to be measured again where
+the hardware changes (shader execution reordering, from Ada). The initial
+pass stays one program, as ReSTIR PT Enhanced's is. Fast math taken on
+its own (below), and each program's register limit by the rule, on the
+megakernel.
+
 ### 8.7 What the first draft got wrong, recorded
 
 - *The initial pass split after its second surface*: withdrawn, fitted

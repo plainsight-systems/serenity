@@ -513,3 +513,20 @@ frame lacked, chosen by the user from a sweep against shipped engines:
 - **clangd in VS Code, on save** (`.clangd`, `.vscode/`), formatting with
   the same clang-format and checking with the same clang-tidy, the
   analyzer aside.
+
+## The RTX 3090 Ti's own design (decided by the user 2026-10-21)
+
+- **CUDA builds with `--use_fast_math`**, as Blender Cycles and pbrt-v4
+  build their GPU kernels (and as Metal's fast math mode is): the
+  backend's earlier IEEE default superseded. Every GPU test's comparison
+  with the CPU holds under it, its tolerance unchanged. The demo 129.7 to
+  163.7 fps at 1920 x 1080 (`docs/research/2026-10-21-tracing-divergence.md`,
+  section 8.6).
+- **ReSTIR PT's initial pass stays one OptiX program on Ampere.** Cycles'
+  wavefront was built and measured, and lost (140.8 against 163.7 fps);
+  kept on the local branch `wavefront-measured`, to be measured again on
+  hardware with shader execution reordering. Both shifts run one thread a
+  pair of a list (ReSTIR PT Enhanced's pair lists).
+- **Optimizations follow production whole, with parameters from the
+  hardware and the programs' own properties,** never fitted to one scene's
+  statistics; scenes confirm a design, they do not choose its numbers.

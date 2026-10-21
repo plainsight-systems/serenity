@@ -205,6 +205,14 @@ files are estimates.
   root, denormals kept, contraction on. The CUDA backend keeps the default:
   `-ftz` would break the BSDF packing's subnormal bound (contract), and
   the GPU tests compare with the CPU, which is IEEE.
+  *Superseded 2026-10-21* (the user's decision,
+  `2026-10-21-tracing-divergence.md`, section 8.3): `--use_fast_math`, as
+  Cycles and pbrt-v4 build. The packing's bound was not at risk: `-ftz`
+  flushes float subnormals (below 1.2 x 10^-38), and the half subnormals
+  the bound speaks of are made by the conversion instruction, which it
+  does not touch; the encoding test holds the bound's endpoints under it,
+  and every GPU test's comparison with the CPU holds, its tolerance
+  unchanged.
 
 **To verify as each step comes:** warp intrinsics inside ray generation
 programs (MNEE's and the replays' appends, the non-finite count use them;
