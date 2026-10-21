@@ -154,13 +154,35 @@ launches and the state's 150 bytes a walk a round are new costs.
 ## 5. The initial pass and the spatial shift
 
 Their divergence is in material, path length and the shift's outcomes,
-not one loop, and how much of their time it costs is not measured:
-reading each program's SIMT efficiency (the lanes busy per instruction)
-and registers needs Nsight Compute, which needs the GPU's performance
-counters, a root setting on the 3090 (NVIDIA's ERR_NVGPUCTRPERM). With
-those numbers, their design follows (a wavefront split with sorting by
-material, Cycles' and pbrt-v4's, is the production answer, and the
-larger change).
+not one loop. Measured 2026-10-21 by Nsight Compute (the counters opened
+by the user), the eight OptiX launches of frame 7000 at 1920 x 1080:
+
+| Program | Registers a thread | Lanes busy an instruction | Warps active, of the SM's peak | GPU time |
+|---|---|---|---|---|
+| ReSTIR PT's initial pass | 128 | 21.3 of 32 (67%) | 27% | 2.75 ms |
+| MNEE's solve | 128 | 5.8 of 32 (18%) | 14% | 2.74 ms |
+| the temporal shift | 128 | 25.9 of 32 | 32% | 0.52 ms |
+| the temporal replay | 128 | 18.9 of 32 | 25% | 0.26 ms |
+| the spatial shift | 128 | 16.0 of 32 (50%) | 28% | 1.28 ms |
+| the spatial replay | 128 | 20.2 of 32 | 28% | 0.20 ms |
+| the features, light and output sizes | 116 | 27.1 and 28.8 of 32 | 26 and 29% | 0.30 and 0.78 ms |
+
+- MNEE's lanes are busy 18% of its instructions, below the samples'
+  estimate (section 2: the estimate left out the threads past the list's
+  count and the work around the walk): section 4 stands.
+- The spatial shift's lanes are idle half the time, the initial pass's a
+  third: their divergence is real, smaller than MNEE's, and spread over
+  materials and outcomes, where a wavefront split with sorting by
+  material (Cycles', pbrt-v4's) is the production answer and the larger
+  change. Designed after section 4's result.
+- **Every tracing program holds 128 registers a thread**, so an SM holds
+  16 warps of its 48 (65,536 registers), a third, and the warps active
+  sit at that ceiling (25 to 32%). OptiX chooses the count where the
+  module leaves it at its default
+  (`OptixModuleCompileOptions::maxRegisterCount`, 0); a lower limit lets
+  more warps hide latency at the cost of spilling to local memory
+  (GPU.3: occupancy as latency-hiding budget, measured, not a score). A
+  lever of its own, measured after section 4.
 
 ## 6. Steps
 
@@ -170,6 +192,37 @@ larger change).
    `/data/serenity/identity/phase1.sha` for the graphs without MNEE.
 2. With the user's leave for the counters: the initial pass's and the
    spatial shift's SIMT efficiency and registers, then their design.
+
+## 7. Results
+
+**MNEE's walk in rounds** (2026-10-21, section 4 as designed). The demo,
+release, the GPU otherwise idle, headless `--times` over frames 7000 to
+7599; before is the work branch at 91ead49, built and run the same hour:
+
+| Size | Before | After |
+|---|---|---|
+| 1920 x 1080 | 99.3 fps (10.07 ms) | **112.7 fps (8.87 ms)**, +13.5% |
+| 3456 x 2234 | 27.7 fps (36.07 ms) | **33.4 fps (29.95 ms)**, +20% |
+
+The frames' spread narrowed with it: 8.2 to 9.4 ms a frame at 1920 x
+1080, from 6.3 to 14.1. The solve's launches (an Nsight Systems trace,
+frames 7020 to 7039): the start 0.18 ms, seven rounds of 0.10 ms each,
+the finish 0.09 ms, 0.97 ms in all against the single solve's 2.57; the
+light half 7.4 ms of the frame, from 8.9.
+
+The picture: the 94 outputs at 640 x 360 the same to the bit as Phase
+1's; the demo's frame at t = 120 at 1920 x 1080 differs in 1.3% of its
+pixels, nearly all by one level of 255 (430 by more than two, at most
+15), each channel's mean the same to 0.001 of a level: the order in
+which the solves add their light to a pixel, float atomics' (section
+4). Shown to the user side by side.
+
+**Tried and removed:** the start and the rounds launched over the GPU's
+resident threads (84 x 1,536), each thread striding over its list, since
+a round's walks take at most 8 iterations: 9.19 ms a frame at 1920 x
+1080 against 8.87, the same at 3456 x 2234. A round's 0.1 ms is its
+walks', not its launch's: the fifth of the walks that fail go on through
+every round.
 
 ## Sources
 

@@ -565,6 +565,15 @@ the two questions.
 The shapes' intersection program (`src/cuda/acceleration/intersection.cuh`)
 is removed: a triangle's hit is OptiX's.
 
+## MNEE's walk in rounds (`docs/research/2026-10-21-tracing-divergence.md`)
+
+| What | Axis | Where |
+|---|---|---|
+| the Newton walk resumable (its state between iterations, a number of them at a time); the chain rebuilt from a request, its light from a solved chain | Integrator | `src/cuda/integrator/mnee.cuh` (`Walk`, `walk()`, `Chain`, `chain_start()`, `chain_light()`, `requested()`) |
+| a walk between rounds; the lists' counts; the rounds' sizes | Frame graph | `src/cuda/frame/mnee_walk.h`, new |
+| the rounds' two lists and the converged list, with the requests' | Frame graph | `src/cuda/frame/mnee_list.{h,cpp}`, `frame_launch.h`, `renderer.cpp` |
+| the start and the rounds, kernels that trace nothing; the finish, the program that traces the chains' visibility; the launches | Pass | `src/cuda/passes/mnee/mnee_kernels.cu`, `mnee.cu`, `mnee.{h,cpp}` |
+
 ## The depth median by the block (Phase 2)
 
 | What | Axis | Where |
