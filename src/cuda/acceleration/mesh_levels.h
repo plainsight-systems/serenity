@@ -36,7 +36,11 @@ namespace serenity::cuda {
 // 3456 x 2234, the M3 Max's window: the most rows a frame of the project
 // has. A larger size renders the same meshes with a larger error.
 inline constexpr double largest_rows = 2234.0;
-// The gap on screen at most a thirtieth of a pixel.
+// The gap on screen at most a thirtieth of a pixel: kept by the user
+// 2026-10-21 over a quarter and a whole pixel, which bought 3% at most and
+// darkened the frame by 1.5% and 4% (the triangles' tilt from the sphere's
+// normal, and the fireflies' meshes smaller than their light;
+// docs/research/2026-10-20-nvidia-hardware-design.md, section 7).
 inline constexpr double screen_bound = 1.0 / 30.0;
 // A sphere as the bound sees it: its radius and the box its center keeps
 // inside.

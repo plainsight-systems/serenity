@@ -272,6 +272,30 @@ picture: the demo frame at t = 120, before and after, shown to the user
 side by side: the same picture, no facet seen, each channel's mean
 within 0.01 of a level, the grain different as the paths are.
 
+**The meshes' bound, measured** (2026-10-21, the user's call). The
+thirtieth of a pixel was chosen in the design, not asked; production
+tessellates to about a pixel (Cycles' default dicing rate, Nanite's
+target). Three builds differing only in the bound, the demo graph over
+frames 7000 to 7599, and the frame at t = 120 at 3456 x 2234 beside each
+other:
+
+| Bound | Marbles' levels | 1920 x 1080 | 3456 x 2234 | The picture |
+|---|---|---|---|---|
+| 1/30 px | 5, 6 | 99.1 fps (10.09 ms) | 27.7 fps (36.1 ms) | as before the meshes |
+| 1/4 px | 3, 4 | 100.7 fps (9.93 ms) | 28.3 fps (35.3 ms) | the frame's mean 1.5% darker |
+| 1 px | 2, 3 | 101.8 fps (9.82 ms) | 28.6 fps (35.0 ms) | 4% darker; the porcelain marble dark, the swirled cores dull through their glass |
+
+No facet shows on any outline, the brass sphere's included, at any of
+the three. What changes is the light: a coarse mesh's triangles tilt
+several degrees from the sphere's own normal, which the BSDF shades by,
+so more grazing samples leave on the triangle's far side; and a coarse
+firefly is smaller than the sphere its light is sampled on (inferred
+from the frames, not measured apart). At a thirtieth of a pixel both
+are under a degree, and the frame's mean matched the frame before the
+meshes to 0.01 of a level. **Kept: a thirtieth of a pixel**, the user's
+decision 2026-10-21: the coarser bounds buy 3% at most and change the
+picture.
+
 What it found on the way: the hit point put back on the sphere needs the
 mesh to clear the ray offset inward, a bound no level meets for a glass
 sphere near the origin (section 4, "Considered, not taken"); the
