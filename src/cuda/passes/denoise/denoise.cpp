@@ -58,8 +58,9 @@ DeviceBuffer uploaded(std::span<const T> values) {
 }
 
 // The depth median's launches: a histogram's blocks square, a select's one
-// block (denoise.cu reads both sizes from its threads); the max pool's
-// blocks, each thread four channels. Metal's.
+// block of 256 threads, the size its block scan is built for (denoise.cu,
+// select_block, which refuses another); the max pool's blocks, each thread
+// four channels. Metal's.
 constexpr unsigned median_side = 16;
 constexpr unsigned select_threads = 256;
 constexpr unsigned pool_threads = 256;

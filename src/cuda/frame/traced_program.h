@@ -19,9 +19,9 @@ namespace serenity::cuda {
 // One ray generation program of a pass's OptiX module, as every tracing
 // pass of the backend makes it (ES.3: written once): its pipeline
 // (cuda/device/pipeline.h) with the backend's tracing contract
-// (cuda/acceleration/structure_block.h): the shapes' and MNEE's seed's
-// intersection programs, which every tracing module defines
-// (traced_module.cuh), a hit record a structure and program, the payload
+// (cuda/acceleration/structure_block.h): the triangles' hit group, OptiX's
+// own, and MNEE's seed's intersection program, which every tracing module
+// defines (traced_module.cuh), a hit record each, the payload
 // words a trace carries, and the frame's launch parameters in `launch`
 // (frame_launch.h). Launched over a grid, a thread a pixel or a list's item,
 // with the frame's launch parameters at the address the renderer uploaded

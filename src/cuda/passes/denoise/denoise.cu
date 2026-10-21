@@ -41,6 +41,7 @@
 #include <cuda_fp16.h>
 
 #include <cstdint>
+#include <cub/block/block_scan.cuh>
 
 #include "core/contracts/denoise.h"
 #include "cuda/device/layout.cuh"
@@ -240,36 +241,95 @@ __device__ void denoise_depth_histogram(const DenoiseConstants& k,
   }
 }
 
-// One thread walks the bins (2048 at most, a few microseconds); then the
-// block clears them for the next level or frame.
+// The select's block (denoise.cpp launches it so), a whole number of the
+// levels' bins a thread: 8 at level 0, 4 at levels 1 and 2.
+inline constexpr uint select_block = 256u;
+static_assert(contracts::median_bins % select_block == 0u &&
+              level_bins % select_block == 0u);
+using BinScan = cub::BlockScan<uint, select_block>;
+
+// Each middle rank's bin: where a walk up the bins, counting, first passes
+// the rank, or the last bin if it never does (the walk's stop, as one
+// thread would take it). Found by the block at once rather than one
+// thread: each thread sums its run of bins, CUB's block scan gives each
+// run the count below it (cub::BlockScan, CUB being CUDA's own), each
+// thread finds where in its run the walk would stop, and the least is the
+// stop. Integers, so the bin and the count below it are the walk's
+// exactly, whatever the order (GDSA.2); a single thread's walk took 0.04
+// to 0.09 ms a level on the RTX 3090 Ti, one block on one SM of 84
+// (docs/research/2026-10-20-nvidia-hardware-design.md, Phase 2). Then the
+// block clears the bins for the next level or frame.
 template <uint Level>
 __device__ void denoise_depth_select(uint* histogram, MedianState& state) {
+  if (blockDim.x != select_block) {
+    __trap();  // launched as it is not built for
+  }
   const uint index = threadIdx.x;
-  const uint threads = blockDim.x;
+  __shared__ typename BinScan::TempStorage scan;
+  __shared__ uint stop[2];
+  __shared__ uint below_stop[2];
+  uint count = state.count;
+  uint rank[2] = {state.rank[0], state.rank[1]};
+  if (Level == 0u) {
+    uint mine = 0u;
+    for (uint b = index; b < contracts::median_bins; b += select_block) {
+      mine += histogram[b];
+    }
+    uint before = 0u;
+    BinScan(scan).ExclusiveSum(mine, before, count);
+    __syncthreads();  // the scan's storage, used again below
+    rank[0] = count == 0u ? 0u : (count - 1u) / 2u;
+    rank[1] = count / 2u;
+  }
+  if (count != 0u) {
+    for (uint r = 0; r < 2u; ++r) {
+      const uint first = Level == 0u ? 0u : r * level_bins;
+      const uint bins = Level == 0u ? contracts::median_bins : level_bins;
+      const uint run = bins / select_block;
+      const uint begin = index * run;
+      uint mine = 0u;
+      for (uint b = begin; b < begin + run; ++b) {
+        mine += histogram[first + b];
+      }
+      uint below = 0u;
+      BinScan(scan).ExclusiveSum(mine, below);
+      if (index == 0u) {
+        stop[r] = bins - 1u;  // the last bin stops every walk
+      }
+      __syncthreads();
+      uint counted = below;
+      for (uint b = begin; b < begin + run; ++b) {
+        const uint n = histogram[first + b];
+        if (counted + n > rank[r]) {
+          atomicMin(&stop[r], b);
+          break;
+        }
+        counted += n;
+      }
+      __syncthreads();
+      if (begin <= stop[r] && stop[r] < begin + run) {
+        uint under = below;
+        for (uint b = begin; b < stop[r]; ++b) {
+          under += histogram[first + b];
+        }
+        below_stop[r] = under;
+      }
+      __syncthreads();
+    }
+  }
   if (index == 0u) {
     if (Level == 0u) {
-      uint n = 0u;
-      for (uint b = 0; b < contracts::median_bins; ++b) {
-        n += histogram[b];
-      }
-      state.count = n;
-      state.rank[0] = n == 0u ? 0u : (n - 1u) / 2u;
-      state.rank[1] = n / 2u;
+      state.count = count;
+      state.rank[0] = rank[0];
+      state.rank[1] = rank[1];
     }
-    if (state.count == 0u) {
+    if (count == 0u) {
       state.median = 1.0f;
     } else {
       for (uint r = 0; r < 2u; ++r) {
-        const uint first = Level == 0u ? 0u : r * level_bins;
-        const uint bins = Level == 0u ? contracts::median_bins : level_bins;
-        uint below = 0u;
-        uint b = 0u;
-        for (; b + 1u < bins && below + histogram[first + b] <= state.rank[r];
-             ++b) {
-          below += histogram[first + b];
-        }
-        state.rank[r] -= below;
-        state.prefix[r] = Level == 0u ? b : (state.prefix[r] << level_bits) | b;
+        state.rank[r] = rank[r] - below_stop[r];
+        state.prefix[r] =
+            Level == 0u ? stop[r] : (state.prefix[r] << level_bits) | stop[r];
       }
       if (Level == 2u) {
         state.median =
@@ -278,7 +338,7 @@ __device__ void denoise_depth_select(uint* histogram, MedianState& state) {
     }
   }
   __syncthreads();
-  for (uint b = index; b < contracts::median_bins; b += threads) {
+  for (uint b = index; b < contracts::median_bins; b += select_block) {
     histogram[b] = 0u;
   }
 }
