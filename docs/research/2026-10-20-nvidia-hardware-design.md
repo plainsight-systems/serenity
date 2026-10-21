@@ -48,8 +48,10 @@ primitives. So the RT cores traverse, and every candidate a ray meets
 leaves them for the SM's intersection program and comes back, which is
 the round trip the hardware has no shortcut for. The main structure of
 all 667 shapes is rebuilt each frame, because the fireflies move. A ray
-leaving a surface ignores it by name: the intersection program skips the
-shape in payload 0, so no ray meets the surface it starts on. There
+leaves a surface from a point offset by its own rounding (Wächter and
+Binder's, since 2026-10-11, `integrator/surface.cuh`); the intersection
+program also skips a shape named in payload 0, which only shadow rays
+pass, and they carry the occluders, which hold no light. There
 is no instance level, and the two questions (every shape, the occluders
 alone) are two structures with default build flags and no compaction.
 
@@ -119,10 +121,10 @@ untouched unless the core changes).
 
 | # | Change | Hardware reason | Picture | Guard |
 |---|---|---|---|---|
-| 1 | **Boxes as 12 triangles** | ray against triangle on the RT core, no round trip | changes: a triangle has no intersection program, so the skip by name goes (below, "Leaving a surface") | before/after frames |
-| 2 | **One instance level**: a geometry structure per kind of shape (the unit box; the sphere, below), the 667 shapes its instances, the mask bits answering the two questions (every shape; occluders alone) in one structure | instance transforms on the RT core; a frame refits 667 instances instead of rebuilding every shape; one structure instead of two | likely the last bits: the world-to-object transform moves from our program's arithmetic to the RT core's | byte identity if it holds, else frames |
+| 1 | **Boxes as 12 triangles** | ray against triangle on the RT core, no round trip | the same box; t and the point in the last bits | before/after frames |
+| 2 | **One instance level**: a geometry structure per kind of shape (the unit box; the sphere, below), the 667 shapes its instances, the mask bits answering the two questions (every shape; occluders alone) in one structure | instance transforms on the RT core; a frame rebuilds 667 instances instead of every shape's boxes; one structure instead of two | with change 4 | before/after frames |
 | 3 | **Build flags and compaction**: fast trace, compacted, for what doesn't move | the guide's | the same | byte identity |
-| 4 | **The spheres as triangles** (below): one level-5 icosphere mesh, instanced | ray against triangle on the RT core for 661 of 667 shapes | changes: a mesh and the origin offset (below) | before/after frames |
+| 4 | **The spheres as triangles** (below): icosphere meshes, a level a sphere by its error, instanced | ray against triangle on the RT core for 661 of 667 shapes | changes: a mesh within a thirtieth of a pixel | before/after frames |
 | 5 | **Fused passes**: ReSTIR PT's shade into the spatial merge (both a pixel's, the merge's reservoir read back at once); the depth of field's and the tone map's per-pixel chains (6 and 12 kernels) into fewer | a pass's output read from registers, not from memory; fewer launch gaps | the same | byte identity |
 | 6 | **Lists by the machine's size**: MNEE's solve and the replays as a grid of 84 x 1,536 threads striding over the list, not the list's capacity | no launch of a million threads that return | the same, except MNEE's: its float atomics already make its sums order-dependent (QUEUE.md) | byte identity for the replays; frames for MNEE |
 | 7 | **The denoiser on the tensor cores' own shape**: m16n8k16, pipelined loads into shared memory (`cp.async`, double-buffered), tiles sized so the five levels fill 84 SMs (wave quantization) | half the instructions a product; loads beside the math; no idle SMs on the small levels | the same sums, perhaps in another order | the PyTorch fixture's tolerance, then frames |
@@ -132,48 +134,79 @@ untouched unless the core changes).
 
 **The spheres as triangles.** Ampere intersects no sphere in hardware,
 so a sphere on the RT core is a triangle mesh: production practice, and
-how NVIDIA's Marbles at Night was made (the user, 2026-10-20). Its
-tessellation is set by its error on screen, not chosen to fit a time:
+how NVIDIA's Marbles at Night was made (the user, 2026-10-20). An
+icosphere's vertices lie on the sphere and its faces inside it; its gap,
+the deepest a face lies below the sphere, is a fraction of the radius
+that falls by four a level (computed from the meshes,
+`cuda/acceleration/shape_meshes.h`; about twice an even edge's sagitta,
+an icosphere's triangles not all alike):
 
-| Icosphere level | Triangles | Its edge's error at the nearest, largest marble, 1920 x 1080 | at 3456 x 2234 |
-|---|---|---|---|
-| 4 | 5,120 | 0.064 px | 0.13 px |
-| 5 | 20,480 | 0.016 px | 0.033 px |
+| Level | Triangles | Gap / radius | Nearest marble, 3456 x 2234 | The 0.75 m brass sphere, 3456 x 2234 |
+|---|---|---|---|---|
+| 3 | 1,280 | 4.5e-3 | 1.0 px | 3.2 px |
+| 5 | 20,480 | 2.8e-4 | 0.063 px | 0.20 px |
+| 6 | 81,920 | 7.1e-5 | 0.016 px | 0.050 px |
+| 7 | 327,680 | 1.8e-5 | 0.004 px | 0.013 px |
 
-(The nearest sphere's surface 0.25 m from the camera, the largest radius
-12.5 mm, the camera's 28 degrees; the error is the chord's sagitta, r(1 -
-cos(a/2)) for an edge of angle a.) So **level 5**: a thirtieth of a pixel
-at the largest size in play. One unit-sphere mesh, a geometry structure
-built once, compacted, every sphere an instance of it, so 45 marbles and
-cores cost one structure of 20,480 triangles; the fireflies the same
-mesh (their own level, by the same bound, if a smaller one serves).
+So each sphere takes **the coarsest level whose gap is within a
+thirtieth of a pixel** at the largest size the project renders (3456 x
+2234, the Mac's window), seen from the nearest the camera comes to it:
+the camera's place grown by its lens, from outside the sphere or within
+it (a cavity), a moving sphere's from its motion's extent
+(`animation/extent.h`). A mesh is built for each level used, once,
+compacted, every sphere an instance of its level's; levels 0 to 9, a
+sphere no level serves (its surface can reach the lens) refused by name
+(`cuda/acceleration/mesh_levels.h`). The marbles scene takes two
+meshes: level 5 for 649 spheres (the fireflies and most marbles), level
+6 for 12, 102,400 triangles; the brass scenes levels 4 to 7, the brass
+sphere level 7.
 
-- **The normal** at a hit is the sphere's own there (from its center, in
-  the instance's space), as a smooth mesh's interpolated normals stand
-  for it: so the shading and MNEE's solve, which works on the sphere
-  itself (its own roots, `integrator/mnee.cuh`), see one surface.
-- **MNEE's seeds** are found today by an intersection program over the
-  casters' boxes (`integrator/mnee_seed.cuh`), which needs every sphere a
-  segment enters, not the nearest. It stays as it is: the casters' boxes
-  a structure of their own, an instance in the same instance level under
-  a mask bit of its own that only seed rays carry.
-- **Considered, not taken:** the spheres kept as custom primitives (as
-  today: every candidate's test on the SM); OptiX's built-in sphere
-  (NVIDIA's program, still on the SM on Ampere); a triangle shell refined
-  to the exact sphere (the RT core's candidate, then a quadratic, a
-  re-trace for grazing rays): exact, but a second mechanism for a
-  difference the tessellation already puts below a thirtieth of a pixel.
-
-**Leaving a surface.** Today a ray ignores the shape it leaves by name,
-in the intersection program; a triangle has none, an any-hit program
-would run for every candidate (the cost the triangles remove), and 8 mask
-bits cannot name 667 shapes. Production practice: the ray's origin moved
-off the surface by an offset scaled to the hit point's floating-point
-error (Wächter and Binder, "A Fast and Robust Method for Avoiding
-Self-Intersection", Ray Tracing Gems ch. 6; what Falcor and RTXDI use).
+- **The point** is the triangle's: the hit's vertices and barycentrics,
+  placed by its instance, as Falcor and RTXDI find a hit's point
+  (`shapes/shapes.cuh`, `acceleration/trace.cuh`). On the surface the
+  ray traced to a few ulps of its own coordinates, which is what the ray
+  offset assumes (2026-10-11), wherever the sphere is and whichever way
+  the ray leaves: the leave test holds, no ray re-hitting the surface it
+  left, at every scale it tries (a 3 mm firefly to a 20 m sphere, the
+  origin to 10 km off).
+- **The normals:** the geometric normal is the triangle's, so a ray
+  leaves on the side of the surface it traced; the shading normal is the
+  sphere's own at the point's place on it, as a smooth mesh's
+  interpolated normal stands for it, so the BSDF sees the sphere. The two
+  differ by under a degree at these levels; a sample above the shading
+  plane and below the triangle's, at a grazing angle, leaves on the
+  triangle's far side, as pbrt-v4 and Falcor let it (both offset by the
+  geometric normal, neither drops it). A texture's object-space point is
+  the sphere's.
+- **MNEE** solves on the sphere itself (its own roots,
+  `integrator/mnee.cuh`); its chain's visibility, traced, meets the mesh
+  within its tolerance (a thousandth of the radius). Its seeds are found
+  by an intersection program over the occluders' boxes
+  (`integrator/mnee_seed.cuh`), which needs every sphere a segment
+  enters, and tests them exactly: those boxes are a structure of their
+  own, an instance in the same instance level under a mask bit only seed
+  rays carry.
+- **The shadow rays' ignored shape:** a shadow ray carries the occluders,
+  which hold no light, so the light it aims at is never among what it can
+  meet, and a triangle needs no program to skip it.
+- **Considered, not taken:**
+  - the hit point put back on the sphere, as the custom primitives had
+    it, with a level fine enough that the mesh clears the ray offset
+    inward. Tried and removed: the offset is about 1.5e-5 of a point's
+    coordinates and the gap a fraction of the radius, so a glass sphere
+    centred near the origin, its coordinates about its radius, needs a
+    gap under 3.8e-6 of it, past level 8; the test scenes' glass spheres
+    (0.5 to 1 m at the origin) were refused. The triangle's point removes
+    the bound rather than tightening it;
+  - the spheres kept as custom primitives (every candidate's test on the
+    SM); OptiX's built-in sphere (NVIDIA's program, still on the SM on
+    Ampere); a triangle shell refined to the exact sphere (a second
+    mechanism for a difference the levels put below a thirtieth of a
+    pixel); one mesh for every sphere (the fireflies would descend a
+    fine tree for a shape 1.5 mm across).
 
 The picture changes from today's, as any change of geometry does: frames
-before and after, side by side, where the glass is thickest.
+before and after, side by side.
 
 **The decision for the user: f16 accumulation.** It doubles the denoiser's tensor rate
 on this card and changes its sums; OIDN takes it only under "fast math".
@@ -186,8 +219,10 @@ measurement says which matters most (the user's rule: no breakdown
 first); the order is an inference from the units: every tracing pass
 runs through the structure, so it is first.
 
-1. **The structure on the RT cores**: changes 1, 2, 3 and 4. Measured
-   after each.
+1. **The structure on the RT cores**: changes 1, 2, 3 and 4, measured
+   as one (the four cannot be separated without code written to be
+   thrown away: an instanced structure of custom boxes). Done
+   2026-10-20; results in section 7.
 2. **Fewer passes and idle threads**: changes 5 and 6.
 3. **The tensor cores**: change 7, then change 8 by the user's decision.
 4. **Bytes and launches**: changes 9 and 10.
@@ -217,6 +252,34 @@ untouched unless the core changes, its 94 outputs then the guard.
   design question, not this machine's tuning.
 - Cooperative vectors (the network inside a ray program): considered
   after these.
+
+## 7. Results
+
+**Phase 1, the structure on the RT cores** (2026-10-20). Release build,
+the GPU otherwise idle, headless `--times` over frames 7000 to 7599 (t =
+117 to 127 s), each period's mean steady; before is the work branch at
+ba7105d, built and run the same hour:
+
+| Size | Before | After |
+|---|---|---|
+| 1920 x 1080 | 11.3 ms | 10.15 ms (-10%) |
+| 3456 x 2234 | 39.6 ms | 35.9 ms (-9%) |
+
+The instance level and the seed's boxes built for fast building instead
+of fast tracing: the same, 10.7 and 38.2 ms against 10.7 and 38.3 over
+the run's first 600 frames, so fast tracing stays, the guide's. The
+picture: the demo frame at t = 120, before and after, shown to the user
+side by side: the same picture, no facet seen, each channel's mean
+within 0.01 of a level, the grain different as the paths are.
+
+What it found on the way: the hit point put back on the sphere needs the
+mesh to clear the ray offset inward, a bound no level meets for a glass
+sphere near the origin (section 4, "Considered, not taken"); the
+triangle's point, Falcor's, removed it. The tests that held a hit to the
+sphere's exact distance take each backend's gap from its harness
+(Metal's 0); the leave test counts a self-hit on the part of a shape a
+ray left, a mesh's triangle, and sees each shape from where the scenes
+see one, so its mesh is the scenes' level.
 
 ## Sources
 

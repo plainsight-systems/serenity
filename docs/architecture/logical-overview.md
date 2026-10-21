@@ -485,15 +485,19 @@ pass, and the rest are CUDA kernels on the same stream, as Blender
 Cycles' OptiX device splits its work
 (`docs/research/2026-10-19-cuda-backend.md`).
 
-**A mask needs an instance level, and the scene has none.** Metal, like
-DXR and OptiX, tests a ray's mask against an instance's, never against a
-primitive's, and the scene's structure is one level of boxes, because on
-this GPU the instance level cost each ray more than it saved
-(`docs/research/2026-10-09-acceleration-structure.md`). So principle 11's
-two questions are kept, on Metal today, as two structures: every shape,
-and the surfaces alone, each ray tracing the one its question names. A
-two-level structure keeps the same two questions as mask bits on its
-instances; which a ray asks does not change.
+**A mask needs an instance level.** Metal, like DXR and OptiX, tests a
+ray's mask against an instance's, never against a primitive's. On the M3
+Max the scene's structure is one level of boxes, because there the
+instance level cost each ray more than it saved
+(`docs/research/2026-10-09-acceleration-structure.md`), so principle 11's
+two questions are two structures: every shape, and the surfaces alone,
+each ray tracing the one its question names. On the RTX 3090 Ti the RT
+cores intersect triangles and instance transforms in hardware and
+nothing else, so the shapes are triangle meshes, one a sphere's level of
+detail and one for boxes, each shape an instance of its mesh, and the two
+questions are mask bits on the instances of one structure
+(`docs/research/2026-10-20-nvidia-hardware-design.md`). Which question a
+ray asks does not change.
 
 **Little is kept alive across a ray query.** On the M3 Max the naive path
 tracer's one kernel holds every path's state, and its ray queries' scratch,

@@ -458,7 +458,7 @@ core's shared layouts are included as they are, with the CUDA branch of
 | the accumulated image's pitched memory and its filtering texture; the bloom levels' arrays, surfaces and textures | GPU backend | `src/cuda/device/images.{h,cpp}`, new |
 | the scene's still arrays and its block, uploaded once | Scene content | `src/cuda/scene/scene_buffers.{h,cpp}`, new |
 | the shapes' transforms and the lights' glows a frame | Scene content | `src/cuda/scene/shape_transforms.{h,cpp}`, `light_glows.{h,cpp}`, new |
-| the two structures built, a moving one each frame; what a pass traces, by mask | Acceleration | `src/cuda/acceleration/scene_acceleration.{h,cpp}`, `structure_block.h`, new |
+| the structure built: the shapes' meshes, the seed's boxes and the instance level over them, the instances rebuilt each frame where shapes move; what a pass traces, by mask bit (the RT cores' design, below) | Acceleration | `src/cuda/acceleration/scene_acceleration.{h,cpp}`, `structure_block.h`, new |
 | the samples not finite, counted a slot and collected | Film | `src/cuda/film/failure_count.{h,cpp}`, new |
 | the accumulated image, by the core's history rule | Frame graph | `src/cuda/frame/accumulation.{h,cpp}`, new |
 | the bloom pyramid at the core's sizes | Frame graph | `src/cuda/frame/frame_images.{h,cpp}`, new |
@@ -467,7 +467,7 @@ core's shared layouts are included as they are, with the CUDA branch of
 | the schedule carried out with the path pass and the tone map; the accumulated image and the failure count read back | Frame graph | `src/cuda/frame/renderer.{h,cpp}`, `offline_frames.{h,cpp}` |
 | device code: the vector types' operators and functions, under Metal's names; hashing, warps, transforms, sRGB; packed layouts read | GPU backend | `src/cuda/math/*.cuh`, `src/cuda/device/layout.cuh`, new |
 | device code: the sampler, the camera, the shapes and their intersection program, textures, materials, media, lights, uniform light selection, the scene's view, the film, the path integrator, tracing | each its family | `src/cuda/<family>/*.cuh`, from `src/metal/<family>/*.metal.h` |
-| the shapes' intersection program, one for every pass, its shapes and table from its structure's hit record; trace() and occluded() over optixTraverse | Acceleration | `src/cuda/acceleration/intersection.cuh`, `trace.cuh`, new |
+| trace() and occluded() over optixTraverse, the hit's shape its instance and its point the triangle's | Acceleration | `src/cuda/acceleration/trace.cuh`, new |
 | a kind no case of a dispatch handles, refused when device code runs (nvcc does not warn of an enumerator a switch leaves out, where Metal's -Wswitch refuses it when it compiles) | GPU backend | `src/cuda/device/layout.cuh`, `unhandled_kind` |
 | the probe tests of eight families (sampler, camera, shapes, textures, lights, film, encodings, BSDFs), one source for both backends, each backend's runner behind `<probe_runner.h>` (SF.12); CUDA's runner and probe kernels | tests | `tests/gpu/*_test.cpp`, `tests/gpu/support/probe_runner.h` (`ProbeScene`), `tests/cuda/support/probe_runner.h`, `tests/cuda/kernels/`, new |
 | the headless program rendering the reference graph, the same bytes twice; the headless shell test on both platforms | tests | `tests/cuda/headless_test.cpp`, `tests/CMakeLists.txt` |
@@ -543,6 +543,27 @@ nothing else.
 | SDL3 and Vulkan on Linux, the window's build there; Vulkan pinned | Build | `CMakeLists.txt`, `cmake/toolchain.json`, `tools/check_toolchain.py` |
 | the window launched on the 3090's monitor with an X server of its own | Build | `Makefile` (`window`) |
 | the swapchain's choices and `--size`, units (the presenter itself needs the X server: checked by the window's run) | tests | `tests/cuda/swapchain_choice_test.cpp`, `tests/options_test.cpp` |
+
+## The structure on the RT cores (the 3090's hardware, Phase 1)
+
+`docs/research/2026-10-20-nvidia-hardware-design.md`: the shapes as
+triangle meshes on Ampere's RT cores, one instance level, its mask bits
+the two questions.
+
+| What | Axis | Where |
+|---|---|---|
+| the unit sphere as an icosphere a level and its gap, the unit box's 12 triangles | Acceleration | `src/cuda/acceleration/shape_meshes.{h,cpp}`, new |
+| each sphere's level, by its gap on screen from the camera's nearest; refused by name where none serves | Acceleration | `src/cuda/acceleration/mesh_levels.{h,cpp}`, new |
+| the meshes built once and compacted; the seed's boxes; the instances, a shape each, its mesh's placement after its own; the mask bits; the instance level rebuilt where shapes move | Acceleration | `src/cuda/acceleration/scene_acceleration.{h,cpp}`, `structure_block.h` |
+| a traced hit's point and normal from its triangle; contract 1 from them, the shading normal the shape's own | Acceleration, Shape | `src/cuda/acceleration/trace.cuh`, `src/cuda/shapes/shapes.cuh` |
+| the trace sites taking the hit's point | Integrator, Pass | `src/cuda/integrator/path.cuh`, `shift.cuh`, `src/cuda/passes/features/features.cu` |
+| MNEE's seed under its own instance and mask bit, the one intersection program | Integrator | `src/cuda/integrator/mnee.cuh`, `mnee_seed.cuh`, `src/cuda/frame/traced_module.cuh`, `traced_program.cpp` |
+| a hit group of built-in triangles; single-level instancing, triangles and custom primitives, a graph two deep | GPU backend | `src/cuda/device/pipeline.{h,cpp}` |
+| the levels handed to the structure | Frame graph | `src/cuda/frame/renderer.cpp` |
+| the meshes' and the levels' unit tests; the harness's hit gap; the leave test's parts of a shape and its cameras | tests | `tests/cuda/shape_meshes_test.cpp`, `mesh_levels_test.cpp`, `tests/{cuda,gpu}/support/traced_probe.h`, `tests/gpu/acceleration_test.cpp`, `leave_test.cpp`, `kernels/leave_probe.h`, `tests/cuda/kernels/traced_probes.cu` |
+
+The shapes' intersection program (`src/cuda/acceleration/intersection.cuh`)
+is removed: a triangle's hit is OptiX's.
 
 ## Not here yet
 
