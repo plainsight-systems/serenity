@@ -75,15 +75,27 @@ ARTICLES = {
                    'm4-shadow-rays-narrow.svg', 'm4-checkerboard-narrow.svg', 'm4-retrain-narrow.svg'],
         'film': 'm3_vs_m4', 'film_title': 'Milestone 3 beside Milestone 4',
     },
+    'milestone-5': {
+        'title': 'Milestone 5: the frame on an NVIDIA GPU',
+        'description': 'Porting the frame to CUDA and OptiX, then arranging its work for the '
+                       'RTX 3090 Ti: geometry, scheduling, precision and the tensor cores.',
+        'date': '2026-10-22', 'milestone': 5,
+        'image': 'images/marbles-m5-20s.jpg',
+        'images': ['marbles-m5-20s.jpg', 'm5-steps.svg',
+                   # the chart drawn again for phones (render-image.html)
+                   'm5-steps-narrow.svg'],
+        'film': 'm4_vs_m5', 'film_title': 'Milestone 4 beside Milestone 5',
+    },
 }
 IMAGE_KEYS = {'artwork', 'poster', 'baseline_poster', 'comparison_poster',
-              'denoised_comparison_poster', 'm3_vs_m4_poster'}
+              'denoised_comparison_poster', 'm3_vs_m4_poster', 'm4_vs_m5_poster'}
 MEDIA_KEYS = IMAGE_KEYS | {'film', 'film_small', 'film_original', 'brass',
                           'baseline', 'baseline_small', 'baseline_original',
                           'comparison', 'comparison_small', 'comparison_original',
                           'denoised_comparison', 'denoised_comparison_small',
                           'denoised_comparison_original',
-                          'm3_vs_m4', 'm3_vs_m4_small', 'm3_vs_m4_original'}
+                          'm3_vs_m4', 'm3_vs_m4_small', 'm3_vs_m4_original',
+                          'm4_vs_m5', 'm4_vs_m5_small', 'm4_vs_m5_original'}
 PUBLIC_PAGES = {'index.html', 'about/index.html', 'writing/index.html', '404.html'} | {
     f'writing/{slug}/index.html' for slug in ARTICLES
 }

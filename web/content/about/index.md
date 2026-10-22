@@ -10,11 +10,11 @@ The scene is deliberately simple: glass, porcelain, and metal marbles on a walnu
 
 ## Where it is now
 
-Milestone 4 makes the frame fast. It applies the optimizations real-time renderers use once the image is right: the light and the network run at the same time on two GPU queues, shadow rays skip the 616 fireflies, and each frame traces half the light’s pixels in an alternating checkerboard. Checking every stage against shipped engines then moved depth of field after the network, which cleaned up the near marbles, and I retrained the network for the new input, for the first time on my RTX 3090.
+Milestone 5 moves the frame to my RTX 3090 Ti, through CUDA and OptiX rather than a portable layer, so I can work with NVIDIA’s own tools and instructions. The first port ran at 89 frames a second at 1920 × 1080. Arranging its work for the card brought it to 174: the spheres became triangle meshes for the ray-tracing cores, unfinished light searches are regrouped so threads don’t sit idle, the GPU code uses fast math, and the network runs in the tensor cores’ own shape. On my M3 Max, Milestone 4 runs the same frame at 57.
 
-The fully lit scene now runs at 57 frames a second at 1920 × 1080 on my M3 Max, up from 43, and about 17 at the display’s full size. The network and the reuse steps are now the larger costs. How to tune the reuse steps as kernels depends on the GPU, so next Serenity leaves the Mac: a Vulkan backend for my RTX 3090 and AMD’s Strix Halo, and Direct3D 12 for the Xbox Series X.
+Next is AMD’s Strix Halo through HIP and HIPRT, then Direct3D 12 on the Xbox Series X. After that the reuse steps can be tuned as kernels on each GPU, the question that started this.
 
-The [fourth milestone]({{< relref "/writing/milestone-4" >}}) follows each optimization and what it bought. The [third]({{< relref "/writing/milestone-3" >}}) follows the model from training data to the Metal kernels that run it; the [second]({{< relref "/writing/milestone-2" >}}) covers path reuse and light focused through glass; the [first]({{< relref "/writing/milestone-1" >}}) records the baseline.
+The [fifth milestone]({{< relref "/writing/milestone-5" >}}) follows the port and the choices that doubled it. The [fourth]({{< relref "/writing/milestone-4" >}}) follows each optimization on the Mac and what it bought; the [third]({{< relref "/writing/milestone-3" >}}) follows the model from training data to the Metal kernels that run it; the [second]({{< relref "/writing/milestone-2" >}}) covers path reuse and light focused through glass; the [first]({{< relref "/writing/milestone-1" >}}) records the baseline.
 
 ## Why the name
 

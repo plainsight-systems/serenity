@@ -1,35 +1,36 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 500" width="720" height="500" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 592" width="420" height="592" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
 <title>Frames a second at 1920 × 1080 after each step of Milestone 5</title>
-<rect x="0" y="0" width="720" height="500" rx="14" fill="#faf8f4"/>
-<text x="24" y="42" font-size="22" font-weight="600" fill="#2b2b2b">Frames a second at 1920 × 1080, the fully lit scene</text>
-<text x="338" y="95" font-size="15" text-anchor="end" fill="#3b3b3b">Milestone 4, M3 Max</text>
-<rect x="350" y="76" width="88.7" height="28" rx="4" fill="#b9b2a5"/>
-<text x="446.7" y="95" font-size="15" font-weight="600" fill="#2b2b2b">57</text>
-<text x="338" y="135" font-size="15" text-anchor="end" fill="#3b3b3b">The port to CUDA and OptiX</text>
-<rect x="350" y="116" width="138.9" height="28" rx="4" fill="#3f6f8f"/>
-<text x="496.9" y="135" font-size="15" font-weight="600" fill="#2b2b2b">89</text>
-<text x="338" y="175" font-size="15" text-anchor="end" fill="#3b3b3b">Every shape as triangles on the RT cores</text>
-<rect x="350" y="156" width="153.2" height="28" rx="4" fill="#3f6f8f"/>
-<text x="511.2" y="175" font-size="15" font-weight="600" fill="#2b2b2b">98</text>
-<text x="338" y="215" font-size="15" text-anchor="end" fill="#3b3b3b">MNEE's walks in rounds</text>
-<rect x="350" y="196" width="175.3" height="28" rx="4" fill="#3f6f8f"/>
-<text x="533.3" y="215" font-size="15" font-weight="600" fill="#2b2b2b">113</text>
-<text x="338" y="255" font-size="15" text-anchor="end" fill="#3b3b3b">A register limit above OptiX's default</text>
-<rect x="350" y="236" width="182.0" height="28" rx="4" fill="#3f6f8f"/>
-<text x="540.0" y="255" font-size="15" font-weight="600" fill="#2b2b2b">117</text>
-<text x="338" y="295" font-size="15" text-anchor="end" fill="#3b3b3b">Both reuses over lists of pairs</text>
-<rect x="350" y="276" width="201.8" height="28" rx="4" fill="#3f6f8f"/>
-<text x="559.8" y="295" font-size="15" font-weight="600" fill="#2b2b2b">130</text>
-<text x="338" y="335" font-size="15" text-anchor="end" fill="#3b3b3b">Fast math, as Cycles and pbrt-v4 build</text>
-<rect x="350" y="316" width="254.6" height="28" rx="4" fill="#3f6f8f"/>
-<text x="612.6" y="335" font-size="15" font-weight="600" fill="#2b2b2b">164</text>
-<text x="338" y="375" font-size="15" text-anchor="end" fill="#3b3b3b">Each program's own register limit</text>
-<rect x="350" y="356" width="262.3" height="28" rx="4" fill="#3f6f8f"/>
-<text x="620.3" y="375" font-size="15" font-weight="600" fill="#2b2b2b">169</text>
-<text x="338" y="415" font-size="15" text-anchor="end" fill="#3b3b3b">The network on the tensor cores' own shape</text>
-<rect x="350" y="396" width="268.6" height="28" rx="4" fill="#3f6f8f"/>
-<text x="626.6" y="415" font-size="15" font-weight="600" fill="#2b2b2b">173</text>
-<text x="338" y="455" font-size="15" text-anchor="end" fill="#3b3b3b">Fused shading, RTXDI's reservoir layout</text>
-<rect x="350" y="436" width="270.5" height="28" rx="4" fill="#3f6f8f"/>
-<text x="628.5" y="455" font-size="15" font-weight="600" fill="#2b2b2b">174</text>
+<rect x="0" y="0" width="420" height="592" rx="14" fill="#faf8f4"/>
+<text x="16" y="34" font-size="17" font-weight="600" fill="#2b2b2b">Frames a second at 1920 × 1080,</text>
+<text x="16" y="56" font-size="17" font-weight="600" fill="#2b2b2b">the fully lit scene</text>
+<text x="16" y="90" font-size="13" fill="#3b3b3b">Milestone 4, M3 Max</text>
+<rect x="16" y="97" width="110.2" height="20" rx="4" fill="#b9b2a5"/>
+<text x="133.2" y="112" font-size="14" font-weight="600" fill="#2b2b2b">57</text>
+<text x="16" y="140" font-size="13" fill="#3b3b3b">The port to CUDA and OptiX</text>
+<rect x="16" y="147" width="172.6" height="20" rx="4" fill="#3f6f8f"/>
+<text x="195.6" y="162" font-size="14" font-weight="600" fill="#2b2b2b">89</text>
+<text x="16" y="190" font-size="13" fill="#3b3b3b">Every shape as triangles on the RT cores</text>
+<rect x="16" y="197" width="190.4" height="20" rx="4" fill="#3f6f8f"/>
+<text x="213.4" y="212" font-size="14" font-weight="600" fill="#2b2b2b">98</text>
+<text x="16" y="240" font-size="13" fill="#3b3b3b">MNEE's walks in rounds</text>
+<rect x="16" y="247" width="217.9" height="20" rx="4" fill="#3f6f8f"/>
+<text x="240.9" y="262" font-size="14" font-weight="600" fill="#2b2b2b">113</text>
+<text x="16" y="290" font-size="13" fill="#3b3b3b">A register limit above OptiX's default</text>
+<rect x="16" y="297" width="226.2" height="20" rx="4" fill="#3f6f8f"/>
+<text x="249.2" y="312" font-size="14" font-weight="600" fill="#2b2b2b">117</text>
+<text x="16" y="340" font-size="13" fill="#3b3b3b">Both reuses over lists of pairs</text>
+<rect x="16" y="347" width="250.8" height="20" rx="4" fill="#3f6f8f"/>
+<text x="273.8" y="362" font-size="14" font-weight="600" fill="#2b2b2b">130</text>
+<text x="16" y="390" font-size="13" fill="#3b3b3b">Fast math, as Cycles and pbrt-v4 build</text>
+<rect x="16" y="397" width="316.5" height="20" rx="4" fill="#3f6f8f"/>
+<text x="339.5" y="412" font-size="14" font-weight="600" fill="#2b2b2b">164</text>
+<text x="16" y="440" font-size="13" fill="#3b3b3b">Each program's own register limit</text>
+<rect x="16" y="447" width="326.0" height="20" rx="4" fill="#3f6f8f"/>
+<text x="349.0" y="462" font-size="14" font-weight="600" fill="#2b2b2b">169</text>
+<text x="16" y="490" font-size="13" fill="#3b3b3b">The network on the tensor cores' own shape</text>
+<rect x="16" y="497" width="333.9" height="20" rx="4" fill="#3f6f8f"/>
+<text x="356.9" y="512" font-size="14" font-weight="600" fill="#2b2b2b">173</text>
+<text x="16" y="540" font-size="13" fill="#3b3b3b">Fused shading, RTXDI's reservoir layout</text>
+<rect x="16" y="547" width="336.2" height="20" rx="4" fill="#3f6f8f"/>
+<text x="359.2" y="562" font-size="14" font-weight="600" fill="#2b2b2b">174</text>
 </svg>

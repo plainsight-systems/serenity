@@ -1,6 +1,6 @@
 # Serenity project site
 
-Hugo implements the homepage, Writing index, four milestone articles,
+Hugo implements the homepage, Writing index, five milestone articles,
 and About page. The shared navy framing and Plex typography follow Cradle and
 Plainsight Systems. No JavaScript, analytics, external fonts, or renderer build
 is required. A custom 404 page is included.
@@ -18,7 +18,7 @@ Open <http://127.0.0.1:1314/>. Rerun after source edits; this is a build followe
 by a static server, not a watcher. The server binds only to loopback and serves
 only the generated output. Port 1313 is the default if `--port` is omitted.
 
-The Milestone 4 film, the three side-by-side comparisons, milestone-one film, their smaller
+The Milestone 5 film, the four side-by-side comparisons, milestone-one film, their smaller
 playback options and original masters, and the brass sphere are hosted at
 `media.plainsight-systems.com` in R2 bucket
 `plainsight-public-media`. Their URLs are configured in `data/media.json`, so
@@ -30,12 +30,13 @@ For offline media development, clear the relevant manifest URLs and pass
 
 ## Content and publication boundary
 
-- `docs/writeups/milestone-1.md` to `milestone-4.md` are the authoritative
+- `docs/writeups/milestone-1.md` to `milestone-5.md` are the authoritative
   articles. The builder stages each as a Hugo leaf bundle, removing its
   duplicate H1 and supplying publication metadata from `ARTICLES` in
   `scripts/site.py`. Edit the prose in the original writeup; update its registry
   entry if its title changes. The registry also selects its images and film.
-- The homepage features the Milestone 4 film. Milestone 4 includes the
+- The homepage features the Milestone 5 film. Milestone 5 includes the
+  Milestone 4 versus Milestone 5 comparison; milestone 4 retains its
   Milestone 3 versus Milestone 4 comparison; milestone 3 retains its ReSTIR
   versus denoised comparison, milestone 2 its path tracer versus ReSTIR
   comparison, and milestone 1 its original film. Each article has its own Writing

@@ -13,6 +13,16 @@ This file tracks active and accepted work.
   same to the bit. Not merged: three deviations outside Metal await the
   user (`workflow.md`).
 
+- **Milestone 5 site update** (2026-10-22, prepared by the user's yes; not
+  published): the homepage plays the Milestone 5 film, rendered on the RTX
+  3090 Ti (its caption gives the live 174 fps and the film's encoded 30
+  fps); the fifth article, staged from docs/writeups/milestone-5.md,
+  carries the Milestone 4 versus Milestone 5 comparison and its chart,
+  with a phone version 420 px wide; Writing, About and the feed cover five
+  milestones. The eight films and stills uploaded to R2, every public copy
+  the same bytes as the local file. Site tests pass (10). Publishing is
+  main's fast-forward and push, waiting for the user's approval.
+
 - **Milestone 4 site update** (2026-10-19, published by the user's approval):
   homepage, Writing, About, article registry/media and feed updated for the
   closed fourth milestone, as for Milestone 3. The homepage plays the
