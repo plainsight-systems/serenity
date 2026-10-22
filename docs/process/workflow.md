@@ -72,7 +72,7 @@ This repo is C++-dominant and performance-sensitive.
   goes in `docs/writeups/`, then `main` is fast-forwarded to the work
   branch, tagged `milestone-N`, and pushed with the tag
   (`git push origin main milestone-N`); `main` only ever fast-forwards.
-  The tags (`milestone-1` to `milestone-4` so far) and source control are
+  The tags (`milestone-1` to `milestone-5` so far) and source control are
   the archive of what each milestone built: what a later decision
   supersedes is deleted, not kept (MEMORY.md, "Decided by the user
   2026-10-17"). Milestone 3 added two steps

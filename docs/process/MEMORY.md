@@ -516,6 +516,18 @@ frame lacked, chosen by the user from a sweep against shipped engines:
 
 ## The RTX 3090 Ti's own design (decided by the user 2026-10-21)
 
+- **Milestone 5 editorial pass (2026-10-22):** Andrew requested his voice
+  guide and Milestone 4 as the reference, with particular attention to
+  keeping the article engaging. The revised writeup follows visible
+  problems, decisions and consequences rather than a pass-by-pass timing
+  inventory. Scheduling gains and the slower wavefront experiment stay
+  together; the chart carries the detailed performance progression.
+  Andrew found the first revision too long. A second pass cut it from
+  about 1,700 to 1,100 words, retaining the geometry, scheduling and
+  precision decisions and the inference connection; secondary experiments
+  remain in the linked research notes.
+  Accepted by Andrew 2026-10-22; Milestone 5 closed.
+
 - **CUDA builds with `--use_fast_math`**, as Blender Cycles and pbrt-v4
   build their GPU kernels (and as Metal's fast math mode is): the
   backend's earlier IEEE default superseded. Every GPU test's comparison
