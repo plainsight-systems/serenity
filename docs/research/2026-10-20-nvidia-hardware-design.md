@@ -530,6 +530,20 @@ developer forum says the same. So:
 - Expected: the image half's launch gaps, perhaps 40 to 80 us of GPU time
   a frame, which the light half partly fills already. Up to 1%.
 
+Change 10, measured (2026-10-22, against change 9, each build twice,
+alternated): 173.9 fps (5.75 to 5.76 ms) at 1920 x 1080 and 50.2 fps
+(19.94 to 19.95 ms) at 3456 x 2234, before and after: no change. The
+graphs run as designed (Nsight Systems over 7,120 frames: two graph
+launches a frame, each updated in place, 4 instantiations in the run;
+the host's capture, update and launch about 27 us a graph against 1.2 us
+a kernel launch, beside a host that waits on the GPU). The frame is the
+GPU's work, both streams keeping it full: a gap on one stream is filled
+by the other's work, so removing gaps frees no time. The 94 outputs the
+same.
+Reverted by the user's decision (2026-10-22): a mechanism that buys
+no time is not kept. The code is on the local branch `graphs-measured`
+(05ceed2).
+
 **Change 10, read-only loads: production already.** Cycles reads its
 scene arrays through const pointers in its launch parameters with plain
 loads (`kernel_data_fetch` in `kernel/device/{cuda,optix}/globals.h`: no
