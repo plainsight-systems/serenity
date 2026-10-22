@@ -114,7 +114,7 @@ class SiteTests(unittest.TestCase):
         home = (output / 'index.html').read_text()
         index = (output / 'writing/index.html').read_text()
         self.assertIn('2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4', first)
-        self.assertIn('2026-10-22-marbles-opening-m5-denoised-1080p30-16mbps.mp4', home)
+        self.assertIn('2026-10-22-marbles-opening-m5-denoised-60fps-1080p60.mp4', home)
         self.assertIn('href="/serenity/writing/milestone-5/"', home)
         self.assertNotIn('2026-10-19-marbles-opening-m4-denoised-1080p30-16mbps.mp4', home)
         self.assertNotIn('2026-10-15-marbles-opening-restir-pt-denoised-1080p30-16mbps.mp4', home)

@@ -13,15 +13,18 @@ This file tracks active and accepted work.
   same to the bit. Not merged: three deviations outside Metal await the
   user (`workflow.md`).
 
-- **Milestone 5 site update** (2026-10-22, prepared by the user's yes; not
-  published): the homepage plays the Milestone 5 film, rendered on the RTX
-  3090 Ti (its caption gives the live 174 fps and the film's encoded 30
-  fps); the fifth article, staged from docs/writeups/milestone-5.md,
-  carries the Milestone 4 versus Milestone 5 comparison and its chart,
-  with a phone version 420 px wide; Writing, About and the feed cover five
-  milestones. The eight films and stills uploaded to R2, every public copy
-  the same bytes as the local file. Site tests pass (10). Publishing is
-  main's fast-forward and push, waiting for the user's approval.
+- **Milestone 5 site update** (2026-10-22, published by the user's
+  approval): the homepage plays the Milestone 5 film rendered on the RTX
+  3090 Ti, 45 s at 60 fps (the user's choice over 30 s at 30 fps: the last
+  15 s the full swarm), encoded at crf 16 with peaks capped, 1080p60 at
+  about 8 Mb/s and 540p60 at about 2; its caption gives the live 174 fps
+  and the film's encoded 60 fps. The fifth article, staged from
+  docs/writeups/milestone-5.md, carries the Milestone 4 versus Milestone 5
+  comparison (30 fps, Milestone 4's film existing at 30 fps only) and its
+  chart, with a phone version 420 px wide; Writing, About and the feed
+  cover five milestones. Every film and still on R2 checked against the
+  local bytes; the superseded 30 fps Milestone 5 film deleted from R2 and
+  media/. Site tests pass (10).
 
 - **Milestone 4 site update** (2026-10-19, published by the user's approval):
   homepage, Writing, About, article registry/media and feed updated for the
