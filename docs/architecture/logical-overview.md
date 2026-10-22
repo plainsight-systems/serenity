@@ -448,7 +448,8 @@ frames.
 **How frames are paced is the backend's, behind a frame source.** The
 window does not know whether the display calls it, as Metal's display
 link does, or whether its own loop waits on a swapchain image and
-presents it, as a CUDA or Direct3D 12 backend will. It hands a
+presents it, as the CUDA backend's does (through Vulkan) and a Direct3D
+12 backend will. It hands a
 **frame source** two things to call: its events, which it handles
 waiting at most as long as the source says, and each frame, given the
 instant it will be shown, for which it returns the frame's inputs. The
@@ -461,12 +462,16 @@ into and when. This is the shape of SDL3's main callbacks
 the loop owns it, on iOS through a display link, and the app's code is
 the same either way.
 
-The target is not met yet. The denoised frame takes 58.3 ms at the
-window's size and 17.4 ms at 1920 x 1080, with the lens applied after the
-network (`docs/research/2026-10-18-production-sweep.md`; 56 and 16.7
-before it, Milestone 4's Step 4, `docs/research/2026-10-17-milestone-4-plan.md`); ReSTIR PT alone at the
-window's full size takes about 150. Making the frame fit the budget is
-later work. The headless renderer is not held to the budget: footage is
+The target is met on the RTX 3090 Ti and not yet on the M3 Max. On the
+Mac the denoised frame takes 58.3 ms at the window's size and 17.4 ms at
+1920 x 1080, with the lens applied after the network
+(`docs/research/2026-10-18-production-sweep.md`; 56 and 16.7 before it,
+Milestone 4's Step 4, `docs/research/2026-10-17-milestone-4-plan.md`);
+ReSTIR PT alone at the window's full size takes about 150. On the 3090,
+designed for its hardware, it takes 5.75 ms (173.9 fps) at 1920 x 1080
+and 19.96 ms (50.1 fps) at the Mac window's 3456 x 2234
+(`docs/research/2026-10-20-nvidia-hardware-design.md`, section 8). Making
+the Mac's frame fit the budget is later work. The headless renderer is not held to the budget: footage is
 written at any resolution and any number of samples.
 
 ## Platform constraints

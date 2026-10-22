@@ -230,7 +230,19 @@ This file tracks active and accepted work.
    (no reference renders, the user's decision), kept by the user
    2026-10-19.
 
-2. **Next (the user, 2026-10-19): the other backends, before any kernel
+2. **Done 2026-10-22.** Milestone 5, the frame on an NVIDIA GPU
+   (docs/writeups/milestone-5.md): the frame on CUDA and OptiX on the RTX
+   3090 Ti, then designed for its hardware
+   (docs/research/2026-10-20-nvidia-hardware-design.md,
+   docs/research/2026-10-21-tracing-divergence.md): 89 fps (11.2 ms) at the
+   port, 173.9 fps (5.75 ms) at its close at 1920 x 1080, and 25 to 50.1 fps
+   (39.6 to 19.96 ms) at 3456 x 2234; films of the opening rendered on the
+   3090 (media/2026-10-22-*, not yet on R2). Open, the user's: f16
+   accumulation in the denoiser, an MNEE iteration cap, split-K in the
+   denoiser (each a picture change). The tag and main's fast-forward wait
+   for the user's review of the write-up. Next: HIP with HIPRT on Strix
+   Halo.
+   The plan the milestone followed, from 2026-10-19: **the other backends, before any kernel
    tuning,** since the reuse kernels' tiling, layout and fusion depend on
    the hardware. Decided by the user 2026-10-19: each vendor's own API,
    no portable layer (MEMORY.md, "Metal now, Vulkan later", superseded).

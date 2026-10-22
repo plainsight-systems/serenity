@@ -10,19 +10,32 @@ amount of running state, combining partial results, and reusing earlier work.
 The scene gives me something visible to judge that work by: 36 glass,
 porcelain, and metal marbles on a walnut table, lit by 616 moving fireflies.
 
-It runs natively on Apple silicon through Metal 4, in C++20. The goal is a
+It runs natively on Apple silicon through Metal 4 and on NVIDIA’s GPUs
+through CUDA and OptiX, in C++20. The goal is a
 clean moving image at the display’s full resolution and 60 frames a second,
 with the light traced at a lower resolution and brought up to the display’s.
 
-[![The marbles twenty seconds into the opening, the swarm perched among them: ReSTIR PT and MNEE traced in a checkerboard, denoised and upscaled to 1920 × 1080 by the retrained network](docs/writeups/images/marbles-m4-20s.jpg)](https://serenity.plainsight-systems.com/#film)
+[![The marbles twenty seconds into the opening, rendered on the RTX 3090 Ti: ReSTIR PT and MNEE traced in a checkerboard, denoised and upscaled to 1920 × 1080](docs/writeups/images/marbles-m5-20s.jpg)](https://serenity.plainsight-systems.com/#film)
 
-**Current state: milestone 4.** The fully lit scene now runs at 57
-frames a second at 1920 × 1080 on my M3 Max, and about 17 at the full size
-of its display. Milestone 3 finished the pipeline; this milestone applied
-the standard optimizations real-time renderers use once the image is
-right. The light and the denoiser run at the same time on two GPU queues;
-shadow rays skip the 616 fireflies, which cast no shadow worth tracing;
-and each frame traces half the light’s pixels in an alternating
+**Current state: milestone 5.** The same frame now runs on my RTX 3090 Ti,
+through CUDA and OptiX, at 174 frames a second at 1920 × 1080 and 50 at
+3456 × 2234. The port alone ran at 89; designing the frame for the
+3090’s hardware doubled it. Every sphere became a triangle mesh for the
+ray-tracing cores, MNEE’s walks run in rounds that keep the GPU’s thread
+groups full, ReSTIR PT’s shifts run over lists of pairs, the GPU code is
+compiled with fast math as Cycles and pbrt-v4 compile theirs, each
+program has its own register limit, the network runs on the tensor
+cores’ own shape, and the reservoirs are stored as NVIDIA’s RTXDI stores
+them. About as many changes were measured and dropped, among them
+Cycles’ wavefront design, which lost on this GPU.
+
+Milestone 4 made the frame fast on the Mac: the fully lit scene runs at
+57 frames a second at 1920 × 1080 on my M3 Max, and about 17 at the full
+size of its display. Milestone 3 had finished the pipeline; Milestone 4
+applied the standard optimizations real-time renderers use once the image
+is right. The light and the denoiser run at the same time on two GPU
+queues; shadow rays skip the 616 fireflies, which cast no shadow worth
+tracing; and each frame traces half the light’s pixels in an alternating
 checkerboard, rebuilding the other half from the frame before. A check of
 every stage against shipped engines then moved depth of field after the
 denoiser, which cleaned up the near marbles, and I retrained the network
@@ -56,6 +69,9 @@ covers the denoiser: what it learned from, how it runs in the frame, and
 what it still leaves.
 [Milestone 4: making the frame fast](docs/writeups/milestone-4.md) follows
 where the frame’s time went and what each optimization bought.
+[Milestone 5: the frame on an NVIDIA GPU](docs/writeups/milestone-5.md)
+covers the port to CUDA and OptiX and the frame designed again for the
+RTX 3090 Ti, including what was measured and dropped.
 [Milestone 1](docs/writeups/milestone-1.md) records the original baseline.
 The design is in [`docs/architecture/`](docs/architecture/README.md).
 
@@ -110,12 +126,11 @@ projections. I trained it in PyTorch on scenes generated for the purpose and
 run it every frame in the renderer’s own Metal compute kernels, which match
 PyTorch to a few parts in ten thousand.
 
-Next, Serenity leaves the Mac, onto each vendor’s own API: CUDA and OptiX
-for my RTX 3090, HIP for AMD’s Strix Halo, and Direct3D 12 for the Xbox
-Series X. The reuse
-passes come after that, treated as kernels and tuned for each GPU, since
-where the time and the bytes go when reservoirs merge depends on the
-hardware.
+Serenity runs on each vendor’s own API: Metal on the Mac, and now CUDA
+and OptiX on my RTX 3090 Ti. Next come HIP with HIPRT for AMD’s Strix
+Halo, and Direct3D 12 for the Xbox Series X. The reuse passes come after
+that, treated as kernels and tuned for each GPU, since where the time and
+the bytes go when reservoirs merge depends on the hardware.
 
 Serenity is R&D under Plainsight Systems LLC.
 
@@ -234,6 +249,29 @@ its own Python environment, Python 3.12.15 and PyTorch 2.14.1 through
 in `training/uv.lock`. Nothing the renderer builds or runs depends on it;
 you need it only to make or change the network. Its data and models live
 in `../serenity-data/`, beside the checkout, and are never committed.
+
+### On an NVIDIA GPU
+
+The CUDA backend builds on Linux with an NVIDIA GPU of the Ampere
+generation (sm_86) or later. Mine is an RTX 3090 Ti on Ubuntu 24.04 with
+driver 595.91.07, CUDA 13.2, Ubuntu's clang 18, CMake 3.28 and its Vulkan
+headers (libvulkan-dev, for the window), versions recorded in
+[`cmake/toolchain.json`](cmake/toolchain.json) as the Mac's are. OptiX's
+headers are fetched at configure time; its runtime comes with the driver.
+The same targets build and test it:
+
+```sh
+make test     # the core's tests, and the CUDA tests on the GPU
+make weights
+make headless GRAPH=graphs/restir_pt_denoised.toml SCENE=scenes/marbles.toml
+make window GRAPH=graphs/restir_pt_denoised.toml SCENE=scenes/marbles.toml
+```
+
+`make window` starts its own X server on the monitor through `xinit`, so it
+runs from an ssh session too, once X's wrapper allows that
+([`docs/research/2026-10-20-cuda-window.md`](docs/research/2026-10-20-cuda-window.md)
+lists the packages and the one setting). Escape or Ctrl-C ends it. The
+headless renderer's `--times` prints the frame time the write-ups quote.
 
 ## Find your way around
 
