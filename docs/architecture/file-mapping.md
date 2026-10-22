@@ -611,6 +611,13 @@ their own.
 | 16-byte copies into shared memory past the registers, zero-filled at a border; their groups and waits | GPU backend | `src/cuda/device/async_copy.cuh`, new |
 | the convolutions: 16 input channels a step, tiles copied by cp.async, the taps padded, the results written from the fragments | Pass | `src/cuda/passes/denoise/denoise.cu` |
 
+## ReSTIR PT's shade in the spatial merge (`docs/research/2026-10-20-nvidia-hardware-design.md`, section 8, change 5)
+
+| What | Axis | Where |
+|---|---|---|
+| step 12 for one pixel, called by the shade pass and by the spatial merge | Pass | `src/cuda/passes/restir_pt/shade.cuh`, new |
+| the merge shading the pixel it merged; the shade pass only in a graph without the spatial pass | Pass, Frame graph | `src/cuda/passes/restir_pt_spatial/`, `src/cuda/passes/restir_pt_shade/`, `src/cuda/frame/renderer.{h,cpp}` |
+
 ## Not here yet
 
 - **HIP with HIPRT** on AMD's Strix Halo and **Direct3D 12** on the Xbox

@@ -2,7 +2,10 @@
 // trace nothing, taking the frame's launch parameters by address
 // (frame/frame_launch.h): the pairing, step 8's choices before its shifts
 // (cuda/passes/restir_pt/shift_replay.h), and step 11, the merge, Metal's
-// restir_pt_spatial (metal/passes/restir_pt_spatial/restir_pt_spatial.metal).
+// restir_pt_spatial (metal/passes/restir_pt_spatial/restir_pt_spatial.metal),
+// with step 12, the shade, in the merge's thread (passes/restir_pt/
+// shade.cuh): the schedule puts the shade straight after this pass, and it
+// reads only the light the merge has just summed (core/frame/schedule.h).
 
 #include "core/contracts/frame_constants.h"
 #include "core/contracts/path_reservoir.h"
@@ -12,6 +15,7 @@
 #include "cuda/frame/frame_launch.h"
 #include "cuda/math/srgb.cuh"
 #include "cuda/passes/restir_pt/restir_pt.cuh"
+#include "cuda/passes/restir_pt/shade.cuh"
 #include "cuda/passes/restir_pt_spatial/partner.cuh"
 
 namespace serenity {
@@ -72,8 +76,9 @@ __device__ inline void spatial_pair(const serenity::cuda::FrameLaunch& launch) {
   }
 }
 
-// Step 11: the merge, one thread a traced pixel; its estimate added to the
-// light buffer (its own pixel's alone, so in place); with temporal reuse in
+// Steps 11 and 12: the merge, one thread a traced pixel; its estimate added
+// to the pixel's light, which is shaded at once, the light buffer not
+// written back (nothing reads it after the shade); with temporal reuse in
 // the graph, the path it keeps written as the frame's final reservoir.
 __device__ inline void spatial_merge(
     const serenity::cuda::FrameLaunch& launch) {
@@ -139,7 +144,9 @@ __device__ inline void spatial_merge(
     }
   }
   sum += canonical * restir_pt::estimate(own);
-  launch.light[i] += make_float4(sum / float(k + 1u), 0.0f);
+  const float3 light = xyz(launch.light[i]) + sum / float(k + 1u);
+  count_non_finite(restir_pt::shade(launch, traced, pixel, light),
+                   launch.non_finite);
   if (!keeps) {
     return;
   }

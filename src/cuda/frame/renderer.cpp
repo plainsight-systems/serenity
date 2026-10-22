@@ -204,7 +204,11 @@ Renderer::Renderer(const Device& device, Submission& submission,
         restir_pt_spatial_.emplace(*optix_, records);
         break;
       case frame::PassKind::restir_pt_shade:
-        restir_pt_shade_.emplace();
+        // The spatial pass's merge shades when the graph has it
+        // (passes/restir_pt_spatial/restir_pt_spatial.h).
+        if (!has(schedule, frame::PassKind::restir_pt_spatial)) {
+          restir_pt_shade_.emplace();
+        }
         break;
       case frame::PassKind::restir_pt_duplication:
         restir_pt_duplication_.emplace();
@@ -565,8 +569,12 @@ void Renderer::record_pass(frame::PassKind kind, CUstream stream,
           .record(stream, address, launch);
       break;
     case frame::PassKind::restir_pt_shade:
-      made(restir_pt_shade_, "ReSTIR PT's shade")
-          .record(stream, address, launch);
+      // Shaded by the spatial pass's merge, recorded just before, when the
+      // graph has it (the constructor).
+      if (!restir_pt_spatial_) {
+        made(restir_pt_shade_, "ReSTIR PT's shade")
+            .record(stream, address, launch);
+      }
       break;
     case frame::PassKind::restir_pt_duplication:
       made(restir_pt_duplication_, "ReSTIR PT's duplication")

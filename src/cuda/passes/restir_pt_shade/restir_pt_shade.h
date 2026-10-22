@@ -14,6 +14,8 @@ namespace serenity::cuda {
 // (restir_pt_shade.cu), one thread a traced pixel, the light buffer (and,
 // with no reuse, the initial reservoir's own estimate) folded into the
 // accumulated image, which is the frame's radiance, as the path pass's is.
+// Recorded only in a graph without the spatial pass, whose merge shades
+// (cuda/passes/restir_pt/shade.cuh).
 //
 // Throws CudaError if the module cannot be loaded.
 class RestirPtShadePass {

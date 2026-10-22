@@ -386,6 +386,7 @@ class Renderer {
   std::optional<RestirPtInitialPass> restir_pt_initial_;
   std::optional<RestirPtTemporalPass> restir_pt_temporal_;
   std::optional<RestirPtSpatialPass> restir_pt_spatial_;
+  // only without the spatial pass, whose merge shades
   std::optional<RestirPtShadePass> restir_pt_shade_;
   std::optional<RestirPtDuplicationPass> restir_pt_duplication_;
   std::optional<FeaturesPass> features_pass_;

@@ -435,6 +435,112 @@ The demo, against 2022573: 168.6 to 172.7 fps (5.93 to 5.79 ms) at
 demo's frame side by side, 0.3% of its pixels by one or two levels, the
 means the same.
 
+### Changes 5, 9 and 10, from what production does and the frame's own launches
+
+The frame's operations, from the latest trace (7,020 frames, the demo at
+1920 x 1080 after change 7): a frame launches 59 kernels, 8 OptiX
+programs, 13 memsets and 18 copies. The light half: the 8 OptiX launches
+and about 18 kernels. The image half: about 41 kernels (the denoiser's
+27 with the depth median's 6, the depth of field's 6, the tone map's 12),
+no OptiX launch. What each change does, from the shipped system it
+follows, with what is expected before it is measured:
+
+**Change 5, ReSTIR PT's shade into the spatial merge.** RTXDI's fused
+mode shades a pixel in the dispatch that resampled it. Here the shade reads
+only the light buffer, and the schedule puts it straight after the spatial
+pass whenever that pass is present (core/frame/schedule.h). So the merge,
+having added its estimate to the pixel's light, folds that light into
+the accumulated image itself (the shade's own code, `accumulate` and
+`count_non_finite`), and no shade launches. The same additions in the
+same order: the same to the bit. A graph without the spatial pass
+launches the shade as now; Metal keeps its own passes. Expected: the
+shade's 16 us and its launch, under a run's spread in frame time.
+Measured (2026-10-22, against change 7, each build twice, alternated):
+172.7 to 172.9 fps (5.79 to 5.785 ms) at 1920 x 1080, 49.6 to 49.7 fps
+(20.15 to 20.11 ms) at 3456 x 2234, within a run's spread; the 94
+outputs the same.
+
+**Change 5, the depth of field's and the tone map's chains: kept as
+passes.** Section 4 called them per-pixel chains; they are not. Each
+kernel reads a neighbourhood of the one before: the tiles' dilation, the
+gather over presorted neighbours, the median, the bloom's 13-tap
+downsample and tent upsample. UE5's depth of field (its flatten,
+dilate, setup, reduce, gather, postfilter and recombine) and its bloom,
+like Call of Duty: Advanced Warfare's, keep each as its own pass. What the
+fusion was for, the launch gaps between small kernels (the tone map's 10
+level kernels hold 42 us of work), is what change 10's graph removes, the
+passes kept.
+
+**Change 9, RTXDI's reservoir layout.** RTXDI maps a pixel to its
+reservoir in two steps: `RTXDI_PixelPosToReservoirPos` halves x under
+the checkerboard, and `RTXDI_ReservoirPositionToPointer` stores the
+result in 16 x 16 blocks, each 256 contiguous elements, rows of blocks
+`ceil(width / 16) * 256` apart. The first step is contract 20's packing
+already (`checkerboard_slot`); what is new:
+
+- **The allocation sized to the packed grid**, `checkerboard_width(w) x
+  h` with the checkerboard and `w x h` without, padded to whole 16 x 16
+  blocks: the core's `path_reuse_arrays` takes the checkerboard, so both
+  backends allocate half the per-pixel arrays (Metal's packing is the
+  same contract; its row-linear slots fit the padded size). Memory only:
+  no time expected from it.
+- **The slots block-linear on CUDA**: `Traced::slot` and its inverse
+  `slot_pixel` (passes/restir_pt/restir_pt.cuh) RTXDI's mapping, and the
+  duplication pass's own row-linear index through it. A per-pixel launch
+  is already 16 x 16 threads (`per_pixel_block`), so a block's threads
+  write one contiguous 256-slot span, and a neighbour within the spatial
+  disc (radius 30) lies a few blocks away, not up to 30 rows of 960
+  slots. Every array indexed by slot follows (reservoirs, primaries,
+  light, shifts, replays, finals, previous positions and pixels,
+  duplication); the pair lists' capacity is the slot count times the
+  neighbours. The same to the bit. Metal keeps its row-linear slots: the
+  layout is this GPU's (L2 sectors and DRAM pages), not the contract's.
+  Expected: within the pairs' and merges' 0.4 ms, a few percent of it.
+
+**Change 10, the image half as a CUDA graph; the light half's runs of
+kernels too.** OptiX's launches cannot be captured. Tried on the 3090
+(OptiX 9.1, driver 595.91): a captured frame instantiates and launches,
+but its OptiX launches are not in the graph, only their parameter
+copies, and the frame faults. An NVIDIA engineer's answer on the
+developer forum says the same. So:
+
+- **The image half, whole**: its 41 kernels recorded under stream
+  capture on the image stream, after the hand-off wait (which stays
+  outside the graph, as the frame's begin and completion events do, so
+  `--times` reads the same events), and launched as one graph. The graph
+  is captured again each frame and the slot's executable graph updated in
+  place (`cuGraphExecUpdate`), instantiated again only when its shape
+  changes (a new size, the history's first frame). This is the CUDA
+  programming guide's whole-graph update, and what llama.cpp's CUDA
+  backend does each token. So whatever `record_image` records is what
+  runs, and no parameter is baked in at a capture.
+- **MNEE's walk** (its start, 7 rounds and settle: 9 kernels between
+  OptiX launches) captured the same way, in its pass. The light half's
+  other runs are one to three operations, where a graph's own launch
+  costs what it saves.
+- **An OptiX launch under capture is refused**: `TracedProgram` and
+  `ShiftReplay` ask `cuStreamIsCapturing` and throw, since the driver
+  would otherwise drop the launch without an error.
+- Expected: the image half's launch gaps, perhaps 40 to 80 us of GPU time
+  a frame, which the light half partly fills already. Up to 1%.
+
+**Change 10, read-only loads: production already.** Cycles reads its
+scene arrays through const pointers in its launch parameters with plain
+loads (`kernel_data_fetch` in `kernel/device/{cuda,optix}/globals.h`: no
+`__ldg`), as this renderer does (cuda/scene/scene_block.cuh). On sm_86
+global loads are cached in L1, which is the same cache as the texture
+path (T). No change.
+
+**One pipeline for the tracing passes: withdrawn.** It came before the
+register rule (2022573). An OptiX pipeline launches as one kernel, so
+the programs sharing it would share one register allocation, the largest
+limit (the tree's 200), undoing the 128 the shifts, the features and the
+path tracer run at (inferred from what a launch is, not measured).
+
+Each change is its own commit, the 94 outputs the same to the bit for
+each, the demo's frame time before and after; the gates once, after
+change 10.
+
 ## Sources
 
 - G: NVIDIA Ampere GA102 GPU Architecture whitepaper, v2 —

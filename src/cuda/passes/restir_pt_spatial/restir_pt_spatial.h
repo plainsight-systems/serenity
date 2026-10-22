@@ -15,7 +15,10 @@ namespace serenity::cuda {
 // RestirPtSpatialPass (metal/passes/restir_pt_spatial/restir_pt_spatial.h,
 // which gives what it reads, writes and costs): the shifts to the paired
 // neighbors, the replays, the pairwise merge into the light buffer and, with
-// temporal reuse, the final reservoirs. The sequence both reuses record
+// temporal reuse, the final reservoirs; and step 12, the shade, in the
+// merge's thread, RTXDI's fused shading: the schedule puts the shade
+// straight after this pass, so the renderer records no shade pass beside
+// it (passes/restir_pt/shade.cuh). The sequence both reuses record
 // (cuda/passes/restir_pt/shift_replay.h), with this pass's pairing and
 // merge (restir_pt_spatial_kernels.cu) and its reconnections and replays
 // (restir_pt_spatial.cu).
@@ -29,11 +32,10 @@ class RestirPtSpatialPass {
 
   // Records the pass on `stream`, the frame's launch parameters at
   // `launch`, `frame` their host copy. Throws CudaError if the frame lacks
-  // what the sequence reads or a launch is refused.
+  // what the sequence reads, the accumulated image or its counter, or a
+  // launch is refused.
   void record(CUstream stream, CUdeviceptr launch,
-              const FrameLaunch& frame) const {
-    sequence_.record(stream, launch, frame);
-  }
+              const FrameLaunch& frame) const;
 
  private:
   ShiftReplay sequence_;
