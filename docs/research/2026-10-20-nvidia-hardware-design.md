@@ -353,6 +353,88 @@ sphere's exact distance take each backend's gap from its harness
 ray left, a mesh's triangle, and sees each shape from where the scenes
 see one, so its mesh is the scenes' level.
 
+## 8. Phases 3 and 4, designed (2026-10-21)
+
+Taken up by the user 2026-10-21 after the tracing passes' work
+(`2026-10-21-tracing-divergence.md`, section 8): changes 7, 5, 9 and 10,
+in that order; change 8 stays the user's call.
+
+**Where the frame is.** The demo at 1920 x 1080, 168.6 fps (5.93 ms): the
+light half 4.15 ms of GPU work, the image half 2.26 ms, run on their two
+streams (frame N's image half beside frame N + 1's light half). Each
+frame takes about 11 ms from start to end and one ends every 5.9 ms, so
+the halves overlap, and the GPU is full: the frame is the two halves'
+work, 6.4 ms, less 0.5 ms the overlap recovers. Measured by the
+submission's own events (a probe build). Nsight Systems' CUDA trace
+shows the halves one after the other (a frame there takes 6.6 ms): its
+tracing serializes the streams, so a trace's timeline is not the frame's
+schedule, only each kernel's time. Every millisecond either half sheds
+is the frame's.
+
+### Change 7: the convolutions on the tensor cores' own shape
+
+What limits them (Nsight Compute, `conv3x3_n4` at 1920 x 1080): the
+tensor pipe busy 34 to 41% of the time; the warps stalled most on the
+tensor pipe's issue rate (math pipe throttle), then on the block's
+barriers between copying a block of 8 input channels and computing on it,
+then on the copy's global loads; 4.4 million of the 8.0 million shared
+memory wavefronts bank conflicts. NVIDIA's own answer on Ampere is
+CUTLASS's implicit-GEMM convolution (`cutlass/conv`, the Ampere tensor-op
+mainloop): mma.sync m16n8k16, ldmatrix from conflict-free shared layouts,
+cp.async copies several stages ahead. Taken in two steps, each measured
+and kept only if it wins:
+
+1. **m16n8k16 and conflict-free tiles.** A K of 16 input channels a
+   product, two 8-channel blocks, half the products' instructions;
+   A by ldmatrix.x4 (16 pixels by 16 channels), B by ldmatrix.x2.trans; a
+   width of input channels that is an odd number of blocks (the test
+   network's 8, 24, 40) takes its last block by m16n8k8. The halo held
+   as one plane a block of 8 channels, a pixel's 16 bytes a row, so
+   ldmatrix's 8 rows are 128 contiguous bytes; the weights' rows padded
+   by 16 bytes, so B's 8 rows fall on distinct banks. The results
+   written from the accumulators' fragments, two channels a lane, no
+   staging through shared memory. The tile stays contract 18's (4 rows
+   of 32 pixels a block, up to 32 output channels).
+2. **The copy ahead of the math.** cp.async (16 bytes, zero-filled past
+   the level's border) into a second stage while the first is multiplied,
+   CUTLASS's multistage mainloop at two stages: the barrier stall and the
+   loads' latency off the math's path, for twice the shared memory (36 KB
+   a block at 32 output channels, 2 blocks an SM where 7 run now).
+
+**The picture.** The tensor core sums 16 products before adding them to
+the accumulator, so the sums round in another order: not the same to the
+bit. The guard is the PyTorch fixture (`tests/gpu/denoise_test.cpp`, its
+tolerance), then the demo's frame side by side.
+
+**Change 7, measured** (2026-10-21). Each convolution kernel's GPU time
+a frame (Nsight Systems, the demo at 1920 x 1080, frames 7000 on), the
+variants built from one source, two constants apart (K, stages), every
+one with the 16-byte copies by cp.async, the padded taps and the results
+from the fragments:
+
+| Variant | 32 outputs a block | 24 | 16 | Shared memory, registers (32) |
+|---|---|---|---|---|
+| before: K 8, ushort4 loads, staged results | 914 us | 293 us | 87 us | 12 KB, 70 |
+| K 8, one stage | 820 | 277 | 75 | 9 KB, 70 |
+| **K 16, one stage** | **784** | **260** | **73** | 18 KB, 85 |
+| K 8, two stages | 813 | 270 | 72 | 18 KB, 80 |
+| K 16, two stages | 942 | 282 | 77 | 36 KB, 75 |
+
+Kept: K 16, one stage, 177 us a frame fewer (14%). The second stage,
+CUTLASS's multistage mainloop, lost: at this tile (4 warps, 32 x 4
+pixels, 32 outputs) its shared memory leaves 2 blocks an SM, where CUTLASS
+pays for its stages with larger tiles. A first build lost to every
+variant until its accumulators were indexed by loops the compiler did not
+unroll: 128 bytes of each thread's accumulators in local memory (the
+compiler's report, STACK:128); every loop over the tile unrolled
+(`#pragma unroll`), none.
+
+The demo, against 2022573: 168.6 to 172.7 fps (5.93 to 5.79 ms) at
+1920 x 1080, 48.5 to 49.4 fps (20.63 to 20.25 ms) at 3456 x 2234. The
+94 outputs: the denoised graphs' 11 changed, every other the same; the
+demo's frame side by side, 0.3% of its pixels by one or two levels, the
+means the same.
+
 ## Sources
 
 - G: NVIDIA Ampere GA102 GPU Architecture whitepaper, v2 —

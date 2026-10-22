@@ -44,6 +44,7 @@
 #include <cub/block/block_scan.cuh>
 
 #include "core/contracts/denoise.h"
+#include "cuda/device/async_copy.cuh"
 #include "cuda/device/layout.cuh"
 #include "cuda/device/matrix.cuh"
 #include "cuda/math/vector.cuh"
@@ -69,12 +70,6 @@ __device__ inline ushort4 narrow(float4 v) {
                       __half_as_ushort(__float2half_rn(v.y)),
                       __half_as_ushort(__float2half_rn(v.z)),
                       __half_as_ushort(__float2half_rn(v.w)));
-}
-
-// Metal's max(float4, float), each component; its own name, since a max
-// declared here would hide math/vector.cuh's for every call below.
-__device__ inline float4 max_each(float4 a, float b) {
-  return make_float4(max(a.x, b), max(a.y, b), max(a.z, b), max(a.w, b));
 }
 
 // A pixel of a pitched image of four floats (cuda/device/images.h).
@@ -424,14 +419,17 @@ __device__ void denoise_input(const DenoiseConstants& k,
 // NT blocks of 8 output channels (2 x NT accumulators, NT at most 4, as
 // Metal's), a grid's z one such chunk of the outputs.
 //
-// For each block of 8 input channels the block of threads first copies,
-// with every thread, the block's 6 x 34 pixels of input (its 4 x 32 and the
-// border the taps reach) and its 9 x 8 x NT x 8 weights into shared memory,
-// coalesced (GPU.2); every warp's 9 taps then load their fragments from
-// there by ldmatrix, so each input value leaves device memory once a block,
-// not 9 times a warp (GDSA.16). Reads past the level's border are zeros.
-// Results go through shared memory, a block of channels at a time, to be
-// biased, rectified and narrowed to half.
+// For each two blocks of 8 input channels (K of an m16n8k16 product,
+// matrix.cuh) the block of threads first copies, with every thread, the
+// block's 6 x 34 pixels of input (its 4 x 32 and the border the taps reach)
+// and its 9 x 16 x NT x 8 weights into shared memory, coalesced (GPU.2);
+// every warp's 9 taps then load their fragments from there by ldmatrix, so
+// each input value leaves device memory once a block, not 9 times a warp
+// (GDSA.16). A width of an odd number of blocks takes its last by
+// m16n8k8. Reads past the level's border are zeros. The results are
+// biased, rectified and narrowed to half from the accumulators' fragments,
+// two channels a lane (docs/research/2026-10-20-nvidia-hardware-design.md,
+// section 8, change 7).
 // ---------------------------------------------------------------------------
 
 // The tile (contract 18): conv_rows rows of conv_pixels, one a warp, with
@@ -466,10 +464,21 @@ __device__ void conv3x3(const contracts::ConvParams& p, const ushort4* input,
                         const ushort4* weights, const float* bias,
                         ushort4* output, const ushort4* coarse) {
   constexpr uint channels = NT * block;
-  constexpr uint quads = channels / 4u;
-  __shared__ __align__(16) ushort4 halo4[halo_rows * halo_pixels * block_quads];
-  __shared__ __align__(16) ushort4 taps4[conv_taps * block * quads];
-  __shared__ float stage[conv_rows * conv_pixels * block];
+  // A K of two blocks: each one plane of the halo and of the taps, a
+  // pixel's 8 channels a 16-byte row of its plane, so ldmatrix's 8 rows are
+  // 128 contiguous bytes; the taps' rows padded by 16 bytes, so B's 8 rows,
+  // NT x 16 bytes apart, fall on distinct banks (NT x 16 a multiple of 64
+  // puts every other row on the same 4 banks).
+  constexpr uint planes = 2u;
+  constexpr uint halo_pixel_count = halo_rows * halo_pixels;
+  constexpr uint halo_quads = halo_pixel_count * block_quads;
+  constexpr uint tap_rows = conv_taps * block;
+  // a tap row's NT 16-byte blocks of 8 outputs, and the padding's one
+  constexpr uint padded_blocks = NT + 1u;
+  constexpr uint padded_quads = padded_blocks * block_quads;
+  constexpr uint tap_quads = tap_rows * padded_quads;
+  __shared__ __align__(16) ushort4 halo4[planes * halo_quads];
+  __shared__ __align__(16) ushort4 taps4[planes * tap_quads];
   const uint sg = warp_index();
   const uint lane = warp_lane();
   const uint tid = sg * contracts::simd_width + lane;
@@ -480,75 +489,143 @@ __device__ void conv3x3(const contracts::ConvParams& p, const ushort4* input,
   const uint first_out = blockIdx.z * channels;
   // the weights' row: every output channel
   const uint out_width = p.out_blocks * block;
+  const uint weight_quads = out_width / 4u;
 
   matrix::Accumulator acc[pixel_tiles][NT];
+#pragma unroll
   for (uint m = 0; m < pixel_tiles; ++m) {
+#pragma unroll
     for (uint n = 0; n < NT; ++n) {
       acc[m][n] = matrix::zero_accumulator();
     }
   }
   const uint in_stride = p.in_stride / 4u;  // in half4s, as the reads below
   const uint up_stride = p.up_stride / 4u;
-  for (uint kb = 0; kb < p.in_blocks; ++kb) {
-    // The block's input, bordered rows y0 .. y0 + conv_rows + 1 and
+  // Starts copying the tiles of the K beginning at block `kb`: every
+  // thread's 16-byte copies (async_copy.cuh), one group. One stage: a
+  // second, copied while the first is multiplied (CUTLASS's multistage
+  // mainloop), doubles the block's shared memory and lost here, at this
+  // tile, to the blocks an SM it costs (docs/research/
+  // 2026-10-20-nvidia-hardware-design.md, section 8, change 7).
+  const auto issue = [&](uint kb) {
+    const uint blocks = min(planes, p.in_blocks - kb);
+    // The blocks' input, bordered rows y0 .. y0 + conv_rows + 1 and
     // columns x0 .. x0 + conv_pixels + 1 (input pixels y0 - 1 .. and
-    // x0 - 1 ..), block_quads half4s a pixel.
-    for (uint i = tid; i < halo_rows * halo_pixels * block_quads;
-         i += conv_threads) {
-      const uint pixel = i / block_quads;
-      const uint quad = i % block_quads;
+    // x0 - 1 ..), plane q block kb + q: a pixel's 8 channels one 16-byte
+    // copy (two half4s, 16-byte aligned: a pixel's channels start on a
+    // block).
+    uint4* const halo16 = reinterpret_cast<uint4*>(halo4);
+    for (uint i = tid; i < blocks * halo_pixel_count; i += conv_threads) {
+      const uint q = i / halo_pixel_count;
+      const uint pixel = i - q * halo_pixel_count;
       const uint row = y0 + pixel / halo_pixels;
       const uint column = x0 + pixel % halo_pixels;
-      ushort4 v = make_ushort4(0, 0, 0, 0);  // half 0.0's bits
-      if (kb < p.up_blocks) {
+      const uint b = kb + q;
+      // Past the level's border: zeros (half 0.0's bits), read from
+      // nowhere.
+      const ushort4* source = input;
+      bool read = false;
+      if (b < p.up_blocks) {
         // Upsampled: input pixel (column - 1, row - 1) reads the level
         // below's at half its coordinates; the border stays zero.
-        if (row >= 1u && row <= p.height && column >= 1u && column <= p.width) {
-          v = coarse[(((row - 1u) / 2u + 1u) * p.up_pitch + (column - 1u) / 2u +
-                      1u) *
-                         up_stride +
-                     kb * block_quads + quad];
+        read =
+            row >= 1u && row <= p.height && column >= 1u && column <= p.width;
+        if (read) {
+          source =
+              coarse +
+              (((row - 1u) / 2u + 1u) * p.up_pitch + (column - 1u) / 2u + 1u) *
+                  up_stride +
+              b * block_quads;
         }
-      } else if (row <= p.height + 1u && column <= p.width + 1u) {
-        v = input[(row * p.in_pitch + column) * in_stride +
-                  (kb - p.up_blocks) * block_quads + quad];
+      } else {
+        read = row <= p.height + 1u && column <= p.width + 1u;
+        if (read) {
+          source = input + (row * p.in_pitch + column) * in_stride +
+                   (b - p.up_blocks) * block_quads;
+        }
       }
-      halo4[pixel * block_quads + quad] = v;
+      async_copy::copy16(&halo16[i], source, read);
     }
-    // Its weights: rows (tap, input channel), this chunk's outputs.
-    const uint weight_quads = out_width / 4u;
-    for (uint i = tid; i < conv_taps * block * quads; i += conv_threads) {
-      const uint row = i / quads;
-      const uint q = i % quads;
+    // Their weights: rows (tap, input channel), this chunk's outputs, 8
+    // output channels one 16-byte copy.
+    uint4* const taps16 = reinterpret_cast<uint4*>(taps4);
+    for (uint i = tid; i < blocks * tap_rows * NT; i += conv_threads) {
+      const uint q = i / (tap_rows * NT);
+      const uint row = (i / NT) % tap_rows;
+      const uint n = i % NT;
       const uint tap = row / block;
       const uint k = row % block;
-      taps4[row * quads + q] =
-          weights[((tap * p.in_blocks + kb) * block + k) * weight_quads +
-                  first_out / 4u + q];
+      async_copy::copy16(
+          &taps16[(q * tap_rows + row) * padded_blocks + n],
+          weights + ((tap * p.in_blocks + kb + q) * block + k) * weight_quads +
+              (first_out + n * block) / 4u,
+          true);
     }
+    async_copy::commit();
+  };
+  for (uint kb = 0; kb < p.in_blocks; kb += planes) {
+    const uint blocks = min(planes, p.in_blocks - kb);
+    issue(kb);
+    // This thread's copies done, then every thread's.
+    async_copy::wait<0>();
     __syncthreads();
     if (active) {
+#pragma unroll
       for (uint tap = 0; tap < conv_taps; ++tap) {
         const uint dy = tap / 3u;
         const uint dx = tap % 3u;
-        // A: tile m's 16 pixels, lane L naming pixel L % 16's 8 channels;
-        // B: the tap's 8 input channels, lane L naming channel L % 8's row
-        // of this chunk's outputs, at output block n.
-        matrix::FragmentA a[pixel_tiles];
-        matrix::FragmentB b[NT];
-        for (uint m = 0; m < pixel_tiles; ++m) {
-          a[m] =
-              matrix::load_a(&halo4[((sg + dy) * halo_pixels + m * tile_pixels +
-                                     dx + lane % tile_pixels) *
-                                    block_quads]);
-        }
-        for (uint n = 0; n < NT; ++n) {
-          b[n] = matrix::load_b(
-              &taps4[(tap * block + lane % block) * quads + n * block_quads]);
-        }
-        for (uint m = 0; m < pixel_tiles; ++m) {
+        // The halo's row of tile m's pixel `pixel`, plane q.
+        const auto halo_row = [&](uint q, uint m, uint pixel) {
+          return &halo4[q * halo_quads + ((sg + dy) * halo_pixels +
+                                          m * tile_pixels + dx + pixel) *
+                                             block_quads];
+        };
+        // The taps' row of input channel k, plane q, at output block n.
+        const auto tap_row = [&](uint q, uint k, uint n) {
+          return &taps4[q * tap_quads + (tap * block + k) * padded_quads +
+                        n * block_quads];
+        };
+        if (planes == 2u && blocks == 2u) {
+          // A: tile m's 16 pixels, lane L naming pixel L % 16's channels
+          // in plane L / 16; B: lane L naming input channel L % 8 of plane
+          // (L / 8) % 2, at output block n.
+          matrix::FragmentA16 a[pixel_tiles];
+          matrix::FragmentB16 b[NT];
+#pragma unroll
+          for (uint m = 0; m < pixel_tiles; ++m) {
+            a[m] = matrix::load_a16(
+                halo_row(lane / tile_pixels, m, lane % tile_pixels));
+          }
+#pragma unroll
           for (uint n = 0; n < NT; ++n) {
-            matrix::multiply_accumulate(acc[m][n], a[m], b[n]);
+            b[n] =
+                matrix::load_b16(tap_row((lane / block) % 2u, lane % block, n));
+          }
+#pragma unroll
+          for (uint m = 0; m < pixel_tiles; ++m) {
+#pragma unroll
+            for (uint n = 0; n < NT; ++n) {
+              matrix::multiply_accumulate(acc[m][n], a[m], b[n]);
+            }
+          }
+        } else {
+          // The last of an odd number of blocks, K = 8.
+          matrix::FragmentA a[pixel_tiles];
+          matrix::FragmentB b[NT];
+#pragma unroll
+          for (uint m = 0; m < pixel_tiles; ++m) {
+            a[m] = matrix::load_a(halo_row(0u, m, lane % tile_pixels));
+          }
+#pragma unroll
+          for (uint n = 0; n < NT; ++n) {
+            b[n] = matrix::load_b(tap_row(0u, lane % block, n));
+          }
+#pragma unroll
+          for (uint m = 0; m < pixel_tiles; ++m) {
+#pragma unroll
+            for (uint n = 0; n < NT; ++n) {
+              matrix::multiply_accumulate(acc[m][n], a[m], b[n]);
+            }
           }
         }
       }
@@ -558,37 +635,36 @@ __device__ void conv3x3(const contracts::ConvParams& p, const ushort4* input,
   if (!active) {
     return;
   }
-  float* mine = stage + sg * conv_pixels * block;
-  const uint x = x0 + lane;
-  ushort4* out = output + (((y + 1u) * p.out_pitch + x + 1u) * p.out_stride +
-                           p.out_offset + first_out) /
-                              4u;
-  // A block of channels at a time through the staging, [pixel][channel]
-  // as Metal's simdgroup_store lays it out, each lane then writing its own
-  // pixel's block, block_quads half4s, inside the level only.
-  for (uint n = 0; n < NT; ++n) {
-    for (uint m = 0; m < pixel_tiles; ++m) {
-      for (uint i = 0; i < 4u; ++i) {
-        mine[(m * tile_pixels + matrix::fragment_row(lane, i)) * block +
-             matrix::fragment_column(lane, i)] = acc[m][n].c[i];
+  // Each lane's fragment elements (matrix.cuh): pixels g and g + 8 of each
+  // tile, output channels 2t and 2t + 1 of each block, biased, rectified
+  // and narrowed to half as one pair, inside the level only.
+  ushort* const out =
+      reinterpret_cast<ushort*>(output) + p.out_offset + first_out;
+#pragma unroll
+  for (uint m = 0; m < pixel_tiles; ++m) {
+#pragma unroll
+    for (uint h = 0; h < 2u; ++h) {
+      const uint i = 2u * h;  // the fragment's elements i and i + 1
+      const uint x = x0 + m * tile_pixels + matrix::fragment_row(lane, i);
+      if (x >= p.width) {
+        continue;
       }
-    }
-    __syncwarp();
-    if (x < p.width) {
-      const float* values = mine + lane * block;
-      const float* b = bias + first_out + n * block;
-      for (uint c = 0; c < block_quads; ++c) {
-        const uint at = 4u * c;
-        float4 v = make_float4(values[at], values[at + 1u], values[at + 2u],
-                               values[at + 3u]) +
-                   make_float4(b[at], b[at + 1u], b[at + 2u], b[at + 3u]);
+      ushort* const pixel_out =
+          out + ((y + 1u) * p.out_pitch + x + 1u) * p.out_stride;
+#pragma unroll
+      for (uint n = 0; n < NT; ++n) {
+        const uint c = n * block + matrix::fragment_column(lane, i);
+        float v0 = acc[m][n].c[i] + bias[first_out + c];
+        float v1 = acc[m][n].c[i + 1u] + bias[first_out + c + 1u];
         if (p.relu != 0u) {
-          v = max_each(v, 0.0f);
+          v0 = max(v0, 0.0f);
+          v1 = max(v1, 0.0f);
         }
-        out[n * block_quads + c] = narrow(v);
+        *reinterpret_cast<uint*>(pixel_out + c) =
+            matrix::pair_of(__half_as_ushort(__float2half_rn(v0)),
+                            __half_as_ushort(__float2half_rn(v1)));
       }
     }
-    __syncwarp();
   }
 }
 

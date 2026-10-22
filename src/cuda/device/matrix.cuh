@@ -8,6 +8,13 @@
 // denoise.cu), on NVIDIA's tensor cores: one warp's
 //
 //   mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32
+//   mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32
+//
+// the second the tensor cores' own shape on Ampere, twice the K a product
+// (the convolutions' two blocks of 8 input channels at once, CUTLASS's
+// Ampere tensor-op shape; docs/research/2026-10-20-nvidia-hardware-design.md,
+// section 8, change 7), the first for the 8-channel products (an odd
+// block, the head's). For m16n8k8,
 //
 // D = A B + C, A 16 x 8 halves (rows: pixels; columns: an 8-channel input
 // block), B 8 x 8 halves (an input block by an 8-channel output block), C
@@ -22,6 +29,17 @@
 //   A  a0: row g,     columns 2t, 2t + 1;  a1: row g + 8, the same columns
 //   B  b0: rows 2t, 2t + 1, column g
 //   C  c0, c1: row g, columns 2t, 2t + 1;  c2, c3: row g + 8
+//
+// and for m16n8k16 ("Matrix Fragments for mma.m16n8k16 with floating
+// point type"), A 16 x 16 and B 16 x 8, C as above:
+//
+//   A  a0, a1 as m16n8k8's (columns 0 to 7); a2, a3 the same rows,
+//      columns 2t + 8, 2t + 9
+//   B  b0 as m16n8k8's (rows 0 to 7); b1 rows 2t + 8, 2t + 9, column g
+//
+// loaded by ldmatrix .x4 (A: lane L names row L % 16 of columns 0 to 7
+// for L < 16, of columns 8 to 15 for L >= 16) and .x2.trans (B: lane L
+// names row L % 16, rows 0 to 7 then 8 to 15).
 //
 // two halves a 32-bit register, the lower index in the lower bits. Loaded
 // from shared memory by ldmatrix (the ISA's "ldmatrix"), which hands each
@@ -43,8 +61,9 @@
 // compiler moves no load or store across it. Every call is warp-wide: all
 // 32 lanes, converged (".sync.aligned").
 //
-// Cost: one ldmatrix moves a 128- or 256-byte tile in one instruction; an
-// mma is 2 x 16 x 8 x 8 multiply-adds a warp.
+// Cost: one ldmatrix moves a 128- to 512-byte tile in one instruction; an
+// m16n8k8 is 16 x 8 x 8 multiply-adds a warp, an m16n8k16 twice that in
+// one instruction.
 
 #include "cuda/math/vector.cuh"
 
@@ -61,6 +80,20 @@ struct FragmentA {
 // An 8 x 8 tile of halves, one register a lane.
 struct FragmentB {
   uint b0;
+};
+
+// A 16 x 16 tile of halves, four registers a lane (above).
+struct FragmentA16 {
+  uint a0;
+  uint a1;
+  uint a2;
+  uint a3;
+};
+
+// A 16 x 8 tile of halves, two registers a lane.
+struct FragmentB16 {
+  uint b0;
+  uint b1;
 };
 
 // A 16 x 8 tile of floats, four a lane: element i at fragment_row(lane, i),
@@ -110,6 +143,31 @@ __device__ inline FragmentB load_b(const void* row_of_lane) {
   return b;
 }
 
+// A, 16 rows of 16 halves in shared memory, two 8-column halves apart:
+// `row_of_lane` is the start of row lane % 16's columns 0 to 7 for lanes
+// below 16, of its columns 8 to 15 for the rest, each 16-byte aligned.
+__device__ inline FragmentA16 load_a16(const void* row_of_lane) {
+  FragmentA16 a;
+  asm volatile(
+      "ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
+      : "=r"(a.a0), "=r"(a.a1), "=r"(a.a2), "=r"(a.a3)
+      : "r"(shared_address(row_of_lane))
+      : "memory");
+  return a;
+}
+
+// B, 16 rows k of 8 halves of a row-major [k][columns] array in shared
+// memory, transposed into B's fragment: `row_of_lane` is the start of row
+// lane % 16's 8 halves (lanes 16 to 31 name none), 16-byte aligned.
+__device__ inline FragmentB16 load_b16(const void* row_of_lane) {
+  FragmentB16 b;
+  asm volatile("ldmatrix.sync.aligned.m8n8.x2.trans.shared.b16 {%0, %1}, [%2];"
+               : "=r"(b.b0), "=r"(b.b1)
+               : "r"(shared_address(row_of_lane))
+               : "memory");
+  return b;
+}
+
 // Two adjacent halves at `p` (4-byte aligned) as one register, the first
 // in the lower bits.
 __device__ inline uint pair_at(const ushort* p) {
@@ -147,6 +205,17 @@ __device__ inline void multiply_accumulate(Accumulator& c, FragmentA a,
       "{%0, %1, %2, %3}, {%4, %5}, {%6}, {%0, %1, %2, %3};"
       : "+f"(c.c[0]), "+f"(c.c[1]), "+f"(c.c[2]), "+f"(c.c[3])
       : "r"(a.a0), "r"(a.a1), "r"(b.b0)
+      : "memory");
+}
+
+// c = a b + c, float sums of half products, K = 16.
+__device__ inline void multiply_accumulate(Accumulator& c, FragmentA16 a,
+                                           FragmentB16 b) {
+  asm volatile(
+      "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 "
+      "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};"
+      : "+f"(c.c[0]), "+f"(c.c[1]), "+f"(c.c[2]), "+f"(c.c[3])
+      : "r"(a.a0), "r"(a.a1), "r"(a.a2), "r"(a.a3), "r"(b.b0), "r"(b.b1)
       : "memory");
 }
 

@@ -603,6 +603,14 @@ their own.
 | each pass's program's limit by the rule | Pass | `src/cuda/passes/{path,features,mnee,restir_pt,restir_pt_initial}/*.cpp` |
 | the probes at OptiX's own limit | tests | `tests/cuda/support/traced_probe.h` |
 
+## The denoiser's convolutions on m16n8k16 (`docs/research/2026-10-20-nvidia-hardware-design.md`, section 8, change 7)
+
+| What | Axis | Where |
+|---|---|---|
+| the k16 fragments, loaded by ldmatrix (x4, and x2 transposed), and their product | GPU backend | `src/cuda/device/matrix.cuh` |
+| 16-byte copies into shared memory past the registers, zero-filled at a border; their groups and waits | GPU backend | `src/cuda/device/async_copy.cuh`, new |
+| the convolutions: 16 input channels a step, tiles copied by cp.async, the taps padded, the results written from the fragments | Pass | `src/cuda/passes/denoise/denoise.cu` |
+
 ## Not here yet
 
 - **HIP with HIPRT** on AMD's Strix Halo and **Direct3D 12** on the Xbox
