@@ -34,8 +34,9 @@ namespace serenity::cuda {
 //              shifts does one kind of work (GDSA.13);
 //   reconnect  a program, one thread a place of the reconnections' list;
 //   replay     a program, one thread a place of the replays' list; each
-//              launched at its list's capacity (contracts::max_path_neighbors
-//              a pixel, the core's size, core/passes/restir_pt_arrays.h), a
+//              launched at the most its list holds
+//              (contracts::max_path_neighbors a traced pixel, within the
+//              core's size, core/passes/restir_pt_arrays.h), a
 //              thread past the list's count, which it reads where the
 //              pairing appended, returning (no launch takes its size from
 //              the GPU);

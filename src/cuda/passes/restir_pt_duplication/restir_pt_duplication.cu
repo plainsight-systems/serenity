@@ -24,17 +24,18 @@ __device__ inline void duplication_block(
   const uint2 group = make_uint2(blockIdx.x, blockIdx.y);
   const uint2 pixel = make_uint2(group.x * duplication::group + local.x,
                                  group.y * duplication::group + local.y);
-  // The arrays' grid: the image, or the packed one, whose slots are its
-  // row-major indices (restir_pt.cuh, Traced).
-  const uint2 size =
-      restir_pt::traced(launch.frame, launch.path_settings).grid();
+  // The arrays' grid: the image, or the packed one, its places at their
+  // block-linear slots (restir_pt.cuh, Traced).
+  const restir_pt::Traced traced =
+      restir_pt::traced(launch.frame, launch.path_settings);
+  const uint2 size = traced.grid();
   duplication::load_keys(
       keys, launch.path_finals, size,
       make_uint2(group.x * duplication::group, group.y * duplication::group),
       local.y * duplication::group + local.x);
   __syncthreads();
   if (pixel.x < size.x && pixel.y < size.y) {
-    launch.duplication[pixel.y * size.x + pixel.x] =
+    launch.duplication[traced.place_slot(pixel)] =
         duplication::score(keys, local);
   }
 }

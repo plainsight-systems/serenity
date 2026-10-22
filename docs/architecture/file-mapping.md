@@ -618,6 +618,15 @@ their own.
 | step 12 for one pixel, called by the shade pass and by the spatial merge | Pass | `src/cuda/passes/restir_pt/shade.cuh`, new |
 | the merge shading the pixel it merged; the shade pass only in a graph without the spatial pass | Pass, Frame graph | `src/cuda/passes/restir_pt_spatial/`, `src/cuda/passes/restir_pt_shade/`, `src/cuda/frame/renderer.{h,cpp}` |
 
+## ReSTIR PT's arrays in RTXDI's layout (`docs/research/2026-10-20-nvidia-hardware-design.md`, section 8, change 9)
+
+| What | Axis | Where |
+|---|---|---|
+| the arrays' 16 x 16 blocks: their side, a grid's slots in whole blocks, a place's block-linear slot | contract 20 | `src/core/contracts/checkerboard.h` |
+| the arrays sized to the grid they are indexed by, the packed one with the checkerboard | Sample reuse | `src/core/passes/restir_pt_arrays.{h,cpp}`; `src/{cuda,metal}/frame/` (the arrays' owners and the renderers) |
+| CUDA's slots block-linear and their inverse; the duplication map through them; the shift lists launched over the traced pairs' most | Pass | `src/cuda/passes/restir_pt/{restir_pt.cuh,shift_replay.{h,cpp}}`, `src/cuda/passes/restir_pt_duplication/`, `src/cuda/reuse/duplication.cuh` |
+| the slots take each place of their grid once, within its blocks | tests | `tests/checkerboard_test.cpp` |
+
 ## Not here yet
 
 - **HIP with HIPRT** on AMD's Strix Halo and **Direct3D 12** on the Xbox

@@ -31,6 +31,7 @@
 // threadgroup memory, a 4-byte write. Measured in docs/research/
 // 2026-10-11-restir-pt-phase2.md.
 
+#include "core/contracts/checkerboard.h"
 #include "core/contracts/path_reservoir.h"
 #include "core/contracts/path_reuse_settings.h"
 #include "cuda/math/vector.cuh"
@@ -71,7 +72,8 @@ __device__ inline uint2 key(serenity::contracts::PathReservoir reservoir) {
 
 // The group's keys into `keys`, span x span, the group's first pixel
 // `origin`, by its thread `thread_index` of group x group; no_key outside
-// the image of `size`.
+// the grid of `size`, whose place (x, y) is at the slot
+// contracts::reservoir_slot(x, y, size.x) (contract 20).
 __device__ inline void load_keys(
     uint2* keys, const serenity::contracts::PathReservoir* reservoirs,
     uint2 size, uint2 origin, uint thread_index) {
@@ -79,7 +81,9 @@ __device__ inline void load_keys(
     const int x = int(origin.x) - int(radius) + int(n % span);
     const int y = int(origin.y) - int(radius) + int(n / span);
     const bool inside = x >= 0 && y >= 0 && x < int(size.x) && y < int(size.y);
-    keys[n] = inside ? key(reservoirs[uint(y) * size.x + uint(x)]) : no_key();
+    keys[n] = inside ? key(reservoirs[serenity::contracts::reservoir_slot(
+                           uint(x), uint(y), size.x)])
+                     : no_key();
   }
 }
 

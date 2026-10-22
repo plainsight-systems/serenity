@@ -28,8 +28,21 @@
 // temporal input, below). The traced half then lies side by side, so a
 // SIMD group's threads read and write adjacent slots (GPU.2: coalesced
 // lane access), where a full-size array indexed by pixel would leave every
-// other element between them unread. The arrays keep their full-size
-// allocation; the packing uses its first half.
+// other element between them unread.
+//
+// How the arrays store the grid they are indexed by (the packed one, or
+// the image without the checkerboard): RTXDI's second step
+// (RTXDI_ReservoirPositionToPointer) stores it in blocks of
+// reservoir_block x reservoir_block slots, each block's 256 slots
+// contiguous, row by row within it, and the blocks row by row
+// (reservoir_slot), so a 16 x 16 group of threads writes one contiguous
+// span and a neighborhood lies in a few blocks, not across as many of the
+// grid's rows (GPU.2). CUDA's kernels address the arrays so (cuda/passes/
+// restir_pt/restir_pt.cuh, Traced; docs/research/2026-10-20-nvidia-
+// hardware-design.md, section 8, change 9); Metal's by the grid's rows
+// (checkerboard_slot), its own GPU's layout. Either fits the arrays' size,
+// reservoir_slots(), the grid in whole blocks (core/passes/
+// restir_pt_arrays.h).
 //
 // The grid the light's kernels dispatch over is the packed one,
 // checkerboard_width() x height: thread (k, y) is the pixel
@@ -104,6 +117,32 @@ SERENITY_SHARED_FUNCTION constexpr uint32_t checkerboard_slot(uint32_t x,
                                                               uint32_t y,
                                                               uint32_t width) {
   return y * checkerboard_width(width) + x / 2u;
+}
+
+// The side of a block of the arrays' slots (above).
+SERENITY_CONSTANT uint32_t reservoir_block = 16u;
+
+// The blocks along a side of the arrays' grid `extent` slots long.
+SERENITY_SHARED_FUNCTION constexpr uint32_t reservoir_blocks(uint32_t extent) {
+  return (extent + reservoir_block - 1u) / reservoir_block;
+}
+
+// The slots the arrays hold for a grid of `grid_width` x `height`: the
+// grid in whole blocks.
+SERENITY_SHARED_FUNCTION constexpr uint32_t reservoir_slots(uint32_t grid_width,
+                                                            uint32_t height) {
+  return reservoir_blocks(grid_width) * reservoir_blocks(height) *
+         reservoir_block * reservoir_block;
+}
+
+// The block-linear slot of the place (x, y) of a grid `grid_width` slots
+// wide (above).
+SERENITY_SHARED_FUNCTION constexpr uint32_t reservoir_slot(
+    uint32_t x, uint32_t y, uint32_t grid_width) {
+  return ((y / reservoir_block) * reservoir_blocks(grid_width) +
+          x / reservoir_block) *
+             (reservoir_block * reservoir_block) +
+         (y % reservoir_block) * reservoir_block + x % reservoir_block;
 }
 
 // The x of the pixel frame `frame - 1` traced beside the pixel (x, y)

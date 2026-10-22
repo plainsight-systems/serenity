@@ -185,6 +185,8 @@ Renderer::RestirPtFamily::RestirPtFamily(
                      : PathReuseImages::Spatial::none,
              temporal ? PathReuseImages::Temporal::merged
                       : PathReuseImages::Temporal::none,
+             settings.checkerboard != 0u ? PathReuseImages::Grid::checkerboard
+                                         : PathReuseImages::Grid::image,
              lights),
       statics(device, submission,
               std::array<std::span<const std::byte>, 2>{

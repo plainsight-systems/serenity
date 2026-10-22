@@ -235,8 +235,9 @@ namespace restir_pt {
 using Scene = path::Scene;
 
 // The pixels a frame traces and where ReSTIR PT's arrays keep each (above,
-// "Checkerboard rendering"; contract 20): without the setting every pixel,
-// at its row-major index; with it the frame's field, packed. Made once a
+// "Checkerboard rendering"; contract 20): without the setting every pixel;
+// with it the frame's field, packed; either grid's places at their
+// block-linear slots (contracts::reservoir_slot, RTXDI's). Made once a
 // kernel from the frame's constants and the settings (traced(), below), so
 // every kernel and the host's dispatch (metal/frame/frame_resources.h,
 // traced) agree which pixel a thread or a slot is.
@@ -264,16 +265,23 @@ struct Traced {
   __device__ bool inside(uint2 pixel) const {
     return pixel.x < width && pixel.y < height;
   }
-  // The slot of `pixel`'s entries in the arrays.
-  __device__ uint slot(uint2 pixel) const {
-    return checkerboard
-               ? serenity::contracts::checkerboard_slot(pixel.x, pixel.y, width)
-               : pixel.y * width + pixel.x;
+  // The slot of the grid's place `place`.
+  __device__ uint place_slot(uint2 place) const {
+    return serenity::contracts::reservoir_slot(place.x, place.y, grid().x);
   }
-  // The pixel slot `i` holds in this frame.
+  // The slot of `pixel`'s entries in the arrays: its place in the grid,
+  // half its x with the checkerboard (contract 20's packing).
+  __device__ uint slot(uint2 pixel) const {
+    return place_slot(checkerboard ? make_uint2(pixel.x / 2u, pixel.y) : pixel);
+  }
+  // The pixel slot `i` holds in this frame: place_slot()'s inverse.
   __device__ uint2 slot_pixel(uint i) const {
-    const uint columns = grid().x;
-    return pixel(make_uint2(i % columns, i / columns));
+    constexpr uint side = serenity::contracts::reservoir_block;
+    const uint block = i / (side * side);
+    const uint within = i % (side * side);
+    const uint blocks = serenity::contracts::reservoir_blocks(grid().x);
+    return pixel(make_uint2((block % blocks) * side + within % side,
+                            (block / blocks) * side + within / side));
   }
 };
 

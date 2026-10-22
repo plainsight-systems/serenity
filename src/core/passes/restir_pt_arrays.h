@@ -18,7 +18,10 @@ namespace serenity::passes {
 // they are is the same on every backend, so decided here (A.1), each a
 // pure function (F.8).
 //
-// At a frame's size, per pixel: the path reservoirs (contract 15), the
+// A slot each of the arrays' grid, the frame's pixels or, with the
+// checkerboard, the packed grid of the half each frame traces (contract
+// 20, core/contracts/checkerboard.h), in whole blocks of its slots
+// (reservoir_slots(), RTXDI's): the path reservoirs (contract 15), the
 // primary hits (contract 5), the light buffer (a float4); with spatial or
 // temporal reuse, the shifted paths (contracts::max_path_neighbors float4s)
 // and the replaying shifts (as many uints); with temporal reuse, the final
@@ -41,7 +44,7 @@ struct PathReuseArrays {
 };
 
 PathReuseArrays path_reuse_arrays(frame::Extent size, bool spatial,
-                                  bool temporal);
+                                  bool temporal, bool checkerboard);
 
 // The light tiles (contract 9), whatever the frame's size.
 std::size_t light_tiles_bytes();

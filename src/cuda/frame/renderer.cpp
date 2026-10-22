@@ -68,6 +68,8 @@ Renderer::RestirPtFamily::RestirPtFamily(
                      : PathReuseImages::Spatial::none,
              temporal ? PathReuseImages::Temporal::merged
                       : PathReuseImages::Temporal::none,
+             settings.checkerboard != 0u ? PathReuseImages::Grid::checkerboard
+                                         : PathReuseImages::Grid::image,
              lights),
       settings(settings),
       pairing(textures.size_bytes()) {

@@ -39,11 +39,11 @@ void ShiftReplay::record(CUstream stream, CUdeviceptr launch,
   CUdeviceptr address = launch;
   std::array<void*, 1> arguments{&address};
   launch_per_pixel(stream, pair_, traced, arguments);
-  // Each list's capacity: max_path_neighbors places a pixel of the arrays'
-  // grid (core/passes/restir_pt_arrays.h).
+  // The most each list holds: max_path_neighbors pairs a traced pixel,
+  // within the lists' max_path_neighbors places a slot of the arrays
+  // (core/passes/restir_pt_arrays.h); a thread past a list's count returns.
   const frame::Extent capacity{
-      frame.frame.width * frame.frame.height * contracts::max_path_neighbors,
-      1};
+      traced.width * traced.height * contracts::max_path_neighbors, 1};
   reconnect_.launch(stream, launch, capacity);
   replay_.launch(stream, launch, capacity);
   check(cuMemsetD32Async(frame.reconnect_counter, 0, 1, stream),

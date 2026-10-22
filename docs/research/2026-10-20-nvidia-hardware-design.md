@@ -497,6 +497,12 @@ already (`checkerboard_slot`); what is new:
   layout is this GPU's (L2 sectors and DRAM pages), not the contract's.
   Expected: within the pairs' and merges' 0.4 ms, a few percent of it.
 
+Change 9, measured (2026-10-22, against change 5, each build twice,
+alternated): 172.9 fps (5.78 ms) at 1920 x 1080 before and after; 49.7
+to 50.2 fps (20.11 to 19.93 ms) at 3456 x 2234, where the spatial disc
+spans the most rows. The 94 outputs the same on the 3090, and Metal's 94
+the same on the Mac (its arrays now the packed grid's size).
+
 **Change 10, the image half as a CUDA graph; the light half's runs of
 kernels too.** OptiX's launches cannot be captured. Tried on the 3090
 (OptiX 9.1, driver 595.91): a captured frame instantiates and launches,

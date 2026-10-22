@@ -1,5 +1,6 @@
 #include "core/passes/restir_pt_arrays.h"
 
+#include "core/contracts/checkerboard.h"
 #include "core/contracts/float3.h"
 #include "core/contracts/light_tile.h"
 #include "core/contracts/path_reservoir.h"
@@ -9,8 +10,11 @@
 namespace serenity::passes {
 
 PathReuseArrays path_reuse_arrays(frame::Extent size, bool spatial,
-                                  bool temporal) {
-  const std::size_t pixels = std::size_t{size.width} * size.height;
+                                  bool temporal, bool checkerboard) {
+  const std::uint32_t grid_width =
+      checkerboard ? contracts::checkerboard_width(size.width) : size.width;
+  const std::size_t pixels =
+      contracts::reservoir_slots(grid_width, size.height);
   PathReuseArrays arrays;
   arrays.copies = temporal ? 2 : 1;
   arrays.reservoirs = pixels * sizeof(contracts::PathReservoir);

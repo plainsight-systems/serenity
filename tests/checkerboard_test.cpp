@@ -7,6 +7,8 @@
 //   - the packed grid's threads take every pixel a frame traces, each
 //     once, and none it does not, each at its own slot;
 //   - the frame before's pixel beside a pixel is one that frame traced;
+//   - the arrays' block-linear slots take every place of their grid, each
+//     at its own slot, within the grid's size in whole blocks;
 //
 // and a denoised graph's one rule for it: a sigma the traced lattice can
 // pair at.
@@ -96,6 +98,38 @@ TEST_CASE(
         }
         CHECK(shared == 0u);
       }
+    }
+  }
+}
+
+TEST_CASE(
+    "the arrays' block-linear slots take each place of their grid once, within "
+    "the grid's size in whole blocks") {
+  for (const std::uint32_t width : widths) {
+    for (const std::uint32_t height : heights) {
+      INFO(width << " x " << height);
+      const std::uint32_t size = contracts::reservoir_slots(width, height);
+      CHECK(size % (contracts::reservoir_block * contracts::reservoir_block) ==
+            0u);
+      CHECK(size >= width * height);
+      std::vector<int> slots(size, 0);
+      std::size_t outside = 0;
+      for (std::uint32_t y = 0; y < height; ++y) {
+        for (std::uint32_t x = 0; x < width; ++x) {
+          const std::uint32_t slot = contracts::reservoir_slot(x, y, width);
+          if (slot >= size) {
+            ++outside;
+          } else {
+            ++slots[slot];
+          }
+        }
+      }
+      CHECK(outside == 0u);
+      std::size_t shared = 0;
+      for (const int used : slots) {
+        shared += used > 1 ? 1u : 0u;
+      }
+      CHECK(shared == 0u);
     }
   }
 }

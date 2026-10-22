@@ -80,12 +80,13 @@ static_assert(PathReuseImages::grid_offset % alignof(gpu::IndirectGrid) == 0 &&
               PathReuseImages::grid_offset % constant_offset_alignment == 0);
 
 PathReuseImages::PathReuseImages(const Device& device, Submission& submission,
-                                 Spatial spatial, Temporal temporal,
+                                 Spatial spatial, Temporal temporal, Grid grid,
                                  std::uint32_t lights)
     : device_(NS::RetainPtr(device.handle())),
       submission_(submission),
       spatial_(spatial),
-      temporal_(temporal) {
+      temporal_(temporal),
+      grid_(grid) {
   // The count starts at 0, and the grid pass keeps setting it back.
   const auto pool = scoped_pool();
   counter_ = make_resident_buffer(device_.get(), submission_, counter_bytes,
@@ -142,8 +143,8 @@ std::uint64_t PathReuseImages::prepare(const frame::FrameInputs& inputs,
     array->reset();
   }
   const auto pool = scoped_pool();
-  const passes::PathReuseArrays sizes =
-      passes::path_reuse_arrays(size, spatial_ == Spatial::merged, temporal);
+  const passes::PathReuseArrays sizes = passes::path_reuse_arrays(
+      size, spatial_ == Spatial::merged, temporal, grid_ == Grid::checkerboard);
   make(reservoirs_, sizes.reservoirs, "path reservoirs");
   for (std::size_t h = 0; h < sizes.copies; ++h) {
     make(primaries_.at(h), sizes.primaries, "primary hits");

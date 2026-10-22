@@ -8,10 +8,12 @@
 namespace serenity::cuda {
 
 PathReuseImages::PathReuseImages(Submission& submission, Spatial spatial,
-                                 Temporal temporal, std::uint32_t lights)
+                                 Temporal temporal, Grid grid,
+                                 std::uint32_t lights)
     : submission_(submission),
       spatial_(spatial),
       temporal_(temporal),
+      grid_(grid),
       counters_(2 * sizeof(std::uint32_t)),
       light_tiles_(passes::light_tiles_bytes()) {
   zero_now(counters_.address(), 2 * sizeof(std::uint32_t), "PathReuseImages");
@@ -48,8 +50,8 @@ std::uint64_t PathReuseImages::prepare(const frame::FrameInputs& inputs,
     submission_.finish();
   }
   size_ = {};
-  const passes::PathReuseArrays sizes =
-      passes::path_reuse_arrays(size, spatial_ == Spatial::merged, temporal);
+  const passes::PathReuseArrays sizes = passes::path_reuse_arrays(
+      size, spatial_ == Spatial::merged, temporal, grid_ == Grid::checkerboard);
   const auto make = [](std::size_t bytes) {
     return bytes == 0 ? DeviceBuffer() : DeviceBuffer(bytes);
   };

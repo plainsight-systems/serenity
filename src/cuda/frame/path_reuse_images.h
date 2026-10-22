@@ -43,10 +43,12 @@ class PathReuseImages {
  public:
   enum class Spatial : std::uint8_t { none, merged };
   enum class Temporal : std::uint8_t { none, merged };
+  // the grid the arrays are indexed by (contract 20)
+  enum class Grid : std::uint8_t { image, checkerboard };
 
   // `lights`: the scene's light records, which the power pyramids hold.
   PathReuseImages(Submission& submission, Spatial spatial, Temporal temporal,
-                  std::uint32_t lights);
+                  Grid grid, std::uint32_t lights);
 
   PathReuseImages(const PathReuseImages&) = delete;
   PathReuseImages& operator=(const PathReuseImages&) = delete;
@@ -86,6 +88,7 @@ class PathReuseImages {
   Submission& submission_;
   Spatial spatial_;
   Temporal temporal_;
+  Grid grid_;
   frame::Extent size_;
   frame::ReuseHistory history_;  // asked only with temporal reuse
   DeviceBuffer reservoirs_;
