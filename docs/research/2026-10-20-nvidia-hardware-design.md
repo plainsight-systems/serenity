@@ -435,6 +435,38 @@ The demo, against 2022573: 168.6 to 172.7 fps (5.93 to 5.79 ms) at
 demo's frame side by side, 0.3% of its pixels by one or two levels, the
 means the same.
 
+**Change 7's third part, the tiles by the machine's size, measured**
+(2026-10-22). The levels' tiles at 1920 x 1080 (blocks of 4 rows of 32
+pixels, each a chunk of 1 to 4 blocks of 8 output channels; about 5
+blocks resident an SM, 420 on 84 SMs, by the kernels' registers and
+shared memory): level 0, 4,080 blocks (about 10 waves); level 1, 2,040
+(5); level 2, 544 (1.3: its second wave 70% idle); level 3, 340 (under
+one wave); the bottleneck, 54 (30 SMs idle). Within contract 18's tile,
+the knob is the chunk: fewer output channels a block, more blocks.
+Each convolution's GPU time a frame (Nsight Systems, 15 frames), every
+chunk forced to its largest divisor up to 1, 2 and 4 (the kept rule):
+
+| Convolution (level, blocks at chunk 4) | chunk 1 | chunk 2 | chunk 4 (kept) |
+|---|---|---|---|
+| encoder 0 (4,080) | 322 us | 214 | **163** |
+| encoder 1 (2,040) | 119 | 86 | **78** |
+| encoder 2 (544) | 53 | 38 | **38** |
+| encoder 3 (340, chunk 2) | 25 | 21 | **20** |
+| bottleneck, two (54 each) | **13 + 15** | 14 + 16 | 15 + 18 |
+| decoders 3, 2, 1 | 65, 140, 298 | 49, 94, 190 | **50, 93, 182** |
+| decoder 0 and the last | 575 + 258 | 350 + 162 | **322 + 137** |
+| all | 1,883 | 1,234 | **1,116** |
+
+A block that computes fewer outputs copies the same input tile and halo
+for less work, and that costs more than the idle SMs: the largest chunk
+is the fastest at every level but the bottleneck, where chunk 1 saves 5
+us. Not kept: under a run's spread. What the idle SMs could give back at
+most, the small levels' 230 us running full, is the image half's, beside
+the light half. The two other levers change what is fixed elsewhere: a
+smaller tile is contract 18's, Metal's too; the input channels' sum split
+across blocks (split-K) changes the sums' order, and so the picture, the
+user's call.
+
 ### Changes 5, 9 and 10, from what production does and the frame's own launches
 
 The frame's operations, from the latest trace (7,020 frames, the demo at
@@ -544,18 +576,28 @@ Reverted by the user's decision (2026-10-22): a mechanism that buys
 no time is not kept. The code is on the local branch `graphs-measured`
 (05ceed2).
 
-**Change 10, read-only loads: production already.** Cycles reads its
+**Change 10, read-only loads: measured, not taken.** Cycles reads its
 scene arrays through const pointers in its launch parameters with plain
 loads (`kernel_data_fetch` in `kernel/device/{cuda,optix}/globals.h`: no
 `__ldg`), as this renderer does (cuda/scene/scene_block.cuh). On sm_86
 global loads are cached in L1, which is the same cache as the texture
-path (T). No change.
+path (T). Measured all the same (2026-10-22): every array of the scene's
+families (shapes, materials, textures, lights, media, the transforms and
+glows, the power pyramid) read through ld.global.nc (__ldg) in the
+widest pieces each element's alignment allows. The tree's launch 1,495
+to 1,520 us, every other the same; the demo 173.9 to 173.6 fps (5.75 to
+5.76 ms) at 1920 x 1080 and 50.1 to 50.0 fps (19.96 to 20.00 ms) at 3456
+x 2234: no gain. Not kept.
 
-**One pipeline for the tracing passes: withdrawn.** It came before the
-register rule (2022573). An OptiX pipeline launches as one kernel, so
-the programs sharing it would share one register allocation, the largest
-limit (the tree's 200), undoing the 128 the shifts, the features and the
-path tracer run at (inferred from what a launch is, not measured).
+**One pipeline for the tracing passes: measured, not taken.** It came
+before the register rule (2022573). OptiX allows a module's register
+limit to "vary within a pipeline" (optix_types.h), but a launch runs one
+kernel, so the question is what its threads are given. Measured
+(2026-10-22): the tree's program (limit 200) linked, unused, into the
+spatial reconnection's pipeline (limit 128), the reconnection's launch
+went from 266 to 355 us a frame (Nsight Systems, 15 frames), every other
+launch the same. Sharing a pipeline gives its programs the largest
+allocation, so one pipeline would undo the register rule.
 
 Each change is its own commit, the 94 outputs the same to the bit for
 each, the demo's frame time before and after; the gates once, after
