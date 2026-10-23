@@ -12,7 +12,7 @@ The scene is deliberately simple: glass, porcelain, and metal marbles on a walnu
 
 Milestone 5 moves the frame to my RTX 3090 Ti, through CUDA and OptiX rather than a portable layer, so I can work with NVIDIA’s own tools and instructions. The first port ran at 89 frames a second at 1920 × 1080. Arranging its work for the card brought it to 174: the spheres became triangle meshes for the ray-tracing cores, unfinished light searches are regrouped so threads don’t sit idle, the GPU code uses fast math, and the network runs in the tensor cores’ own shape. On my M3 Max, Milestone 4 runs the same frame at 57.
 
-Next is AMD’s Strix Halo through HIP and HIPRT, then Direct3D 12 on the Xbox Series X. After that the reuse steps can be tuned as kernels on each GPU, the question that started this.
+Next is a milestone designed for the M3 Max: what held up on the 3090, redesigned from Apple’s own guidance. Then AMD’s Strix Halo through HIP and HIPRT, and Direct3D 12 on the Xbox Series X. After that the reuse steps can be tuned as kernels on each GPU, the question that started this.
 
 The [fifth milestone]({{< relref "/writing/milestone-5" >}}) follows the port and the choices that doubled it. The [fourth]({{< relref "/writing/milestone-4" >}}) follows each optimization on the Mac and what it bought; the [third]({{< relref "/writing/milestone-3" >}}) follows the model from training data to the Metal kernels that run it; the [second]({{< relref "/writing/milestone-2" >}}) covers path reuse and light focused through glass; the [first]({{< relref "/writing/milestone-1" >}}) records the baseline.
 
