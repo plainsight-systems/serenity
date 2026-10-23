@@ -256,7 +256,7 @@ This file tracks active and accepted work.
    `andrew-voice` and Milestone 4: decisions and consequences lead the
    narrative, with the timing inventory left to the chart and research.
    Shortened again at Andrew's request to about 1,100 words, and
-   accepted by him 2026-10-22. Next: HIP with HIPRT on Strix
+   accepted by him 2026-10-22. Next: Milestone 6 (below); then HIP with HIPRT on Strix
    Halo.
    The plan the milestone followed, from 2026-10-19: **the other backends, before any kernel
    tuning,** since the reuse kernels' tiling, layout and fusion depend on
@@ -284,7 +284,66 @@ This file tracks active and accepted work.
    reservoir layout), which closes Milestone 5; then HIP with HIPRT on
    Strix Halo.
 
-3. Reservoir reuse as kernels, tuned per target: tiling, layout and
+3. **Next (the user, 2026-10-22): Milestone 6, the frame designed for
+   Apple silicon**, before Strix Halo, which follows it. The M3 Max runs
+   the demo at 57 fps at 1920 x 1080 and 17 at the display's 3456 x 2234,
+   against the project's goal of 60 at the display's size; Milestone 4
+   applied engines' standard optimizations there, and no design for the
+   M3's own hardware has been made, as Milestone 5 made one for the 3090.
+   The last breakdown (`docs/research/2026-10-17-milestone-4-plan.md`,
+   before Milestone 4, 77 ms at 3456 x 2234): the light's passes about 44
+   ms, the ray-tracing unit about 90% busy, the arithmetic 12 to 15%,
+   occupancy 16 to 22%; the denoiser 26 ms, arithmetic-bound at 97%. The
+   order, as the 3090's:
+
+   0. **The profile, when the user says** (on AC power, the GPU idle, no
+      window running): the demo's frame time headless (`--times`, frames
+      7000 to 7599) at 1920 x 1080 and 3456 x 2234; each pass's GPU time
+      (per-dispatch timestamps); the Performance Limiters counters per
+      pass (the saved Instruments template through `xctrace`); each
+      pipeline's registers and occupancy as the compiler and the GPU
+      report them.
+   1. **The design, written before code**
+      (`docs/research/2026-10-2x-apple-silicon-design.md`): the M3 Max's
+      hardware (ray-tracing unit, Dynamic Caching's on-chip memory,
+      SIMD groups of 32, 16-bit arithmetic and registers, simdgroup
+      matrices); Apple's own guidance (WWDC's M3 profiling and ray
+      tracing sessions, Metal 4's) and production on Apple silicon
+      (Blender Cycles' Metal backend, developed with Apple; Unreal's
+      Metal RHI; Apple's samples), checked first; each change's hardware
+      reason and its expected gain stated before it is measured.
+   2. **The changes, in the order the profile ranks them; the candidates
+      now, each from the 3090's design where it applies:**
+      - *Every shape as triangles on the ray-tracing unit, again.* The
+        earlier test (`docs/research/2026-10-09-acceleration-structure.md`)
+        was the brass scene's 4 shapes in the path tracer, where the
+        instance level cost more than the shader's sphere test; the
+        marbles' 661 spheres each leave the ray-tracing unit for an
+        intersection function, on a unit already the bottleneck. Measured
+        in the layouts that answer it: the 3090's (a mesh a level, every
+        shape an instance); the scene split (the still marbles' meshes
+        placed in one bottom level built once, the fireflies' in another
+        rebuilt or refit each frame, a few instances); one flat level of
+        placed triangles. The hit point the triangle's (Falcor's), the
+        meshes' bound a thirtieth of a pixel, as on CUDA.
+      - *MNEE's walk in rounds* (the 3090's: its solve 2.6 to 1.0 ms).
+      - *Both reuses over lists of pairs* (ReSTIR PT Enhanced 6.2.2).
+      - *Occupancy:* each pipeline's registers against Dynamic Caching;
+        16-bit values where they hold the same answer (Apple's guidance);
+        threadgroup sizes.
+      - *The denoiser:* its simdgroup-matrix shape and tile copies, half
+        inputs with float sums as now; Metal 4's tensor operations
+        considered; f16 sums stay the user's call.
+      - *RTXDI's reservoir layout* (16 x 16 blocks; the sizes are the
+        core's already) and the shade in the spatial merge, as on CUDA.
+   3. Each change its own commit: the demo's frame time before and after
+      at both sizes, Metal's 94 outputs the same to the bit where the
+      picture should not change, a changed picture shown side by side,
+      quality trades the user's. The gates once, at the end; then the
+      write-up, the films (rate and length from the live rate and the
+      scene), `milestone-6`, main and the site.
+
+4. Reservoir reuse as kernels, tuned per target: tiling, layout and
    fusion of the merge passes, what each costs and where the bytes go, on
    each backend.
 
