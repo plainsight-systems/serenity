@@ -1,6 +1,7 @@
 # The frame on the M3 Max's hardware
 
-Status: the profile (sections 1 to 3) and the design (sections 5 to 7),
+Status: the profile (sections 1 to 3) and the design (sections 5 to 7, the
+changes revised by the user's direction),
 2026-10-23, for the user's review before any header or code (the plan's
 steps 0 and 1, docs/process/QUEUE.md, Milestone 6), as the RTX 3090 Ti's
 was (`2026-10-20-nvidia-hardware-design.md`). Milestone 4 applied
@@ -180,130 +181,56 @@ Gathered 2026-10-23; a letter is the source (end of the note).
   upsampling fused), with half-precision tensors and weights; its own
   kernels only prepare the input and the output (O1).
 
-## 6. The changes
+## 6. The changes: production on Apple silicon, taken whole
 
-In the order of what each can move (sections 2 and 3) and what depends on
-what. Each its own commit; the demo's frame time before and after at both
-sizes; Metal's 94 outputs the same to the bit where the picture should
-not change, and a changed picture shown side by side; a quality trade the
-user's. Expected gains are stated before measuring.
+Revised 2026-10-23 at the user's direction: the first draft gated
+production's designs on measurements ("only if still costly"), put in a
+quick change that is not Apple's practice (Winograd), and ruled out a
+layout by estimate. Each change below is built whole; each is measured,
+and the measurement says what it bought, not whether it is built. A
+change to the picture is shown side by side for the user (the meshes,
+the network's 16-bit sums, the raster G-buffer); Metal's 94 outputs guard
+every change that should not change it.
 
-**1. The intersector, on the boxes as they are.** Every tracing pass
-walks candidates with an intersection query and tests each box's shape
-in its own loop (`acceleration/trace.metal.h`). The intersector, with the
-same exact tests as intersection functions (one a shape kind, not one
-function for every kind, as Apple asks), lets the M3's reorder stage
-gather the tests into coherent SIMD groups and cuts the ray-tracing
-unit's scratch memory, which section 3's occupancy targets are spent on.
-The intersector commits the nearest hit as the query's loop does, but
-equal distances and the candidates' order may differ, so the 94 outputs
-decide whether the picture is the same, not this note. What it touches:
-an intersection function table and linked functions on every tracing
-pipeline (seven passes), and MNEE's seed, which visits every shape on a
-segment, as an intersection function writing its payload (Apple: keep
-the payload small). Expected: the largest single lever on the tracing
-passes (32 ms of 62 at 3456 x 2234), size unknown; it isolates the API
-from the geometry.
+1. **Tracing as Blender Cycles traces on the M3** (C1, TT1, TT2): the
+   intersector API in every tracing pass, in place of the intersection
+   query; opaque triangle geometry Metal intersects in hardware, the
+   still shapes built once and compacted, the moving ones (the
+   fireflies) instanced meshes, their top level refit each frame; every
+   sphere a mesh at the 3090's levels (a thirtieth of a pixel at 3456 x
+   2234), the hit point the triangle's, the shading normal the sphere's;
+   MNEE's seed its own box structure with an intersection function under
+   its mask bit; small ray payloads; each tracing pipeline specialized
+   by function constants, as Cycles' are; 64-thread groups, as Cycles'
+   on the M3.
+2. **The first surface rasterized, Apple's hybrid design** (W21): a
+   render pass draws change 1's meshes into the output-size G-buffer
+   (albedo, normal, depth, motion), and only pixels whose first surface
+   is glass or a mirror trace on from it (primary surface replacement,
+   NVIDIA's, as the features pass does now); the light-size features the
+   same at the light's size.
+3. **The network on Apple's own kernels, as Open Image Denoise runs it**
+   (O1, W25a, TT3): the U-Net through Metal 4's machine-learning path in
+   the frame's own command buffers, 16-bit tensors and weights; the
+   export to its package added to `training/` (Core ML's tools, pinned
+   there); the kernel-predicting head and the output kernel ours.
+4. **ReSTIR PT's work over lists, as on the 3090:** MNEE's walks in
+   rounds; both reuses over lists of pairs, reconnections and replays.
+5. **RTXDI's reservoir layout and the fused shade**, as on CUDA.
 
-**2. Every shape as opaque triangles on the ray-tracing unit.** Apple's
-and Cycles' practice on M3, and the 3090's design (its section 4): each
-sphere a mesh at the level whose gap is within a thirtieth of a pixel at
-3456 x 2234, the hit point the triangle's (Falcor's), the shading normal
-the sphere's; MNEE's seed keeps its box structure and intersection
-function under its own mask bit. The earlier test on this machine
-(2026-10-09) traced 4 shapes through the query; this is 661 through the
-intersector. The sizes decide the layouts: by the 3090's levels the
-marbles scene's 661 spheres are 649 at level 5 (20,480 triangles) and 12
-at level 6 (81,920), the 616 fireflies among the first, their level set
-by how near the lens they come; placed, that is about 14.3 million
-triangles, 12.6 million of them the fireflies', which move every frame.
-So a layout that places every triangle (Apple's concatenation of
-everything, or one flat structure) refits 12.6 million triangles a
-frame, and is not a candidate unless the fireflies take a coarser level,
-which the 3090's measurement showed darkens the picture (the light is
-sampled on the true sphere): a quality trade, the user's, not a layout.
-The layouts measured:
-- Cycles' points: the table and the 45 still spheres as opaque
-  triangles, placed once in one primitive structure, compacted (Apple's
-  concatenation for what does not move); the fireflies as boxes with
-  their exact sphere test as an intersection function, in a structure
-  rebuilt each frame, as Cycles traces point clouds on the M3; two
-  instances, a mask bit each.
-- Cycles' meshes and the 3090's: every shape an instance of its level's
-  mesh, the top level of 661 instances rebuilt each frame; Apple's
-  instance cost (W22b) against triangles in hardware for the fireflies.
-The picture changes as any geometry's does (the 3090's: no facet seen,
-each channel's mean within 0.01 of a level): side by side.
+## 7. Not built, and one question for the user
 
-**3. The network's convolutions.** 21.2 ms, the F32 pipeline 98% busy:
-half inputs and float sums already, so fewer multiplies or another
-pipeline is what moves it, not occupancy alone. Measured on the network's
-own layer shapes in a benchmark before the pass changes, the candidates
-in production's order:
-- Apple's own: Metal Performance Primitives' `convolution2d` (or
-  `matmul2d` as the implicit product), half in, float sums, in the
-  shader, so in the frame's own command buffer; OIDN's choice of Apple's
-  kernels is MPSGraph's, which encodes outside Metal 4's command buffers.
-- Winograd's F(2x2, 3x3) on the simdgroup matrices: 2.25 times fewer
-  multiplies for a 3 x 3 convolution, as MPS, cuDNN and ncnn use it.
-- Half sums (the 3090's change 8): the work moved to the F16 pipeline,
-  half the accumulators' registers; the network's sums change, the user's
-  call. Expected small on its own: Apple states FP16 at peak throughput,
-  not twice FP32's rate (TT1), so half sums move the saturation from one
-  pipeline to the other; they pay only as a register lever, or with the
-  work split across both pipelines from different SIMD groups.
-- Metal 4's machine-learning encoder: the U-Net's convolutions as a
-  compiled package encoded beside the frame's compute, inside Metal 4's
-  command buffers (W25a), the kernel-predicting head staying ours. On the
-  M3 it runs as shader kernels, as Metal Performance Primitives do; it
-  needs the network exported as a package (Core ML's tools, a new
-  dependency of `training/`, the user's call), so it is measured only if
-  the primitives do not already reach what the benchmark finds.
-Each against the PyTorch fixture's tolerance (`tests/gpu/denoise_test.cpp`)
-and then the frame side by side; any change to the sums is the user's
-decision.
-
-**4. The full-size albedo by rasterization.** 8.1 ms of a 97% busy
-ray-tracing unit, one ray an output pixel to find the first surface that
-is not glass or a mirror. Apple's hybrid design rasterizes that surface
-(W21); with change 2's meshes the first surface is a raster pass at the
-output's size, and only pixels whose first surface is glass or a mirror
-trace on from it (primary surface replacement, NVIDIA's, as the features
-pass does now). After change 2, measured first: if the traced albedo is
-already cheap there, this is not built. No production example of a
-rasterized first surface with primary surface replacement was found; the
-parts are each production's.
-
-**5. ReSTIR PT's work over lists, as on the 3090.** MNEE's walks in rounds
-(2.6 ms; the 3090's: 2.6 to 1.0) and both reuses over lists of pairs, the
-reconnections as well as the replays (7.1 ms of shifts and replays,
-reconnected inline now). The same pictures to the bit but for MNEE's
-float atomics, as on CUDA.
-
-**6. Threadgroups.** Every per-pixel pass dispatches 1,024 threads a
-threadgroup, the maximum (`device/support.cpp`); Apple asks for the
-smallest multiple of the SIMD width that fits the work, Cycles uses 64 on
-the M3. Swept once, 64 to 1,024, the frame's time the measure. The same
-picture.
-
-**7. RTXDI's reservoir layout and the fused shade**, as on CUDA: the
-array passes are bound by address translation and the last-level cache
-(section 3), what the 16 x 16 blocks address. The same picture.
-
-## 7. Not taken, with why
-
-- MPSGraph for the network, OIDN's way: it encodes into Metal's earlier
-  command buffers, not Metal 4's, so the frame would split across queues
-  with events between, and the network's upsampling-as-it-reads and its
-  kernel-predicting head are not MPSGraph's layers; Apple's Metal 4 paths
-  to its own kernels inside the frame, the tensor operations and the
-  machine-learning encoder, are change 3's candidates.
-- MetalFX's denoised upscaler (Apple family 9): a different network and
-  its own inputs (roughness, specular albedo); replacing the trained
-  network is not this milestone's.
-- A wavefront integrator, Cycles' design: measured losing on the 3090
-  (`2026-10-21-tracing-divergence.md`, section 8.6); the M3 reorders
-  intersection functions in hardware, which change 1 tries first.
+- MPSGraph, Open Image Denoise's own route to Apple's kernels: it encodes
+  into Metal's earlier command buffers; change 3 reaches the same
+  vendor's kernels inside Metal 4's.
+- MetalFX's denoised upscaler: another network with other inputs;
+  replacing the trained network is not this milestone's.
+- **For the user: Cycles' wavefront.** Cycles' integrator on the M3 is a
+  wavefront (C1), so production taken whole includes it. On the 3090 it
+  was built, measured losing (140.8 against 163.7 fps) and reverted by
+  the user's decision; the M3 differs in that its hardware reorders
+  intersection functions (change 1). Built after changes 1 to 5 if the
+  user wants it measured on this machine.
 
 ## Sources
 
