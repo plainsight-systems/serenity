@@ -1,17 +1,18 @@
-#include "cuda/acceleration/mesh_levels.h"
+#include "core/shapes/mesh_levels.h"
 
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <stdexcept>
 #include <string>
+#include <utility>
 
 #include "core/animation/motion.h"
 #include "core/contracts/transform.h"
 #include "core/shapes/primitive.h"
-#include "cuda/acceleration/shape_meshes.h"
-#include "cuda/device/error.h"
+#include "core/shapes/shape_meshes.h"
 
-namespace serenity::cuda {
+namespace serenity::shapes {
 
 namespace {
 
@@ -74,7 +75,16 @@ std::optional<unsigned> sphere_level(const SphereSight& sphere,
   return std::nullopt;
 }
 
-std::vector<std::uint8_t> sphere_levels(const scene::SceneDescription& scene) {
+namespace {
+
+// The levels, or why a sphere has none (sphere_levels(),
+// sphere_level_refusal()).
+struct Levels {
+  std::vector<std::uint8_t> levels;
+  std::optional<std::string> refusal;
+};
+
+Levels levels_of(const scene::SceneDescription& scene) {
   const std::vector<shapes::ShapeRecord>& records = scene.shapes.records;
   std::vector<std::uint8_t> levels(records.size(), no_level);
   for (std::size_t i = 0; i < records.size(); ++i) {
@@ -92,17 +102,33 @@ std::vector<std::uint8_t> sphere_levels(const scene::SceneDescription& scene) {
     }
     const std::optional<unsigned> level = sphere_level(sight, scene.camera);
     if (!level) {
-      throw CudaError(
-          "sphere_levels: shape " + std::to_string(i) +
-          ", a sphere of radius " + std::to_string(sight.radius) +
-          " m: no icosphere up to level " +
-          std::to_string(finest_sphere_level) +
-          " is within a thirtieth of a pixel from the camera's nearest, " +
-          std::to_string(nearest_distance(sight, scene.camera)) + " m");
+      return {
+          .levels = {},
+          .refusal =
+              "shape " + std::to_string(i) + ", a sphere of radius " +
+              std::to_string(sight.radius) + " m: no icosphere up to level " +
+              std::to_string(finest_sphere_level) +
+              " is within a thirtieth of a pixel from the camera's nearest, " +
+              std::to_string(nearest_distance(sight, scene.camera)) + " m"};
     }
     levels[i] = static_cast<std::uint8_t>(*level);
   }
-  return levels;
+  return {.levels = levels, .refusal = std::nullopt};
 }
 
-}  // namespace serenity::cuda
+}  // namespace
+
+std::vector<std::uint8_t> sphere_levels(const scene::SceneDescription& scene) {
+  Levels found = levels_of(scene);
+  if (found.refusal) {
+    throw std::invalid_argument("sphere_levels: " + *found.refusal);
+  }
+  return std::move(found.levels);
+}
+
+std::optional<std::string> sphere_level_refusal(
+    const scene::SceneDescription& scene) {
+  return levels_of(scene).refusal;
+}
+
+}  // namespace serenity::shapes

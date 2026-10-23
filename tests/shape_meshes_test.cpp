@@ -1,10 +1,10 @@
-// The shapes' meshes (cuda/acceleration/shape_meshes.h), a unit with no
+// The shapes' meshes (core/shapes/shape_meshes.h), a unit with no
 // driver: each icosphere's counts, its vertices on the unit sphere, its
 // surface closed and wound outward, its gap the table's; the unit box's
 // twelve triangles on its faces, closed and wound outward; a level past the
 // finest refused.
 
-#include "cuda/acceleration/shape_meshes.h"
+#include "core/shapes/shape_meshes.h"
 
 #include <doctest/doctest.h>
 
@@ -15,7 +15,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace serenity::cuda {
+namespace serenity::shapes {
 namespace {
 
 struct Edge {
@@ -115,4 +115,4 @@ TEST_CASE("the unit box: twelve triangles on its faces, closed, outward") {
 }
 
 }  // namespace
-}  // namespace serenity::cuda
+}  // namespace serenity::shapes

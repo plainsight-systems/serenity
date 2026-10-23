@@ -7,15 +7,16 @@
 
 #include "core/contracts/float3.h"
 
-namespace serenity::cuda {
+namespace serenity::shapes {
 
-// Axis: Acceleration (the shapes as the RTX 3090 Ti's RT cores take them:
+// Axis: Acceleration (the shapes as ray-tracing hardware takes them:
 // docs/research/2026-10-20-nvidia-hardware-design.md, "The spheres as
-// triangles").
+// triangles"; docs/research/2026-10-23-apple-silicon-design.md, section 6).
 //
-// Ampere's RT cores intersect triangles and nothing else, so every shape
-// is a triangle mesh in its own space, each shape an instance of its
-// kind's (scene_acceleration.h):
+// The RTX 3090 Ti's RT cores and the M3's ray-tracing unit intersect
+// triangles in hardware, and nothing else, so every shape is a triangle
+// mesh in its own space, each shape an instance of its kind's (each
+// backend's acceleration/scene_acceleration.h):
 //
 //   - the unit sphere as an icosphere: the icosahedron, each level
 //     splitting every triangle in four and pushing the new vertices out
@@ -32,10 +33,10 @@ namespace serenity::cuda {
 // meet the faces from within), it only fixes one convention.
 //
 // Plain data made on the host, once, when the structure is made (MEM.9),
-// and handed to OptiX as they are: a vertex is three packed floats
-// (OPTIX_VERTEX_FORMAT_FLOAT3), a triangle three 32-bit indices
-// (OPTIX_INDICES_FORMAT_UNSIGNED_INT3). Pure functions of their level
-// (F.8), unit tested without a GPU.
+// and handed to the backend's builder as they are: a vertex is three
+// packed floats (OptiX's OPTIX_VERTEX_FORMAT_FLOAT3, Metal's
+// MTLAttributeFormatFloat3), a triangle three 32-bit indices. Pure
+// functions of their level (F.8), unit tested without a GPU.
 struct TriangleMesh {
   std::vector<contracts::Float3> vertices;
   std::vector<std::array<std::uint32_t, 3>> triangles;
@@ -67,4 +68,4 @@ double sphere_gap(const TriangleMesh& mesh);
 // The unit box's 12 triangles: 8 vertices, the corners.
 TriangleMesh unit_box();
 
-}  // namespace serenity::cuda
+}  // namespace serenity::shapes

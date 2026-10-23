@@ -1,4 +1,4 @@
-// The spheres' levels (cuda/acceleration/mesh_levels.h), a unit with no
+// The spheres' levels (core/shapes/mesh_levels.h), a unit with no
 // driver: a sphere's level finer where it is nearer or seen through a
 // wider lens, the coarsest that meets the screen's bound; a cavity seen
 // from within; none for a sphere whose surface can reach the lens, or one
@@ -6,21 +6,21 @@
 // scene's levels a shape each, a moving sphere's from its motion's reach,
 // and a refusal by name.
 
-#include "cuda/acceleration/mesh_levels.h"
+#include "core/shapes/mesh_levels.h"
 
 #include <doctest/doctest.h>
 
 #include <cmath>
 #include <cstdint>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "core/scene/scene.h"
-#include "cuda/acceleration/shape_meshes.h"
-#include "cuda/device/error.h"
+#include "core/shapes/shape_meshes.h"
 
-namespace serenity::cuda {
+namespace serenity::shapes {
 namespace {
 
 contracts::Camera camera_at_origin(float lens_radius = 0.0f) {
@@ -138,9 +138,13 @@ radius = 1
 material = "matte"
 )";
   const scene::SceneDescription description = scene::parse(text, "refused");
+  CHECK(sphere_level_refusal(description)
+            .value_or("")
+            .find("shape 0, a sphere") != std::string::npos);
   CHECK_THROWS_WITH_AS(sphere_levels(description),
-                       doctest::Contains("shape 0, a sphere"), CudaError);
+                       doctest::Contains("shape 0, a sphere"),
+                       std::invalid_argument);
 }
 
 }  // namespace
-}  // namespace serenity::cuda
+}  // namespace serenity::shapes

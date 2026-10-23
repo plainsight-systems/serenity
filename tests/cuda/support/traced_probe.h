@@ -33,9 +33,9 @@
 
 #include "core/contracts/transform.h"
 #include "core/scene/scene.h"
-#include "cuda/acceleration/mesh_levels.h"
+#include "core/shapes/mesh_levels.h"
+#include "core/shapes/shape_meshes.h"
 #include "cuda/acceleration/scene_acceleration.h"
-#include "cuda/acceleration/shape_meshes.h"
 #include "cuda/device/buffer.h"
 #include "cuda/device/device.h"
 #include "cuda/device/error.h"
@@ -64,15 +64,15 @@ class TracedScene {
       : buffers_(submission_, description),
         transforms_(submission_, description.shapes.transforms),
         lights_(scene::light_shapes(description)),
-        levels_(cuda::sphere_levels(description)),
+        levels_(shapes::sphere_levels(description)),
         acceleration_(
             optix_, submission_, description.shapes,
             {.moving = moving, .lights = lights_, .levels = levels_}) {
     for (std::size_t i = 0; i < levels_.size(); ++i) {
       gaps_.push_back(
-          levels_[i] == cuda::no_level
+          levels_[i] == shapes::no_level
               ? 0.0
-              : cuda::icosphere_gaps.at(levels_[i]) *
+              : shapes::icosphere_gaps.at(levels_[i]) *
                     contracts::scale(description.shapes.transforms[i]));
     }
   }
@@ -88,7 +88,7 @@ class TracedScene {
   cuda::SceneAcceleration& acceleration() noexcept { return acceleration_; }
 
   // How far inside shape `shape`'s own surface, along its normal, a traced
-  // hit may lie: a sphere's mesh's gap (cuda/acceleration/mesh_levels.h);
+  // hit may lie: a sphere's mesh's gap (core/shapes/mesh_levels.h);
   // 0 for a box, whose triangles lie on its faces.
   double hit_gap(std::uint32_t shape) const { return gaps_.at(shape); }
 

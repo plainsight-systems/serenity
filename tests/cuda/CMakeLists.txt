@@ -11,8 +11,6 @@
 # Unit tests of the backend's own logic, apart from the driver: no GPU.
 add_executable(serenity_cuda_unit_tests
     frame_sequence_test.cpp
-    mesh_levels_test.cpp
-    shape_meshes_test.cpp
     swapchain_choice_test.cpp
     ../main_test.cpp
 )

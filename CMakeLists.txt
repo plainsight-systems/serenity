@@ -246,6 +246,8 @@ add_library(serenity_core STATIC
     src/core/scene/swarm.cpp
     src/core/presentation/frame_source.cpp
     src/core/sampling/pairing.cpp
+    src/core/shapes/mesh_levels.cpp
+    src/core/shapes/shape_meshes.cpp
     src/core/shapes/shapes.cpp
     src/core/shapes/structure_plan.cpp
 )
@@ -357,9 +359,7 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     include(CudaModules)
     add_library(serenity_cuda STATIC
-        src/cuda/acceleration/mesh_levels.cpp
         src/cuda/acceleration/scene_acceleration.cpp
-        src/cuda/acceleration/shape_meshes.cpp
         src/cuda/device/buffer.cpp
         src/cuda/device/device.cpp
         src/cuda/device/error.cpp

@@ -14,7 +14,7 @@
 #include "core/frame/refusals.h"
 #include "core/passes/depth_of_field.h"
 #include "core/sampling/pairing.h"
-#include "cuda/acceleration/mesh_levels.h"
+#include "core/shapes/mesh_levels.h"
 #include "cuda/device/error.h"
 
 namespace serenity::cuda {
@@ -284,8 +284,10 @@ void Renderer::make_scene(const Device& device,
     moving.push_back(mover.target);
   }
   const std::vector<std::uint32_t> lights = scene::light_shapes(scene);
-  // Each sphere's mesh, by its error (mesh_levels.h).
-  const std::vector<std::uint8_t> levels = sphere_levels(scene);
+  // Each sphere's mesh, by its error (core/shapes/mesh_levels.h), a scene
+  // whose sphere no level serves refused in the core's words.
+  refuse(shapes::sphere_level_refusal(scene));
+  const std::vector<std::uint8_t> levels = shapes::sphere_levels(scene);
   acceleration_ = std::make_unique<SceneAcceleration>(
       *optix_, submission_, scene.shapes,
       SceneAcceleration::Roles{

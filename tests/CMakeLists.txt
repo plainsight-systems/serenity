@@ -37,6 +37,8 @@ add_executable(serenity_tests
     bsdf_lobes_test.cpp
     unet_test.cpp
     structure_plan_test.cpp
+    mesh_levels_test.cpp
+    shape_meshes_test.cpp
     denoise_core_test.cpp
     graph_file_test.cpp
     restir_pt_core_test.cpp

@@ -552,15 +552,15 @@ the two questions.
 
 | What | Axis | Where |
 |---|---|---|
-| the unit sphere as an icosphere a level and its gap, the unit box's 12 triangles | Acceleration | `src/cuda/acceleration/shape_meshes.{h,cpp}`, new |
-| each sphere's level, by its gap on screen from the camera's nearest; refused by name where none serves | Acceleration | `src/cuda/acceleration/mesh_levels.{h,cpp}`, new |
+| the unit sphere as an icosphere a level and its gap, the unit box's 12 triangles | Acceleration | `src/core/shapes/shape_meshes.{h,cpp}` (moved from `src/cuda/acceleration/` 2026-10-23, for every backend) |
+| each sphere's level, by its gap on screen from the camera's nearest; refused by name where none serves | Acceleration | `src/core/shapes/mesh_levels.{h,cpp}` (moved from `src/cuda/acceleration/` 2026-10-23; its refusal the core's, `sphere_level_refusal()`), new |
 | the meshes built once and compacted; the seed's boxes; the instances, a shape each, its mesh's placement after its own; the mask bits; the instance level rebuilt where shapes move | Acceleration | `src/cuda/acceleration/scene_acceleration.{h,cpp}`, `structure_block.h` |
 | a traced hit's point and normal from its triangle; contract 1 from them, the shading normal the shape's own | Acceleration, Shape | `src/cuda/acceleration/trace.cuh`, `src/cuda/shapes/shapes.cuh` |
 | the trace sites taking the hit's point | Integrator, Pass | `src/cuda/integrator/path.cuh`, `shift.cuh`, `src/cuda/passes/features/features.cu` |
 | MNEE's seed under its own instance and mask bit, the one intersection program | Integrator | `src/cuda/integrator/mnee.cuh`, `mnee_seed.cuh`, `src/cuda/frame/traced_module.cuh`, `traced_program.cpp` |
 | a hit group of built-in triangles; single-level instancing, triangles and custom primitives, a graph two deep | GPU backend | `src/cuda/device/pipeline.{h,cpp}` |
 | the levels handed to the structure | Frame graph | `src/cuda/frame/renderer.cpp` |
-| the meshes' and the levels' unit tests; the harness's hit gap; the leave test's parts of a shape and its cameras | tests | `tests/cuda/shape_meshes_test.cpp`, `mesh_levels_test.cpp`, `tests/{cuda,gpu}/support/traced_probe.h`, `tests/gpu/acceleration_test.cpp`, `leave_test.cpp`, `kernels/leave_probe.h`, `tests/cuda/kernels/traced_probes.cu` |
+| the meshes' and the levels' unit tests; the harness's hit gap; the leave test's parts of a shape and its cameras | tests | `tests/shape_meshes_test.cpp`, `mesh_levels_test.cpp`, `tests/{cuda,gpu}/support/traced_probe.h`, `tests/gpu/acceleration_test.cpp`, `leave_test.cpp`, `kernels/leave_probe.h`, `tests/cuda/kernels/traced_probes.cu` |
 
 The shapes' intersection program (`src/cuda/acceleration/intersection.cuh`)
 is removed: a triangle's hit is OptiX's.

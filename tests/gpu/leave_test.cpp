@@ -26,7 +26,7 @@
 // Each case's camera is where the scenes see such a shape from, its
 // surface 0.4 m off or three radii for a larger one, since a backend that
 // traces meshes chooses a sphere's mesh by how it is seen
-// (cuda/acceleration/mesh_levels.h).
+// (core/shapes/mesh_levels.h).
 //
 // Its dispatch is support/traced_probe.h's, as acceleration_test.cpp's: it
 // binds the structures' block, which the probe runner does not.

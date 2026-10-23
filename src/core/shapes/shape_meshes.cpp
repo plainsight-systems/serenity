@@ -1,4 +1,4 @@
-#include "cuda/acceleration/shape_meshes.h"
+#include "core/shapes/shape_meshes.h"
 
 #include <algorithm>
 #include <cmath>
@@ -7,7 +7,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace serenity::cuda {
+namespace serenity::shapes {
 
 namespace {
 
@@ -181,4 +181,4 @@ TriangleMesh unit_box() {
   return mesh;
 }
 
-}  // namespace serenity::cuda
+}  // namespace serenity::shapes

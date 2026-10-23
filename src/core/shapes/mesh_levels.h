@@ -2,13 +2,14 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "core/contracts/camera.h"
 #include "core/contracts/obstacles.h"
 #include "core/scene/scene.h"
 
-namespace serenity::cuda {
+namespace serenity::shapes {
 
 // Axis: Acceleration (docs/research/2026-10-20-nvidia-hardware-design.md,
 // "The spheres as triangles").
@@ -24,7 +25,7 @@ namespace serenity::cuda {
 // a still one's its center. The camera does not move (core/scene/scene.h).
 //
 // A ray leaves a mesh from the point it traced to, the triangle's
-// (shapes/shapes.cuh), so the level bounds only what is seen, not how a
+// (each backend's shapes), so the level bounds only what is seen, not how a
 // ray leaves.
 //
 // Pure functions of the scene description (F.8), on the host, unit tested
@@ -67,8 +68,14 @@ inline constexpr std::uint8_t no_level = 0xffu;
 // A level for each of `scene`'s shapes, in shape order: a sphere's by
 // sphere_level(), from its transform at rest (its radius the scale), the
 // extent of the motion that moves it if one does (the scene's movers);
-// no_level for any other shape.
-// Throws CudaError naming the first sphere no level serves.
+// no_level for any other shape. Throws std::invalid_argument, with
+// sphere_level_refusal()'s words, if it gives a reason.
 std::vector<std::uint8_t> sphere_levels(const scene::SceneDescription& scene);
 
-}  // namespace serenity::cuda
+// Why `scene` cannot be given its levels, naming the first sphere no level
+// serves; none if every sphere has one. A backend refuses the scene with
+// these words before it builds anything (I.5).
+std::optional<std::string> sphere_level_refusal(
+    const scene::SceneDescription& scene);
+
+}  // namespace serenity::shapes

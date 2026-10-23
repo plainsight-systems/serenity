@@ -150,7 +150,7 @@ SceneAcceleration::SceneAcceleration(const OptixContext& context,
 
   // The meshes: the unit box's, if a box is in the scene, and an icosphere
   // a level the spheres use; each shape's, by index.
-  std::vector<TriangleMesh> meshes;
+  std::vector<shapes::TriangleMesh> meshes;
   std::map<unsigned, std::uint32_t> mesh_of_level;
   std::optional<std::uint32_t> box_mesh;
   mesh_of_.resize(count);
@@ -158,14 +158,14 @@ SceneAcceleration::SceneAcceleration(const OptixContext& context,
     switch (shapes.records[i].kind) {
       case shapes::ShapeKind::sphere: {
         const unsigned level = roles.levels[i];
-        if (level > finest_sphere_level) {
+        if (level > shapes::finest_sphere_level) {
           throw CudaError("SceneAcceleration: shape " + std::to_string(i) +
                           ", a sphere, has no icosphere level");
         }
         const auto [at, made] = mesh_of_level.try_emplace(
             level, static_cast<std::uint32_t>(meshes.size()));
         if (made) {
-          meshes.push_back(icosphere(level));
+          meshes.push_back(shapes::icosphere(level));
         }
         mesh_of_[i] = at->second;
         break;
@@ -173,7 +173,7 @@ SceneAcceleration::SceneAcceleration(const OptixContext& context,
       case shapes::ShapeKind::box:
         if (!box_mesh) {
           box_mesh = static_cast<std::uint32_t>(meshes.size());
-          meshes.push_back(unit_box());
+          meshes.push_back(shapes::unit_box());
         }
         mesh_of_[i] = *box_mesh;
         break;
@@ -272,8 +272,8 @@ SceneAcceleration::SceneAcceleration(const OptixContext& context,
   }
 }
 
-void SceneAcceleration::make_meshes(Submission& submission,
-                                    std::span<const TriangleMesh> meshes) {
+void SceneAcceleration::make_meshes(
+    Submission& submission, std::span<const shapes::TriangleMesh> meshes) {
   struct Staged {
     DeviceBuffer vertices;
     DeviceBuffer triangles;
@@ -285,7 +285,7 @@ void SceneAcceleration::make_meshes(Submission& submission,
   DeviceBuffer compacted_sizes(meshes.size() * sizeof(std::uint64_t));
   const FrameSlot built = submission.begin();
   for (std::size_t i = 0; i < meshes.size(); ++i) {
-    const TriangleMesh& mesh = meshes[i];
+    const shapes::TriangleMesh& mesh = meshes[i];
     Staged& s = staged[i];
     s.vertices = DeviceBuffer(mesh.vertices.size() * sizeof(contracts::Float3));
     s.triangles = DeviceBuffer(mesh.triangles.size() *

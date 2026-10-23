@@ -11,9 +11,9 @@
 
 #include "core/contracts/transform.h"
 #include "core/scene/scene_block.h"
+#include "core/shapes/shape_meshes.h"
 #include "core/shapes/shapes.h"
 #include "core/shapes/structure_plan.h"
-#include "cuda/acceleration/shape_meshes.h"
 #include "cuda/acceleration/structure_block.h"
 #include "cuda/device/buffer.h"
 #include "cuda/device/frame_upload.h"
@@ -143,7 +143,7 @@ class SceneAcceleration {
   // Builds every mesh on `meshes`, compacts them, waits, and keeps the
   // compacted copies: start-up work, settled here (submission.h).
   void make_meshes(Submission& submission,
-                   std::span<const TriangleMesh> meshes);
+                   std::span<const shapes::TriangleMesh> meshes);
   Seeds make_seeds(Submission& submission, shapes::TreePlan plan) const;
   // Records the seeds' build over their boxes, and the instance level's
   // over the instances, on `stream`.
