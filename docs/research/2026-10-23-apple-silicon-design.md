@@ -1,9 +1,9 @@
 # The frame on the M3 Max's hardware
 
-Status: the profile, 2026-10-23 (the plan's step 0, docs/process/QUEUE.md,
-Milestone 6). The design follows in this note, from Apple's guidance and
-production on Apple silicon, before any header or code, as the RTX 3090
-Ti's did (`2026-10-20-nvidia-hardware-design.md`). Milestone 4 applied
+Status: the profile (sections 1 to 3) and the design (sections 5 to 7),
+2026-10-23, for the user's review before any header or code (the plan's
+steps 0 and 1, docs/process/QUEUE.md, Milestone 6), as the RTX 3090 Ti's
+was (`2026-10-20-nvidia-hardware-design.md`). Milestone 4 applied
 engines' standard optimizations on this machine; nothing yet is designed
 for its own hardware.
 
@@ -112,8 +112,176 @@ What the counters say, facts first:
 
 - The 8% at 3456 x 2234 against Milestone 4's recorded frame (section 2).
 - Each pipeline's registers, which Metal does not report; Xcode's GPU
-  capture and shader profiler do, should the design need them.
-- The design itself: Apple's guidance (WWDC's M3 GPU, profiling and ray
-  tracing sessions; Metal 4's), Blender Cycles' Metal backend, Unreal's
-  Metal RHI and Apple's samples, checked before each change is designed;
-  then the changes in the order sections 2 and 3 rank them.
+  capture and shader profiler do, should a change need them.
+
+## 5. What Apple says, and what production does on Apple silicon
+
+Gathered 2026-10-23; a letter is the source (end of the note).
+
+**The hardware, as Apple describes the M3 (Apple family 9):**
+
+- The register file is "now a cache instead of the permanent storage";
+  threadgroup, tile and stack memory likewise, all assigned dynamically
+  from L1, backed by the last-level cache (TT1). An occupancy manager
+  sets a target on the threads a core runs, "to keep the registers,
+  threadgroup, tile, and stack memory on-chip" (TT2): the targets of
+  section 3.
+- "FP16 math instructions execute at peak throughput", use fewer
+  registers, and convert "at no cost"; the FP16, FP32 and integer
+  pipelines run "in parallel to a greater degree than ever before", but
+  only for instructions from several SIMD groups (TT1). Apple does not say
+  FP16 runs at twice FP32's rate on the M3.
+- Ray tracing: "the implementation of the intersector object is
+  hardware-accelerated" on Apple family 9, each traversal independent in
+  fixed-function hardware; intersection functions still run on the shader
+  cores, gathered into coherent SIMD groups by a reorder stage (TT1).
+- Simdgroup matrices are 8 x 8; half x half + float compiles to one
+  intrinsic (checked with this toolchain). Metal 4's tensor operations
+  (Metal Performance Primitives: `matmul2d`, `convolution2d` in shaders)
+  run on M3 as "optimized shader implementations"; only the M5's neural
+  accelerators run them in hardware (TT3, W25a).
+- Threadgroups: "use the smallest multiple of the SIMD width that maps
+  well to your workload"; larger ones can leave cores unbalanced (W22a).
+  The MMU limiter means address translation, its remedy "reduce your
+  memory span and maximize data locality" (W22a, TT2).
+
+**Apple's guidance for this frame's work:**
+
+- "use the intersector object API whenever possible": the intersection
+  query "increases the amount of ray trace scratch memory" and "disables
+  the reorder stage" (TT1). "Maximize opaque triangle tests, and only use
+  custom intersection functions on geometries that need them" (TT2); an
+  opaque triangle geometry skips the intersection function entirely (D1).
+- Each instance a ray enters costs a transform and a switch (W22b); where
+  instances overlap, "concatenate these instances together into a single
+  primitive acceleration structure" (TT2). Refit "is much faster than a
+  full rebuild" (W22b).
+- Keep the ray payload small: lower latency, possibly higher occupancy
+  (TT1).
+- Primary visibility: Apple's hybrid design rasterizes the G-buffer,
+  which "plays the role of our primary rays", and traces the rest (W21);
+  no Apple measurement of it on the M3 was found.
+
+**Production on Apple silicon:**
+
+- **Blender Cycles' Metal backend** (Apple's engineers among its authors):
+  on M3 and later it traces with MetalRT by default ("Cycles' own
+  intersection code" stays the default on M1 and M2), one triangle
+  acceleration structure a mesh, instanced under one top level, static
+  scenes built and compacted, dynamic ones refit; points (spheres) as
+  boxes with an intersection function; curves as Metal's own curve
+  primitives. Every kernel's threadgroup on M3 is 64 threads, "Peak
+  occupancy is achieved through Dynamic Caching on M3 GPUs". Its
+  integrator is a wavefront (C1, C2).
+- **Intel Open Image Denoise's Metal backend** runs its U-Net through
+  Apple's MPSGraph, a graph a layer (convolution, bias, ReLU, pooling and
+  upsampling fused), with half-precision tensors and weights; its own
+  kernels only prepare the input and the output (O1).
+
+## 6. The changes
+
+In the order of what each can move (sections 2 and 3) and what depends on
+what. Each its own commit; the demo's frame time before and after at both
+sizes; Metal's 94 outputs the same to the bit where the picture should
+not change, and a changed picture shown side by side; a quality trade the
+user's. Expected gains are stated before measuring.
+
+**1. The intersector, on the boxes as they are.** Every tracing pass
+walks candidates with an intersection query and tests each box's shape
+in its own loop (`acceleration/trace.metal.h`). The intersector, with the
+same exact tests as intersection functions (one a shape kind, not one
+function for every kind, as Apple asks), lets the M3's reorder stage
+gather the tests into coherent SIMD groups and cuts the ray-tracing
+unit's scratch memory, which section 3's occupancy targets are spent on.
+The same hits, so the same picture, to the bit if the shapes' tests are
+unchanged (checked by the 94 outputs). Expected: the largest single
+lever on the tracing passes (32 ms of 62 at 3456 x 2234), size unknown;
+it isolates the API from the geometry.
+
+**2. Every shape as opaque triangles on the ray-tracing unit.** Apple's
+and Cycles' practice on M3, and the 3090's design (its section 4): each
+sphere a mesh at the level whose gap is within a thirtieth of a pixel at
+3456 x 2234, the hit point the triangle's (Falcor's), the shading normal
+the sphere's; MNEE's seed keeps its box structure and intersection
+function under its own mask bit. The earlier test on this machine
+(2026-10-09) traced 4 shapes through the query; this is 661 through the
+intersector. Three layouts, measured, since Apple warns of instance
+overlap and Cycles instances every mesh: Cycles' (a structure a level,
+an instance a shape, the top level rebuilt each frame); Apple's
+concatenation (the still marbles' placed triangles in one primitive
+structure built once and compacted, the fireflies' in another refit each
+frame, two instances); and one flat structure of every placed triangle,
+refit each frame. The picture changes as any geometry's does (the 3090's:
+no facet seen, each channel's mean within 0.01 of a level): side by side.
+
+**3. The network's convolutions.** 21.2 ms, the F32 pipeline 98% busy:
+half inputs and float sums already, so fewer multiplies or another
+pipeline is what moves it, not occupancy alone. Measured on the network's
+own layer shapes in a benchmark before the pass changes, the candidates
+in production's order:
+- Apple's own: Metal Performance Primitives' `convolution2d` (or
+  `matmul2d` as the implicit product), half in, float sums, in the
+  shader, so in the frame's own command buffer; OIDN's choice of Apple's
+  kernels is MPSGraph's, which encodes outside Metal 4's command buffers.
+- Winograd's F(2x2, 3x3) on the simdgroup matrices: 2.25 times fewer
+  multiplies for a 3 x 3 convolution, as MPS, cuDNN and ncnn use it.
+- Half sums (the 3090's change 8): the work moved to the F16 pipeline,
+  half the accumulators' registers; the network's sums change, the user's
+  call.
+Each against the PyTorch fixture's tolerance (`tests/gpu/denoise_test.cpp`)
+and then the frame side by side; any change to the sums is the user's
+decision.
+
+**4. The full-size albedo by rasterization.** 8.1 ms of a 97% busy
+ray-tracing unit, one ray an output pixel to find the first surface that
+is not glass or a mirror. Apple's hybrid design rasterizes that surface
+(W21); with change 2's meshes the first surface is a raster pass at the
+output's size, and only pixels whose first surface is glass or a mirror
+trace on from it (primary surface replacement, NVIDIA's, as the features
+pass does now). After change 2, measured first: if the traced albedo is
+already cheap there, this is not built. No production example of a
+rasterized first surface with primary surface replacement was found; the
+parts are each production's.
+
+**5. ReSTIR PT's work over lists, as on the 3090.** MNEE's walks in rounds
+(2.6 ms; the 3090's: 2.6 to 1.0) and both reuses over lists of pairs, the
+reconnections as well as the replays (7.1 ms of shifts and replays,
+reconnected inline now). The same pictures to the bit but for MNEE's
+float atomics, as on CUDA.
+
+**6. Threadgroups.** Every per-pixel pass dispatches 1,024 threads a
+threadgroup, the maximum (`device/support.cpp`); Apple asks for the
+smallest multiple of the SIMD width that fits the work, Cycles uses 64 on
+the M3. Swept once, 64 to 1,024, the frame's time the measure. The same
+picture.
+
+**7. RTXDI's reservoir layout and the fused shade**, as on CUDA: the
+array passes are bound by address translation and the last-level cache
+(section 3), what the 16 x 16 blocks address. The same picture.
+
+## 7. Not taken, with why
+
+- MPSGraph for the network, OIDN's way: it encodes into Metal's earlier
+  command buffers, not Metal 4's, so the frame would split across queues
+  with events between; Metal Performance Primitives are the same vendor's
+  kernels inside the frame's own encoder (change 3).
+- MetalFX's denoised upscaler (Apple family 9): a different network and
+  its own inputs (roughness, specular albedo); replacing the trained
+  network is not this milestone's.
+- A wavefront integrator, Cycles' design: measured losing on the 3090
+  (`2026-10-21-tracing-divergence.md`, section 8.6); the M3 reorders
+  intersection functions in hardware, which change 1 tries first.
+
+## Sources
+
+- TT1: Apple, "Explore GPU advancements in M3 and A17 Pro" (tech talk 111375) — https://developer.apple.com/videos/play/tech-talks/111375/
+- TT2: Apple, "Discover new Metal profiling tools for M3 and A17 Pro" (tech talk 111374) — https://developer.apple.com/videos/play/tech-talks/111374/
+- TT3: Apple, "Accelerate your machine learning workloads with the M5 and A19 GPUs" (tech talk 111432) — https://developer.apple.com/videos/play/tech-talks/111432
+- W21: Apple, "Explore hybrid rendering with Metal ray tracing" (WWDC21 10150) — https://developer.apple.com/videos/play/wwdc2021/10150/
+- W22a: Apple, "Scale compute workloads across Apple GPUs" (WWDC22 10159) — https://developer.apple.com/videos/play/wwdc2022/10159/
+- W22b: Apple, "Maximize your Metal ray tracing performance" (WWDC22 10105) — https://developer.apple.com/videos/play/wwdc2022/10105/
+- W25a: Apple, "Combine Metal 4 machine learning and graphics" (WWDC25 262) — https://developer.apple.com/videos/play/wwdc2025/262/
+- D1: Apple, `MTLAccelerationStructureGeometryDescriptor.opaque` — https://developer.apple.com/documentation/metal/mtlaccelerationstructuregeometrydescriptor/opaque
+- C1: Blender Cycles, `src/device/metal/` (`bvh.mm`, `kernel.mm`, `device.mm`), github.com/blender/cycles at a456b76 — https://github.com/blender/cycles
+- C2: Blender 4.0 release notes, Cycles — https://developer.blender.org/docs/release_notes/4.0/cycles/
+- O1: Intel Open Image Denoise, `devices/metal/` (`metal_conv.mm`, `metal_device.mm`), github.com/RenderKit/oidn at 6602ee2 — https://github.com/RenderKit/oidn
