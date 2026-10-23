@@ -304,7 +304,7 @@ This file tracks active and accepted work.
       pipeline's registers and occupancy as the compiler and the GPU
       report them.
    1. **The design, written before code**
-      (`docs/research/2026-10-2x-apple-silicon-design.md`): the M3 Max's
+      (`docs/research/2026-10-23-apple-silicon-design.md`): the M3 Max's
       hardware (ray-tracing unit, Dynamic Caching's on-chip memory,
       SIMD groups of 32, 16-bit arithmetic and registers, simdgroup
       matrices); Apple's own guidance (WWDC's M3 profiling and ray
