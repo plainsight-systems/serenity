@@ -573,8 +573,8 @@ GPU's work, both streams keeping it full: a gap on one stream is filled
 by the other's work, so removing gaps frees no time. The 94 outputs the
 same.
 Reverted by the user's decision (2026-10-22): a mechanism that buys
-no time is not kept. The code is on the local branch `graphs-measured`
-(05ceed2).
+no time is not kept. Its local branch was deleted by the user
+(2026-10-22): what was measured is recorded here.
 
 **Change 10, read-only loads: measured, not taken.** Cycles reads its
 scene arrays through const pointers in its launch parameters with plain

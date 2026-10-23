@@ -516,9 +516,10 @@ shading in separate launches.
 **Decided** (the user, 2026-10-21): the wavefront reverted, as 8.5 says of
 a phase that loses; what was left to try (a CUDA graph for the 0.22 ms of
 gaps, launches sized to their lists for the late surfaces' empty waves)
-is about 0.4 ms against a gap of 1.0 to 1.5 ms. Kept, not merged, on the
-local branch `wavefront-measured` (2157daf), to be measured again where
-the hardware changes (shader execution reordering, from Ada). The initial
+is about 0.4 ms against a gap of 1.0 to 1.5 ms. Not merged; its local
+branch deleted by the user (2026-10-22), the design and measurements
+recorded here for a rebuild where the hardware changes (shader execution
+reordering, from Ada). The initial
 pass stays one program, as ReSTIR PT Enhanced's is. Fast math taken on
 its own (below), and each program's register limit by the rule, on the
 megakernel.

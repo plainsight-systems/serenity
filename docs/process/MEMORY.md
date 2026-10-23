@@ -536,7 +536,8 @@ frame lacked, chosen by the user from a sweep against shipped engines:
   section 8.6).
 - **ReSTIR PT's initial pass stays one OptiX program on Ampere.** Cycles'
   wavefront was built and measured, and lost (140.8 against 163.7 fps);
-  kept on the local branch `wavefront-measured`, to be measured again on
+  not kept (its branch deleted by the user 2026-10-22; the design and
+  measurements in the tracing doc's section 8), to be built again on
   hardware with shader execution reordering. Both shifts run one thread a
   pair of a list (ReSTIR PT Enhanced's pair lists).
 - **Optimizations follow production whole, with parameters from the
