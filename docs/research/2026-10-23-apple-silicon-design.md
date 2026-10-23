@@ -84,7 +84,9 @@ running since 2026-10-10 had blocked every save before it was quit). The
 display's size is the hard case the measurement rule asks for; its
 timestamps at 1920 x 1080 are in section 2.
 
-What the counters say, facts first:
+What the counters say, facts first (occupancy is reported against its
+target, but a pass whose pipeline is saturated is bound by that pipeline,
+not by occupancy; the convolutions below are such):
 
 - **Fact:** the network's convolutions run entirely in 32-bit arithmetic
   (the F32 limiter at 80 to 98%, the F16 limiter at 0), at about a quarter
@@ -193,10 +195,15 @@ same exact tests as intersection functions (one a shape kind, not one
 function for every kind, as Apple asks), lets the M3's reorder stage
 gather the tests into coherent SIMD groups and cuts the ray-tracing
 unit's scratch memory, which section 3's occupancy targets are spent on.
-The same hits, so the same picture, to the bit if the shapes' tests are
-unchanged (checked by the 94 outputs). Expected: the largest single
-lever on the tracing passes (32 ms of 62 at 3456 x 2234), size unknown;
-it isolates the API from the geometry.
+The intersector commits the nearest hit as the query's loop does, but
+equal distances and the candidates' order may differ, so the 94 outputs
+decide whether the picture is the same, not this note. What it touches:
+an intersection function table and linked functions on every tracing
+pipeline (seven passes), and MNEE's seed, which visits every shape on a
+segment, as an intersection function writing its payload (Apple: keep
+the payload small). Expected: the largest single lever on the tracing
+passes (32 ms of 62 at 3456 x 2234), size unknown; it isolates the API
+from the geometry.
 
 **2. Every shape as opaque triangles on the ray-tracing unit.** Apple's
 and Cycles' practice on M3, and the 3090's design (its section 4): each
@@ -205,14 +212,28 @@ sphere a mesh at the level whose gap is within a thirtieth of a pixel at
 the sphere's; MNEE's seed keeps its box structure and intersection
 function under its own mask bit. The earlier test on this machine
 (2026-10-09) traced 4 shapes through the query; this is 661 through the
-intersector. Three layouts, measured, since Apple warns of instance
-overlap and Cycles instances every mesh: Cycles' (a structure a level,
-an instance a shape, the top level rebuilt each frame); Apple's
-concatenation (the still marbles' placed triangles in one primitive
-structure built once and compacted, the fireflies' in another refit each
-frame, two instances); and one flat structure of every placed triangle,
-refit each frame. The picture changes as any geometry's does (the 3090's:
-no facet seen, each channel's mean within 0.01 of a level): side by side.
+intersector. The sizes decide the layouts: by the 3090's levels the
+marbles scene's 661 spheres are 649 at level 5 (20,480 triangles) and 12
+at level 6 (81,920), the 616 fireflies among the first, their level set
+by how near the lens they come; placed, that is about 14.3 million
+triangles, 12.6 million of them the fireflies', which move every frame.
+So a layout that places every triangle (Apple's concatenation of
+everything, or one flat structure) refits 12.6 million triangles a
+frame, and is not a candidate unless the fireflies take a coarser level,
+which the 3090's measurement showed darkens the picture (the light is
+sampled on the true sphere): a quality trade, the user's, not a layout.
+The layouts measured:
+- Cycles' points: the table and the 45 still spheres as opaque
+  triangles, placed once in one primitive structure, compacted (Apple's
+  concatenation for what does not move); the fireflies as boxes with
+  their exact sphere test as an intersection function, in a structure
+  rebuilt each frame, as Cycles traces point clouds on the M3; two
+  instances, a mask bit each.
+- Cycles' meshes and the 3090's: every shape an instance of its level's
+  mesh, the top level of 661 instances rebuilt each frame; Apple's
+  instance cost (W22b) against triangles in hardware for the fireflies.
+The picture changes as any geometry's does (the 3090's: no facet seen,
+each channel's mean within 0.01 of a level): side by side.
 
 **3. The network's convolutions.** 21.2 ms, the F32 pipeline 98% busy:
 half inputs and float sums already, so fewer multiplies or another
@@ -227,7 +248,17 @@ in production's order:
   multiplies for a 3 x 3 convolution, as MPS, cuDNN and ncnn use it.
 - Half sums (the 3090's change 8): the work moved to the F16 pipeline,
   half the accumulators' registers; the network's sums change, the user's
-  call.
+  call. Expected small on its own: Apple states FP16 at peak throughput,
+  not twice FP32's rate (TT1), so half sums move the saturation from one
+  pipeline to the other; they pay only as a register lever, or with the
+  work split across both pipelines from different SIMD groups.
+- Metal 4's machine-learning encoder: the U-Net's convolutions as a
+  compiled package encoded beside the frame's compute, inside Metal 4's
+  command buffers (W25a), the kernel-predicting head staying ours. On the
+  M3 it runs as shader kernels, as Metal Performance Primitives do; it
+  needs the network exported as a package (Core ML's tools, a new
+  dependency of `training/`, the user's call), so it is measured only if
+  the primitives do not already reach what the benchmark finds.
 Each against the PyTorch fixture's tolerance (`tests/gpu/denoise_test.cpp`)
 and then the frame side by side; any change to the sums is the user's
 decision.
@@ -263,8 +294,10 @@ array passes are bound by address translation and the last-level cache
 
 - MPSGraph for the network, OIDN's way: it encodes into Metal's earlier
   command buffers, not Metal 4's, so the frame would split across queues
-  with events between; Metal Performance Primitives are the same vendor's
-  kernels inside the frame's own encoder (change 3).
+  with events between, and the network's upsampling-as-it-reads and its
+  kernel-predicting head are not MPSGraph's layers; Apple's Metal 4 paths
+  to its own kernels inside the frame, the tensor operations and the
+  machine-learning encoder, are change 3's candidates.
 - MetalFX's denoised upscaler (Apple family 9): a different network and
   its own inputs (roughness, specular albedo); replacing the trained
   network is not this milestone's.
