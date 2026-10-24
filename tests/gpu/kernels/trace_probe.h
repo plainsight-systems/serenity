@@ -29,9 +29,9 @@ struct TraceRay {
 static_assert(sizeof(TraceRay) == 32,
               "TraceRay must be the same 32 bytes on the host and in shaders");
 
-// What a ray hit: its distance and its shape, or found 0; and whether a
-// shadow ray along it, as far as its reach, carrying the same mask, is
-// blocked (trace.metal.h, occluded()).
+// What a ray hit, carrying its mask: its distance and its shape, or found
+// 0; and whether a shadow ray along it, as far as its reach, is blocked: a
+// shadow ray carries the occluders (trace.metal.h, occluded()).
 struct TraceHit {
   float t;
   uint32_t shape;

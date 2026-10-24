@@ -1,7 +1,7 @@
 // Runs the tracing loop (metal/acceleration/trace.metal.h) over the scene's
 // structures, for tests/gpu/acceleration_test.cpp: thread i traces ray i,
 // carrying its mask, and writes the hit's t and its shape, or found 0, and
-// whether a shadow ray along it carrying the same mask is blocked within
+// whether a shadow ray along it, which carries the occluders, is blocked within
 // its reach. What it checks: a world ray carried into a shape's object
 // space by its transform keeps the world's t, at any scale, and a hit names
 // its shape by its primitive index
@@ -48,8 +48,7 @@ kernel void trace_probe(device TraceHit* out [[buffer(0)]],
   const bool blocked =
       occluded(structure, shapes,
                metal::raytracing::ray(to_float3(r.origin),
-                                      to_float3(r.direction), 0.0f, r.reach),
-               r.mask, serenity::contracts::no_primitive);
+                                      to_float3(r.direction), 0.0f, r.reach));
   out[i] = TraceHit{hit.found ? hit.t : 0.0f, hit.found ? hit.primitive : 0u,
                     hit.found ? 1u : 0u, blocked ? 1u : 0u};
 }

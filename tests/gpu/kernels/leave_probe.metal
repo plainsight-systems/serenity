@@ -60,9 +60,9 @@ kernel void leave_probe(device LeaveResult* out [[buffer(0)]],
     return;
   }
   result.found = 1u;
-  const serenity::contracts::SurfaceInteraction surface = surface_interaction(
-      shapes, found.primitive, aimed.origin + found.t * aimed.direction,
-      aimed.direction);
+  result.found_part = found.part;  // its triangle
+  const serenity::contracts::SurfaceInteraction surface =
+      surface_interaction(shapes, found.primitive, found.at, aimed.direction);
 
   const float3 n = to_float3(surface.geometric_normal);
   const float cosine = leave_cosines[j / 2u] * ((j % 2u) == 0u ? 1.0f : -1.0f);
@@ -77,6 +77,7 @@ kernel void leave_probe(device LeaveResult* out [[buffer(0)]],
   result.outward = leaves_outward(surface, direction) ? 1u : 0u;
   result.hit = hit.found ? 1u : 0u;
   result.hit_shape = hit.primitive;
+  result.hit_part = hit.found ? hit.part : 0u;
   result.t = hit.t;
   result.cosine = metal::dot(direction, n);
   out[i] = result;

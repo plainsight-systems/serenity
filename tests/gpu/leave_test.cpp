@@ -14,12 +14,12 @@
 // an outward ray that hits the shape at all, or an inward ray that hits the
 // part of it it left nearer than half the way across (for a sphere, half
 // its chord 2 R |cos|; for a box, a hundredth of its least half size,
-// every query's point being in the middle half of its face). Where a
-// backend traces a sphere as a mesh (CUDA's), an inward ray at a grazing
+// every query's point being in the middle half of its face). As both
+// backends trace a sphere as a mesh, an inward ray at a grazing
 // angle near a triangle's edge rightly leaves through the next triangle
 // sooner than through a sphere, so a hit on another part at such an angle
 // (a cosine under 0.5, where a mesh's chord and the sphere's part) is no
-// self-hit; a shape of one primitive (Metal's) has one part. An inward ray that
+// self-hit. An inward ray that
 // hits no shape, or another, started outside the shape: a leak, the offset too
 // large for it.
 //

@@ -499,8 +499,7 @@ __device__ inline float3 next_event(Scene scene, Shading here,
       transmittance(scene.media(), here.medium, sample.distance) /
       light_density * next_event_weight(light_density, here.bsdf, here.wo, wi);
   if (occluded(scene.structure, scene.shapes(),
-               make_ray(origin, wi, 0.0f, sample.distance),
-               serenity::contracts::RayMask::occluders, sample.primitive)) {
+               make_ray(origin, wi, 0.0f, sample.distance))) {
     return make_float3(0.0f);
   }
   return unshadowed;

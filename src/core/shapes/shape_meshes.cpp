@@ -181,4 +181,43 @@ TriangleMesh unit_box() {
   return mesh;
 }
 
+contracts::Transform compose(const contracts::Transform& a,
+                             const contracts::Transform& b) {
+  contracts::Transform c{};
+  // Contract 10's matrix is a C array (MSL has no std::array), indexed by
+  // these loops' bounds.
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index)
+  for (int r = 0; r < 3; ++r) {
+    for (int k = 0; k < 4; ++k) {
+      float sum = k == 3 ? a.m[r][3] : 0.0f;
+      for (int j = 0; j < 3; ++j) {
+        sum += a.m[r][j] * b.m[j][k];
+      }
+      c.m[r][k] = sum;
+    }
+  }
+  // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index)
+  return c;
+}
+
+contracts::Transform instance_transform(const ShapeRecord& record,
+                                        std::span<const BoxData> boxes,
+                                        const contracts::Transform& placed) {
+  contracts::Transform mesh{{
+      {1.0f, 0.0f, 0.0f, 0.0f},
+      {0.0f, 1.0f, 0.0f, 0.0f},
+      {0.0f, 0.0f, 1.0f, 0.0f},
+  }};  // a sphere's: the unit sphere's
+  if (record.kind == ShapeKind::box) {
+    // The unit box onto the box's corners, in its own space.
+    const BoxData& box = boxes[record.geometry];
+    mesh = contracts::Transform{{
+        {box.max.x - box.min.x, 0.0f, 0.0f, box.min.x},
+        {0.0f, box.max.y - box.min.y, 0.0f, box.min.y},
+        {0.0f, 0.0f, box.max.z - box.min.z, box.min.z},
+    }};
+  }
+  return compose(placed, mesh);
+}
+
 }  // namespace serenity::shapes

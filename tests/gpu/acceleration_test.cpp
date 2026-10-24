@@ -249,7 +249,9 @@ TEST_CASE(
   CHECK(hits[0].found == 1u);
   CHECK(hits[0].shape == 0u);
   CHECK(hits[0].t == doctest::Approx(5.0 - 0.03).scale(0).epsilon(1e-6));
-  CHECK(hits[0].occluded == 1u);
+  // A shadow ray carries the occluders: the light before its reach does
+  // not block it.
+  CHECK(hits[0].occluded == 0u);
   CHECK(hits[1].found == 1u);
   CHECK(hits[1].shape == 1u);
   CHECK(hits[1].t == doctest::Approx(7.0).scale(0).epsilon(1e-6));
@@ -258,7 +260,7 @@ TEST_CASE(
   CHECK(hits[3].found == 1u);
   CHECK(hits[3].shape == 2u);
   CHECK(hits[3].t == doctest::Approx(2.9).scale(0).epsilon(1e-6));
-  CHECK(hits[3].occluded == 1u);
+  CHECK(hits[3].occluded == 0u);  // the second light is no occluder
   CHECK(hits[4].found == 1u);
   CHECK(hits[4].shape == 3u);
   CHECK(hits[4].t == doctest::Approx(6.0).scale(0).epsilon(1e-6));

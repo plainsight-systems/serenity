@@ -1,7 +1,7 @@
 // The CUDA backend's tracing probes, one OptiX module (tests/cuda/
 // CMakeLists.txt), each a ray generation program run by the tracing
 // harness (tests/cuda/support/traced_probe.h) and checked by the test it
-// shares with Metal: Metal's trace_probe and leave_probe
+// shares with Metal: Metal's trace_probe, leave_probe and seed_probe
 // (tests/gpu/kernels/), their bindings read from the launch parameters at
 // the places Metal binds them (probe_launch.h), the structures among them.
 // The module holds the backend's one intersection program, MNEE's seed's,
@@ -15,12 +15,16 @@
 #include "core/shapes/primitive.h"
 #include "cuda/acceleration/trace.cuh"
 #include "cuda/device/layout.cuh"
+#include "cuda/integrator/mnee.cuh"
 #include "cuda/integrator/mnee_seed.cuh"
 #include "cuda/integrator/surface.cuh"
 #include "cuda/math/hash.cuh"
+#include "cuda/materials/resolve.cuh"
 #include "cuda/math/warp.cuh"
 #include "cuda/shapes/shapes.cuh"
+#include "core/scene/scene_block.h"
 #include "gpu/kernels/leave_probe.h"
+#include "gpu/kernels/seed_probe.h"
 #include "gpu/kernels/trace_probe.h"
 #include "kernels/probe_launch.h"
 
@@ -67,8 +71,7 @@ __device__ inline void trace_one() {
       r.mask);
   const bool blocked = occluded(
       &probe.structures, shapes,
-      make_ray(to_float3(r.origin), to_float3(r.direction), 0.0f, r.reach),
-      r.mask, serenity::contracts::no_primitive);
+      make_ray(to_float3(r.origin), to_float3(r.direction), 0.0f, r.reach));
   binding<TraceHit>(0)[i] =
       TraceHit{hit.found ? hit.t : 0.0f, hit.found ? hit.primitive : 0u,
                hit.found ? 1u : 0u, blocked ? 1u : 0u};
@@ -129,9 +132,61 @@ __device__ inline void leave_one() {
   out[i] = result;
 }
 
+// What seed_segment() reads of a scene: the structures, the shapes and the
+// materials (Metal's seed_probe's SeedScene).
+struct SeedScene {
+  SceneStructure structure;
+  Shapes traced;
+  Materials kinds;
+  __device__ Shapes shapes() const { return traced; }
+  __device__ Materials materials() const { return kinds; }
+};
+
+// Thread i seeds segment i with this backend's seed (mnee.cuh,
+// seed_segment(), its walk the seed's intersection program, mnee_seed.cuh)
+// and writes the seed (Metal's seed_probe, which says what it checks).
+// Bindings: the output at 0, then the segments, their count, the scene's
+// block, the structures (here in the launch parameters), and the shapes'
+// records, transforms and boxes, at 5 to 7.
+__device__ inline void seed_one() {
+  using serenity::tests::SeedFound;
+  using serenity::tests::SeedSegment;
+  const uint i = optixGetLaunchIndex().x;
+  if (i >= *binding<const uint>(2)) {
+    return;
+  }
+  const serenity::gpu::SceneBlock& block =
+      *binding<const serenity::gpu::SceneBlock>(3);
+  const SeedScene scene{
+      &probe.structures,
+      Shapes{binding<const serenity::shapes::ShapeRecord>(5),
+             binding<const serenity::contracts::Transform>(6),
+             binding<const serenity::shapes::BoxData>(7)},
+      Materials{block.materials, block.roughs, block.dielectrics,
+                block.conductors, block.coateds}};
+  const SeedSegment s = binding<const SeedSegment>(1)[i];
+  // No shape to ignore: the seed traces the occluders, which hold no light.
+  const mnee::Seed seed =
+      mnee::seed_segment(scene, to_float3(s.origin), to_float3(s.direction),
+                         s.distance, serenity::contracts::no_primitive);
+  SeedFound found{};
+  found.count = seed.count;
+  found.blocked = seed.blocked ? 1u : 0u;
+  found.usable = seed.usable ? 1u : 0u;
+  for (uint c = 0u; c < mnee::max_interfaces; ++c) {
+    found.t[c] = c < seed.count ? seed.t[c] : 0.0f;
+    found.shape[c] = c < seed.count ? seed.shape[c] : 0u;
+  }
+  binding<SeedFound>(0)[i] = found;
+}
+
 }  // namespace
 }  // namespace shaders
 }  // namespace serenity
+
+extern "C" __global__ void __raygen__seed_probe() {
+  serenity::shaders::seed_one();
+}
 
 extern "C" __global__ void __raygen__trace_probe() {
   serenity::shaders::trace_one();

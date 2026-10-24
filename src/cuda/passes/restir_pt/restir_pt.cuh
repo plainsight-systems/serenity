@@ -533,7 +533,7 @@ struct TreeGather {
     }
     const float3 at_light = to_float3(at.position);
     const reconnection::Pair pair =
-        shift::forward_pair(before, at_light, to_float3(at.geometric_normal));
+        shift::forward_pair(before, at_light, shift::surface_normal(at));
     if (reconnection::connectable(pair, threshold, settings.roughness)) {
       offer(integrand, 1.0f,
             Stored{length, length, serenity::contracts::PathEnd::struck,
@@ -555,7 +555,7 @@ struct TreeGather {
   __device__ __forceinline__ void reached(Shading here, float3 from,
                                           uint surface) {
     const float3 at = to_float3(here.surface.position);
-    const float3 normal = to_float3(here.surface.geometric_normal);
+    const float3 normal = shift::surface_normal(here.surface);
     if (surface == 0u) {
       threshold = reconnection::footprint_threshold(settings.footprint, from,
                                                     at, normal);
@@ -736,7 +736,7 @@ struct TreeGather {
         suffix = make_float3(1.0f);
       }
     }
-    before = shift::Before{at, to_float3(here.surface.geometric_normal),
+    before = shift::Before{at, shift::surface_normal(here.surface),
                            reconnection::lobe_roughness(next.lobe, here.bsdf),
                            delta, next.pdf};
     before_lobe = next.lobe;

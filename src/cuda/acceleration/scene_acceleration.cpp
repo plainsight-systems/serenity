@@ -105,26 +105,6 @@ OptixAccelBufferSizes sizes_of(OptixDeviceContext context,
   return sizes;
 }
 
-// a x b, each a 3 x 4 affine matrix with the row (0, 0, 0, 1) understood.
-// Contract 10's matrix is a C array (MSL has no std::array), indexed by
-// these loops' bounds.
-contracts::Transform compose(const contracts::Transform& a,
-                             const contracts::Transform& b) {
-  contracts::Transform c{};
-  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index)
-  for (int r = 0; r < 3; ++r) {
-    for (int k = 0; k < 4; ++k) {
-      float sum = k == 3 ? a.m[r][3] : 0.0f;
-      for (int j = 0; j < 3; ++j) {
-        sum += a.m[r][j] * b.m[j][k];
-      }
-      c.m[r][k] = sum;
-    }
-  }
-  // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index)
-  return c;
-}
-
 constexpr contracts::Transform identity{{
     {1.0f, 0.0f, 0.0f, 0.0f},
     {0.0f, 1.0f, 0.0f, 0.0f},
@@ -379,18 +359,8 @@ void SceneAcceleration::build_instances(CUstream stream) {
 
 void SceneAcceleration::place(OptixInstance& instance, std::uint32_t shape,
                               const contracts::Transform& transform) const {
-  contracts::Transform mesh = identity;  // a sphere's: the unit sphere's
-  const shapes::ShapeRecord& record = shapes_.records[shape];
-  if (record.kind == shapes::ShapeKind::box) {
-    // The unit box onto the box's corners, in its own space.
-    const shapes::BoxData& box = shapes_.boxes.at(record.geometry);
-    mesh = contracts::Transform{{
-        {box.max.x - box.min.x, 0.0f, 0.0f, box.min.x},
-        {0.0f, box.max.y - box.min.y, 0.0f, box.min.y},
-        {0.0f, 0.0f, box.max.z - box.min.z, box.min.z},
-    }};
-  }
-  const contracts::Transform placed = compose(transform, mesh);
+  const contracts::Transform placed = shapes::instance_transform(
+      shapes_.records[shape], shapes_.boxes, transform);
   std::memcpy(&instance.transform[0], &placed, sizeof(placed));
 }
 

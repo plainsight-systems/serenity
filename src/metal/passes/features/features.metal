@@ -58,9 +58,9 @@ inline Reached reach(Scene scene, metal::raytracing::ray along) {
     return Reached{false, float3(0.0f), contracts::SurfaceInteraction{}, false,
                    contracts::Bsdf{}};
   }
-  const float3 point = along.origin + hit.t * along.direction;
+  const float3 point = hit.at.point;
   const contracts::SurfaceInteraction surface = surface_interaction(
-      scene.shapes(), hit.primitive, point, along.direction);
+      scene.shapes(), hit.primitive, hit.at, along.direction);
   if (light_at(scene.lights(), hit.primitive).is_light) {
     return Reached{true, point, surface, true, contracts::Bsdf{}};
   }

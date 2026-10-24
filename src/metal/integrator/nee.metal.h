@@ -160,8 +160,7 @@ inline float bsdf_weight(uint m, float light_density, float bsdf_density) {
 inline bool visible(SceneStructure structure, Shapes shapes, float3 origin,
                     float3 direction, float distance, uint primitive) {
   return !occluded(structure, shapes,
-                   metal::raytracing::ray(origin, direction, 0.0f, distance),
-                   serenity::contracts::RayMask::occluders, primitive);
+                   metal::raytracing::ray(origin, direction, 0.0f, distance));
 }
 
 inline bool visible(SceneStructure structure, Shapes shapes, float3 origin,

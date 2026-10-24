@@ -26,12 +26,9 @@
 // one (GPU.4).
 //
 // A shadow ray carries the occluders, which hold no light, so the light
-// it aims at is never among the shapes it can meet; the shape occluded()
-// is told to ignore is that light, and a triangle has no program to skip
-// one by name. A ray carrying everything that names a shape to ignore is
-// one this structure cannot answer, and is refused where it runs, by a
-// trap, never answered as if nothing were ignored. Any-hit is off on the
-// geometry and the ray.
+// it aims at is never among the shapes it can meet, and occluded() takes
+// no shape to ignore and no mask. Any-hit is off on the geometry and the
+// ray.
 
 #include <optix.h>
 
@@ -123,21 +120,16 @@ __device__ inline Hit trace(SceneStructure structures, Shapes /*shapes*/, Ray r,
              hit_mesh_point()};
 }
 
-// Whether any shape `mask` finds lies along `r`: a shadow ray's question.
-// It stops at the first such shape, whichever it is
-// (TERMINATE_ON_FIRST_HIT), rather than searching for the nearest.
-// `ignore` is the light a shadow ray aims at, which the occluders do not
-// hold (above).
+// Whether any occluder lies along `r`: a shadow ray's question. It stops at
+// the first, whichever it is (TERMINATE_ON_FIRST_HIT), rather than
+// searching for the nearest. A shadow ray carries the occluders, which hold
+// no light (contract 19), so the light it aims at is never among what it
+// can meet: no shape to ignore, and no mask (Metal's occluded(),
+// metal/acceleration/trace.metal.h).
 __device__ inline bool occluded(SceneStructure structures, Shapes /*shapes*/,
-                                Ray r, serenity::contracts::RayMask mask,
-                                uint ignore) {
-  if (mask == serenity::contracts::RayMask::everything &&
-      ignore != ignores_none) {
-    // No shape can be skipped by name (above): the launch ends, and the
-    // submission's next wait reports the fault (device/error.h).
-    __trap();
-  }
-  const MaskedStructure traversed = masked(structures, mask);
+                                Ray r) {
+  const MaskedStructure traversed =
+      masked(structures, serenity::contracts::RayMask::occluders);
   if (traversed.empty) {
     return false;
   }

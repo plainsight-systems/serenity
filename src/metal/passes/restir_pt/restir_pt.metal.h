@@ -521,7 +521,7 @@ struct TreeGather {
     }
     const float3 at_light = to_float3(at.position);
     const reconnection::Pair pair =
-        shift::forward_pair(before, at_light, to_float3(at.geometric_normal));
+        shift::forward_pair(before, at_light, shift::surface_normal(at));
     if (reconnection::connectable(pair, threshold, settings.roughness)) {
       offer(integrand, 1.0f,
             Stored{length, length, serenity::contracts::PathEnd::struck,
@@ -542,7 +542,7 @@ struct TreeGather {
   // later vertex from the one before.
   [[gnu::always_inline]] void reached(Shading here, float3 from, uint surface) {
     const float3 at = to_float3(here.surface.position);
-    const float3 normal = to_float3(here.surface.geometric_normal);
+    const float3 normal = shift::surface_normal(here.surface);
     if (surface == 0u) {
       threshold = reconnection::footprint_threshold(settings.footprint, from,
                                                     at, normal);
@@ -619,8 +619,8 @@ struct TreeGather {
       // along the solved chain, weighed by W_RIS, into the pixel's
       // light, not resampled (above, "Manifold next event
       // estimation").
-      const mnee::Seed seed = mnee::seed_segment(
-          scene, origin, wi, kept.sample.distance, kept.sample.primitive);
+      const mnee::Seed seed =
+          mnee::seed_segment(scene, origin, wi, kept.sample.distance);
       if (seed.count != 0u) {
         if (seed.usable) {
           // Where the list is full, counted lost by the MNEE pass
@@ -722,7 +722,7 @@ struct TreeGather {
         suffix = float3(1.0f);
       }
     }
-    before = shift::Before{at, to_float3(here.surface.geometric_normal),
+    before = shift::Before{at, shift::surface_normal(here.surface),
                            reconnection::lobe_roughness(next.lobe, here.bsdf),
                            delta, next.pdf};
     before_lobe = next.lobe;

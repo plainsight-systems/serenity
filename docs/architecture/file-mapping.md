@@ -627,6 +627,28 @@ their own.
 | CUDA's slots block-linear and their inverse; the duplication map through them; the shift lists launched over the traced pairs' most | Pass | `src/cuda/passes/restir_pt/{restir_pt.cuh,shift_replay.{h,cpp}}`, `src/cuda/passes/restir_pt_duplication/`, `src/cuda/reuse/duplication.cuh` |
 | the slots take each place of their grid once, within its blocks | tests | `tests/checkerboard_test.cpp` |
 
+## Tracing on the M3's ray-tracing unit (`docs/research/2026-10-23-apple-silicon-design.md`, section 6, change 1)
+
+The shapes as opaque triangle meshes under one instance structure, traced
+by Metal's intersector, as Blender Cycles traces on the M3; the two
+structures of "Ray masks" above become the mask bits of the one, and
+MNEE's seed a walk of nearest hits through it, as Cycles' seed is.
+
+| What | Axis | Where |
+|---|---|---|
+| the meshes (the core's, as on the 3090) built once, opaque, for fast intersection, and compacted, each triangle's vertices its per-primitive data; the instances, a shape each, placed by the core's `instance_transform()`, their mask bits; the instance structure per slot where shapes move | Acceleration | `src/metal/acceleration/scene_acceleration.{h,cpp}` |
+| the block: the instance structure and the occluders' count; the mask bits; a triangle's per-primitive data | Acceleration | `src/metal/acceleration/structure_block.h` |
+| the intersector's nearest hit by mask and its any-hit shadow test; a hit's point and normal from its triangle | Acceleration | `src/metal/acceleration/trace.metal.h` |
+| a hit's shape placed with its mesh's placement; contract 1 from a hit's triangle, the shading normal the shape's own | Shape | `src/metal/shapes/shapes.metal.h` |
+| a shape's instance transform, its mesh's placement after its own, for every backend | Acceleration | `src/core/shapes/shape_meshes.{h,cpp}` (`compose()`, `instance_transform()`) |
+| MNEE's seed, a walk of at most 10 nearest hits along the segment (Cycles' `kernel_path_mnee_sample`) | Integrator | `src/metal/integrator/mnee.metal.h` (`seed_segment()`) |
+| the trace sites taking the hit's point; the shadow tests with no shape to ignore; the shift's normals the shading normal on both backends (`surface_normal()`) | Integrator, Pass | `src/metal/integrator/{path,nee,shift}.metal.h`, `src/metal/passes/{features/features.metal,restir_pt/restir_pt.metal.h}`; `src/cuda/integrator/{shift,nee,mnee,path}.cuh`, `src/cuda/passes/restir_pt/restir_pt.cuh`, `src/cuda/acceleration/trace.cuh` |
+| the levels handed to the structure, the scene refused where a sphere has none | Frame graph | `src/metal/frame/renderer.cpp` |
+| the probes' hit gap, parts and shadow tests | tests | `tests/gpu/support/traced_probe.h`, `acceleration_test.cpp`, `leave_test.cpp`, `restir_pt_test.cpp`, `kernels/{trace,leave}_probe.{h,metal}`, `tests/cuda/kernels/traced_probes.cu` |
+
+The occluders' box structure, its shape table and the intersection query
+over it are removed from the Metal backend.
+
 ## Not here yet
 
 - **HIP with HIPRT** on AMD's Strix Halo and **Direct3D 12** on the Xbox

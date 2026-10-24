@@ -127,6 +127,22 @@ namespace serenity {
 namespace shaders {
 namespace shift {
 
+// The normal ReSTIR PT measures a surface by, in its reconnection
+// criteria, footprints and Jacobians: the shape's own, contract 1's
+// shading normal (the sphere's along its radius at a hit on its mesh, a
+// box's face's; no material bends it). Not the geometric normal, which at
+// a mesh hit is the triangle's: that decides only which side a ray leaves
+// from (integrator/surface.metal.h). The two differ by the mesh's facets,
+// so a replayed direction turned by the G-buffer's packing (contract 5)
+// across a triangle's edge would turn the face's normal by the facet's
+// angle where the shape's turns by the direction's; and a vertex rebuilt
+// from its stored point (shapes/shapes.metal.h) has only the shape's.
+// Found by this backend's self-shift test (tests/gpu/restir_pt_test.cpp,
+// "a path shifted to its own pixel"), the CUDA backend's the same.
+inline float3 surface_normal(serenity::contracts::SurfaceInteraction s) {
+  return to_float3(s.shading_normal);
+}
+
 // The numbers' dimensions (above, "The numbers"; sampler.metal.h's table),
 // and each span's bound within it: a surface's four BSDF numbers and its
 // candidates' four each, at most max_path_surfaces surfaces; a pick for at
@@ -191,16 +207,15 @@ inline Primary primary_hit(path::Scene scene, CameraRay camera,
   if (!hit.found || light_at(scene.lights(), hit.primitive).is_light) {
     return Primary{false, Shading{}, 0.0f};
   }
-  const float3 point = along.origin + hit.t * along.direction;
+  const float3 point = hit.at.point;
   const serenity::contracts::SurfaceInteraction surface = surface_interaction(
-      scene.shapes(), hit.primitive, point, along.direction);
+      scene.shapes(), hit.primitive, hit.at, along.direction);
   const Shading here{surface,
                      resolve_bsdf(scene.materials(), scene.textures(), surface),
                      -along.direction, serenity::contracts::no_medium};
-  return Primary{
-      here.bsdf.kind != serenity::contracts::BsdfKind::none, here,
-      reconnection::footprint_threshold(footprint, camera.origin, point,
-                                        to_float3(surface.geometric_normal))};
+  return Primary{here.bsdf.kind != serenity::contracts::BsdfKind::none, here,
+                 reconnection::footprint_threshold(
+                     footprint, camera.origin, point, surface_normal(surface))};
 }
 
 // contract 5's PrimaryHit, the G-buffer's record of a pixel's primary hit
@@ -275,7 +290,7 @@ struct Before {
 inline reconnection::Pair full_pair(Before before, Shading here, uint lobe,
                                     float density) {
   const float3 at = to_float3(here.surface.position);
-  const float3 normal = to_float3(here.surface.geometric_normal);
+  const float3 normal = surface_normal(here.surface);
   return reconnection::Pair{
       before.roughness,
       reconnection::footprint(before.delta, before.density, before.position, at,
@@ -313,9 +328,7 @@ inline bool segment_clear(path::Scene scene,
   const float length = metal::length(span);
   return !(length > 0.0f) ||
          !occluded(scene.structure, scene.shapes(),
-                   metal::raytracing::ray(start, span / length, 0.0f, length),
-                   serenity::contracts::RayMask::occluders,
-                   serenity::contracts::no_primitive);
+                   metal::raytracing::ray(start, span / length, 0.0f, length));
 }
 
 // A light at a stored point on shape `primitive`, as seen from `origin`:
@@ -434,7 +447,7 @@ struct Reconnecting {
   const uint k = c::path_rc(source.flags);
   const c::PathEnd end = c::path_end(source.flags);
   const uint lobe_at = c::path_lobe_at(source.flags);
-  const float3 y_normal = to_float3(here.surface.geometric_normal);
+  const float3 y_normal = surface_normal(here.surface);
   const c::SurfaceInteraction at_k = r.at_k;
   const float3 x_k = r.x_k;
   const float3 y = to_float3(here.surface.position);
@@ -455,7 +468,7 @@ struct Reconnecting {
   const float density_k = bsdf_pdf(xk.bsdf, xk.wo, wk);
   const bool nee_at_k = lobe_at == 0u;
   const float geometry =
-      metal::abs(metal::dot(to_float3(at_k.geometric_normal), w)) / distance2;
+      metal::abs(metal::dot(surface_normal(at_k), w)) / distance2;
   const reconnection::Pair pair{
       roughness,
       1.0f / (density * metal::max(geometry, reconnection::least_geometry)),
@@ -512,7 +525,7 @@ inline Shifted reconnect(path::Scene scene, Shading here, float3 beta,
     return failed();
   }
   const float3 y = to_float3(here.surface.position);
-  const float3 y_normal = to_float3(here.surface.geometric_normal);
+  const float3 y_normal = surface_normal(here.surface);
   const float3 decoded = decode_shape_point(
       scene.shapes(), source.primitive,
       c::ShapePoint{source.point, c::path_face(source.flags)});
@@ -603,21 +616,21 @@ inline Shifted replay_end(path::Scene scene, Shading here, float3 beta,
                                       here.surface.primitive))) {
     return failed();
   }
-  const float3 point = along.origin + hit.t * along.direction;
+  const float3 point = hit.at.point;
   beta *=
       transmittance(scene.media(), medium,
                     metal::distance(to_float3(here.surface.position), point));
   // The struck light must not pass the criteria from y_{d-1}: the source's
   // did not.
   const c::SurfaceInteraction lit =
-      surface_interaction(scene.shapes(), hit.primitive, point, wi);
+      surface_interaction(scene.shapes(), hit.primitive, hit.at, wi);
   const Before last{to_float3(here.surface.position),
-                    to_float3(here.surface.geometric_normal),
+                    surface_normal(here.surface),
                     reconnection::lobe_roughness(next.lobe, here.bsdf),
                     (next.lobe & c::lobe_delta) != 0u, next.pdf};
-  if (reconnection::connectable(forward_pair(last, to_float3(lit.position),
-                                             to_float3(lit.geometric_normal)),
-                                threshold, settings.roughness)) {
+  if (reconnection::connectable(
+          forward_pair(last, to_float3(lit.position), surface_normal(lit)),
+          threshold, settings.roughness)) {
     return failed();
   }
   const float weight =
@@ -680,21 +693,21 @@ inline Shifted shift_path(path::Scene scene, Primary destination,
                    ? here.surface.interior
                    : c::no_medium;
     }
-    before = Before{to_float3(here.surface.position),
-                    to_float3(here.surface.geometric_normal),
-                    reconnection::lobe_roughness(next.lobe, here.bsdf),
-                    (next.lobe & c::lobe_delta) != 0u, next.pdf};
+    before =
+        Before{to_float3(here.surface.position), surface_normal(here.surface),
+               reconnection::lobe_roughness(next.lobe, here.bsdf),
+               (next.lobe & c::lobe_delta) != 0u, next.pdf};
     const metal::raytracing::ray along = leave(here.surface, wi);
     const Hit hit =
         trace(scene.structure, scene.shapes(), along, c::RayMask::everything);
     if (!hit.found || light_at(scene.lights(), hit.primitive).is_light) {
       return failed();
     }
-    const float3 point = along.origin + hit.t * along.direction;
+    const float3 point = hit.at.point;
     beta *= transmittance(scene.media(), medium,
                           metal::distance(before.position, point));
     const c::SurfaceInteraction surface =
-        surface_interaction(scene.shapes(), hit.primitive, point, wi);
+        surface_interaction(scene.shapes(), hit.primitive, hit.at, wi);
     here = Shading{surface,
                    resolve_bsdf(scene.materials(), scene.textures(), surface),
                    -wi, medium};

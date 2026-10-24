@@ -494,8 +494,7 @@ inline float3 next_event(Scene scene, Shading here,
       transmittance(scene.media(), here.medium, sample.distance) /
       light_density * next_event_weight(light_density, here.bsdf, here.wo, wi);
   if (occluded(scene.structure, scene.shapes(),
-               metal::raytracing::ray(origin, wi, 0.0f, sample.distance),
-               serenity::contracts::RayMask::occluders, sample.primitive)) {
+               metal::raytracing::ray(origin, wi, 0.0f, sample.distance))) {
     return float3(0.0f);
   }
   return unshadowed;
@@ -660,13 +659,13 @@ template <typename Gather>
       gather.escaped(scene, L, beta, along, surface);
       break;
     }
-    const float3 point = along.origin + hit.t * along.direction;
+    const float3 point = hit.at.point;
     beta *= transmittance(scene.media(), medium, metal::distance(from, point));
     if constexpr (Gather::observes_vertices) {
       gather.crossed(scene, medium, metal::distance(from, point));
     }
     const serenity::contracts::SurfaceInteraction surface_at =
-        surface_interaction(scene.shapes(), hit.primitive, point,
+        surface_interaction(scene.shapes(), hit.primitive, hit.at,
                             along.direction);
 
     // Step 3.

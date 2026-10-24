@@ -38,9 +38,8 @@ static_assert(
 // One ray leaving the point a query found: whether the query found its
 // shape first; the side the leaving ray leaves on, as leave() decides it;
 // its cosine to the geometric normal; and what it hit, its distance from
-// where it starts. Which part of its shape each hit met: a mesh's
-// triangle where a backend traces one (CUDA's), 0 where a shape is one
-// primitive (Metal's).
+// where it starts. Which part of its shape each hit met: its mesh's
+// triangle, as both backends trace meshes.
 struct LeaveResult {
   uint32_t found;    // the query's ray hit its shape, nearest
   uint32_t outward;  // leaves_outward(): on the geometric normal's side

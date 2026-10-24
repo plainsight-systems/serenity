@@ -123,5 +123,76 @@ inline serenity::contracts::SurfaceInteraction surface_interaction(
   return s;
 }
 
+// Where a traced ray met a shape's mesh (acceleration/trace.metal.h): the
+// point on the triangle it hit, in the world, from the triangle's vertices
+// and the hit's barycentrics, as Falcor and RTXDI find a hit's point; and
+// the triangle's outward unit normal, in the world. The CUDA backend's
+// (cuda/shapes/shapes.cuh).
+struct MeshPoint {
+  float3 point;
+  float3 face;
+};
+
+// Shape `shape`'s instance transform: its transform after its mesh's own
+// placement, the identity for a sphere and the unit box onto the box's
+// corners for a box (core/shapes/shape_meshes.h, instance_transform, which
+// the host gives the instance itself).
+inline serenity::contracts::Transform instance_placement(Shapes shapes,
+                                                         uint shape) {
+  const serenity::shapes::ShapeRecord record = shapes.records[shape];
+  serenity::contracts::Transform placed = shapes.transforms[shape];
+  if (record.kind != serenity::shapes::ShapeKind::box) {
+    return placed;
+  }
+  const serenity::shapes::BoxData box = shapes.boxes[record.geometry];
+  const float3 low = float3(box.min.x, box.min.y, box.min.z);
+  const float3 extent = float3(box.max.x, box.max.y, box.max.z) - low;
+  serenity::contracts::Transform out = placed;
+  for (uint r = 0u; r < 3u; ++r) {
+    out.m[r][3] = placed.m[r][3] + placed.m[r][0] * low.x +
+                  placed.m[r][1] * low.y + placed.m[r][2] * low.z;
+    for (uint k = 0u; k < 3u; ++k) {
+      out.m[r][k] = placed.m[r][k] * extent[k];
+    }
+  }
+  return out;
+}
+
+// Contract 1 for a traced hit on shape `shape`'s mesh, the ray along
+// `direction`, as the CUDA backend makes it (cuda/shapes/shapes.cuh;
+// docs/research/2026-10-20-nvidia-hardware-design.md, "The spheres as
+// triangles"). The point is the triangle's: on the surface the ray traced
+// to a few ulps of its own coordinates, which is what a leaving ray's
+// offset assumes (integrator/surface.metal.h), wherever the shape is and
+// whichever way the ray leaves. The geometric normal is the triangle's, so
+// a ray leaves on the side of the surface it traced and arrives from the
+// side it crossed. The shading normal is the shape's own at the point's
+// place on it, as a smooth mesh's interpolated normal stands for it: a
+// sphere's along its radius, a box's its face's (the triangle's). So the
+// BSDF sees the sphere and the ray sees the mesh, which differ by under a
+// degree at the levels used (core/shapes/mesh_levels.h). The object-space
+// position is the shape's own point too, so a texture laid on it (contract
+// 1's object_position) is continuous across the triangles.
+inline serenity::contracts::SurfaceInteraction surface_interaction(
+    Shapes shapes, uint shape, MeshPoint at, float3 direction) {
+  const serenity::shapes::ShapeRecord record = shapes.records[shape];
+  const serenity::contracts::Transform placed = shapes.transforms[shape];
+  const OnShape on =
+      on_shape(shapes, shape, transform_to_object(placed, at.point));
+  serenity::contracts::SurfaceInteraction s{};
+  s.position = to_packed(at.point);
+  s.material = record.material;
+  s.geometric_normal = to_packed(at.face);
+  s.primitive = shape;
+  s.shading_normal =
+      to_packed(metal::normalize(transform_direction(placed, on.normal)));
+  s.flags = metal::dot(direction, at.face) < 0.0f
+                ? serenity::contracts::arrived_from_outside
+                : 0u;
+  s.object_position = to_packed(on.point);
+  s.interior = record.interior;
+  return s;
+}
+
 }  // namespace shaders
 }  // namespace serenity

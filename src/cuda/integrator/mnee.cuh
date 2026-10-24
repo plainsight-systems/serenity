@@ -963,8 +963,7 @@ __device__ __forceinline__ bool chain_visible(SceneT scene, Shapes shapes,
       leaving(p[last], normalize(p[last] - casters[last].center), y);
   return !occluded(scene.structure, shapes,
                    make_ray(leave_from, normalize(y - leave_from), 0.0f,
-                            distance(leave_from, y)),
-                   serenity::contracts::RayMask::occluders, light);
+                            distance(leave_from, y)));
 }
 
 // Steps 2 to 4's chain at `here` for the light sample `sample` drawn from

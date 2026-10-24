@@ -57,6 +57,7 @@
 #include "core/frame/graph_file.h"
 #include "core/sampling/pairing.h"
 #include "core/scene/scene.h"
+#include "core/shapes/mesh_levels.h"
 #include "gpu/kernels/restir_pt_probe.h"
 #include "gpu/support/probe_runner.h"
 #include "gpu/support/rendering.h"
@@ -355,8 +356,11 @@ std::vector<tests::ShiftResult> shift(
   metal::LightGlows glows(device, submission, description.light_counts.spheres,
                           false);
   const std::vector<std::uint32_t> lights = scene::light_shapes(description);
-  metal::SceneAcceleration acceleration(device, submission, description.shapes,
-                                        {.moving = {}, .lights = lights});
+  const std::vector<std::uint8_t> levels =
+      serenity::shapes::sphere_levels(description);
+  metal::SceneAcceleration acceleration(
+      device, submission, description.shapes,
+      {.moving = {}, .lights = lights, .levels = levels});
   metal::Library library(device, metallib::probes);
   const auto pipeline = library.compute_pipeline("pt_shift");
   const auto fill = library.compute_pipeline("pt_light_tiles");
@@ -456,8 +460,11 @@ std::vector<tests::PowerDraw> power_draws(const std::string& text,
   metal::LightGlows glows(device, submission, description.light_counts.spheres,
                           false);
   const std::vector<std::uint32_t> lights = scene::light_shapes(description);
-  metal::SceneAcceleration acceleration(device, submission, description.shapes,
-                                        {.moving = {}, .lights = lights});
+  const std::vector<std::uint8_t> levels =
+      serenity::shapes::sphere_levels(description);
+  metal::SceneAcceleration acceleration(
+      device, submission, description.shapes,
+      {.moving = {}, .lights = lights, .levels = levels});
   metal::Library library(device, metallib::probes);
   const auto build = library.compute_pipeline("pt_light_power");
   const auto draw = library.compute_pipeline("pt_power_draws");

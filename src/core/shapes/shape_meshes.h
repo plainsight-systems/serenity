@@ -6,6 +6,9 @@
 #include <vector>
 
 #include "core/contracts/float3.h"
+#include "core/contracts/transform.h"
+#include "core/shapes/box.h"
+#include "core/shapes/primitive.h"
 
 namespace serenity::shapes {
 
@@ -67,5 +70,21 @@ double sphere_gap(const TriangleMesh& mesh);
 
 // The unit box's 12 triangles: 8 vertices, the corners.
 TriangleMesh unit_box();
+
+// a x b, each a 3 x 4 affine matrix (contract 10) with the row
+// (0, 0, 0, 1) understood: b first, then a.
+contracts::Transform compose(const contracts::Transform& a,
+                             const contracts::Transform& b);
+
+// The transform an instance of shape `record`'s mesh takes, the shape
+// placed by `placed` (contract 10): its mesh's own placement first, the
+// identity for a sphere (the unit sphere's mesh) and the unit box onto the
+// box's corners for a box (its geometry `boxes[record.geometry]`), then
+// `placed`. The same on every backend (each backend's
+// acceleration/scene_acceleration.h). The record must index its kind's
+// array, as the scene reader makes it.
+contracts::Transform instance_transform(const ShapeRecord& record,
+                                        std::span<const BoxData> boxes,
+                                        const contracts::Transform& placed);
 
 }  // namespace serenity::shapes

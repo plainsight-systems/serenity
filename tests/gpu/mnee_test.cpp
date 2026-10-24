@@ -8,6 +8,12 @@
 //     sphere's center and both ends); and the generalized geometry term it
 //     gives is the solid angle at the receiver per area at the light, found
 //     here by moving the light's point and solving again;
+//   - the seed, on each backend its own way (Metal's a walk of nearest
+//     hits, CUDA's an intersection program over the occluders' boxes): a
+//     caster sphere's exact crossings once each, sorted along the segment,
+//     however often its mesh is met; another shape blocking without
+//     stopping it; glass that is no sphere, or more crossings than the
+//     solve takes, refusing it; a clear segment clear;
 //   - the estimator, an integration test: ReSTIR PT, MNEE always on,
 //     converges to the path tracer's mean on a caustic, a glass sphere on a
 //     diffuse floor under a small light, to within MNEE's bias, measured
@@ -27,8 +33,9 @@
 #include <utility>
 #include <vector>
 
-// the backend's runner, by the include path (SF.12)
+// the backend's runner and tracing harness, by the include path (SF.12)
 #include <probe_runner.h>
+#include <traced_probe.h>
 
 #include "core/contracts/bsdf.h"
 #include "core/contracts/emitter.h"
@@ -37,6 +44,7 @@
 #include "core/scene/scene.h"
 #include "core/shapes/primitive.h"
 #include "gpu/kernels/mnee_probe.h"
+#include "gpu/kernels/seed_probe.h"
 #include "gpu/support/rendering.h"
 #include "support/required.h"
 #include "support/scene_text.h"
@@ -447,4 +455,128 @@ TEST_CASE(
     CHECK(rig.renderer().mnee_lost_requests() > 0);
     CHECK(std::ranges::all_of(rgba, [](float v) { return std::isfinite(v); }));
   }
+}
+
+namespace {
+
+// Glass spheres in a row along x, a matte one beyond the first along z, a
+// glass box below z = -5, and a small light far above, which no seed meets
+// (contract 19: the seed traces the occluders).
+constexpr const char* seed_scene = R"(
+[camera]
+position = [0, 30, 30]
+look_at = [0, 0, 0]
+vertical_fov_degrees = 40
+[environment]
+kind = "gradient"
+zenith = [0, 0, 0]
+horizon = [0, 0, 0]
+[materials.glow]
+kind = "emissive"
+radiance = [1, 1, 1]
+[materials.glass]
+kind = "dielectric"
+ior = 1.5
+[materials.matte]
+kind = "rough"
+color = [0.5, 0.5, 0.5]
+[[shapes]]
+kind = "sphere"
+center = [0, 50, 0]
+radius = 0.5
+material = "glow"
+[[shapes]]
+kind = "sphere"
+center = [0, 0, 0]
+radius = 1
+material = "glass"
+[[shapes]]
+kind = "sphere"
+center = [3, 0, 0]
+radius = 1
+material = "glass"
+[[shapes]]
+kind = "sphere"
+center = [6, 0, 0]
+radius = 1
+material = "glass"
+[[shapes]]
+kind = "sphere"
+center = [0, 0, 3]
+radius = 1
+material = "matte"
+[[shapes]]
+kind = "box"
+min = [-1, -1, -7]
+max = [1, 1, -5]
+material = "glass"
+)";
+
+tests::SeedSegment segment(Vec3 origin, Vec3 direction, double distance) {
+  return tests::SeedSegment{tests::float3(origin), static_cast<float>(distance),
+                            tests::float3(normalized(direction)), 0u};
+}
+
+}  // namespace
+
+TEST_CASE(
+    "MNEE's seed: each caster sphere's crossings once and sorted, another "
+    "shape blocking, glass no sphere or too many crossings refusing") {
+  const serenity::scene::SceneDescription description =
+      serenity::scene::parse(seed_scene, "seed");
+  tests::TracedScene traced(description, {});
+  const std::vector<tests::SeedSegment> segments = {
+      // 0: above everything, clear
+      segment({-2.0, 5.0, 0.0}, {1.0, 0.0, 0.0}, 10.0),
+      // 1: through the first two glass spheres, ending before the third
+      segment({-2.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 6.5),
+      // 2: through all three: six crossings, more than the solve takes
+      segment({-2.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 9.5),
+      // 3: through the first glass sphere, then the matte one
+      segment({0.0, 0.0, -2.0}, {0.0, 0.0, 1.0}, 6.5),
+      // 4: into the glass box
+      segment({0.0, 0.0, -9.0}, {0.0, 0.0, 1.0}, 3.0),
+      // 5: from inside the first glass sphere, out through it
+      segment({0.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, 3.0),
+  };
+  const auto count = static_cast<std::uint32_t>(segments.size());
+  const std::vector<tests::SeedFound> seeds = tests::run_traced<tests::SeedFound>(
+      traced, "seed_probe", segments.size(),
+      {Binding::of(segments), Binding::of(count),
+       Binding::of(traced.buffers().block())});
+  REQUIRE(seeds.size() == segments.size());
+  // The crossings are the spheres' own roots, not their meshes' hits.
+  constexpr float tolerance = 1e-5f;
+  const auto crossing = [&](const tests::SeedFound& seed, std::uint32_t c,
+                            float t, std::uint32_t shape) {
+    return std::abs(seed.t[c] - t) <= tolerance * t && seed.shape[c] == shape;
+  };
+
+  CHECK(seeds[0].count == 0u);
+  CHECK(seeds[0].blocked == 0u);
+  CHECK(seeds[0].usable == 1u);
+
+  CHECK(seeds[1].count == 4u);
+  CHECK(seeds[1].blocked == 0u);
+  CHECK(seeds[1].usable == 1u);
+  CHECK(crossing(seeds[1], 0u, 1.0f, 1u));
+  CHECK(crossing(seeds[1], 1u, 3.0f, 1u));
+  CHECK(crossing(seeds[1], 2u, 4.0f, 2u));
+  CHECK(crossing(seeds[1], 3u, 6.0f, 2u));
+
+  CHECK(seeds[2].usable == 0u);
+  CHECK(seeds[2].blocked == 1u);
+
+  CHECK(seeds[3].count == 2u);
+  CHECK(seeds[3].blocked == 1u);
+  CHECK(seeds[3].usable == 1u);
+  CHECK(crossing(seeds[3], 0u, 1.0f, 1u));
+  CHECK(crossing(seeds[3], 1u, 3.0f, 1u));
+
+  CHECK(seeds[4].usable == 0u);
+  CHECK(seeds[4].blocked == 1u);
+
+  CHECK(seeds[5].count == 1u);
+  CHECK(seeds[5].blocked == 0u);
+  CHECK(crossing(seeds[5], 0u, 1.0f, 1u));
 }

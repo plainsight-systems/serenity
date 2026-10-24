@@ -2,44 +2,51 @@
 
 // Axis: Acceleration (shader half of acceleration/scene_acceleration.h).
 //
-// The nearest shape a ray reaches, and whether any shape blocks a shadow
-// ray, among the shapes the ray's mask finds (contract 19,
-// core/contracts/ray_mask.h). Metal's hardware walks a structure of
-// bounding boxes and hands back each box the ray enters as a candidate;
-// the shape's own exact test (shapes/shapes.metal.h) decides whether, and
-// where, the ray hits what is inside, and a hit nearer than the nearest so
-// far is committed. Kind-blind: it names no shape kind.
+// The nearest shape a ray reaches, and whether any occluder blocks a
+// shadow ray (contract 19, core/contracts/ray_mask.h), as the M3's
+// ray-tracing unit answers them (docs/research/2026-10-23-apple-silicon-
+// design.md, section 6, change 1): Metal's intersector over the instance
+// structure of the shapes' triangle meshes, every geometry opaque, so the
+// hardware walks the structure, carries the ray into each instance's space
+// and tests its triangles itself, running no intersection function, as
+// Apple asks of the M3 ("use the intersector object API whenever
+// possible"; "maximize opaque triangle tests") and Blender Cycles traces
+// there. The CUDA backend's trace() and occluded() (cuda/acceleration/
+// trace.cuh), with the same signatures. Kind-blind: it names no shape
+// kind.
 //
-// One level (scene_acceleration.h): a candidate is a box of the structure
-// the mask names, and the shape it holds is the box's primitive index for
-// everything (primitive i is shape i, shapes/primitive.h) and the
-// occluders' table entry for the occluders (structure_block.h). The exact
-// test carries the world's ray into the shape's object space itself
-// (shapes/shapes.metal.h), and the t it finds is the world's
-// (contracts/transform.h), so it is committed and compared as it is. What a
-// hit reports is the shape and t; where on it, in the world, is
-// surface_interaction()'s.
+// A hit names its shape by its instance's user id, the shape's index, and
+// gives the triangle's point and outward normal (mesh_point()): its
+// vertices from the hit's per-primitive data (structure_block.h,
+// MeshTriangle) and their barycentric weights, placed in the world by the
+// shape's transform after its mesh's own placement, which
+// surface_interaction() makes contract 1 of (shapes/shapes.metal.h). Its t
+// is the mesh's: within the mesh's gap of the sphere's own
+// (core/shapes/mesh_levels.h).
 //
 // The mask is an argument, not a bound value: every site passes a constant
-// (I.4: a RayMask, no integer), so the compiler picks the structure and
-// drops the table where everything is traced, and the threads of a SIMD
-// group at one site all trace the same structure (GPU.4). For a query of
-// the caller's own (manifold next event estimation's seed visits every
-// shape on a segment), masked() gives the structure a mask traverses and
-// how its candidates name shapes, so no caller reads the block or the
-// table itself. A two-level structure (Step 3) makes masked() hand back the
-// instance structure and the mask bits instead, and candidates name their
-// shape by their instance; no caller changes.
+// (I.4: a RayMask, no integer), so the compiler picks the instance bit
+// where it is traced, and the threads of a SIMD group at one site trace
+// the same one (GPU.4). A shadow ray carries the occluders, which hold no
+// light (contract 19), so the light it aims at is never among what it can
+// meet: occluded() takes no shape to ignore, and no mask.
+//
+// Manifold next event estimation's seed is a walk of trace()'s nearest
+// hits among the occluders (integrator/mnee.metal.h, seed_segment), so
+// every ray in the frame is the intersector's on opaque triangles: no
+// intersection function, and no intersection query, which would turn off
+// the reorder stage for its whole kernel (Apple, tech talk 111375).
 //
 // A ray is Metal's own bundle, metal::raytracing::ray: origin, unit
 // direction, and the open interval (min_distance, max_distance) its hits lie
-// in (I.23), which the query takes as it is.
+// in (I.23), which the intersector takes as it is.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
 
 #include "core/contracts/ray_mask.h"
 #include "metal/acceleration/structure_block.h"
+#include "metal/math/transform.metal.h"
 #include "metal/shapes/crossing.metal.h"
 #include "metal/shapes/shapes.metal.h"
 
@@ -56,119 +63,91 @@ constant constexpr float unbounded = metal::numeric_limits<float>::max();
 // The structures a frame traces, as a pass binds them (structure_block.h).
 using SceneStructure = constant serenity::gpu::StructureBlock*;
 
-// The intersection query a masked traversal runs: one level, so no
-// instancing tag.
-using MaskedQuery = metal::raytracing::intersection_query<>;
+// The intersector every trace runs: triangles, opaque, one instance level,
+// the hit's triangle data (barycentrics) in its result.
+using MeshIntersector =
+    metal::raytracing::intersector<metal::raytracing::triangle_data,
+                                   metal::raytracing::instancing>;
 
-// What a query carrying one mask traverses: the structure, and how a
-// candidate names its shape, by its primitive index; `table` is null for
-// everything, whose primitive i is shape i. `empty`: the mask finds no
-// shape in this scene (occluders, in a scene of lights alone), and no
-// query is to be made. A caller's own query starts by reset() and names
-// each candidate by candidate_shape(), and so reads neither the structure
-// nor the table itself.
-struct MaskedStructure {
-  metal::raytracing::primitive_acceleration_structure structure;
-  constant uint* table;
-  bool empty;
-
-  uint shape(uint primitive) const {
-    return table == nullptr ? primitive : table[primitive];
-  }
-
-  void reset(thread MaskedQuery& query, metal::raytracing::ray r,
-             metal::raytracing::intersection_params params) const {
-    query.reset(r, structure, params);
-  }
-  uint candidate_shape(thread MaskedQuery& query) const {
-    return shape(query.get_candidate_primitive_id());
-  }
-  uint committed_shape(thread MaskedQuery& query) const {
-    return shape(query.get_committed_primitive_id());
-  }
-};
-
-inline MaskedStructure masked(SceneStructure structures,
-                              serenity::contracts::RayMask mask) {
-  if (mask == serenity::contracts::RayMask::everything) {
-    return MaskedStructure{structures->everything, nullptr, false};
-  }
-  return MaskedStructure{structures->occluders, structures->occluder_shapes,
-                         structures->occluder_count == 0u};
+// The instance bit a mask's rays carry (structure_block.h).
+inline uint mask_bit(serenity::contracts::RayMask mask) {
+  return mask == serenity::contracts::RayMask::everything
+             ? serenity::gpu::everything_bit
+             : serenity::gpu::occluder_bit;
 }
 
 struct Hit {
   bool found;
   float t;  // the ray's parameter: its distance, the direction being unit
   uint primitive;  // the shape, as primitive i is shape i (shapes/primitive.h)
+  MeshPoint at;    // where on its mesh (shapes/shapes.metal.h)
+  uint part;       // the triangle it met, its index in its mesh
 };
+
+// A hit's triangle, its point and outward normal, in the world: its
+// vertices in its mesh's space and their barycentric weights (Metal's:
+// 1 - u - v, u, v for the triangle's three), placed by the shape's
+// instance transform (the shape's transform after its mesh's placement:
+// core/shapes/shape_meshes.h, instance_transform), which carries a box's
+// unit mesh onto its corners too, so the normal is the placed edges' cross
+// product, for any affine placement.
+inline MeshPoint mesh_point(Shapes shapes, uint shape,
+                            const device serenity::gpu::MeshTriangle& tri,
+                            float2 b) {
+  const float3 v0 = float3(tri.v[0][0], tri.v[0][1], tri.v[0][2]);
+  const float3 v1 = float3(tri.v[1][0], tri.v[1][1], tri.v[1][2]);
+  const float3 v2 = float3(tri.v[2][0], tri.v[2][1], tri.v[2][2]);
+  const serenity::contracts::Transform placed =
+      instance_placement(shapes, shape);
+  const float3 object = v0 + b.x * (v1 - v0) + b.y * (v2 - v0);
+  const float3 w0 = transform_to_world(placed, v0);
+  const float3 w1 = transform_to_world(placed, v1);
+  const float3 w2 = transform_to_world(placed, v2);
+  return MeshPoint{transform_to_world(placed, object),
+                   metal::normalize(metal::cross(w1 - w0, w2 - w0))};
+}
 
 // The nearest shape `mask` finds along `r`, its direction unit length.
 inline Hit trace(SceneStructure structures, Shapes shapes,
                  metal::raytracing::ray r, serenity::contracts::RayMask mask) {
   using namespace metal::raytracing;
-  const MaskedStructure traversed = masked(structures, mask);
-  if (traversed.empty) {
-    return Hit{false, 0.0f, 0u};
+  if (mask == serenity::contracts::RayMask::occluders &&
+      structures->occluder_count == 0u) {
+    return Hit{false, 0.0f, 0u, MeshPoint{}, 0u};
   }
-  intersection_params params;
-  params.assume_geometry_type(geometry_type::bounding_box);
-  params.accept_any_intersection(false);
-
-  MaskedQuery query;
-  traversed.reset(query, r, params);
-  ray nearer = r;  // hits nearer than the nearest so far
-  while (query.next()) {
-    if (query.get_candidate_intersection_type() !=
-        intersection_type::bounding_box) {
-      continue;
-    }
-    const Crossing crossing =
-        intersect_shape(shapes, traversed.candidate_shape(query), nearer);
-    if (crossing.found) {
-      query.commit_bounding_box_intersection(crossing.t);
-      nearer.max_distance = crossing.t;
-    }
+  MeshIntersector intersector;
+  intersector.assume_geometry_type(geometry_type::triangle);
+  intersector.force_opacity(forced_opacity::opaque);
+  intersector.accept_any_intersection(false);
+  const auto result =
+      intersector.intersect(r, structures->scene, mask_bit(mask));
+  if (result.type != intersection_type::triangle) {
+    return Hit{false, 0.0f, 0u, MeshPoint{}, 0u};
   }
-
-  const bool found = query.get_committed_intersection_type() ==
-                     intersection_type::bounding_box;
-  return Hit{found, found ? query.get_committed_distance() : 0.0f,
-             found ? traversed.committed_shape(query) : 0u};
+  const uint shape = result.user_instance_id;
+  const device serenity::gpu::MeshTriangle& tri =
+      *static_cast<const device serenity::gpu::MeshTriangle*>(
+          result.primitive_data);
+  return Hit{true, result.distance, shape,
+             mesh_point(shapes, shape, tri, result.triangle_barycentric_coord),
+             result.primitive_id};
 }
 
-// Whether any shape `mask` finds but `ignore` lies along `r`: a shadow
-// ray's question. It stops at the first such shape, whichever it is,
-// rather than searching for the nearest. A shadow ray toward a light
-// carries the occluders, which hold no light, so its light's shape is not
-// among the candidates at all; `ignore` stays for a ray that carries
-// everything, and costs a comparison.
-inline bool occluded(SceneStructure structures, Shapes shapes,
-                     metal::raytracing::ray r,
-                     serenity::contracts::RayMask mask, uint ignore) {
+// Whether any occluder lies along `r`: a shadow ray's question. It stops at
+// the first, whichever it is, rather than searching for the nearest.
+inline bool occluded(SceneStructure structures, Shapes /*shapes*/,
+                     metal::raytracing::ray r) {
   using namespace metal::raytracing;
-  const MaskedStructure traversed = masked(structures, mask);
-  if (traversed.empty) {
+  if (structures->occluder_count == 0u) {
     return false;
   }
-  intersection_params params;
-  params.assume_geometry_type(geometry_type::bounding_box);
-  params.accept_any_intersection(true);
-
-  MaskedQuery query;
-  traversed.reset(query, r, params);
-  while (query.next()) {
-    if (query.get_candidate_intersection_type() !=
-        intersection_type::bounding_box) {
-      continue;
-    }
-    const uint shape = traversed.candidate_shape(query);
-    if (shape != ignore && intersect_shape(shapes, shape, r).found) {
-      query.abort();
-      return true;
-    }
-  }
-  return false;
+  MeshIntersector intersector;
+  intersector.assume_geometry_type(geometry_type::triangle);
+  intersector.force_opacity(forced_opacity::opaque);
+  intersector.accept_any_intersection(true);
+  return intersector
+             .intersect(r, structures->scene, serenity::gpu::occluder_bit)
+             .type == intersection_type::triangle;
 }
 
 }  // namespace shaders

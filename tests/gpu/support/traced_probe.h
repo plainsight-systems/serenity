@@ -37,6 +37,8 @@
 
 #include "core/contracts/transform.h"
 #include "core/scene/scene.h"
+#include "core/shapes/mesh_levels.h"
+#include "core/shapes/shape_meshes.h"
 #include "gpu/support/shared_resources.h"
 #include "metal/acceleration/scene_acceleration.h"
 #include "metal/device/device.h"
@@ -61,9 +63,19 @@ class TracedScene {
         transforms_(device_, submission_, description.shapes.transforms,
                     moving.empty() ? metal::FrameArray::Copies::one
                                    : metal::FrameArray::Copies::per_frame),
+        lights_(scene::light_shapes(description)),
+        levels_(shapes::sphere_levels(description)),
         acceleration_(
             device_, submission_, description.shapes,
-            {.moving = moving, .lights = scene::light_shapes(description)}) {}
+            {.moving = moving, .lights = lights_, .levels = levels_}) {
+    for (std::size_t i = 0; i < levels_.size(); ++i) {
+      gaps_.push_back(
+          levels_[i] == shapes::no_level
+              ? 0.0
+              : shapes::icosphere_gaps.at(levels_[i]) *
+                    contracts::scale(description.shapes.transforms[i]));
+    }
+  }
   TracedScene(const TracedScene&) = delete;
   TracedScene& operator=(const TracedScene&) = delete;
   TracedScene(TracedScene&&) = delete;
@@ -78,16 +90,20 @@ class TracedScene {
   metal::SceneAcceleration& acceleration() noexcept { return acceleration_; }
 
   // How far inside shape `shape`'s own surface, along its normal, a traced
-  // hit may lie: 0 here, where every shape is traced as its own geometry
-  // (each backend's harness says, tests/cuda/support/traced_probe.h).
-  static double hit_gap(std::uint32_t /*shape*/) noexcept { return 0.0; }
+  // hit may lie: a sphere's mesh's gap (core/shapes/mesh_levels.h); 0 for a
+  // box, whose triangles lie on its faces. The CUDA backend's harness says
+  // the same (tests/cuda/support/traced_probe.h).
+  double hit_gap(std::uint32_t shape) const { return gaps_.at(shape); }
 
  private:
   metal::Device device_;
   metal::Submission submission_{device_};
   metal::SceneBuffers buffers_;
   metal::ShapeTransforms transforms_;
+  std::vector<std::uint32_t> lights_;
+  std::vector<std::uint8_t> levels_;
   metal::SceneAcceleration acceleration_;
+  std::vector<double> gaps_;  // a shape each, for hit_gap()
   metal::Library library_{device_, metallib::probes};
 };
 

@@ -158,7 +158,11 @@ Gathered 2026-10-23; a letter is the source (end of the note).
 - Each instance a ray enters costs a transform and a switch (W22b); where
   instances overlap, "concatenate these instances together into a single
   primitive acceleration structure" (TT2). Refit "is much faster than a
-  full rebuild" (W22b).
+  full rebuild", for "deforming or animated models such as skinned
+  characters", primitive structures; the instance structure is rebuilt
+  whole each frame: "Doing a full rebuild is fine in this case since
+  there's only one instance acceleration structure and it usually only
+  contains at most a few thousand objects" (W22b).
 - Keep the ray payload small: lower latency, possibly higher occupancy
   (TT1).
 - Primary visibility: Apple's hybrid design rasterizes the G-buffer,
@@ -196,11 +200,21 @@ every change that should not change it.
    intersector API in every tracing pass, in place of the intersection
    query; opaque triangle geometry Metal intersects in hardware, the
    still shapes built once and compacted, the moving ones (the
-   fireflies) instanced meshes, their top level refit each frame; every
+   fireflies) instanced meshes, their top level rebuilt whole each
+   frame, as Apple advises for an instance structure (W22b; corrected
+   2026-10-24 from "refit", taken from Cycles' viewport updates and
+   checked against Apple's session at the user's direction); every
    sphere a mesh at the 3090's levels (a thirtieth of a pixel at 3456 x
    2234), the hit point the triangle's, the shading normal the sphere's;
-   MNEE's seed its own box structure with an intersection function under
-   its mask bit; small ray payloads; each tracing pipeline specialized
+   MNEE's seed found as Cycles finds it (C3: `kernel_path_mnee_sample`),
+   a walk of nearest hits along the segment through the same instance
+   structure, at most 10 (its `MNEE_MAX_INTERSECTION_COUNT`), each
+   trace starting past the last hit, a caster's crossings taken the
+   first time its mesh is met, so no ray in the frame runs an
+   intersection function or the intersection query (corrected
+   2026-10-24 from "its own box structure with an intersection function
+   under its mask bit", the CUDA backend's design, written before
+   Cycles' seed was read); small ray payloads; each tracing pipeline specialized
    by function constants, as Cycles' are; 64-thread groups, as Cycles'
    on the M3.
 2. **The first surface rasterized, Apple's hybrid design** (W21): a
@@ -243,5 +257,6 @@ every change that should not change it.
 - W25a: Apple, "Combine Metal 4 machine learning and graphics" (WWDC25 262) — https://developer.apple.com/videos/play/wwdc2025/262/
 - D1: Apple, `MTLAccelerationStructureGeometryDescriptor.opaque` — https://developer.apple.com/documentation/metal/mtlaccelerationstructuregeometrydescriptor/opaque
 - C1: Blender Cycles, `src/device/metal/` (`bvh.mm`, `kernel.mm`, `device.mm`), github.com/blender/cycles at a456b76 — https://github.com/blender/cycles
+- C3: Blender Cycles, `src/kernel/integrator/mnee.h` (`kernel_path_mnee_sample`'s probe loop, `MNEE_MAX_INTERSECTION_COUNT` 10), github.com/blender/cycles at a456b76 — https://github.com/blender/cycles/blob/a456b76/src/kernel/integrator/mnee.h
 - C2: Blender 4.0 release notes, Cycles — https://developer.blender.org/docs/release_notes/4.0/cycles/
 - O1: Intel Open Image Denoise, `devices/metal/` (`metal_conv.mm`, `metal_device.mm`), github.com/RenderKit/oidn at 6602ee2 — https://github.com/RenderKit/oidn

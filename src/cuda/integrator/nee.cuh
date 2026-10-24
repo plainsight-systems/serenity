@@ -163,8 +163,7 @@ __device__ inline bool visible(SceneStructure structure, Shapes shapes,
                                float3 origin, float3 direction, float distance,
                                uint primitive) {
   return !occluded(structure, shapes,
-                   make_ray(origin, direction, 0.0f, distance),
-                   serenity::contracts::RayMask::occluders, primitive);
+                   make_ray(origin, direction, 0.0f, distance));
 }
 
 __device__ inline bool visible(SceneStructure structure, Shapes shapes,
