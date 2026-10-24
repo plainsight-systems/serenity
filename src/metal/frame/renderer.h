@@ -184,12 +184,13 @@ namespace serenity::metal {
 // scene_acceleration.h), and one structure build and one barrier.
 // Nothing is allocated.
 //
-// ReSTIR PT. A graph with its passes gets, at construction, its passes;
-// PathReuseImages (frame_images.h), made by prepare() at the frame's size
+// ReSTIR PT. A graph with its passes gets, at construction, its passes,
+// their pipelines specialized by the run's settings (passes/restir_pt/
+// reuse_constants.h); PathReuseImages (frame_images.h), made by prepare() at the frame's size
 // and, with restir_pt_temporal, asked from the frame's inputs' reused_since
 // (core/frame/frame_inputs.h, frame::ReuseHistory) whether the frame has a
-// previous one; one static buffer of its
-// settings and, with restir_pt_spatial, the three reuse textures, built
+// previous one; one static buffer of, with restir_pt_spatial, the three
+// reuse textures (one zero texel without), built
 // once on the CPU from the graph's sigma and a fixed seed
 // (core/sampling/pairing.h; 323 KB); and with restir_pt_temporal, a ring of
 // its reuse constants (contracts/path_reuse_settings.h, 80 bytes a frame:

@@ -4,6 +4,7 @@
 #include <Metal/Metal.hpp>
 #include <string_view>
 
+#include "core/contracts/path_reuse_settings.h"
 #include "core/frame/extent.h"
 #include "metal/device/library.h"
 
@@ -32,8 +33,11 @@ namespace serenity::metal {
 // grid gives it.
 class ShiftReplay {
  public:
-  ShiftReplay(const Library& library, const char* shift, const char* replay,
-              const char* merge, std::string_view pass);
+  // The shift, replay and merge specialized by the run's `settings`
+  // (reuse_constants.h).
+  ShiftReplay(const Library& library,
+              const contracts::PathReuseSettings& settings, const char* shift,
+              const char* replay, const char* merge, std::string_view pass);
 
   // The four dispatches, the shift and the merge over the grid `traced`
   // (frame_resources.h), the replay by the grid at `replay_grid`.

@@ -18,6 +18,7 @@
 #include "metal/integrator/mnee.metal.h"
 #include "metal/passes/bindings.h"
 #include "metal/passes/restir_pt/restir_pt.metal.h"
+#include "metal/passes/restir_pt/reuse_constants.metal.h"
 
 using namespace metal;
 using namespace metal::raytracing;
@@ -32,7 +33,7 @@ inline void initial_pixel(
     serenity::shaders::SceneStructure structure,
     constant serenity::gpu::SceneBlock& block, constant float* sphere_glows,
     constant serenity::contracts::Transform* transforms,
-    constant serenity::contracts::PathReuseSettings& settings,
+    serenity::contracts::PathReuseSettings settings,
     device serenity::contracts::PathReservoir* reservoirs,
     device serenity::contracts::PrimaryHit* primaries, device float4* light,
     const device serenity::contracts::LightTileEntry* tiles,
@@ -78,8 +79,6 @@ kernel void restir_pt_initial(
     constant float* sphere_glows [[buffer(binding::glows)]],
     constant serenity::contracts::Transform* transforms
     [[buffer(binding::transforms)]],
-    constant serenity::contracts::PathReuseSettings& settings
-    [[buffer(binding::settings)]],
     device serenity::contracts::PathReservoir* reservoirs
     [[buffer(binding::reservoirs)]],
     device serenity::contracts::PrimaryHit* primaries
@@ -96,6 +95,8 @@ kernel void restir_pt_initial(
     [[buffer(binding::mnee_requests)]],
     device atomic_uint* mnee_header [[buffer(binding::mnee_header)]],
     uint2 grid_place [[thread_position_in_grid]]) {
+  // the run's, the pipeline's constants (reuse_constants.h)
+  const serenity::contracts::PathReuseSettings settings = reuse_settings();
   initial_pixel(frame, camera, structure, block, sphere_glows, transforms,
                 settings, reservoirs, primaries, light, tiles, light_power,
                 previous_positions, last_transforms,

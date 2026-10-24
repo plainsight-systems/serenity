@@ -14,6 +14,7 @@
 #include "core/contracts/transform.h"
 #include "metal/passes/bindings.h"
 #include "metal/passes/restir_pt/restir_pt.metal.h"
+#include "metal/passes/restir_pt/reuse_constants.metal.h"
 
 using namespace metal;
 using namespace metal::raytracing;
@@ -45,8 +46,6 @@ kernel void restir_pt_temporal_shift(
     constant float* sphere_glows [[buffer(binding::glows)]],
     constant serenity::contracts::Transform* transforms
     [[buffer(binding::transforms)]],
-    constant serenity::contracts::PathReuseSettings& settings
-    [[buffer(binding::settings)]],
     const device serenity::contracts::PathReservoir* reservoirs
     [[buffer(binding::reservoirs)]],
     const device serenity::contracts::PrimaryHit* primaries
@@ -69,6 +68,8 @@ kernel void restir_pt_temporal_shift(
     const device float* light_power [[buffer(binding::light_power)]],
     const device float* last_light_power [[buffer(binding::last_light_power)]],
     uint2 grid_place [[thread_position_in_grid]]) {
+  // the run's, the pipeline's constants (reuse_constants.h)
+  const serenity::contracts::PathReuseSettings settings = reuse_settings();
   const restir_pt::Traced traced = restir_pt::traced(frame, settings);
   const uint2 pixel = traced.pixel(grid_place);
   const bool inside = traced.inside(pixel);
@@ -131,8 +132,6 @@ kernel void restir_pt_temporal_replay(
     constant float* sphere_glows [[buffer(binding::glows)]],
     constant serenity::contracts::Transform* transforms
     [[buffer(binding::transforms)]],
-    constant serenity::contracts::PathReuseSettings& settings
-    [[buffer(binding::settings)]],
     const device serenity::contracts::PathReservoir* reservoirs
     [[buffer(binding::reservoirs)]],
     const device serenity::contracts::PrimaryHit* primaries
@@ -152,6 +151,8 @@ kernel void restir_pt_temporal_replay(
     const device float* light_power [[buffer(binding::light_power)]],
     const device float* last_light_power [[buffer(binding::last_light_power)]],
     uint n [[thread_position_in_grid]]) {
+  // the run's, the pipeline's constants (reuse_constants.h)
+  const serenity::contracts::PathReuseSettings settings = reuse_settings();
   if (n >= grid->count) {
     return;
   }
@@ -174,8 +175,6 @@ kernel void restir_pt_temporal_replay(
 kernel void restir_pt_temporal(
     constant serenity::contracts::FrameConstants& frame
     [[buffer(binding::constants)]],
-    constant serenity::contracts::PathReuseSettings& settings
-    [[buffer(binding::settings)]],
     device serenity::contracts::PathReservoir* reservoirs
     [[buffer(binding::reservoirs)]],
     device float4* light [[buffer(binding::light)]],
@@ -187,6 +186,8 @@ kernel void restir_pt_temporal(
     const device uint* previous_pixels [[buffer(binding::previous_pixels)]],
     const device float* duplication [[buffer(binding::duplication)]],
     uint2 grid_place [[thread_position_in_grid]]) {
+  // the run's, the pipeline's constants (reuse_constants.h)
+  const serenity::contracts::PathReuseSettings settings = reuse_settings();
   const restir_pt::Traced traced = restir_pt::traced(frame, settings);
   const uint2 pixel = traced.pixel(grid_place);
   if (!traced.inside(pixel)) {

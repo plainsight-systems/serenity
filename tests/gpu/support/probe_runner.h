@@ -125,20 +125,23 @@ class ProbeRunner {
   ProbeRunner& operator=(ProbeRunner&&) = delete;
   ~ProbeRunner() = default;
 
-  // Dispatches `threads` threads of `kernel` over `bindings`, waits, and
-  // returns every buffer it bound.
+  // Dispatches `threads` threads of `kernel` over `bindings`, its pipeline
+  // built as `options` say (metal/device/library.h), waits, and returns
+  // every buffer it bound.
   Buffers dispatch(const char* kernel, std::size_t threads,
-                   std::initializer_list<Binding> bindings) {
+                   std::initializer_list<Binding> bindings,
+                   metal::PipelineOptions options = {}) {
     return dispatch(
         kernel, threads,
-        std::span<const Binding>(bindings.begin(), bindings.size()));
+        std::span<const Binding>(bindings.begin(), bindings.size()), options);
   }
 
   Buffers dispatch(const char* kernel, std::size_t threads,
-                   std::span<const Binding> bindings) {
+                   std::span<const Binding> bindings,
+                   metal::PipelineOptions options = {}) {
     const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
     MTL::Device* mtl = device_.handle();
-    const auto pipeline = library_.compute_pipeline(kernel);
+    const auto pipeline = library_.compute_pipeline(kernel, options);
     Buffers out;
     for (const Binding& binding : bindings) {
       if (binding.address() != 0) {
@@ -183,15 +186,18 @@ class ProbeRunner {
   }
 
   // Dispatches `threads` threads of `kernel`, its output, one Out a
-  // thread, at binding 0 and `inputs` from 1, and returns the output.
+  // thread, at binding 0 and `inputs` from 1, its pipeline built as
+  // `options` say, and returns the output.
   template <GpuBytes Out>
   std::vector<Out> run(const char* kernel, std::size_t threads,
-                       std::initializer_list<Binding> inputs) {
+                       std::initializer_list<Binding> inputs,
+                       metal::PipelineOptions options = {}) {
     std::vector<Binding> bindings;
     bindings.reserve(inputs.size() + 1);
     bindings.push_back(Binding::zeroed(threads * sizeof(Out)));
     bindings.insert(bindings.end(), inputs.begin(), inputs.end());
-    return dispatch(kernel, threads, std::span<const Binding>(bindings))
+    return dispatch(kernel, threads, std::span<const Binding>(bindings),
+                    options)
         .template read<Out>(0);
   }
 

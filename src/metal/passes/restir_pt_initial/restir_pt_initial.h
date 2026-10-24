@@ -3,6 +3,7 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
+#include "core/contracts/path_reuse_settings.h"
 #include "metal/device/library.h"
 #include "metal/frame/frame_resources.h"
 #include "metal/passes/mnee/mnee.h"
@@ -45,7 +46,10 @@ namespace serenity::metal {
 // and MNEE's two.
 class RestirPtInitialPass {
  public:
-  explicit RestirPtInitialPass(const Library& library);
+  // Its pipelines specialized by the run's `settings`
+  // (restir_pt/reuse_constants.h).
+  RestirPtInitialPass(const Library& library,
+                      const contracts::PathReuseSettings& settings);
 
   // Records the pass. Throws MetalError if `resources` lacks any array or
   // structure it reads or writes above.

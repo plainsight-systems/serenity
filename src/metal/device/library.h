@@ -36,9 +36,13 @@ namespace serenity::metal {
 // How a pipeline is built beyond its kernel, named fields (I.24):
 // `group_threads`, the most threads a group it is built for (Metal's
 // maxTotalThreadsPerThreadgroup, which the compiler sizes its registers
-// by), 0 for as many as the device and the kernel allow.
+// by), 0 for as many as the device and the kernel allow; `constants`, the
+// values its kernel is specialized by, every function constant it reads
+// (passes/restir_pt/reuse_constants.h), or none for a kernel that reads
+// none. Not retained: it need only outlive the call.
 struct PipelineOptions {
   NS::UInteger group_threads = 0;
+  const MTL::FunctionConstantValues* constants = nullptr;
 };
 
 class Library {

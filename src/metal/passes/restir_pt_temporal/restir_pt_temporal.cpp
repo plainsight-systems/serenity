@@ -6,16 +6,17 @@
 
 namespace serenity::metal {
 
-RestirPtTemporalPass::RestirPtTemporalPass(const Library& library)
-    : reuse_(library, "restir_pt_temporal_shift", "restir_pt_temporal_replay",
-             "restir_pt_temporal", "RestirPtTemporalPass") {}
+RestirPtTemporalPass::RestirPtTemporalPass(
+    const Library& library, const contracts::PathReuseSettings& settings)
+    : reuse_(library, settings, "restir_pt_temporal_shift",
+             "restir_pt_temporal_replay", "restir_pt_temporal",
+             "RestirPtTemporalPass") {}
 
 void RestirPtTemporalPass::record(MTL4::ComputeCommandEncoder* encoder,
                                   const FrameResources& resources) const {
-  if (resources.path_settings == 0 || resources.path_constants == 0 ||
-      resources.path_reservoirs == 0 || resources.primaries == 0 ||
-      resources.last_primaries == 0 || resources.light == 0 ||
-      resources.shifts == 0 || resources.replays == 0 ||
+  if (resources.path_constants == 0 || resources.path_reservoirs == 0 ||
+      resources.primaries == 0 || resources.last_primaries == 0 ||
+      resources.light == 0 || resources.shifts == 0 || resources.replays == 0 ||
       resources.replay_counter == 0 || resources.replay_grid == 0 ||
       resources.path_finals == 0 || resources.last_path_finals == 0 ||
       resources.previous_positions == 0 || resources.previous_pixels == 0 ||
@@ -23,8 +24,8 @@ void RestirPtTemporalPass::record(MTL4::ComputeCommandEncoder* encoder,
       resources.last_glows == 0 || resources.light_power == 0 ||
       resources.last_light_power == 0) {
     throw MetalError(
-        "RestirPtTemporalPass: the frame lacks one of its ReSTIR PT's settings "
-        "and reuse constants, "
+        "RestirPtTemporalPass: the frame lacks one of its ReSTIR PT's reuse "
+        "constants, "
         "path reservoirs, either frame's primary hits or final reservoirs, "
         "light buffer, shifted "
         "paths, replaying shifts, their count or grid, previous positions or "
@@ -34,7 +35,6 @@ void RestirPtTemporalPass::record(MTL4::ComputeCommandEncoder* encoder,
   namespace binding = bindings::restir_pt;
   MTL4::ArgumentTable* arguments = resources.arguments;
   bind_scene(resources, SceneCamera::none, "RestirPtTemporalPass");
-  arguments->setAddress(resources.path_settings, binding::settings);
   arguments->setAddress(resources.path_reservoirs, binding::reservoirs);
   arguments->setAddress(resources.primaries, binding::primaries);
   arguments->setAddress(resources.light, binding::light);

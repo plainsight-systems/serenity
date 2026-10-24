@@ -47,6 +47,7 @@ add_executable(serenity_gpu_tests
     sampler_test.cpp
     path_test.cpp
     mnee_test.cpp
+    reuse_constants_test.cpp
     restir_pt_test.cpp
     encoding_test.cpp
     features_test.cpp
@@ -98,6 +99,7 @@ serenity_add_metallib(
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/restir_pt_probe.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/mnee_probe.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/seed_probe.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/kernels/reuse_constants_probe.metal"
     INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/src")
 
 # Under Metal's API and shader validation, in ctest as by hand (P.12): an

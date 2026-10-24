@@ -58,8 +58,9 @@ struct FrameResources {
   MTL::GPUAddress glows = 0;
   MTL::GPUAddress acceleration = 0;
 
-  // ReSTIR PT's (frame_images.h, PathReuseImages; renderer.h): its
-  // settings and reuse textures, static; its path reservoirs, primary
+  // ReSTIR PT's (frame_images.h, PathReuseImages; renderer.h): its reuse
+  // textures, static (its settings are its pipelines' constants:
+  // passes/restir_pt/reuse_constants.h); its path reservoirs, primary
   // hits, light buffer and light tiles; with either reuse, the shifted
   // paths, the replaying shifts, their count and the replay's indirect
   // grid; and with temporal reuse its reuse constants, last frame's
@@ -67,7 +68,6 @@ struct FrameResources {
   // previous positions, the previous pixels, the duplication map and last
   // frame's transforms and glows (metal/scene/shape_transforms.h,
   // light_glows.h). 0 without its passes.
-  MTL::GPUAddress path_settings = 0;
   MTL::GPUAddress pairing = 0;
   MTL::GPUAddress path_reservoirs = 0;
   MTL::GPUAddress primaries = 0;

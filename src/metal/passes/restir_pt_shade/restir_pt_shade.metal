@@ -16,6 +16,7 @@
 #include "metal/film/accumulate.metal.h"
 #include "metal/passes/bindings.h"
 #include "metal/passes/restir_pt/restir_pt.metal.h"
+#include "metal/passes/restir_pt/reuse_constants.metal.h"
 
 using namespace metal;
 using namespace serenity::shaders;
@@ -24,8 +25,6 @@ namespace binding = serenity::bindings::restir_pt;
 kernel void restir_pt_shade(
     constant serenity::contracts::FrameConstants& frame
     [[buffer(binding::constants)]],
-    constant serenity::contracts::PathReuseSettings& settings
-    [[buffer(binding::settings)]],
     const device serenity::contracts::PathReservoir* reservoirs
     [[buffer(binding::reservoirs)]],
     const device float4* light [[buffer(binding::light)]],
@@ -33,6 +32,8 @@ kernel void restir_pt_shade(
     texture2d<float, access::read_write> accumulated
     [[texture(binding::accumulated)]],
     uint2 grid_place [[thread_position_in_grid]]) {
+  // the run's, the pipeline's constants (reuse_constants.h)
+  const serenity::contracts::PathReuseSettings settings = reuse_settings();
   // Every thread reaches count_non_finite() below, which sums over its
   // SIMD group: none returns early.
   const restir_pt::Traced traced = restir_pt::traced(frame, settings);

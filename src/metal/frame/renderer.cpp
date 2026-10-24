@@ -73,6 +73,19 @@ const T& made(const std::optional<T>& held, std::string_view what) {
   return *held;
 }
 
+// The run's path reuse settings: the graph's, the checkerboard on where
+// the network's input is traced checkerboarded. The ReSTIR PT passes'
+// pipelines are specialized by them (passes/restir_pt/reuse_constants.h)
+// and its arrays sized by them, one derivation for both (ES.3). Throws
+// MetalError if the graph has no ReSTIR PT.
+contracts::PathReuseSettings run_reuse_settings(const frame::Schedule& schedule,
+                                                bool feeds_network) {
+  contracts::PathReuseSettings settings =
+      made(schedule.restir_pt, "ReSTIR PT settings");
+  settings.checkerboard = feeds_network ? 1u : 0u;
+  return settings;
+}
+
 // The argument table's sizes (renderer.h). Each family of passes binds at
 // most its constant's buffers and textures through the table
 // (metal/passes/bindings.h), each the index past its passes' last, asserted
@@ -189,10 +202,9 @@ Renderer::RestirPtFamily::RestirPtFamily(
              settings.checkerboard != 0u ? PathReuseImages::Grid::checkerboard
                                          : PathReuseImages::Grid::image,
              lights),
-      statics(device, submission,
-              std::array<std::span<const std::byte>, 2>{
-                  std::as_bytes(std::span(&settings, 1)),
-                  std::as_bytes(textures)}) {
+      statics(
+          device, submission,
+          std::array<std::span<const std::byte>, 1>{std::as_bytes(textures)}) {
   if (temporal) {
     constants.emplace(
         device, submission,
@@ -206,8 +218,7 @@ void Renderer::RestirPtFamily::bind(
     const std::optional<contracts::Camera>& previous_camera,
     frame::Extent light) {
   const PathReuseImages::Addresses arrays = images.addresses(index);
-  resources.path_settings = statics.address(0);
-  resources.pairing = statics.address(1);
+  resources.pairing = statics.address(0);
   resources.path_reservoirs = arrays.reservoirs;
   resources.primaries = arrays.primaries;
   resources.light = arrays.light;
@@ -454,24 +465,29 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
                  made(schedule.tone_map, "tone map settings")}});
         break;
       case frame::PassKind::restir_pt_initial:
-        steps_.push_back(Step{
-            kind, Pass{std::in_place_type<RestirPtInitialPass>, library_}});
+        steps_.push_back(
+            Step{kind, Pass{std::in_place_type<RestirPtInitialPass>, library_,
+                            run_reuse_settings(schedule, feeds_network_)}});
         break;
       case frame::PassKind::restir_pt_spatial:
-        steps_.push_back(Step{
-            kind, Pass{std::in_place_type<RestirPtSpatialPass>, library_}});
+        steps_.push_back(
+            Step{kind, Pass{std::in_place_type<RestirPtSpatialPass>, library_,
+                            run_reuse_settings(schedule, feeds_network_)}});
         break;
       case frame::PassKind::restir_pt_shade:
         steps_.push_back(
-            Step{kind, Pass{std::in_place_type<RestirPtShadePass>, library_}});
+            Step{kind, Pass{std::in_place_type<RestirPtShadePass>, library_,
+                            run_reuse_settings(schedule, feeds_network_)}});
         break;
       case frame::PassKind::restir_pt_temporal:
-        steps_.push_back(Step{
-            kind, Pass{std::in_place_type<RestirPtTemporalPass>, library_}});
+        steps_.push_back(
+            Step{kind, Pass{std::in_place_type<RestirPtTemporalPass>, library_,
+                            run_reuse_settings(schedule, feeds_network_)}});
         break;
       case frame::PassKind::restir_pt_duplication:
         steps_.push_back(Step{
-            kind, Pass{std::in_place_type<RestirPtDuplicationPass>, library_}});
+            kind, Pass{std::in_place_type<RestirPtDuplicationPass>, library_,
+                       run_reuse_settings(schedule, feeds_network_)}});
         break;
       case frame::PassKind::features:
         steps_.push_back(
@@ -532,9 +548,8 @@ void Renderer::make_restir_pt(const Device& device,
   const bool temporal = has(schedule, frame::PassKind::restir_pt_temporal);
   reuses_history_ = temporal;
   const bool spatial = has(schedule, frame::PassKind::restir_pt_spatial);
-  contracts::PathReuseSettings settings = *schedule.restir_pt;
-  // the network's input is traced checkerboarded
-  settings.checkerboard = feeds_network_ ? 1u : 0u;
+  const contracts::PathReuseSettings settings =
+      run_reuse_settings(schedule, feeds_network_);
   // With spatial reuse, the three reuse textures, built once on the CPU
   // from the graph's sigma and a fixed seed (core/sampling/pairing.h); one
   // zero texel without. With the checkerboard the pairing is over the

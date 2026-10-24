@@ -214,9 +214,14 @@ every change that should not change it.
    intersection function or the intersection query (corrected
    2026-10-24 from "its own box structure with an intersection function
    under its mask bit", the CUDA backend's design, written before
-   Cycles' seed was read); small ray payloads; each tracing pipeline specialized
-   by function constants, as Cycles' are; 64-thread groups, as Cycles'
-   on the M3.
+   Cycles' seed was read); small ray payloads, which the intersector
+   gives by itself (a hit is its result's distance, ids, barycentrics
+   and per-primitive data, nothing carried through an intersection
+   function); each ReSTIR PT pipeline specialized by function constants
+   carrying the run's path reuse settings, as Cycles' are by its
+   KernelData (Cycles' feature flags have no counterpart: the demo scene
+   uses every feature its kernels have, so they would fold nothing); and
+   64-thread groups, as Cycles' on the M3, a per-pixel dispatch's 8 x 8.
 2. **The first surface rasterized, Apple's hybrid design** (W21): a
    render pass draws change 1's meshes into the output-size G-buffer
    (albedo, normal, depth, motion), and only pixels whose first surface

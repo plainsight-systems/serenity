@@ -3,6 +3,7 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
+#include "core/contracts/path_reuse_settings.h"
 #include "metal/device/library.h"
 #include "metal/frame/frame_resources.h"
 #include "metal/passes/restir_pt/shift_replay.h"
@@ -35,7 +36,10 @@ namespace serenity::metal {
 // docs/research/2026-10-11-restir-pt-phase2.md.
 class RestirPtSpatialPass {
  public:
-  explicit RestirPtSpatialPass(const Library& library);
+  // Its pipelines specialized by the run's `settings`
+  // (restir_pt/reuse_constants.h).
+  RestirPtSpatialPass(const Library& library,
+                      const contracts::PathReuseSettings& settings);
 
   // Records the pass. Throws MetalError if `resources` lacks anything it
   // reads or writes above.

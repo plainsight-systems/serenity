@@ -274,9 +274,8 @@ struct Traced {
   }
 };
 
-inline Traced traced(
-    constant serenity::contracts::FrameConstants& frame,
-    constant serenity::contracts::PathReuseSettings& settings) {
+inline Traced traced(constant serenity::contracts::FrameConstants& frame,
+                     serenity::contracts::PathReuseSettings settings) {
   return Traced{settings.checkerboard != 0u, frame.width, frame.height,
                 frame.frame_index};
 }

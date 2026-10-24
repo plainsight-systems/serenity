@@ -102,7 +102,6 @@ enum Buffer : uint8_t {
   scene = 3,
   glows = 4,
   transforms = 5,
-  settings = 6,     // contracts::PathReuseSettings
   reservoirs = 7,   // the path reservoirs, a pixel's each (contract 15)
   primaries = 8,    // each pixel's primary hit, for the merge's similarity test
   light = 9,        // the frame's light buffer, a float4 a pixel

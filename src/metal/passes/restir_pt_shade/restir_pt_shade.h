@@ -3,6 +3,7 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
+#include "core/contracts/path_reuse_settings.h"
 #include "metal/device/library.h"
 #include "metal/frame/frame_resources.h"
 
@@ -20,7 +21,10 @@ namespace serenity::metal {
 // pixel, the accumulated image read and written. One dispatch.
 class RestirPtShadePass {
  public:
-  explicit RestirPtShadePass(const Library& library);
+  // Its pipelines specialized by the run's `settings`
+  // (restir_pt/reuse_constants.h).
+  RestirPtShadePass(const Library& library,
+                    const contracts::PathReuseSettings& settings);
 
   // Records the pass. Throws MetalError if `resources` lacks anything it
   // reads or writes above.

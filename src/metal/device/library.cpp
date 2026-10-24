@@ -55,9 +55,15 @@ NS::SharedPtr<MTL::ComputePipelineState> Library::compute_pipeline(
   const std::string terminated(function);
   auto name = NS::TransferPtr(
       NS::String::alloc()->init(terminated.c_str(), NS::UTF8StringEncoding));
-  auto fn = NS::TransferPtr(library_->newFunction(name.get()));
+  NS::Error* error = nullptr;
+  auto fn = NS::TransferPtr(
+      options.constants == nullptr
+          ? library_->newFunction(name.get())
+          : library_->newFunction(name.get(), options.constants, &error));
   if (!fn) {
-    throw MetalError("no function '" + terminated + "' in the library");
+    throw MetalError(
+        "no function '" + terminated +
+        "' in the library, or none with its constants: " + describe(error));
   }
 
   auto descriptor =
@@ -66,7 +72,6 @@ NS::SharedPtr<MTL::ComputePipelineState> Library::compute_pipeline(
   if (options.group_threads != 0) {
     descriptor->setMaxTotalThreadsPerThreadgroup(options.group_threads);
   }
-  NS::Error* error = nullptr;
   auto pipeline = NS::TransferPtr(device_->newComputePipelineState(
       descriptor.get(), MTL::PipelineOptionNone, nullptr, &error));
   if (!pipeline) {

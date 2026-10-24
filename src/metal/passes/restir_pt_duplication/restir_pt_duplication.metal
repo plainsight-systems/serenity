@@ -12,6 +12,7 @@
 #include "core/contracts/path_reuse_settings.h"
 #include "metal/passes/bindings.h"
 #include "metal/passes/restir_pt/restir_pt.metal.h"
+#include "metal/passes/restir_pt/reuse_constants.metal.h"
 #include "metal/reuse/duplication.metal.h"
 
 using namespace metal;
@@ -21,14 +22,14 @@ namespace binding = serenity::bindings::restir_pt;
 kernel void restir_pt_duplication(
     constant serenity::contracts::FrameConstants& frame
     [[buffer(binding::constants)]],
-    constant serenity::contracts::PathReuseSettings& settings
-    [[buffer(binding::settings)]],
     const device serenity::contracts::PathReservoir* finals
     [[buffer(binding::finals)]],
     device float* map [[buffer(binding::duplication)]],
     uint2 pixel [[thread_position_in_grid]],
     uint2 local [[thread_position_in_threadgroup]],
     uint2 group [[threadgroup_position_in_grid]]) {
+  // the run's, the pipeline's constants (reuse_constants.h)
+  const serenity::contracts::PathReuseSettings settings = reuse_settings();
   threadgroup uint2 keys[duplication::span * duplication::span];
   // The arrays' grid: the image, or the packed one, whose slots are its
   // row-major indices (restir_pt.metal.h, Traced).

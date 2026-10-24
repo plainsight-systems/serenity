@@ -7,6 +7,7 @@
 #include "metal/device/error.h"
 #include "metal/device/support.h"
 #include "metal/passes/bindings.h"
+#include "metal/passes/restir_pt/reuse_constants.h"
 #include "metal/passes/scene_binding.h"
 
 namespace serenity::metal {
@@ -20,22 +21,24 @@ constexpr NS::UInteger tiles_group = 256;
 
 }  // namespace
 
-RestirPtInitialPass::RestirPtInitialPass(const Library& library)
+RestirPtInitialPass::RestirPtInitialPass(
+    const Library& library, const contracts::PathReuseSettings& settings)
     : power_(library.compute_pipeline("restir_pt_light_power")),
       tiles_(library.compute_pipeline("restir_pt_light_tiles")),
       pipeline_(library.compute_pipeline(
-          "restir_pt_initial", {.group_threads = apple_group_threads})),
+          "restir_pt_initial", {.group_threads = apple_group_threads,
+                                .constants = reuse_constants(settings).get()})),
       mnee_(library) {}
 
 void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder,
                                  const FrameResources& resources) const {
-  if (resources.path_settings == 0 || resources.path_reservoirs == 0 ||
-      resources.primaries == 0 || resources.light == 0 ||
-      resources.light_tiles == 0 || resources.light_power == 0 ||
-      resources.mnee_requests == 0 || resources.mnee_header == 0) {
+  if (resources.path_reservoirs == 0 || resources.primaries == 0 ||
+      resources.light == 0 || resources.light_tiles == 0 ||
+      resources.light_power == 0 || resources.mnee_requests == 0 ||
+      resources.mnee_header == 0) {
     throw MetalError(
-        "RestirPtInitialPass: the frame lacks one of its ReSTIR PT's settings, "
-        "path reservoirs, "
+        "RestirPtInitialPass: the frame lacks one of its ReSTIR PT's path "
+        "reservoirs, "
         "primary hits, light buffer, light tiles, power pyramid or MNEE's work "
         "list");
   }
@@ -50,7 +53,6 @@ void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder,
   namespace binding = bindings::restir_pt;
   MTL4::ArgumentTable* arguments = resources.arguments;
   bind_scene(resources, SceneCamera::bound, "RestirPtInitialPass");
-  arguments->setAddress(resources.path_settings, binding::settings);
   arguments->setAddress(resources.path_reservoirs, binding::reservoirs);
   arguments->setAddress(resources.primaries, binding::primaries);
   arguments->setAddress(resources.light, binding::light);

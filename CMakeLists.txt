@@ -292,6 +292,7 @@ add_library(serenity_metal STATIC
     src/metal/passes/checkerboard_fill/checkerboard_fill.cpp
     src/metal/passes/denoise/denoise.cpp
     src/metal/passes/depth_of_field/depth_of_field.cpp
+    src/metal/passes/restir_pt/reuse_constants.cpp
     src/metal/passes/restir_pt/shift_replay.cpp
     src/metal/passes/features/features.cpp
     src/metal/passes/mnee/mnee.cpp
