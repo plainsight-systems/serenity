@@ -7,7 +7,8 @@
 namespace serenity::metal {
 
 CheckerboardFillPass::CheckerboardFillPass(const Library& library)
-    : pipeline_(library.compute_pipeline("checkerboard_fill")) {}
+    : pipeline_(library.compute_pipeline(
+          "checkerboard_fill", {.group_threads = apple_group_threads})) {}
 
 void CheckerboardFillPass::record(MTL4::ComputeCommandEncoder* encoder,
                                   const FrameResources& resources) const {

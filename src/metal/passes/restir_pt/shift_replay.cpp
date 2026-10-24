@@ -11,10 +11,13 @@ namespace serenity::metal {
 ShiftReplay::ShiftReplay(const Library& library, const char* shift,
                          const char* replay, const char* merge,
                          std::string_view pass)
-    : shift_(library.compute_pipeline(shift)),
+    : shift_(library.compute_pipeline(shift,
+                                      {.group_threads = apple_group_threads})),
       grid_(library.compute_pipeline("restir_pt_replay_grid")),
-      replay_(library.compute_pipeline(replay)),
-      merge_(library.compute_pipeline(merge)) {
+      replay_(library.compute_pipeline(replay,
+                                       {.group_threads = apple_group_threads})),
+      merge_(library.compute_pipeline(merge,
+                                      {.group_threads = apple_group_threads})) {
   if (replay_->maxTotalThreadsPerThreadgroup() < contracts::replay_group) {
     throw MetalError(
         std::string(pass) +

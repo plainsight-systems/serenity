@@ -12,12 +12,18 @@
 namespace serenity::metal {
 
 DepthOfFieldPass::DepthOfFieldPass(const Library& library)
-    : presort_(library.compute_pipeline("dof_presort")),
-      tiles_(library.compute_pipeline("dof_tiles")),
-      dilate_(library.compute_pipeline("dof_dilate")),
-      gather_(library.compute_pipeline("dof_gather")),
-      median_(library.compute_pipeline("dof_median")),
-      composite_(library.compute_pipeline("dof_composite")) {}
+    : presort_(library.compute_pipeline(
+          "dof_presort", {.group_threads = apple_group_threads})),
+      tiles_(library.compute_pipeline("dof_tiles",
+                                      {.group_threads = apple_group_threads})),
+      dilate_(library.compute_pipeline("dof_dilate",
+                                       {.group_threads = apple_group_threads})),
+      gather_(library.compute_pipeline("dof_gather",
+                                       {.group_threads = apple_group_threads})),
+      median_(library.compute_pipeline("dof_median",
+                                       {.group_threads = apple_group_threads})),
+      composite_(library.compute_pipeline(
+          "dof_composite", {.group_threads = apple_group_threads})) {}
 
 void DepthOfFieldPass::record(MTL4::ComputeCommandEncoder* encoder,
                               const FrameResources& resources) const {

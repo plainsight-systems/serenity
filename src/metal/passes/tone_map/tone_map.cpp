@@ -27,10 +27,14 @@ frame::Extent extent(const MTL::Texture* texture) {
 ToneMapPass::ToneMapPass(const Device& device, const Library& library,
                          Submission& submission,
                          const passes::ToneMap& settings)
-    : down_first_(library.compute_pipeline("tone_map_down_first")),
-      down_(library.compute_pipeline("tone_map_down")),
-      up_(library.compute_pipeline("tone_map_up")),
-      finish_(library.compute_pipeline("tone_map_finish")) {
+    : down_first_(library.compute_pipeline(
+          "tone_map_down_first", {.group_threads = apple_group_threads})),
+      down_(library.compute_pipeline("tone_map_down",
+                                     {.group_threads = apple_group_threads})),
+      up_(library.compute_pipeline("tone_map_up",
+                                   {.group_threads = apple_group_threads})),
+      finish_(library.compute_pipeline(
+          "tone_map_finish", {.group_threads = apple_group_threads})) {
   if (const std::optional<std::string> reason = frame::invalid(settings)) {
     throw MetalError("ToneMapPass: " + *reason);
   }

@@ -23,7 +23,8 @@ constexpr NS::UInteger tiles_group = 256;
 RestirPtInitialPass::RestirPtInitialPass(const Library& library)
     : power_(library.compute_pipeline("restir_pt_light_power")),
       tiles_(library.compute_pipeline("restir_pt_light_tiles")),
-      pipeline_(library.compute_pipeline("restir_pt_initial")),
+      pipeline_(library.compute_pipeline(
+          "restir_pt_initial", {.group_threads = apple_group_threads})),
       mnee_(library) {}
 
 void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder,

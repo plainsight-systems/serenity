@@ -47,7 +47,7 @@ Library::Library(const Device& device, std::span<const std::byte> metallib)
       library_(load(device_.get(), metallib)) {}
 
 NS::SharedPtr<MTL::ComputePipelineState> Library::compute_pipeline(
-    std::string_view function) const {
+    std::string_view function, PipelineOptions options) const {
   const auto pool = scoped_pool();
 
   // Metal takes a terminated string; a pipeline is built at start-up, so the
@@ -60,9 +60,15 @@ NS::SharedPtr<MTL::ComputePipelineState> Library::compute_pipeline(
     throw MetalError("no function '" + terminated + "' in the library");
   }
 
+  auto descriptor =
+      NS::TransferPtr(MTL::ComputePipelineDescriptor::alloc()->init());
+  descriptor->setComputeFunction(fn.get());
+  if (options.group_threads != 0) {
+    descriptor->setMaxTotalThreadsPerThreadgroup(options.group_threads);
+  }
   NS::Error* error = nullptr;
-  auto pipeline =
-      NS::TransferPtr(device_->newComputePipelineState(fn.get(), &error));
+  auto pipeline = NS::TransferPtr(device_->newComputePipelineState(
+      descriptor.get(), MTL::PipelineOptionNone, nullptr, &error));
   if (!pipeline) {
     throw MetalError("no compute pipeline for '" + terminated +
                      "': " + describe(error));

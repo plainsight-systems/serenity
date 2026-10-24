@@ -67,10 +67,22 @@ NS::SharedPtr<MTL::Texture> make_private_texture(MTL::Device* device,
                                                  frame::Extent size,
                                                  std::string_view what);
 
+// The threads a group on the M3 (Apple family 9), every kernel's but those
+// whose group is part of their own design (threadgroup memory, a group's
+// scan): Blender Cycles' on the M3, "Peak occupancy is achieved through
+// Dynamic Caching on M3 GPUs" (docs/research/2026-10-23-apple-silicon-
+// design.md, section 6, change 1), Apple's "smallest multiple of the SIMD
+// width that maps well to your workload" (WWDC22 10159). A pipeline is
+// built for it (Library::compute_pipeline, PipelineOptions), so the
+// compiler sizes its registers for that occupancy.
+inline constexpr NS::UInteger apple_group_threads = 64;
+
 // Dispatches `pipeline`, already set on `encoder`, over `size`, one thread
-// per pixel, in threadgroups one execution width wide and as many rows as
-// the pipeline allows, so adjacent threads take adjacent pixels of a row
-// (GPU.2).
+// per pixel, in square threadgroups as large as the pipeline allows: 8 x 8
+// for a pipeline built for apple_group_threads, as Apple's ray-tracing
+// sample dispatches its rays, so a SIMD group takes an 8 x 4 tile, whose
+// rays are nearer each other than a row's (GPU.4), each of its rows 8
+// adjacent pixels (GPU.2); 32 x 32 for one that allows 1024.
 void dispatch_per_pixel(MTL4::ComputeCommandEncoder* encoder,
                         const MTL::ComputePipelineState* pipeline,
                         frame::Extent size);

@@ -33,6 +33,14 @@ namespace serenity::metal {
 //
 // Not performance-sensitive: a library is loaded and its pipelines are built
 // once, at start-up.
+// How a pipeline is built beyond its kernel, named fields (I.24):
+// `group_threads`, the most threads a group it is built for (Metal's
+// maxTotalThreadsPerThreadgroup, which the compiler sizes its registers
+// by), 0 for as many as the device and the kernel allow.
+struct PipelineOptions {
+  NS::UInteger group_threads = 0;
+};
+
 class Library {
  public:
   // Loads the library in `metallib`, on `device`. The bytes are copied, so
@@ -46,10 +54,10 @@ class Library {
   ~Library() = default;
 
   // A compute pipeline for the kernel named `function` (a view, which can
-  // be no null pointer: F.24, I.4). Built on the device the library was
-  // loaded on.
+  // be no null pointer: F.24, I.4), built as `options` say. Built on the
+  // device the library was loaded on.
   NS::SharedPtr<MTL::ComputePipelineState> compute_pipeline(
-      std::string_view function) const;
+      std::string_view function, PipelineOptions options = {}) const;
 
   // Valid for the Library's lifetime; not retained for the caller.
   MTL::Library* handle() const noexcept { return library_.get(); }

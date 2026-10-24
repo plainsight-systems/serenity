@@ -8,7 +8,8 @@
 namespace serenity::metal {
 
 FeaturesPass::FeaturesPass(const Library& library)
-    : pipeline_(library.compute_pipeline("features")) {}
+    : pipeline_(library.compute_pipeline(
+          "features", {.group_threads = apple_group_threads})) {}
 
 void FeaturesPass::record(MTL4::ComputeCommandEncoder* encoder,
                           const FrameResources& resources) const {

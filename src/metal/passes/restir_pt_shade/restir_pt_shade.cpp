@@ -7,7 +7,8 @@
 namespace serenity::metal {
 
 RestirPtShadePass::RestirPtShadePass(const Library& library)
-    : pipeline_(library.compute_pipeline("restir_pt_shade")) {}
+    : pipeline_(library.compute_pipeline(
+          "restir_pt_shade", {.group_threads = apple_group_threads})) {}
 
 void RestirPtShadePass::record(MTL4::ComputeCommandEncoder* encoder,
                                const FrameResources& resources) const {

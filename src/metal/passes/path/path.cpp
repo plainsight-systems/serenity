@@ -8,7 +8,8 @@
 namespace serenity::metal {
 
 PathPass::PathPass(const Library& library)
-    : pipeline_(library.compute_pipeline("path_trace")) {}
+    : pipeline_(library.compute_pipeline(
+          "path_trace", {.group_threads = apple_group_threads})) {}
 
 void PathPass::record(MTL4::ComputeCommandEncoder* encoder,
                       const FrameResources& resources) const {

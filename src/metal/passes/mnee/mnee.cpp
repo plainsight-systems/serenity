@@ -12,7 +12,8 @@ namespace serenity::metal {
 
 MneePass::MneePass(const Library& library)
     : grid_(library.compute_pipeline("mnee_grid")),
-      solve_(library.compute_pipeline("mnee_solve")) {
+      solve_(library.compute_pipeline("mnee_solve",
+                                      {.group_threads = apple_group_threads})) {
   // The solve's threadgroup, as mnee.metal's grid writes it (contract 16).
   if (solve_->maxTotalThreadsPerThreadgroup() < contracts::mnee_solve_group) {
     throw MetalError(

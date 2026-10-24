@@ -6,7 +6,8 @@
 namespace serenity::metal {
 
 TestPatternPass::TestPatternPass(const Library& library)
-    : pipeline_(library.compute_pipeline("test_pattern")) {}
+    : pipeline_(library.compute_pipeline(
+          "test_pattern", {.group_threads = apple_group_threads})) {}
 
 void TestPatternPass::record(MTL4::ComputeCommandEncoder* encoder,
                              const FrameResources& resources) const {
