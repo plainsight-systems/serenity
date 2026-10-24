@@ -15,13 +15,15 @@
 // trace.cuh), with the same signatures. Kind-blind: it names no shape
 // kind.
 //
-// A hit names its shape by its instance's user id, the shape's index, and
-// gives the triangle's point and outward normal (mesh_point()): its
-// vertices from the hit's per-primitive data (structure_block.h,
-// MeshTriangle) and their barycentric weights, placed in the world by the
-// shape's transform after its mesh's own placement, which
-// surface_interaction() makes contract 1 of (shapes/shapes.metal.h). Its t
-// is the mesh's: within the mesh's gap of the sphere's own
+// A hit gives its shape and the triangle's point and outward normal, which
+// surface_interaction() makes contract 1 of (shapes/shapes.metal.h), from
+// the hit's per-primitive data (structure_block.h, MeshTriangle) and its
+// barycentric weights: on a still structure (its instance's user id
+// still_instance), the triangle's shape and its vertices in the world
+// (triangle_point()); on a moving shape's instance, the instance's user id,
+// the shape's index, and its vertices placed in the world by the shape's
+// transform after its mesh's own placement (mesh_point()). Its t is the
+// mesh's: within the mesh's gap of the sphere's own
 // (core/shapes/mesh_levels.h).
 //
 // The mask is an argument, not a bound value: every site passes a constant
@@ -81,30 +83,35 @@ struct Hit {
   float t;  // the ray's parameter: its distance, the direction being unit
   uint primitive;  // the shape, as primitive i is shape i (shapes/primitive.h)
   MeshPoint at;    // where on its mesh (shapes/shapes.metal.h)
-  uint part;       // the triangle it met, its index in its mesh
+  uint part;  // the triangle it met, its index in its structure
 };
 
-// A hit's triangle, its point and outward normal, in the world: its
-// vertices in its mesh's space and their barycentric weights (Metal's:
-// 1 - u - v, u, v for the triangle's three), placed by the shape's
-// instance transform (the shape's transform after its mesh's placement:
+// A triangle's point at barycentric weights `b` (Metal's: 1 - u - v, u, v
+// for its three vertices) and its outward normal, the edges' cross product,
+// in the space its vertices are in.
+inline MeshPoint triangle_point(float3 v0, float3 v1, float3 v2, float2 b) {
+  return MeshPoint{v0 + b.x * (v1 - v0) + b.y * (v2 - v0),
+                   metal::normalize(metal::cross(v1 - v0, v2 - v0))};
+}
+
+inline float3 corner(const device serenity::gpu::MeshTriangle& tri, uint i) {
+  return float3(tri.v[i][0], tri.v[i][1], tri.v[i][2]);
+}
+
+// A moving shape's hit triangle, its point and outward normal, in the
+// world: its vertices in its mesh's space placed by the shape's instance
+// transform (the shape's transform after its mesh's placement:
 // core/shapes/shape_meshes.h, instance_transform), which carries a box's
 // unit mesh onto its corners too, so the normal is the placed edges' cross
 // product, for any affine placement.
 inline MeshPoint mesh_point(Shapes shapes, uint shape,
                             const device serenity::gpu::MeshTriangle& tri,
                             float2 b) {
-  const float3 v0 = float3(tri.v[0][0], tri.v[0][1], tri.v[0][2]);
-  const float3 v1 = float3(tri.v[1][0], tri.v[1][1], tri.v[1][2]);
-  const float3 v2 = float3(tri.v[2][0], tri.v[2][1], tri.v[2][2]);
   const serenity::contracts::Transform placed =
       instance_placement(shapes, shape);
-  const float3 object = v0 + b.x * (v1 - v0) + b.y * (v2 - v0);
-  const float3 w0 = transform_to_world(placed, v0);
-  const float3 w1 = transform_to_world(placed, v1);
-  const float3 w2 = transform_to_world(placed, v2);
-  return MeshPoint{transform_to_world(placed, object),
-                   metal::normalize(metal::cross(w1 - w0, w2 - w0))};
+  return triangle_point(transform_to_world(placed, corner(tri, 0u)),
+                        transform_to_world(placed, corner(tri, 1u)),
+                        transform_to_world(placed, corner(tri, 2u)), b);
 }
 
 // The nearest shape `mask` finds along `r`, its direction unit length.
@@ -124,12 +131,18 @@ inline Hit trace(SceneStructure structures, Shapes shapes,
   if (result.type != intersection_type::triangle) {
     return Hit{false, 0.0f, 0u, MeshPoint{}, 0u};
   }
-  const uint shape = result.user_instance_id;
   const device serenity::gpu::MeshTriangle& tri =
       *static_cast<const device serenity::gpu::MeshTriangle*>(
           result.primitive_data);
-  return Hit{true, result.distance, shape,
-             mesh_point(shapes, shape, tri, result.triangle_barycentric_coord),
+  const float2 b = result.triangle_barycentric_coord;
+  if (result.user_instance_id == serenity::gpu::still_instance) {
+    return Hit{true, result.distance, tri.shape,
+               triangle_point(corner(tri, 0u), corner(tri, 1u),
+                              corner(tri, 2u), b),
+               result.primitive_id};
+  }
+  const uint shape = result.user_instance_id;
+  return Hit{true, result.distance, shape, mesh_point(shapes, shape, tri, b),
              result.primitive_id};
 }
 

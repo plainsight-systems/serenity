@@ -51,12 +51,20 @@ using InstanceStructure = std::uint64_t;  // the structure's gpuResourceID
 // everything_bit; a shape that is not a light carries occluder_bit too.
 // A namespace-scope constant is in the shading language's constant address
 // space (core/contracts/shared_layout.h, SERENITY_CONSTANT).
+//
+// still_instance: the user id of an instance of a still structure, the
+// still shapes' meshes placed in the world and concatenated, as Apple asks
+// of instances that overlap (scene_acceleration.h); a hit there names its
+// shape by its triangle (MeshTriangle::shape), a hit on any other instance
+// by the instance's id, the shape's index.
 #if defined(__METAL_VERSION__)
 constant constexpr uint32_t everything_bit = 1u;
 constant constexpr uint32_t occluder_bit = 2u;
+constant constexpr uint32_t still_instance = 0xffffffffu;
 #else
 inline constexpr uint32_t everything_bit = 1u;
 inline constexpr uint32_t occluder_bit = 2u;
+inline constexpr uint32_t still_instance = 0xffffffffu;
 #endif
 
 struct StructureBlock {
@@ -70,17 +78,21 @@ static_assert(
     sizeof(StructureBlock) == 16,
     "StructureBlock must be the same 16 bytes on the host and in shaders");
 
-// A triangle as a mesh's structure keeps it beside the hardware's own copy,
+// A triangle as a structure keeps it beside the hardware's own copy,
 // Metal's per-primitive data (MTL4::AccelerationStructureTriangleGeometry
-// Descriptor's primitiveDataBuffer): its three vertices in the mesh's
-// space, read from a hit's intersection result, so a hit's point is the
-// triangle's (trace.metal.h). 36 bytes, packed floats on both sides.
+// Descriptor's primitiveDataBuffer), read from a hit's intersection result
+// (trace.metal.h): its three vertices, in its mesh's space in a moving
+// shape's mesh, in the world in a still structure, so a hit's point is the
+// triangle's; and in a still structure its shape's index (still_instance,
+// above), unread elsewhere. 40 bytes, packed floats and a word on both
+// sides.
 struct MeshTriangle {
   float v[3][3];
+  uint32_t shape;
 };
 
-static_assert(sizeof(MeshTriangle) == 36,
-              "MeshTriangle must be the same 36 bytes on the host and in "
+static_assert(sizeof(MeshTriangle) == 40,
+              "MeshTriangle must be the same 40 bytes on the host and in "
               "shaders");
 
 }  // namespace gpu

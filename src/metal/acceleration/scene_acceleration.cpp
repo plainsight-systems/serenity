@@ -89,43 +89,62 @@ NS::SharedPtr<MTL::ResidencySet> residency_set(MTL::Device* device) {
   return set;
 }
 
+// Point `p` placed by `t` (contract 10's row-major 3 x 4 matrix).
+contracts::Float3 placed_point(const contracts::Transform& t,
+                               contracts::Float3 p) {
+  const auto row = [&](std::size_t r) {
+    return t.m[r][0] * p.x + t.m[r][1] * p.y + t.m[r][2] * p.z + t.m[r][3];
+  };
+  return contracts::Float3{row(0), row(1), row(2)};
+}
+
+// A triangle's per-primitive data: its vertices from `vertices` by
+// `triangle`, and `shape` (structure_block.h, MeshTriangle).
+gpu::MeshTriangle mesh_triangle(std::span<const contracts::Float3> vertices,
+                                const std::array<std::uint32_t, 3>& triangle,
+                                std::uint32_t shape) {
+  gpu::MeshTriangle data{};
+  for (std::size_t c = 0; c < 3; ++c) {
+    const contracts::Float3& v = vertices[triangle[c]];
+    data.v[c][0] = v.x;
+    data.v[c][1] = v.y;
+    data.v[c][2] = v.z;
+  }
+  data.shape = shape;
+  return data;
+}
+
 }  // namespace
+
+const shapes::TriangleMesh& SceneAcceleration::mesh_for(
+    std::uint32_t shape, std::span<const std::uint8_t> levels,
+    MeshCache& cache) const {
+  switch (records_[shape].kind) {
+    case shapes::ShapeKind::sphere: {
+      const std::uint8_t level = levels[shape];
+      if (level > shapes::finest_sphere_level) {
+        throw MetalError("SceneAcceleration: shape " + std::to_string(shape) +
+                         ", a sphere, has no mesh level");
+      }
+      if (!cache.levels.at(level)) {
+        cache.levels.at(level) = shapes::icosphere(level);
+      }
+      return *cache.levels.at(level);
+    }
+    case shapes::ShapeKind::box:
+      if (!cache.box) {
+        cache.box = shapes::unit_box();
+      }
+      return *cache.box;
+  }
+  throw MetalError("SceneAcceleration: shape " + std::to_string(shape) +
+                   " is of no kind");
+}
 
 void SceneAcceleration::make_meshes(const Device& device,
                                     Submission& submission,
-                                    std::span<const std::uint8_t> levels) {
+                                    std::span<const MeshArrays> made) {
   MTL::Device* metal_device = device.handle();
-  // The meshes the shapes take, each once: the box, and a level a sphere
-  // level used, in the order first met.
-  std::vector<shapes::TriangleMesh> made;
-  std::array<std::optional<std::uint32_t>, shapes::finest_sphere_level + 1>
-      level_mesh{};
-  std::optional<std::uint32_t> box_mesh;
-  shape_mesh_.resize(records_.size());
-  for (std::size_t i = 0; i < records_.size(); ++i) {
-    switch (records_[i].kind) {
-      case shapes::ShapeKind::sphere: {
-        const std::uint8_t level = levels[i];
-        if (level > shapes::finest_sphere_level) {
-          throw MetalError("SceneAcceleration: shape " + std::to_string(i) +
-                           ", a sphere, has no mesh level");
-        }
-        if (!level_mesh.at(level)) {
-          level_mesh.at(level) = static_cast<std::uint32_t>(made.size());
-          made.push_back(shapes::icosphere(level));
-        }
-        shape_mesh_[i] = *level_mesh.at(level);
-        break;
-      }
-      case shapes::ShapeKind::box:
-        if (!box_mesh) {
-          box_mesh = static_cast<std::uint32_t>(made.size());
-          made.push_back(shapes::unit_box());
-        }
-        shape_mesh_[i] = *box_mesh;
-        break;
-    }
-  }
 
   // Each mesh's arrays and its structure, built in one submission for fast
   // intersection, then compacted in a second (Apple's build options;
@@ -140,16 +159,8 @@ void SceneAcceleration::make_meshes(const Device& device,
       residency_set(metal_device);
   meshes_.resize(made.size());
   for (std::size_t m = 0; m < made.size(); ++m) {
-    const shapes::TriangleMesh& mesh = made[m];
-    std::vector<gpu::MeshTriangle> triangles(mesh.triangles.size());
-    for (std::size_t t = 0; t < mesh.triangles.size(); ++t) {
-      for (std::size_t c = 0; c < 3; ++c) {
-        const contracts::Float3& v = mesh.vertices.at(mesh.triangles[t][c]);
-        triangles[t].v[c][0] = v.x;
-        triangles[t].v[c][1] = v.y;
-        triangles[t].v[c][2] = v.z;
-      }
-    }
+    const MeshArrays& mesh = made[m];
+    const std::vector<gpu::MeshTriangle>& triangles = mesh.data;
     const std::array<std::span<const std::byte>, 3> arrays{
         std::as_bytes(std::span(mesh.vertices)),
         std::as_bytes(std::span(mesh.triangles)),
@@ -257,10 +268,10 @@ void SceneAcceleration::make_meshes(const Device& device,
   }
 }
 
-void SceneAcceleration::place(std::uint32_t shape,
+void SceneAcceleration::place(std::uint32_t instance, std::uint32_t shape,
                               const contracts::Transform& transform,
                               std::span<Instance> instances) const {
-  instances[shape].transformationMatrix = packed(
+  instances[instance].transformationMatrix = packed(
       shapes::instance_transform(records_[shape], box_geometry_, transform));
 }
 
@@ -281,27 +292,125 @@ SceneAcceleration::SceneAcceleration(const Device& device,
 
   const auto pool = scoped_pool();
   MTL::Device* metal_device = device.handle();
-  make_meshes(device, submission, roles.levels);
 
-  const NS::SharedPtr<MTL::ResidencySet> build_only =
-      residency_set(metal_device);
-
-  // The instances at rest: each shape its mesh, its mask the questions it
-  // answers, its id the shape's index (structure_block.h).
   std::vector<bool> light(records_.size(), false);
   for (const std::uint32_t l : roles.lights) {
     light.at(l) = true;
   }
-  std::vector<Instance> at_rest(records_.size());
-  for (std::uint32_t i = 0; i < at_rest.size(); ++i) {
-    Instance& instance = at_rest[i];
+  std::vector<bool> moving(records_.size(), false);
+  for (const std::uint32_t m : moving_) {
+    moving.at(m) = true;
+  }
+  // Which shapes are their own instances (scene_acceleration.h): every
+  // moving shape and every box; the still spheres are concatenated.
+  for (std::uint32_t shape = 0; shape < records_.size(); ++shape) {
+    if (moving[shape] || records_[shape].kind == shapes::ShapeKind::box) {
+      instanced_.push_back(shape);
+    }
+  }
+  // The structures' triangles: each instanced shape's mesh, each level and
+  // the box once; then the still occluders' and the still lights' spheres,
+  // each placed in the world by its instance transform at rest and
+  // concatenated (structure_block.h, still_instance).
+  MeshCache cache;
+  std::vector<MeshArrays> made;
+  std::array<std::optional<std::uint32_t>, shapes::finest_sphere_level + 1>
+      level_mesh{};
+  std::optional<std::uint32_t> box_mesh;
+  shape_mesh_.assign(records_.size(), 0u);
+  for (const std::uint32_t shape : instanced_) {
+    std::optional<std::uint32_t>& index =
+        records_[shape].kind == shapes::ShapeKind::box
+            ? box_mesh
+            : level_mesh.at(std::min<std::size_t>(roles.levels[shape],
+                                                  shapes::finest_sphere_level));
+    const shapes::TriangleMesh& mesh = mesh_for(shape, roles.levels, cache);
+    if (!index) {
+      index = static_cast<std::uint32_t>(made.size());
+      MeshArrays arrays{mesh.vertices, mesh.triangles, {}};
+      arrays.data.reserve(mesh.triangles.size());
+      for (const auto& triangle : mesh.triangles) {
+        arrays.data.push_back(
+            mesh_triangle(mesh.vertices, triangle, gpu::still_instance));
+      }
+      made.push_back(std::move(arrays));
+    }
+    shape_mesh_[shape] = *index;
+  }
+  std::array<MeshArrays, 2> still{};  // the occluders', the lights'
+  for (std::uint32_t shape = 0; shape < records_.size(); ++shape) {
+    if (moving[shape] || records_[shape].kind == shapes::ShapeKind::box) {
+      continue;
+    }
+    const shapes::TriangleMesh& mesh = mesh_for(shape, roles.levels, cache);
+    const contracts::Transform placement = shapes::instance_transform(
+        records_[shape], box_geometry_, shapes.transforms.at(shape));
+    MeshArrays& into = still.at(light[shape] ? 1 : 0);
+    const auto first = static_cast<std::uint32_t>(into.vertices.size());
+    for (const contracts::Float3& v : mesh.vertices) {
+      into.vertices.push_back(placed_point(placement, v));
+    }
+    const std::span<const contracts::Float3> world(into.vertices.data() + first,
+                                                   mesh.vertices.size());
+    for (const auto& triangle : mesh.triangles) {
+      into.triangles.push_back(
+          {first + triangle[0], first + triangle[1], first + triangle[2]});
+      // the vertices by the mesh's own indices, into its placed copies
+      into.data.push_back(mesh_triangle(world, triangle, shape));
+    }
+  }
+  std::array<std::optional<std::uint32_t>, 2> still_mesh{};
+  for (std::size_t s = 0; s < still.size(); ++s) {
+    if (!still.at(s).triangles.empty()) {
+      still_mesh.at(s) = static_cast<std::uint32_t>(made.size());
+      made.push_back(std::move(still.at(s)));
+    }
+  }
+  make_meshes(device, submission, made);
+
+  const NS::SharedPtr<MTL::ResidencySet> build_only =
+      residency_set(metal_device);
+
+  // The instances at rest: each still structure once, in the world, its
+  // mask its shapes' questions (structure_block.h); then each moving shape,
+  // its mesh, its mask the questions it answers, its id the shape's index.
+  const auto instance_of = [&](std::uint32_t mesh, std::uint32_t mask,
+                               std::uint32_t id) {
+    Instance instance{};
     instance.options = MTL::AccelerationStructureInstanceOptionOpaque;
-    instance.mask = gpu::everything_bit | (light[i] ? 0u : gpu::occluder_bit);
+    instance.mask = mask;
     instance.intersectionFunctionTableOffset = 0;
-    instance.userID = i;
+    instance.userID = id;
     instance.accelerationStructureID =
-        meshes_.at(shape_mesh_[i]).structure->gpuResourceID();
-    place(i, shapes.transforms.at(i), at_rest);
+        meshes_.at(mesh).structure->gpuResourceID();
+    instance.transformationMatrix =
+        packed(contracts::Transform{{{1.0f, 0.0f, 0.0f, 0.0f},
+                                     {0.0f, 1.0f, 0.0f, 0.0f},
+                                     {0.0f, 0.0f, 1.0f, 0.0f}}});
+    return instance;
+  };
+  std::vector<Instance> at_rest;
+  at_rest.reserve(2 + moving_.size());
+  if (still_mesh[0]) {
+    at_rest.push_back(instance_of(*still_mesh[0],
+                                  gpu::everything_bit | gpu::occluder_bit,
+                                  gpu::still_instance));
+  }
+  if (still_mesh[1]) {
+    at_rest.push_back(
+        instance_of(*still_mesh[1], gpu::everything_bit, gpu::still_instance));
+  }
+  const auto still_count = static_cast<std::uint32_t>(at_rest.size());
+  for (std::size_t k = 0; k < instanced_.size(); ++k) {
+    const std::uint32_t shape = instanced_[k];
+    at_rest.push_back(instance_of(
+        shape_mesh_[shape],
+        gpu::everything_bit | (light[shape] ? 0u : gpu::occluder_bit), shape));
+    const std::uint32_t instance = still_count + static_cast<std::uint32_t>(k);
+    place(instance, shape, shapes.transforms.at(shape), at_rest);
+    if (moving[shape]) {
+      moving_instance_.push_back(instance);
+    }
   }
   instances_ = std::make_unique<FrameArray>(
       device, submission, std::as_bytes(std::span(at_rest)),
@@ -385,8 +494,8 @@ void SceneAcceleration::update(
   }
   // Step 1: the moving shapes' instances.
   const std::span<Instance> instances = instances_->view<Instance>(slot);
-  for (const std::uint32_t shape : moving_) {
-    place(shape, transforms[shape], instances);
+  for (std::size_t k = 0; k < moving_.size(); ++k) {
+    place(moving_instance_[k], moving_[k], transforms[moving_[k]], instances);
   }
   // Step 2: the instance structure, over the slot's own instances.
   const Built& top = tops_.at(slot);

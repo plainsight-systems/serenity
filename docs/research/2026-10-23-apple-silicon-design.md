@@ -199,8 +199,15 @@ every change that should not change it.
 1. **Tracing as Blender Cycles traces on the M3** (C1, TT1, TT2): the
    intersector API in every tracing pass, in place of the intersection
    query; opaque triangle geometry Metal intersects in hardware, the
-   still shapes built once and compacted, the moving ones (the
-   fireflies) instanced meshes, their top level rebuilt whole each
+   still spheres (the marbles' pile, whose instances overlap) placed in
+   the world and concatenated into one structure a mask, built once and
+   compacted, as Apple asks of overlapping instances (TT2; added
+   2026-10-24, after change 1's first slices were measured without it:
+   the passes of incoherent rays slowed most), the boxes and the moving
+   shapes (the fireflies) instanced meshes, the boxes because a box's
+   two triangles a face placed in the world carry their far corners'
+   rounding to every point of the face, past what the ray offset covers
+   (the leave test's ground 400 m across), their top level rebuilt whole each
    frame, as Apple advises for an instance structure (W22b; corrected
    2026-10-24 from "refit", taken from Cycles' viewport updates and
    checked against Apple's session at the user's direction); every

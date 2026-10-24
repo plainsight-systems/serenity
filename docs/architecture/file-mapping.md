@@ -636,9 +636,9 @@ MNEE's seed a walk of nearest hits through it, as Cycles' seed is.
 
 | What | Axis | Where |
 |---|---|---|
-| the meshes (the core's, as on the 3090) built once, opaque, for fast intersection, and compacted, each triangle's vertices its per-primitive data; the instances, a shape each, placed by the core's `instance_transform()`, their mask bits; the instance structure per slot where shapes move | Acceleration | `src/metal/acceleration/scene_acceleration.{h,cpp}` |
-| the block: the instance structure and the occluders' count; the mask bits; a triangle's per-primitive data | Acceleration | `src/metal/acceleration/structure_block.h` |
-| the intersector's nearest hit by mask and its any-hit shadow test; a hit's point and normal from its triangle | Acceleration | `src/metal/acceleration/trace.metal.h` |
+| the meshes (the core's, as on the 3090) built once, opaque, for fast intersection, and compacted, each triangle's vertices its per-primitive data; the still spheres placed in the world and concatenated, one structure for the occluders and one for the lights, as Apple asks of overlapping instances; the boxes and the moving shapes instanced, placed by the core's `instance_transform()`; the mask bits; the instance structure per slot where shapes move | Acceleration | `src/metal/acceleration/scene_acceleration.{h,cpp}` |
+| the block: the instance structure and the occluders' count; the mask bits and the still structures' instance id; a triangle's per-primitive data, its shape in a still structure | Acceleration | `src/metal/acceleration/structure_block.h` |
+| the intersector's nearest hit by mask and its any-hit shadow test; a hit's shape and point and normal from its triangle, in the world on a still structure | Acceleration | `src/metal/acceleration/trace.metal.h` |
 | a hit's shape placed with its mesh's placement; contract 1 from a hit's triangle, the shading normal the shape's own | Shape | `src/metal/shapes/shapes.metal.h` |
 | a shape's instance transform, its mesh's placement after its own, for every backend | Acceleration | `src/core/shapes/shape_meshes.{h,cpp}` (`compose()`, `instance_transform()`) |
 | MNEE's seed, a walk of at most 10 nearest hits along the segment (Cycles' `kernel_path_mnee_sample`) | Integrator | `src/metal/integrator/mnee.metal.h` (`seed_segment()`) |

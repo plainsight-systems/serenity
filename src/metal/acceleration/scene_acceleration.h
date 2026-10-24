@@ -7,12 +7,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
 #include "core/shapes/shape_meshes.h"
 #include "core/shapes/shapes.h"
 #include "core/shapes/structure_plan.h"
+#include "metal/acceleration/structure_block.h"
 #include "metal/device/device.h"
 #include "metal/device/frame_array.h"
 #include "metal/device/static_arrays.h"
@@ -27,28 +29,47 @@ namespace serenity::metal {
 // (docs/research/2026-10-23-apple-silicon-design.md, sections 5 and 6,
 // change 1): opaque triangle geometry, which the hardware intersects
 // itself and runs no intersection function for (Apple, "maximize opaque
-// triangle tests"), each mesh built once and compacted, each shape an
-// instance of its mesh under one top level; the CUDA backend's design on
-// the RTX 3090 Ti (cuda/acceleration/scene_acceleration.h), the same
-// meshes at the same levels (core/shapes/shape_meshes.h, mesh_levels.h):
+// triangle tests"), each structure built once and compacted, under one
+// top level; the still shapes concatenated into one structure, as Apple
+// asks of instances that overlap ("concatenate these instances together
+// into a single primitive acceleration structure", tech talk 111374), the
+// marbles' pile being that; the moving shapes instanced, as Apple asks of
+// objects that move. The same meshes at the same levels as the CUDA
+// backend (core/shapes/shape_meshes.h, mesh_levels.h), which instances
+// every shape, NVIDIA's practice on the RTX 3090 Ti (cuda/acceleration/
+// scene_acceleration.h):
 //
-//   - the meshes: an icosphere a level the scene's spheres use and the
-//     unit box, each a primitive structure of opaque triangles, its
-//     triangles' vertices kept beside it as Metal's per-primitive data
+//   - the instanced shapes' meshes, every moving shape's and every box's:
+//     an icosphere a level they use and the unit box, each a primitive
+//     structure of opaque triangles in its own space, its triangles'
+//     vertices kept beside it as Metal's per-primitive data
 //     (structure_block.h, MeshTriangle), so a hit reads the triangle it
-//     hit from its intersection result (trace.metal.h); built once at
-//     construction for fast intersection and compacted (GPU.9: long-lived,
-//     built once; the compacted copy kept, the build's memory let go);
-//   - the instance structure over the meshes, the one every ray traces,
-//     manifold next event estimation's seed among them (a walk of nearest
-//     hits, as Cycles' seed is: integrator/mnee.metal.h, seed_segment):
-//     each shape an instance of its mesh, instance i shape i (its user id
-//     too), placed by its transform after its mesh's own placement
-//     (the identity for a sphere, the box's corners for a box), its mask
-//     the bits of the questions it answers (structure_block.h: every
-//     shape, surfaces as occluders too). Principle 11's two questions are
-//     the mask bits of one structure, as Cycles' and DXR's instances carry
-//     them (logical-overview.md, "A mask needs an instance level").
+//     hit from its intersection result (trace.metal.h);
+//   - the still structures: the still occluders' and the still lights'
+//     spheres, each placed in the world by its transform and concatenated,
+//     each triangle's per-primitive data its world vertices and its shape;
+//     two, since a mask is an instance's. Not the boxes: a box's faces are
+//     two triangles each, so placed in the world its far corners' rounding
+//     is every point of the face's, which offset_ray() does not cover
+//     where the face is large and the point near the origin (the ground
+//     400 m across: tests/gpu/leave_test.cpp); a sphere's triangles are
+//     small against it, its point's rounding its own coordinates'. The
+//     scenes have a few boxes, so instancing them costs little;
+//   - each built once at construction for fast intersection and compacted
+//     (GPU.9: long-lived, built once; the compacted copy kept, the build's
+//     memory let go);
+//   - the instance structure, the one every ray traces, manifold next
+//     event estimation's seed among them (a walk of nearest hits, as
+//     Cycles' seed is: integrator/mnee.metal.h, seed_segment): each still
+//     structure an instance at the identity, its user id still_instance;
+//     then each instanced shape an instance of its mesh, its user id the
+//     shape's index, placed by its transform after its mesh's placement
+//     (the identity for a sphere, the box's corners for a box);
+//     each instance's mask the bits of the questions its shapes answer
+//     (structure_block.h: every shape, surfaces as occluders too).
+//     Principle 11's two questions are the mask bits of one structure, as
+//     Cycles' and DXR's instances carry them (logical-overview.md, "A mask
+//     needs an instance level").
 //
 // Each sphere's level is the scene's (Roles::levels, from the core's
 // sphere_levels()): the structure builds what it is told and refuses a
@@ -58,7 +79,8 @@ namespace serenity::metal {
 // the shader decided through an intersection query, measured faster than
 // instances on this machine for the brass scene's 4 shapes
 // (docs/research/2026-10-09-acceleration-structure.md); Apple's M3 guidance
-// since (the intersector over the query, opaque triangles) and the
+// since (the intersector over the query, opaque triangles, overlapping
+// instances concatenated) and the
 // marbles' 661 spheres are why it is replaced, and the frame time is what
 // this design is measured by.
 //
@@ -152,12 +174,34 @@ class SceneAcceleration {
     Resident resident;
   };
 
-  // The meshes the levels name and the unit box, built and compacted in
-  // start-up submissions; each shape's mesh, as an index into meshes_.
+  // A triangle set as a structure is built from it: its vertices, its
+  // triangles by index, and each triangle's per-primitive data.
+  struct MeshArrays {
+    std::vector<contracts::Float3> vertices;
+    std::vector<std::array<std::uint32_t, 3>> triangles;
+    std::vector<gpu::MeshTriangle> data;
+  };
+  // The core's meshes, each made once on the host while the structures
+  // are built.
+  struct MeshCache {
+    std::array<std::optional<shapes::TriangleMesh>,
+               shapes::finest_sphere_level + 1>
+        levels;
+    std::optional<shapes::TriangleMesh> box;
+  };
+
+  // Shape `shape`'s mesh in its own space, by its kind and `levels`, made
+  // into `cache` once; throws MetalError if it is a sphere with no level.
+  const shapes::TriangleMesh& mesh_for(std::uint32_t shape,
+                                       std::span<const std::uint8_t> levels,
+                                       MeshCache& cache) const;
+  // Each of `made` as a structure, into meshes_ in order, built and
+  // compacted in start-up submissions.
   void make_meshes(const Device& device, Submission& submission,
-                   std::span<const std::uint8_t> levels);
-  // Shape `shape`'s instance, placed by `transform`.
-  void place(std::uint32_t shape, const contracts::Transform& transform,
+                   std::span<const MeshArrays> made);
+  // Instance `instance`, shape `shape`'s, placed by `transform`.
+  void place(std::uint32_t instance, std::uint32_t shape,
+             const contracts::Transform& transform,
              std::span<MTL::IndirectAccelerationStructureInstanceDescriptor>
                  instances) const;
 
@@ -166,7 +210,12 @@ class SceneAcceleration {
   std::vector<shapes::BoxData> box_geometry_;
   std::vector<std::uint32_t> moving_;
   std::vector<Mesh> meshes_;
-  std::vector<std::uint32_t> shape_mesh_;  // meshes_ index, a shape
+  // the shapes that are their own instances, in shape order, after the
+  // still structures' instances; each one's mesh, as an index into
+  // meshes_; each moving shape's instance, as moving_ orders them
+  std::vector<std::uint32_t> instanced_;
+  std::vector<std::uint32_t> shape_mesh_;
+  std::vector<std::uint32_t> moving_instance_;
   // Each slot's instances (one copy when nothing moves), and its instance
   // structure's descriptor and structure.
   std::unique_ptr<FrameArray> instances_;
