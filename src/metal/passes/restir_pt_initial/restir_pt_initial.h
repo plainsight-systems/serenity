@@ -2,13 +2,21 @@
 
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
+#include <array>
 
 #include "core/contracts/path_reuse_settings.h"
 #include "metal/device/library.h"
+#include "metal/device/submission.h"
 #include "metal/frame/frame_resources.h"
 #include "metal/passes/mnee/mnee.h"
 
 namespace serenity::metal {
+
+// The intersection functions a kernel that seeds MNEE traces with, linked
+// into its pipeline in this order, its table's entries
+// (integrator/mnee_seed.metal; Library's PipelineOptions).
+inline constexpr std::array<const char*, 1> seed_intersection_functions{
+    "mnee_seed_box"};
 
 // Axis: Pass (ReSTIR PT's initial sampling).
 //
@@ -22,6 +30,11 @@ namespace serenity::metal {
 // traced; contract 20), the path tree along the camera's ray resampled to
 // one path; then the tree's MNEE requests solved, their light added to the
 // light buffer (metal/passes/mnee/mnee.h).
+//
+// The path tree's MNEE seeds trace the occluders' boxes with the seed's
+// intersection function: linked into the tree's pipeline, its table made
+// once and kept resident, bound beside the kernel's arrays
+// (integrator/mnee.metal.h, seed_segment()).
 //
 // Reads: the scene, structure, camera, ReSTIR PT's settings and, with
 // temporal reuse, last frame's transforms. Writes: the power pyramid, which
@@ -48,7 +61,8 @@ class RestirPtInitialPass {
  public:
   // Its pipelines specialized by the run's `settings`
   // (restir_pt/reuse_constants.h).
-  RestirPtInitialPass(const Library& library,
+  // Its seed's table kept resident on `submission`'s queue.
+  RestirPtInitialPass(const Library& library, Submission& submission,
                       const contracts::PathReuseSettings& settings);
 
   // Records the pass. Throws MetalError if `resources` lacks any array or
@@ -60,6 +74,8 @@ class RestirPtInitialPass {
   NS::SharedPtr<MTL::ComputePipelineState> power_;
   NS::SharedPtr<MTL::ComputePipelineState> tiles_;
   NS::SharedPtr<MTL::ComputePipelineState> pipeline_;
+  NS::SharedPtr<MTL::IntersectionFunctionTable> seed_functions_;
+  Resident seed_functions_resident_;
   MneePass mnee_;
 };
 

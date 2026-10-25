@@ -40,30 +40,28 @@
 // The algorithm, for a receiver at `here`, a light point y drawn from the
 // point rays leave toward wo (path.metal.h, "One origin"), x0:
 //
-//   1. Seed (seed_segment()): Cycles' probe (kernel_path_mnee_sample), a
-//      walk of nearest hits along x0 -> y, each trace starting just past
-//      the last hit (its t's next float up, Cycles' intersection_t_offset),
-//      at most walk_most_hits of them (Cycles' MNEE_MAX_INTERSECTION_COUNT):
-//      the first time a caster sphere's mesh is met, its exact crossings
-//      within the segment, by its own roots, sorted in, at most
-//      max_interfaces (more refuses the seed); its mesh met again, nothing
-//      more; any other shape met marks the segment blocked. No crossing and
-//      not blocked: the segment is clear, the caller's ordinary next event
-//      estimation. Other shapes do not stop the walk (Cycles: the solved
-//      path may pass where the straight one is blocked); its visibility is
-//      tested once solved (step 4). A walk that meets its last hit before
-//      the segment's end stops there, as Cycles' does, and step 4 decides
-//      what it did not visit. The seed, as the solved chain's segments
-//      (step 4), traces the occluders (contract 19): "every shape" is every
-//      surface, and no firefly blocks it, as none blocks the shadow ray it
-//      stands in for. The walk runs the intersector on the shapes' opaque
-//      meshes, as every other trace does (acceleration/trace.metal.h), no
-//      intersection function and no intersection query, which would turn
-//      off the reorder stage for the whole kernel (Apple, tech talk
-//      111375). A caster is found by its mesh, its crossings by its
-//      sphere: a segment that grazes the sphere within the mesh's gap
-//      (core/shapes/mesh_levels.h, a thirtieth of a pixel) and misses the
-//      mesh finds no crossing there.
+//   1. Seed (seed_segment()): one traversal along x0 -> y of the
+//      occluders' boxes (acceleration/structure_block.h, seed_boxes), its
+//      intersection function (mnee_seed.metal, seed_candidate()) run for
+//      every box the segment enters, none committed: each caster sphere's
+//      exact crossings within the segment, by its own roots, sorted in, at
+//      most max_interfaces (more refuses the seed), once however often its
+//      box is entered; any other shape on it, by its exact test, marks the
+//      segment blocked. No crossing and not blocked: the segment is clear,
+//      the caller's ordinary next event estimation. Other shapes do not
+//      stop the seed (Cycles: the solved path may pass where the straight
+//      one is blocked); its visibility is tested once solved (step 4). The
+//      seed, as the solved chain's segments (step 4), carries the
+//      occluders (contract 19): "every shape" is every surface, and no
+//      firefly blocks it, as none blocks the shadow ray it stands in for.
+//      Cycles walks the segment by nearest hits instead, one traversal from
+//      the top a hit (kernel_path_mnee_sample); built so here, it measured
+//      3.3 ms slower at 3456 x 2234 on the marbles, whose segments cross
+//      piles of them (docs/research/2026-10-23-apple-silicon-design.md,
+//      section 6, change 1). Apple asks for intersection functions "only on
+//      geometries that need them": a question every shape on a segment
+//      answers needs one, and the M3 gathers them into coherent SIMD
+//      groups (tech talk 111375). The CUDA backend's seed, the same.
 //   2. Solve (newton()): Cycles' walk, the constraint at crossing i the
 //      generalized half vector H = -(w_i + eta w_o) projected on the
 //      surface's tangent plane (eta the index past the crossing over the
@@ -148,11 +146,9 @@
 // SIMD group: the path pass took 124 ms at 3456 x 2234 against 30 without
 // MNEE; with the list, 59 (docs/research/2026-10-12-mnee.md).
 //
-// Cost: step 1 is a walk of nearest hits in place of the shadow ray, one
-// trace for a clear segment and one more for each surface of a mesh it
-// crosses (three through one marble), at most walk_most_hits, rather than
-// stopping at the first blocker; how many a thread walks varies across a
-// SIMD group, which waits for its longest (GPU.4), as Cycles' does; a request
+// Cost: step 1 is one traversal of the occluders' boxes in place of the
+// shadow ray, its intersection function run for each box the segment
+// enters rather than stopping at the first blocker; a request
 // is 128 bytes written and read. Per request, per iteration: max_interfaces
 // blocks of a few dozen multiply-adds and three normalizations each, a 2 x
 // 2 inverse and one sphere's roots a crossing; at most 64 iterations, about
@@ -174,6 +170,7 @@
 #include "core/contracts/mnee_request.h"
 #include "core/contracts/surface_interaction.h"
 #include "core/materials/material.h"
+#include "core/scene/scene_block.h"
 #include "core/shapes/primitive.h"
 #include "metal/acceleration/trace.metal.h"
 #include "metal/device/append.metal.h"
@@ -201,7 +198,6 @@ namespace mnee {
 constant constexpr uint max_interfaces =
     serenity::contracts::mnee_most_crossings;
 constant constexpr uint max_iterations = 64u;
-constant constexpr uint walk_most_hits = 10u;  // the seed's (step 1)
 constant constexpr float solver_threshold = 1.0e-3f;
 constant constexpr float least_step = 1.0e-4f;
 constant constexpr float first_step = 0.1f;
@@ -337,7 +333,7 @@ inline bool add_crossings(thread Seed& seed, float3 origin, float3 direction,
                           float distance, Caster caster) {
   const Roots crossings = sphere_roots(origin, direction, caster);
   if (!crossings.found) {
-    return true;  // the mesh met within its gap of the sphere (above)
+    return true;  // its box entered, its sphere missed
   }
   for (uint r = 0u; r < 2u; ++r) {
     const float t = r == 0u ? crossings.near : crossings.far;
@@ -358,39 +354,78 @@ inline bool add_crossings(thread Seed& seed, float3 origin, float3 direction,
   return true;
 }
 
-// Step 1: the crossings of caster spheres along `direction` (unit) from
-// `origin` within `distance`, among the occluders (contract 19), so the
-// light's own shape is never met.
-template <typename SceneT>
-inline Seed seed_segment(SceneT scene, float3 origin, float3 direction,
-                         float distance) {
-  Seed seed{};
-  seed.usable = true;
-  const Shapes shapes = scene.shapes();
-  const Materials materials = scene.materials();
-  metal::raytracing::ray probe(origin, direction, 0.0f, distance);
-  for (uint walked = 0u; walked < walk_most_hits && seed.usable; ++walked) {
-    const Hit hit = trace(scene.structure, shapes, probe,
-                          serenity::contracts::RayMask::occluders);
-    if (!hit.found) {
-      break;  // the segment's end
-    }
-    const CasterAt at = caster_at(shapes, materials, hit.primitive);
-    if (at.is_caster) {
-      if (!seeded(seed, hit.primitive)) {
-        seed.usable =
-            add_crossings(seed, origin, direction, distance, at.caster);
-      }
-    } else {
+// Step 1's state as the seed's traversal carries it, its payload (Metal's
+// ray_data): the scene's arrays, as the intersection function reads them,
+// the segment, and the seed so far.
+struct SeedQuery {
+  constant serenity::gpu::SceneBlock* block;
+  constant serenity::contracts::Transform* transforms;
+  float3 origin;
+  float3 direction;
+  float distance;
+  Seed seed;
+};
+
+// The intersection function's work for the box of `shape` the segment
+// enters (mnee_seed.metal): a caster's crossings, once, however often its
+// box is entered; another shape on the segment, by its exact test, marks
+// it blocked; glass that is no sphere, or more crossings than the solve
+// takes, refuses the seed. Whether the traversal stops here.
+inline bool seed_candidate(ray_data SeedQuery& query, uint shape) {
+  Seed seed = query.seed;
+  if (seeded(seed, shape)) {
+    return false;  // its crossings are in already
+  }
+  const Shapes shapes{query.block->shapes, query.transforms,
+                      query.block->boxes};
+  const Materials materials{query.block->materials, query.block->roughs,
+                            query.block->dielectrics, query.block->conductors,
+                            query.block->coateds};
+  const metal::raytracing::ray segment(query.origin, query.direction, 0.0f,
+                                       query.distance);
+  const CasterAt at = caster_at(shapes, materials, shape);
+  bool stop = false;
+  if (!at.is_caster) {
+    if ((at.dielectric || !seed.blocked) &&
+        intersect_shape(shapes, shape, segment).found) {
       // glass with no smooth normal: no seed through it (above)
       seed.usable = !at.dielectric;
       seed.blocked = true;
+      stop = at.dielectric;
     }
-    // Cycles' intersection_t_offset: the next float past the hit.
-    probe.min_distance = metal::nextafter(hit.t, distance);
+  } else if (!add_crossings(seed, query.origin, query.direction, query.distance,
+                            at.caster)) {
+    seed.usable = false;  // more crossings than the solve takes (above)
+    seed.blocked = true;
+    stop = true;
   }
-  seed.blocked = seed.blocked || !seed.usable;
-  return seed;
+  query.seed = seed;
+  return stop;
+}
+
+// Step 1: the crossings of caster spheres along `direction` (unit) from
+// `origin` within `distance`, among the occluders (contract 19), so the
+// light's own shape is never met: one traversal of the occluders' boxes,
+// its intersection function seed_candidate() for each box entered, through
+// the kernel's table of it, `functions` (mnee_seed.metal).
+template <typename SceneT>
+inline Seed seed_segment(
+    SceneT scene, metal::raytracing::intersection_function_table<> functions,
+    float3 origin, float3 direction, float distance) {
+  using namespace metal::raytracing;
+  SeedQuery query{scene.block, scene.transforms, origin,
+                  direction,   distance,         Seed{}};
+  query.seed.usable = true;
+  if (scene.structure->occluder_count == 0u) {
+    return query.seed;  // no surface: clear
+  }
+  intersector<> boxes;
+  boxes.assume_geometry_type(geometry_type::bounding_box);
+  // the first box the function accepts ends the traversal: where it stops
+  boxes.accept_any_intersection(true);
+  (void)boxes.intersect(ray(origin, direction, 0.0f, distance),
+                        scene.structure->seed_boxes, functions, query);
+  return query.seed;
 }
 
 // A crossing's differential geometry (Cycles' ManifoldVertex, a sphere's):
@@ -801,15 +836,14 @@ inline float geometry_term(uint count, thread const float3* p,
 // off the surface it leaves, on the segment's side) to `to` is shape
 // `shape`, a caster, within `tolerance` of `to`. Among the surfaces alone
 // (contract 19, the occluders): the chain's visibility, as a shadow ray's.
-inline bool reaches(SceneStructure structure, Shapes shapes, float3 origin,
+inline bool reaches(SceneStructure structure, Shapes /*shapes*/, float3 origin,
                     float3 to, uint shape, float tolerance) {
   const float length = metal::distance(origin, to);
   const float3 d = (to - origin) / length;
-  const Hit hit =
-      trace(structure, shapes,
-            metal::raytracing::ray(origin, d, 0.0f, length + tolerance),
-            serenity::contracts::RayMask::occluders);
-  return hit.found && hit.primitive == shape &&
+  // its distance and shape alone (acceleration/trace.metal.h, Met)
+  const Met hit = nearest_occluder(
+      structure, metal::raytracing::ray(origin, d, 0.0f, length + tolerance));
+  return hit.found && hit.shape == shape &&
          metal::abs(hit.t - length) <= tolerance;
 }
 

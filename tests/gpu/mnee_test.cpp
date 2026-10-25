@@ -540,10 +540,12 @@ TEST_CASE(
       segment({0.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, 3.0),
   };
   const auto count = static_cast<std::uint32_t>(segments.size());
-  const std::vector<tests::SeedFound> seeds = tests::run_traced<tests::SeedFound>(
-      traced, "seed_probe", segments.size(),
-      {Binding::of(segments), Binding::of(count),
-       Binding::of(traced.buffers().block())});
+  const std::vector<tests::SeedFound> seeds =
+      tests::run_traced<tests::SeedFound>(
+          traced, "seed_probe", segments.size(),
+          {Binding::of(segments), Binding::of(count),
+           Binding::of(traced.buffers().block())},
+          std::nullopt, tests::Seeding::mnee);
   REQUIRE(seeds.size() == segments.size());
   // The crossings are the spheres' own roots, not their meshes' hits.
   constexpr float tolerance = 1e-5f;

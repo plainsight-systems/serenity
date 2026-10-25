@@ -99,6 +99,7 @@ serenity_add_metallib(
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/restir_pt_probe.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/mnee_probe.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/seed_probe.metal"
+            "${PROJECT_SOURCE_DIR}/src/metal/integrator/mnee_seed.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/kernels/reuse_constants_probe.metal"
     INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/src")
 

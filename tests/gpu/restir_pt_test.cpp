@@ -68,6 +68,7 @@
 #include "metal/device/offscreen.h"
 #include "metal/device/submission.h"
 #include "metal/frame/renderer.h"
+#include "metal/passes/restir_pt_initial/restir_pt_initial.h"
 #include "metal/scene/light_glows.h"
 #include "metal/scene/scene_buffers.h"
 #include "metal/scene/shape_transforms.h"
@@ -362,7 +363,15 @@ std::vector<tests::ShiftResult> shift(
       device, submission, description.shapes,
       {.moving = {}, .lights = lights, .levels = levels});
   metal::Library library(device, metallib::probes);
-  const auto pipeline = library.compute_pipeline("pt_shift");
+  // The trees seed MNEE as the initial pass does: its intersection
+  // function linked, its table kept resident.
+  const auto pipeline = library.compute_pipeline(
+      "pt_shift",
+      {.intersection_functions = metal::seed_intersection_functions});
+  const auto seed_functions = library.intersection_table(
+      pipeline.get(), metal::seed_intersection_functions);
+  const metal::Resident seed_resident =
+      submission.keep_resident(seed_functions.get());
   const auto fill = library.compute_pipeline("pt_light_tiles");
   const auto power = library.compute_pipeline("pt_light_power");
   const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -398,7 +407,7 @@ std::vector<tests::ShiftResult> shift(
       buffer_of(tests::Binding::zeroed(contracts::mnee_header_bytes));
   auto descriptor =
       NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-  descriptor->setMaxBufferBindCount(13);
+  descriptor->setMaxBufferBindCount(14);
   NS::Error* error = nullptr;
   auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
   REQUIRE(table);
@@ -418,6 +427,7 @@ std::vector<tests::ShiftResult> shift(
   table->setAddress(mnee_header->gpuAddress(), 10);
   table->setAddress(mnee_header->gpuAddress(), 11);
   table->setAddress(pyramid->gpuAddress(), 12);
+  table->setResource(seed_functions->gpuResourceID(), 13);
   encoder->setArgumentTable(table.get());
   encoder->setComputePipelineState(power.get());
   encoder->dispatchThreadgroups(

@@ -641,19 +641,21 @@ MNEE's seed a walk of nearest hits through it, as Cycles' seed is.
 | the intersector's nearest hit by mask and its any-hit shadow test; a hit's shape and point and normal from its triangle, in the world on a still structure | Acceleration | `src/metal/acceleration/trace.metal.h` |
 | a hit's shape placed with its mesh's placement; contract 1 from a hit's triangle, the shading normal the shape's own | Shape | `src/metal/shapes/shapes.metal.h` |
 | a shape's instance transform, its mesh's placement after its own, for every backend | Acceleration | `src/core/shapes/shape_meshes.{h,cpp}` (`compose()`, `instance_transform()`) |
-| MNEE's seed, a walk of at most 10 nearest hits along the segment (Cycles' `kernel_path_mnee_sample`) | Integrator | `src/metal/integrator/mnee.metal.h` (`seed_segment()`) |
+| MNEE's seed, one traversal of the occluders' boxes, its intersection function visiting every box the segment enters (the CUDA backend's design); the occluders' box structure, each box's shape its per-primitive data | Integrator, Acceleration | `src/metal/integrator/mnee.metal.h` (`seed_segment()`, `seed_candidate()`), `mnee_seed.metal`, new; `src/metal/acceleration/{scene_acceleration.{h,cpp},structure_block.h}` |
+| a pipeline's linked intersection functions and their table; the initial pass's table, made once, resident, bound | GPU backend, Pass | `src/metal/device/library.{h,cpp}` (`PipelineOptions::intersection_functions`, `intersection_table()`), `src/metal/passes/restir_pt_initial/`, `src/metal/passes/{bindings.h,restir_pt/restir_pt.metal.h}` |
+| a distance-and-shape nearest hit for MNEE's visibility | Acceleration | `src/metal/acceleration/trace.metal.h` (`nearest_occluder()`) |
 | the trace sites taking the hit's point; the shadow tests with no shape to ignore; the shift's normals the shading normal on both backends (`surface_normal()`) | Integrator, Pass | `src/metal/integrator/{path,nee,shift}.metal.h`, `src/metal/passes/{features/features.metal,restir_pt/restir_pt.metal.h}`; `src/cuda/integrator/{shift,nee,mnee,path}.cuh`, `src/cuda/passes/restir_pt/restir_pt.cuh`, `src/cuda/acceleration/trace.cuh` |
 | the levels handed to the structure, the scene refused where a sphere has none | Frame graph | `src/metal/frame/renderer.cpp` |
 | the probes' hit gap, parts and shadow tests | tests | `tests/gpu/support/traced_probe.h`, `acceleration_test.cpp`, `leave_test.cpp`, `restir_pt_test.cpp`, `kernels/{trace,leave}_probe.{h,metal}`, `tests/cuda/kernels/traced_probes.cu` |
-| MNEE's seed checked on both backends, each its own way, by one test | tests | `tests/gpu/mnee_test.cpp`, `kernels/seed_probe.{h,metal}`, `tests/cuda/kernels/traced_probes.cu` |
+| MNEE's seed checked on both backends by one test; the tracing harnesses' `Seeding` (Metal's links the seed's function and binds its table); the shift probe's table | tests | `tests/gpu/mnee_test.cpp`, `kernels/seed_probe.{h,metal}`, `tests/{gpu,cuda}/support/traced_probe.h`, `tests/cuda/kernels/traced_probes.cu`, `tests/gpu/{restir_pt_test.cpp,kernels/restir_pt_probe.metal}`, `tests/gpu/CMakeLists.txt` |
 | 64 threads a group, as Cycles' on the M3: a pipeline built for a group size, a per-pixel dispatch's group square (8 x 8) | GPU backend | `src/metal/device/library.{h,cpp}` (`PipelineOptions`), `src/metal/device/support.{h,cpp}` (`apple_group_threads`, `dispatch_per_pixel()`) |
 | each per-pixel and list kernel's pipeline built for 64-thread groups | Pass | `src/metal/passes/{checkerboard_fill,denoise,depth_of_field,features,mnee,path,restir_pt,restir_pt_initial,restir_pt_shade,test_pattern,tone_map}/*.cpp` |
 | the run's path reuse settings as function constants, as Cycles specializes by its KernelData: each field's index, the host's values, the shader's declarations | Pass | `src/metal/passes/restir_pt/reuse_constants.{h,cpp}`, `reuse_constants.metal.h`, new |
 | ReSTIR PT's kernels specialized by them in place of a settings buffer; their passes built with the run's settings, derived once | Pass, Frame graph | `src/metal/passes/restir_pt*/`, `src/metal/passes/bindings.h`, `src/metal/frame/{renderer.{h,cpp},frame_resources.h}` |
 | the constants carry every field at its own index; the probe runner builds a pipeline with options | tests | `tests/gpu/reuse_constants_test.cpp`, `kernels/reuse_constants_probe.metal`, `support/probe_runner.h` |
 
-The occluders' box structure, its shape table and the intersection query
-over it are removed from the Metal backend.
+The intersection query is removed from the Metal backend; the occluders'
+box structure stays, for MNEE's seed alone.
 
 ## Not here yet
 

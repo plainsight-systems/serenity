@@ -40,6 +40,7 @@ inline void initial_pixel(
     const device float* light_power,
     device serenity::contracts::Float3* previous_positions,
     constant serenity::contracts::Transform* last_transforms, mnee::Queue queue,
+    metal::raytracing::intersection_function_table<> seed_functions,
     uint2 grid_place) {
   const restir_pt::Traced traced = restir_pt::traced(frame, settings);
   const uint2 pixel = traced.pixel(grid_place);
@@ -58,7 +59,8 @@ inline void initial_pixel(
   const bool temporal = settings.confidence_cap > 0.0f;
   restir_pt::TreeGather tree = restir_pt::start_tree(
       settings, numbers, scene.shapes(),
-      restir_pt::block_tile(tiles, pixel, frame.frame_index), queue, i);
+      restir_pt::block_tile(tiles, pixel, frame.frame_index), queue, i,
+      seed_functions);
   (void)path::walk_path(scene, path::walk_from(ray), numbers, tree);
   reservoirs[i] = restir_pt::finish_tree(tree);
   primaries[i] = tree.primary;
@@ -94,13 +96,16 @@ kernel void restir_pt_initial(
     device serenity::contracts::MneeRequest* mnee_requests
     [[buffer(binding::mnee_requests)]],
     device atomic_uint* mnee_header [[buffer(binding::mnee_header)]],
+    metal::raytracing::intersection_function_table<> seed_functions
+    [[buffer(binding::seed_functions)]],
     uint2 grid_place [[thread_position_in_grid]]) {
   // the run's, the pipeline's constants (reuse_constants.h)
   const serenity::contracts::PathReuseSettings settings = reuse_settings();
   initial_pixel(frame, camera, structure, block, sphere_glows, transforms,
                 settings, reservoirs, primaries, light, tiles, light_power,
                 previous_positions, last_transforms,
-                mnee::Queue{mnee_requests, mnee_header}, grid_place);
+                mnee::Queue{mnee_requests, mnee_header}, seed_functions,
+                grid_place);
 }
 
 // The frame's power pyramid (contracts/light_tile.h), by one threadgroup of

@@ -58,9 +58,20 @@ namespace serenity::metal {
 //   - each built once at construction for fast intersection and compacted
 //     (GPU.9: long-lived, built once; the compacted copy kept, the build's
 //     memory let go);
-//   - the instance structure, the one every ray traces, manifold next
-//     event estimation's seed among them (a walk of nearest hits, as
-//     Cycles' seed is: integrator/mnee.metal.h, seed_segment): each still
+//   - the occluders' boxes, a primitive structure of bounding boxes, the
+//     core's plan of them (core/shapes/structure_plan.h), each box's shape
+//     its per-primitive data: manifold next event estimation's seed
+//     traverses it once a segment, its one intersection function visiting
+//     every box the segment enters (integrator/mnee.metal.h,
+//     seed_segment; mnee_seed.metal), as the CUDA backend's seed does;
+//     every shape's in a scene with no light. A walk of nearest hits
+//     through the instance structure, Blender Cycles' seed, measured 3.3
+//     ms slower at 3456 x 2234 on the marbles, whose segments cross piles
+//     of marbles, each hit a traversal from the top (docs/research/
+//     2026-10-23-apple-silicon-design.md, section 6, change 1); Apple asks
+//     for intersection functions "only on geometries that need them", and
+//     a question every shape on a segment answers is one;
+//   - the instance structure, the one every other ray traces: each still
 //     structure an instance at the identity, its user id still_instance;
 //     then each instanced shape an instance of its mesh, its user id the
 //     shape's index, placed by its transform after its mesh's placement
@@ -87,8 +98,10 @@ namespace serenity::metal {
 // A frame where shapes move, update(), at the start of the frame's encoder:
 //
 //   1. the moving shapes' instances placed by the frame's transforms into
-//      the slot's instances (a FrameArray, frame_array.h);
-//   2. the slot's instance structure rebuilt over every instance;
+//      the slot's instances (a FrameArray, frame_array.h), and the seed's
+//      boxes, where they move (shapes::place_moving);
+//   2. the seed's structure rebuilt where it moves, and the slot's
+//      instance structure rebuilt over every instance;
 //   3. one barrier from the acceleration-structure stage to the dispatch
 //      stage, so every pass traces the finished structure (GPU.7).
 //
@@ -105,8 +118,8 @@ namespace serenity::metal {
 //
 // Made once, outside the frame loop: every buffer, structure and descriptor
 // at construction, so a frame allocates nothing (MEM.9); per frame, one
-// instance descriptor written per moving shape on the CPU, and one build
-// and one barrier on the GPU.
+// instance descriptor written per moving shape on the CPU, and one or two
+// builds and one barrier on the GPU.
 //
 // Last frame's structure is not kept: every frame traces its own. ReSTIR
 // PT's shift to last frame's pixel traces this frame's (metal/passes/
@@ -181,6 +194,22 @@ class SceneAcceleration {
     std::vector<std::array<std::uint32_t, 3>> triangles;
     std::vector<gpu::MeshTriangle> data;
   };
+  // The seed's boxes: the core's plan of the occluders, their boxes a
+  // slot (one when none moves), each box's shape (its per-primitive data),
+  // and a structure a slot (one when none moves).
+  struct Seeds {
+    shapes::TreePlan plan;
+    std::unique_ptr<FrameArray> boxes;
+    std::unique_ptr<StaticArrays> shapes;
+    std::array<NS::SharedPtr<MTL4::PrimitiveAccelerationStructureDescriptor>,
+               frames_in_flight>
+        descriptors;
+    std::array<Built, frames_in_flight> structures;
+    bool moves() const { return plan.moves(); }
+    const Built& in(std::uint32_t slot) const {
+      return moves() ? structures.at(slot) : structures[0];
+    }
+  };
   // The core's meshes, each made once on the host while the structures
   // are built.
   struct MeshCache {
@@ -199,6 +228,10 @@ class SceneAcceleration {
   // compacted in start-up submissions.
   void make_meshes(const Device& device, Submission& submission,
                    std::span<const MeshArrays> made);
+  // The seed's boxes, their descriptors and structures; a still one's
+  // scratch added to `build_only` for the start-up build.
+  void make_seeds(const Device& device, Submission& submission,
+                  shapes::TreePlan plan, MTL::ResidencySet* build_only);
   // Instance `instance`, shape `shape`'s, placed by `transform`.
   void place(std::uint32_t instance, std::uint32_t shape,
              const contracts::Transform& transform,
@@ -224,6 +257,7 @@ class SceneAcceleration {
       tops_descriptors_;
   std::array<Built, frames_in_flight> tops_;
   bool moves_ = false;
+  std::optional<Seeds> seeds_;  // none in a scene of lights alone
   // one StructureBlock, one per slot when anything moves
   std::unique_ptr<FrameArray> blocks_;
 };

@@ -8,23 +8,29 @@
 // way of putting an acceleration structure in an argument buffer: the host
 // writes its gpuResourceID, 64 bits, where the shader reads an
 // acceleration structure (Metal Shading Language, 2.17). InstanceStructure
-// picks each side's type, a type alias rather than a macro (ES.30), as
-// core/scene/scene_block.h does.
+// and BoxStructure pick each side's type, type aliases rather than macros
+// (ES.30), as core/scene/scene_block.h does.
 //
 //   scene           the instance structure over every shape's triangle
 //                   mesh, instance i shape i, each carrying the mask bits
 //                   of the questions it answers (everything_bit,
 //                   occluder_bit: contract 19), traced by the intersector
-//                   in hardware, MNEE's seed among its rays
-//                   (docs/research/2026-10-23-apple-silicon-design.md,
-//                   section 6, change 1).
+//                   in hardware (docs/research/2026-10-23-apple-silicon-
+//                   design.md, section 6, change 1).
+//   seed_boxes      the occluders' bounding boxes, a primitive structure
+//                   whose box i's per-primitive data is its shape's index:
+//                   manifold next event estimation's seed traverses it
+//                   once a segment, its intersection function visiting
+//                   every box the segment enters (integrator/
+//                   mnee.metal.h, seed_segment(); mnee_seed.metal). With no
+//                   light, every shape's; with no surface, never traced.
 //   occluder_count  how many shapes carry occluder_bit: none, and a shadow
 //                   ray or the seed is not traced.
 //
-// The constant address space: 16 bytes every thread of every tracing pass
+// The constant address space: 24 bytes every thread of every tracing pass
 // reads before its traces, the same for all of them, the reuse that space
 // is for (metal/scene/scene_block.metal.h, WWDC16 606). Fields largest
-// first (CACHE.5), padded to 16 so the size is one statement on both
+// first (CACHE.5), padded to 24 so the size is one statement on both
 // sides. Written once a slot: at construction, and never again, since each
 // slot's structure stays the same object however often it is rebuilt
 // (scene_acceleration.h).
@@ -43,8 +49,10 @@ namespace gpu {
 
 #if defined(__METAL_VERSION__)
 using InstanceStructure = metal::raytracing::instance_acceleration_structure;
+using BoxStructure = metal::raytracing::primitive_acceleration_structure;
 #else
 using InstanceStructure = std::uint64_t;  // the structure's gpuResourceID
+using BoxStructure = std::uint64_t;       // the structure's gpuResourceID
 #endif
 
 // The instances' mask bits (contract 19): every shape carries
@@ -69,14 +77,15 @@ inline constexpr uint32_t still_instance = 0xffffffffu;
 
 struct StructureBlock {
   InstanceStructure scene;
+  BoxStructure seed_boxes;
   uint32_t occluder_count;
   uint32_t padding;
 };
 
 static_assert(
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
-    sizeof(StructureBlock) == 16,
-    "StructureBlock must be the same 16 bytes on the host and in shaders");
+    sizeof(StructureBlock) == 24,
+    "StructureBlock must be the same 24 bytes on the host and in shaders");
 
 // A triangle as a structure keeps it beside the hardware's own copy,
 // Metal's per-primitive data (MTL4::AccelerationStructureTriangleGeometry

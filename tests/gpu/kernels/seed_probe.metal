@@ -6,8 +6,10 @@
 // the same name (tests/cuda/kernels/traced_probes.cu) seeds the same
 // segments its own way, so the one test checks both. Bindings: the output
 // at 0, then the segments, their count, the scene's block, the structures'
-// block, and the shapes' records, transforms and boxes (seed_probe.h,
-// support/traced_probe.h).
+// block, the shapes' records, transforms and boxes, and the table of the
+// seed's intersection function (seed_probe.h, support/traced_probe.h); the
+// seed reads the records and boxes through the scene's block, so the
+// kernel declares neither.
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -28,40 +30,35 @@ using serenity::tests::SeedSegment;
 
 namespace {
 
-// What seed_segment() reads of a scene: the structures, the shapes and the
-// materials (scene/scene_block.metal.h's SceneView, without what the seed
-// does not read).
+// What seed_segment() reads of a scene: the structures, the scene's block
+// and the shapes' transforms (scene/scene_block.metal.h's SceneView, without
+// what the seed does not read).
 struct SeedScene {
   SceneStructure structure;
-  Shapes traced;
-  Materials kinds;
-  Shapes shapes() const { return traced; }
-  Materials materials() const { return kinds; }
+  constant serenity::gpu::SceneBlock* block;
+  constant serenity::contracts::Transform* transforms;
 };
 
 }  // namespace
 
-kernel void seed_probe(device SeedFound* out [[buffer(0)]],
-                       device const SeedSegment* segments [[buffer(1)]],
-                       constant uint& count [[buffer(2)]],
-                       constant serenity::gpu::SceneBlock& block [[buffer(3)]],
-                       SceneStructure structure [[buffer(4)]],
-                       constant serenity::shapes::ShapeRecord* records
-                       [[buffer(5)]],
-                       constant serenity::contracts::Transform* transforms
-                       [[buffer(6)]],
-                       constant serenity::shapes::BoxData* boxes [[buffer(7)]],
-                       uint i [[thread_position_in_grid]]) {
+kernel void seed_probe(
+    device SeedFound* out [[buffer(0)]],
+    device const SeedSegment* segments [[buffer(1)]],
+    constant uint& count [[buffer(2)]],
+    constant serenity::gpu::SceneBlock& block [[buffer(3)]],
+    SceneStructure structure [[buffer(4)]],
+    constant serenity::contracts::Transform* transforms [[buffer(6)]],
+    metal::raytracing::intersection_function_table<> seed_functions
+    [[buffer(8)]],
+    uint i [[thread_position_in_grid]]) {
   if (i >= count) {
     return;
   }
-  const SeedScene scene{
-      structure, Shapes{records, transforms, boxes},
-      Materials{block.materials, block.roughs, block.dielectrics,
-                block.conductors, block.coateds}};
+  const SeedScene scene{structure, &block, transforms};
   const SeedSegment s = segments[i];
-  const mnee::Seed seed = mnee::seed_segment(
-      scene, to_float3(s.origin), to_float3(s.direction), s.distance);
+  const mnee::Seed seed =
+      mnee::seed_segment(scene, seed_functions, to_float3(s.origin),
+                         to_float3(s.direction), s.distance);
   SeedFound found{};
   found.count = seed.count;
   found.blocked = seed.blocked ? 1u : 0u;

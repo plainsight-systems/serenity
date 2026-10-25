@@ -465,9 +465,10 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
                  made(schedule.tone_map, "tone map settings")}});
         break;
       case frame::PassKind::restir_pt_initial:
-        steps_.push_back(
-            Step{kind, Pass{std::in_place_type<RestirPtInitialPass>, library_,
-                            run_reuse_settings(schedule, feeds_network_)}});
+        steps_.push_back(Step{
+            kind,
+            Pass{std::in_place_type<RestirPtInitialPass>, library_, submission_,
+                 run_reuse_settings(schedule, feeds_network_)}});
         break;
       case frame::PassKind::restir_pt_spatial:
         steps_.push_back(

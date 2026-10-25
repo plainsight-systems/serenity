@@ -401,10 +401,12 @@ struct TreeGather {
   float3 suffix;
   // The main path's chain since its last diffuse bounce
   // (mnee::chain_after(); above, "Manifold next event estimation"); MNEE's
-  // work list and the pixel its requests are for.
+  // work list and the pixel its requests are for; the kernel's table of
+  // the seed's intersection function (mnee::seed_segment()).
   uint chain;
   mnee::Queue queue;
   uint pixel;
+  metal::raytracing::intersection_function_table<> seed_functions;
 
   // Step 2: a candidate, kept or not by the pick (reservoir.metal.h).
   [[gnu::always_inline]] void offer(float3 integrand, float contribution_weight,
@@ -618,8 +620,8 @@ struct TreeGather {
       // along the solved chain, weighed by W_RIS, into the pixel's
       // light, not resampled (above, "Manifold next event
       // estimation").
-      const mnee::Seed seed =
-          mnee::seed_segment(scene, origin, wi, kept.sample.distance);
+      const mnee::Seed seed = mnee::seed_segment(scene, seed_functions, origin,
+                                                 wi, kept.sample.distance);
       if (seed.count != 0u) {
         if (seed.usable) {
           // Where the list is full, counted lost by the MNEE pass
@@ -754,10 +756,12 @@ struct TreeGather {
 inline TreeGather start_tree(
     serenity::contracts::PathReuseSettings settings, PathNumbers stream,
     Shapes shapes, const device serenity::contracts::LightTileEntry* tile,
-    mnee::Queue queue, uint pixel) {
+    mnee::Queue queue, uint pixel,
+    metal::raytracing::intersection_function_table<> seed_functions) {
   TreeGather tree{};
   tree.settings = settings;
   tree.queue = queue;
+  tree.seed_functions = seed_functions;
   tree.pixel = pixel;
   tree.stream = stream;
   tree.shapes = shapes;

@@ -119,7 +119,8 @@ kernel void pt_lattice_pairing(device PairingResult* out [[buffer(0)]],
 // MNEE's work list at 10 and its header at 11, a list of capacity 0, and the
 // power pyramid the tiles were drawn from at 12: the
 // trees' MNEE requests are counted and dropped, MNEE's paths being out of
-// the path space every tree and shift samples (restir_pt.metal.h).
+// the path space every tree and shift samples (restir_pt.metal.h); the
+// table of MNEE's seed's intersection function at 13 (the initial pass's).
 kernel void pt_shift(
     device ShiftResult* out [[buffer(0)]],
     const device ShiftQuery* queries [[buffer(1)]],
@@ -134,6 +135,7 @@ kernel void pt_shift(
     device serenity::contracts::MneeRequest* mnee_requests [[buffer(10)]],
     device atomic_uint* mnee_header [[buffer(11)]],
     const device float* light_power [[buffer(12)]],
+    intersection_function_table<> seed_functions [[buffer(13)]],
     uint i [[thread_position_in_grid]]) {
   if (i >= count) {
     return;
@@ -151,10 +153,10 @@ kernel void pt_shift(
     PathNumbers numbers;
     const CameraRay ray = restir_pt::primary_ray(camera, pixel, q.frame, size,
                                                  unjittered, numbers);
-    restir_pt::TreeGather tree =
-        restir_pt::start_tree(settings, numbers, scene.shapes(),
-                              restir_pt::block_tile(tiles, pixel, q.frame),
-                              mnee::Queue{mnee_requests, mnee_header}, 0u);
+    restir_pt::TreeGather tree = restir_pt::start_tree(
+        settings, numbers, scene.shapes(),
+        restir_pt::block_tile(tiles, pixel, q.frame),
+        mnee::Queue{mnee_requests, mnee_header}, 0u, seed_functions);
     (void)path::walk_path(scene, path::walk_from(ray), numbers, tree);
     return tree;
   };

@@ -135,6 +135,13 @@ class TracedScene {
   std::map<std::string, std::unique_ptr<cuda::Pipeline>> pipelines_;
 };
 
+// Whether a probe seeds manifold next event estimation, as the initial pass
+// does: Metal's harness then links the seed's intersection function and
+// binds its table (tests/gpu/support/traced_probe.h); here nothing, the
+// tracing module holding the seed's program for every probe
+// (kernels/traced_probes.cu).
+enum class Seeding { none, mnee };
+
 // Launches `threads` threads of probe `kernel` over `traced`'s structures,
 // its output, one Out a thread, at binding 0 and `inputs` from 1, as one
 // frame; if `moved` is given, first writes them as the slot's transforms and
@@ -144,7 +151,8 @@ std::vector<Out> run_traced(
     TracedScene& traced, const char* kernel, std::size_t threads,
     std::initializer_list<Binding> inputs,
     const std::optional<std::vector<contracts::Transform>>& moved =
-        std::nullopt) {
+        std::nullopt,
+    Seeding /*seeding*/ = Seeding::none) {
   const cuda::Pipeline& pipeline = traced.pipeline(kernel);
   std::vector<cuda::DeviceBuffer> buffers;
   buffers.emplace_back(std::max<std::size_t>(threads * sizeof(Out), 1));

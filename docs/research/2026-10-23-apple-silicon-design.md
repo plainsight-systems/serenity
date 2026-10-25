@@ -213,15 +213,14 @@ every change that should not change it.
    checked against Apple's session at the user's direction); every
    sphere a mesh at the 3090's levels (a thirtieth of a pixel at 3456 x
    2234), the hit point the triangle's, the shading normal the sphere's;
-   MNEE's seed found as Cycles finds it (C3: `kernel_path_mnee_sample`),
-   a walk of nearest hits along the segment through the same instance
-   structure, at most 10 (its `MNEE_MAX_INTERSECTION_COUNT`), each
-   trace starting past the last hit, a caster's crossings taken the
-   first time its mesh is met, so no ray in the frame runs an
-   intersection function or the intersection query (corrected
-   2026-10-24 from "its own box structure with an intersection function
-   under its mask bit", the CUDA backend's design, written before
-   Cycles' seed was read); small ray payloads, which the intersector
+   MNEE's seed its own box structure with an intersection function,
+   one traversal a segment visiting every box it enters, as the CUDA
+   backend's (Apple: intersection functions "only on geometries that
+   need them"); Cycles' walk of nearest hits (C3:
+   `kernel_path_mnee_sample`, at most 10, each a traversal from the
+   top) was built first and measured 3.3 ms slower at 3456 x 2234 on the
+   marbles, whose segments cross piles of them, and is replaced (decided
+   with the user 2026-10-25); small ray payloads, which the intersector
    gives by itself (a hit is its result's distance, ids, barycentrics
    and per-primitive data, nothing carried through an intersection
    function); each ReSTIR PT pipeline specialized by function constants

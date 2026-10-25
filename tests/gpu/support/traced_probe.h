@@ -44,6 +44,7 @@
 #include "metal/device/device.h"
 #include "metal/device/library.h"
 #include "metal/device/submission.h"
+#include "metal/passes/restir_pt_initial/restir_pt_initial.h"
 #include "metal/scene/scene_buffers.h"
 #include "metal/scene/shape_transforms.h"
 
@@ -107,6 +108,13 @@ class TracedScene {
   metal::Library library_{device_, metallib::probes};
 };
 
+// Whether a probe seeds manifold next event estimation, as the initial pass
+// does: here, its pipeline then links the seed's intersection function and
+// is handed its table, bound after the shapes' boxes
+// (metal/passes/restir_pt_initial/restir_pt_initial.h). The CUDA harness
+// takes the same, its module holding the seed's program for every probe.
+enum class Seeding { none, mnee };
+
 // Dispatches `threads` threads of `kernel` over `traced`'s structure for
 // the next frame's slot, its output, one Out a thread, at binding 0 and
 // `inputs` from 1, in one command buffer; if `moved` is given, first writes
@@ -116,8 +124,22 @@ std::vector<Out> run_traced(
     TracedScene& traced, const char* kernel, std::size_t threads,
     std::initializer_list<Binding> inputs,
     const std::optional<std::vector<contracts::Transform>>& moved =
-        std::nullopt) {
-  const auto pipeline = traced.library().compute_pipeline(kernel);
+        std::nullopt,
+    Seeding seeding = Seeding::none) {
+  const bool seeds = seeding == Seeding::mnee;
+  const auto pipeline = traced.library().compute_pipeline(
+      kernel,
+      seeds ? metal::PipelineOptions{.intersection_functions =
+                                         metal::seed_intersection_functions}
+            : metal::PipelineOptions{});
+  NS::SharedPtr<MTL::IntersectionFunctionTable> seed_functions;
+  std::optional<metal::Resident> seed_resident;
+  if (seeds) {
+    seed_functions = traced.library().intersection_table(
+        pipeline.get(), metal::seed_intersection_functions);
+    seed_resident.emplace(
+        traced.submission().keep_resident(seed_functions.get()));
+  }
   const auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
   MTL::Device* mtl = traced.device().handle();
   const auto out = shared_buffer(traced.device(), traced.submission(), {},
@@ -129,7 +151,7 @@ std::vector<Out> run_traced(
   }
   auto descriptor =
       NS::TransferPtr(MTL4::ArgumentTableDescriptor::alloc()->init());
-  descriptor->setMaxBufferBindCount(1 + buffers.size() + 4);
+  descriptor->setMaxBufferBindCount(1 + buffers.size() + 4 + (seeds ? 1 : 0));
   NS::Error* error = nullptr;
   auto table = NS::TransferPtr(mtl->newArgumentTable(descriptor.get(), &error));
   INFO("argument table: " << reason(error));
@@ -153,7 +175,10 @@ std::vector<Out> run_traced(
                     index++);  // the structures by mask
   table->setAddress(traced.buffers().block().shapes, index++);
   table->setAddress(traced.transforms().address(slot.slot), index++);
-  table->setAddress(traced.buffers().block().boxes, index);
+  table->setAddress(traced.buffers().block().boxes, index++);
+  if (seeds) {
+    table->setResource(seed_functions->gpuResourceID(), index);
+  }
   encoder->setArgumentTable(table.get());
   encoder->setComputePipelineState(pipeline.get());
   encoder->dispatchThreads(MTL::Size(threads, 1, 1),

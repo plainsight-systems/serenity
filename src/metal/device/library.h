@@ -39,10 +39,13 @@ namespace serenity::metal {
 // by), 0 for as many as the device and the kernel allow; `constants`, the
 // values its kernel is specialized by, every function constant it reads
 // (passes/restir_pt/reuse_constants.h), or none for a kernel that reads
-// none. Not retained: it need only outlive the call.
+// none; `intersection_functions`, the library's intersection functions its
+// kernel traces with, by name, linked into it (Library::intersection_table()
+// makes their table). Not retained: each need only outlive the call.
 struct PipelineOptions {
   NS::UInteger group_threads = 0;
   const MTL::FunctionConstantValues* constants = nullptr;
+  std::span<const char* const> intersection_functions;
 };
 
 class Library {
@@ -63,10 +66,21 @@ class Library {
   NS::SharedPtr<MTL::ComputePipelineState> compute_pipeline(
       std::string_view function, PipelineOptions options = {}) const;
 
+  // The table of the intersection functions `functions` linked into
+  // `pipeline` (PipelineOptions), entry i the function named
+  // `functions[i]`, for its kernel to trace with. Throws MetalError if the
+  // library has no such function or Metal makes no table.
+  NS::SharedPtr<MTL::IntersectionFunctionTable> intersection_table(
+      MTL::ComputePipelineState* pipeline,
+      std::span<const char* const> functions) const;
+
   // Valid for the Library's lifetime; not retained for the caller.
   MTL::Library* handle() const noexcept { return library_.get(); }
 
  private:
+  // The library's function `name`; throws MetalError if it has none.
+  NS::SharedPtr<MTL::Function> function_named(const char* name) const;
+
   NS::SharedPtr<MTL::Device> device_;
   NS::SharedPtr<MTL::Library> library_;
 };

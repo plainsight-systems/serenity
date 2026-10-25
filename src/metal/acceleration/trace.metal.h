@@ -33,10 +33,10 @@
 // light (contract 19), so the light it aims at is never among what it can
 // meet: occluded() takes no shape to ignore, and no mask.
 //
-// Manifold next event estimation's seed is a walk of trace()'s nearest
-// hits among the occluders (integrator/mnee.metal.h, seed_segment), so
-// every ray in the frame is the intersector's on opaque triangles: no
-// intersection function, and no intersection query, which would turn off
+// Every ray but manifold next event estimation's seed is the intersector's
+// on opaque triangles, with no intersection function; the seed traverses
+// the occluders' boxes with one of its own (integrator/mnee.metal.h,
+// seed_segment). No ray runs the intersection query, which would turn off
 // the reorder stage for its whole kernel (Apple, tech talk 111375).
 //
 // A ray is Metal's own bundle, metal::raytracing::ray: origin, unit
@@ -83,7 +83,7 @@ struct Hit {
   float t;  // the ray's parameter: its distance, the direction being unit
   uint primitive;  // the shape, as primitive i is shape i (shapes/primitive.h)
   MeshPoint at;    // where on its mesh (shapes/shapes.metal.h)
-  uint part;  // the triangle it met, its index in its structure
+  uint part;       // the triangle it met, its index in its structure
 };
 
 // A triangle's point at barycentric weights `b` (Metal's: 1 - u - v, u, v
@@ -136,14 +136,49 @@ inline Hit trace(SceneStructure structures, Shapes shapes,
           result.primitive_data);
   const float2 b = result.triangle_barycentric_coord;
   if (result.user_instance_id == serenity::gpu::still_instance) {
-    return Hit{true, result.distance, tri.shape,
-               triangle_point(corner(tri, 0u), corner(tri, 1u),
-                              corner(tri, 2u), b),
-               result.primitive_id};
+    return Hit{
+        true, result.distance, tri.shape,
+        triangle_point(corner(tri, 0u), corner(tri, 1u), corner(tri, 2u), b),
+        result.primitive_id};
   }
   const uint shape = result.user_instance_id;
   return Hit{true, result.distance, shape, mesh_point(shapes, shape, tri, b),
              result.primitive_id};
+}
+
+// What a test of a segment's nearest shape needs of its hit and no more:
+// its distance and its shape (MNEE's chain's visibility, integrator/
+// mnee.metal.h, reaches()), with no point or normal built, Apple's least work a
+// hit (tech talk 111375).
+struct Met {
+  bool found;
+  float t;
+  uint shape;
+};
+
+// The nearest occluder along `r` (contract 19), as a walk needs it.
+inline Met nearest_occluder(SceneStructure structures,
+                            metal::raytracing::ray r) {
+  using namespace metal::raytracing;
+  if (structures->occluder_count == 0u) {
+    return Met{false, 0.0f, 0u};
+  }
+  MeshIntersector intersector;
+  intersector.assume_geometry_type(geometry_type::triangle);
+  intersector.force_opacity(forced_opacity::opaque);
+  intersector.accept_any_intersection(false);
+  const auto result =
+      intersector.intersect(r, structures->scene, serenity::gpu::occluder_bit);
+  if (result.type != intersection_type::triangle) {
+    return Met{false, 0.0f, 0u};
+  }
+  const uint shape =
+      result.user_instance_id == serenity::gpu::still_instance
+          ? static_cast<const device serenity::gpu::MeshTriangle*>(
+                result.primitive_data)
+                ->shape
+          : result.user_instance_id;
+  return Met{true, result.distance, shape};
 }
 
 // Whether any occluder lies along `r`: a shadow ray's question. It stops at

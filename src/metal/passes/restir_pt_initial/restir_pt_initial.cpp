@@ -22,12 +22,18 @@ constexpr NS::UInteger tiles_group = 256;
 }  // namespace
 
 RestirPtInitialPass::RestirPtInitialPass(
-    const Library& library, const contracts::PathReuseSettings& settings)
+    const Library& library, Submission& submission,
+    const contracts::PathReuseSettings& settings)
     : power_(library.compute_pipeline("restir_pt_light_power")),
       tiles_(library.compute_pipeline("restir_pt_light_tiles")),
       pipeline_(library.compute_pipeline(
-          "restir_pt_initial", {.group_threads = apple_group_threads,
-                                .constants = reuse_constants(settings).get()})),
+          "restir_pt_initial",
+          {.group_threads = apple_group_threads,
+           .constants = reuse_constants(settings).get(),
+           .intersection_functions = seed_intersection_functions})),
+      seed_functions_(library.intersection_table(pipeline_.get(),
+                                                 seed_intersection_functions)),
+      seed_functions_resident_(submission.keep_resident(seed_functions_.get())),
       mnee_(library) {}
 
 void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder,
@@ -71,6 +77,8 @@ void RestirPtInitialPass::record(MTL4::ComputeCommandEncoder* encoder,
                         binding::last_transforms);
   arguments->setAddress(resources.mnee_requests, binding::mnee_requests);
   arguments->setAddress(resources.mnee_header, binding::mnee_header);
+  arguments->setResource(seed_functions_->gpuResourceID(),
+                         binding::seed_functions);
   // The power pyramid, one threadgroup (contracts/light_tile.h), which the
   // tiles are drawn from (GPU.8: a write and its reader).
   encoder->setComputePipelineState(power_.get());

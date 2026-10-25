@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 #include "metal/device/error.h"
 #include "metal/device/support.h"
@@ -72,6 +73,17 @@ NS::SharedPtr<MTL::ComputePipelineState> Library::compute_pipeline(
   if (options.group_threads != 0) {
     descriptor->setMaxTotalThreadsPerThreadgroup(options.group_threads);
   }
+  if (!options.intersection_functions.empty()) {
+    std::vector<NS::SharedPtr<MTL::Function>> held;
+    std::vector<const NS::Object*> linked;
+    for (const char* linked_name : options.intersection_functions) {
+      held.push_back(function_named(linked_name));
+      linked.push_back(held.back().get());
+    }
+    auto functions = NS::TransferPtr(MTL::LinkedFunctions::alloc()->init());
+    functions->setFunctions(NS::Array::array(linked.data(), linked.size()));
+    descriptor->setLinkedFunctions(functions.get());
+  }
   auto pipeline = NS::TransferPtr(device_->newComputePipelineState(
       descriptor.get(), MTL::PipelineOptionNone, nullptr, &error));
   if (!pipeline) {
@@ -79,6 +91,40 @@ NS::SharedPtr<MTL::ComputePipelineState> Library::compute_pipeline(
                      "': " + describe(error));
   }
   return pipeline;
+}
+
+NS::SharedPtr<MTL::Function> Library::function_named(const char* name) const {
+  auto text =
+      NS::TransferPtr(NS::String::alloc()->init(name, NS::UTF8StringEncoding));
+  auto fn = NS::TransferPtr(library_->newFunction(text.get()));
+  if (!fn) {
+    throw MetalError("no function '" + std::string(name) + "' in the library");
+  }
+  return fn;
+}
+
+NS::SharedPtr<MTL::IntersectionFunctionTable> Library::intersection_table(
+    MTL::ComputePipelineState* pipeline,
+    std::span<const char* const> functions) const {
+  const auto pool = scoped_pool();
+  auto descriptor = NS::TransferPtr(
+      MTL::IntersectionFunctionTableDescriptor::alloc()->init());
+  descriptor->setFunctionCount(functions.size());
+  auto table =
+      NS::TransferPtr(pipeline->newIntersectionFunctionTable(descriptor.get()));
+  if (!table) {
+    throw MetalError("Metal made no intersection function table");
+  }
+  for (std::size_t i = 0; i < functions.size(); ++i) {
+    const auto fn = function_named(functions[i]);
+    MTL::FunctionHandle* handle = pipeline->functionHandle(fn.get());
+    if (handle == nullptr) {
+      throw MetalError("the pipeline has no intersection function '" +
+                       std::string(functions[i]) + "' linked");
+    }
+    table->setFunction(handle, i);
+  }
+  return table;
 }
 
 }  // namespace serenity::metal

@@ -19,7 +19,17 @@ namespace serenity::metal {
 
 // A structure's resource ID is the 64 bits the block holds for it
 // (structure_block.h).
+// The core's bounds are Metal's bounding boxes, byte for byte, so they are
+// written as they are: the same size, each corner at the same offset, and
+// bytes that are their value (SL.con.4).
+static_assert(sizeof(shapes::Bounds) == sizeof(MTL::AxisAlignedBoundingBox));
+static_assert(offsetof(shapes::Bounds, min) ==
+              offsetof(MTL::AxisAlignedBoundingBox, min));
+static_assert(offsetof(shapes::Bounds, max) ==
+              offsetof(MTL::AxisAlignedBoundingBox, max));
+static_assert(std::is_trivially_copyable_v<shapes::Bounds>);
 static_assert(sizeof(MTL::ResourceID) == sizeof(gpu::InstanceStructure));
+static_assert(sizeof(MTL::ResourceID) == sizeof(gpu::BoxStructure));
 static_assert(std::is_trivially_copyable_v<gpu::StructureBlock>);
 // A mesh's vertex is three packed floats, MTLAttributeFormatFloat3's; its
 // triangle three 32-bit indices, MTLIndexTypeUInt32's.
@@ -268,6 +278,54 @@ void SceneAcceleration::make_meshes(const Device& device,
   }
 }
 
+void SceneAcceleration::make_seeds(const Device& device, Submission& submission,
+                                   shapes::TreePlan plan,
+                                   MTL::ResidencySet* build_only) {
+  Seeds& seeds = seeds_.emplace();
+  seeds.plan = std::move(plan);
+  const bool moves = seeds.moves();
+  const std::size_t members = seeds.plan.members.size();
+  seeds.boxes = std::make_unique<FrameArray>(
+      device, submission, std::as_bytes(std::span(seeds.plan.at_rest)),
+      moves ? FrameArray::Copies::per_frame : FrameArray::Copies::one);
+  // Box i's shape, its per-primitive data (structure_block.h).
+  const std::array<std::span<const std::byte>, 1> shape_bytes{
+      std::as_bytes(std::span(seeds.plan.members))};
+  seeds.shapes =
+      std::make_unique<StaticArrays>(device, submission, shape_bytes);
+  MTL::Device* metal_device = device.handle();
+  const std::uint32_t structures = moves ? frames_in_flight : 1u;
+  for (std::uint32_t slot = 0; slot < structures; ++slot) {
+    auto geometry = NS::TransferPtr(
+        MTL4::AccelerationStructureBoundingBoxGeometryDescriptor::alloc()
+            ->init());
+    geometry->setBoundingBoxBuffer(MTL4::BufferRange(
+        seeds.boxes->address(slot), seeds.boxes->bytes(slot).size()));
+    geometry->setBoundingBoxCount(members);
+    geometry->setBoundingBoxStride(sizeof(shapes::Bounds));
+    geometry->setIntersectionFunctionTableOffset(0);
+    geometry->setPrimitiveDataBuffer(MTL4::BufferRange(
+        seeds.shapes->address(0), members * sizeof(std::uint32_t)));
+    geometry->setPrimitiveDataStride(sizeof(std::uint32_t));
+    geometry->setPrimitiveDataElementSize(sizeof(std::uint32_t));
+    auto& descriptor = seeds.descriptors.at(slot);
+    descriptor = NS::TransferPtr(
+        MTL4::PrimitiveAccelerationStructureDescriptor::alloc()->init());
+    const std::array<const NS::Object*, 1> geometries{geometry.get()};
+    descriptor->setGeometryDescriptors(
+        NS::Array::array(geometries.data(), geometries.size()));
+    Built& built = seeds.structures.at(slot);
+    std::tie(built.structure, built.scratch) =
+        make_structure(metal_device, descriptor.get());
+    built.structure_resident = submission.keep_resident(built.structure.get());
+    if (moves) {
+      built.scratch_resident = submission.keep_resident(built.scratch.get());
+    } else {
+      build_only->addAllocation(built.scratch.get());
+    }
+  }
+}
+
 void SceneAcceleration::place(std::uint32_t instance, std::uint32_t shape,
                               const contracts::Transform& transform,
                               std::span<Instance> instances) const {
@@ -371,6 +429,18 @@ SceneAcceleration::SceneAcceleration(const Device& device,
   const NS::SharedPtr<MTL::ResidencySet> build_only =
       residency_set(metal_device);
 
+  // The seed's boxes: the occluders' own tree; everything's in a scene with
+  // no light; none with no surface (the core's plan).
+  shapes::StructurePlan plan =
+      shapes::plan_structures(shapes, roles.moving, roles.lights);
+  if (plan.occluders) {
+    make_seeds(device, submission, std::move(*plan.occluders),
+               build_only.get());
+  } else if (!plan.occluder_table.empty()) {
+    make_seeds(device, submission, std::move(plan.everything),
+               build_only.get());
+  }
+
   // The instances at rest: each still structure once, in the world, its
   // mask its shapes' questions (structure_block.h); then each moving shape,
   // its mesh, its mask the questions it answers, its id the shape's index.
@@ -446,7 +516,11 @@ SceneAcceleration::SceneAcceleration(const Device& device,
   for (std::uint32_t slot = 0; slot < frames_in_flight; ++slot) {
     const MTL::ResourceID scene =
         tops_.at(moves_ ? slot : 0u).structure->gpuResourceID();
-    blocks.at(slot) = gpu::StructureBlock{scene._impl, occluders, 0u};
+    // with no surface, never traced (structure_block.h): the scene's
+    const MTL::ResourceID seed =
+        seeds_ ? seeds_->in(slot).structure->gpuResourceID() : scene;
+    blocks.at(slot) =
+        gpu::StructureBlock{scene._impl, seed._impl, occluders, 0u};
   }
   blocks_ = std::make_unique<FrameArray>(
       device, submission, std::as_bytes(std::span(blocks.data(), 1)),
@@ -457,17 +531,27 @@ SceneAcceleration::SceneAcceleration(const Device& device,
     }
   }
 
-  // A still instance structure, built now, in its own submission.
-  if (moves_) {
-    return;  // each slot's is built by its first update()
+  // The still structures, built now, in one submission.
+  const bool top_still = !moves_;
+  const bool seeds_still = seeds_ && !seeds_->moves();
+  if (!top_still && !seeds_still) {
+    return;  // each is built by its slot's first update()
   }
   build_only->commit();
   const FrameSlot build = submission.begin();
   build.commands->useResidencySet(build_only.get());
   MTL4::ComputeCommandEncoder* encoder = encoder_of(build);
-  encoder->buildAccelerationStructure(tops_[0].structure.get(),
-                                      tops_descriptors_[0].get(),
-                                      whole(tops_[0].scratch.get()));
+  if (seeds_still) {
+    const Built& built = seeds_->structures[0];
+    encoder->buildAccelerationStructure(built.structure.get(),
+                                        seeds_->descriptors[0].get(),
+                                        whole(built.scratch.get()));
+  }
+  if (top_still) {
+    encoder->buildAccelerationStructure(tops_[0].structure.get(),
+                                        tops_descriptors_[0].get(),
+                                        whole(tops_[0].scratch.get()));
+  }
   encoder->endEncoding();
   submission.commit();
   // Start-up work, not a frame: waited for here, so the structures are
@@ -475,7 +559,12 @@ SceneAcceleration::SceneAcceleration(const Device& device,
   // never measured as a frame (submission.h). The scratch was the builds'
   // alone: let go rather than held for the run (GPU.9).
   submission.wait_until_complete(build.sequence);
-  tops_[0].scratch.reset();
+  if (seeds_still) {
+    seeds_->structures[0].scratch.reset();
+  }
+  if (top_still) {
+    tops_[0].scratch.reset();
+  }
 }
 
 void SceneAcceleration::update(
@@ -492,17 +581,26 @@ void SceneAcceleration::update(
   if (transforms.size() != records_.size()) {
     throw MetalError("SceneAcceleration::update: not one transform per shape");
   }
-  // Step 1: the moving shapes' instances.
+  // Step 1: the moving shapes' instances, and the seed's moving boxes.
   const std::span<Instance> instances = instances_->view<Instance>(slot);
   for (std::size_t k = 0; k < moving_.size(); ++k) {
     place(moving_instance_[k], moving_[k], transforms[moving_[k]], instances);
   }
-  // Step 2: the instance structure, over the slot's own instances.
+  // Step 2: the seed's structure where it moves, and the instance
+  // structure, each over the slot's own copy.
+  if (seeds_ && seeds_->moves()) {
+    shapes::place_moving(seeds_->plan, transforms,
+                         seeds_->boxes->view<shapes::Bounds>(slot));
+    const Built& built = seeds_->structures.at(slot);
+    encoder->buildAccelerationStructure(built.structure.get(),
+                                        seeds_->descriptors.at(slot).get(),
+                                        whole(built.scratch.get()));
+  }
   const Built& top = tops_.at(slot);
   encoder->buildAccelerationStructure(top.structure.get(),
                                       tops_descriptors_.at(slot).get(),
                                       whole(top.scratch.get()));
-  // Step 3: every pass after it traces the finished structure.
+  // Step 3: every pass after it traces the finished structures.
   encoder->barrierAfterEncoderStages(MTL::StageAccelerationStructure,
                                      MTL::StageDispatch,
                                      MTL4::VisibilityOptionDevice);
