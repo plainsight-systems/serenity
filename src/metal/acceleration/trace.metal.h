@@ -146,6 +146,57 @@ inline Hit trace(SceneStructure structures, Shapes shapes,
              result.primitive_id};
 }
 
+// The hit `r` makes on the triangle `drawn` names of shape `shape`, known
+// to be its nearest (the features' visibility buffer: passes/features/
+// visibility.h; for an instanced shape the mesh the rasterizer drew, its
+// level this frame): the triangle re-intersected (Möller and Trumbore), in the
+// shape's own space for an instanced mesh, as the hardware intersects it,
+// through its placement's inverse (transform_inverse_linear(): a box's is
+// no similarity), in the world for a still structure's, then its point and
+// normal as trace() builds them from the barycentrics (mesh_point(),
+// triangle_point()); its t the ray's, the direction carried, not
+// renormalized. A triangle the ray meets edge on (no determinant) is no
+// hit: the rasterizer's sliver, the sky to its pixel.
+inline Hit hit_of(constant serenity::gpu::MeshBlock& meshes, Shapes shapes,
+                  metal::raytracing::ray r, uint shape, uint drawn) {
+  // A still shape's mesh is its structure's, `drawn` its triangle; an
+  // instanced shape's the mesh drawn, above the triangle in `drawn`
+  // (structure_block.h, instance_mesh_shift).
+  serenity::gpu::MeshRecord mesh = meshes.meshes[meshes.shape_mesh[shape]];
+  uint triangle = drawn;
+  if (mesh.in_world == 0u) {
+    mesh = meshes.meshes[drawn >> serenity::gpu::instance_mesh_shift];
+    triangle = drawn & serenity::gpu::instance_low_mask;
+  }
+  const device serenity::gpu::MeshTriangle& tri = mesh.triangles[triangle];
+  float3 o = r.origin;
+  float3 d = r.direction;
+  serenity::contracts::Transform placed{};
+  if (mesh.in_world == 0u) {
+    placed = instance_placement(shapes, shape);
+    o = transform_inverse_linear(placed, o - transform_translation(placed));
+    d = transform_inverse_linear(placed, d);
+  }
+  const float3 v0 = corner(tri, 0u);
+  const float3 e1 = corner(tri, 1u) - v0;
+  const float3 e2 = corner(tri, 2u) - v0;
+  const float3 p = metal::cross(d, e2);
+  const float det = metal::dot(e1, p);
+  if (!(metal::abs(det) > 0.0f)) {
+    return Hit{false, 0.0f, 0u, MeshPoint{}, 0u};
+  }
+  const float inverse = 1.0f / det;
+  const float3 s = o - v0;
+  const float3 q = metal::cross(s, e1);
+  const float2 b =
+      float2(metal::dot(s, p) * inverse, metal::dot(d, q) * inverse);
+  const float distance = metal::dot(e2, q) * inverse;
+  return Hit{true, distance, shape,
+             mesh.in_world != 0u ? triangle_point(v0, v0 + e1, v0 + e2, b)
+                                 : mesh_point(shapes, shape, tri, b),
+             triangle};
+}
+
 // What a test of a segment's nearest shape needs of its hit and no more:
 // its distance and its shape (MNEE's chain's visibility, integrator/
 // mnee.metal.h, reaches()), with no point or normal built, Apple's least work a

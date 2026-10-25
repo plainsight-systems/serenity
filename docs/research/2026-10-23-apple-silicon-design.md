@@ -243,6 +243,75 @@ every change that should not change it.
    rounds; both reuses over lists of pairs, reconnections and replays.
 5. **RTXDI's reservoir layout and the fused shade**, as on CUDA.
 
+### Change 2's design (2026-10-25)
+
+What the features need of the primary hit (contract 17,
+`core/contracts/features.h`): the surface itself, its point, normals,
+material and shape, since depth and motion are the primary point's and the
+albedo and normal continue through glass and mirrors from it by primary
+surface replacement. So the raster pass writes a **visibility buffer**, as
+Falcor's VBufferRaster does: each pixel's shape and triangle, two 32-bit
+words (RG32Uint; the sky a shape of `no_primitive`). The features kernel
+rebuilds the hit from it through the same per-primitive data `trace()` reads
+(change 1's `MeshTriangle`), so contract 1's surface has one
+implementation, and the glass and mirror rays after it are traced as now.
+Writing albedo and normal from a fragment shader, Apple's hybrid sample's
+G-buffer, would put the surface and the material resolve in a second place,
+and that sample has no replacement to continue.
+
+The hit point: the pixel's camera ray re-intersected with the identified
+triangle (Möller and Trumbore), in the shape's own space for an instanced
+shape as the hardware intersects it, in the world for a still sphere's,
+giving `t` and the barycentrics `trace()` would have; not the rasterizer's
+interpolated position nor stored barycentrics, which on the ground's 400 m
+box carry its far corners' rounding (change 1's leave test). A triangle a
+draw: each structure's index buffer drawn as built, so a fragment's
+`primitive_id` is the triangle's index in its per-primitive data; the two
+still structures one draw each, each instanced mesh one instanced draw
+over its shapes, placed in the vertex function by `instance_placement()`
+and the frame's transforms, as the instances are.
+
+The projection: the pinhole camera's own, `camera_pixel()`'s, into clip
+space with reversed infinite depth (`near / view depth`), so the
+rasterizer's sample at a pixel's center is the camera ray through that
+center; the light-size features' frame jitter (one offset every pixel,
+contract 17) moved into the projection, so that size is the light passes'
+ray exactly, as now. A graph that feeds the network traces its features
+through a pinhole (`core/frame/schedule.h`, `traced_inputs()`), so no lens
+is ever rasterized; the pass refuses a camera with one (I.5).
+
+**Levels of detail and culling, as raster engines draw:** drawn at the
+tracer's levels, change 1's meshes, the raster passes cost more than the
+traced primary hits they replace (1920 x 1080: 21.7 ms against 17.7 ms for
+change 1; without the instanced draws, 17.9 ms): the fireflies' meshes,
+12.6 of the 14.3 million placed triangles, are sized for the nearest a
+firefly comes over the film, which a ray from anywhere may see, and the
+rasterizer drew them all twice a frame. So each frame the host draws an
+instanced sphere at the coarsest level whose gap, seen from where it is
+that frame, is within the tracer's bound (the same thirtieth of a pixel,
+`core/shapes/raster_levels.h`), never finer than its tracer level, and not
+at all out of the camera's view; a mesh for each level up to the finest
+(draw-only, no structure, where the tracer has none). The entry and the
+visibility buffer carry the mesh drawn above the shape and the triangle,
+so the hit is rebuilt from the triangle rasterized, within the bound of
+the traced one; the boxes and the still structures are drawn whole.
+
+**The picture change, the user's call:** the full-size features are drawn
+with no jitter, so the traced ones take each pixel's own random point
+every frame; a rasterizer samples centers, so these become center-sampled,
+as production upscalers' output-resolution guides are ("unjittered",
+`core/frame/schedule.h`). The network was trained on the random-point
+features; shown side by side before it is kept. The light-size features
+are unchanged.
+
+Encoders: the two raster passes (light size, output size) open the
+frame's light half, each its own render encoder with a memoryless depth
+attachment (Apple's tile memory: never written out); the compute encoder
+after them starts with a barrier from the fragment stage to dispatch
+(Metal 4 tracks no hazards). The visibility buffers are per frame slot, as
+the full-size features are, so no frame's raster waits for the frame
+before's reads.
+
 ## 7. Not built, and one question for the user
 
 - MPSGraph, Open Image Denoise's own route to Apple's kernels: it encodes

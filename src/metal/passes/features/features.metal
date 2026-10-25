@@ -1,5 +1,6 @@
 // The features pass (features.h): one thread a pixel, the camera's ray the
-// light passes trace there, followed through glass and mirrors to the first
+// raster pass drew there (visibility.h), its primary hit rebuilt from the
+// visibility buffer, followed through glass and mirrors to the first
 // surface that is neither; the four feature images of contract 17
 // (core/contracts/features.h, which states every rule this file keeps).
 
@@ -20,6 +21,7 @@
 #include "metal/materials/dielectric.metal.h"
 #include "metal/math/transform.metal.h"
 #include "metal/passes/bindings.h"
+#include "metal/passes/features/visibility.h"
 #include "metal/sampler/sampler.metal.h"
 #include "metal/scene/scene_block.metal.h"
 
@@ -49,11 +51,8 @@ struct Reached {
   contracts::Bsdf bsdf;  // resolved unless `light` or not found
 };
 
-// The camera's rays and their mirrors' see the fireflies: every shape
-// (contract 19, everything).
-inline Reached reach(Scene scene, metal::raytracing::ray along) {
-  const Hit hit = trace(scene.structure, scene.shapes(), along,
-                        contracts::RayMask::everything);
+// The surface `hit` along `along` is, as the features see it.
+inline Reached reached(Scene scene, Hit hit, metal::raytracing::ray along) {
   if (!hit.found) {
     return Reached{false, float3(0.0f), contracts::SurfaceInteraction{}, false,
                    contracts::Bsdf{}};
@@ -66,6 +65,15 @@ inline Reached reach(Scene scene, metal::raytracing::ray along) {
   }
   return Reached{true, point, surface, false,
                  resolve_bsdf(scene.materials(), scene.textures(), surface)};
+}
+
+// The camera's rays and their mirrors' see the fireflies: every shape
+// (contract 19, everything).
+inline Reached reach(Scene scene, metal::raytracing::ray along) {
+  return reached(scene,
+                 trace(scene.structure, scene.shapes(), along,
+                       contracts::RayMask::everything),
+                 along);
 }
 
 // A conductor smooth enough to be a mirror to the features (contract 17).
@@ -194,22 +202,34 @@ kernel void features(
     texture2d<float, access::write> normal [[texture(binding::normal)]],
     texture2d<float, access::write> depth [[texture(binding::depth)]],
     texture2d<float, access::write> motion [[texture(binding::motion)]],
+    texture2d<uint, access::read> visibility [[texture(binding::visibility)]],
+    constant serenity::gpu::MeshBlock& meshes [[buffer(binding::mesh_block)]],
     uint2 pixel [[thread_position_in_grid]]) {
   if (pixel.x >= frame.width || pixel.y >= frame.height) {
     return;
   }
   const uint2 size = uint2(frame.width, frame.height);
   const Scene scene{structure, &block, transforms, sphere_glows};
-  // The light passes' ray at this pixel and frame: their numbers, drawn in
-  // their order (metal/passes/path/path.metal).
-  PathNumbers numbers = path_numbers(pixel, frame.frame_index);
-  const CameraRay ray =
-      pixel_ray(camera, pixel, size, frame_jitter(frame), numbers);
+  // The ray the raster pass drew at this pixel: through its center plus
+  // the frame's jitter where the frame takes it (at the light size, the
+  // light passes' ray), else its center (contract 17), a pinhole's.
+  const PixelJitter jitter = frame_jitter(frame);
+  const CameraRay ray = camera_ray(
+      camera, float2(pixel) + 0.5f + (jitter.on ? jitter.offset : float2(0.0f)),
+      float2(0.0f), size);
   const metal::raytracing::ray along(ray.origin, ray.direction, 0.0f,
                                      unbounded);
   const bool previous = constants.previous != 0u;
 
-  const Reached at = reach(scene, along);
+  // Its primary hit, the triangle the rasterizer found nearest, rebuilt as
+  // trace() builds one (acceleration/trace.metal.h, hit_of()).
+  const uint2 drawn = visibility.read(pixel).xy;
+  const Reached at =
+      drawn.x == serenity::bindings::visibility::sky_shape
+          ? reached(scene, Hit{false, 0.0f, 0u, MeshPoint{}, 0u}, along)
+          : reached(scene,
+                    hit_of(meshes, scene.shapes(), along, drawn.x, drawn.y),
+                    along);
   if (!at.found) {
     // The sky: albedo 1, no normal, no depth; its motion the camera's
     // turn alone, of the direction at infinity.

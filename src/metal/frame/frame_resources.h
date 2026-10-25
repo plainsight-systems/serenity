@@ -4,9 +4,11 @@
 #include <Metal/Metal.hpp>
 #include <array>
 #include <cstdint>
+#include <span>
 
 #include "core/frame/extent.h"
 #include "core/passes/tone_map.h"
+#include "metal/acceleration/scene_acceleration.h"
 
 namespace serenity::metal {
 
@@ -108,14 +110,24 @@ struct FrameResources {
 
   // With the features pass (contract 17, feature_images.h): its constants
   // (the previous camera), the shapes' transforms as the frame before
-  // placed them (this frame's own where nothing moves), and the four
-  // feature images it writes; 0 and null otherwise.
+  // placed them (this frame's own where nothing moves), the four feature
+  // images it writes, and its raster pass's attachments, the visibility
+  // buffer and its memoryless depth; 0 and null otherwise.
   MTL::GPUAddress feature_constants = 0;
   MTL::GPUAddress feature_last_transforms = 0;
   MTL::Texture* albedo = nullptr;
   MTL::Texture* normal = nullptr;
   MTL::Texture* depth = nullptr;
   MTL::Texture* motion = nullptr;
+  MTL::Texture* visibility = nullptr;
+  MTL::Texture* raster_depth = nullptr;
+
+  // With a scene: its meshes as the rasterizer draws them, the instanced
+  // shapes grouped by mesh, and the mesh block a hit is rebuilt through
+  // (metal/acceleration/scene_acceleration.h); empty and 0 otherwise.
+  std::span<const SceneAcceleration::Draw> draws;
+  MTL::GPUAddress instance_shapes = 0;
+  MTL::GPUAddress mesh_block = 0;
 
   // With the denoise pass (core/frame/schedule.h; passes/denoise/
   // denoise.h), given to it alone: the light pass's accumulated image, at

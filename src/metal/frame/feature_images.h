@@ -54,6 +54,14 @@ class FeatureImages {
   MTL::Texture* normal() const noexcept { return normal_.texture.get(); }
   MTL::Texture* depth() const noexcept { return depth_.texture.get(); }
   MTL::Texture* motion() const noexcept { return motion_.texture.get(); }
+  // The raster pass's (passes/features/features.h): the visibility buffer
+  // it draws and the features kernel reads (passes/features/visibility.h),
+  // and its depth attachment, memoryless (tile memory alone: never
+  // written out, no allocation).
+  MTL::Texture* visibility() const noexcept {
+    return visibility_.texture.get();
+  }
+  MTL::Texture* raster_depth() const noexcept { return raster_depth_.get(); }
 
   // The four images as they are, read back (above): the offline
   // renderer's type for them, one type wherever they are read back
@@ -75,6 +83,8 @@ class FeatureImages {
   ResidentTexture normal_;
   ResidentTexture depth_;
   ResidentTexture motion_;
+  ResidentTexture visibility_;
+  NS::SharedPtr<MTL::Texture> raster_depth_;
 };
 
 }  // namespace serenity::metal

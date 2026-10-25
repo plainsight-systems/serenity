@@ -130,5 +130,33 @@ inline float2 camera_pixel(constant serenity::contracts::CameraData& camera,
   return direction_pixel(camera, point - to_float3(camera.origin), size);
 }
 
+// The reversed depth's near distance, meters: a point nearer the camera
+// than this is clipped. A millimeter, under any surface the scenes put
+// before a camera (the marbles' nearest some 10 cm).
+constant constexpr float raster_near = 1.0e-3f;
+
+// Where the rasterizer places `point` for an image of `size`, in clip
+// space, so its sample at a pixel's center is the pinhole camera's ray
+// through that center plus `offset` (pixels; the frame's jitter, contract
+// 17): camera_ray()'s (sx, sy), which are Metal's normalized device
+// coordinates (x right, y up), each times the view depth, less the offset
+// in those coordinates, so the rasterizer's division by w, the view depth,
+// is the projection's; z reversed infinite depth, raster_near / depth.
+// Linear in the point, so a triangle crossing the camera's plane clips
+// rather than divides by 0. A pinhole's: the features never rasterize a
+// lens (docs/research/2026-10-23-apple-silicon-design.md, change 2).
+inline float4 camera_clip(constant serenity::contracts::CameraData& camera,
+                          float3 point, uint2 size, float2 offset) {
+  const float3 v = point - to_float3(camera.origin);
+  const float3 right = to_float3(camera.right);
+  const float3 up = to_float3(camera.up);
+  const float depth = metal::dot(v, to_float3(camera.forward));
+  return float4(metal::dot(v, right) / metal::dot(right, right) -
+                    2.0f * offset.x / float(size.x) * depth,
+                metal::dot(v, up) / metal::dot(up, up) +
+                    2.0f * offset.y / float(size.y) * depth,
+                raster_near, depth);
+}
+
 }  // namespace shaders
 }  // namespace serenity

@@ -61,6 +61,33 @@ void FeatureImages::prepare(frame::Extent size) {
   make(normal_, MTL::PixelFormatRGBA16Float, "normal image");
   make(depth_, MTL::PixelFormatR32Float, "depth image");
   make(motion_, MTL::PixelFormatRGBA16Float, "motion image");
+  // The raster pass's attachments: the visibility buffer drawn into and
+  // read by the kernel; the depth memoryless.
+  const auto attachment = [&](MTL::PixelFormat format, MTL::TextureUsage usage,
+                              MTL::StorageMode storage) {
+    auto descriptor = NS::TransferPtr(MTL::TextureDescriptor::alloc()->init());
+    descriptor->setTextureType(MTL::TextureType2D);
+    descriptor->setPixelFormat(format);
+    descriptor->setWidth(size.width);
+    descriptor->setHeight(size.height);
+    descriptor->setStorageMode(storage);
+    descriptor->setUsage(usage);
+    auto texture = NS::TransferPtr(device_->newTexture(descriptor.get()));
+    if (!texture) {
+      throw MetalError("the device made no " + frame::to_string(size) +
+                       " raster attachment");
+    }
+    return texture;
+  };
+  visibility_.reset();
+  visibility_.texture =
+      attachment(MTL::PixelFormatRG32Uint,
+                 MTL::TextureUsageRenderTarget | MTL::TextureUsageShaderRead,
+                 MTL::StorageModePrivate);
+  visibility_.resident = submission_.keep_resident(visibility_.texture.get());
+  raster_depth_ =
+      attachment(MTL::PixelFormatDepth32Float, MTL::TextureUsageRenderTarget,
+                 MTL::StorageModeMemoryless);
   size_ = size;
 }
 

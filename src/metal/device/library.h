@@ -66,6 +66,14 @@ class Library {
   NS::SharedPtr<MTL::ComputePipelineState> compute_pipeline(
       std::string_view function, PipelineOptions options = {}) const;
 
+  // A render pipeline of the vertex function `vertex` and the fragment
+  // function `fragment`, drawing one color attachment of `color` and a
+  // depth attachment of `depth`. Throws MetalError if the library has no
+  // such function or they make no pipeline.
+  NS::SharedPtr<MTL::RenderPipelineState> render_pipeline(
+      const char* vertex, const char* fragment, MTL::PixelFormat color,
+      MTL::PixelFormat depth) const;
+
   // The table of the intersection functions `functions` linked into
   // `pipeline` (PipelineOptions), entry i the function named
   // `functions[i]`, for its kernel to trace with. Throws MetalError if the

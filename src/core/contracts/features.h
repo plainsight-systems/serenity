@@ -7,15 +7,18 @@
 // (docs/research/2026-10-14-denoiser-training-design.md, "What the network
 // sees"; docs/research/2026-10-14-denoiser-features.md).
 //
-// Four images at the frame's size, one value a pixel each, all from the
-// camera's ray the light passes trace at that pixel and frame (the path
-// pass's point in the pixel and on the lens, metal/passes/path/path.metal;
-// in a ReSTIR PT graph the frame's camera jitter, contracts/
-// frame_constants.h, the same for both),
-// so at the light graph's size each feature is of the very ray its noisy
+// Four images at the frame's size, one value a pixel each, all from one
+// camera ray a pixel, a pinhole's (a graph with the features pass traces
+// through one: core/frame/schedule.h, traced_inputs()): through the
+// pixel's center plus the frame's camera jitter where the frame takes it
+// (contracts/frame_constants.h), the ray the light passes trace there, so
+// at the light graph's size each feature is of the very ray its noisy
 // sample took, as production's guide buffers are (Open Image Denoise: "All
 // auxiliary images should use the same pixel reconstruction filter as the
-// beauty image"):
+// beauty image"); through the pixel's center where it takes none (the
+// output size's full-size albedo), as production upscalers' unjittered
+// guides are. The primary hit rasterized, the rest traced (metal/passes/
+// features/features.h):
 //
 //   albedo  RGBA16Float: the surface's color, independent of light and
 //           view, in [0, 1] (a = 1). Open Image Denoise's rules (its

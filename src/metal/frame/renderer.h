@@ -186,23 +186,22 @@ namespace serenity::metal {
 //
 // ReSTIR PT. A graph with its passes gets, at construction, its passes,
 // their pipelines specialized by the run's settings (passes/restir_pt/
-// reuse_constants.h); PathReuseImages (frame_images.h), made by prepare() at the frame's size
-// and, with restir_pt_temporal, asked from the frame's inputs' reused_since
-// (core/frame/frame_inputs.h, frame::ReuseHistory) whether the frame has a
-// previous one; one static buffer of, with restir_pt_spatial, the three
-// reuse textures (one zero texel without), built
-// once on the CPU from the graph's sigma and a fixed seed
-// (core/sampling/pairing.h; 323 KB); and with restir_pt_temporal, a ring of
-// its reuse constants (contracts/path_reuse_settings.h, 80 bytes a frame:
-// the previous camera, whether there is a previous frame, which the
-// renderer keeps from the frame before: its inputs' camera, framed for this
-// frame's size) and last frame's transforms and glows, a second
-// ShapeTransforms and LightGlows, which recording a frame fills by
-// animating what moves or glows at the previous frame's time (metal/scene/
-// shape_transforms.h, light_glows.h); at the first frame of a history
-// there is no previous frame, and none of it is read. Refused at
-// construction by MetalError, as the G-buffer and the light tiles pack
-// them (I.5): a scene with 0xffff media or more, a material value outside
+// reuse_constants.h); PathReuseImages (frame_images.h), made by prepare() at
+// the frame's size and, with restir_pt_temporal, asked from the frame's inputs'
+// reused_since (core/frame/frame_inputs.h, frame::ReuseHistory) whether the
+// frame has a previous one; one static buffer of, with restir_pt_spatial, the
+// three reuse textures (one zero texel without), built once on the CPU from the
+// graph's sigma and a fixed seed (core/sampling/pairing.h; 323 KB); and with
+// restir_pt_temporal, a ring of its reuse constants
+// (contracts/path_reuse_settings.h, 80 bytes a frame: the previous camera,
+// whether there is a previous frame, which the renderer keeps from the frame
+// before: its inputs' camera, framed for this frame's size) and last frame's
+// transforms and glows, a second ShapeTransforms and LightGlows, which
+// recording a frame fills by animating what moves or glows at the previous
+// frame's time (metal/scene/ shape_transforms.h, light_glows.h); at the first
+// frame of a history there is no previous frame, and none of it is read.
+// Refused at construction by MetalError, as the G-buffer and the light tiles
+// pack them (I.5): a scene with 0xffff media or more, a material value outside
 // the packed BSDF's range, more than 65536 shapes or lights. Barriers, each
 // naming its hazard (GPU.8): the queue barrier before the initial pass, the
 // first that writes what frames share; a dispatch barrier before each
@@ -647,8 +646,15 @@ class Renderer {
                                  const frame::FrameInputs& inputs,
                                  MTL::Texture* target, frame::Extent light,
                                  const Prepared& prepared, bool previous);
-  void animate(MTL4::ComputeCommandEncoder* encoder, const FrameSlot& begun,
-               const frame::FrameInputs& inputs, bool previous);
+  // The frame's shapes and glows placed on the host, and last frame's
+  // where read; then, in the frame's compute encoder, the structure's
+  // update where shapes move (scene_acceleration.h). Apart, so the
+  // rasterizer's draws are chosen from the placed shapes before the
+  // encoders (passes/features/features.h).
+  void animate(const FrameSlot& begun, const frame::FrameInputs& inputs,
+               bool previous);
+  void update_structure(MTL4::ComputeCommandEncoder* encoder,
+                        const FrameSlot& begun);
   // `traced` the frame's inputs as its light is traced, `lens` the
   // frame's own camera, its lens on (above, "The depth of field").
   DenoiseResources denoise_resources(const FrameResources& resources,
@@ -667,6 +673,13 @@ class Renderer {
   void record_light(MTL4::ComputeCommandEncoder* encoder,
                     const FrameResources& resources, std::size_t first,
                     std::size_t last);
+  // The features' raster passes (passes/features/features.h), each its own
+  // render encoder in `begun`'s light half before its compute encoder: the
+  // light size's, with the features pass, and the full size's, with the
+  // denoise pass (`full`, else null). Whether it recorded any, for the
+  // compute encoder's barrier on their fragments (GPU.8).
+  bool record_raster(const FrameSlot& begun, const FrameResources& resources,
+                     const FrameResources* full) const;
   void record_hand_off(MTL4::ComputeCommandEncoder* encoder,
                        const FrameSlot& begun, const FrameResources& resources,
                        const Prepared& prepared, MTL::Texture* hand_off);

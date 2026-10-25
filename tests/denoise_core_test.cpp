@@ -364,6 +364,13 @@ TEST_CASE(
       tests::required(frame::traced_inputs(input, inputs).camera).lens_radius ==
       0.0f);
 
+  // The features alone, the data set's full-size albedo: rasterized, so a
+  // pinhole's too.
+  const Schedule alone = schedule_of({PassKind::features}, false);
+  CHECK(
+      tests::required(frame::traced_inputs(alone, inputs).camera).lens_radius ==
+      0.0f);
+
   const Schedule plain =
       schedule_of({PassKind::restir_pt_initial, PassKind::restir_pt_shade,
                    PassKind::tone_map},

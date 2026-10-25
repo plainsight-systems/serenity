@@ -104,5 +104,59 @@ static_assert(sizeof(MeshTriangle) == 40,
               "MeshTriangle must be the same 40 bytes on the host and in "
               "shaders");
 
+struct MeshRecord;
+
+// Each side's type for the mesh block's addresses (MeshRecord, MeshBlock,
+// below), as for the structures above.
+#if defined(__METAL_VERSION__)
+using MeshTriangles = const device MeshTriangle*;
+using MeshRecords = constant MeshRecord*;
+using ShapeMeshes = constant uint32_t*;
+#else
+using MeshTriangles = std::uint64_t;  // the array's GPU address
+using MeshRecords = std::uint64_t;    // the array's GPU address
+using ShapeMeshes = std::uint64_t;    // the array's GPU address
+#endif
+
+// A mesh as a shader rebuilds a hit on it from its shape and triangle
+// (trace.metal.h, hit_of(); the features' visibility buffer, passes/
+// features/visibility.h): its triangles' per-primitive data, and whether
+// their vertices are in the world (a still structure) or in the mesh's own
+// space (an instanced mesh, placed by its shape's instance transform).
+struct MeshRecord {
+  MeshTriangles triangles;
+  uint32_t in_world;  // 1 for a still structure
+  uint32_t padding;
+};
+
+static_assert(sizeof(MeshRecord) == 16,
+              "MeshRecord must be the same 16 bytes on the host and in "
+              "shaders");
+
+// An instanced shape's raster entry and its fragments' triangle carry the
+// mesh drawn (scene_acceleration.h, raster(); passes/features/
+// visibility.h): its index in the mesh block above the low
+// instance_mesh_shift bits, which hold the shape or the triangle. A level
+// of 9, the finest, has 5,242,880 triangles, under 2^24; the scenes'
+// shapes are as few.
+#if defined(__METAL_VERSION__)
+constant constexpr uint32_t instance_mesh_shift = 24u;
+constant constexpr uint32_t instance_low_mask =
+    (1u << instance_mesh_shift) - 1u;
+#else
+inline constexpr uint32_t instance_mesh_shift = 24u;
+inline constexpr uint32_t instance_low_mask = (1u << instance_mesh_shift) - 1u;
+#endif
+
+// The meshes as hit_of() reads them (scene_acceleration.h, mesh_block()):
+// every mesh's record, and each shape's mesh, an index into them.
+struct MeshBlock {
+  MeshRecords meshes;
+  ShapeMeshes shape_mesh;
+};
+
+static_assert(sizeof(MeshBlock) == 16,
+              "MeshBlock must be the same 16 bytes on the host and in shaders");
+
 }  // namespace gpu
 }  // namespace serenity

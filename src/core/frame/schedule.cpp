@@ -715,7 +715,7 @@ bool lens_after_network(const Schedule& schedule) {
 
 FrameInputs traced_inputs(const Schedule& schedule, const FrameInputs& inputs) {
   FrameInputs traced = inputs;
-  if (!feeds_network(schedule)) {
+  if (!writes_features(schedule)) {
     return traced;
   }
   if (traced.camera) {

@@ -38,6 +38,7 @@ add_executable(serenity_tests
     unet_test.cpp
     structure_plan_test.cpp
     mesh_levels_test.cpp
+    raster_levels_test.cpp
     shape_meshes_test.cpp
     denoise_core_test.cpp
     graph_file_test.cpp

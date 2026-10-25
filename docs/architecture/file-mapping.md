@@ -657,6 +657,27 @@ MNEE's seed a walk of nearest hits through it, as Cycles' seed is.
 The intersection query is removed from the Metal backend; the occluders'
 box structure stays, for MNEE's seed alone.
 
+## The first surface rasterized (`docs/research/2026-10-23-apple-silicon-design.md`, section 6, change 2)
+
+The features' primary hit drawn by the rasterizer into a visibility buffer
+(each pixel's shape and triangle), the hit rebuilt from it as `trace()`
+builds one, and primary surface replacement traced on from it as before.
+
+| What | Axis | Where |
+|---|---|---|
+| an instanced sphere's raster level this frame, the tracer's rule seen from where it is; whether a sphere is in the view | Acceleration | `src/core/shapes/raster_levels.{h,cpp}`, new |
+| the meshes as the rasterizer draws them: each structure's vertices, indices and triangle count, whether in the world; a mesh each sphere level up to the finest, draw-only where the tracer has none; each frame's draws and instance list, the instanced spheres in view at their levels (`raster()`); the mesh block a shader rebuilds a hit through (each mesh's triangles, each shape's mesh); the drawn mesh above an entry's shape and a fragment's triangle | Acceleration | `src/metal/acceleration/scene_acceleration.{h,cpp}`, `structure_block.h` (`MeshBlock`, `instance_mesh_shift`) |
+| a hit rebuilt from its shape and triangle: the ray re-intersected with the triangle, in the shape's space or the world | Acceleration | `src/metal/acceleration/trace.metal.h` (`hit_of()`) |
+| the pinhole camera's clip-space projection, reversed infinite depth, the frame's jitter as an offset | Camera | `src/metal/camera/thin_lens.metal.h` (`camera_clip()`) |
+| the visibility buffer's layout and its sky | Pass | `src/metal/passes/features/visibility.h`, new |
+| the vertex and fragment functions: a still structure's world triangles, an instanced mesh placed by its shapes' transforms; each fragment's shape and triangle | Pass | `src/metal/passes/features/raster.metal`, new |
+| the raster pass a size (render encoder, memoryless depth); the features kernel reading the visibility buffer in place of the camera ray's trace | Pass | `src/metal/passes/features/features.{h,cpp,metal}` |
+| a render pipeline | GPU backend | `src/metal/device/library.{h,cpp}` (`render_pipeline()`) |
+| the visibility buffer a feature set, per frame slot | Frame graph | `src/metal/frame/feature_images.{h,cpp}` |
+| the shapes placed on the host and the frame's raster draws chosen before the encoders, the structure's update in the compute encoder; the raster passes opening the light half, the barrier to the compute encoder; the argument table's counts | Frame graph | `src/metal/frame/renderer.{h,cpp}`, `frame_resources.h` |
+| every graph with the features pass traced through a pinhole | Frame graph (core) | `src/core/frame/schedule.{h,cpp}` (`traced_inputs()`) |
+| the rasterized hit is the traced one, pixel for pixel; the raster levels and view; a features graph's pinhole | tests | `tests/gpu/features_test.cpp`, `tests/raster_levels_test.cpp`, `tests/denoise_core_test.cpp` |
+
 ## Not here yet
 
 - **HIP with HIPRT** on AMD's Strix Halo and **Direct3D 12** on the Xbox

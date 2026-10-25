@@ -10,7 +10,9 @@
 #include <type_traits>
 #include <utility>
 
+#include "core/camera/thin_lens.h"
 #include "core/shapes/mesh_levels.h"
+#include "core/shapes/raster_levels.h"
 #include "metal/acceleration/structure_block.h"
 #include "metal/device/error.h"
 #include "metal/device/support.h"
@@ -426,6 +428,98 @@ SceneAcceleration::SceneAcceleration(const Device& device,
   }
   make_meshes(device, submission, made);
 
+  // The rasterizer's sphere levels: every level up to the finest an
+  // instanced sphere takes in the tracer, a mesh each, the tracer's where
+  // it has one, else one drawn alone, its arrays but no structure
+  // (raster()).
+  std::vector<std::size_t> triangle_counts;
+  triangle_counts.reserve(made.size());
+  for (const MeshArrays& arrays : made) {
+    triangle_counts.push_back(arrays.triangles.size());
+  }
+  trace_level_.assign(records_.size(), shapes::no_level);
+  std::optional<unsigned> raster_finest;
+  for (const std::uint32_t shape : instanced_) {
+    if (records_[shape].kind == shapes::ShapeKind::sphere) {
+      trace_level_[shape] = roles.levels[shape];
+      raster_finest =
+          std::max(raster_finest.value_or(0u), unsigned{roles.levels[shape]});
+    }
+  }
+  if (raster_finest) {
+    raster_mesh_.resize(*raster_finest + 1);
+    for (unsigned level = 0; level <= *raster_finest; ++level) {
+      if (level_mesh.at(level)) {
+        raster_mesh_[level] = *level_mesh.at(level);
+        continue;
+      }
+      if (!cache.levels.at(level)) {
+        cache.levels.at(level) = shapes::icosphere(level);
+      }
+      const shapes::TriangleMesh& mesh = *cache.levels.at(level);
+      std::vector<gpu::MeshTriangle> data;
+      data.reserve(mesh.triangles.size());
+      for (const auto& triangle : mesh.triangles) {
+        data.push_back(
+            mesh_triangle(mesh.vertices, triangle, gpu::still_instance));
+      }
+      const std::array<std::span<const std::byte>, 3> arrays{
+          std::as_bytes(std::span(mesh.vertices)),
+          std::as_bytes(std::span(mesh.triangles)),
+          std::as_bytes(std::span(data))};
+      raster_mesh_[level] = static_cast<std::uint32_t>(meshes_.size());
+      Mesh& drawn = meshes_.emplace_back();
+      drawn.data = std::make_unique<StaticArrays>(device, submission, arrays);
+      triangle_counts.push_back(mesh.triangles.size());
+    }
+  }
+  raster_box_ = box_mesh;
+
+  // Each mesh's record and draw; each shape's mesh (an instanced shape's
+  // the tracer's, which says only that it is instanced: the visibility
+  // buffer names the mesh drawn, visibility.h).
+  std::vector<gpu::MeshRecord> records(meshes_.size());
+  std::vector<std::uint32_t> shape_mesh(records_.size(), 0u);
+  mesh_draws_.resize(meshes_.size());
+  for (std::uint32_t m = 0; m < meshes_.size(); ++m) {
+    const bool in_world = still_mesh[0] == m || still_mesh[1] == m;
+    const StaticArrays& data = *meshes_[m].data;
+    records[m] = gpu::MeshRecord{data.address(2), in_world ? 1u : 0u, 0u};
+    mesh_draws_[m] = Draw{data.address(0),
+                          data.address(1),
+                          data.address(2),
+                          static_cast<std::uint32_t>(3 * triangle_counts[m]),
+                          0u,
+                          0u,
+                          in_world};
+  }
+  for (std::uint32_t shape = 0; shape < records_.size(); ++shape) {
+    const bool own =
+        moving[shape] || records_[shape].kind == shapes::ShapeKind::box;
+    shape_mesh[shape] =
+        own ? shape_mesh_[shape] : *still_mesh.at(light[shape] ? 1 : 0);
+  }
+  const std::array<std::span<const std::byte>, 2> tables{
+      std::as_bytes(std::span(records)), std::as_bytes(std::span(shape_mesh))};
+  mesh_tables_ = std::make_unique<StaticArrays>(device, submission, tables);
+  const gpu::MeshBlock block{mesh_tables_->address(0),
+                             mesh_tables_->address(1)};
+  const std::array<std::span<const std::byte>, 1> block_bytes{
+      std::as_bytes(std::span(&block, 1))};
+  mesh_block_ = std::make_unique<StaticArrays>(device, submission, block_bytes);
+  // A slot's instance list and draws, and the counts, sized once (MEM.9).
+  const std::vector<std::uint32_t> no_entries(
+      std::max<std::size_t>(instanced_.size(), 1), 0u);
+  raster_instances_ = std::make_unique<FrameArray>(
+      device, submission, std::as_bytes(std::span(no_entries)),
+      FrameArray::Copies::per_frame);
+  for (std::vector<Draw>& draws : raster_draws_) {
+    draws.reserve(meshes_.size());
+  }
+  mesh_counts_.resize(meshes_.size());
+  mesh_cursors_.resize(meshes_.size());
+  chosen_mesh_.resize(instanced_.size());
+
   const NS::SharedPtr<MTL::ResidencySet> build_only =
       residency_set(metal_device);
 
@@ -604,6 +698,71 @@ void SceneAcceleration::update(
   encoder->barrierAfterEncoderStages(MTL::StageAccelerationStructure,
                                      MTL::StageDispatch,
                                      MTL4::VisibilityOptionDevice);
+}
+
+SceneAcceleration::Raster SceneAcceleration::raster(
+    std::uint32_t slot, std::span<const contracts::Transform> transforms,
+    const contracts::Camera& camera, frame::Extent size) {
+  if (slot >= frames_in_flight || transforms.size() != records_.size()) {
+    throw MetalError("SceneAcceleration::raster: no frame slot " +
+                     std::to_string(slot) + ", or not one transform per shape");
+  }
+  const contracts::CameraData framed = camera::shader_form(camera, size);
+  std::ranges::fill(mesh_counts_, 0u);
+  // Each instanced shape's mesh this frame, or none out of the view.
+  constexpr std::uint32_t culled = 0xffffffffu;
+  for (std::size_t k = 0; k < instanced_.size(); ++k) {
+    const std::uint32_t shape = instanced_[k];
+    std::uint32_t& mesh = chosen_mesh_[k];
+    if (records_[shape].kind == shapes::ShapeKind::box) {
+      mesh = *raster_box_;  // the scenes' few boxes, always drawn
+    } else {
+      const contracts::Float3 center =
+          contracts::translation(transforms[shape]);
+      const double radius = contracts::scale(transforms[shape]);
+      if (!shapes::in_view(framed, center, radius)) {
+        mesh = culled;
+        continue;
+      }
+      const unsigned traced = trace_level_[shape];
+      const unsigned level = std::min(
+          shapes::raster_level(radius, center, camera).value_or(traced),
+          traced);
+      mesh = raster_mesh_.at(level);
+    }
+    ++mesh_counts_[mesh];
+  }
+  // The entries grouped by mesh, a draw each mesh drawn.
+  std::vector<Draw>& draws = raster_draws_.at(slot);
+  draws.clear();
+  std::uint32_t next = 0;
+  for (std::uint32_t m = 0; m < meshes_.size(); ++m) {
+    mesh_cursors_[m] = next;
+    const Draw& built = mesh_draws_[m];
+    if (built.in_world) {
+      draws.push_back(built);
+    } else if (mesh_counts_[m] > 0) {
+      Draw drawn = built;
+      drawn.first_shape = next;
+      drawn.shape_count = mesh_counts_[m];
+      draws.push_back(drawn);
+    }
+    next += mesh_counts_[m];
+  }
+  const std::span<std::uint32_t> entries =
+      raster_instances_->view<std::uint32_t>(slot);
+  for (std::size_t k = 0; k < instanced_.size(); ++k) {
+    const std::uint32_t mesh = chosen_mesh_[k];
+    if (mesh != culled) {
+      entries[mesh_cursors_[mesh]++] =
+          (mesh << gpu::instance_mesh_shift) | instanced_[k];
+    }
+  }
+  return Raster{draws, raster_instances_->address(slot)};
+}
+
+MTL::GPUAddress SceneAcceleration::mesh_block() const {
+  return mesh_block_->address(0);
 }
 
 MTL::GPUAddress SceneAcceleration::address(std::uint32_t slot) const {

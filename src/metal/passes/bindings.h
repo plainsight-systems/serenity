@@ -103,7 +103,7 @@ enum Buffer : uint8_t {
   glows = 4,
   transforms = 5,
   seed_functions = 6,  // MNEE's seed's intersection function table
-  reservoirs = 7,   // the path reservoirs, a pixel's each (contract 15)
+  reservoirs = 7,      // the path reservoirs, a pixel's each (contract 15)
   primaries = 8,    // each pixel's primary hit, for the merge's similarity test
   light = 9,        // the frame's light buffer, a float4 a pixel
   pairing = 10,     // the reuse textures (core/sampling/pairing.h)
@@ -150,9 +150,34 @@ enum Buffer : uint8_t {
   transforms = 5,
   feature_constants = 6,
   last_transforms = 7,
+  mesh_block = 8,  // the meshes a visibility texel's hit is rebuilt through
 };
-enum Texture : uint8_t { albedo = 0, normal = 1, depth = 2, motion = 3 };
+enum Texture : uint8_t {
+  albedo = 0,
+  normal = 1,
+  depth = 2,
+  motion = 3,
+  visibility = 4,  // the primary hits the raster pass drew (visibility.h)
+};
 }  // namespace features
+
+// The features' raster pass (passes/features/raster.metal), its vertex and
+// fragment functions one layout: the camera and the frame's constants at
+// the pass's size (its size and jitter); a mesh's vertices and, for a still
+// structure's fragments, its triangles; for an instanced mesh, the shapes
+// grouped by mesh, and the scene's block and the shapes' transforms, which
+// place each.
+namespace raster {
+enum Buffer : uint8_t {
+  camera = 0,
+  constants = 1,
+  vertices = 2,
+  triangles = 3,
+  instance_shapes = 4,
+  scene = 5,
+  transforms = 6,
+};
+}  // namespace raster
 
 // The denoise pass's kernels (passes/denoise/denoise.h), one layout for all
 // of them, each taking what it reads: its constants (contract 18's

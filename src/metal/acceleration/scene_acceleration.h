@@ -11,6 +11,8 @@
 #include <span>
 #include <vector>
 
+#include "core/contracts/camera.h"
+#include "core/frame/extent.h"
 #include "core/shapes/shape_meshes.h"
 #include "core/shapes/shapes.h"
 #include "core/shapes/structure_plan.h"
@@ -169,6 +171,52 @@ class SceneAcceleration {
   // address of its StructureBlock (structure_block.h).
   MTL::GPUAddress address(std::uint32_t slot) const;
 
+  // A mesh as the rasterizer draws it (passes/features/raster.metal): its
+  // vertices and its triangles by index, drawn as built, so a fragment's
+  // primitive id is its triangle's index in the mesh's per-primitive data,
+  // `triangles`; whether its vertices are in the world (a still structure,
+  // drawn once) or its own space (an instanced mesh, drawn once for each
+  // of its `shape_count` entries from `first_shape` of the frame's
+  // instance list, each placed by its shape's instance transform).
+  struct Draw {
+    MTL::GPUAddress vertices;
+    MTL::GPUAddress indices;
+    MTL::GPUAddress triangles;
+    std::uint32_t index_count;  // three a triangle
+    std::uint32_t first_shape;
+    std::uint32_t shape_count;  // 0 for a still structure
+    bool in_world;
+  };
+
+  // A frame's draws and their instance list, an entry an instanced shape
+  // drawn (raster()): its mesh's index in the mesh block above
+  // gpu::instance_mesh_shift, its shape below (structure_block.h), so the
+  // visibility buffer names the triangle drawn (passes/features/
+  // visibility.h).
+  struct Raster {
+    std::span<const Draw> draws;
+    MTL::GPUAddress instances = 0;
+  };
+
+  // What the features' raster pass draws in slot `slot` from the frame's
+  // `transforms` (one per shape) seen by `camera` in an image of `size`,
+  // as raster engines choose a level of detail and cull to the view
+  // (core/shapes/raster_levels.h): the still structures whole; each
+  // instanced sphere in the view at its raster level this frame, a mesh
+  // made for each level up to the tracer's finest (draw-only where the
+  // tracer has none); each box. Valid until the slot's next call; writes
+  // the slot's list, which the frame two submissions back read
+  // (Submission::begin() waited for it), and allocates nothing (MEM.9).
+  // Throws MetalError if `transforms` is not the shape count or `slot`
+  // no frame slot.
+  Raster raster(std::uint32_t slot,
+                std::span<const contracts::Transform> transforms,
+                const contracts::Camera& camera, frame::Extent size);
+
+  // The meshes as a shader rebuilds a hit from its shape and triangle
+  // (structure_block.h, MeshBlock): its GPU address.
+  MTL::GPUAddress mesh_block() const;
+
  private:
   // A structure, its scratch and their residency.
   struct Built {
@@ -258,6 +306,24 @@ class SceneAcceleration {
   std::array<Built, frames_in_flight> tops_;
   bool moves_ = false;
   std::optional<Seeds> seeds_;  // none in a scene of lights alone
+  // The rasterizer's: each mesh's draw, as built; each sphere level's mesh
+  // up to raster_finest_ (meshes_ indices; the tracer's where it has one,
+  // a draw-only one else) and the box's; each instanced shape's tracer
+  // level; a slot's instance list (FrameArray) and draws, and the frame's
+  // count of each mesh's entries, all sized at construction.
+  std::vector<Draw> mesh_draws_;
+  std::vector<std::uint32_t> raster_mesh_;
+  std::optional<std::uint32_t> raster_box_;
+  std::vector<std::uint8_t> trace_level_;
+  std::unique_ptr<FrameArray> raster_instances_;
+  std::array<std::vector<Draw>, frames_in_flight> raster_draws_;
+  std::vector<std::uint32_t> mesh_counts_;
+  std::vector<std::uint32_t> mesh_cursors_;
+  std::vector<std::uint32_t> chosen_mesh_;
+  // On the GPU: the meshes' records and each shape's mesh; then the mesh
+  // block over them.
+  std::unique_ptr<StaticArrays> mesh_tables_;
+  std::unique_ptr<StaticArrays> mesh_block_;
   // one StructureBlock, one per slot when anything moves
   std::unique_ptr<FrameArray> blocks_;
 };

@@ -103,6 +103,29 @@ NS::SharedPtr<MTL::Function> Library::function_named(const char* name) const {
   return fn;
 }
 
+NS::SharedPtr<MTL::RenderPipelineState> Library::render_pipeline(
+    const char* vertex, const char* fragment, MTL::PixelFormat color,
+    MTL::PixelFormat depth) const {
+  const auto pool = scoped_pool();
+  auto descriptor =
+      NS::TransferPtr(MTL::RenderPipelineDescriptor::alloc()->init());
+  const auto vertex_function = function_named(vertex);
+  const auto fragment_function = function_named(fragment);
+  descriptor->setVertexFunction(vertex_function.get());
+  descriptor->setFragmentFunction(fragment_function.get());
+  descriptor->colorAttachments()->object(0)->setPixelFormat(color);
+  descriptor->setDepthAttachmentPixelFormat(depth);
+  NS::Error* error = nullptr;
+  auto pipeline = NS::TransferPtr(
+      device_->newRenderPipelineState(descriptor.get(), &error));
+  if (!pipeline) {
+    throw MetalError("no render pipeline for '" + std::string(vertex) +
+                     "' and '" + std::string(fragment) +
+                     "': " + describe(error));
+  }
+  return pipeline;
+}
+
 NS::SharedPtr<MTL::IntersectionFunctionTable> Library::intersection_table(
     MTL::ComputePipelineState* pipeline,
     std::span<const char* const> functions) const {

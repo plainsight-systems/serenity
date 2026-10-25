@@ -247,6 +247,7 @@ add_library(serenity_core STATIC
     src/core/presentation/frame_source.cpp
     src/core/sampling/pairing.cpp
     src/core/shapes/mesh_levels.cpp
+    src/core/shapes/raster_levels.cpp
     src/core/shapes/shape_meshes.cpp
     src/core/shapes/shapes.cpp
     src/core/shapes/structure_plan.cpp
@@ -318,6 +319,7 @@ serenity_add_metallib(
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/tone_map/tone_map.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_initial/restir_pt_initial.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/integrator/mnee_seed.metal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/features/raster.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_temporal/restir_pt_temporal.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_spatial/restir_pt_spatial.metal"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/restir_pt_shade/restir_pt_shade.metal"

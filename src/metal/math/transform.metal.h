@@ -67,6 +67,20 @@ inline float3 transform_to_world(serenity::contracts::Transform x, float3 p) {
   return transform_direction(x, p) + transform_translation(x);
 }
 
+// M^-1 v for the transform's linear part M, any invertible one (a box's
+// instance placement scales each axis its own: core/shapes/shape_meshes.h):
+// rows a, b, c, M^-1 = [b x c, c x a, a x b] / det, as columns. A world
+// vector carried into the space of a placement no similarity is.
+inline float3 transform_inverse_linear(serenity::contracts::Transform x,
+                                       float3 v) {
+  const float3 a = transform_row(x, 0);
+  const float3 b = transform_row(x, 1);
+  const float3 c = transform_row(x, 2);
+  const float3 bc = metal::cross(b, c);
+  return (bc * v.x + metal::cross(c, a) * v.y + metal::cross(a, b) * v.z) /
+         metal::dot(a, bc);
+}
+
 // A world ray in object space: R^T (o - T) / s and R^T d / s, the
 // direction not renormalized, so a parameter t means the same point in both
 // (contracts/transform.h), and the ray's bounds carry over as they are. One

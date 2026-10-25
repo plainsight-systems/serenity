@@ -94,12 +94,12 @@ contracts::PathReuseSettings run_reuse_settings(const frame::Schedule& schedule,
 // texture, medium or light adds to the scene's block, not here.
 //
 // Every graph: the path pass, the features pass, the presenting pass.
-constexpr NS::UInteger max_buffers = 8;
-constexpr NS::UInteger max_textures = 4;
+constexpr NS::UInteger max_buffers = 9;
+constexpr NS::UInteger max_textures = 5;
 static_assert(bindings::path::non_finite < max_buffers);
-static_assert(bindings::features::last_transforms < max_buffers);
+static_assert(bindings::features::mesh_block < max_buffers);
 static_assert(bindings::tone_map::target < max_textures);
-static_assert(bindings::features::motion < max_textures);
+static_assert(bindings::features::visibility < max_textures);
 // A graph with the denoise pass.
 constexpr NS::UInteger max_denoise_buffers = 12;
 constexpr NS::UInteger max_denoise_textures = 8;
@@ -309,6 +309,8 @@ void Renderer::FeatureFamily::bind(
   resources.normal = written.normal();
   resources.depth = written.depth();
   resources.motion = written.motion();
+  resources.visibility = written.visibility();
+  resources.raster_depth = written.raster_depth();
   last_slot = begun.slot;
 }
 
@@ -331,7 +333,7 @@ Renderer::DenoiseFamily::DenoiseFamily(const Device& device,
           device, submission,
           std::vector<std::byte>(sizeof(contracts::FeatureConstants)),
           FrameArray::Copies::per_frame),
-      full_features_pass(library) {
+      full_features_pass(device, library) {
   for (std::optional<FeatureImages>& set : full_features) {
     set.emplace(device, submission);
   }
@@ -491,8 +493,8 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
                        run_reuse_settings(schedule, feeds_network_)}});
         break;
       case frame::PassKind::features:
-        steps_.push_back(
-            Step{kind, Pass{std::in_place_type<FeaturesPass>, library_}});
+        steps_.push_back(Step{
+            kind, Pass{std::in_place_type<FeaturesPass>, device, library_}});
         break;
       case frame::PassKind::denoise:
         // The schedule has its settings with its pass (frame::invalid).
@@ -835,6 +837,7 @@ FrameResources Renderer::frame_resources(const FrameSlot& begun,
     resources.transforms = transforms_->address(begun.slot);
     resources.glows = glows_->address(begun.slot);
     resources.acceleration = acceleration_->address(begun.slot);
+    resources.mesh_block = acceleration_->mesh_block();
   }
   if (images_) {
     resources.radiance = images_->radiance();
@@ -884,19 +887,14 @@ FrameResources Renderer::frame_resources(const FrameSlot& begun,
 // shapes move, the slot's structure rebuilt over them, before any pass
 // traces it (renderer.h). With them, last frame's and the features' frame
 // before's where the graph keeps them.
-void Renderer::animate(MTL4::ComputeCommandEncoder* encoder,
-                       const FrameSlot& begun, const frame::FrameInputs& inputs,
+void Renderer::animate(const FrameSlot& begun, const frame::FrameInputs& inputs,
                        bool previous) {
   if (!scene_ || !animation::changes(animation_)) {
     return;
   }
-  const std::span<contracts::Transform> placed =
-      transforms_->transforms(begun.slot);
-  animation::animate(animation_, inputs.time, placed,
+  animation::animate(animation_, inputs.time,
+                     transforms_->transforms(begun.slot),
                      glows_->glows(begun.slot));
-  if (animation::moves(animation_)) {
-    acceleration_->update(encoder, begun.slot, placed);
-  }
   // Last frame's, at its time; unread at a history's first frame.
   if (last_transforms_ && previous) {
     animation::animate(animation_, previous_time_,
@@ -908,6 +906,14 @@ void Renderer::animate(MTL4::ComputeCommandEncoder* encoder,
   if (features_ && features_->previous_transforms && inputs.previous) {
     animation::place(animation_, inputs.previous->time,
                      features_->previous_transforms->transforms(begun.slot));
+  }
+}
+
+void Renderer::update_structure(MTL4::ComputeCommandEncoder* encoder,
+                                const FrameSlot& begun) {
+  if (scene_ && animation::moves(animation_)) {
+    acceleration_->update(encoder, begun.slot,
+                          transforms_->transforms(begun.slot));
   }
 }
 
@@ -944,6 +950,8 @@ Renderer::DenoiseResources Renderer::denoise_resources(
   full_features.normal = full.normal();
   full_features.depth = full.depth();
   full_features.motion = full.motion();
+  full_features.visibility = full.visibility();
+  full_features.raster_depth = full.raster_depth();
 
   // Its constants: the view axes, the sizes, whether there is a history,
   // and the light's jitter, the frame's (renderer.h, "The camera's
@@ -1058,6 +1066,29 @@ void Renderer::record_hand_off(MTL4::ComputeCommandEncoder* encoder,
 
 // The image half's passes in order into `encoder`, each after the barriers
 // its reads need (renderer.h): the denoise pass and every pass after it.
+bool Renderer::record_raster(const FrameSlot& begun,
+                             const FrameResources& resources,
+                             const FrameResources* full) const {
+  bool recorded = false;
+  for (const Step& step : steps_) {
+    if (step.kind == frame::PassKind::features) {
+      // A set shared by the frames in flight waits for their reads
+      // (renderer.h: one set a slot where handed off).
+      const bool shared = !made(features_, "features").sets[1].has_value();
+      std::get<FeaturesPass>(step.pass).rasterize(begun.commands, resources,
+                                                  shared);
+      recorded = true;
+    }
+  }
+  if (full != nullptr) {
+    // one set a slot (renderer.h)
+    made(denoise_, "denoiser")
+        .full_features_pass.rasterize(begun.commands, *full, false);
+    recorded = true;
+  }
+  return recorded;
+}
+
 void Renderer::record_image(MTL4::ComputeCommandEncoder* encoder,
                             const DenoiseResources& denoised_resources) {
   for (std::size_t i = image_begins_; i < steps_.size(); ++i) {
@@ -1124,8 +1155,27 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given,
   // renderer recorded it (its camera kept): never at a history's first.
   const bool previous = reuses_history_ && prepared.reused_frames > 0 &&
                         previous_camera_.has_value();
-  const FrameResources resources =
+  FrameResources resources =
       frame_resources(begun, inputs, target, light, prepared, previous);
+  // The frame's shapes and glows placed on the host; then what the
+  // rasterizer draws of them this frame (scene_acceleration.h, raster()).
+  animate(begun, inputs, previous);
+  if (scene_ && inputs.camera) {
+    const SceneAcceleration::Raster raster = acceleration_->raster(
+        begun.slot, transforms_->transforms(begun.slot), *inputs.camera, light);
+    resources.draws = raster.draws;
+    resources.instance_shapes = raster.instances;
+  }
+  // A denoised graph's own, before the encoders: its full-size features'
+  // raster pass opens the frame beside the light size's.
+  std::optional<DenoiseResources> denoised;
+  if (denoise_) {
+    denoised.emplace(denoise_resources(resources, begun, inputs,
+                                       made(given.camera, "camera"), size,
+                                       prepared));
+  }
+  const bool rasterized = record_raster(
+      begun, resources, denoised ? &denoised->full_features : nullptr);
 
   MTL4::ComputeCommandEncoder* encoder =
       begun.commands->computeCommandEncoder();
@@ -1133,7 +1183,12 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given,
     throw MetalError(
         "Renderer::record: the command buffer made no compute encoder");
   }
-  animate(encoder, begun, inputs, previous);
+  if (rasterized) {
+    // The features read the visibility buffers the raster passes drew.
+    encoder->barrierAfterQueueStages(MTL::StageFragment, MTL::StageDispatch,
+                                     MTL4::VisibilityOptionDevice);
+  }
+  update_structure(encoder, begun);
   record_light(encoder, resources, 0, fill_at_);
   if (!denoise_) {
     if (checkerboard_) {
@@ -1145,15 +1200,13 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given,
     }
     encoder->endEncoding();
   } else {
-    const DenoiseResources denoised = denoise_resources(
-        resources, begun, inputs, made(given.camera, "camera"), size, prepared);
     // The full-size albedo, in the light half (renderer.h, "Two
     // halves"): it writes the slot's own images, which nothing before
     // it in the frame reads, so no barrier before it, as none before the
     // light-size features; the fill's barrier orders it before the image
     // half in one part, the event in two.
     DenoiseFamily& d = made(denoise_, "denoiser");
-    d.full_features_pass.record(encoder, denoised.full_features);
+    d.full_features_pass.record(encoder, denoised->full_features);
     record_hand_off(encoder, begun, resources, prepared,
                     d.images.light_radiance(begun.slot));
     MTL4::ComputeCommandEncoder* image = encoder;
@@ -1177,7 +1230,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given,
       // place of the event (renderer.h, "One part for a denoised graph").
       barrier_after_dispatch(encoder);
     }
-    record_image(image, denoised);
+    record_image(image, *denoised);
     image->endEncoding();
   }
   // What the next frame's temporal merge asks of this one; what
