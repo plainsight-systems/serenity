@@ -283,7 +283,8 @@ kernel void pt_temporal_merge(device PathMergeResult* out [[buffer(0)]],
 }
 
 // The duplication map of an image of reservoirs, as the pass computes it
-// (restir_pt_duplication.metal), dispatched as it is: whole groups.
+// (restir_pt_duplication.metal), dispatched as it is: whole groups, both
+// the reservoirs and the map at their block-linear slots (contract 20).
 // Bindings: the map at 0, the reservoirs at 1, the image's size at 2.
 kernel void pt_duplication(
     device float* map [[buffer(0)]],
@@ -296,6 +297,7 @@ kernel void pt_duplication(
                          local.y * duplication::group + local.x);
   threadgroup_barrier(mem_flags::mem_threadgroup);
   if (pixel.x < size.x && pixel.y < size.y) {
-    map[pixel.y * size.x + pixel.x] = duplication::score(keys, local);
+    map[serenity::contracts::reservoir_slot(pixel.x, pixel.y, size.x)] =
+        duplication::score(keys, local);
   }
 }

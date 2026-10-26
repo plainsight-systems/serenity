@@ -396,6 +396,39 @@ sphere's frames moved by one level in at most 0.15% of their pixels
 (73afa30). MNEE's light already reaches a pixel by float atomics in the
 order the solves arrive.
 
+### Change 5's design (2026-10-26)
+
+The CUDA backend's two changes (docs/research/2026-10-20-nvidia-hardware-
+design.md, section 8, changes 5 and 9), taken as they are.
+
+**RTXDI's reservoir layout.** ReSTIR PT's arrays already have RTXDI's
+size on both backends (the grid in whole 16 x 16 blocks, `reservoir_slots()`,
+contract 20); Metal still addressed them by the grid's rows. Now every
+place is at its block-linear slot (`reservoir_slot()`,
+RTXDI_ReservoirPositionToPointer), as on CUDA: `Traced::slot()` and its
+inverse, through which every pass, the MNEE requests and the temporal
+input address the arrays, and the duplication map, which reads the final
+reservoirs and is read back by the temporal merge through the same slots.
+An 8 x 8 threadgroup (change 1) lies inside one block, so its 64 slots
+are eight runs of eight, 16 slots apart within the block's 256, rather
+than eight of the grid's rows apart, and the spatial disc lies in a few
+blocks (GPU.2). The
+block stays RTXDI's 16, the core's one constant for both backends.
+
+**The fused shade.** The spatial merge shades the pixel it has just
+merged, RTXDI's fused shading: the light it summed is folded into the
+accumulated image in its own thread, through one function the shade pass
+also calls (`restir_pt/shade.metal.h`), and the light buffer is not
+written back; nothing reads it after the shade. The schedule puts the
+shade straight after the spatial pass, so in a graph with one the shade's
+step records nothing and no barrier (a tag in the renderer's passes, not
+a pass that pretends to run); a graph without a spatial pass keeps the
+shade pass. One dispatch, one barrier and a light buffer's write and read
+fewer (GDSA.6, GPU.6).
+
+Expected in the picture: none. The shade's arithmetic is the same on the
+same inputs, and the layout moves where a value is kept, not what it is.
+
 ## 7. Not built, and one question for the user
 
 - MPSGraph, Open Image Denoise's own route to Apple's kernels: it encodes

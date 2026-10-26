@@ -33,6 +33,7 @@
 
 #include <metal_stdlib>
 
+#include "core/contracts/checkerboard.h"
 #include "core/contracts/path_reservoir.h"
 #include "core/contracts/path_reuse_settings.h"
 
@@ -61,7 +62,8 @@ inline uint2 key(serenity::contracts::PathReservoir reservoir) {
 
 // The group's keys into `keys`, span x span, the group's first pixel
 // `origin`, by its thread `thread_index` of group x group; no_key outside
-// the image of `size`.
+// the grid of `size`, whose place (x, y) is at the slot
+// contracts::reservoir_slot(x, y, size.x) (contract 20).
 inline void load_keys(
     threadgroup uint2* keys,
     const device serenity::contracts::PathReservoir* reservoirs, uint2 size,
@@ -70,8 +72,9 @@ inline void load_keys(
     const int2 at = int2(origin) - int2(radius) + int2(n % span, n / span);
     const bool inside =
         metal::all(at >= int2(0)) && metal::all(at < int2(size));
-    keys[n] =
-        inside ? key(reservoirs[uint(at.y) * size.x + uint(at.x)]) : no_key;
+    keys[n] = inside ? key(reservoirs[serenity::contracts::reservoir_slot(
+                           uint(at.x), uint(at.y), size.x)])
+                     : no_key;
   }
 }
 

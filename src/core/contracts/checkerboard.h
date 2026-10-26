@@ -37,12 +37,12 @@
 // contiguous, row by row within it, and the blocks row by row
 // (reservoir_slot), so a 16 x 16 group of threads writes one contiguous
 // span and a neighborhood lies in a few blocks, not across as many of the
-// grid's rows (GPU.2). CUDA's kernels address the arrays so (cuda/passes/
-// restir_pt/restir_pt.cuh, Traced; docs/research/2026-10-20-nvidia-
-// hardware-design.md, section 8, change 9); Metal's by the grid's rows
-// (checkerboard_slot), its own GPU's layout. Either fits the arrays' size,
-// reservoir_slots(), the grid in whole blocks (core/passes/
-// restir_pt_arrays.h).
+// grid's rows (GPU.2). Both backends' kernels address the arrays so
+// (cuda/passes/restir_pt/restir_pt.cuh and metal/passes/restir_pt/
+// restir_pt.metal.h, Traced; docs/research/2026-10-20-nvidia-hardware-
+// design.md, section 8, change 9; docs/research/2026-10-23-apple-silicon-
+// design.md, section 6, change 5), the arrays sized reservoir_slots(), the
+// grid in whole blocks (core/passes/restir_pt_arrays.h).
 //
 // The grid the light's kernels dispatch over is the packed one,
 // checkerboard_width() x height: thread (k, y) is the pixel
@@ -109,14 +109,6 @@ SERENITY_SHARED_FUNCTION constexpr uint32_t checkerboard_x(uint32_t column,
                                                            uint32_t y,
                                                            uint32_t frame) {
   return 2u * column + ((y + frame) & 1u);
-}
-
-// The packed slot of the pixel (x, y) of an image `width` pixels wide, in
-// either field.
-SERENITY_SHARED_FUNCTION constexpr uint32_t checkerboard_slot(uint32_t x,
-                                                              uint32_t y,
-                                                              uint32_t width) {
-  return y * checkerboard_width(width) + x / 2u;
 }
 
 // The side of a block of the arrays' slots (above).

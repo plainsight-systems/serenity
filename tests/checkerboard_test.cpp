@@ -63,7 +63,7 @@ TEST_CASE(
         INFO(width << " x " << height << ", frame " << frame);
         const std::uint32_t columns = contracts::checkerboard_width(width);
         std::vector<int> taken(std::size_t{width} * height, 0);
-        std::vector<int> slots(std::size_t{columns} * height, 0);
+        std::vector<int> slots(contracts::reservoir_slots(columns, height), 0);
         bool beyond = true;  // every thread's pixel inside the image, or past
                              // an odd width's edge
         std::size_t misplaced = 0;
@@ -75,9 +75,12 @@ TEST_CASE(
               continue;
             }
             ++taken[std::size_t{y} * width + x];
+            // The backends' packing (Traced::slot()): half the pixel's x,
+            // at its block-linear slot.
             const std::uint32_t slot =
-                contracts::checkerboard_slot(x, y, width);
-            misplaced += slot != y * columns + k ? 1u : 0u;
+                contracts::reservoir_slot(x / 2u, y, columns);
+            misplaced +=
+                slot != contracts::reservoir_slot(k, y, columns) ? 1u : 0u;
             ++slots[slot];
           }
         }

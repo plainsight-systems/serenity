@@ -31,13 +31,14 @@ kernel void restir_pt_duplication(
   // the run's, the pipeline's constants (reuse_constants.h)
   const serenity::contracts::PathReuseSettings settings = reuse_settings();
   threadgroup uint2 keys[duplication::span * duplication::span];
-  // The arrays' grid: the image, or the packed one, whose slots are its
-  // row-major indices (restir_pt.metal.h, Traced).
-  const uint2 size = restir_pt::traced(frame, settings).grid();
+  // The arrays' grid: the image, or the packed one, its places at their
+  // block-linear slots (restir_pt.metal.h, Traced).
+  const restir_pt::Traced traced = restir_pt::traced(frame, settings);
+  const uint2 size = traced.grid();
   duplication::load_keys(keys, finals, size, group * duplication::group,
                          local.y * duplication::group + local.x);
   threadgroup_barrier(mem_flags::mem_threadgroup);
   if (pixel.x < size.x && pixel.y < size.y) {
-    map[pixel.y * size.x + pixel.x] = duplication::score(keys, local);
+    map[traced.place_slot(pixel)] = duplication::score(keys, local);
   }
 }

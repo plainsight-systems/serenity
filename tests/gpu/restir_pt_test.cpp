@@ -928,13 +928,15 @@ std::vector<float> duplication_map(
 TEST_CASE(
     "the duplication map counts the copies of each pixel's path in its 17 x 17 "
     "neighborhood") {
-  // 70 x 50, so groups at the right and bottom are cut by the image.
+  // 70 x 50, so groups at the right and bottom are cut by the image. The
+  // reservoirs and the map at their block-linear slots, as the passes keep
+  // them (contract 20).
   constexpr frame::Extent size{70, 50};
   const auto at = [&](std::uint32_t x, std::uint32_t y) {
-    return std::size_t{y} * size.width + x;
+    return std::size_t{contracts::reservoir_slot(x, y, size.width)};
   };
-  std::vector<contracts::PathReservoir> image(std::size_t{size.width} *
-                                              size.height);
+  std::vector<contracts::PathReservoir> image(
+      contracts::reservoir_slots(size.width, size.height));
   for (std::uint32_t y = 0; y < size.height; ++y) {
     for (std::uint32_t x = 0; x < size.width; ++x) {
       image[at(x, y)] = held_path(

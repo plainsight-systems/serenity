@@ -705,6 +705,16 @@ builds one, and primary surface replacement traced on from it as before.
 | the reconnection list beside the replays'; the two counts and grids in the counter's buffer | Frame | `src/metal/frame/frame_images.{h,cpp}`, `frame_resources.h`, `src/metal/passes/bindings.h` (`restir_pt::reconnects`) |
 | CUDA's walk record from the contract | Frame graph | `src/cuda/frame/{mnee_list.h,frame_launch.h}`, `src/cuda/integrator/mnee.cuh`, `src/cuda/passes/mnee/*` |
 
+## RTXDI's layout and the fused shade on the M3 (`docs/research/2026-10-23-apple-silicon-design.md`, section 6, change 5)
+
+| What | Axis | Where |
+|---|---|---|
+| every place of ReSTIR PT's arrays at its block-linear slot, and its inverse | Pass | `src/metal/passes/restir_pt/restir_pt.metal.h` (`Traced`) |
+| the duplication map read and written through the same slots; its probe and test | Sample reuse | `src/metal/reuse/duplication.metal.h`, `src/metal/passes/restir_pt_duplication/restir_pt_duplication.metal`, `tests/gpu/kernels/restir_pt_probe.metal`, `tests/gpu/restir_pt_test.cpp` |
+| a traced pixel's light folded into the accumulated image, one function for the shade pass and the spatial merge | Pass | `src/metal/passes/restir_pt/shade.metal.h`, new; `src/metal/passes/restir_pt_shade/restir_pt_shade.metal` |
+| the merge shades; its pass binds the accumulated image and the count of samples not finite | Pass | `src/metal/passes/restir_pt_spatial/restir_pt_spatial.{metal,h,cpp}` |
+| the shade's step in a graph with the spatial pass, which records nothing | Frame | `src/metal/frame/renderer.{h,cpp}` (`ShadedInMerge`) |
+
 ## Not here yet
 
 - **HIP with HIPRT** on AMD's Strix Halo and **Direct3D 12** on the Xbox
