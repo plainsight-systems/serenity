@@ -32,6 +32,7 @@ file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/tests/generated/headless_program.h"
 # Unit tests of the Metal backend's own logic, apart from Metal: no GPU.
 add_executable(serenity_metal_unit_tests
     frame_sequence_test.cpp
+    raster_inputs_test.cpp
     texture_size_test.cpp
     ../main_test.cpp
 )
@@ -51,6 +52,7 @@ add_executable(serenity_gpu_tests
     restir_pt_test.cpp
     encoding_test.cpp
     features_test.cpp
+    features_raster_test.cpp
     film_test.cpp
     acceleration_test.cpp
     leave_test.cpp

@@ -148,17 +148,14 @@ namespace serenity::frame {
 //
 // Its rules (invalid()): at most once, directly after the denoise pass,
 // which is followed by it, and directly before the presenting pass. A
-// graph with the features pass, the denoised graph and both of the data
-// set's graphs among them, traces its light, its features and its
+// graph whose light is the network's input (feeds_network(), below), the
+// denoised graph among them, traces its light, its features and its
 // full-size albedo through a pinhole, the frame's camera with its lens
-// taken off (traced_inputs()): its features are rasterized, and a
-// rasterizer draws a pinhole's image (docs/research/
-// 2026-10-23-apple-silicon-design.md, section 6, change 2), its light the
-// same rays (contract 17), as the network is trained on; in the denoised
-// graph this pass applies the lens after it. Every other graph traces the
-// scene's lens in its rays. So in the demo the lens is drawn once, after
-// the network, and the data set's graphs are the network's inputs
-// themselves, a pinhole's.
+// taken off (traced_inputs()), as the network is trained on, and in the
+// denoised graph this pass applies the lens after it; every other graph
+// traces the scene's lens in its rays. So in the demo the lens is drawn
+// once, after the network, and the data set's input graph is the
+// network's input itself, a pinhole's.
 //
 // Checkerboard rendering of the light (contract 20, core/contracts/
 // checkerboard.h; Milestone 4's Step 4, docs/research/2026-10-17-milestone-
@@ -290,7 +287,7 @@ std::optional<sampling::CameraJitter> camera_jitter(const Schedule& schedule,
 bool lens_after_network(const Schedule& schedule);
 
 // The frame `inputs` as `schedule`'s passes before the depth of field trace
-// it (above): in a graph with the features pass, the frame's camera and
+// it (above): in a graph that feeds the network, the frame's camera and
 // the frame before's with their lens taken off (a radius of 0, a pinhole,
 // the rest of each camera as it was); `inputs` itself in every other. Pure
 // (F.8): the renderer traces through this and reads the lens for the depth of

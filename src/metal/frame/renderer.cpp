@@ -1193,8 +1193,9 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given,
         "camera");
   }
   // The frame as its light is traced: through a pinhole in a graph that
-  // applies the lens after the network (renderer.h, "The depth of field").
-  const frame::FrameInputs inputs = frame::traced_inputs(schedule_, given);
+  // applies the lens after the network (renderer.h, "The depth of field"),
+  // or whose features Metal rasterizes (raster_inputs.h).
+  const frame::FrameInputs inputs = raster_inputs(schedule_, given);
   // The passes before the denoise pass render at the light size, the
   // target's own in a graph without it (renderer.h).
   const frame::Extent light = frame::light_size(schedule_, size);

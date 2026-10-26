@@ -276,9 +276,13 @@ space with reversed infinite depth (`near / view depth`), so the
 rasterizer's sample at a pixel's center is the camera ray through that
 center; the light-size features' frame jitter (one offset every pixel,
 contract 17) moved into the projection, so that size is the light passes'
-ray exactly, as now. A graph that feeds the network traces its features
-through a pinhole (`core/frame/schedule.h`, `traced_inputs()`), so no lens
-is ever rasterized; the pass refuses a camera with one (I.5).
+ray exactly, as now. Metal traces every graph with the features pass
+through a pinhole (`metal/frame/raster_inputs.h`), so no lens is ever
+rasterized; the pass refuses a camera with one (I.5). Metal's own rule:
+first written into the core's `traced_inputs()`, which reached the CUDA
+backend; moved out on 2026-10-26 at the user's direction, so CUDA keeps
+its traced features (a random point in the pixel, the scene's lens in a
+features graph that does not feed the network).
 
 **Levels of detail and culling, as raster engines draw:** drawn at the
 tracer's levels, change 1's meshes, the raster passes cost more than the

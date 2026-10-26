@@ -675,8 +675,8 @@ builds one, and primary surface replacement traced on from it as before.
 | a render pipeline | GPU backend | `src/metal/device/library.{h,cpp}` (`render_pipeline()`) |
 | the visibility buffer a feature set, per frame slot | Frame graph | `src/metal/frame/feature_images.{h,cpp}` |
 | the shapes placed on the host and the frame's raster draws chosen before the encoders, the structure's update in the compute encoder; the raster passes opening the light half, the barrier to the compute encoder; the argument table's counts | Frame graph | `src/metal/frame/renderer.{h,cpp}`, `frame_resources.h` |
-| every graph with the features pass traced through a pinhole | Frame graph (core) | `src/core/frame/schedule.{h,cpp}` (`traced_inputs()`) |
-| the rasterized hit is the traced one, pixel for pixel; the raster levels and view; a features graph's pinhole | tests | `tests/gpu/features_test.cpp`, `tests/raster_levels_test.cpp`, `tests/denoise_core_test.cpp` |
+| every graph with the features pass traced through a pinhole on Metal, Metal's own rule (moved out of the core 2026-10-26: CUDA keeps its traced features) | Frame | `src/metal/frame/raster_inputs.{h,cpp}`, new; `src/metal/frame/renderer.{h,cpp}` |
+| the rasterized hit is the traced one, pixel for pixel (Metal's alone); the raster levels and view; a features graph's pinhole on Metal | tests | `tests/gpu/features_raster_test.cpp`, `tests/raster_levels_test.cpp`, `tests/gpu/raster_inputs_test.cpp` |
 
 ## The network on Apple's kernels (`docs/research/2026-10-23-apple-silicon-design.md`, section 6, change 3)
 

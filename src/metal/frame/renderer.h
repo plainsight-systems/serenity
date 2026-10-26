@@ -37,6 +37,7 @@
 #include "metal/frame/frame_images.h"
 #include "metal/frame/frame_resources.h"
 #include "metal/frame/mnee_list.h"
+#include "metal/frame/raster_inputs.h"
 #include "metal/passes/checkerboard_fill/checkerboard_fill.h"
 #include "metal/passes/denoise/denoise.h"
 #include "metal/passes/depth_of_field/depth_of_field.h"
@@ -371,7 +372,9 @@ struct ShadedInMerge {};
 // The depth of field (core/frame/schedule.h, depth_of_field; passes/
 // depth_of_field/depth_of_field.h; logical-overview.md, principle 12), a
 // denoised graph's. Such a graph traces through a pinhole: record() takes
-// the frame's inputs as frame::traced_inputs() gives them, the camera and
+// the frame's inputs as raster_inputs() gives them (raster_inputs.h, which
+// also takes the lens off in any graph whose features Metal rasterizes), the
+// camera and
 // the frame before's with their lens taken off, for everything it frames
 // and binds, the light half's rings, the full-size albedo's, the temporal
 // reuse's previous camera and the features' (so prepare() checks the

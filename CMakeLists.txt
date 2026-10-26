@@ -289,6 +289,7 @@ add_library(serenity_metal STATIC
     src/metal/frame/frame_images.cpp
     src/metal/frame/mnee_list.cpp
     src/metal/frame/offline_frames.cpp
+    src/metal/frame/raster_inputs.cpp
     src/metal/frame/renderer.cpp
     src/metal/passes/checkerboard_fill/checkerboard_fill.cpp
     src/metal/passes/denoise/denoise.cpp
