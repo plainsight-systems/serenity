@@ -1,7 +1,8 @@
 // ReSTIR PT's paired spatial reuse (restir_pt_spatial.h): steps 8 to 11 of
-// metal/passes/restir_pt/restir_pt.metal.h, four kernels in order, each
-// behind a barrier; one thread a traced pixel where a kernel runs one a
-// pixel (restir_pt.metal.h, Traced).
+// metal/passes/restir_pt/restir_pt.metal.h, the sequence of
+// restir_pt/shift_replay.h: the pairing, the lists' grids (for both reuses),
+// the shift over each list, the merge; one thread a traced pixel where a
+// kernel runs one a pixel (restir_pt.metal.h, Traced).
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -44,83 +45,89 @@ Partner partner_of(constant ushort* pairing, uint2 pixel, uint t,
 
 }  // namespace
 
-// Step 8: each pixel's path shifted to each similar partner where it
-// reconnects at x2; the pairs that replay appended to the list, a SIMD
-// group's at once (restir_pt.metal.h). Every thread reaches the group's
-// scan: none returns before it.
-kernel void restir_pt_shift(
+// Step 8's pairing, one thread a traced pixel: each of its partners not
+// paired (outside the image, or not similar) or with nothing to shift
+// stored as such; each pair that shifts appended to the list of its kind,
+// the pairs that reconnect at x2 or those that replay (restir_pt.metal.h,
+// replays()), a SIMD group's at once (GDSA.10). Every thread reaches both
+// reserves: none returns before them.
+kernel void restir_pt_pair(
     constant serenity::contracts::FrameConstants& frame
     [[buffer(binding::constants)]],
-    serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
-    constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
-    constant float* sphere_glows [[buffer(binding::glows)]],
-    constant serenity::contracts::Transform* transforms
-    [[buffer(binding::transforms)]],
     const device serenity::contracts::PathReservoir* reservoirs
     [[buffer(binding::reservoirs)]],
     const device serenity::contracts::PrimaryHit* primaries
     [[buffer(binding::primaries)]],
     constant ushort* pairing [[buffer(binding::pairing)]],
     device float4* shifts [[buffer(binding::shifts)]],
-    device uint* replays [[buffer(binding::replays)]],
-    device atomic_uint* counter [[buffer(binding::counter)]],
-    const device float* light_power [[buffer(binding::light_power)]],
+    device uint* reconnects [[buffer(binding::reconnects)]],
+    device uint* replays [[buffer(binding::pairs)]],
+    device atomic_uint* counts [[buffer(binding::counts)]],
     uint2 grid_place [[thread_position_in_grid]]) {
+  namespace c = serenity::contracts;
+  constexpr uint slots = c::max_path_neighbors;
   // the run's, the pipeline's constants (reuse_constants.h)
-  const serenity::contracts::PathReuseSettings settings = reuse_settings();
+  const c::PathReuseSettings settings = reuse_settings();
   const restir_pt::Traced traced = restir_pt::traced(frame, settings);
   const uint2 pixel = traced.pixel(grid_place);
   const bool inside = traced.inside(pixel);
   const uint i = traced.slot(pixel);
-  uint appended[serenity::contracts::max_path_neighbors];
-  uint count = 0u;
+  uint reconnecting[slots];
+  uint replaying[slots];
+  uint reconnect_count = 0u;
+  uint replay_count = 0u;
   if (inside) {
-    const restir_pt::Scene scene{structure, &block, transforms, sphere_glows,
-                                 light_power};
-    const serenity::contracts::PathReservoir reservoir = reservoirs[i];
-    const bool held = serenity::contracts::path_end(reservoir.flags) !=
-                      serenity::contracts::PathEnd::none;
-    const serenity::contracts::PrimaryHit own = primaries[i];
+    const c::PathReservoir reservoir = reservoirs[i];
+    const bool held = c::path_end(reservoir.flags) != c::PathEnd::none;
+    const bool replay = restir_pt::replays(reservoir);
+    const c::PrimaryHit own = primaries[i];
     for (uint t = 0u; t < settings.neighbors; ++t) {
       const Partner partner = partner_of(pairing, pixel, t, traced);
       const uint j = traced.slot(partner.pixel);
       if (!partner.inside || !restir_pt::similar(own, primaries[j])) {
-        shifts[i * serenity::contracts::max_path_neighbors + t] =
-            float4(0.0f, 0.0f, 0.0f, restir_pt::not_paired);
+        shifts[i * slots + t] = float4(0.0f, 0.0f, 0.0f, restir_pt::not_paired);
       } else if (!held) {
-        shifts[i * serenity::contracts::max_path_neighbors + t] = float4(0.0f);
-      } else if (restir_pt::replays(reservoir)) {
-        appended[count++] = restir_pt::replay_item(i, t);
+        shifts[i * slots + t] = float4(0.0f);
+      } else if (replay) {
+        replaying[replay_count++] = restir_pt::replay_item(i, t);
       } else {
-        shifts[i * serenity::contracts::max_path_neighbors + t] =
-            restir_pt::stored_shift(shift::shift_path(
-                scene, shift::unpack_primary_hit(primaries[j]), reservoir,
-                settings));
+        reconnecting[reconnect_count++] = restir_pt::replay_item(i, t);
       }
     }
   }
-  // The group's appended pairs, one atomic for all (GDSA.10).
-  const uint first = simd_reserve(counter, count);
-  for (uint n = 0u; n < count; ++n) {
-    replays[first + n] = appended[n];
+  // The group's appended pairs, one atomic a list for all (GDSA.10).
+  const uint first_reconnect =
+      simd_reserve(counts + c::reconnect_list, reconnect_count);
+  for (uint n = 0u; n < reconnect_count; ++n) {
+    reconnects[first_reconnect + n] = reconnecting[n];
+  }
+  const uint first_replay = simd_reserve(counts + c::replay_list, replay_count);
+  for (uint n = 0u; n < replay_count; ++n) {
+    replays[first_replay + n] = replaying[n];
   }
 }
 
-// Steps 6 and 9, one thread: the list's length as the replay's grid, and
-// the count set back to 0 for the next list (the spatial reuse's, after
-// the temporal's, or the next frame's), which a barrier orders after the
-// replay that reads the grid.
-kernel void restir_pt_replay_grid(device atomic_uint* counter
-                                  [[buffer(binding::counter)]],
-                                  device serenity::gpu::IndirectGrid* grid
-                                  [[buffer(binding::dispatch)]]) {
-  const uint count = atomic_load_explicit(counter, memory_order_relaxed);
-  atomic_store_explicit(counter, 0u, memory_order_relaxed);
-  *grid = indirect_grid(count, serenity::contracts::replay_group);
+// Steps 6 and 9, one thread: both lists' lengths as their grids, and both
+// counts set back to 0 for the next lists (the spatial reuse's, after the
+// temporal's, or the next frame's), which a barrier orders after the
+// shifts that read the grids.
+kernel void restir_pt_pair_grids(device atomic_uint* counts
+                                 [[buffer(binding::counts)]],
+                                 device serenity::gpu::IndirectGrid* grids
+                                 [[buffer(binding::dispatch)]]) {
+  namespace c = serenity::contracts;
+  for (uint list = 0u; list < c::pair_lists; ++list) {
+    const uint count =
+        atomic_load_explicit(counts + list, memory_order_relaxed);
+    atomic_store_explicit(counts + list, 0u, memory_order_relaxed);
+    grids[list] = indirect_grid(count, c::replay_group);
+  }
 }
 
-// Step 10: the pairs that replay, one thread each.
-kernel void restir_pt_replay(
+// Steps 8 and 10: the shift of one pair of a list, one thread a place,
+// whichever list (the host dispatches it over each in turn): this pixel's
+// path shifted to its partner, into the pair's slot.
+kernel void restir_pt_spatial_shift(
     constant serenity::contracts::FrameConstants& frame
     [[buffer(binding::constants)]],
     serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
@@ -134,7 +141,7 @@ kernel void restir_pt_replay(
     [[buffer(binding::primaries)]],
     constant ushort* pairing [[buffer(binding::pairing)]],
     device float4* shifts [[buffer(binding::shifts)]],
-    const device uint* replays [[buffer(binding::replays)]],
+    const device uint* items [[buffer(binding::pairs)]],
     const device serenity::gpu::IndirectGrid* grid
     [[buffer(binding::dispatch)]],
     const device float* light_power [[buffer(binding::light_power)]],
@@ -145,7 +152,7 @@ kernel void restir_pt_replay(
     return;
   }
   const restir_pt::Traced traced = restir_pt::traced(frame, settings);
-  const uint item = replays[n];
+  const uint item = items[n];
   const uint i = restir_pt::replay_pixel(item);
   const uint t = restir_pt::replay_slot(item);
   const uint2 pixel = traced.slot_pixel(i);

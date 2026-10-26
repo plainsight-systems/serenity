@@ -91,6 +91,16 @@ SERENITY_CONSTANT uint32_t duplication_group = 24u;
 // here, where both read it.
 SERENITY_CONSTANT uint32_t replay_group = 64u;
 
+// The two lists a reuse's pairing appends the pairs that shift to (ReSTIR
+// PT Enhanced's 6.2.2; metal/passes/restir_pt/shift_replay.h): the pairs
+// that reconnect at x2 and the pairs that replay, so a SIMD group's shifts
+// do one kind of work. Each list's count is a word of the lists' counts and
+// its indirect grid one of their grids, in this order; each list's
+// threadgroup is replay_group.
+SERENITY_CONSTANT uint32_t reconnect_list = 0u;
+SERENITY_CONSTANT uint32_t replay_list = 1u;
+SERENITY_CONSTANT uint32_t pair_lists = 2u;
+
 // The reuse textures' widths, one per neighbor (Enhanced §3.2: three
 // different sizes, so their repeats do not line up), in the order the
 // shaders and the host read them, and where each starts in the one array

@@ -130,9 +130,10 @@ static_assert(bindings::depth_of_field::dilated < max_denoise_buffers);
 static_assert(bindings::depth_of_field::near_filtered < max_denoise_textures);
 // A ReSTIR PT graph (its initial pass's work list and the MNEE pass bind
 // within it).
-constexpr NS::UInteger max_restir_pt_buffers = 30;
+constexpr NS::UInteger max_restir_pt_buffers = 31;  // Metal 4's most
 static_assert(bindings::restir_pt::mnee_header < max_restir_pt_buffers);
-static_assert(bindings::restir_pt::last_light_power < max_restir_pt_buffers);
+static_assert(bindings::restir_pt::last_light_power < max_restir_pt_buffers &&
+              bindings::restir_pt::reconnects < max_restir_pt_buffers);
 static_assert(bindings::mnee::lost < max_restir_pt_buffers &&
               bindings::mnee::converged_count < max_restir_pt_buffers);
 
@@ -240,9 +241,10 @@ void Renderer::RestirPtFamily::bind(
   resources.primaries = arrays.primaries;
   resources.light = arrays.light;
   resources.shifts = arrays.shifts;
+  resources.reconnects = arrays.reconnects;
   resources.replays = arrays.replays;
-  resources.replay_counter = arrays.counter;
-  resources.replay_grid = arrays.grid;
+  resources.pair_counts = arrays.counts;
+  resources.pair_grids = arrays.grids;
   resources.light_tiles = arrays.light_tiles;
   resources.light_power = arrays.light_power;
   resources.last_light_power = arrays.last_light_power;

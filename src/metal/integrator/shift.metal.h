@@ -95,9 +95,10 @@
 //
 // Cost: the destination's 48-byte record, unpacked; a ray, a surface's
 // resolve and a BSDF sample per replayed vertex; then a shadow ray and two BSDF
-// evaluations for the reconnection. Pairs that replay are compacted before they
-// run (metal/passes/restir_pt/restir_pt.metal.h), so a SIMD group that only
-// reconnects does not wait on one that replays (GPU.4).
+// evaluations for the reconnection. Pairs that reconnect and pairs that replay
+// are compacted into lists of their own before they run (metal/passes/
+// restir_pt/restir_pt.metal.h), so a SIMD group that only reconnects does not
+// wait on one that replays (GPU.4).
 
 #include <metal_raytracing>
 #include <metal_stdlib>

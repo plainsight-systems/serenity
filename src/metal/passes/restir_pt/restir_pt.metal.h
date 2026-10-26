@@ -60,7 +60,7 @@
 //      pixel starts from; and, with temporal reuse, where that hit was last
 //      frame (its point on its shape, placed by last frame's transform).
 //
-// restir_pt_temporal, four dispatches (Lin et al. 2022, TemporalReuse and
+// restir_pt_temporal, five dispatches (Lin et al. 2022, TemporalReuse and
 // TemporalPathRetrace; Enhanced §5, §7):
 //
 //   5. The temporal input: the primary hit's last-frame point through last
@@ -71,10 +71,10 @@
 //      Two shifts: last frame's final path there, shifted here in this
 //      frame's scene; this pixel's path, shifted there in last frame's
 //      (last frame's transforms and glows, for the Talbot weight's domain).
-//      Each done here where it reconnects at x2; appended to the list
-//      where it replays, as step 8 appends.
-//   6. The list's length as an indirect grid (step 9's kernel), and the
-//      replaying shifts, one thread each, each lane's frame data.
+//      Each appended to a list, as step 8 appends: the reconnections' or
+//      the replays'.
+//   6. The lists' lengths as indirect grids (step 9's kernel), and each
+//      list's shifts, one thread each, each lane's frame data.
 //   7. The Talbot merge (path_merge.metal.h): the own reservoir and last
 //      frame's, its confidence capped at c_cap times the own one's, c_cap
 //      lowered by last frame's duplication map at the input's pixel
@@ -83,21 +83,22 @@
 //      frame's final reservoirs, its vector-valued estimate added to the
 //      light buffer.
 //
-// restir_pt_spatial, four dispatches (Enhanced §3, §6.2.2, §7):
+// restir_pt_spatial, five dispatches (Enhanced §3, §6.2.2, §7):
 //
 //   8. Pairs: for each of the 3 reuse textures, the pixel's paired
 //      neighbor (pairing.metal.h); a pair whose primary hits are not
 //      similar (the 2022 code's test: normals within 60 degrees, distances
 //      within 10%, made symmetric so both ends of a pair agree) is not
-//      merged. Each pixel's path shifted to each similar partner: here,
-//      where the path reconnects at x2 and needs no replay; or, where it
-//      replays, the pair appended to a list, compacted by a SIMD-group scan
-//      and one atomic a group (GDSA.10: the count left on the device,
-//      GDSA.13), so the lanes that only reconnect do not wait on the ones
-//      that replay (GPU.4).
-//   9. The list's length turned into an indirect dispatch's grid, and the
-//      count set back to 0 for the next list.
-//  10. The replaying pairs, one thread each, from the list.
+//      merged. Each pair that shifts appended to one of two lists, the
+//      pairs whose path reconnects at x2 and needs no replay or those
+//      whose path replays, compacted by a SIMD-group scan and one atomic a
+//      group (GDSA.10: the counts left on the device, GDSA.13), so a SIMD
+//      group's shifts do one kind of work (GPU.4; Enhanced §6.2.2 on every
+//      pair that shifts, as on the 3090).
+//   9. The lists' lengths turned into indirect dispatches' grids, and the
+//      counts set back to 0 for the next lists.
+//  10. Each list's pairs shifted, one thread each, the two lists' dispatches
+//      free to run together.
 //  11. The merge, one thread a pixel: its own path and its partners',
 //      each shifted both ways by the dispatches above (one shift per pair
 //      serves both ends: Enhanced §3), weighed by pairwise MIS and summed
@@ -851,10 +852,11 @@ inline float4 stored_shift(shift::Shifted shifted) {
   return float4(shifted.integrand, shifted.jacobian);
 }
 
-// A replaying shift as the replay list holds it (steps 5, 6, 8 and 10): the
+// A shifting pair as either list holds it (steps 5, 6, 8 and 10): the
 // pixel whose shifted paths it writes and the slot among them, one word,
-// replay_slots to a pixel; its grid one of metal/device/indirect_grid.h's,
-// in threadgroups of contract 15's replay_group. The spatial reuse's slots
+// replay_slots to a pixel; its list's grid one of
+// metal/device/indirect_grid.h's, in threadgroups of contract 15's
+// replay_group. The spatial reuse's slots
 // are its partners, the temporal reuse's its two shifts (last frame's path
 // here, this pixel's there), each fewer than replay_slots.
 constant constexpr uint replay_slots = 4u;

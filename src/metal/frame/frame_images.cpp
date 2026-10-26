@@ -73,11 +73,14 @@ void FrameImages::prepare(frame::Extent size) {
   size_ = size;
 }
 
-static_assert(PathReuseImages::grid_offset >= sizeof(std::uint32_t) &&
-              PathReuseImages::grid_offset + sizeof(gpu::IndirectGrid) <=
+static_assert(PathReuseImages::grid_offset >=
+                  contracts::pair_lists * sizeof(std::uint32_t) &&
+              PathReuseImages::grid_offset +
+                      contracts::pair_lists * sizeof(gpu::IndirectGrid) <=
                   PathReuseImages::counter_bytes);
 static_assert(PathReuseImages::grid_offset % alignof(gpu::IndirectGrid) == 0 &&
-              PathReuseImages::grid_offset % constant_offset_alignment == 0);
+              PathReuseImages::grid_offset % constant_offset_alignment == 0 &&
+              sizeof(gpu::IndirectGrid) % constant_offset_alignment == 0);
 
 PathReuseImages::PathReuseImages(const Device& device, Submission& submission,
                                  Spatial spatial, Temporal temporal, Grid grid,
@@ -87,11 +90,11 @@ PathReuseImages::PathReuseImages(const Device& device, Submission& submission,
       spatial_(spatial),
       temporal_(temporal),
       grid_(grid) {
-  // The count starts at 0, and the grid pass keeps setting it back.
+  // The counts start at 0, and the grid pass keeps setting them back.
   const auto pool = scoped_pool();
-  counter_ = make_resident_buffer(device_.get(), submission_, counter_bytes,
-                                  MTL::ResourceStorageModeShared,
-                                  "ReSTIR PT's replay count", Zeroed::yes);
+  counter_ = make_resident_buffer(
+      device_.get(), submission_, counter_bytes, MTL::ResourceStorageModeShared,
+      "ReSTIR PT's pair lists' counts", Zeroed::yes);
   make(light_tiles_, passes::light_tiles_bytes(), "light tiles");
   for (std::size_t h = 0; h < (temporal == Temporal::merged ? 2u : 1u); ++h) {
     make(light_power_.at(h), passes::light_power_bytes(lights),
@@ -131,10 +134,10 @@ std::uint64_t PathReuseImages::prepare(const frame::FrameInputs& inputs,
   // not), so nothing of the old arrays is read again; frames in flight
   // may still read them, so settled first.
   size_ = {};
-  const auto all = {&reservoirs_,      &primaries_[0], &primaries_[1],
-                    &light_,           &shifts_,       &replays_,
-                    &finals_[0],       &finals_[1],    &previous_positions_,
-                    &previous_pixels_, &duplication_};
+  const auto all = {
+      &reservoirs_, &primaries_[0],       &primaries_[1],    &light_,
+      &shifts_,     &reconnects_,         &replays_,         &finals_[0],
+      &finals_[1],  &previous_positions_, &previous_pixels_, &duplication_};
   if (std::ranges::any_of(
           all, [](const Array* array) { return static_cast<bool>(*array); })) {
     submission_.drain();
@@ -152,7 +155,9 @@ std::uint64_t PathReuseImages::prepare(const frame::FrameInputs& inputs,
   make(light_, sizes.light, "light buffer");
   if (sizes.shifts != 0) {
     make(shifts_, sizes.shifts, "shifted paths");
-    make(replays_, sizes.replays, "replaying shifts");
+    // Each list the most pairs that shift, as many as replay at most.
+    make(reconnects_, sizes.replays, "reconnecting pairs");
+    make(replays_, sizes.replays, "replaying pairs");
   }
   if (sizes.finals != 0) {
     for (Array& copy : finals_) {
@@ -178,9 +183,13 @@ PathReuseImages::Addresses PathReuseImages::addresses(
   out.primaries = address(primaries_.at(now));
   out.light = address(light_);
   out.shifts = address(shifts_);
+  out.reconnects = address(reconnects_);
   out.replays = address(replays_);
-  out.counter = address(counter_);
-  out.grid = out.counter + grid_offset;
+  out.counts = address(counter_);
+  for (std::size_t list = 0; list < out.grids.size(); ++list) {
+    out.grids.at(list) =
+        out.counts + grid_offset + list * sizeof(gpu::IndirectGrid);
+  }
   out.light_tiles = address(light_tiles_);
   out.light_power = address(light_power_.at(now));
   if (temporal) {

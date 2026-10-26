@@ -7,6 +7,7 @@
 #include <span>
 
 #include "core/contracts/mnee_request.h"
+#include "core/contracts/path_reuse_settings.h"
 #include "core/frame/extent.h"
 #include "core/passes/tone_map.h"
 #include "metal/acceleration/scene_acceleration.h"
@@ -65,20 +66,21 @@ struct FrameResources {
   // textures, static (its settings are its pipelines' constants:
   // passes/restir_pt/reuse_constants.h); its path reservoirs, primary
   // hits, light buffer and light tiles; with either reuse, the shifted
-  // paths, the replaying shifts, their count and the replay's indirect
-  // grid; and with temporal reuse its reuse constants, last frame's
-  // primary hits, this frame's and last frame's final reservoirs, the
-  // previous positions, the previous pixels, the duplication map and last
-  // frame's transforms and glows (metal/scene/shape_transforms.h,
-  // light_glows.h). 0 without its passes.
+  // paths, the two lists of pairs that shift (the reconnections and the
+  // replays), their counts and their indirect grids; and with temporal reuse
+  // its reuse constants, last frame's primary hits, this frame's and last
+  // frame's final reservoirs, the previous positions, the previous pixels, the
+  // duplication map and last frame's transforms and glows
+  // (metal/scene/shape_transforms.h, light_glows.h). 0 without its passes.
   MTL::GPUAddress pairing = 0;
   MTL::GPUAddress path_reservoirs = 0;
   MTL::GPUAddress primaries = 0;
   MTL::GPUAddress light = 0;
   MTL::GPUAddress shifts = 0;
+  MTL::GPUAddress reconnects = 0;
   MTL::GPUAddress replays = 0;
-  MTL::GPUAddress replay_counter = 0;
-  MTL::GPUAddress replay_grid = 0;
+  MTL::GPUAddress pair_counts = 0;
+  std::array<MTL::GPUAddress, contracts::pair_lists> pair_grids{};
   MTL::GPUAddress light_tiles = 0;
   // The frame's power pyramid (contracts/light_tile.h), which the light
   // tiles are drawn from and every density weighs by, and, with temporal

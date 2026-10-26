@@ -1,8 +1,9 @@
 // ReSTIR PT's temporal reuse (restir_pt_temporal.h): steps 5 to 7 of
-// metal/passes/restir_pt/restir_pt.metal.h, three kernels and the spatial
-// pass's replay grid (restir_pt_spatial.metal, restir_pt_replay_grid) in
-// order, each behind a barrier; one thread a traced pixel where a kernel
-// runs one a pixel (restir_pt.metal.h, Traced).
+// metal/passes/restir_pt/restir_pt.metal.h, the sequence of
+// restir_pt/shift_replay.h: the pairing, the lists' grids (the spatial
+// pass's kernel, restir_pt_spatial.metal's restir_pt_pair_grids), the shift
+// over each list, the merge; one thread a traced pixel where a kernel runs
+// one a pixel (restir_pt.metal.h, Traced).
 
 #include <metal_raytracing>
 #include <metal_stdlib>
@@ -34,10 +35,88 @@ static_assert(own_there < restir_pt::replay_slots,
 
 }  // namespace
 
-// Step 5: each pixel's temporal input found; its two shifts done here
-// where they reconnect at x2, appended to the replay list where they
-// replay, a SIMD group's at once (as restir_pt_shift). Every thread reaches
-// the group's scan: none returns before it.
+// Step 5's pairing, one thread a traced pixel: its temporal input found
+// (the pixel last frame, written for the shifts and the merge); each of its
+// two shifts with no path to shift stored as such, each that shifts
+// appended to the list of its kind, the pairs that reconnect at x2 or those
+// that replay (restir_pt.metal.h, replays()), a SIMD group's at once
+// (GDSA.10). Every thread reaches both reserves: none returns before them.
+kernel void restir_pt_temporal_pair(
+    constant serenity::contracts::FrameConstants& frame
+    [[buffer(binding::constants)]],
+    const device serenity::contracts::PathReservoir* reservoirs
+    [[buffer(binding::reservoirs)]],
+    const device serenity::contracts::PrimaryHit* primaries
+    [[buffer(binding::primaries)]],
+    device float4* shifts [[buffer(binding::shifts)]],
+    device uint* reconnects [[buffer(binding::reconnects)]],
+    device uint* replays [[buffer(binding::pairs)]],
+    device atomic_uint* counts [[buffer(binding::counts)]],
+    constant serenity::contracts::PathReuseConstants& reuse
+    [[buffer(binding::path_constants)]],
+    const device serenity::contracts::PrimaryHit* last_primaries
+    [[buffer(binding::last_primaries)]],
+    const device serenity::contracts::PathReservoir* last_finals
+    [[buffer(binding::last_finals)]],
+    const device serenity::contracts::Float3* previous_positions
+    [[buffer(binding::previous_positions)]],
+    device uint* previous_pixels [[buffer(binding::previous_pixels)]],
+    uint2 grid_place [[thread_position_in_grid]]) {
+  namespace c = serenity::contracts;
+  // the run's, the pipeline's constants (reuse_constants.h)
+  const c::PathReuseSettings settings = reuse_settings();
+  const restir_pt::Traced traced = restir_pt::traced(frame, settings);
+  const uint2 pixel = traced.pixel(grid_place);
+  const bool inside = traced.inside(pixel);
+  const uint i = traced.slot(pixel);
+  uint reconnecting[2];
+  uint replaying[2];
+  uint reconnect_count = 0u;
+  uint replay_count = 0u;
+  if (inside) {
+    const c::PrimaryHit own_hit = primaries[i];
+    uint j = restir_pt::no_pixel;
+    if (reuse.previous != 0u && own_hit.distance > 0.0f) {
+      j = restir_pt::previous_pixel(
+          reuse.previous_camera, to_float3(previous_positions[i]),
+          decode_unit(own_hit.normal), last_primaries, traced,
+          restir_pt::ring_start(frame.frame_index));
+    }
+    previous_pixels[i] = j;
+    if (j != restir_pt::no_pixel) {
+      // Each shift's path: last frame's, shifted here, and this pixel's,
+      // shifted there.
+      const c::PathReservoir paths[2] = {last_finals[j], reservoirs[i]};
+      const uint path_slots[2] = {last_here, own_there};
+      for (uint k = 0u; k < 2u; ++k) {
+        const uint slot = path_slots[k];
+        if (!restir_pt::holds_path(paths[k])) {
+          shifts[i * slots + slot] = float4(0.0f);
+        } else if (restir_pt::replays(paths[k])) {
+          replaying[replay_count++] = restir_pt::replay_item(i, slot);
+        } else {
+          reconnecting[reconnect_count++] = restir_pt::replay_item(i, slot);
+        }
+      }
+    }
+  }
+  // The group's appended pairs, one atomic a list for all (GDSA.10).
+  const uint first_reconnect =
+      simd_reserve(counts + c::reconnect_list, reconnect_count);
+  for (uint n = 0u; n < reconnect_count; ++n) {
+    reconnects[first_reconnect + n] = reconnecting[n];
+  }
+  const uint first_replay = simd_reserve(counts + c::replay_list, replay_count);
+  for (uint n = 0u; n < replay_count; ++n) {
+    replays[first_replay + n] = replaying[n];
+  }
+}
+
+// Steps 5 and 6: the shift of one pair of a list, one thread a place,
+// whichever list (the host dispatches it over each in turn). Which frame's
+// scene, which primary hit and which path are data, chosen per lane by the
+// pair's slot, so a SIMD group runs one shift whatever its lanes' slots
+// (GPU.4).
 kernel void restir_pt_temporal_shift(
     constant serenity::contracts::FrameConstants& frame
     [[buffer(binding::constants)]],
@@ -51,93 +130,7 @@ kernel void restir_pt_temporal_shift(
     const device serenity::contracts::PrimaryHit* primaries
     [[buffer(binding::primaries)]],
     device float4* shifts [[buffer(binding::shifts)]],
-    device uint* replays [[buffer(binding::replays)]],
-    device atomic_uint* counter [[buffer(binding::counter)]],
-    constant serenity::contracts::PathReuseConstants& reuse
-    [[buffer(binding::path_constants)]],
-    const device serenity::contracts::PrimaryHit* last_primaries
-    [[buffer(binding::last_primaries)]],
-    const device serenity::contracts::PathReservoir* last_finals
-    [[buffer(binding::last_finals)]],
-    const device serenity::contracts::Float3* previous_positions
-    [[buffer(binding::previous_positions)]],
-    device uint* previous_pixels [[buffer(binding::previous_pixels)]],
-    constant serenity::contracts::Transform* last_transforms
-    [[buffer(binding::last_transforms)]],
-    constant float* last_glows [[buffer(binding::last_glows)]],
-    const device float* light_power [[buffer(binding::light_power)]],
-    const device float* last_light_power [[buffer(binding::last_light_power)]],
-    uint2 grid_place [[thread_position_in_grid]]) {
-  // the run's, the pipeline's constants (reuse_constants.h)
-  const serenity::contracts::PathReuseSettings settings = reuse_settings();
-  const restir_pt::Traced traced = restir_pt::traced(frame, settings);
-  const uint2 pixel = traced.pixel(grid_place);
-  const bool inside = traced.inside(pixel);
-  const uint i = traced.slot(pixel);
-  uint appended[2];
-  uint count = 0u;
-  if (inside) {
-    const serenity::contracts::PrimaryHit own_hit = primaries[i];
-    uint j = restir_pt::no_pixel;
-    if (reuse.previous != 0u && own_hit.distance > 0.0f) {
-      j = restir_pt::previous_pixel(
-          reuse.previous_camera, to_float3(previous_positions[i]),
-          decode_unit(own_hit.normal), last_primaries, traced,
-          restir_pt::ring_start(frame.frame_index));
-    }
-    previous_pixels[i] = j;
-    if (j != restir_pt::no_pixel) {
-      const restir_pt::Scene now{structure, &block, transforms, sphere_glows,
-                                 light_power};
-      const restir_pt::Scene then{structure, &block, last_transforms,
-                                  last_glows, last_light_power};
-      const serenity::contracts::PathReservoir last = last_finals[j];
-      const serenity::contracts::PathReservoir own = reservoirs[i];
-      if (!restir_pt::holds_path(last)) {
-        shifts[i * slots + last_here] = float4(0.0f);
-      } else if (restir_pt::replays(last)) {
-        appended[count++] = restir_pt::replay_item(i, last_here);
-      } else {
-        shifts[i * slots + last_here] =
-            restir_pt::stored_shift(shift::shift_path(
-                now, shift::unpack_primary_hit(own_hit), last, settings));
-      }
-      if (!restir_pt::holds_path(own)) {
-        shifts[i * slots + own_there] = float4(0.0f);
-      } else if (restir_pt::replays(own)) {
-        appended[count++] = restir_pt::replay_item(i, own_there);
-      } else {
-        shifts[i * slots + own_there] =
-            restir_pt::stored_shift(shift::shift_path(
-                then, shift::unpack_primary_hit(last_primaries[j]), own,
-                settings));
-      }
-    }
-  }
-  // The group's appended pairs, one atomic for all (GDSA.10).
-  const uint first = simd_reserve(counter, count);
-  for (uint n = 0u; n < count; ++n) {
-    replays[first + n] = appended[n];
-  }
-}
-
-// Step 6: the shifts that replay, one thread each. Which frame's scene, which
-// primary hit and which path are data, chosen per lane, so a SIMD group runs
-// one shift whatever its lanes' slots (GPU.4).
-kernel void restir_pt_temporal_replay(
-    constant serenity::contracts::FrameConstants& frame
-    [[buffer(binding::constants)]],
-    serenity::shaders::SceneStructure structure [[buffer(binding::structure)]],
-    constant serenity::gpu::SceneBlock& block [[buffer(binding::scene)]],
-    constant float* sphere_glows [[buffer(binding::glows)]],
-    constant serenity::contracts::Transform* transforms
-    [[buffer(binding::transforms)]],
-    const device serenity::contracts::PathReservoir* reservoirs
-    [[buffer(binding::reservoirs)]],
-    const device serenity::contracts::PrimaryHit* primaries
-    [[buffer(binding::primaries)]],
-    device float4* shifts [[buffer(binding::shifts)]],
-    const device uint* replays [[buffer(binding::replays)]],
+    const device uint* items [[buffer(binding::pairs)]],
     const device serenity::gpu::IndirectGrid* grid
     [[buffer(binding::dispatch)]],
     const device serenity::contracts::PrimaryHit* last_primaries
@@ -156,7 +149,7 @@ kernel void restir_pt_temporal_replay(
   if (n >= grid->count) {
     return;
   }
-  const uint item = replays[n];
+  const uint item = items[n];
   const uint i = restir_pt::replay_pixel(item);
   const uint slot = restir_pt::replay_slot(item);
   const uint j = previous_pixels[i];

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <string_view>
 
+#include "core/contracts/path_reuse_settings.h"
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
 #include "core/frame/history.h"
@@ -140,10 +141,12 @@ class FrameImages {
 //   shifts              each pixel's path shifted to each of its 3 partners,
 //                       or the temporal reuse's two shifts, F and the
 //                       Jacobian, 48 bytes;
-//   replays             the shifts that replay, at most 3 a pixel, 12 bytes;
-//   counter             their count and the replay's indirect grid, in one
+//   reconnects, replays the pairs that shift, the reconnections' list and
+//                       the replays' (contracts::pair_lists), each at most 3
+//                       a pixel, 12 bytes each;
+//   counter             their two counts and their indirect grids, in one
 //                       small buffer the CPU zeroes once (shared storage, 128
-//                       bytes): the grid pass sets the count back to 0;
+//                       bytes): the grid pass sets the counts back to 0;
 //
 // and with restir_pt_temporal:
 //
@@ -181,9 +184,9 @@ class FrameImages {
 // queue barrier before the initial pass keeps a frame from writing what
 // the frame before still reads (metal/frame/renderer.h).
 //
-// Bytes a pixel: 128 for the initial pass alone; 188 with spatial reuse;
-// with both reuses, 64 + 2 x 48 + 16 + 48 + 12 + 2 x 64 + 12 + 4 + 4 = 384,
-// 2.96 GB at 3456 x 2234 and 741 MB at 1728 x 1117.
+// Bytes a pixel: 128 for the initial pass alone; 200 with spatial reuse;
+// with both reuses, 64 + 2 x 48 + 16 + 48 + 2 x 12 + 2 x 64 + 12 + 4 + 4 =
+// 396, 3.06 GB at 3456 x 2234 and 764 MB at 1728 x 1117.
 //
 // Throws MetalError if the frame's size is not one Metal makes an image of,
 // the device cannot make a buffer, or the core's history rule refuses a
@@ -218,9 +221,10 @@ class PathReuseImages {
     MTL::GPUAddress last_primaries = 0;
     MTL::GPUAddress light = 0;
     MTL::GPUAddress shifts = 0;
+    MTL::GPUAddress reconnects = 0;
     MTL::GPUAddress replays = 0;
-    MTL::GPUAddress counter = 0;
-    MTL::GPUAddress grid = 0;
+    MTL::GPUAddress counts = 0;  // a word a list (contracts::pair_lists)
+    std::array<MTL::GPUAddress, contracts::pair_lists> grids{};
     MTL::GPUAddress light_tiles = 0;
     MTL::GPUAddress light_power = 0;
     MTL::GPUAddress last_light_power = 0;
@@ -232,10 +236,11 @@ class PathReuseImages {
   };
   Addresses addresses(std::uint64_t index) const noexcept;
 
-  // Where the indirect grid is in the counter's buffer: past the count,
-  // at its own alignment (metal/device/indirect_grid.h) and the constant
-  // offset alignment (support.h), which every binding meets; the buffer's
-  // bytes, the grid within them.
+  // Where the lists' indirect grids are in the counter's buffer, one after
+  // the other in the lists' order: past the counts, at the grid's own
+  // alignment (metal/device/indirect_grid.h) and the constant offset
+  // alignment (support.h), which every binding meets; the buffer's bytes,
+  // the grids within them.
   static constexpr std::size_t grid_offset = 64;
   static constexpr std::size_t counter_bytes = 128;
 
@@ -256,6 +261,7 @@ class PathReuseImages {
   std::array<Array, 2> primaries_;
   Array light_;
   Array shifts_;
+  Array reconnects_;
   Array replays_;
   Array counter_;      // shared storage, zeroed once
   Array light_tiles_;  // contracts/light_tile.h: a frame's, whatever its size

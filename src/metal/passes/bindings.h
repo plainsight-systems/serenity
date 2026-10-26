@@ -118,9 +118,12 @@ enum Buffer : uint8_t {
   light = 9,        // the frame's light buffer, a float4 a pixel
   pairing = 10,     // the reuse textures (core/sampling/pairing.h)
   shifts = 11,      // the shifted paths, 3 a pixel
-  replays = 12,     // the pairs that replay, compacted
-  counter = 13,     // their count
-  dispatch = 14,    // the replay's indirect grid
+  pairs = 12,       // a list of pairs (contracts::pair_lists): the replays
+                    // the pairing appends to; the list a shift dispatch
+                    // reads, rebound to each list in turn
+  counts = 13,      // the two lists' counts, a word each
+  dispatch = 14,    // the lists' indirect grids: the first, which the grid
+                    // kernel writes both from; a shift dispatch's list's
   non_finite = 15,  // the frame's count of samples not finite
                     // (metal/film/failure_count.h)
   light_tiles = 16,     // the frame's light tiles (contracts/light_tile.h)
@@ -141,6 +144,8 @@ enum Buffer : uint8_t {
   light_power = 28,      // the frame's power pyramid (contracts/light_tile.h)
   last_light_power =
       29,  // last frame's, which a shift to last frame's pixel weighs by
+  reconnects = 30,  // the pairs that reconnect at x2, which the pairing
+                    // appends to
 };
 enum Texture : uint8_t {
   accumulated = 0

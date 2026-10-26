@@ -8,16 +8,17 @@ namespace serenity::metal {
 
 RestirPtTemporalPass::RestirPtTemporalPass(
     const Library& library, const contracts::PathReuseSettings& settings)
-    : reuse_(library, settings, "restir_pt_temporal_shift",
-             "restir_pt_temporal_replay", "restir_pt_temporal",
+    : reuse_(library, settings,
+             {.pair = "restir_pt_temporal_pair",
+              .shift = "restir_pt_temporal_shift",
+              .merge = "restir_pt_temporal"},
              "RestirPtTemporalPass") {}
 
 void RestirPtTemporalPass::record(MTL4::ComputeCommandEncoder* encoder,
                                   const FrameResources& resources) const {
   if (resources.path_constants == 0 || resources.path_reservoirs == 0 ||
       resources.primaries == 0 || resources.last_primaries == 0 ||
-      resources.light == 0 || resources.shifts == 0 || resources.replays == 0 ||
-      resources.replay_counter == 0 || resources.replay_grid == 0 ||
+      resources.light == 0 || resources.shifts == 0 ||
       resources.path_finals == 0 || resources.last_path_finals == 0 ||
       resources.previous_positions == 0 || resources.previous_pixels == 0 ||
       resources.duplication == 0 || resources.last_transforms == 0 ||
@@ -28,7 +29,7 @@ void RestirPtTemporalPass::record(MTL4::ComputeCommandEncoder* encoder,
         "constants, "
         "path reservoirs, either frame's primary hits or final reservoirs, "
         "light buffer, shifted "
-        "paths, replaying shifts, their count or grid, previous positions or "
+        "paths, previous positions or "
         "pixels, duplication map, "
         "or last frame's transforms, glows or power pyramid");
   }
@@ -39,9 +40,6 @@ void RestirPtTemporalPass::record(MTL4::ComputeCommandEncoder* encoder,
   arguments->setAddress(resources.primaries, binding::primaries);
   arguments->setAddress(resources.light, binding::light);
   arguments->setAddress(resources.shifts, binding::shifts);
-  arguments->setAddress(resources.replays, binding::replays);
-  arguments->setAddress(resources.replay_counter, binding::counter);
-  arguments->setAddress(resources.replay_grid, binding::dispatch);
   arguments->setAddress(resources.path_constants, binding::path_constants);
   arguments->setAddress(resources.last_primaries, binding::last_primaries);
   arguments->setAddress(resources.path_finals, binding::finals);
@@ -54,7 +52,7 @@ void RestirPtTemporalPass::record(MTL4::ComputeCommandEncoder* encoder,
   arguments->setAddress(resources.last_glows, binding::last_glows);
   arguments->setAddress(resources.light_power, binding::light_power);
   arguments->setAddress(resources.last_light_power, binding::last_light_power);
-  reuse_.record(encoder, resources.traced, resources.replay_grid);
+  reuse_.record(encoder, resources);  // binds its lists
 }
 
 }  // namespace serenity::metal
