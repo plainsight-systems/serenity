@@ -49,7 +49,7 @@ DenoisePass::DenoisePass(const Device& device, const Library& library,
                          Submission& submission,
                          const denoise::Network& network)
     : device_(NS::RetainPtr(device.handle())),
-      submission_(submission),
+      submission_(&submission),
       histogram_{library.compute_pipeline("denoise_depth_histogram0"),
                  library.compute_pipeline("denoise_depth_histogram1"),
                  library.compute_pipeline("denoise_depth_histogram2")},
@@ -143,8 +143,8 @@ void DenoisePass::prepare(frame::Extent padded) {
   heap_resident_.reset();
   pipeline_ = pipeline;
   heap_ = made;
-  pipeline_resident_ = submission_.keep_resident(pipeline_.get());
-  heap_resident_ = submission_.keep_resident(heap_.get());
+  pipeline_resident_ = submission_->keep_resident(pipeline_.get());
+  heap_resident_ = submission_->keep_resident(heap_.get());
   prepared_ = padded;
 }
 

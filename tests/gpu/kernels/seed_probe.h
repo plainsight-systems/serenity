@@ -38,7 +38,9 @@ struct SeedFound {
   uint32_t blocked;
   uint32_t usable;
   uint32_t padding;
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   float t[contracts::mnee_most_crossings];
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   uint32_t shape[contracts::mnee_most_crossings];
 };
 

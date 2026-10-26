@@ -131,9 +131,9 @@ class ProbeRunner {
   Buffers dispatch(const char* kernel, std::size_t threads,
                    std::initializer_list<Binding> bindings,
                    metal::PipelineOptions options = {}) {
-    return dispatch(
-        kernel, threads,
-        std::span<const Binding>(bindings.begin(), bindings.size()), options);
+    return dispatch(kernel, threads,
+                    std::span<const Binding>(bindings.begin(), bindings.size()),
+                    options);
   }
 
   Buffers dispatch(const char* kernel, std::size_t threads,

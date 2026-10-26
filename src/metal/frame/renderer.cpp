@@ -722,7 +722,8 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
   // in flight at a new size.
   for (Step& step : steps_) {
     if (step.kind == frame::PassKind::denoise) {
-      std::get<DenoisePass>(step.pass).prepare(denoise_->images.padded());
+      std::get<DenoisePass>(step.pass).prepare(
+          made(denoise_, "denoiser").images.padded());
     }
   }
   prepared_ =
@@ -1252,7 +1253,9 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given,
     // light-size features; the fill's barrier orders it before the image
     // half in one part, the event in two.
     DenoiseFamily& d = made(denoise_, "denoiser");
-    d.full_features_pass.record(encoder, denoised->full_features);
+    const DenoiseResources& denoising =
+        made(denoised, "the denoised frame's resources");
+    d.full_features_pass.record(encoder, denoising.full_features);
     record_hand_off(encoder, begun, resources, prepared,
                     d.images.light_radiance(begun.slot));
     MTL4::ComputeCommandEncoder* image = encoder;
@@ -1277,7 +1280,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given,
       barrier_after_dispatch(encoder);
     }
     record_image(begun.second != nullptr ? begun.second : begun.commands, image,
-                 *denoised);
+                 denoising);
     image->endEncoding();
   }
   // What the next frame's temporal merge asks of this one; what

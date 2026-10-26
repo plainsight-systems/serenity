@@ -11,6 +11,7 @@
 #include "core/camera/thin_lens.h"
 #include "core/contracts/obstacles.h"
 #include "core/shapes/mesh_levels.h"
+#include "support/required.h"
 
 namespace serenity::shapes {
 namespace {
@@ -33,19 +34,21 @@ TEST_CASE(
   const auto far = raster_level(0.01, {0.0f, 0.0f, -5.0f}, camera);
   REQUIRE(near);
   REQUIRE(far);
-  CHECK(*far < *near);
+  CHECK(tests::required(far) < tests::required(near));
   // As the tracer's for a sphere that stays put.
-  CHECK(*near ==
-        *sphere_level(SphereSight{0.01, contracts::Box{{0.0f, 0.0f, -0.5f},
-                                                       {0.0f, 0.0f, -0.5f}}},
-                      camera));
+  const auto staying = sphere_level(
+      SphereSight{0.01,
+                  contracts::Box{{0.0f, 0.0f, -0.5f}, {0.0f, 0.0f, -0.5f}}},
+      camera);
+  REQUIRE(staying);
+  CHECK(tests::required(near) == tests::required(staying));
   // Never finer than the level of its nearest approach, the tracer's.
   const auto nearest = sphere_level(
       SphereSight{0.01,
                   contracts::Box{{0.0f, 0.0f, -5.0f}, {0.0f, 0.0f, -0.5f}}},
       camera);
   REQUIRE(nearest);
-  CHECK(*far <= *nearest);
+  CHECK(tests::required(far) <= tests::required(nearest));
   // A sphere whose surface touches the lens has none.
   CHECK_FALSE(raster_level(0.01, {0.0f, 0.0f, -0.01f}, camera));
 }

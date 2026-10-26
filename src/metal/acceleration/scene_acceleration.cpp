@@ -115,14 +115,11 @@ contracts::Float3 placed_point(const contracts::Transform& t,
 gpu::MeshTriangle mesh_triangle(std::span<const contracts::Float3> vertices,
                                 const std::array<std::uint32_t, 3>& triangle,
                                 std::uint32_t shape) {
-  gpu::MeshTriangle data{};
-  for (std::size_t c = 0; c < 3; ++c) {
-    const contracts::Float3& v = vertices[triangle[c]];
-    data.v[c][0] = v.x;
-    data.v[c][1] = v.y;
-    data.v[c][2] = v.z;
-  }
-  data.shape = shape;
+  const contracts::Float3& a = vertices[triangle[0]];
+  const contracts::Float3& b = vertices[triangle[1]];
+  const contracts::Float3& c = vertices[triangle[2]];
+  gpu::MeshTriangle data{{{a.x, a.y, a.z}, {b.x, b.y, b.z}, {c.x, c.y, c.z}},
+                         shape};
   return data;
 }
 
@@ -138,16 +135,19 @@ const shapes::TriangleMesh& SceneAcceleration::mesh_for(
         throw MetalError("SceneAcceleration: shape " + std::to_string(shape) +
                          ", a sphere, has no mesh level");
       }
-      if (!cache.levels.at(level)) {
-        cache.levels.at(level) = shapes::icosphere(level);
+      std::optional<shapes::TriangleMesh>& held = cache.levels.at(level);
+      if (!held) {
+        held = shapes::icosphere(level);
       }
-      return *cache.levels.at(level);
+      return *held;
     }
-    case shapes::ShapeKind::box:
-      if (!cache.box) {
-        cache.box = shapes::unit_box();
+    case shapes::ShapeKind::box: {
+      std::optional<shapes::TriangleMesh>& held = cache.box;
+      if (!held) {
+        held = shapes::unit_box();
       }
-      return *cache.box;
+      return *held;
+    }
   }
   throw MetalError("SceneAcceleration: shape " + std::to_string(shape) +
                    " is of no kind");
@@ -249,7 +249,8 @@ void SceneAcceleration::make_meshes(const Device& device,
   // The compacted copies, and the build's memory let go (GPU.9).
   const NS::SharedPtr<MTL::ResidencySet> compact_only =
       residency_set(metal_device);
-  const auto* compacted = static_cast<const std::uint64_t*>(sizes->contents());
+  const std::span<const std::uint64_t> compacted(
+      static_cast<const std::uint64_t*>(sizes->contents()), building.size());
   for (std::size_t m = 0; m < building.size(); ++m) {
     meshes_[m].structure =
         NS::TransferPtr(metal_device->newAccelerationStructure(compacted[m]));
@@ -410,8 +411,9 @@ SceneAcceleration::SceneAcceleration(const Device& device,
     for (const contracts::Float3& v : mesh.vertices) {
       into.vertices.push_back(placed_point(placement, v));
     }
-    const std::span<const contracts::Float3> world(into.vertices.data() + first,
-                                                   mesh.vertices.size());
+    const std::span<const contracts::Float3> world =
+        std::span<const contracts::Float3>(into.vertices)
+            .subspan(first, mesh.vertices.size());
     for (const auto& triangle : mesh.triangles) {
       into.triangles.push_back(
           {first + triangle[0], first + triangle[1], first + triangle[2]});
@@ -449,14 +451,15 @@ SceneAcceleration::SceneAcceleration(const Device& device,
   if (raster_finest) {
     raster_mesh_.resize(*raster_finest + 1);
     for (unsigned level = 0; level <= *raster_finest; ++level) {
-      if (level_mesh.at(level)) {
-        raster_mesh_[level] = *level_mesh.at(level);
+      if (const std::optional<std::uint32_t>& traced = level_mesh.at(level)) {
+        raster_mesh_[level] = *traced;
         continue;
       }
-      if (!cache.levels.at(level)) {
-        cache.levels.at(level) = shapes::icosphere(level);
+      std::optional<shapes::TriangleMesh>& held = cache.levels.at(level);
+      if (!held) {
+        held = shapes::icosphere(level);
       }
-      const shapes::TriangleMesh& mesh = *cache.levels.at(level);
+      const shapes::TriangleMesh& mesh = *held;
       std::vector<gpu::MeshTriangle> data;
       data.reserve(mesh.triangles.size());
       for (const auto& triangle : mesh.triangles) {
@@ -496,8 +499,17 @@ SceneAcceleration::SceneAcceleration(const Device& device,
   for (std::uint32_t shape = 0; shape < records_.size(); ++shape) {
     const bool own =
         moving[shape] || records_[shape].kind == shapes::ShapeKind::box;
-    shape_mesh[shape] =
-        own ? shape_mesh_[shape] : *still_mesh.at(light[shape] ? 1 : 0);
+    if (own) {
+      shape_mesh[shape] = shape_mesh_[shape];
+      continue;
+    }
+    const std::optional<std::uint32_t>& in_still =
+        still_mesh.at(light[shape] ? 1 : 0);
+    if (!in_still) {
+      throw MetalError("SceneAcceleration: still shape " +
+                       std::to_string(shape) + " is in no still structure");
+    }
+    shape_mesh[shape] = *in_still;
   }
   const std::array<std::span<const std::byte>, 2> tables{
       std::as_bytes(std::span(records)), std::as_bytes(std::span(shape_mesh))};
@@ -555,14 +567,14 @@ SceneAcceleration::SceneAcceleration(const Device& device,
   };
   std::vector<Instance> at_rest;
   at_rest.reserve(2 + moving_.size());
-  if (still_mesh[0]) {
-    at_rest.push_back(instance_of(*still_mesh[0],
+  if (const std::optional<std::uint32_t>& occluders = still_mesh[0]) {
+    at_rest.push_back(instance_of(*occluders,
                                   gpu::everything_bit | gpu::occluder_bit,
                                   gpu::still_instance));
   }
-  if (still_mesh[1]) {
+  if (const std::optional<std::uint32_t>& lights = still_mesh[1]) {
     at_rest.push_back(
-        instance_of(*still_mesh[1], gpu::everything_bit, gpu::still_instance));
+        instance_of(*lights, gpu::everything_bit, gpu::still_instance));
   }
   const auto still_count = static_cast<std::uint32_t>(at_rest.size());
   for (std::size_t k = 0; k < instanced_.size(); ++k) {
@@ -715,6 +727,10 @@ SceneAcceleration::Raster SceneAcceleration::raster(
     const std::uint32_t shape = instanced_[k];
     std::uint32_t& mesh = chosen_mesh_[k];
     if (records_[shape].kind == shapes::ShapeKind::box) {
+      if (!raster_box_) {
+        throw MetalError(
+            "SceneAcceleration::raster: a box with no box mesh made");
+      }
       mesh = *raster_box_;  // the scenes' few boxes, always drawn
     } else {
       const contracts::Float3 center =

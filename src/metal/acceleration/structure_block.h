@@ -96,13 +96,16 @@ static_assert(
 // above), unread elsewhere. 40 bytes, packed floats and a word on both
 // sides.
 struct MeshTriangle {
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
   float v[3][3];
   uint32_t shape;
 };
 
-static_assert(sizeof(MeshTriangle) == 40,
-              "MeshTriangle must be the same 40 bytes on the host and in "
-              "shaders");
+static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
+    sizeof(MeshTriangle) == 40,
+    "MeshTriangle must be the same 40 bytes on the host and in "
+    "shaders");
 
 struct MeshRecord;
 
@@ -129,9 +132,11 @@ struct MeshRecord {
   uint32_t padding;
 };
 
-static_assert(sizeof(MeshRecord) == 16,
-              "MeshRecord must be the same 16 bytes on the host and in "
-              "shaders");
+static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
+    sizeof(MeshRecord) == 16,
+    "MeshRecord must be the same 16 bytes on the host and in "
+    "shaders");
 
 // An instanced shape's raster entry and its fragments' triangle carry the
 // mesh drawn (scene_acceleration.h, raster(); passes/features/
@@ -155,8 +160,10 @@ struct MeshBlock {
   ShapeMeshes shape_mesh;
 };
 
-static_assert(sizeof(MeshBlock) == 16,
-              "MeshBlock must be the same 16 bytes on the host and in shaders");
+static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): Metal's layout
+    sizeof(MeshBlock) == 16,
+    "MeshBlock must be the same 16 bytes on the host and in shaders");
 
 }  // namespace gpu
 }  // namespace serenity

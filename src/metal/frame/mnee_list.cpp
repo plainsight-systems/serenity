@@ -78,9 +78,8 @@ MneeList::Addresses MneeList::addresses() const noexcept {
   out.requests = requests_.address();
   out.header = header_.address();
   out.grid = out.header != 0 ? out.header + contracts::mnee_grid_offset : 0;
-  for (std::size_t list = 0; list < walks_.size(); ++list) {
-    out.walks.at(list) = walks_.at(list).address();
-  }
+  static_assert(contracts::mnee_walk_lists == 2);
+  out.walks = {walks_[0].address(), walks_[1].address()};
   out.converged = converged_.address();
   out.walk_header = walk_header_.address();
   return out;

@@ -25,10 +25,10 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <optional>
 #include <string>
 #include <utility>
@@ -291,8 +291,14 @@ TEST_CASE(
     INFO("receiver " << i);
     REQUIRE(whole.found == 1u);
     CHECK(split.found == whole.found);
-    CHECK(std::memcmp(&split.first, &whole.first, sizeof(whole.first)) == 0);
-    CHECK(std::memcmp(&split.second, &whole.second, sizeof(whole.second)) == 0);
+    // To the bit: each coordinate's representation, not its value.
+    const auto bits = [](serenity::contracts::Float3 v) {
+      return std::array<std::uint32_t, 3>{std::bit_cast<std::uint32_t>(v.x),
+                                          std::bit_cast<std::uint32_t>(v.y),
+                                          std::bit_cast<std::uint32_t>(v.z)};
+    };
+    CHECK(bits(split.first) == bits(whole.first));
+    CHECK(bits(split.second) == bits(whole.second));
   }
 }
 

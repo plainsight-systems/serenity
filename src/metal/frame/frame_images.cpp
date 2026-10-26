@@ -186,10 +186,10 @@ PathReuseImages::Addresses PathReuseImages::addresses(
   out.reconnects = address(reconnects_);
   out.replays = address(replays_);
   out.counts = address(counter_);
-  for (std::size_t list = 0; list < out.grids.size(); ++list) {
-    out.grids.at(list) =
-        out.counts + grid_offset + list * sizeof(gpu::IndirectGrid);
-  }
+  // the lists' grids, one after the other (contracts::pair_lists)
+  static_assert(contracts::pair_lists == 2);
+  out.grids = {out.counts + grid_offset,
+               out.counts + grid_offset + sizeof(gpu::IndirectGrid)};
   out.light_tiles = address(light_tiles_);
   out.light_power = address(light_power_.at(now));
   if (temporal) {

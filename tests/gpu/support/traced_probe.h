@@ -113,7 +113,7 @@ class TracedScene {
 // is handed its table, bound after the shapes' boxes
 // (metal/passes/restir_pt_initial/restir_pt_initial.h). The CUDA harness
 // takes the same, its module holding the seed's program for every probe.
-enum class Seeding { none, mnee };
+enum class Seeding : std::uint8_t { none, mnee };
 
 // Dispatches `threads` threads of `kernel` over `traced`'s structure for
 // the next frame's slot, its output, one Out a thread, at binding 0 and

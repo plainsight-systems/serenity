@@ -40,7 +40,7 @@
 namespace serenity {
 namespace bindings {
 namespace reuse_constant {
-enum Index : uint16_t {
+enum Index : uint8_t {
   nee_candidates = 0,
   max_surfaces = 1,
   footprint = 2,

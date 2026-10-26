@@ -140,7 +140,7 @@ class TracedScene {
 // binds its table (tests/gpu/support/traced_probe.h); here nothing, the
 // tracing module holding the seed's program for every probe
 // (kernels/traced_probes.cu).
-enum class Seeding { none, mnee };
+enum class Seeding : std::uint8_t { none, mnee };
 
 // Launches `threads` threads of probe `kernel` over `traced`'s structures,
 // its output, one Out a thread, at binding 0 and `inputs` from 1, as one

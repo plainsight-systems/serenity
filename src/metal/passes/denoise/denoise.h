@@ -95,7 +95,7 @@ class DenoisePass {
                      const FrameResources& resources) const;
 
   NS::SharedPtr<MTL::Device> device_;
-  Submission& submission_;
+  Submission* submission_;  // never null: the constructor's, outliving it
   std::array<NS::SharedPtr<MTL::ComputePipelineState>, 3> histogram_;
   std::array<NS::SharedPtr<MTL::ComputePipelineState>, 3> select_;
   NS::SharedPtr<MTL::ComputePipelineState> input_;
