@@ -201,16 +201,11 @@ __device__ inline void features_pixel() {
   const uint at_pixel = pixel.y * frame.width + pixel.x;
   const Scene scene{&launch.structures, launch.scene, launch.transforms,
                     launch.glows};
-  // Through the pixel's center plus the frame's jitter where the frame
-  // takes it (at the light size, the light passes' ray), else its center
-  // (contract 17), a pinhole's, as Metal's (metal/passes/features/
-  // features.metal).
-  const PixelJitter jitter = frame_jitter(frame);
+  // The light passes' ray at this pixel and frame: their numbers, drawn in
+  // their order (passes/path/path.cu).
+  PathNumbers numbers = path_numbers(pixel, frame.frame_index);
   const CameraRay ray =
-      camera_ray(camera,
-                 make_float2(pixel) + make_float2(0.5f) +
-                     (jitter.on ? jitter.offset : make_float2(0.0f)),
-                 make_float2(0.0f), size);
+      pixel_ray(camera, pixel, size, frame_jitter(frame), numbers);
   const Ray along = make_ray(ray.origin, ray.direction, 0.0f, unbounded);
   const serenity::contracts::FeatureConstants& constants =
       launch.feature_constants;
