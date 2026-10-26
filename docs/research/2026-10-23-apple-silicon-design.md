@@ -433,6 +433,21 @@ fewer (GDSA.6, GPU.6).
 Expected in the picture: none. The shade's arithmetic is the same on the
 same inputs, and the layout moves where a value is kept, not what it is.
 
+### The finished frame, measured (2026-10-26)
+
+Changes 4 and 5 measured once, together, after the gates, as the formula
+asks: the demo graph on the marbles, change 3's build against the finished
+one, alternated, two runs each, on AC power with the GPU idle, each run's
+first second left out.
+
+| Size | Change 3 | Changes 4 and 5 |
+|---|---|---|
+| 1920 x 1080 | 59.7 fps (16.76 ms) | 62.6 fps (15.98 ms) |
+| 3456 x 2234 | 16.9 fps (59.3 ms) | 17.6 fps (56.8 ms) |
+
+The milestone began at 56.6 fps at 1920 x 1080 and 15.8 fps at 3456 x
+2234 (section 1, measured 2026-10-23 on a busier machine).
+
 ## 7. Not built, and one question for the user
 
 - MPSGraph, Open Image Denoise's own route to Apple's kernels: it encodes
