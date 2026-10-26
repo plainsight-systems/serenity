@@ -12,6 +12,12 @@
 # fresh clone runs the same network the write-ups measured. A file already
 # present with the pinned checksum is kept; one that differs is refused, not
 # overwritten, so a network trained locally is never replaced silently.
+#
+# Then the network's Metal package beside the weights, which the Metal
+# backend runs its U-Net through (training/export_metal.py; Xcode's
+# metal-package-builder and the training environment's Core ML Tools), made
+# here from the checked weights rather than published: it is the Mac's
+# toolchain's build of them.
 
 set -euo pipefail
 
@@ -50,3 +56,7 @@ while read -r network file expected; do
     mv "$partial" "$path"
     echo "fetched $path"
 done <<< "$pinned"
+
+if [ "$(uname)" = "Darwin" ]; then
+    (cd "$root/training" && uv run --locked python export_metal.py --model "$out/wide")
+fi

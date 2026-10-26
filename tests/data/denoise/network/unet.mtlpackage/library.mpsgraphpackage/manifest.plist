@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Package Version</key>
+	<dict>
+		<key>6.0.12</key>
+		<dict>
+			<key>Binary File Resources</key>
+			<dict/>
+			<key>Callables</key>
+			<dict/>
+			<key>Data File Names</key>
+			<array/>
+			<key>Optimized Modules</key>
+			<dict/>
+			<key>Optimized No Device Modules</key>
+			<dict/>
+			<key>Optimized No Device Resources Used</key>
+			<dict/>
+			<key>Optimized Resources Used</key>
+			<dict/>
+			<key>Original</key>
+			<string>model_0.mpsgraph</string>
+			<key>Original Resources Used</key>
+			<array>
+				<string>tmp_15</string>
+				<string>tmp_21</string>
+				<string>tmp_14</string>
+				<string>tmp_20</string>
+				<string>tmp_7</string>
+				<string>tmp_13</string>
+				<string>tmp_19</string>
+				<string>tmp_5</string>
+				<string>tmp_18</string>
+				<string>tmp_17</string>
+				<string>tmp_23</string>
+				<string>tmp_16</string>
+				<string>tmp_22</string>
+			</array>
+			<key>Resource Offsets</key>
+			<dict>
+				<key>tmp_13</key>
+				<integer>45023</integer>
+				<key>tmp_14</key>
+				<integer>18438</integer>
+				<key>tmp_15</key>
+				<integer>11523</integer>
+				<key>tmp_16</key>
+				<integer>143907</integer>
+				<key>tmp_17</key>
+				<integer>119708</integer>
+				<key>tmp_18</key>
+				<integer>90904</integer>
+				<key>tmp_19</key>
+				<integer>49346</integer>
+				<key>tmp_20</key>
+				<integer>20745</integer>
+				<key>tmp_21</key>
+				<integer>0</integer>
+				<key>tmp_22</key>
+				<integer>157734</integer>
+				<key>tmp_23</key>
+				<integer>142752</integer>
+				<key>tmp_5</key>
+				<integer>90822</integer>
+				<key>tmp_7</key>
+				<integer>44941</integer>
+			</dict>
+			<key>Resource Storage Mode</key>
+			<integer>1</integer>
+			<key>Symbols With Mutable Weight</key>
+			<array/>
+		</dict>
+	</dict>
+</dict>
+</plist>

@@ -312,6 +312,35 @@ after them starts with a barrier from the fragment stage to dispatch
 the full-size features are, so no frame's raster waits for the frame
 before's reads.
 
+### Change 3's design (2026-10-25)
+
+Apple's workflow (W25a): the U-Net through its last convolution
+(`training/model.py`, `UNet.features`) converted by Core ML Tools 9.0 to
+an ML program, 16-bit tensors and weights, height and width flexible;
+Xcode's `metal-package-builder` turns it into `unet.mtlpackage` beside the
+weights (`training/export_metal.py`, which first checks the program against
+PyTorch's 32-bit features: 3.3e-3 of the largest for the demo's network).
+At run time the package is a library, its `main` function compiled by a
+Metal 4 compiler into a machine-learning pipeline for the light's padded
+size, its intermediates in a placement heap; one dispatch of a
+machine-learning encoder between a barrier from the compute stage and one
+to it. Underneath, MPSGraph: Apple's own kernels, Open Image Denoise's
+route on Metal. The depth median, the input, the 1 x 1 head and the output
+stay our kernels, as the design says; the input and the features are
+planar, as Metal's tensors are, each row padded to 64 bytes (Metal's rule
+for a machine-learning tensor's row stride). Our 11 convolution and 4 pool
+dispatches, and their kernels, are removed.
+
+Found while building it: Xcode 26's `metal-package-builder` rejects the
+newest Core ML operation set's concatenation, which every decoder's skip
+uses; the program targets the iOS 18 set. Metal's tensor extents run
+innermost first, (W, H, C, 1).
+
+Measured before building it into the frame, on random weights: the U-Net
+5.73 ms at 960 x 544 and 20.42 ms at 1728 x 1120, against our kernels'
+6.23 ms and 21.87 ms (convolutions and pools, per-dispatch timestamps);
+within 1.2e-4 of PyTorch's 32-bit output.
+
 ## 7. Not built, and one question for the user
 
 - MPSGraph, Open Image Denoise's own route to Apple's kernels: it encodes

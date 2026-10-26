@@ -93,12 +93,12 @@ TEST_CASE(
   INFO("largest relative difference: " << error);
   CHECK(error < tolerance);
   // And the check can fail: a network one weight off, one weight of the
-  // last convolution by a tenth (about the size of its weights), does not
-  // pass it.
+  // head by a tenth (the 1 x 1 each backend computes itself; Metal's U-Net
+  // is its package, compiled from the weights on disk), does not pass it.
   const double off =
       worst(fixture,
             tests::run_denoise_fixture(fixture, [](denoise::Network& network) {
-              network.dec_final.weight.at(0) += 0.1f;
+              network.head.weight.at(0) += 0.1f;
             }));
   INFO("one weight off: largest relative difference " << off);
   CHECK(off > tolerance);

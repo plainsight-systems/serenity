@@ -46,6 +46,17 @@ SERENITY_CONSTANT uint32_t unet_alignment = 16u;
 // max pools below the input's level
 SERENITY_CONSTANT uint32_t unet_levels = 4u;
 SERENITY_CONSTANT uint32_t network_inputs = 30u;
+
+// A row of the Metal backend's network tensors, in half floats: the padded
+// grid's width rounded up to tensor_row_halves, the 64 bytes Metal asks of
+// a machine-learning tensor's row stride (metal/frame/denoise_images.h);
+// the rows' last values past the width written by no one and never read
+// as a pixel's.
+SERENITY_CONSTANT uint32_t tensor_row_halves = 32u;
+SERENITY_SHARED_FUNCTION constexpr uint32_t tensor_pitch(uint32_t width) {
+  return (width + tensor_row_halves - 1u) / tensor_row_halves *
+         tensor_row_halves;
+}
 // a simdgroup matrix's side: every stored width a multiple
 SERENITY_CONSTANT uint32_t channel_block = 8u;
 // network_inputs, padded to channel_block

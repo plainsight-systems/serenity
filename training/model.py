@@ -102,7 +102,8 @@ class UNet(nn.Module):
         nn.init.zeros_(self.head.weight)  # first kernels uniform, first blend 1/2
         nn.init.zeros_(self.head.bias)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def features(self, x: torch.Tensor) -> torch.Tensor:
+        """The last convolution's features, before the 1 x 1 head: what Metal's machine-learning path runs (export_metal.py)."""
         skips = []
         for layer in self.enc:
             x = F.relu(layer(x))
@@ -113,8 +114,10 @@ class UNet(nn.Module):
         for i, layer in enumerate(self.dec):
             x = F.interpolate(x, scale_factor=2, mode="nearest")
             x = F.relu(layer(torch.cat((x, skips[3 - i]), dim=1)))
-        x = F.relu(self.dec_final(x))
-        return self.head(x)
+        return F.relu(self.dec_final(x))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.head(self.features(x))
 
 
 def warp_history(history: torch.Tensor, motion: torch.Tensor,

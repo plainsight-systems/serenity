@@ -175,6 +175,20 @@ structure, its inputs and outputs) and `SHA256SUMS`; the export reads the
 weights back by the layout alone and checks they compute what the
 checkpoint does, bit for bit.
 
+Then the Metal backend's package of the U-Net, beside them (Metal 4's
+machine-learning path: docs/research/2026-10-23-apple-silicon-design.md,
+section 6, change 3), on a Mac with Xcode:
+
+```sh
+uv run --locked python export_metal.py --model ../../serenity-data/denoiser-v2-model/wide
+```
+
+`unet.mtlpackage`: the U-Net through its last convolution as a Core ML ML
+program, 16-bit, flexible in height and width, built by Xcode's
+`metal-package-builder`; refused if it computes further than a hundredth of
+the largest feature from PyTorch's 32-bit. `make weights` runs it after the
+download.
+
 ## The renderer against PyTorch
 
 The renderer's denoise pass (src/metal/passes/denoise/) runs the exported
@@ -218,6 +232,7 @@ A graph's `[denoise] weights` names another export.
 | `render_warmup.py` | the test sequences' warm-up frames |
 | `evaluate.py` | the test |
 | `export.py` | the weights for Phase 4 |
+| `export_metal.py` | the U-Net's Metal package, for Metal 4's machine-learning path |
 | `denoise_check.py` | the renderer's denoise pass against PyTorch: fixtures and the comparison |
 | `report.py` | markdown tables from one or more test results |
 | `benchmark.py` | a rough MPS time a frame |

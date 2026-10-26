@@ -197,7 +197,9 @@ inline void record_frame(metal::Submission& submission,
   resources.full_albedo = m.full_albedo.get();
   resources.denoise_constants = m.constants->gpuAddress();
   resources.denoise = &images;
-  pass.record(encoder, resources);
+  // the network in its own encoder, a new compute encoder left for the
+  // output (denoise.h)
+  pass.record(begun.commands, encoder, resources);
   encoder->endEncoding();
   submission.commit();
   (void)submission.wait_until_complete(begun.sequence);
@@ -244,6 +246,7 @@ inline std::vector<contracts::LinearImage> run_denoise_fixture(
     frame::FrameInputs inputs{};
     inputs.index = k;
     const bool history = images.prepare(inputs, light);
+    pass.prepare(images.padded());
     const contracts::DenoiseConstants c =
         detail::constants_of(fixture, k, network, images, output, history);
     std::memcpy(made.constants->contents(), &c, sizeof(c));

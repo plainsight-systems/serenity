@@ -86,6 +86,22 @@ contracts::PathReuseSettings run_reuse_settings(const frame::Schedule& schedule,
   return settings;
 }
 
+// A pass recorded into a compute encoder, as every pass but the denoise
+// pass is; that one records with its command buffer, its network in an
+// encoder of its own (record_image()), and is refused here (I.5).
+template <typename P>
+void record_pass(const P& pass, MTL4::ComputeCommandEncoder* encoder,
+                 const FrameResources& resources) {
+  pass.record(encoder, resources);
+}
+void record_pass(const DenoisePass& /*pass*/,
+                 MTL4::ComputeCommandEncoder* /*encoder*/,
+                 const FrameResources& /*resources*/) {
+  throw MetalError(
+      "Renderer: the denoise pass records with its command buffer "
+      "(record_image())");
+}
+
 // The argument table's sizes (renderer.h). Each family of passes binds at
 // most its constant's buffers and textures through the table
 // (metal/passes/bindings.h), each the index past its passes' last, asserted
@@ -682,6 +698,14 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
   }
   const bool denoise_history =
       denoise_ ? denoise_->images.prepare(inputs, light) : false;
+  // The denoise pass's network, compiled for the padded light
+  // (passes/denoise/denoise.h), after its images, which drain the frames
+  // in flight at a new size.
+  for (Step& step : steps_) {
+    if (step.kind == frame::PassKind::denoise) {
+      std::get<DenoisePass>(step.pass).prepare(denoise_->images.padded());
+    }
+  }
   prepared_ =
       Prepared{inputs.index, size, held, reused, denoise_history, fill_history};
 }
@@ -1030,7 +1054,7 @@ void Renderer::record_light(MTL4::ComputeCommandEncoder* encoder,
       // The radiance image an earlier pass of this frame wrote.
       barrier_after_dispatch(encoder);
     }
-    std::visit([&](const auto& pass) { pass.record(encoder, resources); },
+    std::visit([&](const auto& pass) { record_pass(pass, encoder, resources); },
                step.pass);
   }
 }
@@ -1089,7 +1113,8 @@ bool Renderer::record_raster(const FrameSlot& begun,
   return recorded;
 }
 
-void Renderer::record_image(MTL4::ComputeCommandEncoder* encoder,
+void Renderer::record_image(MTL4::CommandBuffer* commands,
+                            MTL4::ComputeCommandEncoder*& encoder,
                             const DenoiseResources& denoised_resources) {
   for (std::size_t i = image_begins_; i < steps_.size(); ++i) {
     const Step& step = steps_[i];
@@ -1099,11 +1124,10 @@ void Renderer::record_image(MTL4::ComputeCommandEncoder* encoder,
       barrier_after_dispatch(encoder);
     }
     if (step.kind == frame::PassKind::denoise) {
-      std::visit(
-          [&](const auto& pass) {
-            pass.record(encoder, denoised_resources.denoising);
-          },
-          step.pass);
+      // Its network in an encoder of its own: it leaves a new compute
+      // encoder in `encoder` for the passes after it (denoise.h).
+      std::get<DenoisePass>(step.pass).record(commands, encoder,
+                                              denoised_resources.denoising);
       continue;
     }
     if (step.kind == frame::PassKind::depth_of_field) {
@@ -1111,7 +1135,7 @@ void Renderer::record_image(MTL4::ComputeCommandEncoder* encoder,
       if (denoised_resources.blurs) {
         std::visit(
             [&](const auto& pass) {
-              pass.record(encoder, denoised_resources.depth_of_field);
+              record_pass(pass, encoder, denoised_resources.depth_of_field);
             },
             step.pass);
       }
@@ -1119,7 +1143,7 @@ void Renderer::record_image(MTL4::ComputeCommandEncoder* encoder,
     }
     std::visit(
         [&](const auto& pass) {
-          pass.record(encoder, denoised_resources.output);
+          record_pass(pass, encoder, denoised_resources.output);
         },
         step.pass);
   }
@@ -1230,7 +1254,8 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given,
       // place of the event (renderer.h, "One part for a denoised graph").
       barrier_after_dispatch(encoder);
     }
-    record_image(image, *denoised);
+    record_image(begun.second != nullptr ? begun.second : begun.commands, image,
+                 *denoised);
     image->endEncoding();
   }
   // What the next frame's temporal merge asks of this one; what

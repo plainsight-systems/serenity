@@ -678,6 +678,20 @@ builds one, and primary surface replacement traced on from it as before.
 | every graph with the features pass traced through a pinhole | Frame graph (core) | `src/core/frame/schedule.{h,cpp}` (`traced_inputs()`) |
 | the rasterized hit is the traced one, pixel for pixel; the raster levels and view; a features graph's pinhole | tests | `tests/gpu/features_test.cpp`, `tests/raster_levels_test.cpp`, `tests/denoise_core_test.cpp` |
 
+## The network on Apple's kernels (`docs/research/2026-10-23-apple-silicon-design.md`, section 6, change 3)
+
+| What | Axis | Where |
+|---|---|---|
+| the U-Net's features as a method of their own; their export to an ML program and Metal package beside the weights, checked against PyTorch; Core ML Tools pinned | Training | `training/model.py` (`UNet.features`), `training/export_metal.py`, new; `training/pyproject.toml`, `uv.lock` |
+| the package made after the weights are fetched | Build | `scripts/fetch_denoiser_weights.sh` |
+| a tensor row's pitch, 64 bytes | Film (contract 18) | `src/core/contracts/denoise.h` (`tensor_pitch()`) |
+| the network's planar input and features and a tensor over each, in place of the U-Net's activations and dispatch parameters | Frame graph | `src/metal/frame/denoise_images.{h,cpp}` |
+| the package loaded, its pipeline compiled a size with its heap, the network in a machine-learning encoder between barriers; the head's weights alone | Pass | `src/metal/passes/denoise/denoise.{h,cpp}` |
+| the input written planar, the head reading planar features; the convolution and pool kernels removed | Pass | `src/metal/passes/denoise/denoise.metal` |
+| the network's tensors' bindings | Pass | `src/metal/passes/bindings.h` (`network`) |
+| the network prepared with its images; the image half's encoder handed through the denoise pass | Frame graph | `src/metal/frame/renderer.{h,cpp}` |
+| the runner's prepare and command buffer; the one-weight-off check on the head | tests | `tests/gpu/support/denoise_runner.h`, `tests/gpu/denoise_test.cpp`, `tests/data/denoise/network/unet.mtlpackage`, new |
+
 ## Not here yet
 
 - **HIP with HIPRT** on AMD's Strix Halo and **Direct3D 12** on the Xbox
