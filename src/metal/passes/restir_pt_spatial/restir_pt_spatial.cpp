@@ -18,11 +18,13 @@ void RestirPtSpatialPass::record(MTL4::ComputeCommandEncoder* encoder,
                                  const FrameResources& resources) const {
   if (resources.pairing == 0 || resources.path_reservoirs == 0 ||
       resources.primaries == 0 || resources.light == 0 ||
-      resources.shifts == 0 || resources.light_power == 0) {
+      resources.shifts == 0 || resources.light_power == 0 ||
+      resources.accumulation == nullptr || resources.non_finite_counter == 0) {
     throw MetalError(
         "RestirPtSpatialPass: the frame lacks one of its ReSTIR PT's reuse "
         "textures, path reservoirs, primary hits, light buffer, shifted "
-        "paths, or the power pyramid");
+        "paths, the power pyramid, or the accumulated image or its counter "
+        "of samples not finite, which the merge shades into");
   }
   namespace binding = bindings::restir_pt;
   MTL4::ArgumentTable* arguments = resources.arguments;
@@ -32,6 +34,9 @@ void RestirPtSpatialPass::record(MTL4::ComputeCommandEncoder* encoder,
   arguments->setAddress(resources.light, binding::light);
   arguments->setAddress(resources.pairing, binding::pairing);
   arguments->setAddress(resources.shifts, binding::shifts);
+  arguments->setAddress(resources.non_finite_counter, binding::non_finite);
+  arguments->setTexture(resources.accumulation->gpuResourceID(),
+                        binding::accumulated);
   arguments->setAddress(resources.light_power, binding::light_power);
   // Unwritten without temporal reuse, where it is 0: bound then to the
   // reservoirs, since Metal's validation refuses a null binding.

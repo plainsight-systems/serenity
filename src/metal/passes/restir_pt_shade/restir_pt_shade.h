@@ -14,7 +14,9 @@ namespace serenity::metal {
 // Step 12 of metal/passes/restir_pt/restir_pt.metal.h: one thread a traced
 // pixel (frame_resources.h, traced; contract 20), the light buffer (and, with
 // no reuse, the initial reservoir's own estimate) folded into the accumulated
-// image, which is the frame's radiance, as the path pass's is.
+// image, which is the frame's radiance, as the path pass's is. In a graph
+// without the spatial pass only: with one, its merge shades
+// (restir_pt_spatial.h; the renderer's ShadedInMerge).
 //
 // Reads: the settings, the path reservoirs and the light buffer. Writes: the
 // accumulated image and the count of samples not finite. 80 bytes read a

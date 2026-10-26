@@ -15,6 +15,7 @@
 #include "metal/passes/bindings.h"
 #include "metal/passes/restir_pt/restir_pt.metal.h"
 #include "metal/passes/restir_pt/reuse_constants.metal.h"
+#include "metal/passes/restir_pt/shade.metal.h"
 
 using namespace metal;
 using namespace metal::raytracing;
@@ -166,27 +167,25 @@ kernel void restir_pt_spatial_shift(
           reservoirs[i], settings));
 }
 
-// Step 11: the merge, one thread a pixel; its estimate added to the light
-// buffer (its own pixel's alone, so in place); with temporal reuse in the
-// graph, the path it keeps written as the frame's final reservoir.
-kernel void restir_pt_spatial(
-    constant serenity::contracts::FrameConstants& frame
-    [[buffer(binding::constants)]],
-    const device serenity::contracts::PathReservoir* reservoirs
-    [[buffer(binding::reservoirs)]],
-    constant ushort* pairing [[buffer(binding::pairing)]],
-    const device float4* shifts [[buffer(binding::shifts)]],
-    device float4* light [[buffer(binding::light)]],
-    device serenity::contracts::PathReservoir* finals
-    [[buffer(binding::finals)]],
-    uint2 grid_place [[thread_position_in_grid]]) {
-  // the run's, the pipeline's constants (reuse_constants.h)
-  const serenity::contracts::PathReuseSettings settings = reuse_settings();
-  const restir_pt::Traced traced = restir_pt::traced(frame, settings);
-  const uint2 pixel = traced.pixel(grid_place);
-  if (!traced.inside(pixel)) {
-    return;
-  }
+// Steps 11 and 12: the merge, one thread a traced pixel; its estimate added
+// to the pixel's light, which is shaded at once (restir_pt/shade.metal.h,
+// RTXDI's fused shading), the light buffer not written back (nothing reads
+// it after the shade); with temporal reuse in the graph, the path it keeps
+// written as the frame's final reservoir. Every thread reaches
+// count_non_finite(), which sums over its SIMD group: none returns before
+// it.
+namespace {
+
+// The merge and shade of `pixel`, inside the image; true if its light is
+// not finite, and so left out of the image.
+bool merge_and_shade(
+    constant serenity::contracts::FrameConstants& frame,
+    serenity::contracts::PathReuseSettings settings, restir_pt::Traced traced,
+    uint2 pixel, const device serenity::contracts::PathReservoir* reservoirs,
+    constant ushort* pairing, const device float4* shifts,
+    const device float4* light,
+    device serenity::contracts::PathReservoir* finals,
+    texture2d<float, access::read_write> accumulated) {
   constexpr uint slots = serenity::contracts::max_path_neighbors;
   const uint i = traced.slot(pixel);
   const serenity::contracts::PathReservoir own = reservoirs[i];
@@ -238,9 +237,10 @@ kernel void restir_pt_spatial(
     }
   }
   sum += canonical * restir_pt::estimate(own);
-  light[i] += float4(sum / float(k + 1u), 0.0f);
+  const bool failed = restir_pt::shade(accumulated, frame, traced, pixel,
+                                       light[i].xyz + sum / float(k + 1u));
   if (!keeps) {
-    return;
+    return failed;
   }
   // The canonical path last, its own odds the same in any order.
   if (stream_pick(weight_sum, canonical * own_target * own.weight,
@@ -253,4 +253,32 @@ kernel void restir_pt_spatial(
                     : 0.0f;
   kept.flags = path_merge::with_count(kept.flags, count_sum);
   finals[i] = kept;
+  return failed;
+}
+
+}  // namespace
+
+kernel void restir_pt_spatial(
+    constant serenity::contracts::FrameConstants& frame
+    [[buffer(binding::constants)]],
+    const device serenity::contracts::PathReservoir* reservoirs
+    [[buffer(binding::reservoirs)]],
+    constant ushort* pairing [[buffer(binding::pairing)]],
+    const device float4* shifts [[buffer(binding::shifts)]],
+    const device float4* light [[buffer(binding::light)]],
+    device serenity::contracts::PathReservoir* finals
+    [[buffer(binding::finals)]],
+    device atomic_uint* non_finite [[buffer(binding::non_finite)]],
+    texture2d<float, access::read_write> accumulated
+    [[texture(binding::accumulated)]],
+    uint2 grid_place [[thread_position_in_grid]]) {
+  // the run's, the pipeline's constants (reuse_constants.h)
+  const serenity::contracts::PathReuseSettings settings = reuse_settings();
+  const restir_pt::Traced traced = restir_pt::traced(frame, settings);
+  const uint2 pixel = traced.pixel(grid_place);
+  const bool failed =
+      traced.inside(pixel) &&
+      merge_and_shade(frame, settings, traced, pixel, reservoirs, pairing,
+                      shifts, light, finals, accumulated);
+  count_non_finite(failed, non_finite);
 }

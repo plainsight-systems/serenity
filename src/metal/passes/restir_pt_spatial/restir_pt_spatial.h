@@ -23,11 +23,16 @@ namespace serenity::metal {
 //   restir_pt_spatial_shift  one thread a pair, over each list in turn: the
 //                            pixel's path shifted to its partner.
 //   restir_pt_spatial        one thread a pixel: the pairwise MIS merge, its
-//                            estimate added to the light buffer.
+//                            estimate added to the pixel's light and shaded
+//                            at once (step 12, restir_pt/shade.metal.h:
+//                            RTXDI's fused shading; the schedule puts the
+//                            shade straight after this pass, so the renderer
+//                            records no shade pass beside it).
 //
 // Reads: the scene, structure, settings, reuse textures, path reservoirs
 // and primary hits. Writes: the shifted paths, the lists, their counts
-// and grids, the light buffer and, with temporal reuse, the final reservoirs.
+// and grids, the accumulated image, the count of samples not finite and,
+// with temporal reuse, the final reservoirs.
 //
 // Cost: three shifts a pixel, each its destination's 48-byte G-buffer
 // record and a reconnection's shadow ray, more for the pairs that replay,

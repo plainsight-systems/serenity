@@ -94,6 +94,13 @@ void record_pass(const P& pass, MTL4::ComputeCommandEncoder* encoder,
                  const FrameResources& resources) {
   pass.record(encoder, resources);
 }
+void record_pass(const ShadedInMerge& /*pass*/,
+                 MTL4::ComputeCommandEncoder* /*encoder*/,
+                 const FrameResources& /*resources*/) {
+  throw MetalError(
+      "Renderer: the shade in the spatial merge records nothing; "
+      "record_light() skips its step");
+}
 void record_pass(const DenoisePass& /*pass*/,
                  MTL4::ComputeCommandEncoder* /*encoder*/,
                  const FrameResources& /*resources*/) {
@@ -500,9 +507,15 @@ void Renderer::make_steps(const Device& device, const frame::Schedule& schedule,
                             run_reuse_settings(schedule, feeds_network_)}});
         break;
       case frame::PassKind::restir_pt_shade:
-        steps_.push_back(
-            Step{kind, Pass{std::in_place_type<RestirPtShadePass>, library_,
-                            run_reuse_settings(schedule, feeds_network_)}});
+        // The spatial pass's merge shades when the graph has it
+        // (ShadedInMerge, renderer.h).
+        if (has(schedule, frame::PassKind::restir_pt_spatial)) {
+          steps_.push_back(Step{kind, Pass{ShadedInMerge{}}});
+        } else {
+          steps_.push_back(
+              Step{kind, Pass{std::in_place_type<RestirPtShadePass>, library_,
+                              run_reuse_settings(schedule, feeds_network_)}});
+        }
         break;
       case frame::PassKind::restir_pt_temporal:
         steps_.push_back(
@@ -1048,6 +1061,9 @@ void Renderer::record_light(MTL4::ComputeCommandEncoder* encoder,
       // touches any (GPU.8).
       encoder->barrierAfterQueueStages(MTL::StageDispatch, MTL::StageDispatch,
                                        MTL4::VisibilityOptionDevice);
+    }
+    if (std::holds_alternative<ShadedInMerge>(step.pass)) {
+      continue;  // shaded by the spatial pass just before (renderer.h)
     }
     if (frame::is_restir_pt(step.kind) && restir_before) {
       // What the ReSTIR PT pass before it wrote this frame: the

@@ -1,12 +1,9 @@
 // ReSTIR PT's shade (restir_pt_shade.h): step 12 of metal/passes/restir_pt/
 // restir_pt.metal.h, one thread a traced pixel (restir_pt.metal.h,
-// Traced). The frame's light buffer, plus the initial reservoir's own
-// estimate where no spatial pass merged one in, folded into the
-// accumulated image as the path pass folds its own (passes/path/
-// path.metal), whose mean is the frame's radiance. With the checkerboard a
-// pixel is folded in every other frame, so it starts over in either of a
-// history's first two frames, the first that trace it (contract 20); its
-// mean is of the frames that traced it.
+// Traced), in a graph without the spatial pass (whose merge shades
+// otherwise). The frame's light buffer, plus the initial reservoir's own
+// estimate where no temporal pass merged one in, folded into the
+// accumulated image (restir_pt/shade.metal.h).
 
 #include <metal_stdlib>
 
@@ -17,6 +14,7 @@
 #include "metal/passes/bindings.h"
 #include "metal/passes/restir_pt/restir_pt.metal.h"
 #include "metal/passes/restir_pt/reuse_constants.metal.h"
+#include "metal/passes/restir_pt/shade.metal.h"
 
 using namespace metal;
 using namespace serenity::shaders;
@@ -50,13 +48,7 @@ kernel void restir_pt_shade(
     const float3 sample =
         light[i].xyz +
         (merged ? float3(0.0f) : restir_pt::estimate(reservoirs[i]));
-    failed = !finite(sample);
-    // A pixel starts over in the image's first frame; with the
-    // checkerboard in either of its first two, whichever traces it.
-    const uint starting_frames = traced.checkerboard ? 2u : 1u;
-    const float4 held = accumulate(accumulated.read(pixel), sample,
-                                   frame.accumulated_frames < starting_frames);
-    accumulated.write(held, pixel);
+    failed = restir_pt::shade(accumulated, frame, traced, pixel, sample);
   }
   count_non_finite(failed, non_finite);
 }

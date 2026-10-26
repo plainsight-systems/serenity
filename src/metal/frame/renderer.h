@@ -55,6 +55,12 @@
 
 namespace serenity::metal {
 
+// The shade's step in a graph with the spatial pass, whose merge shades
+// (RTXDI's fused shading: passes/restir_pt_spatial/restir_pt_spatial.h):
+// the schedule puts the shade straight after it, so the step records no
+// dispatch and no barrier (Renderer's record_light() skips it).
+struct ShadedInMerge {};
+
 // Axis: Frame graph.
 //
 // Carries out the core's schedule on Metal (core/frame/schedule.h): given a
@@ -502,8 +508,8 @@ class Renderer {
   using Pass =
       std::variant<TestPatternPass, PathPass, ToneMapPass, RestirPtInitialPass,
                    RestirPtTemporalPass, RestirPtSpatialPass, RestirPtShadePass,
-                   RestirPtDuplicationPass, FeaturesPass, DenoisePass,
-                   DepthOfFieldPass>;
+                   ShadedInMerge, RestirPtDuplicationPass, FeaturesPass,
+                   DenoisePass, DepthOfFieldPass>;
 
   // A pass of the schedule, with its kind (C.1).
   struct Step {
