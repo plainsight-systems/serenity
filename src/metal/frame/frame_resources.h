@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <span>
 
+#include "core/contracts/mnee_request.h"
 #include "core/frame/extent.h"
 #include "core/passes/tone_map.h"
 #include "metal/acceleration/scene_acceleration.h"
@@ -100,12 +101,16 @@ struct FrameResources {
   frame::Extent traced{};
 
   // With ReSTIR PT's passes: MNEE's work list (contract 16), its header
-  // and the solve's indirect grid in it (mnee_list.h); the frame's
+  // and the pass's indirect grid in it; the walks' two round lists, the
+  // converged list and their counts' header (mnee_list.h); the frame's
   // counter of requests the list had no room for
   // (metal/film/failure_count.h); 0 otherwise.
   MTL::GPUAddress mnee_requests = 0;
   MTL::GPUAddress mnee_header = 0;
   MTL::GPUAddress mnee_grid = 0;
+  std::array<MTL::GPUAddress, contracts::mnee_walk_lists> mnee_walks{};
+  MTL::GPUAddress mnee_converged = 0;
+  MTL::GPUAddress mnee_walk_header = 0;
   MTL::GPUAddress mnee_lost_counter = 0;
 
   // With the features pass (contract 17, feature_images.h): its constants

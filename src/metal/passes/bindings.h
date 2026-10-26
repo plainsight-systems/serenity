@@ -81,6 +81,16 @@ enum Buffer : uint8_t {
   grid = 9,
   light = 10,
   lost = 11,
+  // The walks between rounds (contract 16's MneeWalk; mnee.h), rebound
+  // between dispatches: the list a dispatch reads, the list it appends the
+  // walks still going to and that list's count, the count a grid kernel
+  // reads, the converged list and its count.
+  walks_in = 12,
+  walks_out = 13,
+  walk_count_out = 14,
+  walk_count = 15,
+  converged = 16,
+  converged_count = 17,
 };
 }  // namespace mnee
 

@@ -14,11 +14,11 @@
 //                     (mnee.cu).
 //
 // A round (docs/research/2026-10-21-tracing-divergence.md, section 4):
-// each walk takes up to mnee_round_iterations iterations (cuda/frame/
-// mnee_walk.h); one that converges is appended to the converged list, one
-// still going to the other round list, one that fails is dropped, so the
-// next round's warps hold walks still going, not lanes waiting on one.
-// Appended by warp (device/append.cuh). Each launched at the list's
+// each walk takes up to mnee_round_iterations iterations (contract 16,
+// core/contracts/mnee_request.h); one that converges is appended to the
+// converged list, one still going to the other round list, one that fails is
+// dropped, so the next round's warps hold walks still going, not lanes waiting
+// on one. Appended by warp (device/append.cuh). Each launched at the list's
 // capacity, a thread past its count returning: cheaper than a fixed set of
 // threads striding over it, for the whole walks (the hardware design's
 // Phase 2) and for rounds of them (measured 2026-10-21: 8.87 against 9.19
@@ -29,7 +29,6 @@
 #include "cuda/device/append.cuh"
 #include "cuda/film/accumulate.cuh"
 #include "cuda/frame/frame_launch.h"
-#include "cuda/frame/mnee_walk.h"
 #include "cuda/integrator/mnee.cuh"
 #include "cuda/integrator/path.cuh"
 #include "cuda/math/vector.cuh"
@@ -38,8 +37,8 @@ namespace serenity {
 namespace shaders {
 namespace {
 
+using serenity::contracts::MneeWalk;
 using serenity::cuda::FrameLaunch;
-using serenity::cuda::MneeWalk;
 
 __device__ inline path::Scene scene_of(const FrameLaunch& launch) {
   return path::Scene{&launch.structures, launch.scene, launch.transforms,
@@ -90,11 +89,12 @@ __device__ inline void walk_round(const FrameLaunch& launch, uint request,
   mnee::Blocks blocks[mnee::max_interfaces];
   const mnee::Walked walked =
       mnee::walk(chain.count, w, chain.casters, q.origin, chain.facing, chain.y,
-                 blocks, serenity::cuda::mnee_round_iterations);
+                 blocks, serenity::contracts::mnee_round_iterations);
   if (walked == mnee::Walked::converged) {
-    append_walk(launch.mnee_converged,
-                &launch.mnee_walk_header[serenity::cuda::mnee_converged_word],
-                request, w);
+    append_walk(
+        launch.mnee_converged,
+        &launch.mnee_walk_header[serenity::contracts::mnee_converged_word],
+        request, w);
   } else if (walked == mnee::Walked::going) {
     append_walk(next, next_count, request, w);
   }
@@ -143,11 +143,11 @@ extern "C" __global__ void mnee_walk_round(
   if (n >= launch->mnee_walk_header[from]) {
     return;
   }
-  const serenity::cuda::MneeWalk* const in =
+  const serenity::contracts::MneeWalk* const in =
       from == 0u ? launch->mnee_walks_a : launch->mnee_walks_b;
-  serenity::cuda::MneeWalk* const out =
+  serenity::contracts::MneeWalk* const out =
       from == 0u ? launch->mnee_walks_b : launch->mnee_walks_a;
-  const serenity::cuda::MneeWalk walked = in[n];
+  const serenity::contracts::MneeWalk walked = in[n];
   s::walk_round(*launch, walked.request, s::loaded_walk(walked), out,
                 &launch->mnee_walk_header[1u - from]);
 }
@@ -159,7 +159,7 @@ extern "C" __global__ void mnee_settle(
   const unsigned int written = header[c::mnee_count_word];
   const unsigned int capacity = header[c::mnee_capacity_word];
   header[c::mnee_count_word] = 0u;
-  for (unsigned i = 0u; i < serenity::cuda::mnee_walk_header_words; ++i) {
+  for (unsigned i = 0u; i < serenity::contracts::mnee_walk_header_words; ++i) {
     launch->mnee_walk_header[i] = 0u;
   }
   if (written > capacity) {

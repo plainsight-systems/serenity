@@ -341,6 +341,61 @@ Measured before building it into the frame, on random weights: the U-Net
 6.23 ms and 21.87 ms (convolutions and pools, per-dispatch timestamps);
 within 1.2e-4 of PyTorch's 32-bit output.
 
+### Change 4's design (2026-10-25)
+
+The 3090's two designs for divergent work in ReSTIR PT
+(docs/research/2026-10-21-tracing-divergence.md, sections 4 and 8), taken
+as they are; Metal's SIMD groups are 32 lanes, as a warp, and the walks'
+and the pairs' distributions are the scene's, not the GPU's, so the
+3090's round length (8 iterations, from the measured walks) holds here.
+
+**MNEE's walks in rounds.** The walk's state between iterations, the
+rounds' lists and their sizes move from the CUDA backend into contract 16
+(`core/contracts/mnee_request.h`: `MneeWalk`, 96 bytes; 8 rounds of 8
+iterations), so both backends carry the same record. The Metal
+integrator takes CUDA's split as it is: the walk resumable (`Walk`,
+`walk()` for a number of iterations, `newton()` the walk taken whole),
+the chain rebuilt from a request each round (`chain_start()`), the
+light of a solved chain (`chain_light()`). The pass, in one compute
+encoder, each dispatch behind a barrier on the one before:
+
+| Dispatch | Threads | Does |
+|---|---|---|
+| `mnee_grid` | 1 | the requests' grid; lost requests counted; the count set back to 0 |
+| `mnee_walk_start` | a request | the chain built, its walk begun and taken a round, into list 0 or the converged list |
+| `mnee_walk_grid`, `mnee_walk_round` | 1; a walk | 7 times: the list a round wrote as the next round's grid, its count set back to 0; its walks taken another round, into the other list |
+| `mnee_walk_grid`, `mnee_finish` | 1; a converged walk | the converged list's grid; each converged walk's light, its chain's visibility traced, added to its pixel |
+
+Every grid is written on the GPU (Metal's indirect dispatch, the
+backend's pattern for its lists) and every count is set back to 0 by
+the kernel that reads it, as the requests' and the replays' always were;
+a walk in the last round reaches the walk's 64 iterations, so the list
+that round writes stays empty. CUDA launches at the lists' capacity and
+sets a count to 0 by a memset on the stream; Metal has no memset inside
+a compute encoder, so the grid kernel does both. The list bindings are
+moved between dispatches (Metal 4 takes the argument table's bindings
+at each dispatch). Memory: two round lists and the converged list, each
+the requests' capacity, 96 bytes a pixel each, beside the requests' 128.
+
+**Both reuses over lists of pairs.** Each reuse's pairing kernel (the
+temporal one also finds the pixel last frame) stores the pairs that only
+store and appends each pair that shifts to one of two lists, the pairs
+that reconnect at x2 and those that replay, so a SIMD group's shifts do
+one kind of work (ReSTIR PT Enhanced's 6.2.2). One grid kernel writes
+both lists' grids and sets both counts back to 0; one shift pipeline
+runs over each list, two dispatches with no barrier between them (they
+write different slots and read the same inputs), so the GPU may run
+them together, where CUDA's stream runs one after the other; then the
+merge. The reconnection list is the replay list's size; the two counts
+and the two grids share the counter's 128 bytes.
+
+Expected in the picture: the shifts are the same arithmetic on the same
+inputs, but the reconnections leave the pairing's kernel for their own,
+which fast math may compile differently: on the 3090 seven of the brass
+sphere's frames moved by one level in at most 0.15% of their pixels
+(73afa30). MNEE's light already reaches a pixel by float atomics in the
+order the solves arrive.
+
 ## 7. Not built, and one question for the user
 
 - MPSGraph, Open Image Denoise's own route to Apple's kernels: it encodes

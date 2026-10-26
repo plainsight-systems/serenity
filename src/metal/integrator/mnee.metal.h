@@ -73,7 +73,7 @@
 //      constraint is under 10^-3, or 64 iterations, or a step under 10^-4.
 //      Cycles projects a step back onto its object by tracing the scene;
 //      a sphere is projected exactly, by its own roots, no ray traced.
-//   3. Contribution (manifold_light()): what step 5 of the path tracer adds
+//   3. Contribution (chain_light()): what step 5 of the path tracer adds
 //      for a light sample, f |cos| L_e T / (P p_l), with the segment's
 //      geometry replaced by the chain's:
 //
@@ -140,8 +140,10 @@
 // Where each step runs (decided 2026-10-12, by measurement; contract 16,
 // core/contracts/mnee_request.h): step 1 in the estimator's loop, where the
 // light sample is drawn; steps 2 to 4 in the MNEE pass, from a request the
-// loop writes (request(), enqueue(); the pass's solve_request(): metal/
-// passes/mnee/mnee.h), as Cycles runs its walk in a kernel of its own.
+// loop writes (request(), enqueue(); the pass's requested(), chain_start(),
+// walk() and chain_light(): metal/passes/mnee/mnee.h), as Cycles runs its
+// walk in a kernel of its own; the walk in rounds, the walks still going
+// gathered between them, as on CUDA (metal/passes/mnee/mnee.h).
 // Solved in the loop, a tenth of the paths solving held up nearly every
 // SIMD group: the path pass took 124 ms at 3456 x 2234 against 30 without
 // MNEE; with the list, 59 (docs/research/2026-10-12-mnee.md).
@@ -683,19 +685,60 @@ inline bool transmits(uint count, thread const float3* p,
   return true;
 }
 
-// Step 2, Cycles' mnee_newton_solver(): `p` moved onto the chain that obeys
-// Snell's law at each crossing, `blocks` its derivatives there; false where
-// none is found. `facing` the receiver's normal on the side x0 lies.
-inline bool newton(uint count, thread float3* p, thread const Caster* casters,
-                   float3 x0, float3 facing, float3 y, thread Blocks* blocks) {
+// Step 2's walk as it stands between iterations (Cycles'
+// mnee_newton_solver()'s loop state): the chain's points, the step solved
+// at the last derivatives, the step's size, whether the next iteration
+// computes the derivatives again, and the iterations taken. What a round
+// of the MNEE pass carries to the next (contract 16's MneeWalk), so a walk
+// split into rounds takes the same steps as one taken whole.
+struct Walk {
+  float3 p[max_interfaces];
   float2 dx[max_interfaces];
+  float beta;
+  uint iteration;
+  bool resolve;
+};
+
+// How a walk stands after walk().
+enum class Walked : uint {
+  converged,  // on the chain that obeys Snell's law; `blocks` its derivatives
+  failed,     // no chain found, or max_iterations taken
+  going,      // `steps` taken, neither yet
+};
+
+// The walk begun at the seeded chain `seeded`.
+inline Walk begun_walk(uint count, thread const float3* seeded) {
+  Walk w{};
+#pragma unroll
+  for (uint i = 0u; i < max_interfaces; ++i) {
+    if (i >= count) {
+      break;
+    }
+    w.p[i] = seeded[i];
+  }
+  w.beta = first_step;
+  w.iteration = 0u;
+  w.resolve = true;
+  return w;
+}
+
+// Step 2, Cycles' mnee_newton_solver(), for up to `steps` more iterations
+// of `w`: its points moved toward the chain that obeys Snell's law at each
+// crossing, `blocks` the derivatives there where it converges. `facing`
+// the receiver's normal on the side x0 lies. The iterations are those of
+// one walk taken whole, whatever `steps` divides it into: the state that
+// passes from one iteration to the next is all in `w`.
+inline Walked walk(uint count, thread Walk& w, thread const Caster* casters,
+                   float3 x0, float3 facing, float3 y, thread Blocks* blocks,
+                   uint steps) {
   float3 tentative[max_interfaces];
-  float beta = first_step;
-  bool resolve = true;
-  for (uint iteration = 0u; iteration < max_iterations; ++iteration) {
-    if (resolve) {
-      if (!constraint_blocks(count, p, casters, x0, y, blocks)) {
-        return false;
+  for (uint taken = 0u; taken < steps; ++taken, ++w.iteration) {
+    if (w.iteration >= max_iterations) {
+      return Walked::failed;
+    }
+    if (w.resolve) {
+      if (!constraint_blocks(count, w.p, casters, x0, y, blocks)) {
+        return Walked::failed;
       }
       float norm = 0.0f;
 #pragma unroll
@@ -706,10 +749,10 @@ inline bool newton(uint count, thread float3* p, thread const Caster* casters,
         norm = metal::max(norm, metal::length(blocks[i].constraint));
       }
       if (norm < solver_threshold) {
-        return true;
+        return Walked::converged;
       }
-      if (!solve_steps(count, blocks, dx)) {
-        return false;
+      if (!solve_steps(count, blocks, w.dx)) {
+        return Walked::failed;
       }
     }
     bool reduce = false;
@@ -719,15 +762,16 @@ inline bool newton(uint count, thread float3* p, thread const Caster* casters,
       if (i >= count) {
         break;
       }
-      const Vertex v = vertex_at(p[i], casters[i]);
-      const float3 step = beta * (dx[i].x * v.dp_du + dx[i].y * v.dp_dv);
+      const Vertex v = vertex_at(w.p[i], casters[i]);
+      const float3 step = w.beta * (w.dx[i].x * v.dp_du + w.dx[i].y * v.dp_dv);
       float3 moved = v.p - step;
       if (i == 0u && metal::dot(facing, moved - x0) <= 0.0f) {
         moved =
             v.p +
             step;  // the first solve below the receiver: the other way (Cycles)
       }
-      const Projected on = project(i == 0u ? x0 : p[i - 1u], moved, casters[i]);
+      const Projected on =
+          project(i == 0u ? x0 : w.p[i - 1u], moved, casters[i]);
       if (!on.found) {
         reduce = true;
         break;
@@ -737,17 +781,17 @@ inline bool newton(uint count, thread float3* p, thread const Caster* casters,
       tentative[i] = on.p;
     }
     if (!reduce && !moving) {
-      return false;  // no crossing moves: stuck (Cycles, but for the whole
-                     // chain; above)
+      return Walked::failed;  // no crossing moves: stuck (Cycles, but for the
+                              // whole chain; above)
     }
     if (!reduce && !transmits(count, tentative, casters, x0, y)) {
       reduce = true;
     }
     if (reduce) {
-      resolve = false;
-      beta *= 0.5f;
-      if (beta < least_step) {
-        return false;
+      w.resolve = false;
+      w.beta *= 0.5f;
+      if (w.beta < least_step) {
+        return Walked::failed;
       }
       continue;
     }
@@ -756,12 +800,62 @@ inline bool newton(uint count, thread float3* p, thread const Caster* casters,
       if (i >= count) {
         break;
       }
-      p[i] = tentative[i];
+      w.p[i] = tentative[i];
     }
-    resolve = true;
-    beta = metal::min(1.0f, 2.0f * beta);
+    w.resolve = true;
+    w.beta = metal::min(1.0f, 2.0f * w.beta);
   }
-  return false;
+  return w.iteration >= max_iterations ? Walked::failed : Walked::going;
+}
+
+// Walk `w` for request `request` as a list between rounds keeps it
+// (contract 16's MneeWalk), and back.
+inline serenity::contracts::MneeWalk kept_walk(uint request,
+                                               thread const Walk& w) {
+  serenity::contracts::MneeWalk out{};
+  out.request = request;
+  out.iteration = w.iteration;
+  out.beta = w.beta;
+  out.resolve = w.resolve ? 1u : 0u;
+#pragma unroll
+  for (uint i = 0u; i < max_interfaces; ++i) {
+    out.p[i] = to_packed(w.p[i]);
+    out.dx[i][0] = w.dx[i].x;
+    out.dx[i][1] = w.dx[i].y;
+  }
+  return out;
+}
+
+inline Walk resumed_walk(serenity::contracts::MneeWalk in) {
+  Walk w{};
+#pragma unroll
+  for (uint i = 0u; i < max_interfaces; ++i) {
+    w.p[i] = to_float3(in.p[i]);
+    w.dx[i] = float2(in.dx[i][0], in.dx[i][1]);
+  }
+  w.beta = in.beta;
+  w.iteration = in.iteration;
+  w.resolve = in.resolve != 0u;
+  return w;
+}
+
+// Step 2 whole: `p` moved onto the chain that obeys Snell's law at each
+// crossing, `blocks` its derivatives there; false where none is found
+// within max_iterations. The walk at once (tests/gpu/kernels/
+// mnee_probe.metal); the MNEE pass takes it in rounds (metal/passes/mnee/).
+inline bool newton(uint count, thread float3* p, thread const Caster* casters,
+                   float3 x0, float3 facing, float3 y, thread Blocks* blocks) {
+  Walk w = begun_walk(count, p);
+  const Walked walked =
+      walk(count, w, casters, x0, facing, y, blocks, max_iterations);
+#pragma unroll
+  for (uint i = 0u; i < max_interfaces; ++i) {
+    if (i >= count) {
+      break;
+    }
+    p[i] = w.p[i];
+  }
+  return walked == Walked::converged;
 }
 
 // Cycles' mnee_compute_transfer_matrix(), for a light point y on a surface
@@ -924,45 +1018,74 @@ template <typename SceneT>
                              metal::distance(leave_from, y)));
 }
 
-// Steps 2 to 4 at `here` for the light sample `sample` drawn from `origin`
-// (x0) toward a sphere light centered at `light_center`, whose segment
-// `seed` crosses casters: X (above), per solid angle at x0; 0 where no
-// chain is found, it is blocked, or the light faces away. Precondition:
-// seed.usable, seed.count > 0, sample.pdf > 0.
+// Steps 2 to 4's chain at `here` for the light sample `sample` drawn from
+// `origin` (x0) toward a sphere light centered at `light_center`, whose
+// segment `seed` crosses casters: the casters, the seeded points (Step
+// 1's crossings projected onto their spheres, each crossing's reference
+// tangent set from them), the light's point and normal, the receiver's
+// normal on x0's side. `faces` false where the light faces away from the
+// segment, which ends the request before any walk. Rebuilt from the same
+// inputs, the same chain: what lets the MNEE pass take a walk in rounds
+// and rebuild its chain each round rather than carry it.
+// Precondition: seed.usable, seed.count > 0.
+struct Chain {
+  bool faces;
+  uint count;
+  Caster casters[max_interfaces];
+  float3 seeded[max_interfaces];
+  float3 y;
+  float3 light_normal;
+  float cos_y;
+  float3 facing;
+};
+
 template <typename SceneT>
-inline float3 manifold_light(SceneT scene, Shading here, float3 origin,
-                             float3 light_center,
-                             serenity::contracts::LightSample sample,
-                             Seed seed) {
+inline Chain chain_start(SceneT scene, Shading here, float3 origin,
+                         float3 light_center,
+                         serenity::contracts::LightSample sample, Seed seed) {
   const Shapes shapes = scene.shapes();
   const Materials materials = scene.materials();
+  Chain chain{};
   const float3 wi = to_float3(sample.direction);
-  const float3 y = origin + sample.distance * wi;
-  const float3 light_normal = metal::normalize(y - light_center);
-  const float cos_y = -metal::dot(light_normal, wi);
-  if (!(cos_y > 0.0f)) {
-    return float3(0.0f);
+  chain.y = origin + sample.distance * wi;
+  chain.light_normal = metal::normalize(chain.y - light_center);
+  chain.cos_y = -metal::dot(chain.light_normal, wi);
+  chain.faces = chain.cos_y > 0.0f;
+  if (!chain.faces) {
+    return chain;
   }
-  const uint count = seed.count;
-  Caster casters[max_interfaces];
-  float3 p[max_interfaces];
+  chain.count = seed.count;
 #pragma unroll
   for (uint i = 0u; i < max_interfaces; ++i) {
-    if (i >= count) {
+    if (i >= chain.count) {
       break;
     }
-    casters[i] = caster_at(shapes, materials, seed.shape[i]).caster;
-    p[i] = casters[i].center +
-           casters[i].radius *
-               metal::normalize(origin + seed.t[i] * wi - casters[i].center);
+    chain.casters[i] = caster_at(shapes, materials, seed.shape[i]).caster;
+    chain.seeded[i] =
+        chain.casters[i].center +
+        chain.casters[i].radius *
+            metal::normalize(origin + seed.t[i] * wi - chain.casters[i].center);
   }
-  set_references(count, p, casters);
+  set_references(chain.count, chain.seeded, chain.casters);
   const float3 ng = to_float3(here.surface.geometric_normal);
-  const float3 facing = metal::dot(ng, here.wo) >= 0.0f ? ng : -ng;
-  Blocks blocks[max_interfaces];
-  if (!newton(count, p, casters, origin, facing, y, blocks)) {
-    return float3(0.0f);
-  }
+  chain.facing = metal::dot(ng, here.wo) >= 0.0f ? ng : -ng;
+  return chain;
+}
+
+// Steps 3 and 4 for `chain`, walked to the solved points `p` whose
+// derivatives are `blocks`: X (above), per solid angle at x0; 0 where it is
+// blocked, the light is seen from behind, or the receiver gives nothing.
+template <typename SceneT>
+inline float3 chain_light(SceneT scene, Shading here, float3 origin,
+                          serenity::contracts::LightSample sample,
+                          thread const Chain& chain, thread const float3* p,
+                          thread const Blocks* blocks) {
+  const Shapes shapes = scene.shapes();
+  const uint count = chain.count;
+  thread const Caster* const casters = chain.casters;
+  const float3 y = chain.y;
+  const float3 light_normal = chain.light_normal;
+  const float cos_y = chain.cos_y;
   const uint last = count - 1u;
   if (metal::dot(light_normal, p[last] - y) <= 0.0f) {
     return float3(0.0f);  // the light's point seen from behind by the chain
@@ -1057,39 +1180,46 @@ inline void enqueue(Queue queue, serenity::contracts::MneeRequest r) {
   }
 }
 
-// The light of request `r` (steps 2 to 4), X times its weight: the
-// receiver and the light sample rebuilt from it, the receiver's
-// SurfaceInteraction holding only what manifold_light() reads of it (its
-// geometric normal, the BSDF's: contract 16).
+// Contract 16's request, read back as what made it: the receiver (its
+// SurfaceInteraction holding only what chain_start() and chain_light() read
+// of it: its geometric normal, the BSDF's), the light sample, the light's
+// center, the seed, and the weight its light is multiplied by.
+struct Requested {
+  Shading here;
+  float3 origin;
+  float3 light_center;
+  serenity::contracts::LightSample sample;
+  Seed seed;
+  float3 weight;
+};
+
 template <typename SceneT>
-inline float3 solve_request(SceneT scene, serenity::contracts::MneeRequest r) {
+inline Requested requested(SceneT scene, serenity::contracts::MneeRequest r) {
   namespace c = serenity::contracts;
-  Seed seed{};
-  seed.count = r.crossings;
-  seed.usable = true;
+  Requested q{};
+  q.seed.count = r.crossings;
+  q.seed.usable = true;
 #pragma unroll
   for (uint i = 0u; i < max_interfaces; ++i) {
-    seed.t[i] = r.t[i];
-    seed.shape[i] = (r.shapes[i / c::mnee_shapes_a_word] >>
-                     (c::mnee_shape_bits * (i % c::mnee_shapes_a_word))) &
-                    c::mnee_largest_shape;
+    q.seed.t[i] = r.t[i];
+    q.seed.shape[i] = (r.shapes[i / c::mnee_shapes_a_word] >>
+                       (c::mnee_shape_bits * (i % c::mnee_shapes_a_word))) &
+                      c::mnee_largest_shape;
   }
-  Shading here{};
-  here.bsdf = unpack_bsdf(r.bsdf);
-  here.surface.geometric_normal = here.bsdf.normal;
-  here.surface.shading_normal = here.bsdf.normal;
-  here.wo = to_float3(r.wo);
-  here.medium = r.medium;
-  serenity::contracts::LightSample sample{};
-  sample.direction = r.direction;
-  sample.distance = r.distance;
-  sample.radiance = r.radiance;
-  sample.primitive = r.light;
-  sample.pdf = 1.0f;  // unread: the weight holds the density
-  const float3 center =
-      transform_translation(scene.shapes().transforms[r.light]);
-  return to_float3(r.weight) *
-         manifold_light(scene, here, to_float3(r.origin), center, sample, seed);
+  q.here.bsdf = unpack_bsdf(r.bsdf);
+  q.here.surface.geometric_normal = q.here.bsdf.normal;
+  q.here.surface.shading_normal = q.here.bsdf.normal;
+  q.here.wo = to_float3(r.wo);
+  q.here.medium = r.medium;
+  q.sample.direction = r.direction;
+  q.sample.distance = r.distance;
+  q.sample.radiance = r.radiance;
+  q.sample.primitive = r.light;
+  q.sample.pdf = 1.0f;  // unread: the weight holds the density
+  q.light_center = transform_translation(scene.shapes().transforms[r.light]);
+  q.origin = to_float3(r.origin);
+  q.weight = to_float3(r.weight);
+  return q;
 }
 
 }  // namespace mnee

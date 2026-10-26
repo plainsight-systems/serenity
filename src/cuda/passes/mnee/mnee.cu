@@ -12,7 +12,6 @@
 
 #include "core/contracts/mnee_request.h"
 #include "cuda/film/accumulate.cuh"
-#include "cuda/frame/mnee_walk.h"
 #include "cuda/frame/traced_module.cuh"
 #include "cuda/integrator/mnee.cuh"
 #include "cuda/integrator/path.cuh"
@@ -30,8 +29,8 @@ namespace shaders {
 __device__ inline void finish_one() {
   const uint n = optixGetLaunchIndex().x;
   bool failed = false;
-  if (n < launch.mnee_walk_header[serenity::cuda::mnee_converged_word]) {
-    const serenity::cuda::MneeWalk walked = launch.mnee_converged[n];
+  if (n < launch.mnee_walk_header[serenity::contracts::mnee_converged_word]) {
+    const serenity::contracts::MneeWalk walked = launch.mnee_converged[n];
     const path::Scene scene{&launch.structures, launch.scene, launch.transforms,
                             launch.glows};
     const mnee::Requested q =

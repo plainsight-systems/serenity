@@ -133,7 +133,8 @@ static_assert(bindings::depth_of_field::near_filtered < max_denoise_textures);
 constexpr NS::UInteger max_restir_pt_buffers = 30;
 static_assert(bindings::restir_pt::mnee_header < max_restir_pt_buffers);
 static_assert(bindings::restir_pt::last_light_power < max_restir_pt_buffers);
-static_assert(bindings::mnee::lost < max_restir_pt_buffers);
+static_assert(bindings::mnee::lost < max_restir_pt_buffers &&
+              bindings::mnee::converged_count < max_restir_pt_buffers);
 
 // Whether `schedule` has a pass of `kind`.
 bool has(const frame::Schedule& schedule, frame::PassKind kind) {
@@ -272,6 +273,9 @@ void Renderer::MneeFamily::bind(FrameResources& resources,
   resources.mnee_requests = addresses.requests;
   resources.mnee_header = addresses.header;
   resources.mnee_grid = addresses.grid;
+  resources.mnee_walks = addresses.walks;
+  resources.mnee_converged = addresses.converged;
+  resources.mnee_walk_header = addresses.walk_header;
   lost.begin_frame(begun.slot, begun.sequence);
   resources.mnee_lost_counter = lost.address(begun.slot);
 }

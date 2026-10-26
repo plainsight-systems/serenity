@@ -22,9 +22,9 @@ namespace serenity::cuda {
 // divergence.md, section 4): measured on the RTX 3090 Ti, a fifth of the
 // walks fail and spend 57% of the iterations, and a warp of 32 waits on
 // its longest, its lanes busy 18% of the solve's instructions. Taken in
-// rounds of mnee_round_iterations (cuda/frame/mnee_walk.h), the walks
-// still going gathered into full warps between rounds, each walk takes the
-// same iterations as one taken whole. The launches, which the stream
+// rounds of mnee_round_iterations (contract 16, core/contracts/mnee_request.h),
+// the walks still going gathered into full warps between rounds, each walk
+// takes the same iterations as one taken whole. The launches, which the stream
 // orders, each at its list's capacity (one a pixel, cuda/frame/
 // mnee_list.h), a thread past the count returning:
 //

@@ -28,6 +28,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <string>
 #include <utility>
@@ -255,6 +256,43 @@ TEST_CASE(
     INFO("G expected " << expected << ", found " << chains[i].geometry);
     CHECK(static_cast<double>(chains[i].geometry) ==
           doctest::Approx(expected).epsilon(0.02));
+  }
+}
+
+TEST_CASE(
+    "MNEE's walk in the pass's rounds, kept in contract 16's record between "
+    "them, takes the same steps as the walk taken whole") {
+  // The MNEE pass's claim (metal/passes/mnee/mnee.h): the state a round
+  // carries is all a walk has, so a split walk lands where a whole one does,
+  // to the bit.
+  std::vector<tests::MneeQuery> queries;
+  for (const std::uint32_t in_rounds : {0u, 1u}) {
+    for (const Vec3& x0 : receivers) {
+      queries.push_back(tests::MneeQuery{tests::float3(x0),
+                                         static_cast<float>(ior),
+                                         tests::float3(light_point),
+                                         static_cast<float>(sphere_radius),
+                                         tests::float3(sphere_center),
+                                         in_rounds,
+                                         tests::float3(light_normal),
+                                         0u,
+                                         {0.0f, 1.0f, 0.0f},
+                                         0u});
+    }
+  }
+  const auto count = static_cast<std::uint32_t>(queries.size());
+  tests::ProbeRunner gpu;
+  const std::vector<tests::MneeChain> chains = gpu.run<tests::MneeChain>(
+      "mnee_solve", queries.size(), {Binding::of(queries), Binding::of(count)});
+  REQUIRE(chains.size() == queries.size());
+  for (std::size_t i = 0; i < receivers.size(); ++i) {
+    const tests::MneeChain& whole = chains.at(i);
+    const tests::MneeChain& split = chains.at(receivers.size() + i);
+    INFO("receiver " << i);
+    REQUIRE(whole.found == 1u);
+    CHECK(split.found == whole.found);
+    CHECK(std::memcmp(&split.first, &whole.first, sizeof(whole.first)) == 0);
+    CHECK(std::memcmp(&split.second, &whole.second, sizeof(whole.second)) == 0);
   }
 }
 

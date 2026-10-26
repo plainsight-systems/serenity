@@ -16,14 +16,16 @@ namespace tests {
 
 // A receiver's point, a light's point and the light's outward normal
 // there, and one glass sphere between them: its center, radius and index;
-// the receiver's normal on the side the receiver's point lies.
+// the receiver's normal on the side the receiver's point lies; whether the
+// walk is taken in the MNEE pass's rounds, kept in contract 16's record
+// between them (1), or whole (0).
 struct MneeQuery {
   contracts::Float3 receiver;
   float ior;
   contracts::Float3 light;
   float radius;
   contracts::Float3 center;
-  uint32_t padding0;
+  uint32_t in_rounds;
   contracts::Float3 light_normal;
   uint32_t padding1;
   contracts::Float3 facing;

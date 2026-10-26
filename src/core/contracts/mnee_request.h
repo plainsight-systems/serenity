@@ -110,5 +110,50 @@ static_assert(std::is_trivially_copyable_v<MneeRequest>,
               "MneeRequest is written by the GPU as bytes");
 #endif
 
+// The MNEE pass's walks between rounds (docs/research/
+// 2026-10-21-tracing-divergence.md, section 4; both backends': cuda/passes/
+// mnee/mnee.h, metal/passes/mnee/mnee.h). A request's Newton walk is taken
+// mnee_round_iterations at a time; between rounds a walk's state and the
+// request it walks for (whose chain each round rebuilds from the request
+// rather than carry it: the integrators' chain_start()) are appended to
+// one of two lists, the walks still going to the other list than the one
+// the round read, the converged walks to a third, so every round's SIMD
+// groups hold walks that are still going (GPU.4, GDSA.13). The lists'
+// header: each list's count, one word, which the round writing it appends
+// to (GDSA.10). One record on both backends (ES.3), as the request is.
+struct MneeWalk {
+  uint32_t request;    // its index in the request list
+  uint32_t iteration;  // the walk's iterations taken
+  float beta;          // the step's size
+  uint32_t resolve;    // 1: the next iteration computes the derivatives
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
+  Float3 p[mnee_most_crossings];  // the chain's points
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): MSL has no std::array
+  float dx[mnee_most_crossings][2];  // the step at the last derivatives
+};
+
+static_assert(
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers): the layout
+    sizeof(MneeWalk) == 96,
+    "MneeWalk must be the same 96 bytes on the host and in programs");
+#if !defined(__METAL_VERSION__)
+static_assert(std::is_trivially_copyable_v<MneeWalk>,
+              "MneeWalk is written by the GPU as bytes");
+#endif
+
+// The header's words: the two round lists' counts and the converged
+// list's.
+SERENITY_CONSTANT uint32_t mnee_walk_lists = 2u;
+SERENITY_CONSTANT uint32_t mnee_converged_word = 2u;
+SERENITY_CONSTANT uint32_t mnee_walk_header_words = 3u;
+
+// How many iterations a round takes, and how many rounds a walk of at most
+// the integrators' max_iterations (64) needs: 8 of 8. Eight, from the
+// measured walks (the design's section 2): rounds of 8 leave 29% of a SIMD
+// group's iterations idle, of 16 39%. The last round takes a walk to its
+// 64th iteration, so nothing it leaves is still going.
+SERENITY_CONSTANT uint32_t mnee_round_iterations = 8u;
+SERENITY_CONSTANT uint32_t mnee_rounds = 8u;
+
 }  // namespace contracts
 }  // namespace serenity

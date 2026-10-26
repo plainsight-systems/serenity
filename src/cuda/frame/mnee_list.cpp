@@ -27,10 +27,11 @@ void MneeList::prepare(frame::Extent size) {
   upload_now(header_.address(), std::as_bytes(std::span(words)), "MneeList");
   // A walk a request at most, in each list.
   for (DeviceBuffer& list : walks_) {
-    list = DeviceBuffer(capacity * sizeof(MneeWalk));
+    list = DeviceBuffer(capacity * sizeof(contracts::MneeWalk));
   }
-  converged_ = DeviceBuffer(capacity * sizeof(MneeWalk));
-  walk_header_ = DeviceBuffer(mnee_walk_header_words * sizeof(std::uint32_t));
+  converged_ = DeviceBuffer(capacity * sizeof(contracts::MneeWalk));
+  walk_header_ =
+      DeviceBuffer(contracts::mnee_walk_header_words * sizeof(std::uint32_t));
   zero_now(walk_header_.address(), walk_header_.bytes(), "MneeList");
   size_ = size;
 }

@@ -3,8 +3,8 @@
 #include <array>
 #include <cstdint>
 
+#include "core/contracts/mnee_request.h"
 #include "cuda/device/error.h"
-#include "cuda/frame/mnee_walk.h"
 #include "serenity/cuda_modules/mnee_kernels.h"
 #include "serenity/optix_modules/mnee.h"
 
@@ -54,11 +54,12 @@ void MneePass::record(CUstream stream, CUdeviceptr launch,
   CUdeviceptr address = launch;
   std::array<void*, 1> arguments{&address};
   cuda::launch(stream, start_, lists, arguments);
-  for (unsigned round = 1; round < mnee_rounds; ++round) {
+  for (unsigned round = 1; round < contracts::mnee_rounds; ++round) {
     // Round `round` reads the list the round before wrote and writes the
-    // other, its count set to 0 first (cuda/frame/mnee_walk.h).
-    unsigned from = (round - 1) % mnee_walk_lists;
-    const unsigned into = round % mnee_walk_lists;
+    // other, its count set to 0 first (contract 16,
+    // core/contracts/mnee_request.h).
+    unsigned from = (round - 1) % contracts::mnee_walk_lists;
+    const unsigned into = round % contracts::mnee_walk_lists;
     check(
         cuMemsetD32Async(frame.mnee_walk_header + into * sizeof(std::uint32_t),
                          0, 1, stream),

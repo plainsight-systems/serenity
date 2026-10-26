@@ -37,7 +37,6 @@
 #include "core/contracts/transform.h"
 #include "core/scene/scene_block.h"
 #include "cuda/acceleration/structure_block.h"
-#include "cuda/frame/mnee_walk.h"
 
 namespace serenity::cuda {
 
@@ -114,11 +113,12 @@ struct FrameLaunch {
   Writes<contracts::MneeRequest> mnee_requests;
   Writes<std::uint32_t> mnee_header;
   Writes<std::uint32_t> mnee_lost;
-  // The solve's walks between its rounds (cuda/frame/mnee_walk.h): the
-  // rounds' two lists, the converged walks', their counts.
-  Writes<MneeWalk> mnee_walks_a;
-  Writes<MneeWalk> mnee_walks_b;
-  Writes<MneeWalk> mnee_converged;
+  // The solve's walks between its rounds (contract 16,
+  // core/contracts/mnee_request.h): the rounds' two lists, the converged
+  // walks', their counts.
+  Writes<contracts::MneeWalk> mnee_walks_a;
+  Writes<contracts::MneeWalk> mnee_walks_b;
+  Writes<contracts::MneeWalk> mnee_converged;
   Writes<std::uint32_t> mnee_walk_header;
 
   // The features pass's (cuda/frame/feature_images.h): its constants, the

@@ -21,6 +21,9 @@ static_assert(contracts::mnee_grid_offset + sizeof(gpu::IndirectGrid) <=
               header_bytes);
 static_assert(contracts::mnee_grid_offset % alignof(gpu::IndirectGrid) == 0 &&
               contracts::mnee_grid_offset % constant_offset_alignment == 0);
+// The walks' counts, a word each (contract 16).
+constexpr std::size_t walk_header_bytes =
+    std::size_t{contracts::mnee_walk_header_words} * sizeof(std::uint32_t);
 
 }  // namespace
 
@@ -42,7 +45,8 @@ void MneeList::prepare(frame::Extent size) {
   if (requests_) {
     submission_.drain();  // frames in flight may still read the old arrays
   }
-  for (ResidentBuffer* array : {&requests_, &header_}) {
+  for (ResidentBuffer* array : {&requests_, &header_, &walks_[0], &walks_[1],
+                                &converged_, &walk_header_}) {
     array->reset();
   }
   const auto pool = scoped_pool();
@@ -56,6 +60,16 @@ void MneeList::prepare(frame::Extent size) {
       static_cast<std::uint32_t*>(header_.buffer->contents()),
       header_bytes / sizeof(std::uint32_t));
   words[contracts::mnee_capacity_word] = static_cast<std::uint32_t>(capacity);
+  // A walk a request at most, in each list (contract 16).
+  for (ResidentBuffer& list : walks_) {
+    make(list, capacity * sizeof(contracts::MneeWalk),
+         MTL::ResourceStorageModePrivate, "round list");
+  }
+  make(converged_, capacity * sizeof(contracts::MneeWalk),
+       MTL::ResourceStorageModePrivate, "converged walks");
+  make(walk_header_, walk_header_bytes, MTL::ResourceStorageModeShared,
+       "walks' counts");
+  std::memset(walk_header_.buffer->contents(), 0, walk_header_bytes);
   size_ = size;
 }
 
@@ -64,6 +78,11 @@ MneeList::Addresses MneeList::addresses() const noexcept {
   out.requests = requests_.address();
   out.header = header_.address();
   out.grid = out.header != 0 ? out.header + contracts::mnee_grid_offset : 0;
+  for (std::size_t list = 0; list < walks_.size(); ++list) {
+    out.walks.at(list) = walks_.at(list).address();
+  }
+  out.converged = converged_.address();
+  out.walk_header = walk_header_.address();
   return out;
 }
 

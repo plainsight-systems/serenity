@@ -668,8 +668,9 @@ __device__ inline bool transmits(uint count, const float3* p,
 // mnee_newton_solver()'s loop state): the chain's points, the step solved
 // at the last derivatives, the step's size, whether the next iteration
 // computes the derivatives again, and the iterations taken. What a round
-// of the MNEE pass carries to the next (cuda/frame/mnee_walk.h), so a walk
-// split into rounds takes the same steps as one taken whole.
+// of the MNEE pass carries to the next (contract 16,
+// core/contracts/mnee_request.h), so a walk split into rounds takes the same
+// steps as one taken whole.
 struct Walk {
   float3 p[max_interfaces];
   float2 dx[max_interfaces];

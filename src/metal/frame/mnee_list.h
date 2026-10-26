@@ -2,9 +2,11 @@
 
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
+#include <array>
 #include <cstddef>
 #include <string_view>
 
+#include "core/contracts/mnee_request.h"
 #include "core/frame/extent.h"
 #include "metal/device/device.h"
 #include "metal/device/resident.h"
@@ -20,9 +22,17 @@ namespace serenity::metal {
 //
 //   requests  one a pixel (contract 16), 128 bytes: 988 MB at 3456 x 2234,
 //             265 MB at 1920 x 1080; private to the GPU;
-//   header    the count and capacity, then the solve's indirect grid, in
+//   header    the count and capacity, then the pass's indirect grid, in
 //             one small shared buffer the CPU writes once (the grid kernel
-//             sets the count back to 0).
+//             sets the count back to 0);
+//   walks     the walks between rounds (contract 16's MneeWalk, 96 bytes):
+//             two round lists and the converged list, each the requests'
+//             capacity (a round appends no more walks than it reads), 2.2
+//             GB together at 3456 x 2234 beside the requests' 988 MB, 597
+//             MB at 1920 x 1080; private to the GPU;
+//   walk header  their three counts, in one small shared buffer the CPU
+//             zeroes once (each grid kernel sets the count it reads back
+//             to 0).
 //
 // Nothing is carried from frame to frame but zeros. Made at the frame's
 // size, remade when it changes, settled first (frames in flight may still
@@ -45,6 +55,9 @@ class MneeList {
     MTL::GPUAddress requests = 0;
     MTL::GPUAddress header = 0;
     MTL::GPUAddress grid = 0;
+    std::array<MTL::GPUAddress, contracts::mnee_walk_lists> walks{};
+    MTL::GPUAddress converged = 0;
+    MTL::GPUAddress walk_header = 0;  // contract 16's counts, a word each
   };
   Addresses addresses() const noexcept;
 
@@ -57,6 +70,9 @@ class MneeList {
   frame::Extent size_;
   ResidentBuffer requests_;
   ResidentBuffer header_;
+  std::array<ResidentBuffer, contracts::mnee_walk_lists> walks_;
+  ResidentBuffer converged_;
+  ResidentBuffer walk_header_;
 };
 
 }  // namespace serenity::metal

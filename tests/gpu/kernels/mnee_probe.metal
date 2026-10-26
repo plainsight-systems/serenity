@@ -1,5 +1,6 @@
 // Runs manifold next event estimation's solve (metal/integrator/
-// mnee.metal.h, newton() and transfer()) for tests/gpu/mnee_test.cpp, on one
+// mnee.metal.h, newton() and transfer(), or walk() in the MNEE pass's
+// rounds) for tests/gpu/mnee_test.cpp, on one
 // glass sphere between a receiver's point and a light's, seeded as
 // seed_segment() seeds it, by the straight segment's two crossings; and
 // mnee::chain_after() alone, on bounces whose shape may be no_primitive.
@@ -41,8 +42,26 @@ kernel void mnee_solve(device MneeChain* out [[buffer(0)]],
                                     float3(0.0f), float3(0.0f)};
   mnee::set_references(2u, p, casters);
   mnee::Blocks blocks[mnee::max_interfaces];
-  const bool found =
-      mnee::newton(2u, p, casters, x0, to_float3(q.facing), y, blocks);
+  bool found = false;
+  if (q.in_rounds == 0u) {
+    found = mnee::newton(2u, p, casters, x0, to_float3(q.facing), y, blocks);
+  } else {
+    // As the MNEE pass takes it: a round at a time, kept between rounds.
+    serenity::contracts::MneeWalk kept =
+        mnee::kept_walk(i, mnee::begun_walk(2u, p));
+    mnee::Walked walked = mnee::Walked::going;
+    for (uint round = 0u; round < serenity::contracts::mnee_rounds &&
+                          walked == mnee::Walked::going;
+         ++round) {
+      mnee::Walk w = mnee::resumed_walk(kept);
+      walked = mnee::walk(2u, w, casters, x0, to_float3(q.facing), y, blocks,
+                          serenity::contracts::mnee_round_iterations);
+      kept = mnee::kept_walk(i, w);
+    }
+    found = walked == mnee::Walked::converged;
+    p[0] = to_float3(kept.p[0]);
+    p[1] = to_float3(kept.p[1]);
+  }
   chain.first = to_packed(p[0]);
   chain.second = to_packed(p[1]);
   chain.found = found ? 1u : 0u;

@@ -570,7 +570,7 @@ is removed: a triangle's hit is OptiX's.
 | What | Axis | Where |
 |---|---|---|
 | the Newton walk resumable (its state between iterations, a number of them at a time); the chain rebuilt from a request, its light from a solved chain | Integrator | `src/cuda/integrator/mnee.cuh` (`Walk`, `walk()`, `Chain`, `chain_start()`, `chain_light()`, `requested()`) |
-| a walk between rounds; the lists' counts; the rounds' sizes | Frame graph | `src/cuda/frame/mnee_walk.h`, new |
+| a walk between rounds; the lists' counts; the rounds' sizes | Frame graph | `src/cuda/frame/mnee_walk.h`, new (moved to contract 16 by Milestone 6's change 4) |
 | the rounds' two lists and the converged list, with the requests' | Frame graph | `src/cuda/frame/mnee_list.{h,cpp}`, `frame_launch.h`, `renderer.cpp` |
 | the start and the rounds, kernels that trace nothing; the finish, the program that traces the chains' visibility; the launches | Pass | `src/cuda/passes/mnee/mnee_kernels.cu`, `mnee.cu`, `mnee.{h,cpp}` |
 
@@ -691,6 +691,19 @@ builds one, and primary surface replacement traced on from it as before.
 | the network's tensors' bindings | Pass | `src/metal/passes/bindings.h` (`network`) |
 | the network prepared with its images; the image half's encoder handed through the denoise pass | Frame graph | `src/metal/frame/renderer.{h,cpp}` |
 | the runner's prepare and command buffer; the one-weight-off check on the head | tests | `tests/gpu/support/denoise_runner.h`, `tests/gpu/denoise_test.cpp`, `tests/data/denoise/network/unet.mtlpackage`, new |
+
+## ReSTIR PT's lists on the M3 (`docs/research/2026-10-23-apple-silicon-design.md`, section 6, change 4)
+
+| What | Axis | Where |
+|---|---|---|
+| a walk between rounds, the lists' counts, the rounds' sizes: one record for both backends, moved from `src/cuda/frame/mnee_walk.h` (removed) | Integrator (contract 16) | `src/core/contracts/mnee_request.h` |
+| the Newton walk resumable; the chain rebuilt from a request, its light from a solved chain; the whole-request solve removed | Integrator | `src/metal/integrator/mnee.metal.h` (`Walk`, `walk()`, `Chain`, `chain_start()`, `chain_light()`, `requested()`) |
+| the rounds' two lists, the converged list and their counts, with the requests' | Frame | `src/metal/frame/mnee_list.{h,cpp}`, `frame_resources.h`, `renderer.cpp` |
+| the start, the rounds, their grids and the finish; the dispatches and the lists' bindings between them | Pass | `src/metal/passes/mnee/mnee.{h,cpp,metal}`, `src/metal/passes/bindings.h` (`mnee`) |
+| the sequence both reuses record: pair, the lists' grids, the reconnections and the replays, merge | Pass | `src/metal/passes/restir_pt/shift_replay.{h,cpp}` |
+| each reuse's pairing and its one shift over either list | Pass | `src/metal/passes/restir_pt_temporal/restir_pt_temporal.{metal,cpp}`, `src/metal/passes/restir_pt_spatial/restir_pt_spatial.{metal,cpp}` |
+| the reconnection list beside the replays'; the two counts and grids in the counter's buffer | Frame | `src/metal/frame/frame_images.{h,cpp}`, `frame_resources.h`, `src/metal/passes/bindings.h` (`restir_pt::reconnects`) |
+| CUDA's walk record from the contract | Frame graph | `src/cuda/frame/{mnee_list.h,frame_launch.h}`, `src/cuda/integrator/mnee.cuh`, `src/cuda/passes/mnee/*` |
 
 ## Not here yet
 
