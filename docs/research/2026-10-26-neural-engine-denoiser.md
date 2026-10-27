@@ -134,7 +134,9 @@ which no event of ours orders.
 - **MetalFX Denoising**, Apple's production answer (section 2): its
   upscaler and denoiser from albedo, depth and motion, which the features
   pass already writes. It replaces the trained network (Milestone 3's), so
-  the picture changes most; not measured.
+  the picture changes most. Measured 2026-10-27
+  (`2026-10-27-metalfx-denoising.md`): faster at every size, but it loses
+  the caustics and the mirrors' pinpoints; not kept (the user).
 - **A smaller network**: fewer widths or levels, retrained; the picture
   the user's call (`no-silent-quality-tradeoffs`).
 - **Keep change 3's route**, Apple's custom-network guidance as built.

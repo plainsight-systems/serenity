@@ -543,3 +543,14 @@ frame lacked, chosen by the user from a sweep against shipped engines:
 - **Optimizations follow production whole, with parameters from the
   hardware and the programs' own properties,** never fitted to one scene's
   statistics; scenes confirm a design, they do not choose its numbers.
+
+## Milestone 6: Apple silicon (decided by the user 2026-10-27)
+
+- **The denoiser stays our trained network,** not MetalFX Denoising.
+  MetalFX was measured in the frame with every input Apple lists, glass
+  and mirrors described by primary surface replacement (NVIDIA's DLSS-RR
+  sample): faster at every size (77.3 against 63.0 fps at 1920 x 1080;
+  40.0 at 3x against 17.5 at 3456 x 2234) but it loses the caustics in
+  the glass and the fireflies' pinpoints in the mirrors
+  (`research/2026-10-27-metalfx-denoising.md`). Its prototype was never
+  committed.
