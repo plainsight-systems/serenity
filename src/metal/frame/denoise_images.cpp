@@ -9,11 +9,8 @@
 
 namespace serenity::metal {
 
-DenoiseImages::DenoiseImages(const Device& device, Submission& submission,
-                             const denoise::Widths& widths)
-    : device_(NS::RetainPtr(device.handle())),
-      submission_(submission),
-      widths_(widths) {}
+DenoiseImages::DenoiseImages(const Device& device, Submission& submission)
+    : device_(NS::RetainPtr(device.handle())), submission_(submission) {}
 
 void DenoiseImages::make(Buffer& buffer, std::size_t bytes,
                          std::string_view what) {
@@ -22,37 +19,8 @@ void DenoiseImages::make(Buffer& buffer, std::size_t bytes,
       "the denoiser's " + std::string(what), Zeroed::yes);
 }
 
-NS::SharedPtr<MTL::Tensor> DenoiseImages::tensor_over(const Buffer& buffer,
-                                                      std::uint32_t channels,
-                                                      Resident& resident) {
-  // (W, H, C, 1), innermost first, planar: the innermost stride 1, a row's
-  // its pitch (contract 18's tensor_pitch()), a channel's pitch x H
-  // (above).
-  const std::array<NS::Integer, 4> dims{padded_.width, padded_.height, channels,
-                                        1};
-  const NS::Integer pitch = contracts::tensor_pitch(padded_.width);
-  const NS::Integer plane = pitch * padded_.height;
-  const std::array<NS::Integer, 4> strides{1, pitch, plane, plane * channels};
-  auto descriptor = NS::TransferPtr(MTL::TensorDescriptor::alloc()->init());
-  descriptor->setDataType(MTL::TensorDataTypeFloat16);
-  descriptor->setDimensions(
-      NS::TransferPtr(MTL::TensorExtents::alloc()->init(4, dims.data())).get());
-  descriptor->setStrides(
-      NS::TransferPtr(MTL::TensorExtents::alloc()->init(4, strides.data()))
-          .get());
-  descriptor->setUsage(MTL::TensorUsageMachineLearning);
-  NS::Error* error = nullptr;
-  auto tensor =
-      NS::TransferPtr(buffer.buffer->newTensor(descriptor.get(), 0, &error));
-  if (!tensor) {
-    throw MetalError("the denoiser's tensor: " + describe(error));
-  }
-  resident = submission_.keep_resident(tensor.get());
-  return tensor;
-}
-
 bool DenoiseImages::prepare(const frame::FrameInputs& inputs,
-                            frame::Extent light) {
+                            frame::Extent light, frame::Extent grid) {
   check_texture_size(light, "the denoiser's buffers");
   // Joined on a copy, kept once the buffers exist (E.4; frame_images.cpp,
   // PathReuseImages::prepare).
@@ -63,7 +31,7 @@ bool DenoiseImages::prepare(const frame::FrameInputs& inputs,
   } catch (const frame::HistoryError& refused) {
     throw MetalError(std::string("the denoiser's history: ") + refused.what());
   }
-  if (light == light_) {
+  if (light == light_ && grid == padded_) {
     history_ = joined;
     index_ = inputs.index;
     return held > 0;
@@ -75,7 +43,7 @@ bool DenoiseImages::prepare(const frame::FrameInputs& inputs,
   }
   light_ = {};
   const auto pool = scoped_pool();
-  padded_ = denoise::unet(widths_, light).padded;
+  padded_ = grid;
   allocate(light);
   light_ = light;
   history_ = joined;
@@ -85,20 +53,6 @@ bool DenoiseImages::prepare(const frame::FrameInputs& inputs,
 
 void DenoiseImages::allocate(frame::Extent light) {
   const std::size_t input_pixels = std::size_t{padded_.width} * padded_.height;
-  // The network's input and features, planar half floats a pitch a row,
-  // and their tensors (above).
-  const std::size_t plane =
-      std::size_t{contracts::tensor_pitch(padded_.width)} * padded_.height;
-  input_tensor_.reset();
-  features_tensor_.reset();
-  make(input_, plane * contracts::network_inputs * sizeof(std::uint16_t),
-       "network input");
-  make(features_, plane * widths_.dec.back() * sizeof(std::uint16_t),
-       "network features");
-  input_tensor_ =
-      tensor_over(input_, contracts::network_inputs, input_tensor_resident_);
-  features_tensor_ =
-      tensor_over(features_, widths_.dec.back(), features_tensor_resident_);
   // The demodulated light and the histories: a float4 a pixel.
   make(demod_, input_pixels * 4 * sizeof(float), "demodulated light");
   for (Buffer& h : history_buffers_) {

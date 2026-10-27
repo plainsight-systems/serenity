@@ -55,6 +55,38 @@ struct FrameSlot {
 
 class Submission;
 
+// What the work off the GPU between a hand-off's two halves (Submission,
+// below, "A hand-off") reports, once per submission: that it is done, or
+// that it failed and why. Written on the worker's thread, read by the
+// Submission when it settles the submission, so a failure there is the
+// submission's, reported as a GPU failure is (E.2, E.14). Thread-safe;
+// shared, so a late worker writes into state it keeps alive (R.20, CP.32).
+class HandOffReport {
+ public:
+  // Exactly one of these, before the worker sets the hand-off's `done`.
+  void succeeded(std::uint64_t sequence) noexcept;
+  void failed(std::uint64_t sequence, std::string why) noexcept;
+
+ private:
+  friend class Submission;
+  // For a new use of its slot, settled: nothing writes it meanwhile.
+  void reset() noexcept;
+  std::atomic<std::uint64_t> arrived_{0};  // sequence + 1, released last
+  std::atomic<bool> failed_{false};
+  std::string failure_;  // written before failed_ is released, once
+};
+
+// A hand-off begun (Submission::hand_off()): the command buffer the work
+// after it is recorded into; the events the worker waits on and signals,
+// both at `value`; and where it reports.
+struct HandOff {
+  MTL4::CommandBuffer* after = nullptr;
+  MTL::SharedEvent* ready = nullptr;  // the GPU sets `value`: work before done
+  MTL::SharedEvent* done = nullptr;   // the worker sets `value`: its work done
+  std::uint64_t value = 0;
+  std::shared_ptr<HandOffReport> report;
+};
+
 // An allocation resident through a Submission for as long as this object
 // lives (R.1, C.31; Submission, below, "Residency" and "Lifetime").
 // Move-only. Holds its own reference to the allocation, so the memory
@@ -149,6 +181,26 @@ class Resident {
 //     submits exactly what it did.
 // The drawable a present() writes is waited for and signalled on the queue
 // of the submission's last part, which writes it.
+//
+// A hand-off. Work that is not the GPU's (the denoiser's network on the
+// Neural Engine, metal/passes/denoise/neural_engine.h) can sit between two
+// halves of a submission's last part: hand_off(), called while the last
+// part is recorded, ends it there and begins the part after, `after`, on
+// the same queue. At commit, that queue commits the part before, signals
+// `ready` = value, waits for `done` = value, then commits `after`; the
+// worker waits for `ready` (it was notified of it when it was handed the
+// work), does its work, reports to `report`, then sets `done`. The queue
+// waits on the GPU, not the CPU: the main queue's next submission runs
+// meanwhile, which is what a hand-off is for. Whatever the worker reads,
+// the part before wrote; whatever it writes, the part after reads; what
+// the worker touches is the slot's or is guarded by the queue's order
+// (its owner says which). A submission's record then spans its first
+// part's start to the part after's end, its settling waits for every
+// part's feedback and for the report, and a failed report is the
+// submission's failure. A worker that never sets `done` stops the queue:
+// settling throws on the timeout, as for a GPU that has stopped. One
+// hand-off a submission; a second is refused, as is one with no open
+// submission (MetalError).
 //
 // A two-part submission's Completed record spans both parts: from when the
 // GPU began part 1 to when it finished part 2, the frame's time on the GPU
@@ -303,6 +355,12 @@ class Submission {
   void add_residency_set(MTL::ResidencySet* set);
   void remove_residency_set(MTL::ResidencySet* set) noexcept;
 
+  // Splits the open submission's last part here (above, "A hand-off"):
+  // what was recorded so far into the last part's command buffer runs
+  // before the worker; the returned `after` runs after it. Throws
+  // MetalError with no open submission, or if it was split already.
+  HandOff hand_off();
+
  private:
   friend class Resident;
 
@@ -334,6 +392,11 @@ class Submission {
   struct Slot {
     Part first;   // on the main queue
     Part second;  // on the overlap queue, for a two-part submission
+    Part after;   // the last part's queue, after a hand-off's worker
+    // the hand-off's report, made once (MEM.9), and whether this slot's
+    // submission has one
+    std::shared_ptr<HandOffReport> report = std::make_shared<HandOffReport>();
+    bool handed_off = false;
     Parts parts = Parts::one;  // of the submission last begun in this slot
   };
 
@@ -358,6 +421,10 @@ class Submission {
   NS::SharedPtr<MTL::SharedEvent> completed_;
   // n + 1 once part 1 of two-part submission n has
   NS::SharedPtr<MTL::SharedEvent> first_done_;
+  // a hand-off's: n + 1 once submission n's part before it has completed,
+  // and once its worker has finished (above, "A hand-off")
+  NS::SharedPtr<MTL::SharedEvent> hand_off_ready_;
+  NS::SharedPtr<MTL::SharedEvent> hand_off_done_;
   std::array<Slot, frames_in_flight> slots_;
   // the parts of the last submission committed
   Parts last_committed_ = Parts::one;

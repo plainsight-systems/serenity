@@ -351,7 +351,7 @@ Renderer::DenoiseFamily::DenoiseFamily(const Device& device,
                                        const Library& library,
                                        const denoise::Network& network)
     : features(network.widths.dec.back()),
-      images(device, submission, network.widths),
+      images(device, submission),
       output_constants(device, submission,
                        std::vector<std::byte>(ring_slot_size),
                        FrameArray::Copies::per_frame),
@@ -715,15 +715,17 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
                                           : frame::SceneMotion::still;
     held = accumulation_->prepare(inputs, light, motion);
   }
-  const bool denoise_history =
-      denoise_ ? denoise_->images.prepare(inputs, light) : false;
-  // The denoise pass's network, compiled for the padded light
-  // (passes/denoise/denoise.h), after its images, which drain the frames
-  // in flight at a new size.
+  // The denoise pass's: its images at the network's rung for the light,
+  // then the network's memory at it (passes/denoise/denoise.h), after the
+  // images, which drain the frames in flight at a new size.
+  bool denoise_history = false;
   for (Step& step : steps_) {
     if (step.kind == frame::PassKind::denoise) {
-      std::get<DenoisePass>(step.pass).prepare(
-          made(denoise_, "denoiser").images.padded());
+      auto& pass = std::get<DenoisePass>(step.pass);
+      const frame::Extent grid = pass.grid(light);
+      denoise_history =
+          made(denoise_, "denoiser").images.prepare(inputs, light, grid);
+      pass.prepare(grid);
     }
   }
   prepared_ =
@@ -1136,8 +1138,7 @@ bool Renderer::record_raster(const FrameSlot& begun,
   return recorded;
 }
 
-void Renderer::record_image(MTL4::CommandBuffer* commands,
-                            MTL4::ComputeCommandEncoder*& encoder,
+void Renderer::record_image(MTL4::ComputeCommandEncoder*& encoder,
                             const DenoiseResources& denoised_resources) {
   for (std::size_t i = image_begins_; i < steps_.size(); ++i) {
     const Step& step = steps_[i];
@@ -1147,9 +1148,10 @@ void Renderer::record_image(MTL4::CommandBuffer* commands,
       barrier_after_dispatch(encoder);
     }
     if (step.kind == frame::PassKind::denoise) {
-      // Its network in an encoder of its own: it leaves a new compute
-      // encoder in `encoder` for the passes after it (denoise.h).
-      std::get<DenoisePass>(step.pass).record(commands, encoder,
+      // Its network off the GPU, between the halves of the image part: it
+      // leaves the part after's compute encoder in `encoder` for the passes
+      // after it (denoise.h).
+      std::get<DenoisePass>(step.pass).record(encoder,
                                               denoised_resources.denoising);
       continue;
     }
@@ -1280,8 +1282,7 @@ void Renderer::record(const FrameSlot& begun, const frame::FrameInputs& given,
       // place of the event (renderer.h, "One part for a denoised graph").
       barrier_after_dispatch(encoder);
     }
-    record_image(begun.second != nullptr ? begun.second : begun.commands, image,
-                 denoising);
+    record_image(image, denoising);
     image->endEncoding();
   }
   // What the next frame's temporal merge asks of this one; what

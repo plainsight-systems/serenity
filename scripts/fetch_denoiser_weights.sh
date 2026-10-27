@@ -13,11 +13,11 @@
 # present with the pinned checksum is kept; one that differs is refused, not
 # overwritten, so a network trained locally is never replaced silently.
 #
-# Then the network's Metal package beside the weights, which the Metal
-# backend runs its U-Net through (training/export_metal.py; Xcode's
-# metal-package-builder and the training environment's Core ML Tools), made
-# here from the checked weights rather than published: it is the Mac's
-# toolchain's build of them.
+# Then the network's Core ML model beside the weights, which the Metal
+# backend runs its U-Net through on the Neural Engine
+# (training/export_coreml.py; Xcode's coremlcompiler and the training
+# environment's Core ML Tools), made here from the checked weights rather
+# than published: it is the Mac's toolchain's build of them.
 
 set -euo pipefail
 
@@ -58,5 +58,5 @@ while read -r network file expected; do
 done <<< "$pinned"
 
 if [ "$(uname)" = "Darwin" ]; then
-    (cd "$root/training" && uv run --locked python export_metal.py --model "$out/wide")
+    (cd "$root/training" && uv run --locked python export_coreml.py --model "$out/wide")
 fi

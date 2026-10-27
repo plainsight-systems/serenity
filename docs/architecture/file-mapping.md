@@ -715,6 +715,22 @@ builds one, and primary surface replacement traced on from it as before.
 | the merge shades; its pass binds the accumulated image and the count of samples not finite | Pass | `src/metal/passes/restir_pt_spatial/restir_pt_spatial.{metal,h,cpp}` |
 | the shade's step in a graph with the spatial pass, which records nothing | Frame | `src/metal/frame/renderer.{h,cpp}` (`ShadedInMerge`) |
 
+## The network on the Neural Engine (`docs/research/2026-10-26-neural-engine-denoiser.md`, section 5)
+
+| What | Axis | Where |
+|---|---|---|
+| the U-Net's features exported to a Core ML model of enumerated shapes (a ladder of 121; the fixture's own), compiled beside the weights, checked against PyTorch and by the compute plan; the Metal package's export removed | Training | `training/export_coreml.py`, new; `training/export_metal.py`, removed; `training/README.md`, `training/model.py` |
+| the model made after the weights are fetched | Build | `scripts/fetch_denoiser_weights.sh` |
+| Core ML, Core Video and IOSurface linked; the Objective-C++ file under ARC | Build | `CMakeLists.txt` |
+| the grid a light runs at: the smallest rung that holds its padded size, Metal's alone | Pass | `src/metal/passes/denoise/rungs.{h,cpp}`, new |
+| a submission's last part split around work off the GPU, ordered by two shared events; the worker's report the submission's failure; the open submission's sequence | GPU backend | `src/metal/device/submission.{h,cpp}` (`hand_off()`, `HandOff`, `HandOffReport`), `src/metal/device/frame_sequence.{h,cpp}` (`open()`) |
+| the model loaded for the CPU and Neural Engine, its rungs read from it; the input and features in IOSurface pixel buffers, Metal's buffers over the same memory; the prediction on a shared-event listener's queue | GPU backend | `src/metal/passes/denoise/neural_engine.{h,mm}`, new |
+| the network between the halves of the image part; the grid by rung; the machine-learning encoder, pipeline, heap and tensors removed | Pass | `src/metal/passes/denoise/denoise.{h,cpp}` |
+| the network's input and features no longer the images'; the padded grid given | Frame graph | `src/metal/frame/denoise_images.{h,cpp}` |
+| the images and the network prepared at the light's rung; the image half's encoder handed through the denoise pass | Frame graph | `src/metal/frame/renderer.{h,cpp}` |
+| the network's tensors' bindings removed | Pass | `src/metal/passes/bindings.h` |
+| the rung for a light (a unit, no Metal call); the hand-off's order both ways, its failure and misuse; the network's refusals and the fixture's shapes; the fixture's model | tests | `tests/gpu/rungs_test.cpp`, `tests/gpu/frame_sequence_test.cpp`, `tests/gpu/hand_off_test.cpp`, `tests/gpu/neural_engine_test.cpp`, new; `tests/gpu/support/denoise_runner.h`; `tests/data/denoise/network/unet.mlmodelc`, new (the package removed) |
+
 ## Not here yet
 
 - **HIP with HIPRT** on AMD's Strix Halo and **Direct3D 12** on the Xbox

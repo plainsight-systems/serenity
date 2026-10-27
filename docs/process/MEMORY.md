@@ -554,3 +554,14 @@ frame lacked, chosen by the user from a sweep against shipped engines:
   the glass and the fireflies' pinpoints in the mirrors
   (`research/2026-10-27-metalfx-denoising.md`). Its prototype was never
   committed, and was deleted 2026-10-27.
+- **The network runs on the Neural Engine, beside the GPU** (kept by the
+  user 2026-10-27; `research/2026-10-26-neural-engine-denoiser.md`,
+  section 5): the image half split around a Core ML prediction
+  (`Submission::hand_off()`), the input and features shared in place
+  through IOSurfaces, a ladder of 121 enumerated shapes the light is padded
+  to. 63.3 to 84.2 fps at 1920 x 1080, 17.7 to 25.1 fps at 3456 x 2234,
+  the picture the GPU's within 4 levels at the demo's sizes. Not Apple's
+  rendering guidance (networks on the GPU): the user's call, on the
+  numbers. Metal 4's machine-learning route removed. Between rungs (window
+  sizes whose light is not a rung) the extra padding changes the network's
+  output near the bottom and right edges.

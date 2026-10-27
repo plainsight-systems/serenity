@@ -293,6 +293,8 @@ add_library(serenity_metal STATIC
     src/metal/frame/renderer.cpp
     src/metal/passes/checkerboard_fill/checkerboard_fill.cpp
     src/metal/passes/denoise/denoise.cpp
+    src/metal/passes/denoise/neural_engine.mm
+    src/metal/passes/denoise/rungs.cpp
     src/metal/passes/depth_of_field/depth_of_field.cpp
     src/metal/passes/restir_pt/reuse_constants.cpp
     src/metal/passes/restir_pt/shift_replay.cpp
@@ -307,11 +309,16 @@ add_library(serenity_metal STATIC
     src/metal/passes/test_pattern/test_pattern.cpp
     src/metal/passes/tone_map/tone_map.cpp
 )
-target_link_libraries(serenity_metal PUBLIC serenity_core metal_cpp)
+# Core ML, Core Video and IOSurface: the denoiser's network on the Neural
+# Engine, the one thing Metal does not reach (neural_engine.h); the
+# system's own frameworks, versioned with macOS, nothing fetched.
+target_link_libraries(serenity_metal PUBLIC serenity_core metal_cpp
+    "-framework CoreML" "-framework CoreVideo" "-framework IOSurface")
 target_compile_options(serenity_metal PRIVATE ${SERENITY_SOURCE_WARNINGS})
-# The display link's Objective-C objects are held under ARC, released by
-# what holds them (display_link.mm).
-set_source_files_properties(src/metal/device/display_link.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+# The display link's and the Neural Engine's Objective-C objects are held
+# under ARC, released by what holds them (display_link.mm, neural_engine.mm).
+set_source_files_properties(src/metal/device/display_link.mm src/metal/passes/denoise/neural_engine.mm
+    PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
 serenity_add_metallib(
     TARGET serenity_metal NAME shaders
     SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/metal/passes/test_pattern/test_pattern.metal"

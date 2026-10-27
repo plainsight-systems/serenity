@@ -176,13 +176,6 @@ enum Texture : uint8_t {
 };
 }  // namespace features
 
-// The denoiser's network (passes/denoise/denoise.h), as its package's
-// function binds its tensors: the input at 0, the features it writes at 1
-// (training/export_metal.py's features_in and features_out, in order).
-namespace network {
-enum Buffer : uint8_t { input = 0, features = 1 };
-}  // namespace network
-
 // The features' raster pass (passes/features/raster.metal), its vertex and
 // fragment functions one layout: the camera and the frame's constants at
 // the pass's size (its size and jitter); a mesh's vertices and, for a still

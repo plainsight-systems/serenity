@@ -1,0 +1,67 @@
+[
+  {
+    "metadataOutputVersion" : "3.0",
+    "storagePrecision" : "Float16",
+    "outputSchema" : [
+      {
+        "hasShapeFlexibility" : "0",
+        "isOptional" : "0",
+        "dataType" : "Float16",
+        "formattedType" : "MultiArray (Float16)",
+        "shortDescription" : "",
+        "shape" : "[]",
+        "name" : "features_out",
+        "type" : "MultiArray"
+      }
+    ],
+    "modelParameters" : [
+
+    ],
+    "specificationVersion" : 9,
+    "mlProgramOperationTypeHistogram" : {
+      "Ios18.maxPool" : 4,
+      "Ios18.relu" : 11,
+      "Ios18.conv" : 11,
+      "UpsampleNearestNeighbor" : 4,
+      "Ios18.concat" : 4
+    },
+    "computePrecision" : "Mixed (Float16, Float32, Int32)",
+    "isUpdatable" : "0",
+    "stateSchema" : [
+
+    ],
+    "availability" : {
+      "macOS" : "15.0",
+      "tvOS" : "18.0",
+      "visionOS" : "2.0",
+      "watchOS" : "11.0",
+      "iOS" : "18.0",
+      "macCatalyst" : "18.0"
+    },
+    "modelType" : {
+      "name" : "MLModelType_mlProgram"
+    },
+    "userDefinedMetadata" : {
+      "com.github.apple.coremltools.conversion_date" : "2026-10-27",
+      "com.github.apple.coremltools.source" : "torch==2.14.1",
+      "com.github.apple.coremltools.version" : "9.0",
+      "com.github.apple.coremltools.source_dialect" : "TorchScript"
+    },
+    "inputSchema" : [
+      {
+        "shortDescription" : "",
+        "dataType" : "Float16",
+        "hasShapeFlexibility" : "1",
+        "isOptional" : "0",
+        "shapeFlexibility" : "1 × 30 × 256 × 256 | 1 × 30 × 32 × 48 | 1 × 30 × 32 × 32 | 1 × 30 × 96 × 128",
+        "formattedType" : "MultiArray (Float16 1 × 30 × 256 × 256)",
+        "type" : "MultiArray",
+        "shape" : "[1, 30, 256, 256]",
+        "name" : "features_in",
+        "enumeratedShapes" : "[[1, 30, 256, 256], [1, 30, 32, 48], [1, 30, 32, 32], [1, 30, 96, 128]]"
+      }
+    ],
+    "generatedClassName" : "unet",
+    "method" : "predict"
+  }
+]

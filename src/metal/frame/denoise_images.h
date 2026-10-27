@@ -25,16 +25,8 @@ namespace serenity::metal {
 // changes, before the frame's submission begins, draining the submission
 // first, as the images between passes are (frame_images.h; GPU.9, MEM.9):
 //
-//   - the network's input and its features, half floats, planar (a
-//     channel's pixels of the padded grid row after row, then the next
-//     channel's), as Metal's tensors lay them out, the innermost stride 1
-//     (docs/research/2026-10-23-apple-silicon-design.md, section 6, change
-//     3): the 30 inputs the input kernel writes and the network reads, the
-//     last convolution's features the network writes and the output
-//     kernel's head reads; a tensor over each, (W, H, C, 1) innermost
-//     first, which Metal's machine-learning encoder binds. The U-Net's
-//     own activations are the network's, in its intermediates heap
-//     (passes/denoise/denoise.h);
+//   (the network's input and features are the network's, in memory the
+//   Neural Engine shares: passes/denoise/neural_engine.h)
 //   - the demodulated light, a float4 an input pixel of the padded grid;
 //   - the history, last frame's output and this frame's, a float4 an output
 //     pixel of twice the padded grid, two of them by the frame's parity;
@@ -66,8 +58,7 @@ namespace serenity::metal {
 // or the device cannot make a buffer.
 class DenoiseImages {
  public:
-  DenoiseImages(const Device& device, Submission& submission,
-                const denoise::Widths& widths);
+  DenoiseImages(const Device& device, Submission& submission);
 
   DenoiseImages(const DenoiseImages&) = delete;
   DenoiseImages& operator=(const DenoiseImages&) = delete;
@@ -75,21 +66,16 @@ class DenoiseImages {
   DenoiseImages& operator=(DenoiseImages&&) = delete;
   ~DenoiseImages() = default;
 
-  // Ready for frame `inputs`, its light of `light`: the buffers made or
-  // remade, the frame joined to the history. Whether the frame reads last
-  // frame's output.
-  bool prepare(const frame::FrameInputs& inputs, frame::Extent light);
+  // Ready for frame `inputs`, its light of `light` padded to `grid` (the
+  // network's rung for it: passes/denoise/rungs.h, smallest_rung()): the
+  // buffers made or remade, the frame joined to the history. Whether the
+  // frame reads last frame's output.
+  bool prepare(const frame::FrameInputs& inputs, frame::Extent light,
+               frame::Extent grid);
 
   // Each valid after the first prepare().
   frame::Extent light() const noexcept { return light_; }
   frame::Extent padded() const noexcept { return padded_; }
-  MTL::GPUAddress input() const noexcept { return input_.address(); }
-  MTL::GPUAddress features() const noexcept { return features_.address(); }
-  // The tensors over them (above).
-  MTL::Tensor* input_tensor() const noexcept { return input_tensor_.get(); }
-  MTL::Tensor* features_tensor() const noexcept {
-    return features_tensor_.get();
-  }
   MTL::GPUAddress demod() const noexcept;
   MTL::GPUAddress histogram() const noexcept;
   MTL::GPUAddress median() const noexcept;
@@ -104,29 +90,17 @@ class DenoiseImages {
   using Buffer = ResidentBuffer;  // metal/device/resident.h
 
   void make(Buffer& buffer, std::size_t bytes, std::string_view what);
-  // A planar tensor of `channels` over `buffer`, at the padded grid, made
-  // resident; throws MetalError if Metal makes none.
-  NS::SharedPtr<MTL::Tensor> tensor_over(const Buffer& buffer,
-                                         std::uint32_t channels,
-                                         Resident& resident);
   // At a new size, the light's `light`: every buffer, tensor and image.
   void allocate(frame::Extent light);
 
   NS::SharedPtr<MTL::Device> device_;
   Submission& submission_;
-  denoise::Widths widths_;
   frame::ReuseHistory history_;
   frame::Extent light_;
   frame::Extent padded_;
   // the prepared frame's: its parity picks the history
   std::uint64_t index_ = 0;
 
-  Buffer input_;
-  Buffer features_;
-  NS::SharedPtr<MTL::Tensor> input_tensor_;
-  NS::SharedPtr<MTL::Tensor> features_tensor_;
-  Resident input_tensor_resident_;
-  Resident features_tensor_resident_;
   Buffer demod_;
   std::array<Buffer, 2> history_buffers_;
   Buffer histogram_;

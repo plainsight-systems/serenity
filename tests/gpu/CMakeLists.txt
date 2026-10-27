@@ -33,6 +33,7 @@ file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/tests/generated/headless_program.h"
 add_executable(serenity_metal_unit_tests
     frame_sequence_test.cpp
     raster_inputs_test.cpp
+    rungs_test.cpp
     texture_size_test.cpp
     ../main_test.cpp
 )
@@ -63,6 +64,8 @@ add_executable(serenity_gpu_tests
     scene_block_test.cpp
     allocation_test.cpp
     lifetime_test.cpp
+    hand_off_test.cpp
+    neural_engine_test.cpp
     frame_errors_test.cpp
     headless_pfm_test.cpp
     denoise_test.cpp

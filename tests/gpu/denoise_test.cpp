@@ -94,7 +94,8 @@ TEST_CASE(
   CHECK(error < tolerance);
   // And the check can fail: a network one weight off, one weight of the
   // head by a tenth (the 1 x 1 each backend computes itself; Metal's U-Net
-  // is its package, compiled from the weights on disk), does not pass it.
+  // is its Core ML model, compiled from the weights on disk), does not pass
+  // it.
   const double off = worst(fixture, tests::run_denoise_fixture(
                                         fixture, [](denoise::Network& network) {
                                           network.head.weight.at(0) += 0.1f;

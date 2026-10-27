@@ -103,7 +103,7 @@ class UNet(nn.Module):
         nn.init.zeros_(self.head.bias)
 
     def features(self, x: torch.Tensor) -> torch.Tensor:
-        """The last convolution's features, before the 1 x 1 head: what Metal's machine-learning path runs (export_metal.py)."""
+        """The last convolution's features, before the 1 x 1 head: what Metal's backend runs on the Neural Engine (export_coreml.py)."""
         skips = []
         for layer in self.enc:
             x = F.relu(layer(x))

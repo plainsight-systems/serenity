@@ -692,10 +692,10 @@ class Renderer {
   void record_hand_off(MTL4::ComputeCommandEncoder* encoder,
                        const FrameSlot& begun, const FrameResources& resources,
                        const Prepared& prepared, MTL::Texture* hand_off);
-  // The image half into `commands`, from `encoder`, which the denoise pass
-  // ends and replaces with a new one, left open (passes/denoise/denoise.h).
-  void record_image(MTL4::CommandBuffer* commands,
-                    MTL4::ComputeCommandEncoder*& encoder,
+  // The image half from `encoder`, which the denoise pass ends and replaces
+  // with the part after its hand-off's, left open
+  // (passes/denoise/denoise.h).
+  void record_image(MTL4::ComputeCommandEncoder*& encoder,
                     const DenoiseResources& denoised_resources);
 
   Submission& submission_;

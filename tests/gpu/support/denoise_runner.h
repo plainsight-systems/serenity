@@ -197,9 +197,9 @@ inline void record_frame(metal::Submission& submission,
   resources.full_albedo = m.full_albedo.get();
   resources.denoise_constants = m.constants->gpuAddress();
   resources.denoise = &images;
-  // the network in its own encoder, a new compute encoder left for the
-  // output (denoise.h)
-  pass.record(begun.commands, encoder, resources);
+  // the network on the Neural Engine between the halves of the one part,
+  // the part after's compute encoder left for the output (denoise.h)
+  pass.record(encoder, resources);
   encoder->endEncoding();
   submission.commit();
   (void)submission.wait_until_complete(begun.sequence);
@@ -220,7 +220,7 @@ inline std::vector<contracts::LinearImage> run_denoise_fixture(
   metal::Submission submission(device);
   metal::Library library(device, metallib::shaders);
   metal::DenoisePass pass(device, library, submission, network);
-  metal::DenoiseImages images(device, submission, network.widths);
+  metal::DenoiseImages images(device, submission);
   const frame::Extent light = fixture.light;
   const frame::Extent output{contracts::denoise_scale * light.width,
                              contracts::denoise_scale * light.height};
@@ -245,7 +245,7 @@ inline std::vector<contracts::LinearImage> run_denoise_fixture(
     // Frame k of a history from frame 0 (reused_since 0, the default).
     frame::FrameInputs inputs{};
     inputs.index = k;
-    const bool history = images.prepare(inputs, light);
+    const bool history = images.prepare(inputs, light, pass.grid(light));
     pass.prepare(images.padded());
     const contracts::DenoiseConstants c =
         detail::constants_of(fixture, k, network, images, output, history);

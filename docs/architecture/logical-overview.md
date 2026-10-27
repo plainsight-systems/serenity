@@ -389,6 +389,19 @@ about as often as the slower half takes, not their sum.
 A graph without the denoiser has one half and runs on one queue, as
 before.
 
+**On Apple silicon the network leaves the GPU** (Milestone 6,
+`docs/research/2026-10-26-neural-engine-denoiser.md`): the image half is
+split around the U-Net, which runs on the M3 Max's Neural Engine through
+Core ML, the input and features in memory both read and write in place.
+The GPU traces frame N + 1's light while the Neural Engine runs frame N's
+network, so the network's time leaves the frame's critical path; the
+part of the image half after it waits for it on the GPU's queue, not the
+CPU. The network's shapes are fixed when its model is compiled, so the
+light is padded to the smallest of them that holds it. The picture is the
+GPU's within the Neural Engine's rounding where that shape is the light's
+own padded size (the demo's sizes); between shapes, the extra padding
+changes the network's output near the bottom and right edges.
+
 **Checkerboard rendering of the light** (Milestone 4's Step 4,
 `docs/research/2026-10-17-milestone-4-plan.md`) is how the light the
 network reads is traced, not a setting (principle 13); a graph whose

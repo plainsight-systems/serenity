@@ -6,6 +6,10 @@ machine-learning path, change 3); the M3 Max has a 16-core Neural Engine
 the frame does not use. Would the network run there instead, beside the
 GPU? Nothing is built; the measurements below are standalone.
 
+**Built and kept, 2026-10-27 (the user): section 5.** The demo 63.3 to
+84.2 fps at 1920 x 1080 and 17.7 to 25.1 fps at 3456 x 2234, the picture
+the GPU's within the Neural Engine's rounding at both.
+
 ## 1. Measured
 
 The demo's trained network (`serenity-data/denoiser-v2-model/wide`), its
@@ -140,6 +144,85 @@ which no event of ours orders.
 - **A smaller network**: fewer widths or levels, retrained; the picture
   the user's call (`no-silent-quality-tradeoffs`).
 - **Keep change 3's route**, Apple's custom-network guidance as built.
+  Replaced by the Neural Engine (section 5); its Metal package, tensors
+  and export removed.
+
+## 5. Built, measured in the frame, kept (2026-10-27)
+
+Built on the branch `neural-engine` from `apple` at `2ba0735`, as section 3
+designs it, after a standalone check that the hand-over copies nothing:
+Metal writes the input into an IOSurface-backed pixel buffer, Core ML
+reads it and writes the features into ours (`outputBackings`), Metal
+reads them, and the features are Core ML's own bit for bit, the
+prediction 6.57 and 23.37 ms at the demo's rungs (section 1's 6.46 and
+23.06 within a run's spread).
+
+**As built, where it differs from section 3:**
+
+- **The ladder's sides** 256, 320, 448, 544, 640, 832, 960, 1120, 1376,
+  1728, 2048: 336 and 672 became 320 and 640, so every side is a
+  multiple of 32 halves, a row 64 bytes aligned, and Core Video pads none
+  (contract 18's pitch; the renderer refuses a pitch that differs).
+- **Metal reads the surfaces through buffers**, not linear textures:
+  `newBufferWithBytesNoCopy` over the surface's memory, so the input
+  kernel and the head address the planes as before, unchanged, and the
+  frame's GPU work is the same work.
+- **A failed prediction is the submission's failure**, reported when the
+  submission is settled as a GPU error is (`Submission::hand_off()`,
+  `HandOffReport`), not at the next frame's prepare(): the last frames'
+  failures are reported too.
+- **The model's default shape is its first, 256 x 256 or larger:** Core
+  ML on macOS 26.6 traps in its first prediction when a model's default
+  shape is small (32 x 32, 32 x 48 and 64 x 64 measured, beside a
+  96 x 128), and runs every one of them when the default is 256 x 256.
+  The test fixture's model has the tests' shapes after a first 256 x 256.
+
+**The frame**, the demo graph on the marbles, `--time 120 --times`, 800
+frames at 1920 x 1080 and 300 at 3456 x 2234, each run's mean over its
+seconds but the first; the network on the GPU the committed `apple`
+build; three runs each, alternated, AC power, the GPU idle before every
+run, each configuration's runs within 1% of their mean:
+
+| Output | Network on the GPU (change 3) | Network on the Neural Engine |
+|---|---|---|
+| 1920 x 1080 | 63.3 fps (15.80 ms) | **84.2 fps (11.87 ms)**, +33% |
+| 3456 x 2234 | 17.7 fps (56.52 ms) | **25.1 fps (39.89 ms)**, +42% |
+
+Against section 3's estimate: inside it at 3456 x 2234 (25 to 27 fps),
+under it at 1920 x 1080 (90 to 100 fps). Where the difference goes is not
+measured. A first round, with the system's aerial wallpaper running,
+gave 59.9 against 82.4 and 17.6 against 24.0 fps, two configurations
+spreading past 2%, and was run again.
+
+**The picture**, frame 7029, side by side:
+[1920 x 1080](2026-10-26-neural-engine-denoiser/gpu-vs-neural-engine-1920x1080.jpg),
+[3456 x 2234](2026-10-26-neural-engine-denoiser/gpu-vs-neural-engine-3456x2234.jpg).
+At 1920 x 1080 0.3% of pixels differ, by at most 2 levels of 255; at
+3456 x 2234 0.2%, 35 pixels by more than 2, at most 4; every channel's
+mean the same. The caustics and the mirrors' pinpoints are the GPU's.
+
+**Between rungs**, a light whose aligned size is not a rung is padded
+further, and the network's output changes near the bottom and right
+edges (section 3 said so). At 640 x 360 the light, 320 x 180, ran at
+320 x 192 on the GPU and runs at the rung 320 x 256: the brass sphere's
+denoised frames differ in their bottom quarter (rows 266 to 359), by up
+to 46 levels, the means within 0.05 of a level
+([side by side, with the difference x 8](2026-10-26-neural-engine-denoiser/padding-between-rungs-640x360.jpg)).
+Not at the demo's sizes, whose rungs are their aligned sizes.
+
+**The guards.** Every graph's 94 outputs at 640 x 360 the same to the bit
+as the committed build's but the denoised graph's on the brass sphere
+scenes (11 files, the padding above); the marbles' denoised frames there,
+the dark opening, the same; the same 94 twice. Against the PyTorch
+fixture 2.8e-4 relative (tolerance 1e-3). The hand-off tested on both
+queues (the worker sees the part before's write, the part after the
+worker's, a sleeping worker not overtaken; a worker's failure the
+submission's; a second hand-off and one with none open refused); the
+network's refusals; recording a frame still allocates nothing of ours.
+The window run 15 s on the Neural Engine without an error. Three presets
+at 0 warnings, ctest and `make check` green. The guideline corpora's
+servers were down this session: the new headers were not checked
+against them.
 
 ## Sources
 

@@ -284,8 +284,15 @@ This file tracks active and accepted work.
    reservoir layout), which closes Milestone 5; then HIP with HIPRT on
    Strix Halo.
 
-3. **Next (the user, 2026-10-22): Milestone 6, the frame designed for
-   Apple silicon**, before Strix Halo, which follows it. The M3 Max runs
+3. **Built, not yet closed: Milestone 6, the frame designed for Apple
+   silicon** (the user, 2026-10-22), before Strix Halo, which follows it.
+   Changes 1 to 5 built (`docs/research/2026-10-23-apple-silicon-design.md`:
+   62.6 fps at 1920 x 1080, 17.6 at 3456 x 2234), then the network on the
+   Neural Engine (2026-10-27, `docs/research/2026-10-26-neural-engine-denoiser.md`,
+   section 5): 84.2 fps (11.87 ms) and 25.1 fps (39.89 ms); MetalFX
+   Denoising measured and not kept. Open, the user's: Cycles' wavefront on
+   the M3; the close (write-up, films, `milestone-6`, main, the site).
+   The plan as it was written: The M3 Max runs
    the demo at 57 fps at 1920 x 1080 and 17 at the display's 3456 x 2234,
    against the project's goal of 60 at the display's size; Milestone 4
    applied engines' standard optimizations there, and no design for the

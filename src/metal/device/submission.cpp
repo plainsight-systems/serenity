@@ -65,12 +65,14 @@ Submission::Submission(const Device& device)
       overlap_(make_queue(device_.get())),
       residency_(make_residency_set(device_.get())),
       completed_(make_event(device_.get())),
-      first_done_(make_event(device_.get())) {
+      first_done_(make_event(device_.get())),
+      hand_off_ready_(make_event(device_.get())),
+      hand_off_done_(make_event(device_.get())) {
   const auto pool = scoped_pool();
   queue_->addResidencySet(residency_.get());
   overlap_->addResidencySet(residency_.get());
   for (Slot& slot : slots_) {
-    for (Part* part : {&slot.first, &slot.second}) {
+    for (Part* part : {&slot.first, &slot.second, &slot.after}) {
       part->allocator = NS::TransferPtr(device_->newCommandAllocator());
       part->commands = NS::TransferPtr(device_->newCommandBuffer());
       if (!part->allocator || !part->commands) {
@@ -126,14 +128,32 @@ std::optional<Completed> Submission::settle(std::uint64_t sequence) {
   };
   const Feedback& first = *slot.first.feedback;
   arrived(first);
-  // A two-part submission's record spans both parts (submission.h).
-  const Feedback& last =
-      slot.parts == Parts::two ? *slot.second.feedback : first;
+  // A two-part submission's record spans both parts, a hand-off's to the
+  // part after it (submission.h).
+  const Feedback* last = &first;
   if (slot.parts == Parts::two) {
-    arrived(last);
+    last = slot.second.feedback.get();
+    arrived(*last);
+  }
+  if (slot.handed_off) {
+    const HandOffReport& report = *slot.report;
+    while (report.arrived_.load(std::memory_order_acquire) < sequence + 1) {
+      if (std::chrono::steady_clock::now() > deadline) {
+        throw MetalError("no report from submission " +
+                         std::to_string(sequence) + "'s hand-off within " +
+                         std::to_string(timeout.count()) + " ms");
+      }
+      std::this_thread::sleep_for(feedback_poll);
+    }
+    if (report.failed_.load(std::memory_order_acquire)) {
+      throw MetalError("submission " + std::to_string(sequence) +
+                       "'s hand-off failed: " + report.failure_);
+    }
+    last = slot.after.feedback.get();
+    arrived(*last);
   }
   frames_.settled(sequence);
-  return Completed{sequence, first.gpu_start, last.gpu_end};
+  return Completed{sequence, first.gpu_start, last->gpu_end};
 }
 
 FrameSlot Submission::begin(Parts parts) {
@@ -150,6 +170,7 @@ FrameSlot Submission::begin(Parts parts) {
   }
 
   slot.parts = parts;
+  slot.handed_off = false;
   slot.first.allocator->reset();
   slot.first.commands->beginCommandBuffer(slot.first.allocator.get());
   MTL4::CommandBuffer* second = nullptr;
@@ -160,6 +181,38 @@ FrameSlot Submission::begin(Parts parts) {
   }
   frames_.opened();
   return FrameSlot{slot.first.commands.get(), second, index, sequence, settled};
+}
+
+HandOff Submission::hand_off() {
+  const std::uint64_t sequence = frames_.open();
+  Slot& slot = slots_.at(sequence % frames_in_flight);
+  if (slot.handed_off) {
+    throw MetalError("hand_off(): submission " + std::to_string(sequence) +
+                     " has been handed off already");
+  }
+  slot.handed_off = true;
+  slot.report->reset();
+  slot.after.allocator->reset();
+  slot.after.commands->beginCommandBuffer(slot.after.allocator.get());
+  return HandOff{slot.after.commands.get(), hand_off_ready_.get(),
+                 hand_off_done_.get(), sequence + 1, slot.report};
+}
+
+void HandOffReport::reset() noexcept {
+  failed_.store(false, std::memory_order_relaxed);
+  failure_.clear();
+}
+
+void HandOffReport::succeeded(std::uint64_t sequence) noexcept {
+  arrived_.store(sequence + 1, std::memory_order_release);
+}
+
+void HandOffReport::failed(std::uint64_t sequence, std::string why) noexcept {
+  if (!failed_.load(std::memory_order_relaxed)) {
+    failure_ = std::move(why);
+    failed_.store(true, std::memory_order_release);
+  }
+  arrived_.store(sequence + 1, std::memory_order_release);
 }
 
 // Commits `commands` to `queue` with a feedback handler writing `state`
@@ -196,9 +249,13 @@ void Submission::end_and_commit(const MTL::Drawable* drawable) {
   const std::uint64_t sequence = frames_.commit();
   Slot& slot = slots_.at(sequence % frames_in_flight);
   const bool two = slot.parts == Parts::two;
+  const bool handed_off = slot.handed_off;
   slot.first.commands->endCommandBuffer();
   if (two) {
     slot.second.commands->endCommandBuffer();
+  }
+  if (handed_off) {
+    slot.after.commands->endCommandBuffer();
   }
 
   const auto pool = scoped_pool();
@@ -213,17 +270,28 @@ void Submission::end_and_commit(const MTL::Drawable* drawable) {
                 sequence, ", part 1,");
     queue_->signalEvent(first_done_.get(), sequence + 1);
     overlap_->wait(first_done_.get(), sequence + 1);
-    if (drawable != nullptr) {
-      overlap_->wait(drawable);
-    }
-    commit_part(overlap_.get(), slot.second.commands.get(),
-                slot.second.feedback, sequence, ", part 2,");
+  }
+  // The last part, split around a hand-off's worker if it has one
+  // (submission.h, "A hand-off"); the drawable waited for before the part
+  // that writes it, the last.
+  Part& last_part = two ? slot.second : slot.first;
+  const char* last_name = two ? ", part 2," : "";
+  if (handed_off) {
+    commit_part(
+        last, last_part.commands.get(), last_part.feedback, sequence,
+        two ? ", part 2 before its hand-off," : ", before its hand-off,");
+    last->signalEvent(hand_off_ready_.get(), sequence + 1);
+    last->wait(hand_off_done_.get(), sequence + 1);
+  }
+  if (drawable != nullptr) {
+    last->wait(drawable);
+  }
+  if (handed_off) {
+    commit_part(last, slot.after.commands.get(), slot.after.feedback, sequence,
+                ", after its hand-off,");
   } else {
-    if (drawable != nullptr) {
-      queue_->wait(drawable);
-    }
-    commit_part(queue_.get(), slot.first.commands.get(), slot.first.feedback,
-                sequence, "");
+    commit_part(last, last_part.commands.get(), last_part.feedback, sequence,
+                last_name);
   }
   if (drawable != nullptr) {
     last->signalDrawable(drawable);

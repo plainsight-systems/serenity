@@ -28,6 +28,13 @@ void FrameSequence::opened() noexcept {
   ++next_;
 }
 
+std::uint64_t FrameSequence::open() const {
+  if (!open_) {
+    throw MetalError("a hand-off with no submission begun");
+  }
+  return next_ - 1;
+}
+
 std::uint64_t FrameSequence::commit() {
   if (!open_) {
     throw MetalError("commit with no submission begun");

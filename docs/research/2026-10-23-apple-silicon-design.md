@@ -448,6 +448,12 @@ first second left out.
 The milestone began at 56.6 fps at 1920 x 1080 and 15.8 fps at 3456 x
 2234 (section 1, measured 2026-10-23 on a busier machine).
 
+Then the network on the Neural Engine, beside the GPU, in place of change
+3's route (2026-10-27, the user's: `2026-10-26-neural-engine-denoiser.md`,
+section 5): 63.3 to 84.2 fps (15.80 to 11.87 ms) at 1920 x 1080 and 17.7
+to 25.1 fps (56.52 to 39.89 ms) at 3456 x 2234. MetalFX Denoising was
+measured and not kept (`2026-10-27-metalfx-denoising.md`).
+
 ## 7. Not built, and one question for the user
 
 - MPSGraph, Open Image Denoise's own route to Apple's kernels: it encodes
