@@ -65,20 +65,29 @@ namespace serenity::metal {
 // Failure is the submission's (E.2): a prediction that fails, or that
 // Core ML answers in memory not ours, reports the failure and still sets
 // `done`, so the GPU never waits on it forever; the submission that
-// carried it throws, naming Core ML's error, when it is settled. Loading,
-// a missing model, shapes that are not enumerated, inputs or outputs of
-// another name or count, and a rung not the model's throw MetalError.
+// carried it throws, naming Core ML's error, when it is settled. The
+// worker is noexcept (E.12): an exception there, a failed allocation
+// building its message or an Objective-C exception from Core ML, ends the
+// program rather than leave the GPU waiting. Loading, a missing model,
+// shapes that are not enumerated, inputs or outputs of another name,
+// count or type, and a rung not the model's throw MetalError.
 //
-// Cost a frame, on the CPU: one listener wake, one prediction call, one
-// event set; Core ML allocates its result's provider per call (the API's
-// shape: our output backing is filled, the provider around it is new).
+// Cost a frame, on the CPU: the worker registered, which copies its block
+// to the heap with what it holds (two shared pointers, the events) and
+// allocates by the API's shape, as Submission's feedback handler does
+// (submission.h, "Cost of a frame"); one listener wake, one prediction
+// call, one event set; Core ML allocates its result's provider per call
+// (the API's shape: our output backing is filled, the provider around it
+// is new). These go through the C heap, which the allocation test
+// (tests/gpu/allocation_test.cpp) does not count.
 class NeuralEngineNetwork {
  public:
-  // The model in `directory` (above), its input of `inputs` channels and
-  // its features of `features`.
+  // The model in `directory` (above), its input of `input_channels`
+  // channels and its features of `feature_channels`.
   NeuralEngineNetwork(const Device& device, Submission& submission,
                       const std::filesystem::path& directory,
-                      std::uint32_t inputs, std::uint32_t features);
+                      std::uint32_t input_channels,
+                      std::uint32_t feature_channels);
   ~NeuralEngineNetwork();
 
   NeuralEngineNetwork(const NeuralEngineNetwork&) = delete;
@@ -90,16 +99,22 @@ class NeuralEngineNetwork {
   const std::vector<frame::Extent>& rungs() const noexcept;
 
   // Ready for `rung`, its planes' rows `row_bytes` apart (the pitch the
-  // kernels address: contract 18's tensor_pitch()): its pixel buffers and
-  // Metal's buffers over them, made resident, and one prediction run.
-  // Nothing at the rung it was ready for. Frames in flight must have
-  // drained (DenoiseImages has, at a new size). Throws MetalError if
-  // `rung` is not one, Core Video's rows are not `row_bytes` apart, or a
-  // buffer cannot be made as above.
+  // kernels address: contract 18's tensor_pitch()): the last rung's memory
+  // let go, then its pixel buffers and Metal's buffers over them, one
+  // prediction run, and the buffers made resident. Nothing at the rung and
+  // pitch it was ready for. Frames in flight must have drained
+  // (DenoiseImages has, at a new size). Throws MetalError if `rung` is not
+  // one, `row_bytes` is not the pitch it was ready for at the same rung,
+  // Core Video's rows are not `row_bytes` apart, or a buffer or the first
+  // prediction cannot be made as above; then, but for the pitch refused
+  // at the same rung, it is ready for none (E.4: nothing half made kept).
   void prepare(frame::Extent rung, std::size_t row_bytes);
+  // The rung it is ready for; none (0 x 0) before prepare() or after one
+  // that failed.
   frame::Extent prepared() const noexcept { return prepared_; }
 
-  // The input and the features, planar half floats, contract 18's pitch.
+  // The input and the features, planar half floats, contract 18's pitch;
+  // 0 when not prepared.
   MTL::GPUAddress input() const noexcept;
   MTL::GPUAddress features() const noexcept;
 
@@ -117,6 +132,7 @@ class NeuralEngineNetwork {
   std::shared_ptr<State> state_;  // shared with the listener's blocks
   std::vector<frame::Extent> rungs_;
   frame::Extent prepared_;
+  std::size_t row_bytes_ = 0;  // the prepared rung's
   NS::SharedPtr<MTL::Buffer> input_;
   NS::SharedPtr<MTL::Buffer> features_;
   Resident input_resident_;

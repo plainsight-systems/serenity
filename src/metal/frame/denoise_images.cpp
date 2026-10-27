@@ -22,6 +22,10 @@ void DenoiseImages::make(Buffer& buffer, std::size_t bytes,
 bool DenoiseImages::prepare(const frame::FrameInputs& inputs,
                             frame::Extent light, frame::Extent grid) {
   check_texture_size(light, "the denoiser's buffers");
+  if (grid.width < light.width || grid.height < light.height) {
+    throw MetalError("the denoiser's grid " + frame::to_string(grid) +
+                     " does not hold its light, " + frame::to_string(light));
+  }
   // Joined on a copy, kept once the buffers exist (E.4; frame_images.cpp,
   // PathReuseImages::prepare).
   frame::ReuseHistory joined = history_;
@@ -48,7 +52,9 @@ bool DenoiseImages::prepare(const frame::FrameInputs& inputs,
   light_ = light;
   history_ = joined;
   index_ = inputs.index;
-  return held > 0;
+  // Buffers just made hold no last frame, whatever the history holds (a
+  // new grid at the same light).
+  return false;
 }
 
 void DenoiseImages::allocate(frame::Extent light) {

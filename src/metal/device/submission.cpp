@@ -2,6 +2,8 @@
 
 #include <array>
 #include <chrono>
+#include <concepts>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <thread>
@@ -26,6 +28,19 @@ constexpr std::chrono::microseconds feedback_poll{20};
 // The residency set's room before it grows: more than the allocations a
 // renderer makes resident (a dozen or so).
 constexpr NS::UInteger residency_capacity = 16;
+
+// Looks at `arrived` until it holds, sleeping feedback_poll between looks;
+// false if `deadline` passes first.
+template <std::predicate F>
+bool arrives_by(F arrived, std::chrono::steady_clock::time_point deadline) {
+  while (!arrived()) {
+    if (std::chrono::steady_clock::now() > deadline) {
+      return false;
+    }
+    std::this_thread::sleep_for(feedback_poll);
+  }
+  return true;
+}
 
 NS::SharedPtr<MTL4::CommandQueue> make_queue(MTL::Device* device) {
   auto queue = NS::TransferPtr(device->newMTL4CommandQueue());
@@ -100,7 +115,7 @@ bool Submission::wait_idle() noexcept {
 }
 
 std::optional<Completed> Submission::settle(std::uint64_t sequence) {
-  Slot& slot = slots_.at(sequence % frames_in_flight);
+  const Slot& slot = slots_.at(sequence % frames_in_flight);
   if (frames_.is_settled(sequence)) {
     return std::nullopt;
   }
@@ -114,13 +129,15 @@ std::optional<Completed> Submission::settle(std::uint64_t sequence) {
   // each part's, bounded.
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   const auto arrived = [&](const Feedback& feedback) {
-    while (feedback.arrived.load(std::memory_order_acquire) < sequence + 1) {
-      if (std::chrono::steady_clock::now() > deadline) {
-        throw MetalError("no feedback for submission " +
-                         std::to_string(sequence) + " within " +
-                         std::to_string(timeout.count()) + " ms");
-      }
-      std::this_thread::sleep_for(feedback_poll);
+    if (!arrives_by(
+            [&] {
+              return feedback.arrived.load(std::memory_order_acquire) >=
+                     sequence + 1;
+            },
+            deadline)) {
+      throw MetalError("no feedback for submission " +
+                       std::to_string(sequence) + " within " +
+                       std::to_string(timeout.count()) + " ms");
     }
     if (feedback.failed.load(std::memory_order_acquire)) {
       throw MetalError(feedback.failure);
@@ -137,17 +154,14 @@ std::optional<Completed> Submission::settle(std::uint64_t sequence) {
   }
   if (slot.handed_off) {
     const HandOffReport& report = *slot.report;
-    while (report.arrived_.load(std::memory_order_acquire) < sequence + 1) {
-      if (std::chrono::steady_clock::now() > deadline) {
-        throw MetalError("no report from submission " +
-                         std::to_string(sequence) + "'s hand-off within " +
-                         std::to_string(timeout.count()) + " ms");
-      }
-      std::this_thread::sleep_for(feedback_poll);
+    if (!arrives_by([&] { return report.arrived(); }, deadline)) {
+      throw MetalError("no report from submission " + std::to_string(sequence) +
+                       "'s hand-off within " + std::to_string(timeout.count()) +
+                       " ms");
     }
-    if (report.failed_.load(std::memory_order_acquire)) {
+    if (const std::string* failure = report.failure()) {
       throw MetalError("submission " + std::to_string(sequence) +
-                       "'s hand-off failed: " + report.failure_);
+                       "'s hand-off failed: " + *failure);
     }
     last = slot.after.feedback.get();
     arrived(*last);
@@ -184,35 +198,49 @@ FrameSlot Submission::begin(Parts parts) {
 }
 
 HandOff Submission::hand_off() {
-  const std::uint64_t sequence = frames_.open();
+  const std::uint64_t sequence = frames_.to_hand_off();
   Slot& slot = slots_.at(sequence % frames_in_flight);
   if (slot.handed_off) {
     throw MetalError("hand_off(): submission " + std::to_string(sequence) +
                      " has been handed off already");
   }
+  // The part before ends here: nothing more is recorded into it
+  // (submission.h).
+  (slot.parts == Parts::two ? slot.second : slot.first)
+      .commands->endCommandBuffer();
   slot.handed_off = true;
-  slot.report->reset();
+  slot.report->arm();
   slot.after.allocator->reset();
   slot.after.commands->beginCommandBuffer(slot.after.allocator.get());
   return HandOff{slot.after.commands.get(), hand_off_ready_.get(),
                  hand_off_done_.get(), sequence + 1, slot.report};
 }
 
-void HandOffReport::reset() noexcept {
+// The order of these is submission.h's, HandOffReport.
+void HandOffReport::arm() noexcept {
+  arrived_.store(false, std::memory_order_relaxed);
   failed_.store(false, std::memory_order_relaxed);
   failure_.clear();
 }
 
-void HandOffReport::succeeded(std::uint64_t sequence) noexcept {
-  arrived_.store(sequence + 1, std::memory_order_release);
+void HandOffReport::report_success() noexcept {
+  arrived_.store(true, std::memory_order_release);
 }
 
-void HandOffReport::failed(std::uint64_t sequence, std::string why) noexcept {
+void HandOffReport::report_failure(std::string why) noexcept {
   if (!failed_.load(std::memory_order_relaxed)) {
     failure_ = std::move(why);
     failed_.store(true, std::memory_order_release);
   }
-  arrived_.store(sequence + 1, std::memory_order_release);
+  arrived_.store(true, std::memory_order_release);
+}
+
+bool HandOffReport::arrived() const noexcept {
+  return arrived_.load(std::memory_order_acquire);
+}
+
+const std::string* HandOffReport::failure() const noexcept {
+  return failed_.load(std::memory_order_acquire) ? &failure_ : nullptr;
 }
 
 // Commits `commands` to `queue` with a feedback handler writing `state`
@@ -247,16 +275,15 @@ void Submission::commit_part(MTL4::CommandQueue* queue,
 
 void Submission::end_and_commit(const MTL::Drawable* drawable) {
   const std::uint64_t sequence = frames_.commit();
-  Slot& slot = slots_.at(sequence % frames_in_flight);
+  const Slot& slot = slots_.at(sequence % frames_in_flight);
   const bool two = slot.parts == Parts::two;
-  const bool handed_off = slot.handed_off;
-  slot.first.commands->endCommandBuffer();
+  // Every command buffer still open ends; a hand-off ended the part before
+  // it (hand_off()).
+  const Part& last_part = two ? slot.second : slot.first;
   if (two) {
-    slot.second.commands->endCommandBuffer();
+    slot.first.commands->endCommandBuffer();
   }
-  if (handed_off) {
-    slot.after.commands->endCommandBuffer();
-  }
+  (slot.handed_off ? slot.after : last_part).commands->endCommandBuffer();
 
   const auto pool = scoped_pool();
   // The queue of the last part writes the drawable (submission.h).
@@ -271,33 +298,34 @@ void Submission::end_and_commit(const MTL::Drawable* drawable) {
     queue_->signalEvent(first_done_.get(), sequence + 1);
     overlap_->wait(first_done_.get(), sequence + 1);
   }
-  // The last part, split around a hand-off's worker if it has one
-  // (submission.h, "A hand-off"); the drawable waited for before the part
-  // that writes it, the last.
-  Part& last_part = two ? slot.second : slot.first;
-  const char* last_name = two ? ", part 2," : "";
-  if (handed_off) {
-    commit_part(
-        last, last_part.commands.get(), last_part.feedback, sequence,
-        two ? ", part 2 before its hand-off," : ", before its hand-off,");
-    last->signalEvent(hand_off_ready_.get(), sequence + 1);
-    last->wait(hand_off_done_.get(), sequence + 1);
-  }
-  if (drawable != nullptr) {
-    last->wait(drawable);
-  }
-  if (handed_off) {
-    commit_part(last, slot.after.commands.get(), slot.after.feedback, sequence,
-                ", after its hand-off,");
-  } else {
-    commit_part(last, last_part.commands.get(), last_part.feedback, sequence,
-                last_name);
-  }
-  if (drawable != nullptr) {
-    last->signalDrawable(drawable);
-  }
+  commit_last(slot, last, sequence, drawable);
   last->signalEvent(completed_.get(), sequence + 1);
   last_committed_ = slot.parts;
+}
+
+void Submission::commit_last(const Slot& slot, MTL4::CommandQueue* queue,
+                             std::uint64_t sequence,
+                             const MTL::Drawable* drawable) {
+  const bool two = slot.parts == Parts::two;
+  const Part* final_part = two ? &slot.second : &slot.first;
+  const char* final_name = two ? ", part 2," : "";
+  if (slot.handed_off) {
+    commit_part(
+        queue, final_part->commands.get(), final_part->feedback, sequence,
+        two ? ", part 2 before its hand-off," : ", before its hand-off,");
+    queue->signalEvent(hand_off_ready_.get(), sequence + 1);
+    queue->wait(hand_off_done_.get(), sequence + 1);
+    final_part = &slot.after;
+    final_name = ", after its hand-off,";
+  }
+  if (drawable != nullptr) {
+    queue->wait(drawable);
+  }
+  commit_part(queue, final_part->commands.get(), final_part->feedback, sequence,
+              final_name);
+  if (drawable != nullptr) {
+    queue->signalDrawable(drawable);
+  }
 }
 
 void Submission::commit() { end_and_commit(nullptr); }

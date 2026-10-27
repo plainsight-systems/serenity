@@ -51,9 +51,9 @@ class FrameSequence {
   // The sequence of the submission committed, the one begun last; refused
   // with none open, or for one abandoned.
   std::uint64_t commit();
-  // The sequence of the submission open now, the one begun last; refused
-  // with none open (a hand-off's rule).
-  std::uint64_t open() const;
+  // The submission a hand-off splits: the one open now, begun last;
+  // refused with none open (a hand-off's rule).
+  [[nodiscard]] std::uint64_t to_hand_off() const;
 
   // Refused unless submission `sequence` is committed and its slot not
   // reused (wait_until_complete()'s rule).

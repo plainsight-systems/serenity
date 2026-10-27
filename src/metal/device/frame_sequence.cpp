@@ -28,7 +28,7 @@ void FrameSequence::opened() noexcept {
   ++next_;
 }
 
-std::uint64_t FrameSequence::open() const {
+std::uint64_t FrameSequence::to_hand_off() const {
   if (!open_) {
     throw MetalError("a hand-off with no submission begun");
   }

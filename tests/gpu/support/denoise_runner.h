@@ -245,7 +245,7 @@ inline std::vector<contracts::LinearImage> run_denoise_fixture(
     // Frame k of a history from frame 0 (reused_since 0, the default).
     frame::FrameInputs inputs{};
     inputs.index = k;
-    const bool history = images.prepare(inputs, light, pass.grid(light));
+    const bool history = images.prepare(inputs, light, pass.rung_for(light));
     pass.prepare(images.padded());
     const contracts::DenoiseConstants c =
         detail::constants_of(fixture, k, network, images, output, history);

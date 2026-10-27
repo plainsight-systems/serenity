@@ -22,11 +22,6 @@ namespace serenity::metal {
 // How a frame's work reaches the GPU: Submission, below, and what it hands
 // out. First the few names everything else uses.
 
-// The frames in flight: two (Submission, below, "The frames in flight").
-// C++, named as C++ constants are; Objective-C's naming rule reaches it
-// only through display_link.mm, which includes it for CAMetalDisplayLink.
-// NOLINTNEXTLINE(google-objc-global-variable-declaration)
-
 // A submission settled (Submission, below, "Settling").
 struct Completed {
   std::uint64_t sequence = 0;
@@ -59,26 +54,43 @@ class Submission;
 // below, "A hand-off") reports, once per submission: that it is done, or
 // that it failed and why. Written on the worker's thread, read by the
 // Submission when it settles the submission, so a failure there is the
-// submission's, reported as a GPU failure is (E.2, E.14). Thread-safe;
-// shared, so a late worker writes into state it keeps alive (R.20, CP.32).
+// submission's, reported as a GPU failure is (E.2, E.14). One a frame slot,
+// made once (MEM.9), armed by hand_off() for the slot's submission, so the
+// worker names no submission; shared, so a late worker writes into state it
+// keeps alive (R.20, CP.32).
+//
+// The order, by hand, as the slot's Feedback (below) keeps it, the
+// pattern CP.100 asks to be stated: the worker writes `failure_`, releases
+// `failed_`, then `arrived_`, last; the Submission acquires `arrived_`,
+// then `failed_`, then reads `failure_`. A slot's report is armed again
+// only after the Submission has acquired its last worker's `arrived_`, that
+// worker's last write; the arming reaches the next worker through its
+// registration (NeuralEngineNetwork::run()), made after hand_off() on the
+// same thread, and Metal's dispatch of it.
 class HandOffReport {
  public:
   // Exactly one of these, before the worker sets the hand-off's `done`.
-  void succeeded(std::uint64_t sequence) noexcept;
-  void failed(std::uint64_t sequence, std::string why) noexcept;
+  void report_success() noexcept;
+  void report_failure(std::string why) noexcept;
 
  private:
   friend class Submission;
-  // For a new use of its slot, settled: nothing writes it meanwhile.
-  void reset() noexcept;
-  std::atomic<std::uint64_t> arrived_{0};  // sequence + 1, released last
+  // For its slot's next submission, the last settled: nothing writes it
+  // meanwhile.
+  void arm() noexcept;
+  // Whether the worker has reported; then its failure, null if none.
+  bool arrived() const noexcept;
+  const std::string* failure() const noexcept;
+
+  std::atomic<bool> arrived_{false};  // released last
   std::atomic<bool> failed_{false};
   std::string failure_;  // written before failed_ is released, once
 };
 
 // A hand-off begun (Submission::hand_off()): the command buffer the work
-// after it is recorded into; the events the worker waits on and signals,
-// both at `value`; and where it reports.
+// after it is recorded into; the events the worker waits on and sets, at
+// `value`, this hand-off's (the worker passes it on, and computes nothing
+// from it); and where it reports.
 struct HandOff {
   MTL4::CommandBuffer* after = nullptr;
   MTL::SharedEvent* ready = nullptr;  // the GPU sets `value`: work before done
@@ -185,17 +197,17 @@ class Resident {
 // A hand-off. Work that is not the GPU's (the denoiser's network on the
 // Neural Engine, metal/passes/denoise/neural_engine.h) can sit between two
 // halves of a submission's last part: hand_off(), called while the last
-// part is recorded, ends it there and begins the part after, `after`, on
-// the same queue. At commit, that queue commits the part before, signals
-// `ready` = value, waits for `done` = value, then commits `after`; the
-// worker waits for `ready` (it was notified of it when it was handed the
-// work), does its work, reports to `report`, then sets `done`. The queue
-// waits on the GPU, not the CPU: the main queue's next submission runs
-// meanwhile, which is what a hand-off is for. Whatever the worker reads,
-// the part before wrote; whatever it writes, the part after reads; what
-// the worker touches is the slot's or is guarded by the queue's order
-// (its owner says which). A submission's record then spans its first
-// part's start to the part after's end, its settling waits for every
+// part is recorded, ends its command buffer there, so nothing more is
+// recorded into it, and begins the part after, `after`, on the same queue. At
+// commit, that queue commits the part before, signals `ready` = value, waits
+// for `done` = value, then commits `after`; the worker waits for `ready` (it
+// was notified of it when it was handed the work), does its work, reports to
+// `report`, then sets `done`. The queue waits on the GPU, not the CPU: the main
+// queue's next submission runs meanwhile, which is what a hand-off is for.
+// Whatever the worker reads, the part before wrote; whatever it writes, the
+// part after reads; what the worker touches is the slot's or is guarded by the
+// queue's order (its owner says which). A submission's record then spans its
+// first part's start to the part after's end, its settling waits for every
 // part's feedback and for the report, and a failed report is the
 // submission's failure. A worker that never sets `done` stops the queue:
 // settling throws on the timeout, as for a GPU that has stopped. One
@@ -284,7 +296,12 @@ class Resident {
 // allocations a frame, by the API's shape. Kept: an options object cannot
 // shed a handler once added, so it cannot be reused for the next commit
 // with a new one, and a few allocations against a frame of milliseconds are
-// not worth a design of their own (Per.1, Per.6: no measured cost).
+// not worth a design of their own (Per.1, Per.6: no measured cost). A
+// hand-off adds, a frame: a third command buffer reset, begun, ended and
+// committed, with its options and handler as above, and its feedback
+// polled; an event signalled and one waited for, the GPU's; and the
+// report's poll, which has always arrived once the submission's event has,
+// the worker reporting before it sets `done`.
 class Submission {
  public:
   explicit Submission(const Device& device);
@@ -356,10 +373,12 @@ class Submission {
   void remove_residency_set(MTL::ResidencySet* set) noexcept;
 
   // Splits the open submission's last part here (above, "A hand-off"):
-  // what was recorded so far into the last part's command buffer runs
-  // before the worker; the returned `after` runs after it. Throws
-  // MetalError with no open submission, or if it was split already.
-  HandOff hand_off();
+  // the last part's command buffer, as recorded so far, is ended and runs
+  // before the worker; nothing more may be recorded into it. The returned
+  // `after` runs after the worker, which must be registered for it before
+  // commit: a hand-off dropped stops the queue until settling times out.
+  // Throws MetalError with no open submission, or if it was split already.
+  [[nodiscard]] HandOff hand_off();
 
  private:
   friend class Resident;
@@ -394,7 +413,7 @@ class Submission {
     Part second;  // on the overlap queue, for a two-part submission
     Part after;   // the last part's queue, after a hand-off's worker
     // the hand-off's report, made once (MEM.9), and whether this slot's
-    // submission has one
+    // submission has a hand-off
     std::shared_ptr<HandOffReport> report = std::make_shared<HandOffReport>();
     bool handed_off = false;
     Parts parts = Parts::one;  // of the submission last begun in this slot
@@ -405,6 +424,11 @@ class Submission {
   // its record if this call settled it, none if it was settled already.
   std::optional<Completed> settle(std::uint64_t sequence);
   void end_and_commit(const MTL::Drawable* drawable);
+  // Commits `slot`'s last part to `queue`, split around its hand-off's
+  // worker if it has one, `drawable` (if any) waited for before the command
+  // buffer that writes it and signalled after (above, "A hand-off").
+  void commit_last(const Slot& slot, MTL4::CommandQueue* queue,
+                   std::uint64_t sequence, const MTL::Drawable* drawable);
   // Commits one part's `commands` to `queue`, its feedback handler writing
   // `state`; `part` names it in a failure's message ("" for one part).
   static void commit_part(MTL4::CommandQueue* queue,

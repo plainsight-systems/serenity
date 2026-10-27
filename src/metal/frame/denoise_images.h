@@ -7,8 +7,6 @@
 #include <cstdint>
 
 #include "core/contracts/denoise.h"
-#include "core/denoise/network.h"
-#include "core/denoise/unet.h"
 #include "core/frame/extent.h"
 #include "core/frame/frame_inputs.h"
 #include "core/frame/history.h"
@@ -69,7 +67,9 @@ class DenoiseImages {
   // Ready for frame `inputs`, its light of `light` padded to `grid` (the
   // network's rung for it: passes/denoise/rungs.h, smallest_rung()): the
   // buffers made or remade, the frame joined to the history. Whether the
-  // frame reads last frame's output.
+  // frame reads last frame's output: never when the buffers were just
+  // made, which hold none. Throws MetalError if `grid` does not hold
+  // `light` (I.5), as when the two are passed swapped.
   bool prepare(const frame::FrameInputs& inputs, frame::Extent light,
                frame::Extent grid);
 
@@ -90,7 +90,7 @@ class DenoiseImages {
   using Buffer = ResidentBuffer;  // metal/device/resident.h
 
   void make(Buffer& buffer, std::size_t bytes, std::string_view what);
-  // At a new size, the light's `light`: every buffer, tensor and image.
+  // At a new size, the light's `light`: every buffer and image.
   void allocate(frame::Extent light);
 
   NS::SharedPtr<MTL::Device> device_;

@@ -9,7 +9,6 @@
 #include "core/frame/extent.h"
 #include "metal/device/device.h"
 #include "metal/device/library.h"
-#include "metal/device/resident.h"
 #include "metal/device/static_arrays.h"
 #include "metal/device/submission.h"
 #include "metal/frame/denoise_images.h"
@@ -49,7 +48,7 @@ namespace serenity::metal {
 // What a frame gives it (FrameResources): the light pass's accumulated
 // image and the features at the light size, the full-size albedo, the
 // radiance image it writes at the output size, its constants and its
-// buffers and tensors (metal/frame/denoise_images.h). Throws MetalError,
+// buffers (metal/frame/denoise_images.h). Throws MetalError,
 // at record(), if any is missing.
 //
 // The light is padded to the network's rung for it (rungs.h, smallest_rung()),
@@ -71,12 +70,12 @@ class DenoisePass {
 
   // The grid a light of `light` runs at: the network's rung for it. Throws
   // MetalError for a light past the largest.
-  frame::Extent grid(frame::Extent light) const;
+  frame::Extent rung_for(frame::Extent light) const;
 
-  // Ready for the grid `grid` (DenoiseImages's padded grid): the network's
-  // memory at it and its first prediction (neural_engine.h). Throws
-  // MetalError as NeuralEngineNetwork::prepare() does.
-  void prepare(frame::Extent grid);
+  // Ready for `rung` (DenoiseImages's padded grid): the network's memory at
+  // it and its first prediction (neural_engine.h). Throws MetalError as
+  // NeuralEngineNetwork::prepare() does.
+  void prepare(frame::Extent rung);
 
   // Records the pass: steps 1 and 2 into `encoder`, which it ends; the
   // submission's hand-off and the network between its halves; step 4

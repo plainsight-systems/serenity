@@ -1,6 +1,5 @@
 #include "metal/passes/denoise/denoise.h"
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -49,7 +48,10 @@ DenoisePass::DenoisePass(const Device& device, const Library& library,
               library.compute_pipeline("denoise_depth_select2")},
       input_(library.compute_pipeline("denoise_input",
                                       {.group_threads = apple_group_threads})),
-      output_(library.compute_pipeline("denoise_output")) {
+      output_(library.compute_pipeline("denoise_output")),
+      network_(std::make_unique<NeuralEngineNetwork>(
+          device, submission, std::filesystem::path{network.source},
+          contracts::network_inputs, network.widths.dec.back())) {
   const auto pool = scoped_pool();
   // The head as the output kernel's matrix product reads it: [feature]
   // [output], the 124 outputs padded to head_columns with zeros, half
@@ -66,13 +68,9 @@ DenoisePass::DenoisePass(const Device& device, const Library& library,
   const std::array<std::span<const std::byte>, 2> arrays{
       std::as_bytes(std::span(head)), std::as_bytes(std::span(h.bias))};
   weights_ = std::make_unique<StaticArrays>(device, submission, arrays);
-
-  network_ = std::make_unique<NeuralEngineNetwork>(
-      device, submission, std::filesystem::path(network.source),
-      contracts::network_inputs, network.widths.dec.back());
 }
 
-frame::Extent DenoisePass::grid(frame::Extent light) const {
+frame::Extent DenoisePass::rung_for(frame::Extent light) const {
   const std::optional<frame::Extent> rung =
       smallest_rung(network_->rungs(), light);
   if (!rung) {
@@ -82,11 +80,11 @@ frame::Extent DenoisePass::grid(frame::Extent light) const {
   return *rung;
 }
 
-void DenoisePass::prepare(frame::Extent grid) {
+void DenoisePass::prepare(frame::Extent rung) {
   // The planes' rows as the input kernel and the head address them
   // (denoise.metal: contract 18's pitch, half floats).
   network_->prepare(
-      grid, std::size_t{contracts::tensor_pitch(grid.width)} * sizeof(Half));
+      rung, std::size_t{contracts::tensor_pitch(rung.width)} * sizeof(Half));
 }
 
 void DenoisePass::record(MTL4::ComputeCommandEncoder*& encoder,
@@ -174,7 +172,7 @@ void DenoisePass::record_output(MTL4::ComputeCommandEncoder* encoder,
   namespace binding = bindings::denoise;
   MTL4::ArgumentTable* arguments = resources.arguments;
   const DenoiseImages& images = *resources.denoise;
-  const frame::Extent grid = images.padded();
+  const frame::Extent padded = images.padded();
   arguments->setAddress(network_->features(), binding::input);
   arguments->setAddress(weights_->address(head_index), binding::weights);
   arguments->setAddress(weights_->address(head_index + 1), binding::bias);
@@ -186,7 +184,7 @@ void DenoisePass::record_output(MTL4::ComputeCommandEncoder* encoder,
   arguments->setTexture(resources.radiance->gpuResourceID(), binding::radiance);
   encoder->setComputePipelineState(output_.get());
   encoder->dispatchThreadgroups(
-      MTL::Size{groups(grid.width, contracts::conv_pixels), grid.height, 1},
+      MTL::Size{groups(padded.width, contracts::conv_pixels), padded.height, 1},
       MTL::Size{contracts::denoise_threads, 1, 1});
 }
 

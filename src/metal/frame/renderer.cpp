@@ -722,10 +722,10 @@ void Renderer::prepare(const frame::FrameInputs& inputs, frame::Extent size) {
   for (Step& step : steps_) {
     if (step.kind == frame::PassKind::denoise) {
       auto& pass = std::get<DenoisePass>(step.pass);
-      const frame::Extent grid = pass.grid(light);
+      const frame::Extent rung = pass.rung_for(light);
       denoise_history =
-          made(denoise_, "denoiser").images.prepare(inputs, light, grid);
-      pass.prepare(grid);
+          made(denoise_, "denoiser").images.prepare(inputs, light, rung);
+      pass.prepare(rung);
     }
   }
   prepared_ =

@@ -77,26 +77,27 @@ TEST_CASE(
         parts == metal::Parts::two ? begun.second : begun.commands;
     copy(last, a.get(), b.get());  // the part before: b = 7
     const metal::HandOff hand_off = rig.submission.hand_off();
-    std::atomic<std::uint32_t> seen{0};
+    // Shared with the worker, which may outlive this scope (F.53).
+    const auto seen = std::make_shared<std::atomic<std::uint32_t>>(0);
     hand_off.ready->notifyListener(
         rig.listener.get(), hand_off.value,
-        [&seen, b = b.get(), c = c.get(), report = hand_off.report,
+        [seen, b = b.get(), c = c.get(), report = hand_off.report,
          done = hand_off.done,
          value = hand_off.value](MTL::SharedEvent*, std::uint64_t) {
-          seen = read(b);
+          *seen = read(b);
           std::this_thread::sleep_for(worker_sleep);
           *static_cast<std::uint32_t*>(c->contents()) = 9;
-          report->succeeded(value - 1);
+          report->report_success();
           done->setSignaledValue(value);
         });
     copy(hand_off.after, c.get(), d.get());  // the part after: d = c
     rig.submission.commit();
     const auto record = rig.submission.wait_until_complete(begun.sequence);
-    CHECK(seen == 7);
+    CHECK(*seen == 7);
     CHECK(read(d.get()) == 9);
     // The record spans the worker: from the part before's start to the part
-    // after's end.
-    REQUIRE(record.has_value());
+    // after's end. No record fails the span too: an empty one spans nothing.
+    CHECK(record.has_value());
     const metal::Completed spanned = record.value_or(metal::Completed{});
     CHECK(spanned.gpu_end - spanned.gpu_start >=
           std::chrono::duration<double>(worker_sleep));
@@ -112,7 +113,7 @@ TEST_CASE("a worker's failure is its submission's, in its words") {
       rig.listener.get(), hand_off.value,
       [report = hand_off.report, done = hand_off.done, value = hand_off.value](
           MTL::SharedEvent*, std::uint64_t) {
-        report->failed(value - 1, "the worker's own words");
+        report->report_failure("the worker's own words");
         done->setSignaledValue(value);
       });
   rig.submission.commit();
@@ -132,7 +133,7 @@ TEST_CASE("a hand-off with none open, or a second, is refused") {
                        "hand_off(): submission 0 has been handed off already",
                        metal::MetalError);
   // The first goes on: its worker done at once.
-  hand_off.report->succeeded(0);
+  hand_off.report->report_success();
   hand_off.done->setSignaledValue(hand_off.value);
   rig.submission.commit();
   CHECK_NOTHROW((void)rig.submission.wait_until_complete(begun.sequence));

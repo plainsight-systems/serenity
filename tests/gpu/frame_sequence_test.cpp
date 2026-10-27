@@ -105,14 +105,14 @@ TEST_CASE("the protocol refuses misuse, each in its words") {
 
 TEST_CASE("a hand-off names the submission open, and none with none open") {
   FrameSequence frames;
-  CHECK_THROWS_WITH_AS((void)frames.open(),
+  CHECK_THROWS_WITH_AS((void)frames.to_hand_off(),
                        "a hand-off with no submission begun", MetalError);
   (void)submit(frames);
   (void)frames.to_begin();
   frames.opened();
-  CHECK(frames.open() == 1);
+  CHECK(frames.to_hand_off() == 1);
   (void)frames.commit();
-  CHECK_THROWS_AS((void)frames.open(), MetalError);
+  CHECK_THROWS_AS((void)frames.to_hand_off(), MetalError);
 }
 
 TEST_CASE("a submission open when memory is released is never committed") {
