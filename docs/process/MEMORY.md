@@ -553,4 +553,4 @@ frame lacked, chosen by the user from a sweep against shipped engines:
   40.0 at 3x against 17.5 at 3456 x 2234) but it loses the caustics in
   the glass and the fireflies' pinpoints in the mirrors
   (`research/2026-10-27-metalfx-denoising.md`). Its prototype was never
-  committed.
+  committed, and was deleted 2026-10-27.

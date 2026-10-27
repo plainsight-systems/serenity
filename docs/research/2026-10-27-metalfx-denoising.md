@@ -200,7 +200,8 @@ What they show:
 
 ## 6. Left
 
-- The prototype stays outside the repository; nothing of it is committed.
+- The prototype was never committed and was deleted after the decision
+  (the user, 2026-10-27); this note is its record.
 - MetalFX's Metal 4 creation failure is not reported to Apple; the
   standalone program reproduces it in seconds.
 - The Neural Engine note's design remains the open route to a faster
