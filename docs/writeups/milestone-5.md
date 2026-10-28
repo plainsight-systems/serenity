@@ -123,6 +123,7 @@ and 25. The [hardware-design notes](../research/2026-10-20-nvidia-hardware-desig
 and [tracing measurements](../research/2026-10-21-tracing-divergence.md)
 keep the full experiments, including the changes I dropped.
 
-Next is AMD's Strix Halo through HIP and HIPRT. I want to see which of
-these choices carry over, and where its thread grouping and memory
-limits call for a different arrangement.
+Next, the M3 Max gets a milestone of its own. I'll take what held up on
+the 3090, redesign the frame from Apple's own guidance, and measure how
+much of the gap closes. AMD's Strix Halo through HIP and HIPRT comes
+after that.
