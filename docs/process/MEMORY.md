@@ -565,3 +565,14 @@ frame lacked, chosen by the user from a sweep against shipped engines:
   numbers. Metal 4's machine-learning route removed. Between rungs (window
   sizes whose light is not a rung) the extra padding changes the network's
   output near the bottom and right edges.
+- **Two frames in flight stay** (the user, 2026-10-27): at 1920 x 1080
+  the light half is 11.27 of the frame's 11.89 ms; a third frame in
+  flight would recover at most the 0.54 ms gap between light halves, for
+  about 300 MB and slots apart from `CAMetalDisplayLink`'s latency
+  (`research/2026-10-26-neural-engine-denoiser.md`, section 5).
+- **Milestone 6 closed 2026-10-27** (tag `milestone-6`): the user's
+  judgment that the frame has reached the M3 Max's ray-tracing limit.
+  Cycles' wavefront integrator was not built on the M3. The write-up
+  (`docs/writeups/milestone-6.md`) uses diagrams where the earlier ones
+  used prose, at Andrew's request: the hand-off as a timeline at measured
+  times, MetalFX against the network as crops.

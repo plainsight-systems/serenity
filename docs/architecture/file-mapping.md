@@ -723,7 +723,7 @@ builds one, and primary surface replacement traced on from it as before.
 | the model made after the weights are fetched | Build | `scripts/fetch_denoiser_weights.sh` |
 | Core ML, Core Video and IOSurface linked; the Objective-C++ file under ARC | Build | `CMakeLists.txt` |
 | the grid a light runs at: the smallest rung that holds its padded size, Metal's alone | Pass | `src/metal/passes/denoise/rungs.{h,cpp}`, new |
-| a submission's last part split around work off the GPU, ordered by two shared events; the worker's report the submission's failure; the open submission's sequence | GPU backend | `src/metal/device/submission.{h,cpp}` (`hand_off()`, `HandOff`, `HandOffReport`), `src/metal/device/frame_sequence.{h,cpp}` (`open()`) |
+| a submission's last part split around work off the GPU, ordered by two shared events; the worker's report the submission's failure; the open submission's sequence | GPU backend | `src/metal/device/submission.{h,cpp}` (`hand_off()`, `HandOff`, `HandOffReport`), `src/metal/device/frame_sequence.{h,cpp}` (`to_hand_off()`) |
 | the model loaded for the CPU and Neural Engine, its rungs read from it; the input and features in IOSurface pixel buffers, Metal's buffers over the same memory; the prediction on a shared-event listener's queue | GPU backend | `src/metal/passes/denoise/neural_engine.{h,mm}`, new |
 | the network between the halves of the image part; the grid by rung; the machine-learning encoder, pipeline, heap and tensors removed | Pass | `src/metal/passes/denoise/denoise.{h,cpp}` |
 | the network's input and features no longer the images'; the padded grid given | Frame graph | `src/metal/frame/denoise_images.{h,cpp}` |

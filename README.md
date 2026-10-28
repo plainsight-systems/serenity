@@ -17,7 +17,17 @@ with the light traced at a lower resolution and brought up to the display’s.
 
 [![The marbles twenty seconds into the opening, rendered on the RTX 3090 Ti: ReSTIR PT and MNEE traced in a checkerboard, denoised and upscaled to 1920 × 1080](docs/writeups/images/marbles-m5-20s.jpg)](https://serenity.plainsight-systems.com/#film)
 
-**Current state: milestone 5.** The same frame now runs on my RTX 3090 Ti,
+**Current state: milestone 6.** The frame is designed for the M3 Max's
+own hardware, and runs at 84 frames a second at 1920 × 1080 and 25 at the
+display's 3456 × 2234, up from 57 and 16. Production's designs for Apple
+silicon (Blender Cycles' tracing, Apple's rasterized first surface, Apple's
+own network kernels) and the 3090's scheduling bought a few percent each;
+most of the gain came from moving the denoiser's network to the Neural
+Engine, where it runs beside the GPU while the GPU traces the next frame's
+light. Apple's own MetalFX Denoising was faster than my network and lost
+the caustics in the glass, so my network stays.
+
+Milestone 5 put the same frame on my RTX 3090 Ti,
 through CUDA and OptiX, at 174 frames a second at 1920 × 1080 and 50 at
 3456 × 2234. The port alone ran at 89; designing the frame for the
 3090’s hardware doubled it. Every sphere became a triangle mesh for the
@@ -72,6 +82,9 @@ where the frame’s time went and what each optimization bought.
 [Milestone 5: the frame on an NVIDIA GPU](docs/writeups/milestone-5.md)
 covers the port to CUDA and OptiX and the frame designed again for the
 RTX 3090 Ti, including what was measured and dropped.
+[Milestone 6: the frame on Apple silicon](docs/writeups/milestone-6.md)
+designs the frame again for the M3 Max and moves the network to its
+Neural Engine.
 [Milestone 1](docs/writeups/milestone-1.md) records the original baseline.
 The design is in [`docs/architecture/`](docs/architecture/README.md).
 
@@ -123,8 +136,8 @@ is why it works on a scene it never saw. The correspondence has limits: the
 neighborhood is a small, fixed window (3 × 3 at three spacings), and the
 values being averaged are the noisy colors themselves, not learned
 projections. I trained it in PyTorch on scenes generated for the purpose and
-run it every frame in the renderer’s own Metal compute kernels, which match
-PyTorch to a few parts in ten thousand.
+run it every frame, on the Mac’s Neural Engine and on the 3090’s tensor
+cores, matching PyTorch to a few parts in ten thousand.
 
 Serenity runs on each vendor’s own API: Metal on the Mac, and now CUDA
 and OptiX on my RTX 3090 Ti. Next come HIP with HIPRT for AMD’s Strix
