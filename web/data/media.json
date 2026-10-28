@@ -8,32 +8,32 @@
     "provenance": "Project illustration, not a rendered frame."
   },
   "poster": {
-    "local": "media/2026-10-22-marbles-opening-m5-denoised-60fps-thumbnail-10s.png",
-    "url": "https://media.plainsight-systems.com/2026-10-22-marbles-opening-m5-denoised-60fps-thumbnail-10s.png",
+    "local": "media/2026-10-27-marbles-opening-m6-denoised-60fps-thumbnail-10s.png",
+    "url": "https://media.plainsight-systems.com/2026-10-27-marbles-opening-m6-denoised-60fps-thumbnail-10s.png",
     "width": 1920,
     "height": 1080,
-    "alt": "Glass, porcelain and metal marbles ten seconds into the opening, rendered by Milestone 5 on an RTX 3090 Ti",
-    "provenance": "Milestone 5 · RTX 3090 Ti · Denoised and upscaled · t = 10 s"
+    "alt": "Glass, porcelain and metal marbles ten seconds into the opening, rendered by Milestone 6 on an M3 Max",
+    "provenance": "Milestone 6 · M3 Max · Denoised and upscaled · t = 10 s"
   },
   "film": {
-    "local": "media/2026-10-22-marbles-opening-m5-denoised-60fps-1080p60.mp4",
-    "url": "https://media.plainsight-systems.com/2026-10-22-marbles-opening-m5-denoised-60fps-1080p60.mp4",
+    "local": "media/2026-10-27-marbles-opening-m6-denoised-60fps-1080p60.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-27-marbles-opening-m6-denoised-60fps-1080p60.mp4",
     "width": 1920,
     "height": 1080,
     "type": "video/mp4",
     "label": "1080p film",
-    "provenance": "Milestone 5 · ReSTIR PT + MNEE, traced in a checkerboard · Denoised and upscaled from 960 × 540 · Depth of field after the network · Runs live at 174 fps at 1920 × 1080 on an RTX 3090 Ti · This film rendered offline and encoded at 60 fps",
-    "alt": "Forty-five-second opening rendered by Milestone 5 on an RTX 3090 Ti: light traced at half resolution, denoised and upscaled by the network, then given its depth of field"
+    "provenance": "Milestone 6 · ReSTIR PT + MNEE, traced in a checkerboard · Denoised and upscaled from 960 × 540, the network on the Neural Engine · Depth of field after the network · Runs live at 84 fps at 1920 × 1080 on an M3 Max · This film rendered offline and encoded at 60 fps",
+    "alt": "Forty-five-second opening rendered by Milestone 6 on an M3 Max: light traced at half resolution on the GPU, denoised and upscaled by the network on the Neural Engine, then given its depth of field"
   },
   "film_small": {
-    "local": "media/2026-10-22-marbles-opening-m5-denoised-60fps-540p.mp4",
-    "url": "https://media.plainsight-systems.com/2026-10-22-marbles-opening-m5-denoised-60fps-540p.mp4",
+    "local": "media/2026-10-27-marbles-opening-m6-denoised-60fps-540p.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-27-marbles-opening-m6-denoised-60fps-540p.mp4",
     "optional": true,
     "label": "Smaller playback file"
   },
   "film_original": {
-    "local": "media/2026-10-22-marbles-opening-m5-denoised-60fps-master.mp4",
-    "url": "https://media.plainsight-systems.com/2026-10-22-marbles-opening-m5-denoised-60fps-master.mp4",
+    "local": "media/2026-10-27-marbles-opening-m6-denoised-60fps-master.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-27-marbles-opening-m6-denoised-60fps-master.mp4",
     "optional": true,
     "label": "Open the original render"
   },
@@ -198,5 +198,36 @@
     "height": 1080,
     "alt": "Milestone 4 on the left and Milestone 5 on the right, ten seconds into the opening",
     "provenance": "Milestone 5 · Comparison at t = 10 s"
+  },
+  "m4_vs_m6": {
+    "local": "media/2026-10-27-marbles-opening-m4-vs-m6-1080p30-16mbps.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-27-marbles-opening-m4-vs-m6-1080p30-16mbps.mp4",
+    "label": "Comparison film (1920 × 540)",
+    "width": 1920,
+    "height": 540,
+    "type": "video/mp4",
+    "alt": "Thirty-second comparison of the opening on the same M3 Max: Milestone 4 on the left, Milestone 6 on the right",
+    "provenance": "Milestone 4, M3 Max (left) · Milestone 6, M3 Max (right) · Frame rates as labelled, measured live on the fully lit scene · This film rendered offline and encoded at 30 fps",
+    "note": "The frame rates in the labels were measured on the fully lit scene about two minutes in, both on the same M3 Max. This film shows the opening."
+  },
+  "m4_vs_m6_small": {
+    "local": "media/2026-10-27-marbles-opening-m4-vs-m6-540p.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-27-marbles-opening-m4-vs-m6-540p.mp4",
+    "label": "Smaller comparison (960 × 270)",
+    "optional": true
+  },
+  "m4_vs_m6_original": {
+    "local": "media/2026-10-27-marbles-opening-m4-vs-m6-master.mp4",
+    "url": "https://media.plainsight-systems.com/2026-10-27-marbles-opening-m4-vs-m6-master.mp4",
+    "label": "Full-resolution comparison (3840 × 1080)",
+    "optional": true
+  },
+  "m4_vs_m6_poster": {
+    "local": "media/2026-10-27-marbles-opening-m4-vs-m6-thumbnail-10s.png",
+    "url": "https://media.plainsight-systems.com/2026-10-27-marbles-opening-m4-vs-m6-thumbnail-10s.png",
+    "width": 3840,
+    "height": 1080,
+    "alt": "Milestone 4 on the left and Milestone 6 on the right, ten seconds into the opening",
+    "provenance": "Milestone 6 · Comparison at t = 10 s"
   }
 }

@@ -86,16 +86,30 @@ ARTICLES = {
                    'm5-steps-narrow.svg'],
         'film': 'm4_vs_m5', 'film_title': 'Milestone 4 beside Milestone 5',
     },
+    'milestone-6': {
+        'title': 'Milestone 6: the frame on Apple silicon',
+        'description': 'Designing the frame again for the M3 Max: production designs that paid '
+                       'little, Apple\'s own denoiser set aside, and the network moved to the Neural Engine.',
+        'date': '2026-10-27', 'milestone': 6,
+        'image': 'images/marbles-m6-20s.jpg',
+        'images': ['marbles-m6-20s.jpg', 'm6-network-vs-metalfx.jpg', 'm6-neural-engine.svg',
+                   'm6-steps.svg',
+                   # each diagram drawn again for phones (render-image.html)
+                   'm6-neural-engine-narrow.svg', 'm6-steps-narrow.svg'],
+        'film': 'm4_vs_m6', 'film_title': 'Milestone 4 beside Milestone 6',
+    },
 }
 IMAGE_KEYS = {'artwork', 'poster', 'baseline_poster', 'comparison_poster',
-              'denoised_comparison_poster', 'm3_vs_m4_poster', 'm4_vs_m5_poster'}
+              'denoised_comparison_poster', 'm3_vs_m4_poster', 'm4_vs_m5_poster',
+              'm4_vs_m6_poster'}
 MEDIA_KEYS = IMAGE_KEYS | {'film', 'film_small', 'film_original', 'brass',
                           'baseline', 'baseline_small', 'baseline_original',
                           'comparison', 'comparison_small', 'comparison_original',
                           'denoised_comparison', 'denoised_comparison_small',
                           'denoised_comparison_original',
                           'm3_vs_m4', 'm3_vs_m4_small', 'm3_vs_m4_original',
-                          'm4_vs_m5', 'm4_vs_m5_small', 'm4_vs_m5_original'}
+                          'm4_vs_m5', 'm4_vs_m5_small', 'm4_vs_m5_original',
+                          'm4_vs_m6', 'm4_vs_m6_small', 'm4_vs_m6_original'}
 PUBLIC_PAGES = {'index.html', 'about/index.html', 'writing/index.html', '404.html'} | {
     f'writing/{slug}/index.html' for slug in ARTICLES
 }

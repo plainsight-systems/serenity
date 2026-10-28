@@ -98,7 +98,8 @@ class SiteTests(unittest.TestCase):
                           project / 'content/writing/milestone-2/index.md',
                           project / 'content/writing/milestone-3/index.md',
                           project / 'content/writing/milestone-4/index.md',
-                          project / 'content/writing/milestone-5/index.md'})
+                          project / 'content/writing/milestone-5/index.md',
+                          project / 'content/writing/milestone-6/index.md'})
         html = (output / 'index.html').read_text()
         self.assertIn('https://media.example.invalid/', html)
         self.assertIn('Smaller playback file', html)
@@ -114,8 +115,9 @@ class SiteTests(unittest.TestCase):
         home = (output / 'index.html').read_text()
         index = (output / 'writing/index.html').read_text()
         self.assertIn('2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4', first)
-        self.assertIn('2026-10-22-marbles-opening-m5-denoised-60fps-1080p60.mp4', home)
-        self.assertIn('href="/serenity/writing/milestone-5/"', home)
+        self.assertIn('2026-10-27-marbles-opening-m6-denoised-60fps-1080p60.mp4', home)
+        self.assertIn('href="/serenity/writing/milestone-6/"', home)
+        self.assertNotIn('2026-10-22-marbles-opening-m5-denoised-60fps-1080p60.mp4', home)
         self.assertNotIn('2026-10-19-marbles-opening-m4-denoised-1080p30-16mbps.mp4', home)
         self.assertNotIn('2026-10-15-marbles-opening-restir-pt-denoised-1080p30-16mbps.mp4', home)
         self.assertNotIn('2026-10-10-marbles-opening-v3-1080p30-16mbps.mp4', home)
@@ -158,6 +160,20 @@ class SiteTests(unittest.TestCase):
         self.assertIn('<picture class="diagram-picture"><source media="(max-width: 900px)" '
                       'srcset="images/m5-steps-narrow.svg"><img class="diagram" '
                       'src="images/m5-steps.svg"', fifth)
+        sixth = (output / 'writing/milestone-6/index.html').read_text()
+        self.assertIn('2026-10-27-marbles-opening-m4-vs-m6-1080p30-16mbps.mp4', sixth)
+        self.assertIn('href="/serenity/writing/milestone-5/"', sixth)
+        self.assertIn('https://example.invalid/serenity/images/marbles-m6-20s.jpg', sixth)
+        self.assertIn('2026-10-23-apple-silicon-design.md', sixth)
+        self.assertNotIn('2026-10-27-marbles-opening-m4-vs-m6-1080p30-16mbps.mp4', fifth)
+        self.assertTrue((output / 'writing/milestone-6/images/m6-network-vs-metalfx.jpg').is_file())
+        for name in ('m6-neural-engine', 'm6-steps'):
+            self.assertTrue((output / f'writing/milestone-6/images/{name}.svg').is_file())
+            self.assertTrue((output / f'writing/milestone-6/images/{name}-narrow.svg').is_file())
+            self.assertIn(f'<picture class="diagram-picture"><source media="(max-width: 900px)" '
+                          f'srcset="images/{name}-narrow.svg"><img class="diagram" '
+                          f'src="images/{name}.svg"', sixth)
+        self.assertLess(index.index('writing/milestone-6/'), index.index('writing/milestone-5/'))
         self.assertLess(index.index('writing/milestone-5/'), index.index('writing/milestone-4/'))
         self.assertLess(index.index('writing/milestone-4/'), index.index('writing/milestone-3/'))
         self.assertLess(index.index('writing/milestone-3/'), index.index('writing/milestone-2/'))
@@ -182,8 +198,8 @@ class SiteTests(unittest.TestCase):
                         '--panicOnWarning'], check=True, capture_output=True)
         xml = (output / 'writing/index.xml').read_text()
         entries = ET.fromstring(xml).findall('./channel/item')
-        self.assertEqual(len(entries), 30)
-        self.assertEqual(entries[0].findtext('title'), site.ARTICLES['milestone-5']['title'])
+        self.assertEqual(len(entries), 25 + len(site.ARTICLES))
+        self.assertEqual(entries[0].findtext('title'), site.ARTICLES['milestone-6']['title'])
         self.assertIn('Fixture 0 & <GPU>', [item.findtext('title') for item in entries])
         self.assertNotIn('PRIVATE BODY', xml)
         self.assertNotIn('/writing/draft/', xml)

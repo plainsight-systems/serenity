@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 290" width="420" height="290" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+<title>Frames a second at 1920 × 1080 after each step of Milestone 6</title>
+<rect x="0" y="0" width="420" height="290" rx="14" fill="#faf8f4"/>
+<text x="16" y="34" font-size="17" font-weight="600" fill="#2b2b2b">Frames a second at 1920 × 1080</text>
+<text x="16" y="56" font-size="17" font-weight="600" fill="#2b2b2b">on the M3 Max, the fully lit scene</text>
+<text x="16" y="90" font-size="13" fill="#3b3b3b">Milestone 4, M3 Max</text>
+<rect x="16" y="97" width="110.2" height="20" rx="4" fill="#b9b2a5"/>
+<text x="133.2" y="112" font-size="14" font-weight="600" fill="#2b2b2b">57</text>
+<text x="16" y="140" font-size="13" fill="#3b3b3b">Apple's tracing, raster, network kernels</text>
+<rect x="16" y="147" width="116.0" height="20" rx="4" fill="#3f6f8f"/>
+<text x="139.0" y="162" font-size="14" font-weight="600" fill="#2b2b2b">60</text>
+<text x="16" y="190" font-size="13" fill="#3b3b3b">ReSTIR PT's lists, RTXDI's layout</text>
+<rect x="16" y="197" width="121.8" height="20" rx="4" fill="#3f6f8f"/>
+<text x="144.8" y="212" font-size="14" font-weight="600" fill="#2b2b2b">63</text>
+<text x="16" y="240" font-size="13" fill="#3b3b3b">The network on the Neural Engine</text>
+<rect x="16" y="247" width="162.4" height="20" rx="4" fill="#3f6f8f"/>
+<text x="185.4" y="262" font-size="14" font-weight="600" fill="#2b2b2b">84</text>
+</svg>

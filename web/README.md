@@ -1,6 +1,6 @@
 # Serenity project site
 
-Hugo implements the homepage, Writing index, five milestone articles,
+Hugo implements the homepage, Writing index, six milestone articles,
 and About page. The shared navy framing and Plex typography follow Cradle and
 Plainsight Systems. No JavaScript, analytics, external fonts, or renderer build
 is required. A custom 404 page is included.
@@ -18,7 +18,7 @@ Open <http://127.0.0.1:1314/>. Rerun after source edits; this is a build followe
 by a static server, not a watcher. The server binds only to loopback and serves
 only the generated output. Port 1313 is the default if `--port` is omitted.
 
-The Milestone 5 film, the four side-by-side comparisons, milestone-one film, their smaller
+The Milestone 6 film, the five side-by-side comparisons, milestone-one film, their smaller
 playback options and original masters, and the brass sphere are hosted at
 `media.plainsight-systems.com` in R2 bucket
 `plainsight-public-media`. Their URLs are configured in `data/media.json`, so
@@ -30,13 +30,14 @@ For offline media development, clear the relevant manifest URLs and pass
 
 ## Content and publication boundary
 
-- `docs/writeups/milestone-1.md` to `milestone-5.md` are the authoritative
+- `docs/writeups/milestone-1.md` to `milestone-6.md` are the authoritative
   articles. The builder stages each as a Hugo leaf bundle, removing its
   duplicate H1 and supplying publication metadata from `ARTICLES` in
   `scripts/site.py`. Edit the prose in the original writeup; update its registry
   entry if its title changes. The registry also selects its images and film.
-- The homepage features the Milestone 5 film. Milestone 5 includes the
-  Milestone 4 versus Milestone 5 comparison; milestone 4 retains its
+- The homepage features the Milestone 6 film. Milestone 6 includes the
+  Milestone 4 versus Milestone 6 comparison, both on the M3 Max; milestone 5
+  retains its Milestone 4 versus Milestone 5 comparison; milestone 4 retains its
   Milestone 3 versus Milestone 4 comparison; milestone 3 retains its ReSTIR
   versus denoised comparison, milestone 2 its path tracer versus ReSTIR
   comparison, and milestone 1 its original film. Each article has its own Writing
@@ -103,6 +104,16 @@ half of each; all 30 seconds at 30 fps. The comparison's labels ("Milestone
 3, 23.5 ms per frame · 43 fps" and "Milestone 4, 17.5 ms per frame · 57 fps")
 were measured on the fully lit scene at t = 120 s, not the opening shown.
 The Milestone 3 denoised film remains on R2 but is no longer linked.
+
+Milestone-six objects: `2026-10-27-marbles-opening-m6-denoised-60fps-*` (the
+homepage film, 45 seconds at 60 fps as Milestone 5's: master at crf 16,
+1080p60 at crf 16 capped at 12 Mb/s, 540p60 at crf 18 capped at 3 Mb/s) and
+`2026-10-27-marbles-opening-m4-vs-m6-*` (the Milestone 6 article's
+comparison, 30 seconds at 30 fps, the pattern above). Both rendered offline
+on the M3 Max at `milestone-6`. The comparison's labels ("Milestone 4 · M3
+Max, 17.5 ms per frame · 57 fps" and "Milestone 6 · M3 Max, 11.9 ms per frame
+· 84 fps") were measured on the fully lit scene, not the opening shown. The
+Milestone 5 homepage film remains on R2 but is no longer linked.
 
 New uploads use `Content-Type: video/mp4` and
 `Cache-Control: public, max-age=31536000, immutable`. Use new filenames for
