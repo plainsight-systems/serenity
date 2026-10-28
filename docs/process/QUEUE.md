@@ -295,8 +295,15 @@ This file tracks active and accepted work.
    user 2026-10-27 as the limit for this frame on the M3 Max's ray
    tracing, Cycles' wavefront left untried on the M3. The write-up, with
    diagrams of the hand-off and the MetalFX comparison, accepted by
-   Andrew 2026-10-27. Not done: the films and the site update, each the
-   user's call. Next: HIP with HIPRT on Strix Halo.
+   Andrew 2026-10-27. The films and the site published 2026-10-27 by the
+   user's approval: the homepage plays Milestone 6's opening rendered on
+   the M3 Max (45 s at 60 fps, crf 16 capped, about 7 Mb/s at 1080p60);
+   the sixth article carries Milestone 4 beside Milestone 6 on the same
+   M3 Max (30 s at 30 fps, labelled 57 and 84 fps) and its diagrams with
+   phone versions; About, Writing and the feed cover six milestones. The
+   8 new objects on R2 checked against the local bytes; Milestone 5's
+   homepage film stays on R2, unlinked. Next: HIP with HIPRT on Strix
+   Halo.
    The plan as it was written: The M3 Max runs
    the demo at 57 fps at 1920 x 1080 and 17 at the display's 3456 x 2234,
    against the project's goal of 60 at the display's size; Milestone 4
