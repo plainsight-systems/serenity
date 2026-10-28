@@ -189,10 +189,39 @@ run, each configuration's runs within 1% of their mean:
 | 3456 x 2234 | 17.7 fps (56.52 ms) | **25.1 fps (39.89 ms)**, +42% |
 
 Against section 3's estimate: inside it at 3456 x 2234 (25 to 27 fps),
-under it at 1920 x 1080 (90 to 100 fps). Where the difference goes is not
-measured. A first round, with the system's aerial wallpaper running,
+under it at 1920 x 1080 (90 to 100 fps). A first round, with the system's aerial wallpaper running,
 gave 59.9 against 82.4 and 17.6 against 24.0 fps, two configurations
 spreading past 2%, and was run again.
+
+**Where 1920 x 1080's difference goes** (2026-10-27, at `39b6e5d`). A
+scratch probe, never committed: `Submission::settle()` printing each
+part's GPU instants, and the CPU's at `begin()` and the commit, in host
+time. The demo at 1920 x 1080 as above, the window's 600 frames, its
+rate the unpatched build's (11.91 against 11.93 ms); medians:
+
+| | |
+|---|---|
+| The frame | 84.1 fps (11.89 ms) |
+| The light half, on the main queue | 11.27 ms, a ceiling of 88.7 fps |
+| The main queue idle between light halves | 0.54 ms |
+| The part before the hand-off; the part after | 0.69 ms; 3.93 ms |
+| The hand-off's round trip, Neural Engine included | 7.17 ms (the prediction alone 6.57) |
+| The CPU's recording, `begin()` to commit | 0.23 ms |
+
+The light half is the frame: section 3's estimate took the network out
+as if nothing else bounded it, and the light half alone is past 90 fps.
+The gap is two frames in flight's: `begin(n + 1)` waits for frame n - 1,
+which ends about when frame n's light half does (0.15 ms before, the
+median), then records and commits, and the main queue waits for it.
+
+**Not taken (the user, 2026-10-27):** three frames in flight (Apple's
+Metal Best Practices Guide, "Triple Buffering"), at most the 0.54 ms gap
+back, 84 to about 88 fps, for about 300 MB at 3456 x 2234 and slots
+apart from `CAMetalDisplayLink`'s latency of 1 or 2; and freeing a slot's
+light-half resources when its light half ends, the same gap without a
+third frame, an inference not measured. The frame's time is the light
+half's. The repeat runs and a 3456 x 2234 control the same hour spread
+past 8% from their known rates, cause not found, and are not used.
 
 **The picture**, frame 7029, side by side:
 [1920 x 1080](2026-10-26-neural-engine-denoiser/gpu-vs-neural-engine-1920x1080.jpg),
